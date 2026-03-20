@@ -20,11 +20,11 @@ Systematically analyze server logs from the `.dork/logs/` directory to diagnose 
 
 The `.dork` directory location depends on the environment:
 
-| Environment | Location | How |
-|---|---|---|
-| Development | `apps/server/.temp/.dork/` | Auto-detected when `NODE_ENV !== 'production'` |
-| Production (CLI) | `~/.dork/` | Default, or `DORK_HOME` env var |
-| Custom | Any path | Set `DORK_HOME` env var |
+| Environment      | Location                   | How                                            |
+| ---------------- | -------------------------- | ---------------------------------------------- |
+| Development      | `apps/server/.temp/.dork/` | Auto-detected when `NODE_ENV !== 'production'` |
+| Production (CLI) | `~/.dork/`                 | Default, or `DORK_HOME` env var                |
+| Custom           | Any path                   | Set `DORK_HOME` env var                        |
 
 Resolution logic is in `apps/server/src/lib/dork-home.ts`.
 
@@ -108,20 +108,20 @@ for line in sys.stdin:
 
 Common tags in the codebase:
 
-| Tag | Component |
-|---|---|
-| `DB` | Database initialization |
-| `Startup` | Server startup sequence |
-| `Pulse` | Pulse scheduler |
-| `Relay` | Relay message bus |
-| `Mesh` | Mesh agent discovery |
-| `AgentManager` | Claude SDK sessions |
-| `BindingRouter` | Adapter-agent routing |
-| `AdapterManager` | Adapter lifecycle |
-| `SessionBroadcaster` | Cross-client sync |
-| `ConfigManager` | Configuration |
-| `Request` | HTTP request logging |
-| `Error` | Error handler middleware |
+| Tag                  | Component                |
+| -------------------- | ------------------------ |
+| `DB`                 | Database initialization  |
+| `Startup`            | Server startup sequence  |
+| `Pulse`              | Pulse scheduler          |
+| `Relay`              | Relay message bus        |
+| `Mesh`               | Mesh agent discovery     |
+| `AgentManager`       | Claude SDK sessions      |
+| `BindingRouter`      | Adapter-agent routing    |
+| `AdapterManager`     | Adapter lifecycle        |
+| `SessionBroadcaster` | Cross-client sync        |
+| `ConfigManager`      | Configuration            |
+| `Request`            | HTTP request logging     |
+| `Error`              | Error handler middleware |
 
 ```bash
 # Filter by specific tag
@@ -174,17 +174,17 @@ for line in sys.stdin:
 
 ### 3.1 DorkOS-Specific Error Patterns
 
-| Category | Log Pattern | Typical Cause |
-|---|---|---|
-| **Relay delivery** | `ClaudeCodeAdapter: envelope .* has no replyTo` | Missing replyTo field in relay message |
-| **Binding failure** | `BindingRouter: failed to persist session map` | File system error writing sessions.json |
-| **Adapter error** | `AdapterManager: adapter .* failed` | Adapter start/stop lifecycle issue |
-| **SDK error** | `AgentManager: SDK query failed` | Claude Agent SDK call failure |
-| **Mesh discovery** | `Mesh: scan failed` | Discovery scan error |
-| **Pulse execution** | `Pulse: run .* failed` | Scheduled task execution failure |
-| **DB error** | `DB: migration failed` | Database schema issue |
-| **Boundary violation** | `403.*boundary` | Path outside configured boundary |
-| **Session lock** | `SESSION_LOCKED` | Concurrent write attempt |
+| Category               | Log Pattern                                     | Typical Cause                           |
+| ---------------------- | ----------------------------------------------- | --------------------------------------- |
+| **Relay delivery**     | `ClaudeCodeAdapter: envelope .* has no replyTo` | Missing replyTo field in relay message  |
+| **Binding failure**    | `BindingRouter: failed to persist session map`  | File system error writing sessions.json |
+| **Adapter error**      | `AdapterManager: adapter .* failed`             | Adapter start/stop lifecycle issue      |
+| **SDK error**          | `AgentManager: SDK query failed`                | Claude Agent SDK call failure           |
+| **Mesh discovery**     | `Mesh: scan failed`                             | Discovery scan error                    |
+| **Pulse execution**    | `Pulse: run .* failed`                          | Scheduled task execution failure        |
+| **DB error**           | `DB: migration failed`                          | Database schema issue                   |
+| **Boundary violation** | `403.*boundary`                                 | Path outside configured boundary        |
+| **Session lock**       | `SESSION_LOCKED`                                | Concurrent write attempt                |
 
 ### 3.2 Correlate with State Files
 
@@ -333,26 +333,26 @@ print('\n'.join(sorted(tags)))
 
 ### Log File Locations
 
-| File | Purpose |
-|---|---|
-| `{DORK_HOME}/logs/dorkos.log` | Active log file |
-| `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.log` | Daily rotated logs |
-| `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.N.log` | Size-rotated within a day |
-| `{DORK_HOME}/config.json` | Server configuration |
-| `{DORK_HOME}/dork.db` | SQLite database (pulse, relay, mesh) |
-| `{DORK_HOME}/relay/adapters.json` | Adapter configurations |
-| `{DORK_HOME}/relay/bindings.json` | Adapter-agent bindings |
-| `{DORK_HOME}/relay/sessions.json` | Active session mappings |
+| File                                       | Purpose                              |
+| ------------------------------------------ | ------------------------------------ |
+| `{DORK_HOME}/logs/dorkos.log`              | Active log file                      |
+| `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.log`   | Daily rotated logs                   |
+| `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.N.log` | Size-rotated within a day            |
+| `{DORK_HOME}/config.json`                  | Server configuration                 |
+| `{DORK_HOME}/dork.db`                      | SQLite database (pulse, relay, mesh) |
+| `{DORK_HOME}/relay/adapters.json`          | Adapter configurations               |
+| `{DORK_HOME}/relay/bindings.json`          | Adapter-agent bindings               |
+| `{DORK_HOME}/relay/sessions.json`          | Active session mappings              |
 
 ### HTTP Status Codes
 
-| Code | Meaning |
-|---|---|
-| 400 | Bad Request - Zod validation failure |
-| 403 | Forbidden - Boundary violation |
-| 404 | Not Found - Resource missing |
-| 409 | Conflict - Session locked |
-| 500 | Internal Server Error |
+| Code | Meaning                              |
+| ---- | ------------------------------------ |
+| 400  | Bad Request - Zod validation failure |
+| 403  | Forbidden - Boundary violation       |
+| 404  | Not Found - Resource missing         |
+| 409  | Conflict - Session locked            |
+| 500  | Internal Server Error                |
 
 ## Important Behaviors
 

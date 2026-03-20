@@ -1,5 +1,5 @@
 ---
-title: "ngrok Integration Best Practices for Node.js/Express"
+title: 'ngrok Integration Best Practices for Node.js/Express'
 date: 2026-03-01
 type: external-best-practices
 status: active
@@ -34,20 +34,21 @@ For solo developer tools like DorkOS (single user, no team), direct public endpo
 
 ngrok's Traffic Policy engine exposes six authentication mechanisms — from trivial to enterprise-grade:
 
-| Method | Use Case | Plan Required | Complexity |
-|--------|----------|--------------|------------|
-| Basic Auth | Dev tools, demos, quick protection | Personal ($8/mo) | Low |
-| OAuth (Google, GitHub, etc.) | Internal tools, single sign-on | Personal | Medium |
-| OIDC (Okta, Azure AD) | Enterprise corporate IdPs | Pro | Medium-High |
-| JWT Validation | API-to-API, mobile backends | Personal | Medium |
-| IP Restrictions | Office-only access | Personal | Low |
-| Mutual TLS (mTLS) | Machine-to-machine, zero-trust | Pro | High |
+| Method                       | Use Case                           | Plan Required    | Complexity  |
+| ---------------------------- | ---------------------------------- | ---------------- | ----------- |
+| Basic Auth                   | Dev tools, demos, quick protection | Personal ($8/mo) | Low         |
+| OAuth (Google, GitHub, etc.) | Internal tools, single sign-on     | Personal         | Medium      |
+| OIDC (Okta, Azure AD)        | Enterprise corporate IdPs          | Pro              | Medium-High |
+| JWT Validation               | API-to-API, mobile backends        | Personal         | Medium      |
+| IP Restrictions              | Office-only access                 | Personal         | Low         |
+| Mutual TLS (mTLS)            | Machine-to-machine, zero-trust     | Pro              | High        |
 
 **Critical**: Basic Auth requires a paid plan. The free tier cannot add any auth to tunnel endpoints beyond the authtoken itself.
 
 ### 3. Custom Domain Options Are Tiered
 
 Free tier users get a static "dev domain" (e.g., `abc123.ngrok-free.app`) that cannot be customized. Paid plans unlock:
+
 - **Personal ($8/mo)**: Reserved subdomains on `ngrok.app`, `ngrok.dev`
 - **Pay-as-you-go**: Bring-your-own domains via CNAME + wildcard subdomains
 
@@ -63,13 +64,13 @@ ngrok's Traffic Policy engine provides a `rate-limit` action with sliding window
 
 ### 6. Production vs. Development: Different Endpoints, Different Lifecycles
 
-| Dimension | Development Tunnel | Production Cloud Endpoint |
-|-----------|-------------------|--------------------------|
-| Lifecycle | Ephemeral (process lifetime) | Persistent (exists until deleted) |
-| URL stability | Static dev domain (free) or custom (paid) | Always stable |
-| Auth | Basic auth or OAuth | IP restrictions + JWT + mTLS |
-| Traffic policy | Optional | Required |
-| Management | Programmatic via SDK | Dashboard/API |
+| Dimension      | Development Tunnel                        | Production Cloud Endpoint         |
+| -------------- | ----------------------------------------- | --------------------------------- |
+| Lifecycle      | Ephemeral (process lifetime)              | Persistent (exists until deleted) |
+| URL stability  | Static dev domain (free) or custom (paid) | Always stable                     |
+| Auth           | Basic auth or OAuth                       | IP restrictions + JWT + mTLS      |
+| Traffic policy | Optional                                  | Required                          |
+| Management     | Programmatic via SDK                      | Dashboard/API                     |
 
 ### 7. DX Patterns from Expo and Vercel
 
@@ -115,6 +116,7 @@ process.on('SIGTERM', async () => {
 #### 3. Unique Authtokens Per Context
 
 ngrok allows generating multiple authtokens per account. The best practice is:
+
 - One authtoken per developer (for team setups)
 - One authtoken per application (for production use)
 - Revoke individual tokens without affecting others
@@ -129,7 +131,7 @@ The `circuit_breaker` option (free tier, no extra cost) automatically rejects re
 const listener = await ngrok.forward({
   addr: PORT,
   authtoken: process.env.NGROK_AUTHTOKEN,
-  circuit_breaker: 0.5,  // Reject new requests when >50% return 5XX
+  circuit_breaker: 0.5, // Reject new requests when >50% return 5XX
 });
 ```
 
@@ -160,21 +162,20 @@ Simplest protection. Up to 10 username/password pairs. Prompts browser users. No
 const listener = await ngrok.forward({
   addr: PORT,
   authtoken: process.env.NGROK_AUTHTOKEN,
-  basic_auth: [
-    `${process.env.TUNNEL_USERNAME}:${process.env.TUNNEL_PASSWORD}`,
-  ],
+  basic_auth: [`${process.env.TUNNEL_USERNAME}:${process.env.TUNNEL_PASSWORD}`],
 });
 ```
 
 Traffic Policy equivalent (for multiple credentials):
+
 ```yaml
 actions:
   - type: basic-auth
     config:
       credentials:
-        - "user1:password1"
-        - "user2:password2"
-      realm: "DorkOS"
+        - 'user1:password1'
+        - 'user2:password2'
+      realm: 'DorkOS'
 ```
 
 #### OAuth via Traffic Policy
@@ -188,8 +189,8 @@ const listener = await ngrok.forward({
   authtoken: process.env.NGROK_AUTHTOKEN,
   oauth: {
     provider: 'google',
-    allow_emails: ['user@example.com'],         // Allowlist by email
-    allow_domains: ['yourcompany.com'],          // Allowlist by domain
+    allow_emails: ['user@example.com'], // Allowlist by email
+    allow_domains: ['yourcompany.com'], // Allowlist by domain
   },
 });
 
@@ -230,10 +231,10 @@ For machine-to-machine or mobile app backends where the client sends a Bearer to
   config:
     issuer:
       allow_list:
-        - value: "https://auth.example.com"
+        - value: 'https://auth.example.com'
     audience:
       allow_list:
-        - value: "my-api"
+        - value: 'my-api'
     http:
       tokens:
         - type: bearer
@@ -358,8 +359,9 @@ async function createResilientTunnel(port: number): Promise<ngrok.Listener> {
     })
     .connect();
 
-  const listener = await session.httpEndpoint()
-    .domain(process.env.NGROK_DOMAIN ?? '')     // empty string = use dev domain
+  const listener = await session
+    .httpEndpoint()
+    .domain(process.env.NGROK_DOMAIN ?? '') // empty string = use dev domain
     .circuitBreaker(0.5)
     .listen();
 
@@ -372,6 +374,7 @@ async function createResilientTunnel(port: number): Promise<ngrok.Listener> {
 #### Automatic Reconnection
 
 The SDK's built-in reconnection behavior:
+
 - Detects failure via missed heartbeats (30s tolerance by default)
 - Exponential backoff between reconnection attempts
 - Automatically re-establishes all tunnels after reconnection
@@ -404,10 +407,18 @@ async function startTunnelSafely(port: number) {
       return { ok: false, error: 'PLAN_LIMIT', detail: 'Feature requires a paid ngrok plan' };
     }
     if (msg.includes('ECONNREFUSED') || msg.includes('ERR_NGROK_3004')) {
-      return { ok: false, error: 'NETWORK_ERROR', detail: 'Cannot reach ngrok servers — check internet connection' };
+      return {
+        ok: false,
+        error: 'NETWORK_ERROR',
+        detail: 'Cannot reach ngrok servers — check internet connection',
+      };
     }
     if (msg.includes('tunnel not found') || msg.includes('ERR_NGROK_8012')) {
-      return { ok: false, error: 'DOMAIN_INVALID', detail: 'The specified domain is not reserved on this account' };
+      return {
+        ok: false,
+        error: 'DOMAIN_INVALID',
+        detail: 'The specified domain is not reserved on this account',
+      };
     }
     return { ok: false, error: 'UNKNOWN', detail: msg };
   }
@@ -446,9 +457,9 @@ const policy = JSON.stringify({
           config: {
             name: 'per-ip-limit',
             algorithm: 'sliding_window',
-            capacity: 100,        // 100 requests
-            rate: '1m',           // per minute
-            bucket_key: ['conn.ClientIP'],  // per IP address
+            capacity: 100, // 100 requests
+            rate: '1m', // per minute
+            bucket_key: ['conn.ClientIP'], // per IP address
           },
         },
       ],
@@ -464,6 +475,7 @@ const listener = await ngrok.forward({
 ```
 
 Rate-limited requests receive HTTP 429 with a `Retry-After` header. Bucket key options:
+
 - `conn.ClientIP` — per source IP (recommended for abuse prevention)
 - `req.Headers['Authorization']` — per API key/token
 - No bucket key — global limit across all traffic
@@ -479,8 +491,8 @@ import rateLimit from 'express-rate-limit';
 app.set('trust proxy', 1); // Trust first proxy (ngrok forwards real IP in X-Forwarded-For)
 
 const limiter = rateLimit({
-  windowMs: 60 * 1000,   // 1 minute
-  max: 100,              // 100 requests per IP per minute
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per IP per minute
   standardHeaders: true, // Return rate limit info in RateLimit-* headers
   legacyHeaders: false,
   handler: (req, res) => {
@@ -530,13 +542,12 @@ ngrok Cloud Endpoints are **persistent** — they exist independently of any run
 ```typescript
 // Cloud Endpoint is created once via dashboard or API
 // Your server just connects to it on startup:
-const session = await new ngrok.SessionBuilder()
-  .authtokenFromEnv()
-  .connect();
+const session = await new ngrok.SessionBuilder().authtokenFromEnv().connect();
 
 // Bind to an existing Cloud Endpoint
-const listener = await session.httpEndpoint()
-  .domain('api.yourcompany.com')  // Pre-provisioned Cloud Endpoint
+const listener = await session
+  .httpEndpoint()
+  .domain('api.yourcompany.com') // Pre-provisioned Cloud Endpoint
   .listen();
 listener.forward(`localhost:${PORT}`);
 ```
@@ -551,6 +562,7 @@ listener.forward(`localhost:${PORT}`);
 #### DorkOS-Specific Guidance
 
 DorkOS's tunnel is a development convenience feature — the right design:
+
 1. **Off by default** (existing implementation is correct)
 2. **Non-blocking on failure** (tunnel failure must not prevent local server from starting — existing implementation is correct)
 3. **Explicit opt-in** — users who enable tunnel understand they are exposing Claude Code capabilities publicly
@@ -585,6 +597,7 @@ This resilience pattern — trying multiple providers until one works — is wor
 #### Microsoft Dev Tunnels
 
 The `devtunnel` CLI (Visual Studio / VS Code integration) embeds tunnel UX directly in the IDE:
+
 - Status shown in the status bar (bottom of VS Code)
 - Tunnel URL copyable from a dedicated panel
 - Auth integrated with the user's Microsoft account (no separate token needed)
@@ -595,6 +608,7 @@ Key UX lesson: tunnel status belongs in **persistent** UI (status bar or dedicat
 #### ngrok's Own Dashboard UX
 
 The ngrok web dashboard uses:
+
 - Live traffic inspector (request/response replay)
 - Real-time connection count per tunnel
 - Endpoint health status badges (green/amber/red)

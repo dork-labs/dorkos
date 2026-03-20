@@ -24,7 +24,7 @@ export class AdapterDelivery {
   constructor(
     private readonly adapterRegistry: AdapterRegistryLike | undefined,
     private readonly sqliteIndex: SqliteIndex,
-    private readonly logger: Logger = console,
+    private readonly logger: Logger = console
   ) {}
 
   /**
@@ -38,7 +38,7 @@ export class AdapterDelivery {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    contextBuilder?: (subject: string) => AdapterContext | undefined,
+    contextBuilder?: (subject: string) => AdapterContext | undefined
   ): Promise<DeliveryResult | null> {
     if (!this.adapterRegistry) return null;
 
@@ -53,7 +53,7 @@ export class AdapterDelivery {
         new Promise<DeliveryResult>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error('adapter delivery timeout (120s)')),
-            AdapterDelivery.TIMEOUT_MS,
+            AdapterDelivery.TIMEOUT_MS
           );
         }),
       ]);

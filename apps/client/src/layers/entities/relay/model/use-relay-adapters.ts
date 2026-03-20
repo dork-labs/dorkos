@@ -48,9 +48,9 @@ export function useToggleAdapter() {
           old?.map((entry) => ({
             ...entry,
             instances: entry.instances.map((inst) =>
-              inst.id === id ? { ...inst, enabled } : inst,
+              inst.id === id ? { ...inst, enabled } : inst
             ),
-          })),
+          }))
         );
       }
 

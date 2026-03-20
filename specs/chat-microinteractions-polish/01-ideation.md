@@ -41,6 +41,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary Components/Modules:**
+
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` — Chat container; session switching triggers re-mount (key=activeSessionId)
 - `apps/client/src/layers/features/chat/ui/MessageList.tsx` — TanStack Virtual list; historyCount tracks new vs history messages
 - `apps/client/src/layers/features/chat/ui/MessageItem.tsx` — Per-message animator; already uses motion.div with isNew gate
@@ -50,11 +51,13 @@ status: ideation
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` — Session list container; must use `layout` prop + host layoutId root
 
 **Shared Dependencies:**
+
 - `apps/client/src/layers/shared/lib/cn.ts` — Class merging utility
 - `apps/client/src/layers/shared/lib/timing.ts` — `TIMING` constants (TOOL_CALL_AUTO_HIDE_MS etc.)
 - `motion/react` — AnimatePresence, motion, MotionConfig, useAnimate, layoutId
 
 **Data Flow for New Messages:**
+
 ```
 User sends message
   → useChatSession appends optimistic user message to messages[]
@@ -69,6 +72,7 @@ SSE stream arrives
 ```
 
 **Session Switch Flow:**
+
 ```
 User clicks SessionItem
   → setActiveSession(sessionId)
@@ -81,6 +85,7 @@ User clicks SessionItem
 ```
 
 **Component Hierarchy (animation-relevant):**
+
 ```
 App
 └── MotionConfig (reducedMotion="user")
@@ -93,6 +98,7 @@ App
 ```
 
 **Potential Blast Radius:**
+
 - **Direct changes (5 files):** ChatPanel.tsx, MessageItem.tsx, SessionItem.tsx, SessionSidebar.tsx, possibly index.css (spring token)
 - **Indirect (no logic change):** MessageList.tsx (receives same props), ToolCallCard.tsx (spring already good)
 - **Tests to review:** `__tests__/MessageItem.test.tsx`, `__tests__/ChatPanel.test.tsx`, `__tests__/SessionItem.test.tsx` — motion is already mocked in test setup
@@ -110,6 +116,7 @@ _Not a bug fix — section not applicable._
 **Potential Solutions Evaluated:**
 
 **1. Per-token streaming animation (typing effect)**
+
 - Description: Animate each token as it appears (fade in, slide up per word)
 - Pros: Very theatrical, immediately obvious the content is "live"
 - Cons: Causes severe jank at high token rates; degrades performance; makes text harder to read while streaming; no major production app does this
@@ -117,6 +124,7 @@ _Not a bug fix — section not applicable._
 - **Verdict: Rejected**
 
 **2. Message container spring entrance (current approach + improvements)**
+
 - Description: Keep the isNew/historyCount gate; upgrade timing from duration to spring physics; add user-message scale
 - Pros: Already proven correct; easy upgrade; matches iMessage/Slack/Claude.ai behavior exactly; virtualized list stays happy
 - Cons: None identified
@@ -124,6 +132,7 @@ _Not a bug fix — section not applicable._
 - **Verdict: Recommended**
 
 **3. AnimatePresence session crossfade (ChatPanel level)**
+
 - Description: Wrap MessageList render in `<AnimatePresence mode="wait">` keyed by sessionId
 - Pros: Old session fades out → new fades in; 150ms duration; dramatically smoother than instant swap; zero impact on virtualized list internals
 - Cons: Adds 300ms total to session switch (150ms out + 150ms in) — acceptable for a deliberate navigation action
@@ -131,6 +140,7 @@ _Not a bug fix — section not applicable._
 - **Verdict: Recommended**
 
 **4. Stagger history messages on session switch**
+
 - Description: After crossfade, cascade history messages in with 20ms stagger
 - Pros: More theatrical
 - Cons: 100-message session = 2 seconds of cascade; looks broken on long sessions; conflicts with virtualized rendering (items at virtual positions, not sequential DOM)
@@ -138,6 +148,7 @@ _Not a bug fix — section not applicable._
 - **Verdict: Rejected** (user confirmed)
 
 **5. layoutId sliding active indicator (sidebar)**
+
 - Description: Single `motion.div` with `layoutId="active-session-bg"` that slides between items as active session changes
 - Pros: Flagship premium interaction — the exact pattern Linear, Notion, Vercel use; one animated element instead of N background toggles; spring-powered, feels physical
 - Cons: Requires adding an absolutely-positioned child div to SessionItem; SessionSidebar needs `layout` prop; ~30 lines of targeted refactoring
@@ -145,6 +156,7 @@ _Not a bug fix — section not applicable._
 - **Verdict: Recommended** (user confirmed)
 
 **6. CSS transition active indicator (per-item background)**
+
 - Description: Keep CSS background class but add `transition-colors duration-150`
 - Pros: Minimal change
 - Cons: Each item independently transitions; no cross-item sliding; less premium
@@ -152,12 +164,14 @@ _Not a bug fix — section not applicable._
 - **Verdict: Not chosen** (user selected layoutId approach)
 
 **Industry findings:**
+
 - iMessage, Slack, Claude.ai: All use opacity + translateY entrance, spring or ease-out, 150–250ms. No per-token animation.
 - Linear/Notion/Vercel: layoutId shared background for list selection is the defining premium UX signature.
 - Motion.dev recommendation: `mode="wait"` for session crossfade (not `mode="popLayout"`, which is for sibling reflow).
 - Reduced motion: motion.dev's `MotionConfig reducedMotion="user"` automatically substitutes opacity fades for transforms — DorkOS already benefits from this at no extra cost.
 
 **Recommended spring presets:**
+
 ```typescript
 // Message entry (snappy, no bounce)
 { type: 'spring', stiffness: 320, damping: 28 }
@@ -173,10 +187,10 @@ _Not a bug fix — section not applicable._
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Sidebar active indicator animation | `layoutId` sliding background (premium) | Matches Linear/Notion/Vercel pattern — a single shared `motion.div` slides between sessions rather than N independent CSS toggles. User confirmed this approach. |
-| 2 | Session switch animation scope | Simple ChatPanel-level crossfade only | `AnimatePresence mode="wait"` at ChatPanel level, keyed by sessionId. 150ms opacity fade each way. Research + user confirmed: staggered history entry rejected due to virtualized list complexity and chaos at 100+ messages. |
+| #   | Decision                           | Choice                                  | Rationale                                                                                                                                                                                                                     |
+| --- | ---------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Sidebar active indicator animation | `layoutId` sliding background (premium) | Matches Linear/Notion/Vercel pattern — a single shared `motion.div` slides between sessions rather than N independent CSS toggles. User confirmed this approach.                                                              |
+| 2   | Session switch animation scope     | Simple ChatPanel-level crossfade only   | `AnimatePresence mode="wait"` at ChatPanel level, keyed by sessionId. 150ms opacity fade each way. Research + user confirmed: staggered history entry rejected due to virtualized list complexity and chaos at 100+ messages. |
 
 ---
 
@@ -202,9 +216,11 @@ Spring feels more physical and natural. Zero risk — motion.dev handles this id
 Five targeted changes, ordered by visual impact:
 
 ### Change 1: ChatPanel — Session switch crossfade
+
 **File:** `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`
 **What:** Wrap the `<MessageList>` render in `<AnimatePresence mode="wait">` with a keyed `motion.div` using sessionId.
 **Lines changed:** ~5
+
 ```tsx
 <AnimatePresence mode="wait">
   <motion.div
@@ -221,32 +237,39 @@ Five targeted changes, ordered by visual impact:
 ```
 
 ### Change 2: SessionItem + SessionSidebar — layoutId active indicator
+
 **Files:** `SessionItem.tsx`, `SessionSidebar.tsx`
 **What:** Add an absolutely-positioned `motion.div` with `layoutId="active-session-bg"` inside each SessionItem. It renders only when the item is active. Motion.dev automatically animates the shared element between positions.
 **Lines changed:** ~30 (structured refactor, not complexity)
+
 ```tsx
 // In SessionItem (active item only):
-{isActive && (
-  <motion.div
-    layoutId="active-session-bg"
-    className="absolute inset-0 rounded-md bg-accent/60"
-    transition={{ type: 'spring', stiffness: 280, damping: 32 }}
-  />
-)}
+{
+  isActive && (
+    <motion.div
+      layoutId="active-session-bg"
+      className="bg-accent/60 absolute inset-0 rounded-md"
+      transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+    />
+  );
+}
 // Container needs: position: relative, layout prop on SessionSidebar
 
 // Remove: CSS active background class from SessionItem
 ```
 
 ### Change 3: SessionItem — tap feedback
+
 **File:** `apps/client/src/layers/features/session-list/ui/SessionItem.tsx`
 **What:** Add `whileTap={{ scale: 0.98 }}` to the clickable surface.
 **Lines changed:** 1
 
 ### Change 4: MessageItem — spring physics + user-message scale
+
 **File:** `apps/client/src/layers/features/chat/ui/MessageItem.tsx`
 **What:** Replace duration-based transition with spring. Add `scale: 0.97` to initial state for user messages.
 **Lines changed:** 3
+
 ```tsx
 initial={isNew ? { opacity: 0, y: 8, scale: isUser ? 0.97 : 1 } : false}
 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -254,6 +277,7 @@ transition={{ type: 'spring', stiffness: 320, damping: 28 }}
 ```
 
 ### Change 5: SessionItem — hover/active state CSS transitions
+
 **File:** `apps/client/src/layers/features/session-list/ui/SessionItem.tsx`
 **What:** Ensure text color, opacity, and non-background state changes use `transition-all duration-150`. Audit for any hard-coded state switches that should be transitions.
 **Lines changed:** ~5

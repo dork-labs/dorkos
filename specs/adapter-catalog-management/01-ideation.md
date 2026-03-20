@@ -114,12 +114,12 @@ Cross-system analysis of VS Code, Grafana, n8n, Home Assistant, Raycast, Slack, 
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Adapter install source | Built-in catalog + npm plugins | Ship built-in adapters; support npm packages for community/custom adapters |
-| 2 | Config UX | Wizard preferred, file as escape hatch | UI wizard for common adapters; power users can edit adapters.json directly (hot-reload works) |
-| 3 | Developer experience priority | Clear interface + docs | Well-documented RelayAdapter interface + AdapterManifest; no scaffolding CLI needed yet |
-| 4 | Schema representation | ConfigField[] descriptor | Plain serializable array alongside Zod schema; n8n/Raycast pattern. UI renders from descriptor, server validates with Zod |
-| 5 | UI placement | Inside Relay panel | Upgrade the Adapters tab within RelayPanel. Avoids new top-level nav item pre-launch |
-| 6 | Catalog display | Show all available adapters | Two sections: "Configured" (installed instances) and "Available" (built-in types not yet added). Grafana/Home Assistant pattern |
-| 7 | Connection test | Yes, with skip option | Wizard offers "Test Connection" that transiently starts the adapter. Users can skip. Requires new server endpoint |
+| #   | Decision                      | Choice                                 | Rationale                                                                                                                       |
+| --- | ----------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Adapter install source        | Built-in catalog + npm plugins         | Ship built-in adapters; support npm packages for community/custom adapters                                                      |
+| 2   | Config UX                     | Wizard preferred, file as escape hatch | UI wizard for common adapters; power users can edit adapters.json directly (hot-reload works)                                   |
+| 3   | Developer experience priority | Clear interface + docs                 | Well-documented RelayAdapter interface + AdapterManifest; no scaffolding CLI needed yet                                         |
+| 4   | Schema representation         | ConfigField[] descriptor               | Plain serializable array alongside Zod schema; n8n/Raycast pattern. UI renders from descriptor, server validates with Zod       |
+| 5   | UI placement                  | Inside Relay panel                     | Upgrade the Adapters tab within RelayPanel. Avoids new top-level nav item pre-launch                                            |
+| 6   | Catalog display               | Show all available adapters            | Two sections: "Configured" (installed instances) and "Available" (built-in types not yet added). Grafana/Home Assistant pattern |
+| 7   | Connection test               | Yes, with skip option                  | Wizard offers "Test Connection" that transiently starts the adapter. Users can skip. Requires new server endpoint               |

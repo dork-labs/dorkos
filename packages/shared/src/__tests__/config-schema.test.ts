@@ -26,27 +26,19 @@ describe('UserConfigSchema', () => {
   });
 
   it('rejects invalid port below 1024', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, server: { port: 80 } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, server: { port: 80 } })).toThrow();
   });
 
   it('rejects invalid port above 65535', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, server: { port: 70000 } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, server: { port: 70000 } })).toThrow();
   });
 
   it('rejects non-integer port', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, server: { port: 4242.5 } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, server: { port: 4242.5 } })).toThrow();
   });
 
   it('rejects invalid theme value', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, ui: { theme: 'blue' } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, ui: { theme: 'blue' } })).toThrow();
   });
 
   it('accepts null for nullable fields', () => {
@@ -280,15 +272,11 @@ describe('UserConfigSchema logging', () => {
   });
 
   it('logging.level rejects invalid values', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, logging: { level: 'verbose' } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, logging: { level: 'verbose' } })).toThrow();
   });
 
   it('logging.level rejects numeric strings', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, logging: { level: '3' } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, logging: { level: '3' } })).toThrow();
   });
 });
 

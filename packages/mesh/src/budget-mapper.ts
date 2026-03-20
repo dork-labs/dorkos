@@ -77,8 +77,8 @@ export class BudgetMapper {
       .where(
         and(
           eq(rateLimitBuckets.agentId, agentId),
-          sql`${rateLimitBuckets.bucketMinute} >= ${windowStart}`,
-        ),
+          sql`${rateLimitBuckets.bucketMinute} >= ${windowStart}`
+        )
       )
       .get();
 

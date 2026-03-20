@@ -134,24 +134,35 @@ vi.mock('@grammyjs/auto-retry', () => ({
 // --- Relay mock helpers ---
 
 function createMockRelay(): RelayPublisher {
-  const signalHandlers: Array<{ pattern: string; handler: (subject: string, signal: { type: string; state: string }) => void }> = [];
+  const signalHandlers: Array<{
+    pattern: string;
+    handler: (subject: string, signal: { type: string; state: string }) => void;
+  }> = [];
 
   const relay: RelayPublisher = {
     publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    onSignal: vi.fn().mockImplementation((pattern: string, handler: (subject: string, signal: { type: string; state: string }) => void): Unsubscribe => {
-      signalHandlers.push({ pattern, handler });
-      return () => {
-        const idx = signalHandlers.findIndex((s) => s.handler === handler);
-        if (idx >= 0) signalHandlers.splice(idx, 1);
-      };
-    }),
+    onSignal: vi
+      .fn()
+      .mockImplementation(
+        (
+          pattern: string,
+          handler: (subject: string, signal: { type: string; state: string }) => void
+        ): Unsubscribe => {
+          signalHandlers.push({ pattern, handler });
+          return () => {
+            const idx = signalHandlers.findIndex((s) => s.handler === handler);
+            if (idx >= 0) signalHandlers.splice(idx, 1);
+          };
+        }
+      ),
   };
 
   // Expose a way to trigger signals from tests
-  (relay as RelayPublisher & { _emitSignal: (subject: string, signal: { type: string; state: string }) => void })._emitSignal = (
-    subject: string,
-    signal: { type: string; state: string },
-  ) => {
+  (
+    relay as RelayPublisher & {
+      _emitSignal: (subject: string, signal: { type: string; state: string }) => void;
+    }
+  )._emitSignal = (subject: string, signal: { type: string; state: string }) => {
     for (const { handler } of signalHandlers) {
       handler(subject, signal);
     }
@@ -252,7 +263,11 @@ describe('TelegramAdapter', () => {
   });
 
   it('accepts a custom displayName', () => {
-    const custom = new TelegramAdapter('tg-work', { token: 'tok', mode: 'polling' }, 'Work Telegram');
+    const custom = new TelegramAdapter(
+      'tg-work',
+      { token: 'tok', mode: 'polling' },
+      'Work Telegram'
+    );
     expect(custom.displayName).toBe('Work Telegram');
   });
 
@@ -274,7 +289,7 @@ describe('TelegramAdapter', () => {
     const { autoRetry } = await import('@grammyjs/auto-retry');
     expect(autoRetry).toHaveBeenCalled();
     expect(mockBotStart).toHaveBeenCalledWith(
-      expect.objectContaining({ drop_pending_updates: true }),
+      expect.objectContaining({ drop_pending_updates: true })
     );
   });
 
@@ -352,7 +367,7 @@ describe('TelegramAdapter', () => {
         content: 'Hello!',
         channelType: 'dm',
       }),
-      { from: 'relay.human.telegram.bot', replyTo: 'relay.human.telegram.12345' },
+      { from: 'relay.human.telegram.bot', replyTo: 'relay.human.telegram.12345' }
     );
   });
 
@@ -373,7 +388,7 @@ describe('TelegramAdapter', () => {
         content: 'Group message',
         channelType: 'group',
       }),
-      { from: 'relay.human.telegram.bot', replyTo: 'relay.human.telegram.group.-100111222' },
+      { from: 'relay.human.telegram.bot', replyTo: 'relay.human.telegram.group.-100111222' }
     );
   });
 
@@ -397,7 +412,7 @@ describe('TelegramAdapter', () => {
           maxLength: 4096,
         }),
       }),
-      expect.any(Object),
+      expect.any(Object)
     );
   });
 
@@ -416,7 +431,7 @@ describe('TelegramAdapter', () => {
           fromId: 55,
         }),
       }),
-      expect.any(Object),
+      expect.any(Object)
     );
   });
 
@@ -486,7 +501,9 @@ describe('TelegramAdapter', () => {
     const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Hello from agent!' });
     await adapter.deliver('relay.human.telegram.12345', envelope);
 
-    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', { parse_mode: 'HTML' });
+    expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', {
+      parse_mode: 'HTML',
+    });
   });
 
   it('deliver() sends to group chat ID (negative)', async () => {
@@ -557,7 +574,9 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', 'plain text message');
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'plain text message', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'plain text message', {
+        parse_mode: 'HTML',
+      });
     });
 
     it('handles object payload with content field', async () => {
@@ -569,7 +588,9 @@ describe('TelegramAdapter', () => {
       });
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'structured message', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'structured message', {
+        parse_mode: 'HTML',
+      });
     });
 
     it('handles object payload with text field', async () => {
@@ -581,7 +602,9 @@ describe('TelegramAdapter', () => {
       });
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'text field message', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'text field message', {
+        parse_mode: 'HTML',
+      });
     });
 
     it('handles object payload without content or text — falls back to JSON', async () => {
@@ -591,7 +614,9 @@ describe('TelegramAdapter', () => {
       const envelope = createEnvelope('relay.human.telegram.12345', payload);
       await adapter.deliver('relay.human.telegram.12345', envelope);
 
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, JSON.stringify(payload), { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, JSON.stringify(payload), {
+        parse_mode: 'HTML',
+      });
     });
 
     it('handles null payload', async () => {
@@ -744,7 +769,7 @@ describe('TelegramAdapter', () => {
 
     expect(mockSetWebhook).toHaveBeenCalledWith(
       'https://example.com/webhook',
-      expect.objectContaining({ secret_token: expect.any(String) }),
+      expect.objectContaining({ secret_token: expect.any(String) })
     );
 
     await webhookAdapter.stop();
@@ -787,17 +812,14 @@ describe('TelegramAdapter', () => {
     await webhookAdapter.start(mockRelay);
 
     // setWebhook should receive the secret_token option
-    expect(mockSetWebhook).toHaveBeenCalledWith(
-      'https://example.com/webhook',
-      { secret_token: 'my-fixed-secret' },
-    );
+    expect(mockSetWebhook).toHaveBeenCalledWith('https://example.com/webhook', {
+      secret_token: 'my-fixed-secret',
+    });
 
     // webhookCallback should receive the secretToken option
-    expect(webhookCallback).toHaveBeenCalledWith(
-      expect.anything(),
-      'http',
-      { secretToken: 'my-fixed-secret' },
-    );
+    expect(webhookCallback).toHaveBeenCalledWith(expect.anything(), 'http', {
+      secretToken: 'my-fixed-secret',
+    });
 
     await webhookAdapter.stop();
   });
@@ -815,7 +837,7 @@ describe('TelegramAdapter', () => {
     // Should still pass a secret_token (auto-generated)
     expect(mockSetWebhook).toHaveBeenCalledWith(
       'https://example.com/webhook',
-      expect.objectContaining({ secret_token: expect.any(String) }),
+      expect.objectContaining({ secret_token: expect.any(String) })
     );
 
     // The auto-generated secret should be non-empty
@@ -1012,7 +1034,7 @@ describe('TelegramAdapter', () => {
 
     // on() must NOT have been called with 'error' (that would be the leaky path)
     const onErrorCalls = (mockServerOn.mock.calls as Array<[string, unknown]>).filter(
-      ([event]) => event === 'error',
+      ([event]) => event === 'error'
     );
     expect(onErrorCalls).toHaveLength(0);
 
@@ -1099,7 +1121,7 @@ describe('TelegramAdapter', () => {
 
     const status = adapter.getStatus();
     expect(status.lastError).toBe(
-      'Max reconnection attempts exhausted \u2014 adapter will not retry',
+      'Max reconnection attempts exhausted \u2014 adapter will not retry'
     );
   });
 
@@ -1170,7 +1192,9 @@ describe('TelegramAdapter', () => {
       const doneResult = await adapter.deliver('relay.human.telegram.12345', doneEnvelope);
       expect(doneResult.success).toBe(true);
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Hello from agent!', {
+        parse_mode: 'HTML',
+      });
     });
 
     it('sends error with buffered text on error event', async () => {
@@ -1194,7 +1218,7 @@ describe('TelegramAdapter', () => {
       expect(mockSendMessage).toHaveBeenCalledWith(
         12345,
         'Partial response\n\n[Error: Context limit exceeded]',
-        { parse_mode: 'HTML' },
+        { parse_mode: 'HTML' }
       );
     });
 
@@ -1207,7 +1231,9 @@ describe('TelegramAdapter', () => {
       });
       const result = await adapter.deliver('relay.human.telegram.12345', errorEnvelope);
       expect(result.success).toBe(true);
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, '[Error: Session failed]', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, '[Error: Session failed]', {
+        parse_mode: 'HTML',
+      });
     });
 
     it('silently skips session_status events', async () => {
@@ -1271,31 +1297,43 @@ describe('TelegramAdapter', () => {
       await adapter.start(mockRelay);
 
       // Buffer text in chat 111
-      await adapter.deliver('relay.human.telegram.111', createEnvelope('relay.human.telegram.111', {
-        type: 'text_delta',
-        data: { text: 'Chat A' },
-      }));
+      await adapter.deliver(
+        'relay.human.telegram.111',
+        createEnvelope('relay.human.telegram.111', {
+          type: 'text_delta',
+          data: { text: 'Chat A' },
+        })
+      );
 
       // Buffer text in chat 222
-      await adapter.deliver('relay.human.telegram.222', createEnvelope('relay.human.telegram.222', {
-        type: 'text_delta',
-        data: { text: 'Chat B' },
-      }));
+      await adapter.deliver(
+        'relay.human.telegram.222',
+        createEnvelope('relay.human.telegram.222', {
+          type: 'text_delta',
+          data: { text: 'Chat B' },
+        })
+      );
 
       // Flush chat 111
-      await adapter.deliver('relay.human.telegram.111', createEnvelope('relay.human.telegram.111', {
-        type: 'done',
-        data: {},
-      }));
+      await adapter.deliver(
+        'relay.human.telegram.111',
+        createEnvelope('relay.human.telegram.111', {
+          type: 'done',
+          data: {},
+        })
+      );
 
       expect(mockSendMessage).toHaveBeenCalledTimes(1);
       expect(mockSendMessage).toHaveBeenCalledWith(111, 'Chat A', { parse_mode: 'HTML' });
 
       // Flush chat 222
-      await adapter.deliver('relay.human.telegram.222', createEnvelope('relay.human.telegram.222', {
-        type: 'done',
-        data: {},
-      }));
+      await adapter.deliver(
+        'relay.human.telegram.222',
+        createEnvelope('relay.human.telegram.222', {
+          type: 'done',
+          data: {},
+        })
+      );
 
       expect(mockSendMessage).toHaveBeenCalledTimes(2);
       expect(mockSendMessage).toHaveBeenCalledWith(222, 'Chat B', { parse_mode: 'HTML' });
@@ -1304,14 +1342,20 @@ describe('TelegramAdapter', () => {
     it('increments outbound count when flushing buffer on done', async () => {
       await adapter.start(mockRelay);
 
-      await adapter.deliver('relay.human.telegram.12345', createEnvelope('relay.human.telegram.12345', {
-        type: 'text_delta',
-        data: { text: 'hi' },
-      }));
-      await adapter.deliver('relay.human.telegram.12345', createEnvelope('relay.human.telegram.12345', {
-        type: 'done',
-        data: {},
-      }));
+      await adapter.deliver(
+        'relay.human.telegram.12345',
+        createEnvelope('relay.human.telegram.12345', {
+          type: 'text_delta',
+          data: { text: 'hi' },
+        })
+      );
+      await adapter.deliver(
+        'relay.human.telegram.12345',
+        createEnvelope('relay.human.telegram.12345', {
+          type: 'done',
+          data: {},
+        })
+      );
 
       expect(adapter.getStatus().messageCount.outbound).toBe(1);
     });
@@ -1335,7 +1379,7 @@ describe('TelegramAdapter', () => {
         content: 'Photo description',
         channelType: 'dm',
       }),
-      { from: 'relay.human.telegram.bot', replyTo: 'relay.human.telegram.12345' },
+      { from: 'relay.human.telegram.bot', replyTo: 'relay.human.telegram.12345' }
     );
   });
 });

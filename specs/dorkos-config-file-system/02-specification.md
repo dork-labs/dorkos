@@ -18,6 +18,7 @@ Add a persistent user configuration file at `~/.dork/config.json` that integrate
 ## 2. Background / Problem Statement
 
 DorkOS currently has no persistent user configuration. All settings are either:
+
 - Hardcoded defaults in `packages/shared/src/constants.ts`
 - Environment variables read from `.env` or shell
 - CLI flags passed on every invocation (`--port`, `--tunnel`, `--dir`)
@@ -46,11 +47,11 @@ This means users must re-specify settings every time they start DorkOS, or maint
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose | Package |
-|------------|---------|---------|---------|
-| `conf` | `^15.1.0` | Atomic JSON config I/O, migrations, dot-path access | `packages/cli`, `apps/server` |
-| `@inquirer/prompts` | `^8.2.0` | Interactive CLI prompts for `dorkos init` | `packages/cli` |
-| `zod` | `^4.3.6` (existing) | Schema definition, validation, JSON Schema generation via `z.toJSONSchema()` | `packages/shared` |
+| Dependency          | Version             | Purpose                                                                      | Package                       |
+| ------------------- | ------------------- | ---------------------------------------------------------------------------- | ----------------------------- |
+| `conf`              | `^15.1.0`           | Atomic JSON config I/O, migrations, dot-path access                          | `packages/cli`, `apps/server` |
+| `@inquirer/prompts` | `^8.2.0`            | Interactive CLI prompts for `dorkos init`                                    | `packages/cli`                |
+| `zod`               | `^4.3.6` (existing) | Schema definition, validation, JSON Schema generation via `z.toJSONSchema()` | `packages/shared`             |
 
 **Note:** `zod-to-json-schema` is NOT needed. Zod v4 has native `z.toJSONSchema()` support, eliminating this dependency.
 
@@ -70,19 +71,25 @@ export const SENSITIVE_CONFIG_KEYS = ['tunnel.authtoken', 'tunnel.auth'] as cons
 
 export const UserConfigSchema = z.object({
   version: z.literal(1),
-  server: z.object({
-    port: z.number().int().min(1024).max(65535).default(4242),
-    cwd: z.string().nullable().default(null),
-  }).default({}),
-  tunnel: z.object({
-    enabled: z.boolean().default(false),
-    domain: z.string().nullable().default(null),
-    authtoken: z.string().nullable().default(null),
-    auth: z.string().nullable().default(null),
-  }).default({}),
-  ui: z.object({
-    theme: z.enum(['light', 'dark', 'system']).default('system'),
-  }).default({}),
+  server: z
+    .object({
+      port: z.number().int().min(1024).max(65535).default(4242),
+      cwd: z.string().nullable().default(null),
+    })
+    .default({}),
+  tunnel: z
+    .object({
+      enabled: z.boolean().default(false),
+      domain: z.string().nullable().default(null),
+      authtoken: z.string().nullable().default(null),
+      auth: z.string().nullable().default(null),
+    })
+    .default({}),
+  ui: z
+    .object({
+      theme: z.enum(['light', 'dark', 'system']).default('system'),
+    })
+    .default({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -92,6 +99,7 @@ export const USER_CONFIG_DEFAULTS: UserConfig = UserConfigSchema.parse({ version
 ```
 
 Export from `packages/shared` via new entry in `package.json` exports map:
+
 ```json
 "./config-schema": {
   "types": "./src/config-schema.ts",
@@ -104,6 +112,7 @@ Export from `packages/shared` via new entry in `package.json` exports map:
 New file: `apps/server/src/services/config-manager.ts`
 
 **Responsibilities:**
+
 1. Initialize `conf` with `cwd: process.env.DORK_HOME`, overriding platform defaults
 2. Convert Zod schema to JSON Schema via `z.toJSONSchema()` for `conf`'s Ajv validator
 3. Handle first-run: if no config exists, `conf` creates it with defaults
@@ -116,7 +125,11 @@ import Conf from 'conf';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
+import {
+  UserConfigSchema,
+  USER_CONFIG_DEFAULTS,
+  SENSITIVE_CONFIG_KEYS,
+} from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 
 const jsonSchema = z.toJSONSchema(UserConfigSchema, { target: 'draft-2020-12' });
@@ -167,7 +180,9 @@ class ConfigManager {
     }
   }
 
-  get isFirstRun(): boolean { return this._isFirstRun; }
+  get isFirstRun(): boolean {
+    return this._isFirstRun;
+  }
 
   get<K extends keyof UserConfig>(key: K): UserConfig[K] {
     return this.store.get(key);
@@ -213,7 +228,7 @@ class ConfigManager {
       if (error instanceof z.ZodError) {
         return {
           valid: false,
-          errors: error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+          errors: error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
         };
       }
       throw error;
@@ -241,6 +256,7 @@ export function initConfigManager(dorkHome?: string): ConfigManager {
 Modified file: `packages/cli/src/cli.ts`
 
 **Changes:**
+
 1. After creating `~/.dork/` and before starting the server, initialize `configManager`
 2. Read config values and merge with CLI flags (flags take precedence)
 3. Route `dorkos config <subcommand>` and `dorkos init` to handlers
@@ -263,24 +279,26 @@ CLI startup flow (updated):
 
 New file: `packages/cli/src/config-commands.ts`
 
-| Command | Behavior |
-|---------|----------|
-| `dorkos config` | Pretty-print all effective settings with source indicators |
-| `dorkos config get <key>` | Print single value by dot-path (e.g., `server.port`) |
-| `dorkos config set <key> <value>` | Set value, auto-parse type (number, boolean, string). Warn on sensitive keys. |
-| `dorkos config list` | Print raw JSON (machine-readable, for scripting) |
-| `dorkos config reset [key]` | Reset all or specific key to defaults |
-| `dorkos config edit` | Open config file in `$EDITOR` (fallback: `nano` on Unix, `notepad` on Windows) |
-| `dorkos config path` | Print absolute path to config file |
-| `dorkos config validate` | Run Zod validation, print results, exit 0/1 |
+| Command                           | Behavior                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| `dorkos config`                   | Pretty-print all effective settings with source indicators                     |
+| `dorkos config get <key>`         | Print single value by dot-path (e.g., `server.port`)                           |
+| `dorkos config set <key> <value>` | Set value, auto-parse type (number, boolean, string). Warn on sensitive keys.  |
+| `dorkos config list`              | Print raw JSON (machine-readable, for scripting)                               |
+| `dorkos config reset [key]`       | Reset all or specific key to defaults                                          |
+| `dorkos config edit`              | Open config file in `$EDITOR` (fallback: `nano` on Unix, `notepad` on Windows) |
+| `dorkos config path`              | Print absolute path to config file                                             |
+| `dorkos config validate`          | Run Zod validation, print results, exit 0/1                                    |
 
 **Value parsing for `config set`:**
+
 - `"true"` / `"false"` → boolean
 - Numeric strings → number
 - `"null"` → null
 - Everything else → string
 
 **Pretty-print format for `dorkos config`:**
+
 ```
 DorkOS Configuration (~/.dork/config.json)
 
@@ -314,11 +332,13 @@ New file: `packages/cli/src/init-wizard.ts`
 ```
 
 **`dorkos init --yes`** — Accept all defaults silently (CI-friendly):
+
 ```
 ✓ Config initialized with defaults at ~/.dork/config.json
 ```
 
 **Behavior:**
+
 - If config already exists, prompt: "Config already exists. Overwrite? (y/N)"
 - `--yes` flag skips all prompts, uses defaults
 - Writes full config to file (not just version marker)
@@ -330,6 +350,7 @@ Modified file: `apps/server/src/routes/config.ts`
 Add `PATCH /api/config` alongside existing `GET /api/config`:
 
 **Request:** Partial `UserConfig` body (deep merge with current config)
+
 ```json
 PATCH /api/config
 Content-Type: application/json
@@ -341,15 +362,19 @@ Content-Type: application/json
 ```
 
 **Response (200):**
+
 ```json
 {
   "success": true,
-  "config": { /* full merged UserConfig */ },
+  "config": {
+    /* full merged UserConfig */
+  },
   "warnings": ["'tunnel.authtoken' contains sensitive data..."]
 }
 ```
 
 **Response (400):**
+
 ```json
 {
   "error": "Validation failed",
@@ -358,6 +383,7 @@ Content-Type: application/json
 ```
 
 **Validation flow:**
+
 1. Parse request body
 2. Deep merge with current config
 3. Validate merged result with `UserConfigSchema`
@@ -410,7 +436,7 @@ external: [
   // ... existing externals
   'conf',
   '@inquirer/prompts',
-]
+];
 ```
 
 Both packages are listed in `packages/cli/package.json` dependencies so they ship with `npm install -g dorkos`.
@@ -418,6 +444,7 @@ Both packages are listed in `packages/cli/package.json` dependencies so they shi
 ## 7. User Experience
 
 ### First-time user (npm install)
+
 ```bash
 $ npm install -g dorkos
 $ dorkos
@@ -426,6 +453,7 @@ Starting DorkOS on port 4242...
 ```
 
 ### Optional interactive setup
+
 ```bash
 $ dorkos init
 🤓 DorkOS Setup
@@ -440,6 +468,7 @@ Starting DorkOS on port 8080...
 ```
 
 ### Day-to-day config changes
+
 ```bash
 $ dorkos config set server.port 5000
 ✓ Set server.port = 5000
@@ -468,6 +497,7 @@ $ dorkos config reset server.port
 ```
 
 ### Remote config update (via tunnel)
+
 A user connected via tunnel can update settings through the PATCH endpoint, which the client Settings UI can call.
 
 ## 8. Testing Strategy
@@ -578,6 +608,7 @@ Mock `@inquirer/prompts` to test:
 ### New: `guides/configuration.md`
 
 Comprehensive configuration guide covering:
+
 - Config file location and structure
 - All available settings with types and defaults
 - Precedence order (CLI flags > env vars > config > defaults)
@@ -588,17 +619,18 @@ Comprehensive configuration guide covering:
 
 ### Updates
 
-| Document | Changes |
-|----------|---------|
-| `CLAUDE.md` | Add config system section: location, schema, precedence, CLI commands. Add `dorkos init` and `dorkos config` to Commands section. |
-| `guides/architecture.md` | Add ConfigManager to services list. Update startup flow diagram with config loading step. |
-| `guides/api-reference.md` | Document PATCH /api/config endpoint with request/response schemas. |
-| `packages/cli/README.md` | Add configuration section with commands and examples. |
-| CLI `--help` output | Add `Config file: ~/.dork/config.json` line and list `config`, `init` subcommands. |
+| Document                  | Changes                                                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`               | Add config system section: location, schema, precedence, CLI commands. Add `dorkos init` and `dorkos config` to Commands section. |
+| `guides/architecture.md`  | Add ConfigManager to services list. Update startup flow diagram with config loading step.                                         |
+| `guides/api-reference.md` | Document PATCH /api/config endpoint with request/response schemas.                                                                |
+| `packages/cli/README.md`  | Add configuration section with commands and examples.                                                                             |
+| CLI `--help` output       | Add `Config file: ~/.dork/config.json` line and list `config`, `init` subcommands.                                                |
 
 ## 12. Implementation Phases
 
 ### Phase 1: Core Config System
+
 - `packages/shared/src/config-schema.ts` — Zod schema, types, defaults
 - `packages/shared/package.json` — New export entry
 - `apps/server/src/services/config-manager.ts` — ConfigManager service
@@ -607,23 +639,27 @@ Comprehensive configuration guide covering:
 - Install `conf` in `packages/cli` and `apps/server`
 
 ### Phase 2: CLI Integration
+
 - `packages/cli/src/config-commands.ts` — Config subcommand handlers
 - `packages/cli/src/cli.ts` — Route subcommands, config loading, precedence merge
 - `packages/cli/src/__tests__/config-commands.test.ts` — Command tests
 - `packages/cli/scripts/build.ts` — Add `conf` to esbuild externals
 
 ### Phase 3: Interactive Wizard
+
 - `packages/cli/src/init-wizard.ts` — Setup wizard
 - `packages/cli/src/__tests__/init-wizard.test.ts` — Wizard tests
 - Install `@inquirer/prompts` in `packages/cli`
 - Add to esbuild externals
 
 ### Phase 4: Server Endpoint
+
 - `apps/server/src/routes/config.ts` — Add PATCH handler
 - `apps/server/src/routes/__tests__/config.test.ts` — Endpoint tests
 - `packages/shared/src/schemas.ts` — Add PATCH request/response schemas for OpenAPI
 
 ### Phase 5: Documentation
+
 - `guides/configuration.md` — New comprehensive guide
 - `CLAUDE.md` — Config system section
 - `guides/architecture.md` — ConfigManager service docs
@@ -637,32 +673,34 @@ None — all clarifications resolved in ideation phase (see [01-ideation.md](./0
 ## 14. File Change Summary
 
 ### New Files
-| File | Purpose |
-|------|---------|
-| `packages/shared/src/config-schema.ts` | Zod schema, types, defaults, sensitive keys list |
-| `apps/server/src/services/config-manager.ts` | ConfigManager service (conf + Zod) |
-| `packages/cli/src/config-commands.ts` | CLI config subcommand handlers |
-| `packages/cli/src/init-wizard.ts` | Interactive `dorkos init` wizard |
-| `guides/configuration.md` | Configuration guide |
-| `packages/shared/src/__tests__/config-schema.test.ts` | Schema tests |
-| `apps/server/src/services/__tests__/config-manager.test.ts` | Service tests |
-| `packages/cli/src/__tests__/config-commands.test.ts` | CLI command tests |
-| `packages/cli/src/__tests__/init-wizard.test.ts` | Wizard tests |
+
+| File                                                        | Purpose                                          |
+| ----------------------------------------------------------- | ------------------------------------------------ |
+| `packages/shared/src/config-schema.ts`                      | Zod schema, types, defaults, sensitive keys list |
+| `apps/server/src/services/config-manager.ts`                | ConfigManager service (conf + Zod)               |
+| `packages/cli/src/config-commands.ts`                       | CLI config subcommand handlers                   |
+| `packages/cli/src/init-wizard.ts`                           | Interactive `dorkos init` wizard                 |
+| `guides/configuration.md`                                   | Configuration guide                              |
+| `packages/shared/src/__tests__/config-schema.test.ts`       | Schema tests                                     |
+| `apps/server/src/services/__tests__/config-manager.test.ts` | Service tests                                    |
+| `packages/cli/src/__tests__/config-commands.test.ts`        | CLI command tests                                |
+| `packages/cli/src/__tests__/init-wizard.test.ts`            | Wizard tests                                     |
 
 ### Modified Files
-| File | Changes |
-|------|---------|
-| `packages/cli/src/cli.ts` | Config loading, subcommand routing, precedence merge |
-| `packages/cli/package.json` | Add `conf`, `@inquirer/prompts` dependencies |
-| `packages/cli/scripts/build.ts` | Add externals for conf, @inquirer/prompts |
-| `apps/server/src/routes/config.ts` | Add PATCH handler |
-| `apps/server/src/index.ts` | Call `initConfigManager()` at startup |
-| `apps/server/package.json` | Add `conf` dependency |
-| `packages/shared/package.json` | Add `./config-schema` export |
-| `packages/shared/src/schemas.ts` | Add PATCH request/response schemas |
-| `CLAUDE.md` | Config system documentation |
-| `guides/architecture.md` | ConfigManager service docs |
-| `guides/api-reference.md` | PATCH endpoint docs |
+
+| File                               | Changes                                              |
+| ---------------------------------- | ---------------------------------------------------- |
+| `packages/cli/src/cli.ts`          | Config loading, subcommand routing, precedence merge |
+| `packages/cli/package.json`        | Add `conf`, `@inquirer/prompts` dependencies         |
+| `packages/cli/scripts/build.ts`    | Add externals for conf, @inquirer/prompts            |
+| `apps/server/src/routes/config.ts` | Add PATCH handler                                    |
+| `apps/server/src/index.ts`         | Call `initConfigManager()` at startup                |
+| `apps/server/package.json`         | Add `conf` dependency                                |
+| `packages/shared/package.json`     | Add `./config-schema` export                         |
+| `packages/shared/src/schemas.ts`   | Add PATCH request/response schemas                   |
+| `CLAUDE.md`                        | Config system documentation                          |
+| `guides/architecture.md`           | ConfigManager service docs                           |
+| `guides/api-reference.md`          | PATCH endpoint docs                                  |
 
 ## 15. References
 

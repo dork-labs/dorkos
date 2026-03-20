@@ -53,16 +53,16 @@ DorkOS needs a universal message transport that all higher-level modules (Mesh, 
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose | Status |
-|---|---|---|---|
-| `better-sqlite3` | `^11.0.0` | SQLite database (WAL mode) | Already in monorepo (apps/server) |
-| `@types/better-sqlite3` | `^7.6.0` | TypeScript types | Already in monorepo |
-| `ulidx` | `^3.0.0` | Monotonic ULID generation | New dependency |
-| `chokidar` | `^4.0.0` | Filesystem watching for message delivery | Already in monorepo (apps/server) |
-| `zod` | `^4.3.6` | Schema validation | Already in @dorkos/shared |
-| `@asteasolutions/zod-to-openapi` | `^8.4.0` | OpenAPI metadata | Already in @dorkos/shared |
-| `@dorkos/shared` | `*` | Zod schemas, shared types | Internal package |
-| `@dorkos/typescript-config` | `*` | tsconfig preset | Internal package |
+| Dependency                       | Version   | Purpose                                  | Status                            |
+| -------------------------------- | --------- | ---------------------------------------- | --------------------------------- |
+| `better-sqlite3`                 | `^11.0.0` | SQLite database (WAL mode)               | Already in monorepo (apps/server) |
+| `@types/better-sqlite3`          | `^7.6.0`  | TypeScript types                         | Already in monorepo               |
+| `ulidx`                          | `^3.0.0`  | Monotonic ULID generation                | New dependency                    |
+| `chokidar`                       | `^4.0.0`  | Filesystem watching for message delivery | Already in monorepo (apps/server) |
+| `zod`                            | `^4.3.6`  | Schema validation                        | Already in @dorkos/shared         |
+| `@asteasolutions/zod-to-openapi` | `^8.4.0`  | OpenAPI metadata                         | Already in @dorkos/shared         |
+| `@dorkos/shared`                 | `*`       | Zod schemas, shared types                | Internal package                  |
+| `@dorkos/typescript-config`      | `*`       | tsconfig preset                          | Internal package                  |
 
 **Key decision:** ULID via `ulidx` with `monotonicFactory()` for message IDs (not UUID). Provides monotonic ordering, compact 26-char format, and sequential B-tree inserts for SQLite performance.
 
@@ -320,6 +320,7 @@ export function matchesPattern(subject: string, pattern: string): boolean;
 ```
 
 **Validation rules:**
+
 - Subject must be non-empty string
 - No whitespace characters
 - Dot-delimited tokens; no empty tokens (no consecutive dots, no leading/trailing dots)
@@ -349,9 +350,9 @@ Manages registered endpoints and their Maildir directory structures.
 ```typescript
 export interface EndpointInfo {
   subject: string;
-  hash: string;          // Deterministic hash for filesystem directory
-  maildirPath: string;   // Absolute path to Maildir root
-  registeredAt: string;  // ISO timestamp
+  hash: string; // Deterministic hash for filesystem directory
+  maildirPath: string; // Absolute path to Maildir root
+  registeredAt: string; // ISO timestamp
 }
 
 export class EndpointRegistry {
@@ -378,9 +379,9 @@ export type MessageHandler = (envelope: RelayEnvelope) => void | Promise<void>;
 export type Unsubscribe = () => void;
 
 export interface SubscriptionInfo {
-  id: string;            // ULID
-  pattern: string;       // Subject pattern with wildcards
-  createdAt: string;     // ISO timestamp
+  id: string; // ULID
+  pattern: string; // Subject pattern with wildcards
+  createdAt: string; // ISO timestamp
 }
 
 export class SubscriptionRegistry {
@@ -392,6 +393,7 @@ export class SubscriptionRegistry {
 ```
 
 **Behavior:**
+
 - `subscribe()` validates pattern (wildcards allowed), stores handler in-memory, persists pattern to `subscriptions.json`
 - `getSubscribers()` iterates all subscriptions, uses `matchesPattern()` to find matches, returns their handlers
 - Unsubscribe function removes handler from memory and updates `subscriptions.json`
@@ -431,6 +433,7 @@ export class MaildirStore {
 ```
 
 **Delivery flow:**
+
 1. Generate ULID via `monotonicFactory()` — serves as filename
 2. Serialize envelope to JSON
 3. Write to `tmp/{ulid}` using `fs.open()` with flags `'wx'` (`O_CREAT | O_EXCL | O_WRONLY`) and `mode: 0o600`
@@ -456,14 +459,22 @@ Derived index following the PulseStore pattern. Fully rebuildable from Maildir f
 ```typescript
 export interface RelayMetrics {
   totalMessages: number;
-  byStatus: Record<string, number>;  // new, cur, dlq
+  byStatus: Record<string, number>; // new, cur, dlq
   bySubject: Array<{ subject: string; count: number }>;
 }
 
 export class SqliteIndex {
   constructor(dataDir: string);
 
-  insertMessage(msg: { id: string; subject: string; fromSubject: string; status: string; endpointHash: string; createdAt: number; expiresAt?: number }): void;
+  insertMessage(msg: {
+    id: string;
+    subject: string;
+    fromSubject: string;
+    status: string;
+    endpointHash: string;
+    createdAt: number;
+    expiresAt?: number;
+  }): void;
   updateStatus(id: string, status: string): void;
   getBySubject(subject: string, limit?: number): MessageRow[];
   getByEndpoint(endpointHash: string, limit?: number): MessageRow[];
@@ -514,7 +525,7 @@ Pure functions for budget validation. Budgets can only shrink, never grow.
 ```typescript
 export interface BudgetResult {
   allowed: boolean;
-  reason?: string;           // Present when rejected
+  reason?: string; // Present when rejected
   updatedBudget?: RelayBudget; // Present when allowed
 }
 
@@ -527,14 +538,15 @@ export function createDefaultBudget(overrides?: Partial<RelayBudget>): RelayBudg
 
 **Enforcement checks (in order):**
 
-| # | Check | Rejection Reason |
-|---|---|---|
-| 1 | `budget.hopCount >= budget.maxHops` | `"max hops exceeded (${hopCount}/${maxHops})"` |
-| 2 | `budget.ancestorChain.includes(currentEndpoint)` | `"cycle detected: ${currentEndpoint} already in chain"` |
-| 3 | `Date.now() > budget.ttl` | `"message expired (TTL)"` |
-| 4 | `budget.callBudgetRemaining <= 0` | `"call budget exhausted"` |
+| #   | Check                                            | Rejection Reason                                        |
+| --- | ------------------------------------------------ | ------------------------------------------------------- |
+| 1   | `budget.hopCount >= budget.maxHops`              | `"max hops exceeded (${hopCount}/${maxHops})"`          |
+| 2   | `budget.ancestorChain.includes(currentEndpoint)` | `"cycle detected: ${currentEndpoint} already in chain"` |
+| 3   | `Date.now() > budget.ttl`                        | `"message expired (TTL)"`                               |
+| 4   | `budget.callBudgetRemaining <= 0`                | `"call budget exhausted"`                               |
 
 **When allowed**, return updated budget:
+
 - `hopCount` incremented by 1
 - `currentEndpoint` appended to `ancestorChain`
 - `callBudgetRemaining` decremented by 1
@@ -559,7 +571,7 @@ interface RelaySignalEvents {
 }
 
 export class SignalEmitter extends EventEmitter<RelaySignalEvents> {
-  constructor(maxListeners?: number);  // default 100
+  constructor(maxListeners?: number); // default 100
 
   /** Emit a signal to all matching subscribers. */
   emitSignal(subject: string, signal: Signal): void;
@@ -570,6 +582,7 @@ export class SignalEmitter extends EventEmitter<RelaySignalEvents> {
 ```
 
 **Behavior:**
+
 - `emitSignal()` validates subject, then emits `'signal'` event
 - `onSignal()` registers a filtered listener that checks `matchesPattern(subject, pattern)` before calling handler
 - Returns an `Unsubscribe` function that removes the listener
@@ -604,6 +617,7 @@ export class DeadLetterQueue {
 ```
 
 **Behavior:**
+
 - `reject()` writes `{ envelope, reason, failedAt }` as JSON to `mailboxes/{hash}/failed/{ulid}`
 - Also inserts/updates SQLite index with `status = 'dlq'`
 - `listDead()` reads from `failed/` directories (optionally filtered by endpoint hash)
@@ -642,12 +656,14 @@ export class AccessControl {
 ```
 
 **Evaluation algorithm:**
+
 1. Sort rules by priority (highest first)
 2. For each rule: check if `matchesPattern(from, rule.from)` AND `matchesPattern(to, rule.to)`
 3. First match wins — return `{ allowed: rule.action === 'allow', matchedRule: rule }`
 4. No match — return `{ allowed: true }` (default-allow)
 
 **Persistence:**
+
 - Rules stored in `access-rules.json` as a JSON array
 - Hot-reloaded via chokidar when file changes on disk
 - `addRule()`/`removeRule()` write back to file atomically (write tmp + rename)
@@ -660,15 +676,15 @@ Main entry point that composes all modules.
 
 ```typescript
 export interface RelayOptions {
-  dataDir?: string;          // default: ~/.dork/relay
-  maxHops?: number;          // default: 5
-  defaultTtlMs?: number;     // default: 3_600_000 (1 hour)
+  dataDir?: string; // default: ~/.dork/relay
+  maxHops?: number; // default: 5
+  defaultTtlMs?: number; // default: 3_600_000 (1 hour)
   defaultCallBudget?: number; // default: 10
 }
 
 export interface PublishOptions {
-  from: string;              // Sender subject
-  replyTo?: string;          // Response routing
+  from: string; // Sender subject
+  replyTo?: string; // Response routing
   budget?: Partial<RelayBudget>; // Override default budget
 }
 
@@ -717,11 +733,13 @@ export class RelayCore {
 ```
 
 **Subscribe delivery (push via chokidar):**
+
 - When an endpoint is registered, start watching its `new/` directory via chokidar
 - On file creation event: read envelope, find matching subscription handlers, invoke them
 - After handler returns: `maildirStore.claim()` moves file to `cur/`, then `maildirStore.complete()` removes it
 
 **Graceful shutdown (`close()`):**
+
 1. Stop all chokidar watchers
 2. Close SQLite database (with WAL checkpoint)
 3. Clear subscription handlers
@@ -782,9 +800,13 @@ const unsub = relay.subscribe('relay.agent.myproject.*', (envelope) => {
 });
 
 // Publish a message
-const msgId = await relay.publish('relay.agent.myproject.backend', {
-  content: 'Deploy completed successfully',
-}, { from: 'relay.system.pulse' });
+const msgId = await relay.publish(
+  'relay.agent.myproject.backend',
+  {
+    content: 'Deploy completed successfully',
+  },
+  { from: 'relay.system.pulse' }
+);
 
 // Ephemeral signal (no disk)
 relay.signal('relay.agent.myproject.backend', {
@@ -806,6 +828,7 @@ await relay.close();
 Each module has its own test file in `src/__tests__/`:
 
 **subject-matcher.test.ts:**
+
 - Literal subject match (exact equality)
 - `*` wildcard matches exactly one token (`foo.*` matches `foo.bar`, not `foo.bar.baz`)
 - `>` wildcard matches one or more tokens (`foo.>` matches `foo.bar` and `foo.bar.baz`)
@@ -817,6 +840,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: These tests verify the correctness of the NATS subject matching algorithm, which is the routing foundation — if matching is wrong, messages go to wrong endpoints
 
 **budget-enforcer.test.ts:**
+
 - Hop count exceeds maxHops — reject
 - Cycle detection: endpoint already in ancestorChain — reject
 - TTL expired — reject
@@ -828,6 +852,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: Budget enforcement prevents infinite agent loops and runaway costs — the most critical safety mechanism
 
 **maildir-store.test.ts:**
+
 - Use real temp directories (`os.tmpdir()`) for filesystem tests
 - Atomic delivery: file appears in `new/`, not in `tmp/` after deliver()
 - Claim moves from `new/` to `cur/`
@@ -840,6 +865,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: Validates the Maildir protocol invariants — atomic delivery is the correctness guarantee
 
 **sqlite-index.test.ts:**
+
 - Use temp database files (`:memory:` or temp file)
 - Insert and query by subject
 - Update status
@@ -850,6 +876,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: Ensures the derived index stays consistent with Maildir truth
 
 **access-control.test.ts:**
+
 - Allow rule permits communication
 - Deny rule blocks communication
 - Priority ordering: higher priority evaluated first
@@ -859,6 +886,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: Access control is the authorization layer — must correctly enforce policy
 
 **signal-emitter.test.ts:**
+
 - Emit signal, receive in handler
 - Pattern matching filters signals correctly
 - Unsubscribe prevents further delivery
@@ -867,6 +895,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: Signals must be purely ephemeral — disk writes would be a bug
 
 **dead-letter-queue.test.ts:**
+
 - Reject writes to failed/ with reason
 - ListDead returns all dead letters
 - ListDead filters by endpoint hash
@@ -874,6 +903,7 @@ Each module has its own test file in `src/__tests__/`:
 - Purpose: DLQ provides observability into failed messages
 
 **relay-core.test.ts (integration):**
+
 - Full publish -> subscribe flow: publish message, verify subscriber receives it
 - Budget enforcement integration: publish with expired TTL, verify rejection + DLQ
 - Access control integration: add deny rule, verify message blocked
@@ -891,25 +921,25 @@ Each module has its own test file in `src/__tests__/`:
 
 ## Performance Considerations
 
-| Concern | Mitigation |
-|---|---|
-| SQLite write throughput | WAL mode + `synchronous=NORMAL` provides ~10,000-50,000 inserts/sec |
-| ULID sequential inserts | Eliminate B-tree page splits vs random UUIDs (2-5x improvement) |
-| Subject matching at scale | Linear scan is O(N) per publish; adequate for <1,000 subscriptions. SubjectMatcher interface allows future trie upgrade. |
-| Maildir file count | Per-endpoint directories limit files per directory. Scalability concern at >100K messages per endpoint (mitigated by consumer processing). |
-| Chokidar watching | Native OS APIs (FSEvents/inotify); zero-polling overhead |
-| Memory for subscriptions | In-memory handlers; subscription count bounded by registered patterns |
+| Concern                   | Mitigation                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| SQLite write throughput   | WAL mode + `synchronous=NORMAL` provides ~10,000-50,000 inserts/sec                                                                        |
+| ULID sequential inserts   | Eliminate B-tree page splits vs random UUIDs (2-5x improvement)                                                                            |
+| Subject matching at scale | Linear scan is O(N) per publish; adequate for <1,000 subscriptions. SubjectMatcher interface allows future trie upgrade.                   |
+| Maildir file count        | Per-endpoint directories limit files per directory. Scalability concern at >100K messages per endpoint (mitigated by consumer processing). |
+| Chokidar watching         | Native OS APIs (FSEvents/inotify); zero-polling overhead                                                                                   |
+| Memory for subscriptions  | In-memory handlers; subscription count bounded by registered patterns                                                                      |
 
 ## Security Considerations
 
-| Concern | Mitigation |
-|---|---|
-| Path traversal | Subject validation rejects special characters; endpoint hash is SHA-256 derived |
-| File permissions | Directories: `0o700`, files: `0o600`; `O_CREAT | O_EXCL` prevents TOCTOU |
-| SQLite injection | All queries use prepared statements via better-sqlite3 (never string interpolation) |
-| Listener flooding | `setMaxListeners(100)` cap; per-endpoint subscription limits possible in future |
-| Budget tampering | Budgets can only shrink — enforcement is server-side, not client-controlled |
-| Cycle attacks | Ancestor chain tracking detects loops; maxHops provides hard upper bound |
+| Concern           | Mitigation                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------- | ----------------------- |
+| Path traversal    | Subject validation rejects special characters; endpoint hash is SHA-256 derived     |
+| File permissions  | Directories: `0o700`, files: `0o600`; `O_CREAT                                      | O_EXCL` prevents TOCTOU |
+| SQLite injection  | All queries use prepared statements via better-sqlite3 (never string interpolation) |
+| Listener flooding | `setMaxListeners(100)` cap; per-endpoint subscription limits possible in future     |
+| Budget tampering  | Budgets can only shrink — enforcement is server-side, not client-controlled         |
+| Cycle attacks     | Ancestor chain tracking detects loops; maxHops provides hard upper bound            |
 
 ## Documentation
 
@@ -969,6 +999,7 @@ No open questions remain. All decisions were resolved during ideation:
 ## Related ADRs
 
 No existing ADRs directly relate to Relay. This spec will likely generate draft ADRs for:
+
 - Subject matching algorithm choice (linear scan with interface for future trie)
 - Maildir as message storage (vs append-only log)
 - ULID for message IDs (vs UUID)

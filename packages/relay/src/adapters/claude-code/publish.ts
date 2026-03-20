@@ -27,7 +27,7 @@ export async function publishAgentResult(
   originalEnvelope: RelayEnvelope,
   text: string,
   fromId: string,
-  relay: RelayPublisher,
+  relay: RelayPublisher
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
@@ -58,7 +58,7 @@ export async function publishDispatchProgress(
   step_type: 'message' | 'tool_result',
   text: string,
   fromId: string,
-  relay: RelayPublisher,
+  relay: RelayPublisher
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
@@ -68,7 +68,7 @@ export async function publishDispatchProgress(
   await relay.publish(
     originalEnvelope.replyTo,
     { type: 'progress', step, step_type, text, done: false },
-    opts,
+    opts
   );
 }
 
@@ -94,7 +94,7 @@ export async function publishResponseWithCorrelation(
   relay: RelayPublisher,
   log: Pick<Console, 'warn'>,
   correlationId?: string,
-  enrichment?: { agentId?: string },
+  enrichment?: { agentId?: string }
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {
@@ -126,7 +126,7 @@ export async function publishResponseWithCorrelation(
   const result = await relay.publish(originalEnvelope.replyTo, payload, opts);
   if (result.deliveredTo === 0 && event.type !== 'done') {
     log.warn(
-      `[CCA] publishResponse delivered to 0 subscribers: subject=${originalEnvelope.replyTo}, eventType=${event.type}`,
+      `[CCA] publishResponse delivered to 0 subscribers: subject=${originalEnvelope.replyTo}, eventType=${event.type}`
     );
   }
 }

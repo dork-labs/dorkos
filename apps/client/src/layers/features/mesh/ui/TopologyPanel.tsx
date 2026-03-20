@@ -21,24 +21,26 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted/50"
+        className="hover:bg-muted/50 flex w-full items-center gap-2 px-4 py-3 text-left"
       >
         {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-        <span className="font-medium text-sm">{namespace}</span>
+        <span className="text-sm font-medium">{namespace}</span>
         <Badge variant="secondary" className="ml-auto text-xs">
           {agentCount} agent{agentCount !== 1 ? 's' : ''}
         </Badge>
       </button>
       {expanded && (
-        <div className="border-t px-4 py-2 space-y-2">
+        <div className="space-y-2 border-t px-4 py-2">
           {agents.map((agent) => (
             <div key={agent.id} className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm">{agent.name}</span>
-                <Badge variant="outline" className="text-xs">{agent.runtime}</Badge>
+                <Badge variant="outline" className="text-xs">
+                  {agent.runtime}
+                </Badge>
               </div>
               {agent.budget && (
-                <div className="flex gap-2 text-xs text-muted-foreground">
+                <div className="text-muted-foreground flex gap-2 text-xs">
                   <span>{agent.budget.maxCallsPerHour} calls/hr</span>
                   <span>{agent.budget.maxHopsPerMessage} max hops</span>
                 </div>
@@ -74,7 +76,7 @@ function AccessRuleRow({ sourceNamespace, targetNamespace, action, onRemove }: A
       <button
         type="button"
         onClick={onRemove}
-        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded p-1"
         aria-label={`Remove rule ${sourceNamespace} to ${targetNamespace}`}
       >
         <Trash2 className="size-3.5" />
@@ -107,7 +109,9 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
   return (
     <form onSubmit={handleSubmit} className="flex items-end gap-2">
       <div className="flex-1">
-        <label htmlFor="acl-source" className="text-xs font-medium text-muted-foreground">Source</label>
+        <label htmlFor="acl-source" className="text-muted-foreground text-xs font-medium">
+          Source
+        </label>
         <select
           id="acl-source"
           value={source}
@@ -116,12 +120,16 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
         >
           <option value="">Select namespace</option>
           {namespaces.map((ns) => (
-            <option key={ns} value={ns}>{ns}</option>
+            <option key={ns} value={ns}>
+              {ns}
+            </option>
           ))}
         </select>
       </div>
       <div className="flex-1">
-        <label htmlFor="acl-target" className="text-xs font-medium text-muted-foreground">Target</label>
+        <label htmlFor="acl-target" className="text-muted-foreground text-xs font-medium">
+          Target
+        </label>
         <select
           id="acl-target"
           value={target}
@@ -130,14 +138,16 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
         >
           <option value="">Select namespace</option>
           {namespaces.map((ns) => (
-            <option key={ns} value={ns}>{ns}</option>
+            <option key={ns} value={ns}>
+              {ns}
+            </option>
           ))}
         </select>
       </div>
       <button
         type="submit"
         disabled={isPending || !source || !target || source === target}
-        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
       >
         {isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
         Allow
@@ -164,7 +174,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loader2 className="text-muted-foreground size-5 animate-spin" />
       </div>
     );
   }
@@ -179,7 +189,9 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
         icon={Shield}
         headline="Cross-project access requires multiple namespaces"
         description="Register agents from different directories to create namespaces, then configure cross-namespace access rules."
-        action={onGoToDiscovery ? { label: 'Go to Discovery', onClick: onGoToDiscovery } : undefined}
+        action={
+          onGoToDiscovery ? { label: 'Go to Discovery', onClick: onGoToDiscovery } : undefined
+        }
       />
     );
   }
@@ -188,7 +200,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
     <div className="space-y-6 p-4">
       {/* Namespace Groups */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-muted-foreground">Namespaces</h3>
+        <h3 className="text-muted-foreground text-sm font-medium">Namespaces</h3>
         {namespaces.map((ns) => (
           <NamespaceGroup
             key={ns.namespace}
@@ -201,9 +213,9 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
 
       {/* Cross-Project Rules */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-muted-foreground">Cross-Project Access Rules</h3>
+        <h3 className="text-muted-foreground text-sm font-medium">Cross-Project Access Rules</h3>
         {accessRules.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             No cross-project rules. Agents can only communicate within their own namespace.
           </p>
         ) : (
@@ -230,7 +242,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
       {/* Add Rule Form */}
       {namespaceNames.length >= 2 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Add Cross-Project Rule</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Add Cross-Project Rule</h3>
           <AddRuleForm
             namespaces={namespaceNames}
             isPending={isPending}

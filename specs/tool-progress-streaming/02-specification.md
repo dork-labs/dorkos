@@ -51,7 +51,7 @@ export const ToolProgressEventSchema = z
 **New field on `ToolCallPartSchema`: `progressOutput`**
 
 ```typescript
-progressOutput: z.string().optional()
+progressOutput: z.string().optional();
 ```
 
 Accumulates intermediate output during tool execution. Cleared when `tool_result` arrives (result replaces progress).
@@ -59,6 +59,7 @@ Accumulates intermediate output during tool execution. Cleared when `tool_result
 ### Result Transition
 
 When `tool_result` arrives for a tool call that has `progressOutput`:
+
 1. Set `result` to the tool_result value
 2. Clear `progressOutput` (set to `undefined`)
 3. The result becomes the canonical display — progress was a preview
@@ -68,6 +69,7 @@ This keeps the final state clean and avoids showing redundant content (SDK resul
 ### Auto-Expand Behavior
 
 When the first `tool_progress` event arrives for a tool call:
+
 - The ToolCallCard auto-expands to show the streaming output
 - Progress renders in a scrollable monospace `<pre>` block (same styling as result)
 - After completion, normal auto-hide behavior applies (if enabled)
@@ -75,6 +77,7 @@ When the first `tool_progress` event arrives for a tool call:
 ### Truncation
 
 Progress output is truncated at 5,120 bytes (~5KB) in the UI:
+
 - Display the first 5KB of accumulated output
 - Show a "Show full output ({size})" disclosure below the truncated preview
 - Clicking expands to show all output (still in monospace `<pre>`)
@@ -219,9 +222,11 @@ const PROGRESS_TRUNCATE_BYTES = 5120;
 Between the `ToolArgumentsDisplay` block and the `result` block, add progress rendering:
 
 ```tsx
-{toolCall.progressOutput && !toolCall.result && (
-  <ProgressOutput content={toolCall.progressOutput} />
-)}
+{
+  toolCall.progressOutput && !toolCall.result && (
+    <ProgressOutput content={toolCall.progressOutput} />
+  );
+}
 ```
 
 **5d. Create `ProgressOutput` component**
@@ -232,15 +237,12 @@ A small internal component (same file or extracted if it grows):
 function ProgressOutput({ content }: { content: string }) {
   const [showFull, setShowFull] = useState(false);
   const isTruncated = content.length > PROGRESS_TRUNCATE_BYTES;
-  const displayContent = isTruncated && !showFull
-    ? content.slice(0, PROGRESS_TRUNCATE_BYTES)
-    : content;
+  const displayContent =
+    isTruncated && !showFull ? content.slice(0, PROGRESS_TRUNCATE_BYTES) : content;
 
   return (
     <div className="mt-2 border-t pt-2">
-      <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">
-        {displayContent}
-      </pre>
+      <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
       {isTruncated && !showFull && (
         <button
           onClick={() => setShowFull(true)}
@@ -255,6 +257,7 @@ function ProgressOutput({ content }: { content: string }) {
 ```
 
 **Key rendering logic:**
+
 - Progress shows only while `progressOutput` exists AND `result` is absent
 - When `tool_result` arrives, `progressOutput` is cleared → progress block unmounts, result block mounts
 - The `<pre>` block has `max-h-48 overflow-y-auto` for scroll containment
@@ -308,7 +311,9 @@ describe('tool_progress messages', () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('tool_progress');
     expect((events[0].data as Record<string, unknown>).toolCallId).toBe('tc-1');
-    expect((events[0].data as Record<string, unknown>).content).toBe('Installing dependencies...\n');
+    expect((events[0].data as Record<string, unknown>).content).toBe(
+      'Installing dependencies...\n'
+    );
   });
 });
 ```
@@ -335,15 +340,15 @@ Render with progressOutput, then update with result and no progressOutput. Verif
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `packages/shared/src/schemas.ts` | Add `tool_progress` to enum, add `ToolProgressEventSchema`, add to `StreamEventSchema` union, add `progressOutput` to `ToolCallPartSchema` and `HistoryToolCallSchema` |
-| `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts` | Add `tool_progress` branch |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Add `tool_progress` switch case, clear `progressOutput` on `tool_result` |
-| `apps/client/src/layers/features/chat/model/chat-types.ts` | Add `progressOutput` to `ToolCallState` |
-| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` | Add auto-expand, `ProgressOutput` component with truncation |
-| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Pass `progressOutput` through `AutoHideToolCall` to `ToolCallCard` |
-| `apps/server/src/services/core/__tests__/sdk-event-mapper.test.ts` | Add `tool_progress` test case |
+| File                                                                          | Change                                                                                                                                                                 |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                                              | Add `tool_progress` to enum, add `ToolProgressEventSchema`, add to `StreamEventSchema` union, add `progressOutput` to `ToolCallPartSchema` and `HistoryToolCallSchema` |
+| `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts`           | Add `tool_progress` branch                                                                                                                                             |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts`          | Add `tool_progress` switch case, clear `progressOutput` on `tool_result`                                                                                               |
+| `apps/client/src/layers/features/chat/model/chat-types.ts`                    | Add `progressOutput` to `ToolCallState`                                                                                                                                |
+| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx`                    | Add auto-expand, `ProgressOutput` component with truncation                                                                                                            |
+| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Pass `progressOutput` through `AutoHideToolCall` to `ToolCallCard`                                                                                                     |
+| `apps/server/src/services/core/__tests__/sdk-event-mapper.test.ts`            | Add `tool_progress` test case                                                                                                                                          |
 
 ## Acceptance Criteria
 

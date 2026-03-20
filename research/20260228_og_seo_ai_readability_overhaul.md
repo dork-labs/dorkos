@@ -1,5 +1,5 @@
 ---
-title: "OG Tags, SEO Metadata & AI Agent Readability Overhaul — Research Report"
+title: 'OG Tags, SEO Metadata & AI Agent Readability Overhaul — Research Report'
 date: 2026-02-28
 type: implementation
 status: archived
@@ -32,6 +32,7 @@ DorkOS's current metadata baseline is solid — `metadataBase`, OG/Twitter field
 **Twitter card type**: `summary_large_image` is the right choice for a developer tool. Already set correctly.
 
 **File size constraints**:
+
 - `opengraph-image` must not exceed 8 MB (Next.js build fails otherwise)
 - `twitter-image` must not exceed 5 MB
 - Both are PNG — fine at this image complexity
@@ -40,6 +41,7 @@ DorkOS's current metadata baseline is solid — `metadataBase`, OG/Twitter field
 The Next.js docs confirm: "you only need to set it for openGraph; twitter will be generated automatically." Having separate `twitter-image.tsx` and `opengraph-image.tsx` with different content is a design choice that is valid but requires maintenance. The current situation where the two files have different content (OG says "Claude Code in your browser", Twitter says "Build fast. Learn faster.") creates inconsistency. The two images should either be unified or clearly differentiated for purpose.
 
 **Platform rendering differences**:
+
 - **Discord**: Renders full OG embed. Supports up to 15 MB. Shows `og:title`, `og:description`, `og:image`. Important for developer audiences.
 - **Slack**: Reads `og:title` and `og:description` from HTML. Renders image if provided. Tight 3-5 second timeout — if edge OG image generation is slow on cold start, Slack will show blank preview.
 - **iMessage/WhatsApp**: Strict timeout. Fast static rendering preferred.
@@ -51,8 +53,10 @@ The current `opengraph-image.tsx` uses `export const runtime = 'edge'` but does 
 
 ```ts
 // Option A: Stay on edge, fetch font from Google Fonts
-const fontRes = await fetch('https://fonts.gstatic.com/s/ibmplexsans/v19/zYXgKVEl...(url for SemiBold TTF)')
-const fontData = await fontRes.arrayBuffer()
+const fontRes = await fetch(
+  'https://fonts.gstatic.com/s/ibmplexsans/v19/zYXgKVEl...(url for SemiBold TTF)'
+);
+const fontData = await fontRes.arrayBuffer();
 
 // Option B: Switch to Node.js runtime (remove runtime = 'edge')
 // const fontData = await readFile(join(process.cwd(), 'assets/IBMPlexSans-Bold.ttf'))
@@ -71,6 +75,7 @@ This is 124 characters — within the 155-160 character limit. However it reads 
 **Canonical URLs**: Currently set as relative paths (`'/'`, `/blog/${slug}`). With `metadataBase: new URL(siteConfig.url)`, these resolve correctly to `https://dorkos.ai` and `https://dorkos.ai/blog/${slug}`. This is correct.
 
 **robots.txt analysis**: The current `robots.ts` only has one rule block (`userAgent: '*'`). In 2025-2026, AI crawlers are a major concern:
+
 - GPTBot (OpenAI) accounted for 30% of non-human traffic by mid-2025
 - ClaudeBot (Anthropic) and PerplexityBot are significant
 - Vercel's network recorded 569M GPTBot requests and 370M ClaudeBot requests
@@ -151,6 +156,7 @@ The site has no JSON-LD. For a developer tool, two schemas are high-value:
 The `apps/web/public` directory has only `.gitkeep` and `images/`. There is no `favicon.ico`, no `apple-touch-icon.png`, no `site.webmanifest`. Next.js file-based metadata detects `app/icon.png`, `app/apple-icon.png`, and `app/favicon.ico`.
 
 Modern minimal favicon set (Evil Martians "three files" approach):
+
 - `favicon.ico` (32x32, for legacy browser tab)
 - `icon.svg` (SVG favicon, supports dark mode via `prefers-color-scheme`)
 - `apple-touch-icon.png` (180x180, for iOS home screen — needs solid background + padding)
@@ -158,6 +164,7 @@ Modern minimal favicon set (Evil Martians "three files" approach):
 - `icon-192.png` and `icon-512.png` (referenced from manifest)
 
 In Next.js App Router, placing files in `apps/web/src/app/`:
+
 - `favicon.ico` → auto-detected as `<link rel="icon">`
 - `icon.png` or `icon.svg` → auto-generates `<link rel="icon">`
 - `apple-icon.png` → auto-generates `<link rel="apple-touch-icon">`
@@ -210,15 +217,15 @@ DorkOS is not a hosted service. It is a CLI tool (`npm install -g dorkos`) and a
 **robots.txt for AI crawlers** — nuanced strategy:
 DorkOS should welcome AI indexing crawlers (so AI can answer questions about it) while optionally blocking non-compliant scrapers.
 
-| Crawler | Company | Recommended |
-|---|---|---|
-| `GPTBot` | OpenAI | Allow — helps ChatGPT cite DorkOS |
-| `OAI-SearchBot` | OpenAI | Allow — ChatGPT search index |
-| `ClaudeBot` | Anthropic | Allow — helps Claude cite DorkOS |
-| `PerplexityBot` | Perplexity | Allow — search index |
-| `Google-Extended` | Google | Allow — Gemini AI Overviews |
-| `CCBot` | Common Crawl | Disallow — aggressive, low benefit |
-| `Bytespider` | ByteDance | Disallow — often non-compliant |
+| Crawler           | Company      | Recommended                        |
+| ----------------- | ------------ | ---------------------------------- |
+| `GPTBot`          | OpenAI       | Allow — helps ChatGPT cite DorkOS  |
+| `OAI-SearchBot`   | OpenAI       | Allow — ChatGPT search index       |
+| `ClaudeBot`       | Anthropic    | Allow — helps Claude cite DorkOS   |
+| `PerplexityBot`   | Perplexity   | Allow — search index               |
+| `Google-Extended` | Google       | Allow — Gemini AI Overviews        |
+| `CCBot`           | Common Crawl | Disallow — aggressive, low benefit |
+| `Bytespider`      | ByteDance    | Disallow — often non-compliant     |
 
 **Schema.org for AI comprehension**: In 2025, structured data evolved from an SEO tactic to infrastructure for AI systems. Microsoft's NLWeb initiative (built on Schema.org) enables AI agents to query website content conversationally. The most impactful schema types for a developer tool are `SoftwareApplication`, `WebSite`, `Organization`, and `BlogPosting`.
 
@@ -228,6 +235,7 @@ DorkOS should welcome AI indexing crawlers (so AI can answer questions about it)
 
 **Metadata merging behavior — critical for OG images**:
 Next.js does a **shallow merge** of metadata objects across layout then page. This means:
+
 - If `app/layout.tsx` defines `openGraph: { images: [...] }` and `app/blog/[slug]/page.tsx` defines `openGraph: { title, description }` WITHOUT `images`, the entire `openGraph` object from the layout is **replaced** — and the `images` field is lost.
 - The file-based `opengraph-image.tsx` at the root level has higher priority than the `metadata` object.
 - Blog posts currently inherit the root OG image because they have no route-level `opengraph-image.tsx`. Adding one per-route is the correct fix.
@@ -235,10 +243,12 @@ Next.js does a **shallow merge** of metadata objects across layout then page. Th
 **Streaming metadata** (introduced v15.2.0): `generateMetadata` is now streamed — it no longer blocks the initial HTML response for JS-capable bots. For HTML-limited bots like `facebookexternalhit`, metadata still appears in `<head>`. OG image for Facebook link previews is correctly served.
 
 **File-based metadata takes priority over object-based**:
+
 ```
 opengraph-image.tsx > metadata.openGraph.images
 twitter-image.tsx   > metadata.twitter.images
 ```
+
 Since both route files exist, the comments in `layout.tsx` noting auto-generation are accurate. The issue is that the two files currently have different marketing taglines.
 
 **Edge runtime limitation**: `export const runtime = 'edge'` means `readFile` from `node:fs/promises` is NOT available. The current images render without IBM Plex Sans font. They fall back to whatever the edge runtime's default font is.
@@ -254,6 +264,7 @@ Since both route files exist, the comments in `layout.tsx` noting auto-generatio
 ### Current State Assessment
 
 **What is already correct:**
+
 - `metadataBase: new URL(siteConfig.url)` in root layout — required for all relative URL resolution
 - OG image dimensions: 1200x630 — correct
 - `contentType: 'image/png'` — correct
@@ -266,19 +277,19 @@ Since both route files exist, the comments in `layout.tsx` noting auto-generatio
 
 **What is missing or needs improvement:**
 
-| Item | Priority | Impact |
-|---|---|---|
-| JSON-LD structured data (SoftwareApplication) | High | AI comprehension, Google rich results |
-| `llms.txt` at root | High | AI agent discoverability |
-| Blog post OG images (dynamic per-post) | High | CTR on social shares |
-| Blog posts in sitemap | Medium | Search indexing |
-| Favicon infrastructure | Medium | Brand recognition |
-| robots.ts — block CCBot/Bytespider | Medium | Reduce scraper load |
-| `/test/` routes excluded from robots disallow | Medium | Avoid indexing dev pages |
-| OG image consistency (two different taglines) | Low | Brand coherence |
-| Custom font in OG images | Low | Visual quality |
-| Meta description wordsmithing | Low | CTR improvement |
-| llms-full.txt | Low | Deep AI comprehension |
+| Item                                          | Priority | Impact                                |
+| --------------------------------------------- | -------- | ------------------------------------- |
+| JSON-LD structured data (SoftwareApplication) | High     | AI comprehension, Google rich results |
+| `llms.txt` at root                            | High     | AI agent discoverability              |
+| Blog post OG images (dynamic per-post)        | High     | CTR on social shares                  |
+| Blog posts in sitemap                         | Medium   | Search indexing                       |
+| Favicon infrastructure                        | Medium   | Brand recognition                     |
+| robots.ts — block CCBot/Bytespider            | Medium   | Reduce scraper load                   |
+| `/test/` routes excluded from robots disallow | Medium   | Avoid indexing dev pages              |
+| OG image consistency (two different taglines) | Low      | Brand coherence                       |
+| Custom font in OG images                      | Low      | Visual quality                        |
+| Meta description wordsmithing                 | Low      | CTR improvement                       |
+| llms-full.txt                                 | Low      | Deep AI comprehension                 |
 
 ### Implementation Roadmap
 
@@ -287,17 +298,18 @@ Since both route files exist, the comments in `layout.tsx` noting auto-generatio
 **1.1 Add blog posts to sitemap**
 
 In `apps/web/src/app/sitemap.ts`:
+
 ```ts
-import { source, blog } from '@/lib/source'
+import { source, blog } from '@/lib/source';
 
 const blogPages: MetadataRoute.Sitemap = blog.getPages().map((page) => ({
   url: `${BASE_URL}/blog/${page.slugs[0]}`,
   lastModified: new Date(page.data.date),
   changeFrequency: 'monthly' as const,
   priority: 0.6,
-}))
+}));
 
-return [...staticPages, ...docPages, ...blogPages]
+return [...staticPages, ...docPages, ...blogPages];
 ```
 
 **1.2 Exclude `/test/` from robots.txt disallow**
@@ -330,7 +342,7 @@ export default function robots(): MetadataRoute.Robots {
       },
     ],
     sitemap: `${siteConfig.url}/sitemap.xml`,
-  }
+  };
 }
 ```
 
@@ -362,14 +374,14 @@ const softwareAppJsonLd = {
     'SSE streaming',
   ],
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-}
+};
 
 const websiteJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
   name: 'DorkOS',
   url: siteConfig.url,
-}
+};
 
 // In the component, before the return or as a fragment child:
 // <script type="application/ld+json" ... />
@@ -390,7 +402,7 @@ const jsonLd = {
   author: { '@type': 'Organization', name: 'DorkOS', url: siteConfig.url },
   publisher: { '@type': 'Organization', name: 'DorkOS', url: siteConfig.url },
   url: `${siteConfig.url}/blog/${params.slug}`,
-}
+};
 ```
 
 #### Phase 3 — llms.txt
@@ -404,16 +416,16 @@ Create `apps/web/public/llms.txt` with the content structure shown in Section 3.
 Create `apps/web/src/app/llms.txt/route.ts`:
 
 ```ts
-import { source } from '@/lib/source'
-import { siteConfig } from '@/config/site'
+import { source } from '@/lib/source';
+import { siteConfig } from '@/config/site';
 
-export const dynamic = 'force-static'
+export const dynamic = 'force-static';
 
 export async function GET() {
-  const docPages = source.getPages()
+  const docPages = source.getPages();
   const links = docPages
     .map((page) => `- [${page.data.title}](${siteConfig.url}${page.url})`)
-    .join('\n')
+    .join('\n');
 
   const body = [
     `# DorkOS`,
@@ -429,17 +441,18 @@ export async function GET() {
     `- [Blog](${siteConfig.url}/blog)`,
     `- [GitHub](${siteConfig.github})`,
     `- [npm](${siteConfig.npm})`,
-  ].join('\n')
+  ].join('\n');
 
   return new Response(body, {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-  })
+  });
 }
 ```
 
 #### Phase 4 — Favicon Infrastructure
 
 Files to create:
+
 - `apps/web/src/app/favicon.ico` (32x32 ICO derived from triangle logo)
 - `apps/web/src/app/icon.svg` (SVG with dark-mode-aware `fill`)
 - `apps/web/src/app/apple-icon.png` (180x180, solid background)
@@ -448,6 +461,7 @@ Files to create:
 - `apps/web/public/icon-512.png`
 
 Add to root layout `metadata`:
+
 ```ts
 manifest: '/site.webmanifest',
 ```
@@ -455,6 +469,7 @@ manifest: '/site.webmanifest',
 The `icon.*` and `apple-icon.*` files in `app/` are auto-detected by Next.js — no metadata config needed for them.
 
 `site.webmanifest` content:
+
 ```json
 {
   "name": "DorkOS",
@@ -474,103 +489,97 @@ The `icon.*` and `apple-icon.*` files in `app/` are auto-detected by Next.js —
 Create `apps/web/src/app/(marketing)/blog/[slug]/opengraph-image.tsx`:
 
 ```tsx
-import { ImageResponse } from 'next/og'
-import { blog } from '@/lib/source'
-import { notFound } from 'next/navigation'
+import { ImageResponse } from 'next/og';
+import { blog } from '@/lib/source';
+import { notFound } from 'next/navigation';
 
-export const size = { width: 1200, height: 630 }
-export const contentType = 'image/png'
+export const size = { width: 1200, height: 630 };
+export const contentType = 'image/png';
 
-export default async function Image({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}) {
-  const { slug } = await params
-  const page = blog.getPage([slug])
-  if (!page) notFound()
+export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const page = blog.getPage([slug]);
+  if (!page) notFound();
 
   return new ImageResponse(
-    (
+    <div
+      style={{
+        background: '#FFFCF7',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        padding: '80px',
+        position: 'relative',
+      }}
+    >
+      {/* Grid background matching brand */}
       <div
         style={{
-          background: '#FFFCF7',
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'flex-end',
-          padding: '80px',
-          position: 'relative',
+          position: 'absolute',
+          inset: 0,
+          backgroundImage:
+            'linear-gradient(to right, rgba(139,90,43,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(139,90,43,0.08) 1px, transparent 1px)',
+          backgroundSize: '40px 40px',
+        }}
+      />
+      {/* Section label */}
+      <span
+        style={{
+          fontSize: 18,
+          color: '#E86C3A',
+          letterSpacing: '0.15em',
+          textTransform: 'uppercase',
+          marginBottom: 24,
+          fontFamily: 'monospace',
         }}
       >
-        {/* Grid background matching brand */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage:
-              'linear-gradient(to right, rgba(139,90,43,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(139,90,43,0.08) 1px, transparent 1px)',
-            backgroundSize: '40px 40px',
-          }}
-        />
-        {/* Section label */}
+        DorkOS Blog
+      </span>
+      {/* Article title */}
+      <span
+        style={{
+          fontSize: 56,
+          fontWeight: 700,
+          color: '#2C2C2C',
+          lineHeight: 1.1,
+          letterSpacing: '-0.03em',
+          maxWidth: 900,
+        }}
+      >
+        {page.data.title}
+      </span>
+      {/* Description */}
+      {page.data.description && (
         <span
           style={{
-            fontSize: 18,
-            color: '#E86C3A',
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-            marginBottom: 24,
-            fontFamily: 'monospace',
+            fontSize: 24,
+            color: '#6B6B6B',
+            marginTop: 20,
+            maxWidth: 800,
           }}
         >
-          DorkOS Blog
+          {page.data.description}
         </span>
-        {/* Article title */}
-        <span
-          style={{
-            fontSize: 56,
-            fontWeight: 700,
-            color: '#2C2C2C',
-            lineHeight: 1.1,
-            letterSpacing: '-0.03em',
-            maxWidth: 900,
-          }}
-        >
-          {page.data.title}
-        </span>
-        {/* Description */}
-        {page.data.description && (
-          <span
-            style={{
-              fontSize: 24,
-              color: '#6B6B6B',
-              marginTop: 20,
-              maxWidth: 800,
-            }}
-          >
-            {page.data.description}
-          </span>
-        )}
-        {/* Brand stripes */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div style={{ height: 8, background: '#E86C3A' }} />
-          <div style={{ height: 8, background: '#5B8C5A' }} />
-        </div>
+      )}
+      {/* Brand stripes */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ height: 8, background: '#E86C3A' }} />
+        <div style={{ height: 8, background: '#5B8C5A' }} />
       </div>
-    ),
+    </div>,
     { ...size }
-  )
+  );
 }
 ```
 

@@ -19,11 +19,13 @@ title: Relay Conversation View Implementation Plan
 ### Task 1: Wire TraceStore into RelayCore.publish()
 
 **Files:**
+
 - Modify: `packages/relay/src/types.ts:175-195` (add TraceStoreLike to RelayCore deps)
 - Modify: `packages/relay/src/relay-core.ts:247-350` (wire insertSpan after delivery)
 - Test: `packages/relay/src/__tests__/relay-core.test.ts`
 
 **Context:**
+
 - TraceStore.insertSpan signature (from `apps/server/src/services/relay/trace-store.ts:68-98`): accepts `{ messageId, traceId, subject, status?, metadata? }`
 - RelayCore already has optional deps pattern (adapterRegistry, opts)
 - The trace route (`apps/server/src/routes/relay.ts:137-147`) looks up spans by messageId, so traceId should equal messageId for single-message traces
@@ -83,29 +85,37 @@ it('records trace span when traceStore is provided', async () => {
   const core = createRelayCore({ traceStore: mockTraceStore });
   // register an endpoint so delivery succeeds
   await core.registerEndpoint('relay.test.subject');
-  await core.publish('relay.test.subject', { content: 'hello' }, {
-    from: 'relay.test.sender',
-    replyTo: 'relay.test.sender',
-  });
+  await core.publish(
+    'relay.test.subject',
+    { content: 'hello' },
+    {
+      from: 'relay.test.sender',
+      replyTo: 'relay.test.sender',
+    }
+  );
   expect(mockTraceStore.insertSpan).toHaveBeenCalledWith(
     expect.objectContaining({
       subject: 'relay.test.subject',
       status: 'delivered',
-    }),
+    })
   );
 });
 
 it('records failed trace span for dead-lettered messages', async () => {
   const mockTraceStore = { insertSpan: vi.fn() };
   const core = createRelayCore({ traceStore: mockTraceStore });
-  await core.publish('relay.nowhere.subject', { content: 'lost' }, {
-    from: 'relay.test.sender',
-    replyTo: 'relay.test.sender',
-  });
+  await core.publish(
+    'relay.nowhere.subject',
+    { content: 'lost' },
+    {
+      from: 'relay.test.sender',
+      replyTo: 'relay.test.sender',
+    }
+  );
   expect(mockTraceStore.insertSpan).toHaveBeenCalledWith(
     expect.objectContaining({
       status: 'failed',
-    }),
+    })
   );
 });
 ```
@@ -131,10 +141,12 @@ git commit -m "fix(relay): wire trace store into publish pipeline for delivery t
 ### Task 2: Add subject label resolver utility
 
 **Files:**
+
 - Create: `apps/server/src/services/relay/subject-resolver.ts`
 - Test: `apps/server/src/services/relay/__tests__/subject-resolver.test.ts`
 
 **Context:**
+
 - Subject patterns: `relay.agent.{sessionId}`, `relay.human.console.{clientId}`, `relay.system.pulse.{scheduleId}`, `relay.system.console`
 - Agent resolution: session ID → TranscriptReader.getSession() → cwd → readManifest(cwd) → manifest.name
 - TranscriptReader is at `apps/server/src/services/core/transcript-reader.ts`
@@ -226,7 +238,7 @@ const SESSION_ID_PREVIEW_LENGTH = 7;
  */
 export async function resolveSubjectLabel(
   subject: string,
-  deps: ResolverDeps,
+  deps: ResolverDeps
 ): Promise<SubjectLabel> {
   const raw = subject;
 
@@ -274,11 +286,11 @@ export async function resolveSubjectLabel(
  */
 export async function resolveSubjectLabels(
   subjects: string[],
-  deps: ResolverDeps,
+  deps: ResolverDeps
 ): Promise<Map<string, SubjectLabel>> {
   const unique = [...new Set(subjects)];
   const results = await Promise.all(
-    unique.map(async (s) => [s, await resolveSubjectLabel(s, deps)] as const),
+    unique.map(async (s) => [s, await resolveSubjectLabel(s, deps)] as const)
   );
   return new Map(results);
 }
@@ -301,6 +313,7 @@ git commit -m "feat(relay): add subject label resolver for human-readable names"
 ### Task 3: Add GET /relay/conversations endpoint
 
 **Files:**
+
 - Modify: `apps/server/src/routes/relay.ts:55-63` (add new route)
 - Modify: `packages/shared/src/relay-schemas.ts` (add ConversationSchema)
 - Modify: `packages/shared/src/transport.ts:131-137` (add listRelayConversations)
@@ -309,6 +322,7 @@ git commit -m "feat(relay): add subject label resolver for human-readable names"
 - Modify: `apps/client/src/layers/entities/relay/index.ts` (export new hook)
 
 **Context:**
+
 - RelayCore exposes `listMessages()` for SQLite index queries and `getMessage()` for single messages
 - Maildir envelopes can be read via RelayCore's internal maildirStore (need to add a public method or read from the endpoint-level data)
 - The grouping logic correlates `relay.agent.*` (requests) with `relay.human.console.*` (response chunks)
@@ -379,18 +393,12 @@ router.get('/conversations', async (_req, res) => {
     const deadLetters = relayCore.getDeadLetters();
 
     // Import resolver
-    const { resolveSubjectLabels } = await import(
-      '../services/relay/subject-resolver.js'
-    );
-    const { transcriptReader } = await import(
-      '../services/core/transcript-reader.js'
-    );
+    const { resolveSubjectLabels } = await import('../services/relay/subject-resolver.js');
+    const { transcriptReader } = await import('../services/core/transcript-reader.js');
     const { readManifest } = await import('@dorkos/shared/manifest');
 
     // Collect all unique subjects
-    const allSubjects = [
-      ...messages.messages.map((m: { subject: string }) => m.subject),
-    ];
+    const allSubjects = [...messages.messages.map((m: { subject: string }) => m.subject)];
     const resolverDeps = {
       getSession: async (id: string) => transcriptReader.getSession(id),
       readManifest: async (cwd: string) => readManifest(cwd),
@@ -427,14 +435,12 @@ router.get('/conversations', async (_req, res) => {
       // Find response chunks (matched by the request's from field being the response subject)
       // For now, use the most recent relay.human.console.* group
       const fromSubject = req.from as string | undefined;
-      const responseChunks = fromSubject
-        ? (responseChunksBySubject.get(fromSubject) ?? [])
-        : [];
+      const responseChunks = fromSubject ? (responseChunksBySubject.get(fromSubject) ?? []) : [];
       const lastChunk = responseChunks[0]; // messages are sorted newest-first
 
       // Resolve dead letter info
       const deadLetter = deadLetters.find(
-        (dl: { messageId: string }) => dl.messageId === messageId,
+        (dl: { messageId: string }) => dl.messageId === messageId
       );
 
       // Build preview from dead letter envelope (has full payload) or from the message
@@ -444,18 +450,25 @@ router.get('/conversations', async (_req, res) => {
         payload = deadLetter.envelope.payload;
         const p = payload as Record<string, unknown>;
         const text = p?.content ?? p?.text ?? p?.message;
-        preview = typeof text === 'string' ? text.slice(0, 120) : JSON.stringify(payload).slice(0, 120);
+        preview =
+          typeof text === 'string' ? text.slice(0, 120) : JSON.stringify(payload).slice(0, 120);
       }
 
-      const fromLabel = labelMap.get(fromSubject ?? '') ?? { label: 'Unknown', raw: fromSubject ?? '' };
+      const fromLabel = labelMap.get(fromSubject ?? '') ?? {
+        label: 'Unknown',
+        raw: fromSubject ?? '',
+      };
       const toLabel = labelMap.get(subject) ?? { label: subject, raw: subject };
 
       return {
         id: messageId,
         direction: 'outbound' as const,
-        status: status === 'cur' || status === 'delivered' ? 'delivered' as const
-          : status === 'failed' ? 'failed' as const
-          : 'pending' as const,
+        status:
+          status === 'cur' || status === 'delivered'
+            ? ('delivered' as const)
+            : status === 'failed'
+              ? ('failed' as const)
+              : ('pending' as const),
         from: fromLabel,
         to: toLabel,
         preview,
@@ -529,10 +542,12 @@ git commit -m "feat(relay): add conversations endpoint with grouped messages and
 ### Task 4: Create ConversationRow component
 
 **Files:**
+
 - Create: `apps/client/src/layers/features/relay/ui/ConversationRow.tsx`
 - Modify: `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx` (swap MessageRow for ConversationRow)
 
 **Context:**
+
 - Current MessageRow is at `apps/client/src/layers/features/relay/ui/MessageRow.tsx` (158 lines)
 - Uses motion/react for expand/collapse, Badge from shared/ui, MessageTrace for trace view
 - Status colors from `../lib/status-colors.ts`
@@ -768,6 +783,7 @@ In `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx`:
 5. Keep the existing animation logic (initialIdsRef, motion.div wrapper)
 
 The source filter maps to conversation fields:
+
 - "Chat messages" → `conversation.subject.startsWith('relay.agent.')`
 - "Pulse jobs" → `conversation.subject.startsWith('relay.system.pulse.')`
 - "System" → `conversation.subject.startsWith('relay.system.') && !conversation.subject.startsWith('relay.system.pulse.')`
@@ -793,9 +809,11 @@ git commit -m "feat(relay): replace MessageRow with ConversationRow for human-re
 ### Task 5: Improve DeadLetterSection with human labels
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/relay/ui/DeadLetterSection.tsx`
 
 **Context:**
+
 - Dead letter API response already includes the full envelope with payload and subject
 - Current DeadLetterRow shows message ID and reason, but no human-readable info
 - The dead letter data has `envelope.subject`, `envelope.payload`, `envelope.from`
@@ -814,11 +832,13 @@ In `DeadLetterSection.tsx`, update the `DeadLetterRow` component:
 5. Keep the expandable JSON detail for power users
 
 The collapsed row should show:
+
 ```
 "hello" → Agent (a6010b)    No matching endpoints    4h ago
 ```
 
 Instead of:
+
 ```
 01KJG7Z6ZQAFXRTMB1WQKS1MQM    Unknown    4h ago
 ```
@@ -837,9 +857,11 @@ git commit -m "feat(relay): show human-readable labels and message preview in de
 ### Task 6: Improve EndpointList with human labels
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/relay/ui/EndpointList.tsx`
 
 **Context:**
+
 - Endpoint data includes `subject`, `hash`, `registeredAt`
 - Apply the same static subject parsing client-side
 - Show human label as primary text, raw subject as secondary monospace
@@ -865,6 +887,7 @@ export function resolveSubjectLabelLocal(subject: string): string {
 **Step 2: Update EndpointList to show human label above raw subject**
 
 In the endpoint card, render:
+
 - Human label as `text-sm font-medium`
 - Raw subject below as `text-xs font-mono text-muted-foreground truncate`
 
@@ -886,15 +909,18 @@ git commit -m "feat(relay): add human-readable labels to endpoints and adapter d
 ### Task 7: Update filter labels and search placeholder
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx`
 
 **Context:**
+
 - Current source filter options: derived from subject prefixes with technical names
 - Current search placeholder: "Filter by subject..."
 
 **Step 1: Update filter labels**
 
 Rename source filter options:
+
 - "All" stays
 - TG/Telegram → (keep if present)
 - WH/Webhook → (keep if present)
@@ -902,6 +928,7 @@ Rename source filter options:
 - Add "Chat" for `relay.agent.*` and `relay.human.console.*`
 
 Rename status filter options:
+
 - "All" stays
 - "New" → "Pending"
 - "Cur" → "Delivered"
@@ -924,6 +951,7 @@ git commit -m "feat(relay): rename filter labels to human-friendly terms"
 ### Task 8: Final integration test and cleanup
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/relay/ui/MessageRow.tsx` (keep but no longer imported by ActivityFeed — verify unused or remove)
 - Run: Full test suite
 
@@ -945,6 +973,7 @@ Expected: No new errors
 **Step 4: Manual browser verification**
 
 Start dev server (`pnpm dev`), open Relay panel:
+
 - [ ] Activity tab shows ConversationRow with "You → Agent Name" labels
 - [ ] Expanding a conversation shows payload (not "undefined")
 - [ ] Expanding a conversation shows delivery timing

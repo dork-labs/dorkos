@@ -18,7 +18,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 export async function collectSseEvents(
   app: Express,
   sessionId: string,
-  content: string,
+  content: string
 ): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
 

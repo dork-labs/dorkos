@@ -120,7 +120,7 @@ export function useAgentFrecency() {
               timestamps: [now, ...r.timestamps].slice(0, MAX_TIMESTAMPS),
               totalCount: r.totalCount + 1,
             }
-          : r,
+          : r
       );
     } else {
       updated = [...current, { agentId, timestamps: [now], totalCount: 1 }];
@@ -143,7 +143,7 @@ export function useAgentFrecency() {
         return scoreB - scoreA;
       });
     },
-    [records],
+    [records]
   );
 
   return { entries: records, recordUsage, getSortedAgentIds };

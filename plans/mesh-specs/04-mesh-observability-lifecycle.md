@@ -1,26 +1,26 @@
 ---
-title: "Mesh Observability"
+title: 'Mesh Observability'
 spec: 4
 order: 3
 status: in-progress
 blockedBy: [2]
 blocks: []
 parallelWith: [3]
-litepaperPhase: "Phase 3 — Observability"
+litepaperPhase: 'Phase 3 — Observability'
 complexity: medium
 risk: low
 estimatedFiles: 8-12
 newPackages: []
-primaryWorkspaces: ["apps/server", "apps/client", "packages/mesh"]
+primaryWorkspaces: ['apps/server', 'apps/client', 'packages/mesh']
 touchesServer: true
 touchesClient: true
 verification:
-  - "Console shows agent network topology visualization (agents as nodes, relationships as edges)"
-  - "Agent health status reflects last-seen timestamp and connectivity"
-  - "MCP tools mesh_status, mesh_inspect provide diagnostic output"
-  - "Agent lifecycle events (registered, unregistered, health change) are emitted as Relay signals"
-  - "Mesh dashboard shows aggregate stats (total agents, by runtime, by project, errors)"
-  - "Health tracking updates when agents send/receive Relay messages"
+  - 'Console shows agent network topology visualization (agents as nodes, relationships as edges)'
+  - 'Agent health status reflects last-seen timestamp and connectivity'
+  - 'MCP tools mesh_status, mesh_inspect provide diagnostic output'
+  - 'Agent lifecycle events (registered, unregistered, health change) are emitted as Relay signals'
+  - 'Mesh dashboard shows aggregate stats (total agents, by runtime, by project, errors)'
+  - 'Health tracking updates when agents send/receive Relay messages'
 notes: >
   Can run in PARALLEL with Spec 3 (Network Topology) — they're independent
   additions to the Spec 2 foundation. This spec is focused purely on
@@ -96,12 +96,14 @@ OUT OF SCOPE:
 ## Context for Review
 
 This spec adds the observability layer. The /ideate exploration agent should focus on:
+
 - `SignalEmitter` in `packages/relay/src/signal-emitter.ts` — how to emit lifecycle signals
 - Existing client visualization patterns — any graph/chart components already in the codebase
 - The Relay metrics endpoint — reference for aggregate stats patterns
 - How RunHistoryPanel and ActivityFeed display status and events
 
 The /ideate research agent should investigate:
+
 - React network graph libraries (React Flow, Cytoscape.js, vis-network, Sigma.js) — evaluate for agent topology
 - Dashboard design patterns for service mesh observability (Istio dashboard, Consul UI)
 - Agent health monitoring patterns in multi-agent frameworks

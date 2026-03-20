@@ -45,11 +45,11 @@ The broadcaster's writes bypass `sendSSEEvent()` entirely — they format SSE st
 
 ## Technical Dependencies
 
-| Dependency | Notes |
-|---|---|
-| Node.js `http.ServerResponse.write()` | Returns `boolean`; `drain` event on socket |
-| `session-broadcaster.ts` | Current synchronous `res.write()` calls |
-| `stream-adapter.ts` | Reference implementation of the async drain pattern |
+| Dependency                            | Notes                                               |
+| ------------------------------------- | --------------------------------------------------- |
+| Node.js `http.ServerResponse.write()` | Returns `boolean`; `drain` event on socket          |
+| `session-broadcaster.ts`              | Current synchronous `res.write()` calls             |
+| `stream-adapter.ts`                   | Reference implementation of the async drain pattern |
 
 No new libraries. No schema changes.
 
@@ -60,6 +60,7 @@ No new libraries. No schema changes.
 ### Fix 1: Relay Subscription Writes (line 186)
 
 **Current code** (`session-broadcaster.ts:176-193`):
+
 ```typescript
 private subscribeToRelay(res: Response, clientId: string): void {
   const subject = `relay.human.console.${clientId}`;
@@ -126,6 +127,7 @@ private subscribeToRelay(res: Response, clientId: string): void {
 ### Fix 2: Sync Update Broadcasts (line 324)
 
 **Current code** (`session-broadcaster.ts:320-332`):
+
 ```typescript
 const eventData = `event: sync_update\ndata: ${JSON.stringify(event)}\n\n`;
 

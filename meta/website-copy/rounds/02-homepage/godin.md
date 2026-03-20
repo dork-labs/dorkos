@@ -7,6 +7,7 @@
 ## Section 1: Hero (Above the Fold)
 
 ### Design Direction
+
 The screen is dark. Not a gradient, not a decorative dark mode — the black of a display that hasn't turned on yet. The headline appears as if the screen is waking. Monospaced tagline below. No product screenshot. No illustration. Just language and space. The `npm install` does NOT appear here — it comes later, at peak desire. A single subtle animation: a cursor blink after the tagline, as if the system is waiting for input.
 
 ---
@@ -34,6 +35,7 @@ The screen is dark. Not a gradient, not a decorative dark mode — the black of 
 ## Section 2: The Villain — Recognition (First Scroll)
 
 ### Design Direction
+
 Four cards or panels, each one dark, each one activating as the user scrolls. Monospaced labels. Short. These should feel like terminal error messages from your own life. Minimal animation — a status indicator shifting from dim to full contrast as each one enters view. No icons. The text does the work.
 
 ---
@@ -57,6 +59,7 @@ Your laptop went to sleep. The agent went with it. Eight hours of potential, gon
 ## Section 3: The Pivot
 
 ### Design Direction
+
 A single line, centered, with maximum whitespace above and below. This is the fulcrum of the entire page. It earns its weight because the reader just felt four specific pains. Typeset larger than body copy, smaller than the hero headline. Clean serif or monospaced — set apart from everything around it. It should feel like a quiet, certain observation. Not a shout. A realization.
 
 ---
@@ -68,6 +71,7 @@ We solved this for applications fifty years ago. We called it an operating syste
 ## Section 4: The Product — Timeline Narrative
 
 ### Design Direction
+
 A vertical timeline, dark background. Each timestamp is monospaced, left-aligned. The description flows to the right. As the user scrolls, each moment activates — a status indicator shifting from `idle` to `active` to `complete`. The feeling: watching a system operate in real time. The palette shifts subtly from the muted tones of the villain section toward higher contrast. The system is waking up.
 
 ---
@@ -109,26 +113,28 @@ This is not a demo. This is Tuesday.
 ## Section 5: Module Reference
 
 ### Design Direction
+
 A compact, clean table. Monospaced module names. Two columns: what's broken, what fixes it. Activates after the timeline, for the reader who needs to map capabilities quickly. This is for the architect brain — the person who just felt the story and now wants the schematic. Keep it tight. No marketing copy in the table itself.
 
 ---
 
 **Section label (small, monospaced):** `// subsystems`
 
-| The gap | The fix | |
-|---|---|---|
-| No schedule — agents only run when you're watching | Cron-based autonomous execution. Agents run on their own clock. | **Pulse** |
-| No communication — agents can't reach you or each other | Built-in messaging. Telegram, webhooks, inter-agent channels. | **Relay** |
-| No colleagues — agents work in isolation | Agent discovery and coordination across projects. | **Mesh** |
-| No oversight — you're switching between fifteen terminals | Browser-based command center. Every session, one place. | **Console** |
-| No improvement loop — no signal, no learning | Signal detection, hypothesis, dispatch, measurement. | **Loop** |
-| No memory — every session starts from zero | Persistent context across all sessions. | **Wing** `coming soon` |
+| The gap                                                   | The fix                                                         |                        |
+| --------------------------------------------------------- | --------------------------------------------------------------- | ---------------------- |
+| No schedule — agents only run when you're watching        | Cron-based autonomous execution. Agents run on their own clock. | **Pulse**              |
+| No communication — agents can't reach you or each other   | Built-in messaging. Telegram, webhooks, inter-agent channels.   | **Relay**              |
+| No colleagues — agents work in isolation                  | Agent discovery and coordination across projects.               | **Mesh**               |
+| No oversight — you're switching between fifteen terminals | Browser-based command center. Every session, one place.         | **Console**            |
+| No improvement loop — no signal, no learning              | Signal detection, hypothesis, dispatch, measurement.            | **Loop**               |
+| No memory — every session starts from zero                | Persistent context across all sessions.                         | **Wing** `coming soon` |
 
 ---
 
 ## Section 6: The Install Moment
 
 ### Design Direction
+
 This is the most important moment on the page. Full-width. Dark. A single terminal prompt, monospaced, high contrast, generous whitespace on all sides. This is not a button. It is a command. It has the gravity of something you type deliberately, not something you click casually. Below it, two lines in a smaller weight. Copy-to-clipboard interaction on hover. The spacing above this section should be the largest on the page — a breath before the action.
 
 ---
@@ -146,6 +152,7 @@ Open source. Self-hosted. Yours.
 ## Section 7: The Identity Close
 
 ### Design Direction
+
 The tone shifts here. Warmer. The system boot aesthetic softens. This is not a footer — it's the last thing you read before you decide. The background stays dark but the typography loosens slightly. A monospaced label, then human prose. If there is ever a photo on this page, it goes here — but it's optional. What matters is that this section feels like meeting the person behind the tool. Brief. Factual. Present without demanding attention.
 
 ---
@@ -169,19 +176,21 @@ It's open source because the best infrastructure is shared infrastructure. It's 
 ## Section 8: Social Proof Placeholder
 
 ### Design Direction
+
 Design this section but leave it empty until launch. A row of quote cards, dimmed, with a subtle `// awaiting signal` label. When real testimonials arrive, they should be formatted as confessions — short, raw, first-person. Not "DorkOS is great." More like "I shipped three features before breakfast and wrote zero code." The section heading should be something like `// field reports` — not "What our customers say."
 
 ---
 
 **Section label (small, monospaced):** `// field reports`
 
-*[Placeholder — populated post-launch with real developer testimonials. Format: short first-person statements. No attribution needed beyond a handle.]*
+_[Placeholder — populated post-launch with real developer testimonials. Format: short first-person statements. No attribution needed beyond a handle.]_
 
 ---
 
 ## Section 9: Persistent Footer
 
 ### Design Direction
+
 Minimal. Dark. Three columns max. The tagline lives here as a quiet anchor. Links to GitHub, docs, npm. No newsletter signup — this audience doesn't want email, they want a repo. The footer should feel like the last line of a terminal session — clean, done, nothing wasted.
 
 ---

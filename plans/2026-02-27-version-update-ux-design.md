@@ -28,22 +28,24 @@ Full research at `research/20260227_update_notification_ux_patterns.md`. Key fin
 
 Compare `major.minor` (not just patch) to classify updates:
 
-| Update Type | Condition | Example |
-|---|---|---|
-| Patch | Only patch version changed | 0.4.0 -> 0.4.1 |
-| Feature | Major or minor version changed | 0.4.0 -> 0.5.0, 0.x -> 1.0 |
+| Update Type | Condition                      | Example                    |
+| ----------- | ------------------------------ | -------------------------- |
+| Patch       | Only patch version changed     | 0.4.0 -> 0.4.1             |
+| Feature     | Major or minor version changed | 0.4.0 -> 0.5.0, 0.x -> 1.0 |
 
 ### Layer 1: Status Bar Indicator
 
 **No update:** `v0.4.0` in `text-muted-foreground`, `cursor-default`.
 
 **Patch update:**
+
 - Text changes to `v0.4.1 available` in `text-muted-foreground` (stays muted)
 - Small amber dot (4px) appears to the left
 - Dot fades in (opacity 0->1, 200ms ease-out), then static
 - `cursor-pointer` to indicate clickability
 
 **Feature update:**
+
 - Text changes to `Upgrade available` in `text-amber-600 dark:text-amber-400`
 - Amber dot appears, then **pulses once** (scale 1->1.4->1, 600ms ease-out), settles to static
 - Version text uses `AnimatePresence` crossfade transition
@@ -75,6 +77,7 @@ Click the indicator to open a `Popover` (from `shared/ui/`) above the status bar
 **Exit:** Opacity 1->0, 100ms ease-in.
 
 **Copy command interaction:**
+
 - Click the code block or clipboard icon -> copies `npm update -g dorkos` to clipboard
 - Clipboard icon morphs to checkmark with crossfade
 - Checkmark persists for 2 seconds, then morphs back
@@ -101,10 +104,10 @@ No server changes. Current flow:
 
 ## Components Changed
 
-| File | Change |
-|---|---|
-| `VersionItem.tsx` | Rewrite: Popover, two-tier indicator, animations, copy-to-clipboard |
-| `VersionItem.test.tsx` | Update tests for new behavior |
+| File                   | Change                                                              |
+| ---------------------- | ------------------------------------------------------------------- |
+| `VersionItem.tsx`      | Rewrite: Popover, two-tier indicator, animations, copy-to-clipboard |
+| `VersionItem.test.tsx` | Update tests for new behavior                                       |
 
 ## Components NOT Changed
 
@@ -117,15 +120,15 @@ No server changes. Current flow:
 
 ## Animation Spec
 
-| Animation | Duration | Easing | Trigger |
-|---|---|---|---|
-| Dot fade-in (patch) | 200ms | ease-out | Update detected |
-| Dot pulse (feature) | 600ms | ease-out | Update detected, one-time |
-| Text crossfade | 150ms | ease-out | Update detected |
-| Popover entrance | 150ms | ease-out | Click indicator |
-| Popover exit | 100ms | ease-in | Click outside |
-| Clipboard -> checkmark | 150ms | crossfade | Click copy |
-| Checkmark -> clipboard | 150ms | crossfade | After 2s timeout |
+| Animation              | Duration | Easing    | Trigger                   |
+| ---------------------- | -------- | --------- | ------------------------- |
+| Dot fade-in (patch)    | 200ms    | ease-out  | Update detected           |
+| Dot pulse (feature)    | 600ms    | ease-out  | Update detected, one-time |
+| Text crossfade         | 150ms    | ease-out  | Update detected           |
+| Popover entrance       | 150ms    | ease-out  | Click indicator           |
+| Popover exit           | 100ms    | ease-in   | Click outside             |
+| Clipboard -> checkmark | 150ms    | crossfade | Click copy                |
+| Checkmark -> clipboard | 150ms    | crossfade | After 2s timeout          |
 
 All animations respect `prefers-reduced-motion` via `<MotionConfig reducedMotion="user">` (already set in `App.tsx`).
 

@@ -1,9 +1,20 @@
 ---
-title: "StatusLine Compound Component Patterns"
+title: 'StatusLine Compound Component Patterns'
 date: 2026-03-10
 type: implementation
 status: active
-tags: [react, compound-components, animation, framer-motion, motion, statusline, toolbar, separator, typescript]
+tags:
+  [
+    react,
+    compound-components,
+    animation,
+    framer-motion,
+    motion,
+    statusline,
+    toolbar,
+    separator,
+    typescript,
+  ]
 feature_slug: statusline-compound-component
 searches_performed: 10
 sources_count: 18
@@ -23,9 +34,9 @@ The React compound component pattern using Context API is the correct approach f
 
 **React.Children APIs are in maintenance mode** and have two critical limitations for this use case:
 
-- `React.Children.toArray` cannot detect components that *return* null — it only filters JSX `null`/`undefined`/`Boolean` literals. A `<StatusLine.Item visible={false}>` that internally returns null is invisible to the array.
+- `React.Children.toArray` cannot detect components that _return_ null — it only filters JSX `null`/`undefined`/`Boolean` literals. A `<StatusLine.Item visible={false}>` that internally returns null is invisible to the array.
 - `React.Children.map` does not traverse Fragments, so wrapping items in a Fragment for grouping breaks the pattern.
-- Neither approach works with `AnimatePresence` because `AnimatePresence` needs items to actually *unmount* from the tree to fire exit animations, but `React.Children` inspection happens at the JSX level before rendering.
+- Neither approach works with `AnimatePresence` because `AnimatePresence` needs items to actually _unmount_ from the tree to fire exit animations, but `React.Children` inspection happens at the JSX level before rendering.
 
 **The Context API approach is universally recommended** by the React team and community for compound components. It avoids these limitations by letting each child register itself.
 
@@ -33,14 +44,14 @@ The React compound component pattern using Context API is the correct approach f
 
 **Architecture A — Visibility via `visible` prop + imperative registration (recommended)**
 
-Each `StatusLine.Item` calls `useLayoutEffect` to register/unregister itself with the root context. The root maintains an ordered registry `Map<key, boolean>` and uses it to render separators between *visible* items. Items themselves render unconditionally (always mounted), and a `visible` prop controls whether the item fires an exit animation or renders nothing.
+Each `StatusLine.Item` calls `useLayoutEffect` to register/unregister itself with the root context. The root maintains an ordered registry `Map<key, boolean>` and uses it to render separators between _visible_ items. Items themselves render unconditionally (always mounted), and a `visible` prop controls whether the item fires an exit animation or renders nothing.
 
 ```tsx
 // Root holds the registry
 interface StatusLineContextValue {
   registerItem: (key: string, order: number) => void;
   unregisterItem: (key: string) => void;
-  visibleKeys: string[];  // ordered list of currently-visible item keys
+  visibleKeys: string[]; // ordered list of currently-visible item keys
 }
 
 // Item self-registers and signals visibility to context
@@ -62,7 +73,7 @@ The root receives children as before but exposes a `<StatusLine.Item>` wrapper t
 
 ### 3. AnimatePresence + Compound Components
 
-**Critical requirement:** `AnimatePresence` only animates items that *unmount from the React tree*. If an item is always mounted (even when invisible), AnimatePresence cannot fire exit animations for it.
+**Critical requirement:** `AnimatePresence` only animates items that _unmount from the React tree_. If an item is always mounted (even when invisible), AnimatePresence cannot fire exit animations for it.
 
 **Two placement strategies for `AnimatePresence`:**
 
@@ -87,6 +98,7 @@ Items render `null` when `visible={false}`, so they actually unmount. The root's
 **The winner is Strategy 2** — items unmount when invisible. The `Item` component simply renders `null` when `visible={false}`, and the root `AnimatePresence` handles the animation. This is exactly how the current code works; the refactor just moves the `if (show) entries.push(...)` logic into each `Item` component.
 
 **`mode="popLayout"` requirements:**
+
 - The exiting element is removed from document flow immediately while its exit animation plays
 - Surrounding items animate smoothly to their new positions via `layout` prop
 - **Requirement:** Custom components that are direct children of `AnimatePresence` with `mode="popLayout"` must forward refs to a DOM element. If `StatusLine.Item` renders a `motion.div` directly, this is handled automatically. If it renders a custom component, `forwardRef` is needed.
@@ -101,7 +113,7 @@ This is the trickiest part of the refactor. The current code uses index position
 ```css
 /* Between visible items using CSS */
 .status-item + .status-item::before {
-  content: "·";
+  content: '·';
   /* or use gap + border-left */
 }
 ```
@@ -126,7 +138,7 @@ The separator is a sibling inside the same animated wrapper as the item content:
 </motion.div>
 ```
 
-The separator attaches to the *left* of each item (except the first). When an item exits, its separator exits with it. The root needs to know which items are visible to compute `showSeparator = index > 0`. This is the registration pattern's payoff — the root knows the ordered visible list.
+The separator attaches to the _left_ of each item (except the first). When an item exits, its separator exits with it. The root needs to know which items are visible to compute `showSeparator = index > 0`. This is the registration pattern's payoff — the root knows the ordered visible list.
 
 **Approach C — Separator as a separate animated child (current pattern, problematic with compound components):**
 
@@ -147,7 +159,7 @@ interface StatusLineContextValue {
 
 Each `StatusLine.Item` accepts its own `visible` prop. The root does not need to know about individual item states — items self-manage by unmounting when `visible={false}`.
 
-The *separator computation* happens at the root level via the registration pattern. A lightweight secondary mechanism:
+The _separator computation_ happens at the root level via the registration pattern. A lightweight secondary mechanism:
 
 ```typescript
 // Registration context (separate from animation context for performance)
@@ -178,7 +190,8 @@ The compound component API **naturally supports plugin items** because consumers
 **Priority/ordering:** The `order` prop on each `Item` determines separator position. The root sorts the registered visible items by `order` before rendering. This gives plugins a stable insertion point without modifying core code.
 
 **Registration vs composition:** Composition (just pass children) is simpler and more idiomatic React. Registration (items call an API to insert themselves) is necessary only when:
-- Items need to be inserted from *outside* the render tree (e.g., portals, separate React roots)
+
+- Items need to be inserted from _outside_ the render tree (e.g., portals, separate React roots)
 - Items need to appear in a different DOM position than they're declared
 
 For DorkOS's StatusLine, **composition is correct**. Plugin items are simply declared as siblings in JSX. No registration API needed at the app level.
@@ -262,6 +275,7 @@ Each `StatusLine.Item` calls `notifyVisible(key, visible)` in a `useEffect` when
 **The separator solution** with this pattern: use CSS `gap` on the flex container plus a `·` separator rendered via a utility class or CSS `::before` on items after the first. This avoids needing index information entirely.
 
 Alternatively, each `Item` renders its separator internally:
+
 ```tsx
 function Item({ itemKey, visible, showSeparator, children }) {
   // showSeparator is passed by the parent caller (knows the order)
@@ -312,6 +326,7 @@ Method 1 is what Shadcn/ui uses internally and is the community standard.
 Given the 184-line current `StatusLine.tsx`, a compound component refactor will add ~50-80 lines (context, Item component, registration logic). This pushes the file toward the 300-line caution threshold.
 
 **Recommendation:** Split into:
+
 - `StatusLine.tsx` — root component + compound API assembly + context
 - `StatusLineItem.tsx` — `StatusLine.Item` implementation
 - Keep all item components (`CwdItem`, `ModelItem`, etc.) in their own files as-is
@@ -323,6 +338,7 @@ Given the 184-line current `StatusLine.tsx`, a compound component refactor will 
 ### Potential Solutions
 
 **1. Declarative Composition + CSS Separator (Recommended)**
+
 - `StatusLine` provides `AnimatePresence` context and a lightweight registration for `hasVisibleChildren`
 - `StatusLine.Item` accepts `visible` prop; when `false`, returns `null` (unmounts for AnimatePresence)
 - Separator is a CSS `::before` pseudo-element on `[data-separator]` items after index 0
@@ -333,6 +349,7 @@ Given the 184-line current `StatusLine.tsx`, a compound component refactor will 
 - Maintenance: Very low
 
 **2. Declarative Composition + Registration Context + Separator in Item**
+
 - Full registration context: each Item registers key + order + visibility
 - Root derives ordered visible list and passes `showSeparator` via context (keyed by item key)
 - Item reads `showSeparator` from context and renders `<Separator />` if true
@@ -342,6 +359,7 @@ Given the 184-line current `StatusLine.tsx`, a compound component refactor will 
 - Maintenance: Medium
 
 **3. Keep Entries Array, Wrap in StatusLine.Item (Facade Pattern)**
+
 - `StatusLine.Item` is a pure marker component that renders its children
 - `StatusLine` root walks `React.Children.toArray(children)`, finds all `StatusLine.Item` elements, checks their `visible` prop, and builds the entries array
 - Preserves the current imperative logic behind a declarative API
@@ -355,6 +373,7 @@ Given the 184-line current `StatusLine.tsx`, a compound component refactor will 
 **Recommendation: Approach B (separator inside the `motion.div` wrapper)** combined with registration context visibility tracking.
 
 Each `StatusLine.Item` renders:
+
 ```tsx
 <motion.div key={itemKey} layout initial={...} animate={...} exit={...} transition={itemTransition}>
   {!isFirstVisible && <Separator />}
@@ -390,7 +409,7 @@ Each `StatusLine.Item` that is `visible` renders a `motion.div` with `layout` pr
     <CwdItem cwd={cwd} />
   </StatusLine.Item>
   {/* Plugin slot — just declare it */}
-  <PluginStatusItems sessionId={id} />  {/* renders more StatusLine.Items */}
+  <PluginStatusItems sessionId={id} /> {/* renders more StatusLine.Items */}
 </StatusLine>
 ```
 
@@ -401,6 +420,7 @@ The composition model is flexible enough to support this without any registratio
 **Recommended Approach: Solution 1 — Declarative Composition + CSS Separator**
 
 **Rationale:**
+
 - Preserves all existing animation behavior (`AnimatePresence`, `mode="popLayout"`, `layout` prop, item transition config)
 - Declarative API is clearly better ergonomics than the current imperative array
 - CSS separator eliminates the need for a full registration context, keeping the context minimal (just `itemTransition`)
@@ -409,6 +429,7 @@ The composition model is flexible enough to support this without any registratio
 - Matches what Radix UI, Headless UI, and Shadcn/ui all do: thin context, declarative children, CSS for visual separators
 
 **Caveats:**
+
 - The CSS separator `::before` approach requires care in Tailwind v4 — test that the arbitrary variant `[&>*:not(:first-child)]:before:content-['·']` works correctly with the flex layout. An alternative is a `data-separator` attribute on the `motion.div` inside each Item and a global CSS rule.
 - `hasVisibleChildren` still requires a lightweight registration effect (one `useEffect` per Item). This is a minor render cycle but acceptable at ~9 items.
 - If future requirements include animated separators (fade in/out), migration to Solution 2 is straightforward from Solution 1 — the context shape just needs `visibleKeys` added.

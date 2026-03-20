@@ -30,6 +30,7 @@ BindingRouter.handleInbound() republishes to `relay.agent.{sessionId}` with the 
 **Files:** `packages/relay/src/adapters/slack/outbound.ts`
 
 Three-part fix:
+
 - **3a:** Harden `resolveThreadTs` with emptiness guards (`&& pd.threadTs`, `&& pd.ts`)
 - **3b:** Add synthetic fallback `effectiveThreadTs = threadTs ?? envelope.id` for programmatic messages without `platformData`
 - **3c:** Add `streamId: string` (via `randomUUID()`) to `ActiveStream` interface for race detection
@@ -93,6 +94,7 @@ Add a `streaming` configField of type `boolean` to `SLACK_MANIFEST.configFields`
 **Files:** `packages/relay/src/adapters/slack/outbound.ts`, `packages/relay/src/adapters/slack/slack-adapter.ts`
 
 Thread `streaming` config through `SlackDeliverOptions`. When `streaming === false`:
+
 - `text_delta`: Accumulate text in `streamState` with `messageTs: ''` (no Slack API calls)
 - `done`: Send accumulated text via `chat.postMessage` (detect buffered mode by empty `messageTs`)
 - `error`: Send accumulated text + error suffix via `chat.postMessage`
@@ -110,6 +112,7 @@ Thread `streaming` config through `SlackDeliverOptions`. When `streaming === fal
 **Files:** `packages/shared/src/relay-adapter-schemas.ts`, `packages/relay/src/adapters/slack/slack-adapter.ts`, `packages/relay/src/adapters/slack/outbound.ts`
 
 Full implementation:
+
 1. Add `typingIndicator: z.enum(['none', 'reaction']).default('none')` to schema
 2. Add `reactions:write` to `SLACK_APP_MANIFEST_YAML` bot scopes
 3. Add `typingIndicator` configField to manifest

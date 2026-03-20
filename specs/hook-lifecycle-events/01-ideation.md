@@ -86,10 +86,10 @@ Research report: `research/20260316_hook_lifecycle_events_ui_patterns.md`
 
 **SDK Hook Message Shapes (from `sdk.d.ts`):**
 
-| Message | Key Fields |
-|---------|-----------|
-| `hook_started` | `hook_id`, `hook_name`, `hook_event`, `session_id` |
-| `hook_progress` | `hook_id`, `hook_name`, `hook_event`, `stdout`, `stderr`, `output` |
+| Message         | Key Fields                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `hook_started`  | `hook_id`, `hook_name`, `hook_event`, `session_id`                                                                 |
+| `hook_progress` | `hook_id`, `hook_name`, `hook_event`, `stdout`, `stderr`, `output`                                                 |
 | `hook_response` | `hook_id`, `hook_name`, `hook_event`, `stdout`, `stderr`, `exit_code?`, `outcome: 'success'\|'error'\|'cancelled'` |
 
 **Hook Events (from SDK `HookEvent` type):**
@@ -125,8 +125,8 @@ Research report: `research/20260316_hook_lifecycle_events_ui_patterns.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How should tool-contextual hooks render? | Sub-rows inside ToolCallCard | Clear causal relationship between hook and tool. Extends existing component. Follows GitHub Actions sub-step pattern. No new top-level component needed. |
-| 2 | How should session-level hooks render? | SystemStatusZone with error escalation | Success hooks are ephemeral (uninteresting). Failed session hooks escalate to persistent error banner via existing `error` event type. Reuses both existing surfaces. |
-| 3 | Should successful hooks auto-hide independently? | Hide with parent card | When ToolCallCard auto-collapses, hook rows go with it. Failed hooks force the card to stay expanded. Simplest approach — hooks are visual children of the tool card. |
+| #   | Decision                                         | Choice                                 | Rationale                                                                                                                                                             |
+| --- | ------------------------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | How should tool-contextual hooks render?         | Sub-rows inside ToolCallCard           | Clear causal relationship between hook and tool. Extends existing component. Follows GitHub Actions sub-step pattern. No new top-level component needed.              |
+| 2   | How should session-level hooks render?           | SystemStatusZone with error escalation | Success hooks are ephemeral (uninteresting). Failed session hooks escalate to persistent error banner via existing `error` event type. Reuses both existing surfaces. |
+| 3   | Should successful hooks auto-hide independently? | Hide with parent card                  | When ToolCallCard auto-collapses, hook rows go with it. Failed hooks force the card to stay expanded. Simplest approach — hooks are visual children of the tool card. |

@@ -62,10 +62,10 @@ The AI orchestration layer addresses a second problem: traditional E2E test suit
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@playwright/test` | `^1.51.0` | Playwright Test runner, fixtures, assertions |
-| `@dorkos/typescript-config` | `*` | Shared tsconfig preset (devDep) |
+| Dependency                  | Version   | Purpose                                      |
+| --------------------------- | --------- | -------------------------------------------- |
+| `@playwright/test`          | `^1.51.0` | Playwright Test runner, fixtures, assertions |
+| `@dorkos/typescript-config` | `*`       | Shared tsconfig preset (devDep)              |
 
 No additional runtime dependencies. Playwright browsers are installed via `npx playwright install chromium`.
 
@@ -162,6 +162,7 @@ export default defineConfig({
 ```
 
 Key decisions:
+
 - **`reuseExistingServer: !CI`** — reuses running dev servers locally (instant startup), spawns fresh in CI
 - **`cache: false`** in turbo.json — browser tests have external side effects, caching produces false positives
 - **No `globalSetup`** — webServer URL polling handles readiness; no auth/DB seeding needed
@@ -258,9 +259,12 @@ export class ChatPage {
 
   async waitForResponse(timeoutMs = 60_000) {
     // Wait for inference indicator to appear then disappear (streaming complete)
-    await this.page.locator('[data-testid="inference-indicator"]')
-      .waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-    await this.page.locator('[data-testid="inference-indicator"]')
+    await this.page
+      .locator('[data-testid="inference-indicator"]')
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .catch(() => {});
+    await this.page
+      .locator('[data-testid="inference-indicator"]')
       .waitFor({ state: 'hidden', timeout: timeoutMs });
   }
 
@@ -382,8 +386,9 @@ test.describe('Chat — Send Message @integration', () => {
     await chatPage.sendMessage('Count from 1 to 5');
 
     // Inference indicator should appear during streaming
-    await expect(chatPage.page.locator('[data-testid="inference-indicator"]'))
-      .toBeVisible({ timeout: 10_000 });
+    await expect(chatPage.page.locator('[data-testid="inference-indicator"]')).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 ```
@@ -439,26 +444,24 @@ test.describe('Settings — Dialog @smoke', () => {
 
 The following `data-testid` attributes need to be added to client components for stable E2E selectors. These are the minimum set for the seed tests:
 
-| Component | File | Attribute |
-|---|---|---|
-| App shell wrapper | `App.tsx` | `data-testid="app-shell"` |
-| Chat panel | `ChatPanel.tsx` | `data-testid="chat-panel"` |
-| Message list | `MessageList.tsx` | `data-testid="message-list"` |
-| Message item | `MessageItem.tsx` | `data-testid="message-item"` + `data-role="user\|assistant"` |
-| Session sidebar | `SessionSidebar.tsx` | `data-testid="session-sidebar"` |
-| Session list | `SessionSidebar.tsx` | `data-testid="session-list"` |
-| Session item | `SessionItem.tsx` | `data-testid="session-item"` |
-| Status line | `StatusLine.tsx` | `data-testid="status-line"` |
-| Settings dialog | `SettingsDialog.tsx` | `data-testid="settings-dialog"` |
+| Component           | File                     | Attribute                                                                                       |
+| ------------------- | ------------------------ | ----------------------------------------------------------------------------------------------- |
+| App shell wrapper   | `App.tsx`                | `data-testid="app-shell"`                                                                       |
+| Chat panel          | `ChatPanel.tsx`          | `data-testid="chat-panel"`                                                                      |
+| Message list        | `MessageList.tsx`        | `data-testid="message-list"`                                                                    |
+| Message item        | `MessageItem.tsx`        | `data-testid="message-item"` + `data-role="user\|assistant"`                                    |
+| Session sidebar     | `SessionSidebar.tsx`     | `data-testid="session-sidebar"`                                                                 |
+| Session list        | `SessionSidebar.tsx`     | `data-testid="session-list"`                                                                    |
+| Session item        | `SessionItem.tsx`        | `data-testid="session-item"`                                                                    |
+| Status line         | `StatusLine.tsx`         | `data-testid="status-line"`                                                                     |
+| Settings dialog     | `SettingsDialog.tsx`     | `data-testid="settings-dialog"`                                                                 |
 | Inference indicator | `InferenceIndicator.tsx` | Already exists: `data-testid="inference-indicator-streaming"` (rename to `inference-indicator`) |
 
 ### 6.6 Custom Manifest Reporter
 
 ```typescript
 // reporters/manifest-reporter.ts
-import type {
-  Reporter, TestCase, TestResult, FullResult, Suite,
-} from '@playwright/test/reporter';
+import type { Reporter, TestCase, TestResult, FullResult, Suite } from '@playwright/test/reporter';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -507,10 +510,7 @@ class ManifestReporter implements Reporter {
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
-    const relativeFile = path.relative(
-      path.resolve(__dirname, '..', 'tests'),
-      test.location.file,
-    );
+    const relativeFile = path.relative(path.resolve(__dirname, '..', 'tests'), test.location.file);
     const feature = relativeFile.split(path.sep)[0] || 'unknown';
     const testKey = path.basename(test.location.file, '.spec.ts');
 
@@ -550,9 +550,9 @@ class ManifestReporter implements Reporter {
       id: runId,
       timestamp: now.toISOString(),
       total: this.runResults.length,
-      passed: this.runResults.filter(r => r.status === 'passed').length,
-      failed: this.runResults.filter(r => r.status === 'failed').length,
-      skipped: this.runResults.filter(r => r.status === 'skipped').length,
+      passed: this.runResults.filter((r) => r.status === 'passed').length,
+      failed: this.runResults.filter((r) => r.status === 'failed').length,
+      skipped: this.runResults.filter((r) => r.status === 'skipped').length,
       duration: Date.now() - this.startTime,
     });
     if (this.manifest.runHistory.length > 100) {
@@ -618,17 +618,18 @@ category: testing
 
 **Smart routing logic:**
 
-| Usage | Behavior |
-|---|---|
-| `/browsertest run` | Run entire suite: `npx playwright test` |
-| `/browsertest run chat` | Run feature subset: `npx playwright test tests/chat/` |
-| `/browsertest chat messaging` | Find matching test in manifest OR create new one |
-| `/browsertest debug chat-messaging` | Diagnose failing test with Playwright MCP |
-| `/browsertest maintain` | Delegates to `/browsertest:maintain` |
-| `/browsertest report` | Show health dashboard from manifest.json |
-| `/browsertest create chat file-upload` | Explicitly create a new test |
+| Usage                                  | Behavior                                              |
+| -------------------------------------- | ----------------------------------------------------- |
+| `/browsertest run`                     | Run entire suite: `npx playwright test`               |
+| `/browsertest run chat`                | Run feature subset: `npx playwright test tests/chat/` |
+| `/browsertest chat messaging`          | Find matching test in manifest OR create new one      |
+| `/browsertest debug chat-messaging`    | Diagnose failing test with Playwright MCP             |
+| `/browsertest maintain`                | Delegates to `/browsertest:maintain`                  |
+| `/browsertest report`                  | Show health dashboard from manifest.json              |
+| `/browsertest create chat file-upload` | Explicitly create a new test                          |
 
 **Test creation flow:**
+
 1. Use Playwright MCP to navigate to the feature in the running app
 2. Capture accessibility snapshots to identify key elements and selectors
 3. Generate `.spec.ts` file with appropriate POM usage
@@ -636,6 +637,7 @@ category: testing
 5. Update manifest.json with test metadata
 
 **Debug flow:**
+
 1. Run the failing test with `--reporter=json` to capture error details
 2. Use Playwright MCP to navigate to the failing page
 3. Capture current accessibility tree
@@ -657,6 +659,7 @@ category: testing
 ```
 
 **Maintenance flow:**
+
 1. Read `apps/e2e/manifest.json`
 2. For each test entry:
    - Check if the spec file still exists
@@ -684,6 +687,7 @@ description: Methodology for writing and maintaining DorkOS browser tests
 ```
 
 Teaches:
+
 - When to write a browser test vs unit test (cross-component flows, SSE streaming, real API calls)
 - Page Object Model patterns for DorkOS (fixture-based, locator-first)
 - Selector strategy (prefer `getByRole` > `data-testid` > CSS class)

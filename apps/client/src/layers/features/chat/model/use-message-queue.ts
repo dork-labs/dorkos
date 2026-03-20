@@ -59,9 +59,7 @@ export function useMessageQueue({
     if (prevStatusRef.current === 'streaming' && status === 'idle') {
       if (queue.length > 0 && !sessionBusy) {
         // Skip the item being edited; flush the first non-editing item
-        const firstNonEditing = editingIndex === 0
-          ? queue.length > 1 ? 1 : null
-          : 0;
+        const firstNonEditing = editingIndex === 0 ? (queue.length > 1 ? 1 : null) : 0;
 
         if (firstNonEditing !== null) {
           const item = queue[firstNonEditing];
@@ -88,29 +86,21 @@ export function useMessageQueue({
 
   const addToQueue = useCallback((content: string) => {
     if (!content.trim()) return;
-    setQueue((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), content, createdAt: Date.now() },
-    ]);
+    setQueue((prev) => [...prev, { id: crypto.randomUUID(), content, createdAt: Date.now() }]);
   }, []);
 
   const updateQueueItem = useCallback((index: number, content: string) => {
-    setQueue((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, content } : item))
-    );
+    setQueue((prev) => prev.map((item, i) => (i === index ? { ...item, content } : item)));
   }, []);
 
-  const removeFromQueue = useCallback(
-    (index: number) => {
-      setQueue((prev) => prev.filter((_, i) => i !== index));
-      setEditingIndex((prev) => {
-        if (prev === index) return null;
-        if (prev !== null && prev > index) return prev - 1;
-        return prev;
-      });
-    },
-    []
-  );
+  const removeFromQueue = useCallback((index: number) => {
+    setQueue((prev) => prev.filter((_, i) => i !== index));
+    setEditingIndex((prev) => {
+      if (prev === index) return null;
+      if (prev !== null && prev > index) return prev - 1;
+      return prev;
+    });
+  }, []);
 
   const startEditing = useCallback(
     (index: number): string => {

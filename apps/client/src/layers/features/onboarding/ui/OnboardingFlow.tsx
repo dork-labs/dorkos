@@ -86,11 +86,7 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
 
   // Auto-skip Pulse step when no agents are registered
   useEffect(() => {
-    if (
-      currentStep === 1 &&
-      !agentPaths.isLoading &&
-      agentPaths.data?.agents.length === 0
-    ) {
+    if (currentStep === 1 && !agentPaths.isLoading && agentPaths.data?.agents.length === 0) {
       completeStep('pulse');
       goNext();
     }
@@ -99,7 +95,7 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
   // Show the completion screen
   if (showComplete) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+      <div className="bg-background fixed inset-0 z-50 flex items-center justify-center">
         <OnboardingComplete onComplete={onComplete} />
       </div>
     );
@@ -108,7 +104,7 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
   // Welcome screen (step -1)
   if (currentStep === -1) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
+      <div className="bg-background fixed inset-0 z-50 flex items-center justify-center">
         <WelcomeStep onGetStarted={handleWelcomeStart} onSkip={handleSkipAll} />
       </div>
     );
@@ -138,7 +134,7 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
       };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="bg-background fixed inset-0 z-50 flex flex-col">
       {/* Unified navigation bar — Back, step dots, Skip/Skip all */}
       <div className="flex items-center justify-between px-4 py-3 sm:px-6">
         <Button variant="ghost" size="sm" onClick={goBack} className="min-w-16">
@@ -151,15 +147,15 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
               {i === currentStep ? (
                 <motion.div
                   layoutId="step-indicator"
-                  className="flex h-2 w-6 items-center justify-center rounded-full bg-primary"
+                  className="bg-primary flex h-2 w-6 items-center justify-center rounded-full"
                   transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 />
               ) : i < currentStep ? (
-                <div className="flex size-2 items-center justify-center rounded-full bg-primary/60">
-                  <Check className="size-1.5 text-primary-foreground" />
+                <div className="bg-primary/60 flex size-2 items-center justify-center rounded-full">
+                  <Check className="text-primary-foreground size-1.5" />
                 </div>
               ) : (
-                <div className={cn('size-2 rounded-full ring-1 ring-muted-foreground/30')} />
+                <div className={cn('ring-muted-foreground/30 size-2 rounded-full ring-1')} />
               )}
             </div>
           ))}
@@ -169,7 +165,12 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
           <Button variant="ghost" size="sm" onClick={handleSkip}>
             Skip
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleSkipAll} className="text-muted-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSkipAll}
+            className="text-muted-foreground"
+          >
             Skip all
           </Button>
         </div>
@@ -194,9 +195,7 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
             className="absolute inset-0 flex flex-col"
           >
             <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-4 py-4 sm:px-6">
-              {currentStep === 0 && (
-                <AgentDiscoveryStep onStepComplete={handleStepComplete} />
-              )}
+              {currentStep === 0 && <AgentDiscoveryStep onStepComplete={handleStepComplete} />}
               {currentStep === 1 && (
                 <PulsePresetsStep
                   onStepComplete={handleStepComplete}

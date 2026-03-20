@@ -75,7 +75,7 @@ describe('readManifest / writeManifest', () => {
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
       JSON.stringify({ name: 'incomplete' }),
-      'utf-8',
+      'utf-8'
     );
 
     const result = await readManifest(projectDir);

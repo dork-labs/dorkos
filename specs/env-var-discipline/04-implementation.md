@@ -96,9 +96,14 @@ These generate 10 `no-restricted-syntax` warnings. All are intentional and docum
 ### Session 1
 
 **boolFlag pattern confirmed working:**
+
 ```ts
-const boolFlag = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const boolFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
 ```
+
 Feature flags are now `boolean` type throughout. All `=== 'true'` string comparisons eliminated.
 
 **NodeNext `.js` extension:** All relative imports from env.ts use `'./env.js'` extension as required by NodeNext module resolution.

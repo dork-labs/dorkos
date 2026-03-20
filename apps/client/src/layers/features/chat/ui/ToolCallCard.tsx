@@ -18,7 +18,11 @@ interface TruncatedOutputProps {
 }
 
 /** Renders text content with character-based truncation and a one-way expand button. */
-function TruncatedOutput({ content, threshold = TRUNCATE_THRESHOLD, className }: TruncatedOutputProps) {
+function TruncatedOutput({
+  content,
+  threshold = TRUNCATE_THRESHOLD,
+  className,
+}: TruncatedOutputProps) {
   const [showFull, setShowFull] = useState(false);
   const isTruncated = content.length > threshold;
   const displayContent = isTruncated && !showFull ? content.slice(0, threshold) : content;
@@ -45,10 +49,10 @@ interface HookRowProps {
 
 /** Status icon map for hook execution states. */
 const hookStatusIcon = {
-  running: <Loader2 className="size-(--size-icon-xs) animate-spin text-muted-foreground" />,
-  success: <Check className="size-(--size-icon-xs) text-muted-foreground" />,
-  error: <X className="size-(--size-icon-xs) text-destructive" />,
-  cancelled: <X className="size-(--size-icon-xs) text-muted-foreground" />,
+  running: <Loader2 className="text-muted-foreground size-(--size-icon-xs) animate-spin" />,
+  success: <Check className="text-muted-foreground size-(--size-icon-xs)" />,
+  error: <X className="text-destructive size-(--size-icon-xs)" />,
+  cancelled: <X className="text-muted-foreground size-(--size-icon-xs)" />,
 } satisfies Record<HookState['status'], React.ReactNode>;
 
 /**
@@ -64,20 +68,20 @@ function HookRow({ hook }: HookRowProps) {
     <div>
       <button
         onClick={() => hasOutput && setExpanded((e) => !e)}
-        className={cn(
-          'flex w-full items-center gap-1.5 py-0.5',
-          !hasOutput && 'cursor-default',
-        )}
+        className={cn('flex w-full items-center gap-1.5 py-0.5', !hasOutput && 'cursor-default')}
         aria-expanded={hasOutput ? expanded : undefined}
         disabled={!hasOutput}
       >
         {hookStatusIcon[hook.status]}
-        <span className={cn('text-3xs font-mono', hook.status === 'error' ? 'text-destructive' : 'text-muted-foreground')}>
+        <span
+          className={cn(
+            'text-3xs font-mono',
+            hook.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
+          )}
+        >
           {hook.hookName}
         </span>
-        {hook.status === 'error' && (
-          <span className="text-3xs text-destructive">failed</span>
-        )}
+        {hook.status === 'error' && <span className="text-3xs text-destructive">failed</span>}
         {hook.exitCode !== undefined && (
           <span className="text-3xs text-muted-foreground ml-auto">exit {hook.exitCode}</span>
         )}
@@ -91,7 +95,7 @@ function HookRow({ hook }: HookRowProps) {
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="overflow-hidden"
           >
-            <pre className="text-muted-foreground max-h-32 overflow-y-auto whitespace-pre-wrap py-1 text-xs">
+            <pre className="text-muted-foreground max-h-32 overflow-y-auto py-1 text-xs whitespace-pre-wrap">
               {output}
             </pre>
           </motion.div>
@@ -120,7 +124,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
 
   const hooksSection =
     toolCall.hooks && toolCall.hooks.length > 0 ? (
-      <div className="border-t border-border/50 px-3 py-1 space-y-0.5">
+      <div className="border-border/50 space-y-0.5 border-t px-3 py-1">
         {toolCall.hooks.map((hook) => (
           <HookRow key={hook.hookId} hook={hook} />
         ))}

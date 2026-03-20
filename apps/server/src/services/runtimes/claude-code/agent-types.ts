@@ -45,19 +45,41 @@ export function createToolState(): ToolState {
   let thinkingStartMs = 0;
   const toolNameById = new Map<string, string>();
   return {
-    get inTool() { return inTool; },
-    get currentToolName() { return currentToolName; },
-    get currentToolId() { return currentToolId; },
-    get taskToolInput() { return taskToolInput; },
-    get inThinking() { return inThinking; },
-    set inThinking(v: boolean) { inThinking = v; },
-    get thinkingStartMs() { return thinkingStartMs; },
-    set thinkingStartMs(v: number) { thinkingStartMs = v; },
+    get inTool() {
+      return inTool;
+    },
+    get currentToolName() {
+      return currentToolName;
+    },
+    get currentToolId() {
+      return currentToolId;
+    },
+    get taskToolInput() {
+      return taskToolInput;
+    },
+    get inThinking() {
+      return inThinking;
+    },
+    set inThinking(v: boolean) {
+      inThinking = v;
+    },
+    get thinkingStartMs() {
+      return thinkingStartMs;
+    },
+    set thinkingStartMs(v: number) {
+      thinkingStartMs = v;
+    },
     toolNameById,
-    appendTaskInput: (chunk: string) => { taskToolInput += chunk; },
-    resetTaskInput: () => { taskToolInput = ''; },
+    appendTaskInput: (chunk: string) => {
+      taskToolInput += chunk;
+    },
+    resetTaskInput: () => {
+      taskToolInput = '';
+    },
     setToolState: (tool: boolean, name: string, id: string) => {
-      inTool = tool; currentToolName = name; currentToolId = id;
+      inTool = tool;
+      currentToolName = name;
+      currentToolId = id;
     },
   };
 }

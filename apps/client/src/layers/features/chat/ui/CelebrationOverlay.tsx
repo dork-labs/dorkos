@@ -1,6 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fireConfetti, RADIAL_GLOW_STYLE, TIMING, type CelebrationEvent } from '@/layers/shared/lib';
+import {
+  fireConfetti,
+  RADIAL_GLOW_STYLE,
+  TIMING,
+  type CelebrationEvent,
+} from '@/layers/shared/lib';
 
 interface CelebrationOverlayProps {
   celebration: CelebrationEvent | null;

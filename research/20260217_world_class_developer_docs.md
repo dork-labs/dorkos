@@ -1,5 +1,5 @@
 ---
-title: "World-Class Developer Documentation: Research Findings"
+title: 'World-Class Developer Documentation: Research Findings'
 date: 2026-02-17
 type: external-best-practices
 status: archived
@@ -29,12 +29,12 @@ World-class developer documentation is characterized by a clear information arch
 
 The most widely adopted information architecture for developer docs is the **Diátaxis framework**, used by Cloudflare, Gatsby, Django, and others. It defines four distinct documentation modes that serve different user needs:
 
-| Type | User need | Orientation | Answers |
-|---|---|---|---|
-| **Tutorial** | Learning | Practical study | "Help me learn by doing" |
-| **How-to guide** | Problem-solving | Goal-oriented | "How do I accomplish X?" |
-| **Reference** | Information lookup | Theoretical | "What does X do exactly?" |
-| **Explanation** | Understanding | Conceptual | "Why does it work this way?" |
+| Type             | User need          | Orientation     | Answers                      |
+| ---------------- | ------------------ | --------------- | ---------------------------- |
+| **Tutorial**     | Learning           | Practical study | "Help me learn by doing"     |
+| **How-to guide** | Problem-solving    | Goal-oriented   | "How do I accomplish X?"     |
+| **Reference**    | Information lookup | Theoretical     | "What does X do exactly?"    |
+| **Explanation**  | Understanding      | Conceptual      | "Why does it work this way?" |
 
 **Critical insight:** These types must be kept strictly separate. Mixing tutorial tone ("now let's try...") into reference material is the single most common failure in developer docs.
 
@@ -72,12 +72,14 @@ Fumadocs provides significantly more components than the current DorkOS docs use
 #### MDX Components (available in any .mdx file)
 
 **Layout & Structure**
+
 - `<Cards>` / `<Card>` — card grids for navigation and feature showcases
 - `<Steps>` / `<Step>` — numbered step sequences with visual connectors (also via `fd-steps`/`fd-step` CSS classes)
 - `<Tabs>` / `<Tab>` — tabbed content with `groupId` for synchronized selection across the page/site, `persist` for localStorage persistence, `updateAnchor` for shareable URL-linked tabs
 - `<Accordions>` — collapsible FAQ-style sections
 
 **Callouts**
+
 - `<Callout type="info">` — default blue info box
 - `<Callout type="warn">` / `<Callout type="warning">` — yellow warning
 - `<Callout type="error">` — red error/danger
@@ -85,6 +87,7 @@ Fumadocs provides significantly more components than the current DorkOS docs use
 - `<Callout type="idea">` — purple idea/tip
 
 **Code Features**
+
 - Syntax highlighting via Shiki (all languages)
 - `title="filename.ts"` attribute on fences — shows filename header
 - `tab="Label"` attribute — creates inline code tab groups (`CodeBlockTabs`)
@@ -96,20 +99,24 @@ Fumadocs provides significantly more components than the current DorkOS docs use
 - TypeScript Twoslash — show inferred types inline
 
 **File Trees**
+
 - `<Files>` / `<Folder>` / `<File>` — interactive file tree display
 - `Folder` supports `defaultOpen`, `disabled` props
 - `remark-mdx-files` plugin — convert ASCII tree syntax or glob patterns
 
 **Type Documentation**
+
 - `<TypeTable>` — manual type documentation table with type/description/default columns
 - `<AutoTypeTable>` — auto-generated from TypeScript source files (uses ts-morph)
 
 **Content Reuse**
+
 - `<Include>` — embed content from other MDX files by reference
 - `<DocsCategory>` — auto-generates a category page listing child pages from the page tree (excellent for section landing pages)
 - `<FeedbackBlock>` — collects user ratings/feedback (integrates with PostHog, GitHub Discussions)
 
 **Media**
+
 - Zoomable images (click to zoom)
 - `<Mermaid>` — diagram support (via plugin)
 
@@ -214,6 +221,7 @@ Research consensus on what a great quickstart contains:
 Best practices for API reference (highly relevant for DorkOS's REST/SSE API):
 
 **Structure per endpoint:**
+
 - HTTP method badge + path (e.g., `POST /api/sessions/:id/messages`)
 - One-sentence description
 - Authentication requirements
@@ -229,6 +237,7 @@ Best practices for API reference (highly relevant for DorkOS's REST/SSE API):
 **SSE endpoints need special treatment:** Standard OpenAPI doesn't model SSE well. The SSE streaming protocol deserves its own dedicated explanation page (which DorkOS already has in `docs/integrations/sse-protocol.mdx`) with annotated event payload examples.
 
 **Error documentation:** Every error code should be documented with:
+
 - When it occurs
 - What the response body looks like
 - How to resolve it
@@ -276,6 +285,7 @@ Table of all env vars with names, descriptions, defaults
 ```
 
 **Conventions:**
+
 - Use `<angle-brackets>` for required arguments
 - Use `[square-brackets]` for optional arguments
 - Show the exact error message when showing error scenarios
@@ -288,6 +298,7 @@ DorkOS has four distinct deployment targets: npm CLI, Obsidian plugin, self-host
 
 **Pattern 1: Separate quickstarts per installation path**
 Recommended. Each target gets its own Getting Started flow:
+
 - "Install via npm" (most users)
 - "Install Obsidian Plugin" (Obsidian users)
 - "Self-host the server" (infrastructure users)
@@ -299,6 +310,7 @@ Use `<Tabs groupId="install-target" persist>` with tabs like "npm CLI | Obsidian
 
 **Pattern 3: Callouts for target-specific warnings**
 Within shared guide pages, use `<Callout type="info">` with clear labeling:
+
 ```
 <Callout type="info">**Obsidian plugin note:** The working directory is determined
 by your vault location and cannot be changed via --dir flag.</Callout>
@@ -339,9 +351,11 @@ Given DorkOS already uses Fumadocs, here is what should be adopted immediately:
 **Use `<Cards>` on the index and section landing pages** — replace link lists with card grids. Each card should have an icon, title, and 1-sentence description. Fumadocs Cards are composable inside DocsCategory for auto-generated category pages.
 
 **Use `<Tabs groupId="package-manager" persist>` for all install commands** — Fumadocs actually has built-in NPM tab generation. A code block written as:
+
 ```bash
 npm install -g dorkos
 ```
+
 ...can automatically generate pnpm/yarn/bun variants with a single config option.
 
 **Use `<Callout>` for all warnings, notes, and tips** — currently the docs have inline bold text for warnings. Callouts are visually distinct and scannable.
@@ -359,7 +373,8 @@ npm install -g dorkos
 ### Information Architecture Gaps in Current DorkOS Docs
 
 **Missing: A concepts/explanation layer**
-The current structure jumps from "how to use" guides directly to "contributing" architecture docs. There's no middle layer explaining *why* things work the way they do for users who want to understand the system without contributing to it. Examples:
+The current structure jumps from "how to use" guides directly to "contributing" architecture docs. There's no middle layer explaining _why_ things work the way they do for users who want to understand the system without contributing to it. Examples:
+
 - "Why does DorkOS show sessions I created in the CLI?" (session model explanation)
 - "What is a Transport and why does it matter?" (for users building integrations)
 - "How does tool approval work under the hood?" (for power users)
@@ -371,6 +386,7 @@ The `docs/index.mdx` is essentially a table of contents. World-class docs index 
 The `docs/changelog.mdx` exists but is presumably empty or minimal. Changelogs are high-traffic pages and should use a timeline-style layout with version headings, type badges (Breaking, Feature, Fix), and clear dates.
 
 **Thin content in high-value pages**
+
 - `cli-usage.mdx` — is a TODO stub
 - `building-integrations.mdx` — is a TODO stub
 - `quickstart.mdx` — is 10 lines with no code

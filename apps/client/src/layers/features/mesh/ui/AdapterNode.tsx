@@ -54,7 +54,7 @@ const PLATFORM_ICONS: Record<string, React.ElementType> = {
 /** Renders the platform icon for an adapter type. Extracted as a component to satisfy React Compiler. */
 function PlatformIcon({ adapterType }: { adapterType: string }) {
   const Icon = PLATFORM_ICONS[adapterType] ?? Bot;
-  return <Icon className="size-4 shrink-0 text-muted-foreground" />;
+  return <Icon className="text-muted-foreground size-4 shrink-0" />;
 }
 
 /** Resolve the status indicator color, falling back to zinc. */
@@ -75,15 +75,17 @@ function AdapterCompactPill({
   return (
     <div
       className={cn(
-        'flex w-[120px] items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 shadow-sm',
-        selected && 'ring-2 ring-primary',
+        'bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2.5 py-1 shadow-sm',
+        selected && 'ring-primary ring-2'
       )}
       aria-label={`Adapter: ${d.adapterName}, status ${d.adapterStatus}`}
     >
       <Handle type="source" position={Position.Right} isConnectable />
       <span className={cn('size-2 shrink-0 rounded-full', statusColor)} />
       <PlatformIcon adapterType={d.adapterType} />
-      <span className="truncate text-xs font-medium text-foreground">{d.label || d.adapterName}</span>
+      <span className="text-foreground truncate text-xs font-medium">
+        {d.label || d.adapterName}
+      </span>
     </div>
   );
 }
@@ -101,8 +103,8 @@ function AdapterDefaultCard({
   return (
     <div
       className={cn(
-        'rounded-xl border bg-card p-4 shadow-soft hover:shadow-md',
-        selected && 'ring-2 ring-primary',
+        'bg-card shadow-soft rounded-xl border p-4 hover:shadow-md',
+        selected && 'ring-primary ring-2'
       )}
       style={{ width: ADAPTER_NODE_WIDTH, minHeight: ADAPTER_NODE_HEIGHT }}
       aria-label={`Adapter: ${d.adapterName}, status ${d.adapterStatus}`}
@@ -114,23 +116,21 @@ function AdapterDefaultCard({
         <span className={cn('size-2.5 shrink-0 rounded-full', statusColor)} />
         <PlatformIcon adapterType={d.adapterType} />
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-foreground">
+          <span className="text-foreground truncate text-sm font-medium">
             {d.label || d.adapterName}
           </span>
           {d.label && (
-            <span className="truncate text-xs text-muted-foreground">
-              {d.adapterName}
-            </span>
+            <span className="text-muted-foreground truncate text-xs">{d.adapterName}</span>
           )}
         </div>
-        <Badge variant="outline" className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+        <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 text-[10px]">
           Adapter
         </Badge>
       </div>
 
       {/* Footer row: type label + binding count badge */}
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-xs capitalize text-muted-foreground">{d.adapterType}</span>
+        <span className="text-muted-foreground text-xs capitalize">{d.adapterType}</span>
         {d.bindingCount > 0 && (
           <Badge variant="secondary" className="text-xs">
             {d.bindingCount} {d.bindingCount === 1 ? 'binding' : 'bindings'}
@@ -152,23 +152,31 @@ function AdapterNodeInner({ data, selected }: NodeProps) {
   if (d.isGhost) {
     return (
       <div
-        className="flex items-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 bg-card/40 px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
+        className="border-muted-foreground/30 bg-card/40 flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
         style={{ width: ADAPTER_NODE_WIDTH, height: ADAPTER_NODE_HEIGHT }}
         onClick={d.onGhostClick}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); d.onGhostClick?.(); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            d.onGhostClick?.();
+          }
+        }}
         role="button"
         tabIndex={0}
         aria-label="Add adapter"
       >
-        <Plus className="size-4 text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Add Adapter</span>
+        <Plus className="text-muted-foreground size-4" />
+        <span className="text-muted-foreground text-sm">Add Adapter</span>
       </div>
     );
   }
 
-  const content = band === 'compact'
-    ? <AdapterCompactPill d={d} statusColor={statusColor} selected={selected} />
-    : <AdapterDefaultCard d={d} statusColor={statusColor} selected={selected} />;
+  const content =
+    band === 'compact' ? (
+      <AdapterCompactPill d={d} statusColor={statusColor} selected={selected} />
+    ) : (
+      <AdapterDefaultCard d={d} statusColor={statusColor} selected={selected} />
+    );
 
   const bandKey = band === 'compact' ? 'compact' : 'default';
 

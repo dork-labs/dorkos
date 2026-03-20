@@ -69,7 +69,7 @@ export function WelcomeStep({ onGetStarted, onSkip }: WelcomeStepProps) {
       </h1>
 
       <motion.p
-        className="mt-4 text-muted-foreground"
+        className="text-muted-foreground mt-4"
         initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4, duration: 0.5 }}
@@ -86,10 +86,10 @@ export function WelcomeStep({ onGetStarted, onSkip }: WelcomeStepProps) {
       >
         {PREVIEW_ITEMS.map(({ icon: Icon, label }, i) => (
           <div key={i} className="flex flex-col items-center gap-2">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
-              <Icon className="size-5 text-muted-foreground" />
+            <div className="bg-muted flex size-10 items-center justify-center rounded-lg">
+              <Icon className="text-muted-foreground size-5" />
             </div>
-            <span className="text-xs text-muted-foreground">{label}</span>
+            <span className="text-muted-foreground text-xs">{label}</span>
           </div>
         ))}
       </motion.div>
@@ -101,16 +101,12 @@ export function WelcomeStep({ onGetStarted, onSkip }: WelcomeStepProps) {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8, duration: 0.4 }}
       >
-        <HoverBorderGradient
-          className="px-6 py-2"
-          duration={1.2}
-          onClick={onGetStarted}
-        >
+        <HoverBorderGradient className="px-6 py-2" duration={1.2} onClick={onGetStarted}>
           Get Started
         </HoverBorderGradient>
         <button
           onClick={onSkip}
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground text-sm transition-colors"
         >
           Skip setup
         </button>

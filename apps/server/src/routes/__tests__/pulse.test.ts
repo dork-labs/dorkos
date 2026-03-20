@@ -37,9 +37,11 @@ describe('Pulse routes', () => {
     app.use(express.json());
     app.use('/api/pulse', createPulseRouter(store, scheduler, '/tmp/dork-test'));
     // Error handler to surface errors instead of hanging
-    app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      res.status(500).json({ error: err.message });
-    });
+    app.use(
+      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        res.status(500).json({ error: err.message });
+      }
+    );
   });
 
   afterEach(() => {
@@ -103,9 +105,7 @@ describe('Pulse routes', () => {
     });
 
     it('returns 404 for nonexistent schedule', async () => {
-      const res = await request(app)
-        .patch('/api/pulse/schedules/nonexistent')
-        .send({ name: 'X' });
+      const res = await request(app).patch('/api/pulse/schedules/nonexistent').send({ name: 'X' });
 
       expect(res.status).toBe(404);
     });
@@ -113,9 +113,7 @@ describe('Pulse routes', () => {
     it('unregisters cron when disabling', async () => {
       const sched = store.createSchedule({ name: 'Dis', prompt: 'p', cron: '0 * * * *' });
 
-      await request(app)
-        .patch(`/api/pulse/schedules/${sched.id}`)
-        .send({ enabled: false });
+      await request(app).patch(`/api/pulse/schedules/${sched.id}`).send({ enabled: false });
 
       expect(scheduler.unregisterSchedule).toHaveBeenCalledWith(sched.id);
     });

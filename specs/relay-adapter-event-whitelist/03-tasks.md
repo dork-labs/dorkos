@@ -14,6 +14,7 @@
 Remove the `SILENT_EVENT_TYPES` blacklist from `payload-utils.ts` and update Slack outbound delivery to use a whitelist model. After handling `text_delta`, `error`, and `done`, all other StreamEvent types return `{ success: true }` immediately, preventing fallthrough to `extractPayloadContent()` which would `JSON.stringify` unknown events.
 
 **Files modified:**
+
 - `packages/relay/src/lib/payload-utils.ts` — Delete `SILENT_EVENT_TYPES` export
 - `packages/relay/src/adapters/slack/outbound.ts` — Remove import, add unconditional return before closing `}`
 - `packages/relay/src/lib/__tests__/payload-utils.test.ts` — Remove `SILENT_EVENT_TYPES` test block
@@ -28,6 +29,7 @@ Remove the `SILENT_EVENT_TYPES` blacklist from `payload-utils.ts` and update Sla
 Same whitelist pattern for Telegram outbound. Additionally adds comprehensive delivery tests that currently don't exist — the test file only covers typing indicators today.
 
 **Files modified:**
+
 - `packages/relay/src/adapters/telegram/outbound.ts` — Remove `SILENT_EVENT_TYPES` import, add unconditional return
 - `packages/relay/src/adapters/telegram/__tests__/outbound.test.ts` — Add `deliverMessage` tests: echo prevention, guard conditions, standard payload, text_delta buffering, done flush, error flush, whitelist (21 event types)
 
@@ -42,6 +44,7 @@ Same whitelist pattern for Telegram outbound. Additionally adds comprehensive de
 Implement Slack's `chat.startStream`/`appendStream`/`stopStream` as an alternative to `chat.update` edit-in-place. Controlled by a new `nativeStreaming` config field (default: `true`). Falls back to `chat.update` if `startStream` fails.
 
 **Files modified:**
+
 - `packages/shared/src/relay-adapter-schemas.ts` — Add `nativeStreaming` to `SlackAdapterConfigSchema`
 - `packages/relay/src/adapters/slack/slack-adapter.ts` — Add `nativeStreaming` config field to manifest, thread to deliver options
 - `packages/relay/src/adapters/slack/outbound.ts` — Add `nativeStreaming` to options/interfaces, implement native streaming in handlers
@@ -49,11 +52,11 @@ Implement Slack's `chat.startStream`/`appendStream`/`stopStream` as an alternati
 
 **Behavior matrix:**
 
-| `streaming` | `nativeStreaming` | Behavior |
-|---|---|---|
-| `true` | `true` | Slack native streaming API |
-| `true` | `false` | `chat.update` edit-in-place (legacy) |
-| `false` | any | Buffer-and-flush on done |
+| `streaming` | `nativeStreaming` | Behavior                             |
+| ----------- | ----------------- | ------------------------------------ |
+| `true`      | `true`            | Slack native streaming API           |
+| `true`      | `false`           | `chat.update` edit-in-place (legacy) |
+| `false`     | any               | Buffer-and-flush on done             |
 
 ---
 
@@ -64,6 +67,7 @@ Implement Slack's `chat.startStream`/`appendStream`/`stopStream` as an alternati
 Implement Telegram's `sendMessageDraft` for ChatGPT-style streaming in DMs. Groups (negative chatId) always use buffer-and-flush. Throttled to ~200ms intervals.
 
 **Files modified:**
+
 - `packages/shared/src/relay-adapter-schemas.ts` — Add `streaming` to `TelegramAdapterConfigSchema`
 - `packages/relay/src/adapters/telegram/telegram-adapter.ts` — Add `streaming` config field to manifest, thread to deliver options
 - `packages/relay/src/adapters/telegram/outbound.ts` — Add `streaming` to options, implement `sendMessageDraft` with throttling
@@ -80,6 +84,7 @@ Implement Telegram's `sendMessageDraft` for ChatGPT-style streaming in DMs. Grou
 Add TTL reaping to `responseBuffers` to prevent memory leaks from orphaned buffers (agent crashes without sending `done`/`error`). Changes buffer type from `Map<number, string>` to `Map<number, ResponseBuffer>` with `text` and `startedAt` fields. Reaping matches Slack's 5-minute TTL pattern.
 
 **Files modified:**
+
 - `packages/relay/src/adapters/telegram/outbound.ts` — Add `ResponseBuffer` interface, `BUFFER_TTL_MS`, reaping loop, update all buffer operations
 - `packages/relay/src/adapters/telegram/telegram-adapter.ts` — Update `responseBuffers` field type
 - `packages/relay/src/adapters/telegram/__tests__/outbound.test.ts` — Update buffer shape in tests, add 3 TTL reaping tests
@@ -103,9 +108,9 @@ Phase 3:
 
 ## Summary
 
-| Phase | Tasks | Parallelizable |
-|-------|-------|---------------|
-| 1 — Whitelist Fix | 2 | 1.1 ∥ 1.2 |
-| 2 — Native Streaming | 2 | 2.1 ∥ 2.2 |
-| 3 — Buffer Cleanup | 1 | — |
-| **Total** | **5** | |
+| Phase                | Tasks | Parallelizable |
+| -------------------- | ----- | -------------- |
+| 1 — Whitelist Fix    | 2     | 1.1 ∥ 1.2      |
+| 2 — Native Streaming | 2     | 2.1 ∥ 2.2      |
+| 3 — Buffer Cleanup   | 1     | —              |
+| **Total**            | **5** |                |

@@ -89,7 +89,7 @@ export async function* executeSdkQuery(
   session: AgentSession,
   opts: MessageSenderOpts,
   messageOpts?: MessageOpts,
-  retryDepth = 0,
+  retryDepth = 0
 ): AsyncGenerator<StreamEvent> {
   session.lastActivity = Date.now();
   session.eventQueue = [];
@@ -136,7 +136,11 @@ export async function* executeSdkQuery(
     globalConfig,
   });
 
-  const baseAppend = await buildSystemPromptAppend(effectiveCwd, opts.meshCore ?? undefined, toolConfig);
+  const baseAppend = await buildSystemPromptAppend(
+    effectiveCwd,
+    opts.meshCore ?? undefined,
+    toolConfig
+  );
   // Concatenate caller-supplied append (e.g. Pulse scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend
     ? `${baseAppend}\n\n${messageOpts.systemPromptAppend}`
@@ -158,9 +162,12 @@ export async function* executeSdkQuery(
   if (session.hasStarted) {
     sdkOptions.resume = session.sdkSessionId;
     if (session.sdkSessionId === sessionId) {
-      logger.debug('[sendMessage] resuming with sdkSessionId === sessionId (expected after server restart)', {
-        session: sessionId,
-      });
+      logger.debug(
+        '[sendMessage] resuming with sdkSessionId === sessionId (expected after server restart)',
+        {
+          session: sessionId,
+        }
+      );
     }
   }
 
@@ -243,7 +250,7 @@ export async function* executeSdkQuery(
               status: s.status,
               error: s.error,
               scope: s.scope,
-            })),
+            }))
         );
       })
       .catch((err) => {
@@ -261,7 +268,7 @@ export async function* executeSdkQuery(
             name: c.name,
             description: c.description,
             argumentHint: c.argumentHint,
-          })),
+          }))
         );
       })
       .catch((err) => {
@@ -303,9 +310,7 @@ export async function* executeSdkQuery(
       });
 
       if (!pendingSdkPromise) {
-        pendingSdkPromise = sdkIterator
-          .next()
-          .then((result) => ({ sdk: true as const, result }));
+        pendingSdkPromise = sdkIterator.next().then((result) => ({ sdk: true as const, result }));
       }
 
       const winner = await Promise.race([queuePromise, pendingSdkPromise]);
@@ -327,7 +332,9 @@ export async function* executeSdkQuery(
           }
         }
         // Track content events for empty-stream detection
-        if (['text_delta', 'tool_call_start', 'tool_result', 'thinking_delta'].includes(event.type)) {
+        if (
+          ['text_delta', 'tool_call_start', 'tool_result', 'thinking_delta'].includes(event.type)
+        ) {
           contentEventCount++;
         }
         if (['approval_required', 'question_prompt'].includes(event.type)) {
@@ -365,7 +372,8 @@ export async function* executeSdkQuery(
     yield {
       type: 'error',
       data: {
-        message: 'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
+        message:
+          'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.',
         category: 'execution_error' as ErrorCategory,
         details: errMsg,
       },

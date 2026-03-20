@@ -11,12 +11,12 @@ import type { Session } from '@dorkos/shared/types';
 export function insertOptimisticSession(
   queryClient: ReturnType<typeof useQueryClient>,
   selectedCwd: string | null,
-  session: Session,
+  session: Session
 ) {
-  queryClient.setQueryData<Session[]>(
-    ['sessions', selectedCwd],
-    (old) => [session, ...(old ?? [])],
-  );
+  queryClient.setQueryData<Session[]>(['sessions', selectedCwd], (old) => [
+    session,
+    ...(old ?? []),
+  ]);
 }
 
 /** Fetch and manage the session list for the current working directory. */

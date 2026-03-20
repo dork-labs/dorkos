@@ -233,12 +233,15 @@ export const useAppStore = create<AppState>()(
       sidebarActiveTab: (() => {
         try {
           const stored = localStorage.getItem('dorkos-sidebar-active-tab');
-          if (stored === 'sessions' || stored === 'schedules' || stored === 'connections') return stored;
+          if (stored === 'sessions' || stored === 'schedules' || stored === 'connections')
+            return stored;
         } catch {}
         return 'sessions';
       })() as 'sessions' | 'schedules' | 'connections',
       setSidebarActiveTab: (tab) => {
-        try { localStorage.setItem('dorkos-sidebar-active-tab', tab); } catch {}
+        try {
+          localStorage.setItem('dorkos-sidebar-active-tab', tab);
+        } catch {}
         set({ sidebarActiveTab: tab });
       },
 
@@ -247,13 +250,19 @@ export const useAppStore = create<AppState>()(
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       pulseOpen: false,
       setPulseOpen: (open) =>
-        set(open ? { pulseOpen: true } : { pulseOpen: false, pulseAgentFilter: null, pulseEditScheduleId: null }),
+        set(
+          open
+            ? { pulseOpen: true }
+            : { pulseOpen: false, pulseAgentFilter: null, pulseEditScheduleId: null }
+        ),
       pulseAgentFilter: null,
       setPulseAgentFilter: (id) => set({ pulseAgentFilter: id }),
       pulseEditScheduleId: null,
       setPulseEditScheduleId: (id) => set({ pulseEditScheduleId: id }),
-      openPulseForAgent: (agentId) => set({ pulseOpen: true, pulseAgentFilter: agentId, pulseEditScheduleId: null }),
-      openPulseToEdit: (scheduleId) => set({ pulseOpen: true, pulseEditScheduleId: scheduleId, pulseAgentFilter: null }),
+      openPulseForAgent: (agentId) =>
+        set({ pulseOpen: true, pulseAgentFilter: agentId, pulseEditScheduleId: null }),
+      openPulseToEdit: (scheduleId) =>
+        set({ pulseOpen: true, pulseEditScheduleId: scheduleId, pulseAgentFilter: null }),
       relayOpen: false,
       setRelayOpen: (open) => set({ relayOpen: open }),
       meshOpen: false,
@@ -282,7 +291,10 @@ export const useAppStore = create<AppState>()(
       setSelectedCwd: (cwd) =>
         set((s) => {
           const entry: RecentCwd = { path: cwd, accessedAt: new Date().toISOString() };
-          const recents = [entry, ...s.recentCwds.filter((r) => r.path !== cwd)].slice(0, MAX_RECENT_CWDS);
+          const recents = [entry, ...s.recentCwds.filter((r) => r.path !== cwd)].slice(
+            0,
+            MAX_RECENT_CWDS
+          );
           try {
             localStorage.setItem(STORAGE_KEYS.RECENT_CWDS, JSON.stringify(recents));
           } catch {}
@@ -396,12 +408,18 @@ export const useAppStore = create<AppState>()(
         writeBool(BOOL_KEYS.showStatusBarPolling, v);
         set({ showStatusBarPolling: v });
       },
-      enableCrossClientSync: readBool(BOOL_KEYS.enableCrossClientSync, BOOL_DEFAULTS.enableCrossClientSync),
+      enableCrossClientSync: readBool(
+        BOOL_KEYS.enableCrossClientSync,
+        BOOL_DEFAULTS.enableCrossClientSync
+      ),
       setEnableCrossClientSync: (v) => {
         writeBool(BOOL_KEYS.enableCrossClientSync, v);
         set({ enableCrossClientSync: v });
       },
-      enableMessagePolling: readBool(BOOL_KEYS.enableMessagePolling, BOOL_DEFAULTS.enableMessagePolling),
+      enableMessagePolling: readBool(
+        BOOL_KEYS.enableMessagePolling,
+        BOOL_DEFAULTS.enableMessagePolling
+      ),
       setEnableMessagePolling: (v) => {
         writeBool(BOOL_KEYS.enableMessagePolling, v);
         set({ enableMessagePolling: v });

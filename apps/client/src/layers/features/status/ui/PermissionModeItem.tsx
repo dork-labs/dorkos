@@ -76,9 +76,7 @@ export function PermissionModeItem({ mode, onChangeMode, disabled }: PermissionM
 
   return (
     <ResponsiveDropdownMenu>
-      <ResponsiveDropdownMenuTrigger asChild>
-        {trigger}
-      </ResponsiveDropdownMenuTrigger>
+      <ResponsiveDropdownMenuTrigger asChild>{trigger}</ResponsiveDropdownMenuTrigger>
       <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
         <ResponsiveDropdownMenuLabel>Permission Mode</ResponsiveDropdownMenuLabel>
         <ResponsiveDropdownMenuRadioGroup

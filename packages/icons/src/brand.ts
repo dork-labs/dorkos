@@ -12,7 +12,7 @@ export const BRAND_COLORS = {
   purple: '#8B7BA4',
   charcoal: '#1A1A1A',
   red: '#CE2021',
-} as const
+} as const;
 
 /** Logo color variants keyed by usage context. */
 export const LOGO_COLORS = {
@@ -20,6 +20,6 @@ export const LOGO_COLORS = {
   white: '#FFFFFF',
   orange: '#CE2021',
   current: 'currentColor',
-} as const
+} as const;
 
-export type LogoVariant = keyof typeof LOGO_COLORS
+export type LogoVariant = keyof typeof LOGO_COLORS;

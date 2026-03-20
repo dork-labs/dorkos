@@ -40,7 +40,11 @@ interface StatusLineProps {
   children: React.ReactNode;
 }
 
-function StatusLineRoot({ sessionId: _sessionId, isStreaming: _isStreaming, children }: StatusLineProps) {
+function StatusLineRoot({
+  sessionId: _sessionId,
+  isStreaming: _isStreaming,
+  children,
+}: StatusLineProps) {
   const [registeredKeys, setRegisteredKeys] = useState<string[]>([]);
 
   const registerItem = useCallback((key: string) => {
@@ -124,8 +128,7 @@ interface StatusLineItemProps {
 }
 
 function StatusLineItem({ itemKey, visible, children }: StatusLineItemProps) {
-  const { itemTransition, firstVisibleKey, registerItem, unregisterItem } =
-    useStatusLineContext();
+  const { itemTransition, firstVisibleKey, registerItem, unregisterItem } = useStatusLineContext();
 
   /*
    * Register with root context when visible; deregister on unmount or when visibility

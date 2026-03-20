@@ -1,5 +1,5 @@
 ---
-title: "Mesh Registry Integrity — Research Findings"
+title: 'Mesh Registry Integrity — Research Findings'
 date: 2026-02-26
 type: internal-architecture
 status: active
@@ -46,6 +46,7 @@ In-memory service (MeshCore, Relay endpoints)
 ```
 
 Rules:
+
 - The manifest file is the only portable representation. It travels with the project.
 - SQLite is a derived index that can be rebuilt from disk at any time.
 - In-memory state is rebuilt from SQLite on server startup.
@@ -159,12 +160,14 @@ The health status is computed, not stored — it is derived from `last_seen_at` 
 **`INSERT OR REPLACE` vs `INSERT ... ON CONFLICT DO UPDATE`**:
 
 `INSERT OR REPLACE` is implemented as **delete-then-insert**, not update. This means:
+
 - The ROWID changes on every replace, breaking any foreign key references
 - Delete triggers fire (if recursive triggers are enabled)
 - The update hook is NOT invoked — watchers miss the change
 - Cascading deletes on child tables execute silently
 
 `INSERT ... ON CONFLICT DO UPDATE` (UPSERT, SQLite 3.24+, 2018) is a true in-place update:
+
 - ROWID stays the same
 - Foreign key children are preserved
 - Update triggers fire correctly
@@ -204,7 +207,8 @@ if (existing && existing.id !== newId) {
 }
 
 // Step 2: Safe upsert by primary key
-db.prepare(`
+db.prepare(
+  `
   INSERT INTO agents (id, path, name, runtime, registered_at, manifest_hash)
   VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
@@ -212,7 +216,8 @@ db.prepare(`
     name = excluded.name,
     runtime = excluded.runtime,
     manifest_hash = excluded.manifest_hash
-`).run(id, path, name, runtime, registeredAt, hash);
+`
+).run(id, path, name, runtime, registeredAt, hash);
 ```
 
 The explicit path-conflict check before the upsert prevents the UNIQUE violation on `path` entirely. This application-level guard is cleaner than relying on SQLite's conflict resolution for the path column.
@@ -222,6 +227,7 @@ The explicit path-conflict check before the upsert prevents the UNIQUE violation
 ### 5. JSON Blob Column Anti-Pattern
 
 **The problem**: Storing a full JSON copy (`manifest TEXT`) alongside individual indexed columns (`name TEXT`, `runtime TEXT`, etc.) creates:
+
 - Dual writes that can diverge (the columns say one thing, the blob says another)
 - Ambiguity about which is canonical
 - Wasted storage and parse overhead on every read
@@ -232,6 +238,7 @@ The explicit path-conflict check before the upsert prevents the UNIQUE violation
 > Store data in columns when you need to query, filter, index, or join on it. Store in a JSON text column only for semi-structured, variable-shape data you will never query field-by-field.
 
 **The three legitimate uses of a JSON column in SQLite**:
+
 1. Truly variable-shape extras (the `capabilities` array in `AgentManifest` is a reasonable example — it varies per agent and is not queried in WHERE clauses)
 2. Config/behavior objects that are always read/written as a unit and never filtered on
 3. Audit-trail snapshots for historical record
@@ -253,6 +260,7 @@ CREATE INDEX idx_agents_runtime ON agents(runtime_virtual);
 This gives B-tree index speed on JSON fields without storing them twice.
 
 **Migration strategy for removing the blob**:
+
 1. Add the new normalized columns alongside the blob (schema migration via `PRAGMA user_version`)
 2. Run a one-time backfill: `UPDATE agents SET name = json_extract(manifest, '$.name'), ...`
 3. Verify all rows have non-null values in the new columns
@@ -264,6 +272,7 @@ This gives B-tree index speed on JSON fields without storing them twice.
 ### 6. File Watching vs Periodic Reconciliation
 
 **chokidar / fs.watch event-based watching**:
+
 - Uses native OS kernel events (inotify on Linux, FSEvents on macOS, ReadDirectoryChangesW on Windows)
 - Zero CPU cost at idle — no polling
 - Sub-second latency on most platforms
@@ -271,11 +280,13 @@ This gives B-tree index speed on JSON fields without storing them twice.
 - Breaks in some Docker/VM/network filesystem scenarios
 
 **Polling-based watching**:
+
 - Constant CPU and disk I/O proportional to number of watched paths
 - In a project with 1000+ watched files, polling can consume a full CPU core at idle
 - Required fallback for NFS/SMB/Docker mounted filesystems
 
 **Periodic reconciliation sweep**:
+
 - Low-frequency (e.g., every 5 minutes) directory scan
 - Near-zero CPU impact
 - Latency up to the interval for detecting changes
@@ -384,7 +395,8 @@ async function registerAgent(manifest: AgentManifest, db: Database): Promise<voi
 
   // 4. Compute hash and upsert into SQLite
   const hash = sha256(JSON.stringify(manifest));
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO agents (id, path, name, runtime, namespace, capabilities, behavior, budget,
                         registered_at, registered_by, manifest_hash)
     VALUES (@id, @path, @name, @runtime, @namespace, @capabilities, @behavior, @budget,
@@ -398,9 +410,10 @@ async function registerAgent(manifest: AgentManifest, db: Database): Promise<voi
       behavior       = excluded.behavior,
       budget         = excluded.budget,
       manifest_hash  = excluded.manifest_hash
-  `).run({
+  `
+  ).run({
     id: manifest.id,
-    path: manifest.path,       // assuming path is part of the manifest or passed separately
+    path: manifest.path, // assuming path is part of the manifest or passed separately
     name: manifest.name,
     runtime: manifest.runtime,
     namespace: manifest.namespace ?? null,
@@ -426,7 +439,7 @@ async function startupReconcile(db: Database, meshDir: string): Promise<void> {
   // Read all manifest files
   let files: string[] = [];
   try {
-    files = (await fs.readdir(agentsDir)).filter(f => f.endsWith('.json'));
+    files = (await fs.readdir(agentsDir)).filter((f) => f.endsWith('.json'));
   } catch {
     return; // no agents dir yet
   }
@@ -454,7 +467,10 @@ async function startupReconcile(db: Database, meshDir: string): Promise<void> {
   }
 
   // Remove DB entries with no corresponding disk file
-  const dbIds = db.prepare('SELECT id FROM agents').all().map(r => r.id);
+  const dbIds = db
+    .prepare('SELECT id FROM agents')
+    .all()
+    .map((r) => r.id);
   for (const id of dbIds) {
     if (!diskIds.has(id)) {
       db.prepare('DELETE FROM agents WHERE id = ?').run(id);

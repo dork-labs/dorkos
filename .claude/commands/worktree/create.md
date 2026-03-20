@@ -13,9 +13,9 @@ Create an isolated git worktree with automatic dependency installation and port 
 
 Parse `$ARGUMENTS` for:
 
-| Argument         | Effect                                              |
-| ---------------- | --------------------------------------------------- |
-| `<branch-name>`  | **Required.** Name of the branch/worktree to create |
+| Argument         | Effect                                               |
+| ---------------- | ---------------------------------------------------- |
+| `<branch-name>`  | **Required.** Name of the branch/worktree to create  |
 | `--from-current` | Base the new branch on the current branch (not main) |
 
 **Examples:**
@@ -64,6 +64,7 @@ git gtr new <branch-name> --from-current --yes
 ```
 
 This will:
+
 1. Create a sibling directory `../<repo>-<branch-name>/`
 2. Copy `.env.example` (from `.gtrconfig`)
 3. Run `npm install` (from `.gtrconfig` postCreate hook)

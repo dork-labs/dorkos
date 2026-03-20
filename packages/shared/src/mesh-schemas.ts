@@ -256,7 +256,9 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   color: true,
   icon: true,
   enabledToolGroups: true,
-}).partial().openapi('UpdateAgentRequest');
+})
+  .partial()
+  .openapi('UpdateAgentRequest');
 
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
 

@@ -20,8 +20,12 @@ describe('useMessageQueue', () => {
   it('addToQueue appends item with unique id and content', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('First'); });
-    act(() => { result.current.addToQueue('Second'); });
+    act(() => {
+      result.current.addToQueue('First');
+    });
+    act(() => {
+      result.current.addToQueue('Second');
+    });
 
     expect(result.current.queue).toHaveLength(2);
     expect(result.current.queue[0].content).toBe('First');
@@ -35,8 +39,12 @@ describe('useMessageQueue', () => {
   it('addToQueue with empty string is rejected', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue(''); });
-    act(() => { result.current.addToQueue('   '); });
+    act(() => {
+      result.current.addToQueue('');
+    });
+    act(() => {
+      result.current.addToQueue('   ');
+    });
 
     expect(result.current.queue).toHaveLength(0);
   });
@@ -44,10 +52,14 @@ describe('useMessageQueue', () => {
   it('updateQueueItem modifies content at index, preserves id', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('Original'); });
+    act(() => {
+      result.current.addToQueue('Original');
+    });
     const originalId = result.current.queue[0].id;
 
-    act(() => { result.current.updateQueueItem(0, 'Updated'); });
+    act(() => {
+      result.current.updateQueueItem(0, 'Updated');
+    });
 
     expect(result.current.queue[0].content).toBe('Updated');
     expect(result.current.queue[0].id).toBe(originalId);
@@ -56,12 +68,22 @@ describe('useMessageQueue', () => {
   it('removeFromQueue removes item and adjusts editingIndex', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('A'); });
-    act(() => { result.current.addToQueue('B'); });
-    act(() => { result.current.addToQueue('C'); });
-    act(() => { result.current.startEditing(2); });
+    act(() => {
+      result.current.addToQueue('A');
+    });
+    act(() => {
+      result.current.addToQueue('B');
+    });
+    act(() => {
+      result.current.addToQueue('C');
+    });
+    act(() => {
+      result.current.startEditing(2);
+    });
 
-    act(() => { result.current.removeFromQueue(0); });
+    act(() => {
+      result.current.removeFromQueue(0);
+    });
 
     expect(result.current.queue).toHaveLength(2);
     expect(result.current.editingIndex).toBe(1);
@@ -70,11 +92,19 @@ describe('useMessageQueue', () => {
   it('removeFromQueue when editing the removed item resets editingIndex to null', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('A'); });
-    act(() => { result.current.addToQueue('B'); });
-    act(() => { result.current.startEditing(0); });
+    act(() => {
+      result.current.addToQueue('A');
+    });
+    act(() => {
+      result.current.addToQueue('B');
+    });
+    act(() => {
+      result.current.startEditing(0);
+    });
 
-    act(() => { result.current.removeFromQueue(0); });
+    act(() => {
+      result.current.removeFromQueue(0);
+    });
 
     expect(result.current.editingIndex).toBeNull();
   });
@@ -82,12 +112,22 @@ describe('useMessageQueue', () => {
   it('removeFromQueue when editing item after removed one decrements editingIndex', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('A'); });
-    act(() => { result.current.addToQueue('B'); });
-    act(() => { result.current.addToQueue('C'); });
-    act(() => { result.current.startEditing(2); });
+    act(() => {
+      result.current.addToQueue('A');
+    });
+    act(() => {
+      result.current.addToQueue('B');
+    });
+    act(() => {
+      result.current.addToQueue('C');
+    });
+    act(() => {
+      result.current.startEditing(2);
+    });
 
-    act(() => { result.current.removeFromQueue(1); });
+    act(() => {
+      result.current.removeFromQueue(1);
+    });
 
     expect(result.current.editingIndex).toBe(1);
   });
@@ -95,10 +135,14 @@ describe('useMessageQueue', () => {
   it('startEditing sets editingIndex and returns content', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('test content'); });
+    act(() => {
+      result.current.addToQueue('test content');
+    });
 
     let returned = '';
-    act(() => { returned = result.current.startEditing(0); });
+    act(() => {
+      returned = result.current.startEditing(0);
+    });
 
     expect(returned).toBe('test content');
     expect(result.current.editingIndex).toBe(0);
@@ -107,10 +151,16 @@ describe('useMessageQueue', () => {
   it('cancelEditing resets editingIndex to null', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('test'); });
-    act(() => { result.current.startEditing(0); });
+    act(() => {
+      result.current.addToQueue('test');
+    });
+    act(() => {
+      result.current.startEditing(0);
+    });
 
-    act(() => { result.current.cancelEditing(); });
+    act(() => {
+      result.current.cancelEditing();
+    });
 
     expect(result.current.editingIndex).toBeNull();
   });
@@ -118,9 +168,15 @@ describe('useMessageQueue', () => {
   it('saveEditing updates item content and resets editingIndex', () => {
     const { result } = renderHook(() => useMessageQueue(defaultOptions));
 
-    act(() => { result.current.addToQueue('original'); });
-    act(() => { result.current.startEditing(0); });
-    act(() => { result.current.saveEditing('updated'); });
+    act(() => {
+      result.current.addToQueue('original');
+    });
+    act(() => {
+      result.current.startEditing(0);
+    });
+    act(() => {
+      result.current.saveEditing('updated');
+    });
 
     expect(result.current.queue[0].content).toBe('updated');
     expect(result.current.editingIndex).toBeNull();
@@ -133,7 +189,9 @@ describe('useMessageQueue', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('queued message'); });
+    act(() => {
+      result.current.addToQueue('queued message');
+    });
 
     rerender({ status: 'idle' as const });
 
@@ -147,7 +205,9 @@ describe('useMessageQueue', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('My message'); });
+    act(() => {
+      result.current.addToQueue('My message');
+    });
     rerender({ status: 'idle' as const });
 
     expect(onFlush).toHaveBeenCalledWith(
@@ -163,7 +223,9 @@ describe('useMessageQueue', () => {
       { initialProps: { status: 'streaming' as ChatStatus, sessionBusy: true } }
     );
 
-    act(() => { result.current.addToQueue('queued'); });
+    act(() => {
+      result.current.addToQueue('queued');
+    });
     rerender({ status: 'idle' as const, sessionBusy: true });
 
     expect(onFlush).not.toHaveBeenCalled();
@@ -176,15 +238,19 @@ describe('useMessageQueue', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('Being edited'); });
-    act(() => { result.current.addToQueue('Should flush'); });
-    act(() => { result.current.startEditing(0); });
+    act(() => {
+      result.current.addToQueue('Being edited');
+    });
+    act(() => {
+      result.current.addToQueue('Should flush');
+    });
+    act(() => {
+      result.current.startEditing(0);
+    });
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(
-      expect.stringContaining('Should flush')
-    );
+    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'));
     expect(result.current.queue[0].content).toBe('Being edited');
   });
 
@@ -206,7 +272,9 @@ describe('useMessageQueue', () => {
       { initialProps: { sessionId: 'session-a' } }
     );
 
-    act(() => { result.current.addToQueue('msg'); });
+    act(() => {
+      result.current.addToQueue('msg');
+    });
     expect(result.current.queue).toHaveLength(1);
 
     rerender({ sessionId: 'session-b' });
@@ -220,7 +288,9 @@ describe('useMessageQueue', () => {
       { initialProps: { selectedCwd: '/dir-a' } }
     );
 
-    act(() => { result.current.addToQueue('msg'); });
+    act(() => {
+      result.current.addToQueue('msg');
+    });
     expect(result.current.queue).toHaveLength(1);
 
     rerender({ selectedCwd: '/dir-b' });

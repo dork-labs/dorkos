@@ -20,6 +20,7 @@ Agent-to-agent relay messaging routes messages to the wrong CWD due to three cas
 **Goal**: Fix the root cause. After Phase 1, `buildContext('relay.agent.{agentId}')` returns a valid `AdapterContext` with the correct `directory`, and agents teaching tools use `{agentId}` terminology.
 
 ### Task 1.1 — Fix `AdapterManagerDeps.meshCore` type and `buildContext()` method
+
 **Size**: small | **Priority**: high | **Parallel with**: 1.2
 
 Fixes two of the three wiring bugs in `apps/server/src/services/relay/adapter-manager.ts`:
@@ -27,6 +28,7 @@ Fixes two of the three wiring bugs in `apps/server/src/services/relay/adapter-ma
 **Bug 1b**: The `meshCore?` field declares `getAgent(id)` which does not exist on `MeshCore`. Replace with a named structural interface `AdapterMeshCoreLike` that exposes `getProjectPath(agentId): string | undefined`.
 
 **Bug 1c**: `buildContext()` calls `this.deps.meshCore.getAgent(sessionId)` and reads `agentInfo.manifest.directory`. Replace with:
+
 ```typescript
 export interface AdapterMeshCoreLike {
   getProjectPath(agentId: string): string | undefined;
@@ -48,11 +50,13 @@ buildContext(subject: string): AdapterContext | undefined {
 ---
 
 ### Task 1.2 — Fix `RELAY_TOOLS_CONTEXT` doc labels in context-builder.ts
+
 **Size**: small | **Priority**: high | **Parallel with**: 1.1
 
 Rename all `{sessionId}` and `{theirSessionId}` labels in the `RELAY_TOOLS_CONTEXT` constant to `{agentId}` and `{theirAgentId}`. These label the relay subject hierarchy shown to agents; using the wrong term causes agents to pass SDK UUIDs as relay subjects.
 
 Specific replacements in `apps/server/src/services/core/context-builder.ts`:
+
 - `relay.agent.{sessionId}` → `relay.agent.{agentId}`
 - `relay.inbox.{sessionId}` → `relay.inbox.{agentId}`
 - `{theirSessionId}` (two occurrences) → `{theirAgentId}`
@@ -64,6 +68,7 @@ Specific replacements in `apps/server/src/services/core/context-builder.ts`:
 ---
 
 ### Task 1.3 — Fix `index.ts` init order so `meshCore` is available when `adapterManager` starts
+
 **Size**: medium | **Priority**: high | **Depends on**: 1.1
 
 Fixes Bug 1a: `adapterManager` is currently constructed before `meshCore` is initialized, so its `meshCore` dep is always `undefined`.
@@ -75,6 +80,7 @@ Split the relay init into three sub-phases:
 **Phase B** (always-on): Initialize `meshCore` (unchanged).
 
 **Phase C** (inside `if (relayEnabled && relayCore)`, AFTER meshCore): Construct `adapterManager` with `meshCore` included:
+
 ```typescript
 adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
   agentManager,
@@ -94,6 +100,7 @@ relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManag
 ---
 
 ### Task 1.4 — Add `buildContext()` tests to adapter-manager.test.ts
+
 **Size**: small | **Priority**: high | **Depends on**: 1.1 | **Parallel with**: 1.3
 
 Add a `describe('buildContext()', ...)` block to `apps/server/src/services/relay/__tests__/adapter-manager.test.ts` with 5 tests:
@@ -113,9 +120,11 @@ Add a `describe('buildContext()', ...)` block to `apps/server/src/services/relay
 **Goal**: Server restarts no longer create new conversation threads for known agents. The mapping from Mesh ULID to SDK session UUID is persisted to `~/.dork/relay/agent-sessions.json`.
 
 ### Task 2.1 — Create `AgentSessionStore` for persistent agentId-to-SDK-UUID mapping
+
 **Size**: medium | **Priority**: high | **Depends on**: 1.1, 1.3
 
 Create `apps/server/src/services/relay/agent-session-store.ts` with:
+
 - `AgentSessionRecord` interface: `{ sdkSessionId, createdAt, updatedAt }`
 - `AgentSessionStoreLike` interface: `{ get(agentId), set(agentId, sdkId) }` (consumed by CCA)
 - `AgentSessionStore` class with `init()`, `get()`, `set()`, `delete()`, `persist()` (atomic tmp+rename)
@@ -127,9 +136,11 @@ Storage at `{relayDir}/agent-sessions.json`. `init()` is non-fatal: missing file
 ---
 
 ### Task 2.2 — Add unit tests for `AgentSessionStore`
+
 **Size**: medium | **Priority**: high | **Depends on**: 2.1
 
 Create `apps/server/src/services/relay/__tests__/agent-session-store.test.ts` with 9 tests covering:
+
 - `get()` returns `undefined` for unknown agentId
 - `set()` + `get()` round-trip
 - `set()` preserves `createdAt` on update
@@ -145,6 +156,7 @@ Create `apps/server/src/services/relay/__tests__/agent-session-store.test.ts` wi
 ---
 
 ### Task 2.3 — Wire `AgentSessionStore` into `AdapterManager` and CCA
+
 **Size**: large | **Priority**: high | **Depends on**: 2.1, 1.1, 1.3
 
 Five-step integration:
@@ -156,6 +168,7 @@ Five-step integration:
 3. **`agent-manager.ts`**: Implement `getSdkSessionId()` on the real `AgentManager`. Add `sdkSessionId?: string` to `AgentSession` if needed.
 
 4. **`handleAgentMessage()` in CCA**: Replace direct `extractSessionId()` use with the two-step resolution:
+
    ```typescript
    const persistedSdkId = this.deps.agentSessionStore?.get(agentId);
    const ccaSessionKey = persistedSdkId ?? agentId;
@@ -170,6 +183,7 @@ Five-step integration:
 ---
 
 ### Task 2.4 — Add session mapping integration tests to CCA test suite
+
 **Size**: medium | **Priority**: medium | **Depends on**: 2.3
 
 Extend `packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts` with 3 tests:
@@ -189,11 +203,13 @@ Requires updating mock `createMockAgentManager()` to implement `getSdkSessionId(
 **Goal**: Agents receiving relay messages can see both their Mesh ULID (for routing) and their SDK UUID (for conversation continuity) in the `<relay_context>` block.
 
 ### Task 3.1 — Add `Agent-ID` and `Session-ID` lines to relay_context block
+
 **Size**: small | **Priority**: medium | **Depends on**: 2.3
 
 Three changes:
 
 1. **`formatPromptWithContext()` in CCA**: Add `agentId` and `sdkSessionId` parameters. Insert two lines after `From:`:
+
    ```
    Agent-ID: {agentId}          ← Mesh ULID for routing
    Session-ID: {sdkSessionId}   ← SDK UUID for conversation continuity
@@ -212,6 +228,7 @@ Three changes:
 **Goal**: Two concurrent `relay_send` calls to the same agent are serialized. The "Already connected to a transport" SDK error cannot be triggered.
 
 ### Task 4.1 — Add per-agentId promise queue to CCA for concurrency safety
+
 **Size**: medium | **Priority**: high | **Depends on**: 2.3
 
 Add to `ClaudeCodeAdapter`:
@@ -239,6 +256,7 @@ Wrap the agent message path in `deliver()` through `processWithQueue()`. Clear `
 ---
 
 ### Task 4.2 — Add concurrency serialization tests to CCA test suite
+
 **Size**: small | **Priority**: high | **Depends on**: 4.1
 
 Add `describe('per-agentId queue (concurrency safety)', ...)` with 2 tests:
@@ -256,6 +274,7 @@ Add `describe('per-agentId queue (concurrency safety)', ...)` with 2 tests:
 **Goal**: No relay-related file uses `sessionId` to refer to a Mesh agent ULID. The ID glossary comment block is present in CCA.
 
 ### Task 5.1 — Rename `extractSessionId` to `extractAgentId` and audit CCA
+
 **Size**: small | **Priority**: medium | **Depends on**: 2.3, 3.1, 4.1 | **Parallel with**: 5.2
 
 In `packages/relay/src/adapters/claude-code-adapter.ts`:
@@ -277,6 +296,7 @@ In `packages/relay/src/adapters/claude-code-adapter.ts`:
 ---
 
 ### Task 5.2 — Naming audit in adapter-delivery.ts, relay-tools.ts, and interactive-handlers.ts
+
 **Size**: small | **Priority**: low | **Depends on**: 2.3 | **Parallel with**: 5.1
 
 Audit three files for relay-subject `sessionId` terminology:
@@ -292,6 +312,7 @@ Rename any `sessionId` that holds a Mesh ULID to `agentId`. Update doc strings. 
 ---
 
 ### Task 5.3 — Update relay-cca-roundtrip test and run full test suite
+
 **Size**: small | **Priority**: medium | **Depends on**: 5.1, 5.2, 4.2, 2.4
 
 Final validation task:
@@ -299,6 +320,7 @@ Final validation task:
 1. **Update `relay-cca-roundtrip.test.ts`**: Add a CWD propagation test that verifies `context.agent.directory` flows end-to-end to `ensureSession()`. Update `createMockAgentManager()` to implement `getSdkSessionId()` (required by updated `AgentManagerLike`).
 
 2. **Run all affected test suites**:
+
    ```bash
    pnpm vitest run packages/relay
    pnpm vitest run apps/server/src/services/relay
@@ -338,23 +360,23 @@ Final validation task:
 
 ## Files Changed Summary
 
-| File | Tasks | Change Type |
-|------|-------|-------------|
-| `apps/server/src/index.ts` | 1.3 | Init reorder: meshCore before adapterManager |
-| `apps/server/src/services/relay/adapter-manager.ts` | 1.1, 2.3 | Fix types + buildContext + wire AgentSessionStore |
-| `apps/server/src/services/core/context-builder.ts` | 1.2, 3.1 | Doc labels + dual-ID guidance |
-| `packages/relay/src/adapters/claude-code-adapter.ts` | 2.3, 3.1, 4.1, 5.1 | Session store + traceability + queue + naming |
-| `packages/relay/src/adapter-delivery.ts` | 5.2 | Naming audit only |
-| `apps/server/src/services/core/mcp-tools/relay-tools.ts` | 5.2 | Naming audit only |
-| `apps/server/src/services/core/interactive-handlers.ts` | 5.2 | Naming audit only |
-| `apps/server/src/services/core/agent-manager.ts` | 2.3 | Add getSdkSessionId() |
-| `apps/server/src/services/core/agent-types.ts` | 2.3 | Add sdkSessionId? to AgentSession |
-| `apps/server/src/services/relay/adapter-factory.ts` | 2.3 | Pass agentSessionStore to CCA |
-| `packages/relay/src/types.ts` | 4.1 | Add queuedMessages? to AdapterStatus |
+| File                                                     | Tasks              | Change Type                                       |
+| -------------------------------------------------------- | ------------------ | ------------------------------------------------- |
+| `apps/server/src/index.ts`                               | 1.3                | Init reorder: meshCore before adapterManager      |
+| `apps/server/src/services/relay/adapter-manager.ts`      | 1.1, 2.3           | Fix types + buildContext + wire AgentSessionStore |
+| `apps/server/src/services/core/context-builder.ts`       | 1.2, 3.1           | Doc labels + dual-ID guidance                     |
+| `packages/relay/src/adapters/claude-code-adapter.ts`     | 2.3, 3.1, 4.1, 5.1 | Session store + traceability + queue + naming     |
+| `packages/relay/src/adapter-delivery.ts`                 | 5.2                | Naming audit only                                 |
+| `apps/server/src/services/core/mcp-tools/relay-tools.ts` | 5.2                | Naming audit only                                 |
+| `apps/server/src/services/core/interactive-handlers.ts`  | 5.2                | Naming audit only                                 |
+| `apps/server/src/services/core/agent-manager.ts`         | 2.3                | Add getSdkSessionId()                             |
+| `apps/server/src/services/core/agent-types.ts`           | 2.3                | Add sdkSessionId? to AgentSession                 |
+| `apps/server/src/services/relay/adapter-factory.ts`      | 2.3                | Pass agentSessionStore to CCA                     |
+| `packages/relay/src/types.ts`                            | 4.1                | Add queuedMessages? to AdapterStatus              |
 
 ## Files Created Summary
 
-| File | Task | Purpose |
-|------|------|---------|
-| `apps/server/src/services/relay/agent-session-store.ts` | 2.1 | Persistent agentId→SDK UUID mapping |
-| `apps/server/src/services/relay/__tests__/agent-session-store.test.ts` | 2.2 | Unit tests for AgentSessionStore |
+| File                                                                   | Task | Purpose                             |
+| ---------------------------------------------------------------------- | ---- | ----------------------------------- |
+| `apps/server/src/services/relay/agent-session-store.ts`                | 2.1  | Persistent agentId→SDK UUID mapping |
+| `apps/server/src/services/relay/__tests__/agent-session-store.test.ts` | 2.2  | Unit tests for AgentSessionStore    |

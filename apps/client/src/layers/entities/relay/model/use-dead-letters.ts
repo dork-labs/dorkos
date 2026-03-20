@@ -26,10 +26,7 @@ const DEAD_LETTERS_KEY = ['relay', 'dead-letters'] as const;
  * @param filters - Optional filters (endpointHash) to scope results.
  * @param enabled - When false, the query is skipped entirely (Relay feature gate).
  */
-export function useDeadLetters(
-  filters?: { endpointHash?: string },
-  enabled = true,
-) {
+export function useDeadLetters(filters?: { endpointHash?: string }, enabled = true) {
   const transport = useTransport();
 
   return useQuery({

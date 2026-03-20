@@ -1,9 +1,22 @@
 ---
-title: "Chat Bubble UI CSS Patterns — ChatGPT, Claude.ai, iMessage, Slack, Discord"
+title: 'Chat Bubble UI CSS Patterns — ChatGPT, Claude.ai, iMessage, Slack, Discord'
 date: 2026-03-10
 type: external-best-practices
 status: active
-tags: [chat-ui, message-bubble, css, flexbox, border-radius, tailwind, imessage, chatgpt, claude-ai, slack, discord]
+tags:
+  [
+    chat-ui,
+    message-bubble,
+    css,
+    flexbox,
+    border-radius,
+    tailwind,
+    imessage,
+    chatgpt,
+    claude-ai,
+    slack,
+    discord,
+  ]
 searches_performed: 14
 sources_count: 22
 ---
@@ -35,6 +48,7 @@ ChatGPT uses a deliberately asymmetric layout:
 - **Typography**: Assistant uses `font-light` or `font-normal`; user bubble uses regular weight.
 
 **CSS summary for ChatGPT-style user message:**
+
 ```css
 /* Outer row */
 display: flex;
@@ -46,24 +60,21 @@ max-width: 70%;
 padding: 12px 16px;
 border-radius: 24px; /* rounded-3xl */
 background: hsl(0 0% 91%); /* light mode */
-background: rgba(255,255,255,0.05); /* dark mode */
+background: rgba(255, 255, 255, 0.05); /* dark mode */
 ```
 
 **Tailwind equivalent:**
+
 ```html
 <!-- User message row -->
 <div class="flex justify-end">
-  <div class="max-w-[70%] rounded-3xl bg-muted px-4 py-3 text-sm">
-    Message text here
-  </div>
+  <div class="bg-muted max-w-[70%] rounded-3xl px-4 py-3 text-sm">Message text here</div>
 </div>
 
 <!-- Assistant message row (full width) -->
 <div class="flex gap-3">
   <div class="mt-0.5 size-6 flex-shrink-0"><!-- avatar --></div>
-  <div class="min-w-0 flex-1 text-sm">
-    Assistant response here
-  </div>
+  <div class="min-w-0 flex-1 text-sm">Assistant response here</div>
 </div>
 ```
 
@@ -84,6 +95,7 @@ Claude.ai follows the same hybrid pattern as ChatGPT but with distinct visual id
 - **Alignment**: Same `ml-auto` / `flex-end` pattern as ChatGPT.
 
 **Tailwind equivalent (Claude-style):**
+
 ```html
 <!-- User message -->
 <div class="flex justify-end px-4">
@@ -95,9 +107,7 @@ Claude.ai follows the same hybrid pattern as ChatGPT but with distinct visual id
 <!-- Assistant message -->
 <div class="flex gap-3 px-4">
   <div class="mt-1 size-7 flex-shrink-0 rounded-full"><!-- Claude avatar --></div>
-  <div class="prose prose-sm min-w-0 flex-1 font-serif">
-    Assistant response markdown
-  </div>
+  <div class="prose prose-sm min-w-0 flex-1 font-serif">Assistant response markdown</div>
 </div>
 ```
 
@@ -108,17 +118,20 @@ Claude.ai follows the same hybrid pattern as ChatGPT but with distinct visual id
 iMessage is the canonical reference for colored-bubble chat UI. It uses bubbles for **both sides**, differentiated by color and alignment:
 
 **Sent messages (right side):**
+
 - `align-self: flex-end` in a `display: flex; flex-direction: column` container
 - Background: `#0b93f6` (blue, iOS default) or `#34C759` (green for SMS)
 - Text: white
 - `border-radius: 25px` base, with speech bubble tail via pseudo-elements
 
 **Received messages (left side):**
+
 - `align-self: flex-start`
 - Background: `#e5e5ea` (light gray)
 - Text: black
 
 **Exact CSS values from iOS implementation:**
+
 ```css
 /* Shared bubble */
 max-width: 255px;
@@ -141,6 +154,7 @@ max-width: 450px;
 **Grouped messages (tail removal):** Consecutive messages from the same sender use the `.noTail` class which sets `opacity: 0` on the `::before` / `::after` pseudo-elements (the tail). The bubble shape itself stays fully rounded — iMessage does NOT change border-radius for grouped messages; it only hides/shows the tail. Vertical margin is reduced from `15px` to `2px` for grouped messages.
 
 **Dark mode colors:**
+
 - Background: `#161515`
 - Sent bubble remains blue `#0b93f6`
 
@@ -158,6 +172,7 @@ Slack does **not** use chat bubbles. It uses a flat, email-thread-inspired layou
 - **Compact mode**: Removes avatars entirely; shows inline `HH:mm` timestamps; all messages are vertically compact at ~20px line-height.
 
 **CSS pattern for Slack-style grouping:**
+
 ```css
 /* Message row */
 .message-row {
@@ -185,16 +200,18 @@ Slack does **not** use chat bubbles. It uses a flat, email-thread-inspired layou
 Discord has two distinct display modes:
 
 **Cozy Mode (default):**
+
 - No bubble backgrounds by default — same flat layout as Slack
 - Avatar shown for first message in group; subsequent messages have `padding-left: 68px` (matching the avatar width) and no avatar
 - Hover reveals a timestamp inline
 - No border-radius; no bubble
 
 **BetterDiscord "Chat Bubbles" CSS** (community mod, shows what Discord could look like with bubbles):
+
 ```css
 /* Variables */
---bubble-radius-full: 0.8rem;    /* 12.8px */
---bubble-radius-tight: 0rem;     /* sharp corner on grouped side */
+--bubble-radius-full: 0.8rem; /* 12.8px */
+--bubble-radius-tight: 0rem; /* sharp corner on grouped side */
 
 /* First message in group */
 border-radius: 0.8rem 0.8rem 0.8rem 0rem;
@@ -206,22 +223,23 @@ border-radius: 0rem 0.8rem 0.8rem 0rem;
 border-radius: 0rem 0.8rem 0.8rem 0.8rem;
 
 /* Padding */
-padding: 0.3rem 0.4rem;          /* very compact: ~5px vertical, 6px horizontal */
+padding: 0.3rem 0.4rem; /* very compact: ~5px vertical, 6px horizontal */
 
 /* Max-width */
-max-width: 62ch;                 /* character-based, excellent for readability */
+max-width: 62ch; /* character-based, excellent for readability */
 ```
 
 This uses CSS `:has()` selector (Chrome 105+, now universally supported) to detect consecutive messages:
 
 ```css
 /* Message is followed by another from same author */
-.message-group:has(+ .message-group[data-author="same"]) .bubble {
+.message-group:has(+ .message-group[data-author='same']) .bubble {
   border-end-start-radius: var(--bubble-radius-tight);
 }
 ```
 
 **Compact Mode:**
+
 - Fully flat, no avatars, all messages in one column
 - Timestamp shown at start of each message inline
 - Maximum information density
@@ -235,42 +253,62 @@ This uses CSS `:has()` selector (Chrome 105+, now universally supported) to dete
 This is a subtle but important CSS decision. Both approaches achieve right-alignment but have different semantics and different effects in a flex column:
 
 **`justify-end` on the row container:**
+
 ```css
 /* Row is flex-row, justify-end pushes bubble right */
-.message-row { display: flex; justify-content: flex-end; }
-.bubble { /* no special alignment needed */ }
+.message-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.bubble {
+  /* no special alignment needed */
+}
 ```
+
 - Use when: The entire row is dedicated to this message (no avatar on the right side for user messages)
 - Effect: The bubble fills from right; any child elements also push right
 
 **`ml-auto` on the bubble itself:**
+
 ```css
 /* Container is flex-column (all messages stacked) */
-.message-list { display: flex; flex-direction: column; }
-.bubble.user { margin-left: auto; }
+.message-list {
+  display: flex;
+  flex-direction: column;
+}
+.bubble.user {
+  margin-left: auto;
+}
 ```
+
 - Use when: Messages are stacked in a single flex column (the most common pattern)
 - Effect: The bubble is pushed to the right edge; works regardless of sibling alignment
 - **This is the correct approach for chat UIs** where messages from different roles alternate in the same column
 
 **`align-self: flex-end` (equivalent in flex column):**
+
 ```css
-.message-list { display: flex; flex-direction: column; }
-.bubble.user { align-self: flex-end; }
+.message-list {
+  display: flex;
+  flex-direction: column;
+}
+.bubble.user {
+  align-self: flex-end;
+}
 ```
+
 - Equivalent to `ml-auto` in a flex column
 - Slightly more explicit about intent
 
 **Industry consensus:** ChatGPT, iMessage implementations, and community Tailwind patterns all converge on `ml-auto` or `align-self: flex-end` for individual bubble alignment within a flex column. Avoid `justify-end` on the row if the row also contains an avatar or any other element that should stay left.
 
 **Tailwind implementation:**
+
 ```html
 <!-- Flex column container for all messages -->
 <div class="flex flex-col gap-1">
   <!-- User message: pushed right via ml-auto -->
-  <div class="ml-auto max-w-[75%] rounded-3xl bg-muted px-4 py-3">
-    User text
-  </div>
+  <div class="bg-muted ml-auto max-w-[75%] rounded-3xl px-4 py-3">User text</div>
   <!-- Assistant message: natural left flow -->
   <div class="flex gap-3">
     <div><!-- avatar --></div>
@@ -283,17 +321,18 @@ This is a subtle but important CSS decision. Both approaches achieve right-align
 
 ### Max-Width Best Practices
 
-| App / Context | Max-Width Value | Notes |
-|---|---|---|
-| iMessage | `255px` fixed | Mobile-native; feels tight on desktop |
-| Facebook Messenger | `calc(100% - 67px)` | Accounts for action menu |
-| ChatGPT user bubble | ~70% of conversation column | Column itself is `max-w-2xl` (672px) |
-| Claude.ai user bubble | ~75% of conversation column | Slightly wider |
-| Discord bubbles (community) | `62ch` | Character-based — best for text |
-| Flowbite component | `max-w-[320px]` | Fixed px |
-| General best practice | `clamp(200px, 75%, 480px)` | Fluid, responsive |
+| App / Context               | Max-Width Value             | Notes                                 |
+| --------------------------- | --------------------------- | ------------------------------------- |
+| iMessage                    | `255px` fixed               | Mobile-native; feels tight on desktop |
+| Facebook Messenger          | `calc(100% - 67px)`         | Accounts for action menu              |
+| ChatGPT user bubble         | ~70% of conversation column | Column itself is `max-w-2xl` (672px)  |
+| Claude.ai user bubble       | ~75% of conversation column | Slightly wider                        |
+| Discord bubbles (community) | `62ch`                      | Character-based — best for text       |
+| Flowbite component          | `max-w-[320px]`             | Fixed px                              |
+| General best practice       | `clamp(200px, 75%, 480px)`  | Fluid, responsive                     |
 
 **Recommendation for AI chat UIs:**
+
 - User bubble: `max-w-[75%]` or `max-w-prose` (65ch)
 - The conversation column itself should have `max-w-2xl` to `max-w-3xl` (672px–768px)
 - On mobile, relax to `max-w-[85%]`
@@ -305,14 +344,14 @@ This is a subtle but important CSS decision. Both approaches achieve right-align
 
 **Standard (no grouping):**
 
-| App | Border-Radius |
-|---|---|
-| iMessage | `25px` (approximately `rounded-3xl` in Tailwind) |
-| ChatGPT user bubble | `24px` (`rounded-3xl`) |
-| Claude.ai user bubble | ~`18px`–`20px` (`rounded-2xl`) |
-| Facebook Messenger | `18px` base |
-| Discord (community bubbles) | `12.8px` (0.8rem) |
-| Flowbite component | uses logical properties (`rounded-e-base rounded-es-base`) |
+| App                         | Border-Radius                                              |
+| --------------------------- | ---------------------------------------------------------- |
+| iMessage                    | `25px` (approximately `rounded-3xl` in Tailwind)           |
+| ChatGPT user bubble         | `24px` (`rounded-3xl`)                                     |
+| Claude.ai user bubble       | ~`18px`–`20px` (`rounded-2xl`)                             |
+| Facebook Messenger          | `18px` base                                                |
+| Discord (community bubbles) | `12.8px` (0.8rem)                                          |
+| Flowbite component          | uses logical properties (`rounded-e-base rounded-es-base`) |
 
 **Grouped message radius reduction (the "stacking" pattern):**
 
@@ -322,7 +361,9 @@ For **right-aligned user bubbles**, the grouped side is the bottom-right:
 
 ```css
 /* Only message OR single message in group */
-.bubble { border-radius: 18px; }
+.bubble {
+  border-radius: 18px;
+}
 
 /* First message of group (more coming below from same sender) */
 .bubble.group-first {
@@ -345,32 +386,50 @@ For **right-aligned user bubbles**, the grouped side is the bottom-right:
 ```
 
 For **left-aligned received/assistant bubbles** (mirror):
+
 ```css
-.bubble.group-first  { border-radius: 18px 18px 18px 4px; } /* bottom-left tight */
-.bubble.group-middle { border-radius: 4px 18px 18px 4px; }  /* both left corners tight */
-.bubble.group-last   { border-radius: 4px 18px 18px 18px; } /* top-left tight */
+.bubble.group-first {
+  border-radius: 18px 18px 18px 4px;
+} /* bottom-left tight */
+.bubble.group-middle {
+  border-radius: 4px 18px 18px 4px;
+} /* both left corners tight */
+.bubble.group-last {
+  border-radius: 4px 18px 18px 18px;
+} /* top-left tight */
 ```
 
 **Using CSS logical properties** (RTL-safe, modern approach):
+
 ```css
 /* User bubble (inline-end = right in LTR) */
-.bubble.user { border-radius: 1.25rem; }
+.bubble.user {
+  border-radius: 1.25rem;
+}
 
-.bubble.user.group-first  { border-end-end-radius: 0.25rem; }
-.bubble.user.group-middle { border-start-end-radius: 0.25rem; border-end-end-radius: 0.25rem; }
-.bubble.user.group-last   { border-start-end-radius: 0.25rem; }
+.bubble.user.group-first {
+  border-end-end-radius: 0.25rem;
+}
+.bubble.user.group-middle {
+  border-start-end-radius: 0.25rem;
+  border-end-end-radius: 0.25rem;
+}
+.bubble.user.group-last {
+  border-start-end-radius: 0.25rem;
+}
 ```
 
 **Tailwind v4 with arbitrary values:**
+
 ```html
 <!-- first in group (user, right-aligned) -->
 <div class="rounded-3xl rounded-br-[4px] ...">
-
-<!-- middle in group -->
-<div class="rounded-3xl rounded-tr-[4px] rounded-br-[4px] ...">
-
-<!-- last in group -->
-<div class="rounded-3xl rounded-tr-[4px] ...">
+  <!-- middle in group -->
+  <div class="rounded-3xl rounded-tr-[4px] rounded-br-[4px] ...">
+    <!-- last in group -->
+    <div class="rounded-3xl rounded-tr-[4px] ..."></div>
+  </div>
+</div>
 ```
 
 **Tight radius value:** Industry converges on `2px`–`6px` for the "grouped side" corner. Facebook Messenger uses `4px`. Discord uses `0rem` (fully sharp). iMessage doesn't change the radius at all (just hides the tail). **Recommendation: `4px` (`rounded-[4px]`) — sharp enough to signal grouping without looking broken.**
@@ -379,14 +438,14 @@ For **left-aligned received/assistant bubbles** (mirror):
 
 ### Padding Values by Pattern
 
-| Pattern | Padding | Tailwind |
-|---|---|---|
-| iMessage | `10px 20px` | `py-2.5 px-5` |
-| ChatGPT estimated | `12px 16px` | `py-3 px-4` |
-| Facebook Messenger | `8px 12px 9px` | `px-3 pt-2 pb-[9px]` |
-| Discord (community) | `5px 6px` | `py-[5px] px-[6px]` (very compact) |
-| Flowbite | `16px` all sides | `p-4` |
-| General recommended | `10px 14px` | `py-2.5 px-3.5` |
+| Pattern             | Padding          | Tailwind                           |
+| ------------------- | ---------------- | ---------------------------------- |
+| iMessage            | `10px 20px`      | `py-2.5 px-5`                      |
+| ChatGPT estimated   | `12px 16px`      | `py-3 px-4`                        |
+| Facebook Messenger  | `8px 12px 9px`   | `px-3 pt-2 pb-[9px]`               |
+| Discord (community) | `5px 6px`        | `py-[5px] px-[6px]` (very compact) |
+| Flowbite            | `16px` all sides | `p-4`                              |
+| General recommended | `10px 14px`      | `py-2.5 px-3.5`                    |
 
 **Observation:** iMessage-like apps use generous horizontal padding (20px) to make short messages feel substantial. AI chat apps use more moderate padding since bubbles are only on the user side and messages tend to be longer.
 
@@ -397,28 +456,34 @@ For **left-aligned received/assistant bubbles** (mirror):
 **The invariant:** user/sent messages use an accent color; assistant/received messages use either no background (AI chat pattern) or a neutral gray.
 
 **ChatGPT:**
+
 - User bubble light mode: `rgba(0,0,0,0.05)` to `#e5e5e5` range (muted surface)
 - User bubble dark mode: `rgba(255,255,255,0.05)` (very subtle white overlay)
 - Note: OpenAI uses `bg-token-*` custom properties internally, not raw hex values
 
 **Claude.ai (assistant-ui documented colors):**
+
 - User bubble light: `#DDD9CE` (warm cream)
 - User bubble dark: `#393937` (warm dark gray)
 - No bubble for assistant messages
 
 **iMessage:**
+
 - Sent: `#0b93f6` (blue) with white text
 - Received: `#e5e5ea` (gray) with dark text
 
 **Facebook Messenger:**
+
 - Sent: brand blue (`#0084ff`) historically, now gradient
 - Received: `#f0f0f0` or dark surface
 
 **Discord (default, no bubbles):**
+
 - Hover: `rgba(4, 4, 5, 0.07)` on dark theme
 - No background at rest
 
 **AI chat UI recommendation (for DorkOS):**
+
 ```css
 /* Light mode */
 --user-bubble: hsl(0 0% 91%); /* existing --user-msg token */
@@ -431,15 +496,16 @@ For **left-aligned received/assistant bubbles** (mirror):
 
 ### Vertical Spacing Between Grouped Messages
 
-| App | Same-sender gap | New-sender gap |
-|---|---|---|
-| iMessage | `2px` (`margin-bottom: 2px`) | `15px` |
-| Discord cozy | ~`2px` | `~16px` + username header |
-| Slack | `2px` | `~12px` + avatar + name |
-| Facebook Messenger | `2px` (`gap: 2px` in flex column) | `8px` |
-| ChatGPT (estimated) | `4px`–`8px` | `16px` |
+| App                 | Same-sender gap                   | New-sender gap            |
+| ------------------- | --------------------------------- | ------------------------- |
+| iMessage            | `2px` (`margin-bottom: 2px`)      | `15px`                    |
+| Discord cozy        | ~`2px`                            | `~16px` + username header |
+| Slack               | `2px`                             | `~12px` + avatar + name   |
+| Facebook Messenger  | `2px` (`gap: 2px` in flex column) | `8px`                     |
+| ChatGPT (estimated) | `4px`–`8px`                       | `16px`                    |
 
 **Tailwind pattern:**
+
 ```html
 <div class="flex flex-col">
   <!-- group start -->
@@ -470,10 +536,10 @@ function getBubbleClasses(role: MessageRole, position: MessagePosition): string 
 
   // Border-radius per position (tight corner on bottom-right for user bubbles)
   const radius: Record<MessagePosition, string> = {
-    only:   'rounded-3xl',
-    first:  'rounded-3xl rounded-br-[4px]',
+    only: 'rounded-3xl',
+    first: 'rounded-3xl rounded-br-[4px]',
     middle: 'rounded-3xl rounded-tr-[4px] rounded-br-[4px]',
-    last:   'rounded-3xl rounded-tr-[4px]',
+    last: 'rounded-3xl rounded-tr-[4px]',
   };
 
   return `${base} ${radius[position]}`;
@@ -488,25 +554,23 @@ function getRowSpacing(position: MessagePosition, role: MessageRole): string {
 
 ```html
 <!-- User message -->
-<div class="flex mt-4">
-  <div class="ml-auto max-w-[75%] rounded-3xl bg-user-msg px-4 py-3 text-sm">
-    User message text
-  </div>
+<div class="mt-4 flex">
+  <div class="bg-user-msg ml-auto max-w-[75%] rounded-3xl px-4 py-3 text-sm">User message text</div>
 </div>
 
 <!-- User message grouped (follows another user message within ~2min) -->
-<div class="flex mt-0.5">
-  <div class="ml-auto max-w-[75%] rounded-3xl rounded-tr-[4px] bg-user-msg px-4 py-3 text-sm">
+<div class="mt-0.5 flex">
+  <div class="bg-user-msg ml-auto max-w-[75%] rounded-3xl rounded-tr-[4px] px-4 py-3 text-sm">
     Follow-up from same user
   </div>
 </div>
 
 <!-- Assistant message (no bubble) -->
-<div class="flex items-start gap-3 mt-4 px-4">
+<div class="mt-4 flex items-start gap-3 px-4">
   <div class="mt-[3px] w-4 flex-shrink-0">
     <!-- role indicator icon -->
   </div>
-  <div class="min-w-0 flex-1 text-sm font-light leading-relaxed">
+  <div class="min-w-0 flex-1 text-sm leading-relaxed font-light">
     Assistant response with markdown
   </div>
 </div>
@@ -529,10 +593,8 @@ function getMessagePosition(
   const prev = messages[index - 1];
   const next = messages[index + 1];
 
-  const sameRoleAsPrev = prev?.role === msg.role &&
-    (msg.timestamp - prev.timestamp) < groupWindowMs;
-  const sameRoleAsNext = next?.role === msg.role &&
-    (next.timestamp - msg.timestamp) < groupWindowMs;
+  const sameRoleAsPrev = prev?.role === msg.role && msg.timestamp - prev.timestamp < groupWindowMs;
+  const sameRoleAsNext = next?.role === msg.role && next.timestamp - msg.timestamp < groupWindowMs;
 
   if (sameRoleAsPrev && sameRoleAsNext) return 'middle';
   if (sameRoleAsPrev) return 'last';
@@ -545,18 +607,18 @@ function getMessagePosition(
 
 ## Summary Comparison Table
 
-| Dimension | ChatGPT | Claude.ai | iMessage | Slack/Discord |
-|---|---|---|---|---|
-| **User alignment** | Right bubble | Right bubble | Right bubble | N/A (no "you" distinction) |
-| **Assistant alignment** | Full-width, no bubble | Full-width, no bubble | Left bubble | Left, no bubble |
-| **User border-radius** | `~24px` (`rounded-3xl`) | `~18–20px` (`rounded-2xl`) | `25px` | N/A |
-| **Received border-radius** | None (no bubble) | None (no bubble) | `25px` | N/A |
-| **User bg** | Muted gray (~`#e5e5e5` light, `white/5` dark) | Warm cream (`#DDD9CE` / `#393937`) | Blue (`#0b93f6`) | N/A |
-| **Max-width (user bubble)** | ~70% of column | ~75% of column | `255px` fixed | Full width |
-| **Grouped radius** | Likely reduced (unconfirmed) | Likely reduced (unconfirmed) | No change (tail hidden) | `0–4px` on grouped side |
-| **Grouped spacing** | ~`4px` gap | ~`4px` gap | `2px` gap | `2px` gap |
-| **Tail/pointer** | None | None | Yes (pseudo-element) | None |
-| **Avatar position** | Left of assistant | Left of assistant | None (name only) | Left of first in group |
+| Dimension                   | ChatGPT                                       | Claude.ai                          | iMessage                | Slack/Discord              |
+| --------------------------- | --------------------------------------------- | ---------------------------------- | ----------------------- | -------------------------- |
+| **User alignment**          | Right bubble                                  | Right bubble                       | Right bubble            | N/A (no "you" distinction) |
+| **Assistant alignment**     | Full-width, no bubble                         | Full-width, no bubble              | Left bubble             | Left, no bubble            |
+| **User border-radius**      | `~24px` (`rounded-3xl`)                       | `~18–20px` (`rounded-2xl`)         | `25px`                  | N/A                        |
+| **Received border-radius**  | None (no bubble)                              | None (no bubble)                   | `25px`                  | N/A                        |
+| **User bg**                 | Muted gray (~`#e5e5e5` light, `white/5` dark) | Warm cream (`#DDD9CE` / `#393937`) | Blue (`#0b93f6`)        | N/A                        |
+| **Max-width (user bubble)** | ~70% of column                                | ~75% of column                     | `255px` fixed           | Full width                 |
+| **Grouped radius**          | Likely reduced (unconfirmed)                  | Likely reduced (unconfirmed)       | No change (tail hidden) | `0–4px` on grouped side    |
+| **Grouped spacing**         | ~`4px` gap                                    | ~`4px` gap                         | `2px` gap               | `2px` gap                  |
+| **Tail/pointer**            | None                                          | None                               | Yes (pseudo-element)    | None                       |
+| **Avatar position**         | Left of assistant                             | Left of assistant                  | None (name only)        | Left of first in group     |
 
 ---
 

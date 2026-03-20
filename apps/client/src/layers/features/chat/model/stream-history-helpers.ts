@@ -70,7 +70,7 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
 export function reconcileTaggedMessages(
   currentMessages: ChatMessage[],
   history: HistoryMessage[],
-  setMessages: (fn: (prev: ChatMessage[]) => ChatMessage[]) => void,
+  setMessages: (fn: (prev: ChatMessage[]) => ChatMessage[]) => void
 ): void {
   const currentIds = new Set(currentMessages.map((m) => m.id));
   const taggedMessages = currentMessages.filter((m) => m._streaming);
@@ -91,8 +91,8 @@ export function reconcileTaggedMessages(
       // Replace tagged user with server version, clear tag
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === taggedUser.id ? { ...mapHistoryMessage(serverMsg), _streaming: false } : m,
-        ),
+          m.id === taggedUser.id ? { ...mapHistoryMessage(serverMsg), _streaming: false } : m
+        )
       );
       continue;
     }
@@ -108,10 +108,10 @@ export function reconcileTaggedMessages(
       // transcript parser may or may not extract them depending on SDK version).
       const serverMapped = mapHistoryMessage(serverMsg);
       const serverSubagentIds = new Set(
-        serverMapped.parts.filter((p) => p.type === 'subagent').map((p) => p.taskId),
+        serverMapped.parts.filter((p) => p.type === 'subagent').map((p) => p.taskId)
       );
       const clientOnlyParts = taggedAssistant.parts.filter(
-        (p) => p.type === 'subagent' && !serverSubagentIds.has(p.taskId),
+        (p) => p.type === 'subagent' && !serverSubagentIds.has(p.taskId)
       );
       const mergedParts =
         clientOnlyParts.length > 0
@@ -122,8 +122,8 @@ export function reconcileTaggedMessages(
         prev.map((m) =>
           m.id === taggedAssistant.id
             ? { ...serverMapped, parts: mergedParts, _streaming: false }
-            : m,
-        ),
+            : m
+        )
       );
       continue;
     }

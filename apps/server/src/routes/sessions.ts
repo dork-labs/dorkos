@@ -319,7 +319,7 @@ router.get('/:id/stream', async (req, res) => {
     internalSessionId,
     cwd,
     (event) => sendSSEEvent(res, event),
-    clientId,
+    clientId
   );
 
   res.on('close', () => unsubscribe());

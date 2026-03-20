@@ -67,6 +67,7 @@ status: ideation
   - React 19 hooks (`useState`, refs)
 
 - **Data flow:**
+
   ```
   SDK emits prompt_suggestion { suggestions: string[] }
     ↓
@@ -103,6 +104,7 @@ Research agent consulted 14 sources including NN/G articles, Material Design 3 c
 ### Potential Solutions
 
 **1. Inline Chips Below Last Assistant Message (Recommended)**
+
 - Chips rendered as pill buttons in a horizontal row directly below the final message bubble, scrolling with the conversation
 - Pros: Industry consensus location (ChatGPT, Perplexity, Gemini), contextually associated with the message that generated them, natural keyboard tab order, no z-index conflicts, fully accessible via native `<button>` elements
 - Cons: Requires scroll if user is far up in history — mitigated by the existing scroll-to-bottom behavior that fires on `done`
@@ -110,6 +112,7 @@ Research agent consulted 14 sources including NN/G articles, Material Design 3 c
 - Maintenance: Low — purely additive, no existing behavior changes
 
 **2. Floating Bar Above Input Area**
+
 - Fixed-position area above the chat textarea, always visible
 - Pros: Always reachable regardless of scroll position
 - Cons: Permanent layout real estate, layout shift when chips appear/disappear, competes with command palette z-index, wrong aesthetic for DorkOS's control-panel feel
@@ -117,6 +120,7 @@ Research agent consulted 14 sources including NN/G articles, Material Design 3 c
 - Maintenance: Medium — coupling with input area layout
 
 **3. Inside the Input Area (Ghost Text / Embedded Chips)**
+
 - Suggestions appear as ghost text or chips embedded in the textarea
 - Pros: Zero extra layout space
 - Cons: Conflicts with typed content, multiple suggestions don't map to a single ghost string, destroys input simplicity, observed to confuse users in research
@@ -124,6 +128,7 @@ Research agent consulted 14 sources including NN/G articles, Material Design 3 c
 - Maintenance: High — fragile coupling with input behavior
 
 **4. Inline with Auto-Scroll Anchor (Refinement of #1)**
+
 - Same as #1 but scroll is guarded by IntersectionObserver — only scrolls if user is already near bottom
 - Pros: Guarantees visibility without jarring scroll for users reading history
 - Cons: Marginally more complexity than #1
@@ -131,16 +136,19 @@ Research agent consulted 14 sources including NN/G articles, Material Design 3 c
 - Maintenance: Low
 
 ### Security Considerations
+
 - Suggestion text is plain text from the Claude SDK. React JSX auto-escaping provides full XSS protection when rendered as `{suggestion}` inside `<button>`. Never use `dangerouslySetInnerHTML`.
 - When submitted as a user message, the suggestion flows through the existing `sendMessage` pipeline — no additional sanitization needed.
 
 ### Performance Considerations
+
 - `prompt_suggestion` events are sparse (one per turn, not a stream of deltas). No debounce or batching needed.
 - Chips are plain text `<button>` elements — negligible DOM cost.
 - `AnimatePresence` with 2-3 items adds no measurable overhead.
 - Store as `string[]` in local `useState` — no Zustand store needed for ephemeral session-local UI state.
 
 ### Accessibility Considerations
+
 - Use native `<button>` elements for keyboard focusability and Enter/Space activation
 - Wrap chips in `role="group"` container with `aria-label="Suggested follow-ups"`
 - Use `aria-label` on each chip when text is truncated
@@ -148,12 +156,13 @@ Research agent consulted 14 sources including NN/G articles, Material Design 3 c
 - Visible focus ring via existing `focus-visible:ring-2` Tailwind utilities
 
 ### Recommendation
+
 **Recommended: Approach #1 (Inline chips below last assistant message)**. Industry consensus, lowest complexity, follows existing `ShortcutChips.tsx` pattern, fully accessible, no layout shift concerns. Auto-scroll already handles visibility.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Click behavior | Populate input only (no auto-send) | NN/G research + Perplexity pattern. Gives power users review control before execution. Aligns with Kai persona who prefers to verify before sending. |
-| 2 | Chip persistence | Clear on any message send | Ephemeral UI — chips vanish when user sends any message (suggestion or typed). Never persisted in JSONL history. Clean, predictable lifecycle. |
-| 3 | Input overlap behavior | Hide when input has text | Chips fade out when user starts typing, fade back if input is cleared. Prevents confusion about replace-vs-append. Clean UX with no ambiguity. |
+| #   | Decision               | Choice                             | Rationale                                                                                                                                            |
+| --- | ---------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Click behavior         | Populate input only (no auto-send) | NN/G research + Perplexity pattern. Gives power users review control before execution. Aligns with Kai persona who prefers to verify before sending. |
+| 2   | Chip persistence       | Clear on any message send          | Ephemeral UI — chips vanish when user sends any message (suggestion or typed). Never persisted in JSONL history. Clean, predictable lifecycle.       |
+| 3   | Input overlap behavior | Hide when input has text           | Chips fade out when user starts typing, fade back if input is cleared. Prevents confusion about replace-vs-append. Clean UX with no ambiguity.       |

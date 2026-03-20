@@ -34,7 +34,13 @@ function createMockEnvelope() {
     id: 'env-01',
     subject: 'relay.test.mock.event',
     from: 'relay.agent.sender',
-    budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 3600000, callBudgetRemaining: 10 },
+    budget: {
+      hopCount: 0,
+      maxHops: 5,
+      ancestorChain: [],
+      ttl: Date.now() + 3600000,
+      callBudgetRemaining: 10,
+    },
     createdAt: new Date().toISOString(),
     payload: { text: 'hello' },
   };
@@ -135,7 +141,11 @@ describe('AdapterRegistry', () => {
     const delivered = await registry.deliver(subject, { ...envelope, subject });
 
     expect(delivered).toEqual({ success: true, durationMs: 0 });
-    expect(adapter.deliver).toHaveBeenCalledWith(subject, expect.objectContaining({ subject }), undefined);
+    expect(adapter.deliver).toHaveBeenCalledWith(
+      subject,
+      expect.objectContaining({ subject }),
+      undefined
+    );
   });
 
   it('deliver() returns null when no adapter matches', async () => {
@@ -197,10 +207,14 @@ describe('AdapterRegistry', () => {
     await registry.deliver(
       'relay.test.ctx.event',
       { ...envelope, subject: 'relay.test.ctx.event' },
-      context,
+      context
     );
 
-    expect(adapter.deliver).toHaveBeenCalledWith('relay.test.ctx.event', expect.any(Object), context);
+    expect(adapter.deliver).toHaveBeenCalledWith(
+      'relay.test.ctx.event',
+      expect.any(Object),
+      context
+    );
   });
 
   // --- Hot-reload ---

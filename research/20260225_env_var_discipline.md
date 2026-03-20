@@ -1,5 +1,5 @@
 ---
-title: "Disciplined Environment Variable Handling in TypeScript Monorepos"
+title: 'Disciplined Environment Variable Handling in TypeScript Monorepos'
 date: 2026-02-25
 type: implementation
 status: active
@@ -36,6 +36,7 @@ T3 Env (`@t3-oss/env-core`, currently v0.13.10) wraps Zod (or any Standard Schem
 - **Vite support**: Use `@t3-oss/env-core` (not the Next.js variant), set `clientPrefix: 'VITE_'`, and point `runtimeEnv: import.meta.env`.
 
 **Known Issues (from GitHub)**:
+
 - `skipValidation` does not propagate to extended configs (Issue #323) — if `packages/auth/env.ts` does not set `skipValidation`, it will throw even when the consuming app sets it.
 - `skipValidation` skips defaults entirely (Issue #266) — so any code relying on `.default(value)` will see `undefined`.
 - The package is ESM-only, which can complicate CJS consumers or certain Jest/Vitest setups.
@@ -56,6 +57,7 @@ export type Env = z.infer<typeof envSchema>;
 ```
 
 Characteristics:
+
 - Zod is already a project dependency, so no new package.
 - `z.coerce.number()` handles string-to-number coercion automatically (all env vars arrive as strings).
 - `envSchema.parse()` throws a `ZodError` with human-readable field-level errors.
@@ -96,6 +98,7 @@ export const env = clientEnvSchema.parse(import.meta.env);
 For build-time validation of Vite env vars (fail fast before the dev server starts), the `@julr/vite-plugin-validate-env` package supports Zod schemas and runs at `vite dev` / `vite build` time with zero runtime overhead.
 
 With T3 Env + Vite, the pattern is:
+
 ```ts
 import { createEnv } from '@t3-oss/env-core';
 import { z } from 'zod';
@@ -184,7 +187,7 @@ beforeEach(() => {
 **Pattern 3: `skipValidation` (T3 Env only — avoid for DorkOS)**
 
 ```ts
-skipValidation: !!process.env.VITEST || process.env.NODE_ENV === 'test'
+skipValidation: !!process.env.VITEST || process.env.NODE_ENV === 'test';
 ```
 
 This bypasses all validation AND all Zod defaults, leaving variables as raw strings or `undefined`. It is fragile: code that expects `env.port` to be a `number` will get `undefined`. The issues on the T3 Env GitHub tracker (especially #155 and #266) confirm this causes real bugs.
@@ -204,7 +207,7 @@ export default defineConfig({
 
 This is a valid fallback when some variables genuinely have no safe default.
 
-**Recommendation**: Design schemas with `.default()` values for all non-secret variables. The current DorkOS env vars (DORKOS_PORT, DORKOS_*, TUNNEL_*) all have obvious safe defaults. This eliminates the need for `skipValidation` or test-env files entirely.
+**Recommendation**: Design schemas with `.default()` values for all non-secret variables. The current DorkOS env vars (DORKOS*PORT, DORKOS*\_, TUNNEL\_\_) all have obvious safe defaults. This eliminates the need for `skipValidation` or test-env files entirely.
 
 ### Security Considerations
 
@@ -227,12 +230,14 @@ This is a valid fallback when some variables genuinely have no safe default.
 **Description**: Official library for validated env vars with server/client separation, framework adapters, and monorepo `extends` composition.
 
 **Pros**:
+
 - Built-in server-vs-client firewall enforced at runtime
 - `clientPrefix` enforcement prevents misnamed client vars
 - `extends` allows sharing schemas across packages without code duplication
 - Widely used in the T3 ecosystem, well-documented
 
 **Cons**:
+
 - ESM-only — may require build config changes for CJS consumers (CLI package uses esbuild CJS output)
 - `skipValidation` breaks Zod defaults — unreliable in test environments
 - Extended configs don't inherit `skipValidation` (open bug #323 as of Feb 2026)
@@ -248,6 +253,7 @@ This is a valid fallback when some variables genuinely have no safe default.
 **Description**: Each app exports `const env = z.object({...}).parse(process.env)` from a dedicated `env.ts` file, with coercion and defaults baked into the schema.
 
 **Pros**:
+
 - Zero new dependencies (Zod already used throughout the project)
 - Defaults always work, including in test environments
 - Predictable behavior — no hidden modes or escape hatches
@@ -257,6 +263,7 @@ This is a valid fallback when some variables genuinely have no safe default.
 - `vi.stubEnv()` and `vi.resetModules()` are sufficient for test overrides
 
 **Cons**:
+
 - No runtime enforcement of server/client boundary (relies on import hygiene + FSD layer rules)
 - Some env var names repeated across per-app schemas (minor duplication)
 - Does not auto-integrate with Next.js `NEXT_PUBLIC_` bundle splitting
@@ -269,11 +276,13 @@ This is a valid fallback when some variables genuinely have no safe default.
 **Description**: A Vite plugin that validates env vars at build/dev time (not runtime), providing early failure before the dev server even starts. Supports Zod schemas.
 
 **Pros**:
+
 - Zero runtime overhead (all validation at build time)
 - Integrates directly into Vite's plugin pipeline
 - Catches missing vars before the browser loads anything
 
 **Cons**:
+
 - Vite-only (does not help with Express server or CLI)
 - Adds another dev dependency
 - Redundant with a runtime `env.ts` that already validates at startup
@@ -308,6 +317,7 @@ Do NOT create a `packages/env/` shared package for DorkOS. The complexity of cro
 **Rationale**: Zod is already a core dependency, the schemas are simple to write and read, and the defaults-always-work behavior eliminates an entire class of test environment bugs that T3 Env's `skipValidation` introduces. The FSD layer architecture already enforces server/client import boundaries more effectively than T3 Env's runtime check, making T3 Env's primary differentiating feature redundant. The manual pattern is also consistent with the existing `packages/shared/src/config-schema.ts` style that the team already writes.
 
 **Caveats**:
+
 - The client `env.ts` must use `import.meta.env`, not `process.env` — Vite will strip unknown vars from the browser bundle silently.
 - For Next.js (`apps/web`), consider `@t3-oss/env-nextjs` or the Next.js-specific pattern of importing `env.ts` in `next.config.ts` to get build-time validation. The Next.js app is separate enough that its env handling can differ from the Express server.
 - The CLI package (`packages/cli/src/cli.ts`) sets `process.env` variables imperatively before the server starts (it is the bootstrap that writes DORKOS_PORT etc. into process.env). Its `env.ts` should be validated after that bootstrap phase, or use a lazy initializer pattern.

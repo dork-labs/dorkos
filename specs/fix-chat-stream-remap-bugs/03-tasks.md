@@ -42,6 +42,7 @@ The `done` handler calls `onSessionIdChangeRef.current?.(doneData.sessionId)` wi
 **Location:** `done` case, lines 292–311 of `stream-event-handler.ts`
 
 **Before:**
+
 ```typescript
 case 'done': {
   const doneData = data as { sessionId?: string };
@@ -52,6 +53,7 @@ case 'done': {
 ```
 
 **After:**
+
 ```typescript
 case 'done': {
   const doneData = data as { sessionId?: string };
@@ -109,18 +111,21 @@ evaluates `streamingStatus?.model` unconditionally, so it permanently shadows `s
 **Location:** Lines 68–69 of `use-session-status.ts`
 
 **Before:**
+
 ```typescript
 // Priority: local optimistic > streaming live data > persisted session data > defaults
 const model = localModel ?? streamingStatus?.model ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 **After:**
+
 ```typescript
 // Priority: local optimistic > streaming live data (only while streaming) > persisted session data > defaults
 // Gate streamingStatus?.model behind isStreaming: after streaming ends, session?.model is
 // the authoritative value (set via PATCH). Without this gate, the stale streamingStatus.model
 // permanently shadows session.model, making model changes invisible in the status bar.
-const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
+const model =
+  localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 `streamingStatus` is NOT cleared — `streamingStatus.contextTokens` and `streamingStatus.costUsd` are used by lines 72–78 for context percentage and cost display, and those remain unchanged.
@@ -161,7 +166,7 @@ it('does not use streamingStatus.model when isStreaming is false', async () => {
   const transport = createMockTransport({
     getSession: vi.fn().mockResolvedValue({
       id: 's1',
-      model: 'claude-haiku-4-5-20251001',  // PATCH-confirmed value
+      model: 'claude-haiku-4-5-20251001', // PATCH-confirmed value
       permissionMode: 'default',
     }),
   });
@@ -255,8 +260,9 @@ it('clears messages and resets refs when done event carries a new sessionId', ()
   expect(onSessionIdChangeRef.current).toHaveBeenCalledWith('sdk-uuid');
 
   // ORDER: setMessages([]) must precede onSessionIdChange
-  expect(setMessages.mock.invocationCallOrder[0])
-    .toBeLessThan(onSessionIdChangeFn.mock.invocationCallOrder[0]);
+  expect(setMessages.mock.invocationCallOrder[0]).toBeLessThan(
+    onSessionIdChangeFn.mock.invocationCallOrder[0]
+  );
 });
 ```
 
@@ -295,12 +301,12 @@ it('does not clear messages on done event when sessionId is unchanged', () => {
 
 ## Summary
 
-| # | Title | Priority | Parallel Group | Depends On |
-|---|-------|----------|----------------|------------|
-| 1 | Fix Bug #1: clear streaming buffer on remap | P1 | `core-fixes` | — |
-| 2 | Fix Bug #3: gate streamingStatus.model behind isStreaming | P1 | `core-fixes` | — |
-| 3 | Regression tests for Bug #3 | P2 | — | Task 2 |
-| 4 | Regression tests for Bug #1 | P2 | — | Task 1 |
+| #   | Title                                                     | Priority | Parallel Group | Depends On |
+| --- | --------------------------------------------------------- | -------- | -------------- | ---------- |
+| 1   | Fix Bug #1: clear streaming buffer on remap               | P1       | `core-fixes`   | —          |
+| 2   | Fix Bug #3: gate streamingStatus.model behind isStreaming | P1       | `core-fixes`   | —          |
+| 3   | Regression tests for Bug #3                               | P2       | —              | Task 2     |
+| 4   | Regression tests for Bug #1                               | P2       | —              | Task 1     |
 
 **Critical path length:** 2 steps (P1 fix → P2 tests)
 **Parallelism:** Tasks 1 and 2 are independent and can run concurrently

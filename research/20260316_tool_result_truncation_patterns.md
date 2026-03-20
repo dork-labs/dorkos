@@ -1,5 +1,5 @@
 ---
-title: "Tool Result Truncation Patterns for ToolCallCard.tsx"
+title: 'Tool Result Truncation Patterns for ToolCallCard.tsx'
 date: 2026-03-16
 type: implementation
 status: active
@@ -29,9 +29,8 @@ const PROGRESS_TRUNCATE_BYTES = 5120;
 function ProgressOutput({ content }: { content: string }) {
   const [showFull, setShowFull] = useState(false);
   const isTruncated = content.length > PROGRESS_TRUNCATE_BYTES;
-  const displayContent = isTruncated && !showFull
-    ? content.slice(0, PROGRESS_TRUNCATE_BYTES)
-    : content;
+  const displayContent =
+    isTruncated && !showFull ? content.slice(0, PROGRESS_TRUNCATE_BYTES) : content;
   // ...
 }
 ```
@@ -41,6 +40,7 @@ The `toolCall.result` block (line 101) is the only piece that lacks this treatme
 ### 2. CSS max-height Does NOT Solve the Performance Problem
 
 A common instinct is to use `max-height: 200px; overflow: hidden` — this visually clips the content but the browser must still:
+
 - Parse and create DOM text nodes for all 100KB of text
 - Run layout calculations for the full `<pre>` element
 - Calculate `whitespace: pre-wrap` line wrapping (expensive for long lines)
@@ -92,9 +92,7 @@ The string slicing approach handles this correctly: if `showFull` is false, the 
 ### Approach 1: CSS-Only Truncation
 
 ```tsx
-<pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">
-  {toolCall.result}
-</pre>
+<pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{toolCall.result}</pre>
 ```
 
 **Performance:** The full string is passed to the DOM. Chrome must tokenize `100KB` of text, run `whitespace-pre-wrap` layout, and allocate all text nodes. For a ~100KB bash output at `text-xs` (12px), this is approximately 1,500–2,000 text lines. Browser profiling shows that rendering a single large `whitespace-pre-wrap` block causes a synchronous layout flush that can block the main thread for 80–200ms on mid-range hardware.
@@ -113,15 +111,12 @@ const RESULT_TRUNCATE_BYTES = 5120; // matches PROGRESS_TRUNCATE_BYTES
 function TruncatedOutput({ content }: { content: string }) {
   const [showFull, setShowFull] = useState(false);
   const isTruncated = content.length > RESULT_TRUNCATE_BYTES;
-  const displayContent = isTruncated && !showFull
-    ? content.slice(0, RESULT_TRUNCATE_BYTES)
-    : content;
+  const displayContent =
+    isTruncated && !showFull ? content.slice(0, RESULT_TRUNCATE_BYTES) : content;
 
   return (
     <div>
-      <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">
-        {displayContent}
-      </pre>
+      <pre className="max-h-48 overflow-y-auto text-xs whitespace-pre-wrap">{displayContent}</pre>
       {isTruncated && !showFull && (
         <button
           onClick={() => setShowFull(true)}
@@ -144,6 +139,7 @@ function TruncatedOutput({ content }: { content: string }) {
 **Memory:** The full string is in `ToolCallState.result` regardless of truncation. String slicing creates a new string slice, but V8 optimizes this to a reference into the original buffer — typically zero-copy for slices within the same string. Even pessimistically, it is 5KB of additional allocation, negligible.
 
 **Edge cases:**
+
 - Very long single lines (no `\n`): The `whitespace-pre-wrap` class on the `<pre>` handles this — lines wrap rather than forcing horizontal scroll.
 - ANSI escape codes: These are rendered as raw characters in a plain `<pre>` (no ANSI stripping library). The slice will not split an ANSI code mid-sequence unless the code straddles byte 5120. At 5KB, this is unlikely but possible. Acceptable for now — ANSI rendering is a separate concern.
 - UTF-8 multibyte characters: `String.prototype.slice` operates on UTF-16 code units, not bytes. Treating `content.length` as "bytes" is a minor inaccuracy (JS strings are UTF-16). For the threshold comparison, this is fine — a 5000-character string at 2 bytes/char avg is ~10KB. The threshold is a heuristic, not an exact byte limit.
@@ -160,7 +156,7 @@ const virtualizer = useVirtualizer({
   count: lines.length,
   getScrollElement: () => containerRef.current,
   estimateSize: () => 18, // line height in px
-  useFlushSync: false,    // React 19 compat
+  useFlushSync: false, // React 19 compat
 });
 ```
 
@@ -169,6 +165,7 @@ const virtualizer = useVirtualizer({
 **UX:** No truncation — users see all content via scrolling. No "Show more" button needed.
 
 **Implementation complexity:** High. Requirements:
+
 - Fixed container height (conflicts with the card's variable height)
 - Line splitting by `\n` (misses wrapped lines — a 200-char line at 80-char container width wraps to 2.5 visual lines; the virtualizer cannot know this without measuring)
 - `measureElement` callbacks for accurate heights
@@ -202,17 +199,21 @@ The recommended approach already combines these: string slice for the DOM perfor
 
 ```tsx
 // Before (line 100–104 of ToolCallCard.tsx)
-{toolCall.result && (
-  <pre className="mt-2 overflow-x-auto border-t pt-2 text-xs whitespace-pre-wrap">
-    {toolCall.result}
-  </pre>
-)}
+{
+  toolCall.result && (
+    <pre className="mt-2 overflow-x-auto border-t pt-2 text-xs whitespace-pre-wrap">
+      {toolCall.result}
+    </pre>
+  );
+}
 
 // After
-{toolCall.result && (
-  <ProgressOutput content={toolCall.result} />
-  // or TruncatedOutput if renamed
-)}
+{
+  toolCall.result && (
+    <ProgressOutput content={toolCall.result} />
+    // or TruncatedOutput if renamed
+  );
+}
 ```
 
 Since `ProgressOutput` already uses `border-t pt-2` in its wrapper div, and the existing result `<pre>` uses `mt-2 border-t pt-2`, the visual output would be identical for results shorter than the threshold.
@@ -220,6 +221,7 @@ Since `ProgressOutput` already uses `border-t pt-2` in its wrapper div, and the 
 ### Threshold Choice
 
 `5120` bytes (5KB) is well-chosen:
+
 - A typical `cat` of a 200-line source file is ~8–15KB — truncated after 5KB shows ~2–3 screenfulls of context, which is enough for the user to decide if they want to expand.
 - A large `Read` file call on a 500-line file is ~20KB — truncated at 5KB still shows meaningful content.
 - Bash output from `find` or `ls -la` — 5KB is several hundred file entries, sufficient.

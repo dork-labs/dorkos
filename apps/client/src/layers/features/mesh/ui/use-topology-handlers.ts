@@ -75,7 +75,7 @@ export function useTopologyHandlers({
     (edgeId: string) => {
       deleteBindingMutate(extractBindingId(edgeId));
     },
-    [deleteBindingMutate, extractBindingId],
+    [deleteBindingMutate, extractBindingId]
   );
 
   /** Handle node changes (drag, selection) in ReactFlow controlled mode. */
@@ -108,7 +108,7 @@ export function useTopologyHandlers({
         setLayoutedEdges((prev) => applyEdgeChanges(nonBindingChanges, prev));
       }
     },
-    [deleteBindingMutate, extractBindingId],
+    [deleteBindingMutate, extractBindingId]
   );
 
   /** Clear manual position overrides and trigger a fresh ELK layout pass. */
@@ -140,7 +140,7 @@ export function useTopologyHandlers({
       const targetZoom = Math.max(getZoom(), 1.0);
       setCenter(centerX, centerY, { zoom: targetZoom, duration: 350 });
     },
-    [setCenter, getZoom],
+    [setCenter, getZoom]
   );
 
   /** Only allow connections from non-ghost adapter nodes to agent nodes. */
@@ -152,7 +152,7 @@ export function useTopologyHandlers({
       if ((sourceNode?.data as Record<string, unknown>)?.isGhost) return false;
       return sourceNode?.type === 'adapter' && targetNode?.type === 'agent';
     },
-    [rawNodes],
+    [rawNodes]
   );
 
   /** Open the BindingDialog when a valid adapter-to-agent connection is drawn. */
@@ -172,7 +172,7 @@ export function useTopologyHandlers({
         targetAgentName: agentData.label,
       });
     },
-    [rawNodes],
+    [rawNodes]
   );
 
   /** Create the binding when the BindingDialog is confirmed. */
@@ -187,7 +187,7 @@ export function useTopologyHandlers({
       });
       setPendingConnection(null);
     },
-    [pendingConnection, createBindingMutate],
+    [pendingConnection, createBindingMutate]
   );
 
   /** Track when a drag-to-connect gesture starts from an adapter node. */
@@ -199,7 +199,7 @@ export function useTopologyHandlers({
         setConnectingFrom(params.nodeId);
       }
     },
-    [rawNodes],
+    [rawNodes]
   );
 
   /** Clear drag-to-connect visual state when the connection gesture ends. */

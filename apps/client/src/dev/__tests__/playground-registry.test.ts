@@ -24,14 +24,29 @@ describe('playground-registry', () => {
   });
 
   it('all sections have a valid page assignment', () => {
-    const validPages = new Set(['overview', 'tokens', 'forms', 'components', 'chat', 'features', 'simulator']);
+    const validPages = new Set([
+      'overview',
+      'tokens',
+      'forms',
+      'components',
+      'chat',
+      'features',
+      'simulator',
+    ]);
     for (const section of PLAYGROUND_REGISTRY) {
       expect(validPages.has(section.page)).toBe(true);
     }
   });
 
   it('PLAYGROUND_REGISTRY equals the union of all page-level arrays', () => {
-    const combined = [...TOKENS_SECTIONS, ...FORMS_SECTIONS, ...COMPONENTS_SECTIONS, ...CHAT_SECTIONS, ...FEATURES_SECTIONS, ...SIMULATOR_SECTIONS];
+    const combined = [
+      ...TOKENS_SECTIONS,
+      ...FORMS_SECTIONS,
+      ...COMPONENTS_SECTIONS,
+      ...CHAT_SECTIONS,
+      ...FEATURES_SECTIONS,
+      ...SIMULATOR_SECTIONS,
+    ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);
   });
 

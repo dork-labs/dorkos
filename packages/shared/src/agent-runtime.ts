@@ -121,11 +121,7 @@ export interface AgentRuntime {
    * @param content - User message text
    * @param opts - Optional overrides for permission mode, cwd, and system prompt
    */
-  sendMessage(
-    sessionId: string,
-    content: string,
-    opts?: MessageOpts
-  ): AsyncGenerator<StreamEvent>;
+  sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent>;
 
   // --- Interactive flows ---
 
@@ -147,11 +143,7 @@ export interface AgentRuntime {
    * @param answers - Map of question key → answer value
    * @returns false if the session or interaction was not found
    */
-  submitAnswers(
-    sessionId: string,
-    toolCallId: string,
-    answers: Record<string, string>
-  ): boolean;
+  submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
 
   // --- Session queries (storage) ---
 
@@ -177,9 +169,7 @@ export interface AgentRuntime {
    * @param sessionId - Session to query
    * @returns ID pair or null if not available
    */
-  getLastMessageIds(
-    sessionId: string,
-  ): Promise<{ user: string; assistant: string } | null>;
+  getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null>;
 
   /**
    * Read new content from a session transcript starting at a byte offset.

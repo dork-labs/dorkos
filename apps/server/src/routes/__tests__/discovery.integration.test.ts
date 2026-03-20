@@ -90,7 +90,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -104,7 +104,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -119,7 +119,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 5, foundAgents: 1, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -177,7 +177,7 @@ describe('Discovery SSE Integration', () => {
         expect.objectContaining({
           path: '/home/user/project-alpha',
           strategy: 'claude-code',
-        }),
+        })
       );
 
       // Second candidate
@@ -186,7 +186,7 @@ describe('Discovery SSE Integration', () => {
         expect.objectContaining({
           path: '/home/user/project-beta',
           strategy: 'dork-manifest',
-        }),
+        })
       );
     });
   });
@@ -202,7 +202,7 @@ describe('Discovery SSE Integration', () => {
           { type: 'progress', data: { scannedDirs: 100, foundAgents: 2 } },
           { type: 'progress', data: { scannedDirs: 200, foundAgents: 5 } },
           { type: 'complete', data: { scannedDirs: 250, foundAgents: 5, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -219,7 +219,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 3, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -242,7 +242,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 500, foundAgents: 12, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -263,7 +263,7 @@ describe('Discovery SSE Integration', () => {
         mockGenerator([
           { type: 'progress', data: { scannedDirs: 100, foundAgents: 1 } },
           { type: 'complete', data: { scannedDirs: 100, foundAgents: 1, timedOut: true } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -271,9 +271,7 @@ describe('Discovery SSE Integration', () => {
       const parsed = parseSSEResponse(res.body as string);
 
       const complete = parsed.find((e) => e.type === 'complete');
-      expect(complete!.data).toEqual(
-        expect.objectContaining({ timedOut: true }),
-      );
+      expect(complete!.data).toEqual(expect.objectContaining({ timedOut: true }));
     });
 
     it('is the last event in the stream', async () => {
@@ -290,7 +288,7 @@ describe('Discovery SSE Integration', () => {
           },
           { type: 'progress', data: { scannedDirs: 100, foundAgents: 1 } },
           { type: 'complete', data: { scannedDirs: 150, foundAgents: 1, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -308,8 +306,14 @@ describe('Discovery SSE Integration', () => {
   describe('auto-import filtering', () => {
     it('filters auto-import events from SSE output', async () => {
       mockDiscover.mockImplementation(async function* () {
-        yield { type: 'auto-import', data: { manifest: { name: 'test' }, path: '/home/user/proj' } };
-        yield { type: 'candidate', data: { path: '/home/user/proj', strategy: 'claude-code', hints: {}, discoveredAt: '' } };
+        yield {
+          type: 'auto-import',
+          data: { manifest: { name: 'test' }, path: '/home/user/proj' },
+        };
+        yield {
+          type: 'candidate',
+          data: { path: '/home/user/proj', strategy: 'claude-code', hints: {}, discoveredAt: '' },
+        };
         yield { type: 'complete', data: { scannedDirs: 1, foundAgents: 1, timedOut: false } };
       });
 
@@ -371,9 +375,7 @@ describe('Discovery SSE Integration', () => {
       mockIsWithinBoundary.mockResolvedValue(false);
 
       const app = createTestApp();
-      const res = await request(app)
-        .post('/api/discovery/scan')
-        .send({ root: '/root/forbidden' });
+      const res = await request(app).post('/api/discovery/scan').send({ root: '/root/forbidden' });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('Root path outside directory boundary');
@@ -383,9 +385,7 @@ describe('Discovery SSE Integration', () => {
       mockIsWithinBoundary.mockResolvedValue(false);
 
       const app = createTestApp();
-      await request(app)
-        .post('/api/discovery/scan')
-        .send({ root: '/root/forbidden' });
+      await request(app).post('/api/discovery/scan').send({ root: '/root/forbidden' });
 
       expect(mockDiscover).not.toHaveBeenCalled();
     });
@@ -394,7 +394,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -415,7 +415,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -423,7 +423,7 @@ describe('Discovery SSE Integration', () => {
 
       expect(mockDiscover).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ timeout: 5000 }),
+        expect.objectContaining({ timeout: 5000 })
       );
     });
 
@@ -431,7 +431,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -439,7 +439,7 @@ describe('Discovery SSE Integration', () => {
 
       expect(mockDiscover).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ maxDepth: 7 }),
+        expect.objectContaining({ maxDepth: 7 })
       );
     });
 
@@ -447,7 +447,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();
@@ -456,7 +456,7 @@ describe('Discovery SSE Integration', () => {
       expect(mockIsWithinBoundary).toHaveBeenCalledWith('/home/user/projects');
       expect(mockDiscover).toHaveBeenCalledWith(
         ['/home/user/projects'],
-        expect.objectContaining({}),
+        expect.objectContaining({})
       );
     });
   });
@@ -566,7 +566,7 @@ describe('Discovery SSE Integration', () => {
       mockDiscover.mockImplementation(
         mockGenerator([
           { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } },
-        ]),
+        ])
       );
 
       const app = createTestApp();

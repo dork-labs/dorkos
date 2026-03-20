@@ -159,15 +159,15 @@ Adding `apps/web` to the existing DorkOS Turborepo eliminates content sync compl
 
 All clarification questions were answered during ideation review:
 
-| # | Question | Decision |
-|---|---|---|
-| 1 | Monorepo vs separate repo | **Monorepo** — `apps/web` in existing DorkOS Turborepo |
-| 2 | Domain structure | **`dorkos.ai/docs`** — path-based via Next.js route groups |
-| 3 | Vercel plan | **Hobby (free)** — repo going public removes org restriction |
-| 4 | Feature scope | **Remove** BetterAuth + Prisma. **Keep** PostHog, contact form, Motion, shadcn, existing styles |
-| 5 | Content integration | **Direct path** — `../../docs/` from `apps/web/source.config.ts` (monorepo, no sync needed) |
-| 6 | API docs | **Include from day one** via `fumadocs-openapi` |
-| 7 | Going public | **Now** — audit repo for secrets before making public |
+| #   | Question                  | Decision                                                                                        |
+| --- | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| 1   | Monorepo vs separate repo | **Monorepo** — `apps/web` in existing DorkOS Turborepo                                          |
+| 2   | Domain structure          | **`dorkos.ai/docs`** — path-based via Next.js route groups                                      |
+| 3   | Vercel plan               | **Hobby (free)** — repo going public removes org restriction                                    |
+| 4   | Feature scope             | **Remove** BetterAuth + Prisma. **Keep** PostHog, contact form, Motion, shadcn, existing styles |
+| 5   | Content integration       | **Direct path** — `../../docs/` from `apps/web/source.config.ts` (monorepo, no sync needed)     |
+| 6   | API docs                  | **Include from day one** via `fumadocs-openapi`                                                 |
+| 7   | Going public              | **Now** — audit repo for secrets before making public                                           |
 
 ### Additional Notes from Discussion
 

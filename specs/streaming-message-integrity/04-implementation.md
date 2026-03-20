@@ -13,7 +13,7 @@
 
 ### Session 1 - 2026-03-19
 
-- Task #1: [P1] Add _streaming flag to ChatMessage and tag streaming messages
+- Task #1: [P1] Add \_streaming flag to ChatMessage and tag streaming messages
 - Task #2: [P1] Remove post-stream history reset and invalidation
 - Task #3: [P1] Implement smart tagged-dedup in seed effect Branch 2
 - Task #4: [P1] Remove setMessages([]) from session remap in done handler

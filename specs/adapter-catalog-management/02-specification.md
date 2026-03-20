@@ -24,6 +24,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 Today, the Relay Adapters tab only shows adapters already configured in `~/.dork/relay/adapters.json`. The default config contains only the `claude-code` adapter. Users cannot discover that Telegram and Webhook adapters exist without reading documentation. Adding an adapter requires manually editing a JSON file with the correct schema. There is no way to configure, test, or remove adapters through the UI.
 
 This creates two problems:
+
 1. **Poor user experience** — users don't know what adapters are available and must edit JSON to use them
 2. **Poor developer experience** — adapter authors have no way to declare their config schema for automatic form generation; the UI treats all adapters as opaque
 
@@ -59,13 +60,13 @@ A plain, JSON-serializable descriptor for a single form field. Lives in `package
 
 ```typescript
 export const ConfigFieldTypeSchema = z.enum([
-  'text',       // Standard string input
-  'password',   // Masked input — value never echoed in GET responses
-  'number',     // Numeric input
-  'boolean',    // Toggle/checkbox
-  'select',     // Dropdown from options[]
-  'textarea',   // Multi-line text
-  'url',        // URL input with format hint
+  'text', // Standard string input
+  'password', // Masked input — value never echoed in GET responses
+  'number', // Numeric input
+  'boolean', // Toggle/checkbox
+  'select', // Dropdown from options[]
+  'textarea', // Multi-line text
+  'url', // URL input with format hint
 ]);
 
 export const ConfigFieldOptionSchema = z.object({
@@ -93,10 +94,12 @@ export const ConfigFieldSchema = z.object({
   /** Visual section grouping (e.g., 'Authentication', 'Advanced') */
   section: z.string().optional(),
   /** Conditional visibility: only show when another field has a specific value */
-  showWhen: z.object({
-    field: z.string(),
-    equals: z.union([z.string(), z.boolean(), z.number()]),
-  }).optional(),
+  showWhen: z
+    .object({
+      field: z.string(),
+      equals: z.union([z.string(), z.boolean(), z.number()]),
+    })
+    .optional(),
 });
 
 export type ConfigField = z.infer<typeof ConfigFieldSchema>;
@@ -117,10 +120,10 @@ export const AdapterSetupStepSchema = z.object({
 });
 
 export const AdapterCategorySchema = z.enum([
-  'messaging',    // Telegram, Slack, Discord
-  'automation',   // Webhooks, HTTP integrations
-  'internal',     // Claude Code, system adapters
-  'custom',       // Community/plugin adapters
+  'messaging', // Telegram, Slack, Discord
+  'automation', // Webhooks, HTTP integrations
+  'internal', // Claude Code, system adapters
+  'custom', // Community/plugin adapters
 ]);
 
 export const AdapterManifestSchema = z.object({
@@ -226,7 +229,8 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       showWhen: { field: 'mode', equals: 'webhook' },
     },
   ],
-  setupInstructions: 'Open Telegram and search for **@BotFather**. Send `/newbot`, choose a name and username. Copy the token provided.',
+  setupInstructions:
+    'Open Telegram and search for **@BotFather**. Send `/newbot`, choose a name and username. Copy the token provided.',
 };
 ```
 
@@ -347,7 +351,7 @@ export interface LoadedAdapter {
 export async function loadAdapters(
   configs: PluginAdapterConfig[],
   builtinMap: Map<string, (config: Record<string, unknown>) => RelayAdapter>,
-  configDir: string,
+  configDir: string
 ): Promise<LoadedAdapter[]> {
   // ...same loading logic, but also call module.getManifest?.()
   // Validate manifest with AdapterManifestSchema.safeParse()
@@ -356,6 +360,7 @@ export async function loadAdapters(
 ```
 
 **Manifest discovery order:**
+
 1. Call `module.getManifest()` if it exists — preferred, TypeScript-typed
 2. If not, generate minimal manifest: `{ type: config.type, displayName: config.id, description: 'Custom adapter', configFields: [], builtin: false, category: 'custom' }`
 
@@ -478,8 +483,15 @@ export function useAddAdapter() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ type, id, config }: { type: string; id: string; config: Record<string, unknown> }) =>
-      transport.addRelayAdapter(type, id, config),
+    mutationFn: ({
+      type,
+      id,
+      config,
+    }: {
+      type: string;
+      id: string;
+      config: Record<string, unknown>;
+    }) => transport.addRelayAdapter(type, id, config),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
@@ -487,8 +499,12 @@ export function useAddAdapter() {
   });
 }
 
-export function useRemoveAdapter() { /* same pattern, invalidates catalog + adapters */ }
-export function useUpdateAdapterConfig() { /* same pattern */ }
+export function useRemoveAdapter() {
+  /* same pattern, invalidates catalog + adapters */
+}
+export function useUpdateAdapterConfig() {
+  /* same pattern */
+}
 
 export function useTestAdapterConnection() {
   const transport = useTransport();
@@ -531,6 +547,7 @@ apps/client/src/layers/features/relay/ui/CatalogCard.tsx
 ```
 
 Displays an available (unconfigured) adapter type:
+
 - Icon emoji + display name
 - Category badge
 - Short description
@@ -545,11 +562,13 @@ apps/client/src/layers/features/relay/ui/AdapterSetupWizard.tsx
 A Dialog-based wizard with these states:
 
 **Add mode (new adapter):**
+
 1. **Configure** — Dynamic form from `manifest.configFields`. If `manifest.setupSteps` is defined, show one step at a time with next/back navigation. Otherwise, show all fields on one page. `setupInstructions` shown as an info callout at the top.
 2. **Test** — "Test Connection" button. Shows spinner during test, success/error result. "Skip" link to proceed without testing.
-3. **Confirm** — Summary of entered values (passwords shown as "***"). Save button.
+3. **Confirm** — Summary of entered values (passwords shown as "\*\*\*"). Save button.
 
 **Edit mode (existing adapter):**
+
 - Same form, pre-filled with current config values
 - Password fields show placeholder "Leave blank to keep current" and are NOT pre-filled
 - No "Test" step by default (user can trigger test from the form)
@@ -567,17 +586,18 @@ apps/client/src/layers/features/relay/ui/ConfigFieldInput.tsx
 
 Generic form field renderer. Maps `ConfigField.type` to shadcn/ui:
 
-| ConfigField type | Component | Notes |
-|---|---|---|
-| `text` | `<Input type="text" />` | |
-| `url` | `<Input type="url" />` | |
-| `password` | `<Input type="password" />` | With eye toggle to reveal |
-| `number` | `<Input type="number" />` | |
-| `boolean` | `<Switch />` | |
-| `select` | `<Select>` | Options from `field.options` |
-| `textarea` | `<Textarea />` | |
+| ConfigField type | Component                   | Notes                        |
+| ---------------- | --------------------------- | ---------------------------- |
+| `text`           | `<Input type="text" />`     |                              |
+| `url`            | `<Input type="url" />`      |                              |
+| `password`       | `<Input type="password" />` | With eye toggle to reveal    |
+| `number`         | `<Input type="number" />`   |                              |
+| `boolean`        | `<Switch />`                |                              |
+| `select`         | `<Select>`                  | Options from `field.options` |
+| `textarea`       | `<Textarea />`              |                              |
 
 Each field renders:
+
 - Label (from `field.label`)
 - Input component
 - Description (from `field.description`, muted text below input)
@@ -659,6 +679,7 @@ function unflattenConfig(flat: Record<string, unknown>): Record<string, unknown>
 ### Server Tests
 
 **AdapterManager catalog tests** (`apps/server/src/services/relay/__tests__/adapter-manager.test.ts`):
+
 - `getCatalog()` returns built-in manifests with their configured instances
 - `getCatalog()` masks password fields in instance configs
 - `addAdapter()` validates config against Zod schema, rejects invalid configs
@@ -673,6 +694,7 @@ function unflattenConfig(flat: Record<string, unknown>): Record<string, unknown>
 - Sensitive field masking handles dot-notation keys (e.g., `inbound.secret`)
 
 **Route tests** (`apps/server/src/routes/__tests__/relay-adapters.test.ts`):
+
 - `GET /adapters/catalog` returns 200 with CatalogEntry[]
 - `POST /adapters` returns 201 on success, 400 on bad config, 409 on duplicate ID
 - `DELETE /adapters/:id` returns 200 on success, 404 on missing
@@ -682,12 +704,14 @@ function unflattenConfig(flat: Record<string, unknown>): Record<string, unknown>
 ### Client Tests
 
 **ConfigFieldInput tests** (`apps/client/src/layers/features/relay/ui/__tests__/ConfigFieldInput.test.tsx`):
+
 - Renders correct input type for each ConfigField.type
 - Shows/hides fields based on showWhen condition
 - Displays description text and error messages
 - Password toggle reveals/hides text
 
 **AdapterSetupWizard tests** (`apps/client/src/layers/features/relay/ui/__tests__/AdapterSetupWizard.test.tsx`):
+
 - Wizard opens in add mode with empty form
 - Wizard opens in edit mode with pre-filled values (passwords empty)
 - Multi-step navigation works when setupSteps defined
@@ -699,6 +723,7 @@ function unflattenConfig(flat: Record<string, unknown>): Record<string, unknown>
 ### Relay Package Tests
 
 **Manifest export tests** (`packages/relay/src/__tests__/manifests.test.ts`):
+
 - Each built-in manifest validates against `AdapterManifestSchema`
 - Each manifest's configFields keys match the corresponding Zod config schema keys
 - Plugin loader returns manifest alongside adapter when available

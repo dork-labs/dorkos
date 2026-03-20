@@ -1,5 +1,5 @@
 ---
-title: "Adding a Blog to a Next.js + Fumadocs Site"
+title: 'Adding a Blog to a Next.js + Fumadocs Site'
 date: 2026-02-18
 type: implementation
 status: archived
@@ -30,6 +30,7 @@ For release announcements specifically, the recommended approach (used by Next.j
 Fumadocs does **not** have a separate `fumadocs-blog` npm package. Blog support is built into `fumadocs-mdx` via the `defineCollections` API introduced in fumadocs-mdx v10+. There is a community scaffolding project (`rjv.im/blog/...`) that provides opinionated helpers, but they are optional — the core machinery is all in `fumadocs-mdx`.
 
 The official Fumadocs guide ("Making a Blog with Fumadocs", published Dec 2024) uses:
+
 - `defineCollections` in `source.config.ts`
 - `loader()` from `fumadocs-core/source` with `toFumadocsSource()`
 - Standard Next.js App Router page files under `app/(home)/blog/`
@@ -51,12 +52,12 @@ Standard Next.js pages that call the source API and render MDX body.
 
 ### 3. How Major Developer-Tool Sites Handle Blogs / Release Pages
 
-| Site | Approach | URL Pattern | Technology |
-|------|----------|-------------|------------|
-| **Next.js** | MDX files in `pages/blog/` (Pages Router), each as its own folder with `index.mdx` + re-exported metadata | `/blog/next-16` | `@next/mdx`, custom `getAllPostPreviews()` util |
-| **Tailwind CSS** | Same — each post is a folder with `index.mdx` + metadata exported as `meta` object | `/blog/building-the-tailwind-blog` | Custom MDX pipeline |
-| **Fumadocs** | `defineCollections` with `dir: 'content/blog'`, rendered at `/blog/[slug]` | `/blog/v16` | `fumadocs-mdx` (their own library) |
-| **shadcn/ui** | Changelog as a flat docs page (`/docs/changelog`) for simple projects; separate blog for major announcements | `/docs/changelog` | Fumadocs-style MDX |
+| Site             | Approach                                                                                                     | URL Pattern                        | Technology                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ----------------------------------------------- |
+| **Next.js**      | MDX files in `pages/blog/` (Pages Router), each as its own folder with `index.mdx` + re-exported metadata    | `/blog/next-16`                    | `@next/mdx`, custom `getAllPostPreviews()` util |
+| **Tailwind CSS** | Same — each post is a folder with `index.mdx` + metadata exported as `meta` object                           | `/blog/building-the-tailwind-blog` | Custom MDX pipeline                             |
+| **Fumadocs**     | `defineCollections` with `dir: 'content/blog'`, rendered at `/blog/[slug]`                                   | `/blog/v16`                        | `fumadocs-mdx` (their own library)              |
+| **shadcn/ui**    | Changelog as a flat docs page (`/docs/changelog`) for simple projects; separate blog for major announcements | `/docs/changelog`                  | Fumadocs-style MDX                              |
 
 The clear pattern from mature developer-tool projects: **use real blog posts for release announcements** (not a flat `changelog.mdx`). A `/blog/releases/` category or a `type: 'release'` frontmatter field lets you query only release posts for a "What's New" section, while the same posts also appear in the main blog feed.
 
@@ -100,16 +101,16 @@ The blog should live in `app/(marketing)/blog/` so it uses the existing marketin
 
 ```typescript
 // apps/web/source.config.ts
-import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config'
-import { z } from 'zod'
+import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config';
+import { z } from 'zod';
 
 export const docs = defineDocs({
   dir: '../../docs',
-})
+});
 
 export const blogPosts = defineCollections({
   type: 'doc',
-  dir: '../../blog',  // Root-level blog/ directory in the monorepo
+  dir: '../../blog', // Root-level blog/ directory in the monorepo
   schema: (ctx) =>
     z.object({
       title: z.string(),
@@ -120,9 +121,9 @@ export const blogPosts = defineCollections({
       tags: z.array(z.string()).optional(),
       image: z.string().optional(),
     }),
-})
+});
 
-export default defineConfig()
+export default defineConfig();
 ```
 
 **Note on `dir`:** The existing `docs` uses `dir: '../../docs'` (relative to `apps/web/`). For a root-level `blog/` directory, use `dir: '../../blog'`. Alternatively, keep blog content co-located as `dir: 'content/blog'` within `apps/web/content/blog/`.
@@ -133,21 +134,21 @@ The monorepo-root approach (`../../blog`) is cleaner for DorkOS since `docs/` al
 
 ```typescript
 // apps/web/src/lib/source.ts
-import { docs, blogPosts } from '@/.source'
-import { loader } from 'fumadocs-core/source'
-import { openapiPlugin } from 'fumadocs-openapi/server'
-import { toFumadocsSource } from 'fumadocs-mdx/runtime/server'
+import { docs, blogPosts } from '@/.source';
+import { loader } from 'fumadocs-core/source';
+import { openapiPlugin } from 'fumadocs-openapi/server';
+import { toFumadocsSource } from 'fumadocs-mdx/runtime/server';
 
 export const source = loader({
   baseUrl: '/docs',
   source: docs.toFumadocsSource(),
   plugins: [openapiPlugin()],
-})
+});
 
 export const blog = loader({
   baseUrl: '/blog',
   source: toFumadocsSource(blogPosts, []),
-})
+});
 ```
 
 **Important:** The import path for `blogPosts` is `@/.source` (the generated virtual module), not `source.config.ts` directly. The `@/.source` module is auto-generated by `fumadocs-mdx` during build from the `source.config.ts` definitions.
@@ -343,13 +344,15 @@ apps/web/
 This is the key detail that trips people up. When you add a new collection in `source.config.ts`, it is not immediately importable. The `fumadocs-mdx` Next.js plugin (called via `createMDX()` in `next.config.ts`) generates a virtual module at `@/.source` at build time. That module exports both `docs` and `blogPosts` (whatever you export from `source.config.ts`).
 
 In the existing `lib/source.ts`, the import is:
+
 ```typescript
-import { docs } from '@/.source'
+import { docs } from '@/.source';
 ```
 
 After adding the blog collection, it becomes:
+
 ```typescript
-import { docs, blogPosts } from '@/.source'
+import { docs, blogPosts } from '@/.source';
 ```
 
 The `toFumadocsSource()` helper from `fumadocs-mdx/runtime/server` wraps a raw collection for use with `loader()`. Note: `defineDocs` (used for docs) has a `.toFumadocsSource()` method built in; `defineCollections` (used for blog) requires the explicit `toFumadocsSource(blogPosts, [])` call.
@@ -359,6 +362,7 @@ The `toFumadocsSource()` helper from `fumadocs-mdx/runtime/server` wraps a raw c
 The `InlineTOC` component from `fumadocs-ui/components/inline-toc` works outside the `DocsLayout` — it is a standalone component. However, it requires `fumadocs-ui/style.css` to be loaded. Currently this CSS is imported in `app/(docs)/layout.tsx`. To use Fumadocs UI components in the blog (marketing layout), add the same import to the marketing layout or a shared root layout.
 
 Two options:
+
 1. Import `fumadocs-ui/style.css` in `app/layout.tsx` (root layout) — simplest, affects all routes
 2. Import it in `app/(marketing)/blog/layout.tsx` — scoped to blog only
 
@@ -379,14 +383,13 @@ The `blog.getPages()` call returns all pages. Since Fumadocs loaders don't have 
 
 ```typescript
 // Sort by date descending (newest first)
-const posts = blog.getPages().sort(
-  (a, b) => b.data.date.getTime() - a.data.date.getTime()
-)
+const posts = blog.getPages().sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 
 // Filter to only release posts
-const releases = blog.getPages()
+const releases = blog
+  .getPages()
   .filter((p) => p.data.category === 'release')
-  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime())
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 ```
 
 This can be extracted to a `lib/blog.ts` helper once there are enough query patterns to justify it.
@@ -397,12 +400,10 @@ A `/blog/feed.xml` route for RSS is a one-file addition:
 
 ```typescript
 // apps/web/src/app/blog/feed.xml/route.ts
-import { blog } from '@/lib/source'
+import { blog } from '@/lib/source';
 
 export function GET() {
-  const posts = blog.getPages().sort(
-    (a, b) => b.data.date.getTime() - a.data.date.getTime()
-  )
+  const posts = blog.getPages().sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 
   const rss = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -422,11 +423,11 @@ export function GET() {
       )
       .join('')}
   </channel>
-</rss>`
+</rss>`;
 
   return new Response(rss, {
     headers: { 'Content-Type': 'application/xml' },
-  })
+  });
 }
 ```
 
@@ -435,6 +436,7 @@ export function GET() {
 ## How Reference Sites Handle Blogs
 
 ### Next.js (`nextjs.org/blog`)
+
 - Each release post is a standalone MDX file with rich content (tables, code blocks, images)
 - URL pattern: `/blog/next-16`, `/blog/next-15-3`
 - Post metadata is a `meta` object exported from each MDX file
@@ -443,18 +445,21 @@ export function GET() {
 - Separate from their versioned docs — announcement posts are editorial, not docs
 
 ### Tailwind CSS (`tailwindcss.com/blog`)
+
 - Same folder-per-post structure with `index.mdx` + metadata re-export
 - Metadata includes: `title`, `description`, `date`, `authors` (array), OG image, Discussion link
 - Notable: every post links to a GitHub Discussions thread for comments
 - Also uses a custom MDX pipeline, not Fumadocs
 
 ### Fumadocs (`fumadocs.dev/blog`)
+
 - Uses their own `defineCollections` API (the exact approach documented above)
 - URL pattern: `/blog/v16`, `/blog/mdx-v10`
 - Index page is a card grid sorted by date
 - No pagination for developer-tool blogs at their scale (< 50 posts)
 
 ### shadcn/ui (`ui.shadcn.com`)
+
 - Uses a flat `/docs/changelog` page for release notes (Fumadocs docs page)
 - No separate blog — their "blog" is their Twitter/X activity
 - Works at their scale because changes are incremental component additions, not releases
@@ -475,6 +480,7 @@ Given the existing setup, **the lowest-friction path is:**
 This reuses 100% of existing infrastructure — no new packages, no separate MDX pipeline, no separate Next.js config changes. The only addition is ~40 lines across two new page files and a two-line change to `source.config.ts` and `lib/source.ts`.
 
 The key files to change/create:
+
 - `apps/web/source.config.ts` — add `blogPosts` collection
 - `apps/web/src/lib/source.ts` — add `blog` loader
 - `apps/web/src/app/(marketing)/blog/page.tsx` — blog index

@@ -1,7 +1,13 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
-import { formatRelativeTime, shortenHomePath, STORAGE_KEYS, hashToHslColor, hashToEmoji } from '@/layers/shared/lib';
+import {
+  formatRelativeTime,
+  shortenHomePath,
+  STORAGE_KEYS,
+  hashToHslColor,
+  hashToEmoji,
+} from '@/layers/shared/lib';
 import { PathBreadcrumb } from './path-breadcrumb';
 import {
   ResponsiveDialog,
@@ -40,12 +46,20 @@ interface DirectoryPickerProps {
 }
 
 /** Modal dialog for browsing the filesystem and selecting a working directory. */
-export function DirectoryPicker({ open, onOpenChange, onSelect, initialPath, resolvedAgents }: DirectoryPickerProps) {
+export function DirectoryPicker({
+  open,
+  onOpenChange,
+  onSelect,
+  initialPath,
+  resolvedAgents,
+}: DirectoryPickerProps) {
   const transport = useTransport();
   const { recentCwds } = useAppStore();
   const [currentPath, setCurrentPath] = useState(initialPath || '');
   const [showHidden, setShowHidden] = useState(false);
-  const [view, setView] = useState<PickerView>(() => getInitialView(recentCwds, initialPath ?? null));
+  const [view, setView] = useState<PickerView>(() =>
+    getInitialView(recentCwds, initialPath ?? null)
+  );
 
   const onClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
@@ -211,7 +225,9 @@ export function DirectoryPicker({ open, onOpenChange, onSelect, initialPath, res
                           style={{ backgroundColor: color }}
                         />
                         <span className="text-sm">{emoji}</span>
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{agent.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {agent.name}
+                        </span>
                         <span className="text-muted-foreground truncate text-xs">
                           {shortenHomePath(recent.path)}
                         </span>

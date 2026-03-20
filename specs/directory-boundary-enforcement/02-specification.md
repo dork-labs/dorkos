@@ -20,6 +20,7 @@ Centralize the directory boundary check into a shared utility, enforce it across
 DorkOS restricts directory browsing to `~/` via a hardcoded check in `routes/directory.ts`. However, this is the **only** endpoint with boundary enforcement. Nine other endpoints accept arbitrary `cwd`/`path`/`dir` parameters and pass them directly to services that perform filesystem operations (`execFile`, `readdir`, `readFile`) without validation.
 
 **Current security gaps:**
+
 - `POST /api/sessions` — creates agent sessions in arbitrary directories
 - `GET /api/sessions` — lists transcripts from arbitrary project slugs
 - `GET /api/sessions/:id`, `/messages`, `/tasks` — reads transcripts from arbitrary paths
@@ -105,10 +106,7 @@ export function getBoundary(): string {
  * @returns Resolved canonical path
  * @throws BoundaryError if path is outside boundary or invalid
  */
-export async function validateBoundary(
-  userPath: string,
-  boundary?: string
-): Promise<string> {
+export async function validateBoundary(userPath: string, boundary?: string): Promise<string> {
   const root = boundary ?? getBoundary();
 
   // Reject null bytes
@@ -134,10 +132,7 @@ export async function validateBoundary(
 
   // Boundary check: path must equal boundary or be a child of it
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new BoundaryError(
-      'Access denied: path outside directory boundary',
-      'OUTSIDE_BOUNDARY'
-    );
+    throw new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY');
   }
 
   return resolved;
@@ -148,10 +143,7 @@ export async function validateBoundary(
  *
  * @returns true if within boundary, false otherwise
  */
-export async function isWithinBoundary(
-  userPath: string,
-  boundary?: string
-): Promise<boolean> {
+export async function isWithinBoundary(userPath: string, boundary?: string): Promise<boolean> {
   try {
     await validateBoundary(userPath, boundary);
     return true;
@@ -162,6 +154,7 @@ export async function isWithinBoundary(
 ```
 
 **Key design decisions:**
+
 - **Module-level state** (`resolvedBoundary`): Set once at startup, avoids passing boundary through every call. The `getBoundary()` accessor throws if not initialized, preventing silent misuse.
 - **`resolved === root` check**: Allows the boundary root itself to be a valid path (e.g., `~/` when boundary is `~/`).
 - **ENOENT fallback**: For session creation, the target directory may not exist yet (SDK creates it). We use `path.resolve()` without `realpath()` in this case — the symlink resolution matters less than the boundary containment check.
@@ -193,7 +186,7 @@ Add `--boundary` flag and `DORKOS_BOUNDARY` env var handling:
 const { values, positionals } = parseArgs({
   options: {
     // ... existing options ...
-    boundary: { type: 'string', short: 'b' },  // NEW
+    boundary: { type: 'string', short: 'b' }, // NEW
   },
   allowPositionals: true,
 });
@@ -220,7 +213,7 @@ const home = os.homedir();
 if (boundaryVal && !boundaryVal.startsWith(home + path.sep) && boundaryVal !== home) {
   console.warn(
     `[Warning] Directory boundary "${boundaryVal}" is above home directory "${home}". ` +
-    `This grants access to system directories.`
+      `This grants access to system directories.`
   );
 }
 ```
@@ -231,13 +224,10 @@ After setting `DORKOS_DEFAULT_CWD`, validate it against boundary:
 // Validate default CWD is within boundary
 const effectiveBoundary = process.env.DORKOS_BOUNDARY || home;
 const resolvedDir = process.env.DORKOS_DEFAULT_CWD!;
-if (
-  resolvedDir !== effectiveBoundary &&
-  !resolvedDir.startsWith(effectiveBoundary + path.sep)
-) {
+if (resolvedDir !== effectiveBoundary && !resolvedDir.startsWith(effectiveBoundary + path.sep)) {
   console.warn(
     `[Warning] Default CWD "${resolvedDir}" is outside boundary "${effectiveBoundary}". ` +
-    `Falling back to boundary root.`
+      `Falling back to boundary root.`
   );
   process.env.DORKOS_DEFAULT_CWD = effectiveBoundary;
 }
@@ -325,8 +315,8 @@ router.get('/', async (req, res) => {
   // ... readdir logic unchanged ...
 
   const parent = path.dirname(resolved);
-  const hasParent = parent !== resolved &&
-    (parent === boundary || parent.startsWith(boundary + path.sep));
+  const hasParent =
+    parent !== resolved && (parent === boundary || parent.startsWith(boundary + path.sep));
 
   res.json({ path: resolved, entries, parent: hasParent ? parent : null });
 });
@@ -346,6 +336,7 @@ router.get('/default', (_req, res) => {
 For each endpoint accepting `cwd`:
 
 **POST `/api/sessions`** (line 29):
+
 ```typescript
 const { permissionMode = 'default', cwd } = parsed.data;
 let validatedCwd = cwd;
@@ -363,6 +354,7 @@ agentManager.ensureSession(sessionId, { permissionMode, cwd: validatedCwd });
 ```
 
 **GET endpoints** (list, detail, messages, tasks) — all follow the same pattern:
+
 ```typescript
 const rawCwd = (req.query.cwd as string) || parsed.data.cwd;
 let projectDir = rawCwd || vaultRoot;
@@ -382,7 +374,9 @@ if (rawCwd) {
 
 ```typescript
 const parsed = FileListQuerySchema.safeParse(req.query);
-if (!parsed.success) { /* 400 */ }
+if (!parsed.success) {
+  /* 400 */
+}
 try {
   const validatedCwd = await validateBoundary(parsed.data.cwd);
   const result = await fileLister.listFiles(validatedCwd);
@@ -594,6 +588,7 @@ dorkos config get server.boundary
 ```
 
 **Error experience**: If a user (or API caller) provides a `cwd` outside the boundary, they receive a `403` with:
+
 ```json
 {
   "error": "Access denied: path outside directory boundary",
@@ -612,9 +607,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 describe('validateBoundary', () => {
   // Core validation
-  it('allows paths within boundary', async () => { /* /home/user/projects within /home/user */ });
-  it('allows the boundary root itself', async () => { /* /home/user within /home/user */ });
-  it('rejects paths outside boundary', async () => { /* /etc within /home/user */ });
+  it('allows paths within boundary', async () => {
+    /* /home/user/projects within /home/user */
+  });
+  it('allows the boundary root itself', async () => {
+    /* /home/user within /home/user */
+  });
+  it('rejects paths outside boundary', async () => {
+    /* /etc within /home/user */
+  });
 
   // Prefix collision fix (the bug we're fixing)
   it('rejects /home/username when boundary is /home/user', async () => {
@@ -622,7 +623,9 @@ describe('validateBoundary', () => {
   });
 
   // Security
-  it('rejects null bytes', async () => { /* path containing \0 */ });
+  it('rejects null bytes', async () => {
+    /* path containing \0 */
+  });
   it('rejects paths with .. that escape boundary', async () => {
     /* /home/user/../etc resolves to /etc → rejected */
   });
@@ -634,19 +637,19 @@ describe('validateBoundary', () => {
   it('handles ENOENT gracefully (path.resolve fallback)', async () => {
     /* Non-existent path still checked against boundary */
   });
-  it('throws PERMISSION_DENIED for EACCES', async () => { });
-  it('works with trailing slashes', async () => { });
+  it('throws PERMISSION_DENIED for EACCES', async () => {});
+  it('works with trailing slashes', async () => {});
 });
 
 describe('initBoundary', () => {
-  it('resolves symlinks at startup', async () => { });
-  it('defaults to os.homedir() when null', async () => { });
-  it('stores resolved path for getBoundary()', async () => { });
+  it('resolves symlinks at startup', async () => {});
+  it('defaults to os.homedir() when null', async () => {});
+  it('stores resolved path for getBoundary()', async () => {});
 });
 
 describe('isWithinBoundary', () => {
-  it('returns true for valid paths', async () => { });
-  it('returns false for invalid paths (does not throw)', async () => { });
+  it('returns true for valid paths', async () => {});
+  it('returns false for invalid paths (does not throw)', async () => {});
 });
 ```
 

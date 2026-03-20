@@ -295,13 +295,16 @@ export interface TraceStoreLike {
     metadata?: Record<string, unknown>;
     [key: string]: unknown;
   }): void;
-  updateSpan(messageId: string, update: {
-    status?: string;
-    deliveredAt?: string | number | null;
-    processedAt?: string | number | null;
-    error?: string | null;
-    [key: string]: unknown;
-  }): void;
+  updateSpan(
+    messageId: string,
+    update: {
+      status?: string;
+      deliveredAt?: string | number | null;
+      processedAt?: string | number | null;
+      error?: string | null;
+      [key: string]: unknown;
+    }
+  ): void;
 }
 
 /**
@@ -311,7 +314,11 @@ export interface TraceStoreLike {
  */
 export interface AdapterRegistryLike {
   setRelay(relay: RelayPublisher): void;
-  deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult | null>;
+  deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult | null>;
   shutdown(): Promise<void>;
 }
 
@@ -358,7 +365,11 @@ export interface RelayAdapter {
    * @param envelope - The relay envelope to deliver
    * @param context - Optional rich context for informed dispatch decisions
    */
-  deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult>;
+  deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult>;
 
   /** Current adapter status */
   getStatus(): AdapterStatus;
@@ -451,8 +462,8 @@ export type EndpointType = 'dispatch' | 'query' | 'persistent' | 'agent' | 'unkn
  */
 export function inferEndpointType(subject: string): EndpointType {
   if (subject.startsWith('relay.inbox.dispatch.')) return 'dispatch';
-  if (subject.startsWith('relay.inbox.query.'))    return 'query';
-  if (subject.startsWith('relay.inbox.'))           return 'persistent';
-  if (subject.startsWith('relay.agent.'))           return 'agent';
+  if (subject.startsWith('relay.inbox.query.')) return 'query';
+  if (subject.startsWith('relay.inbox.')) return 'persistent';
+  if (subject.startsWith('relay.agent.')) return 'agent';
   return 'unknown';
 }

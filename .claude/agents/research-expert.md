@@ -24,6 +24,7 @@ You are a specialized research expert designed for efficient, focused informatio
 4. If existing research is partially relevant, note what's covered and only research the gaps
 
 **Return format when using cached research:**
+
 ```
 Using existing research: research/[filename].md
 
@@ -159,28 +160,29 @@ Every research file **must** begin with YAML frontmatter. Infer each field from 
 
 ```yaml
 ---
-title: "Human-readable title of the research"
-date: YYYY-MM-DD          # today's date (ISO format)
-type: external-best-practices  # see type taxonomy below
+title: 'Human-readable title of the research'
+date: YYYY-MM-DD # today's date (ISO format)
+type: external-best-practices # see type taxonomy below
 status: active
 tags: [keyword1, keyword2, keyword3]
-feature_slug: mesh-topology-elevation  # optional: matching spec slug if applicable
-searches_performed: 14    # optional: number of WebSearch calls made
-sources_count: 40         # optional: number of distinct sources consulted
+feature_slug: mesh-topology-elevation # optional: matching spec slug if applicable
+searches_performed: 14 # optional: number of WebSearch calls made
+sources_count: 40 # optional: number of distinct sources consulted
 ---
 ```
 
 **Type taxonomy** — choose the most accurate one:
 
-| Type | Use When |
-|------|----------|
+| Type                      | Use When                                                                  |
+| ------------------------- | ------------------------------------------------------------------------- |
 | `external-best-practices` | Industry patterns, library comparisons, UX research from external sources |
-| `internal-architecture` | DorkOS-specific design decisions that may become ADRs or specs |
-| `strategic` | Competitive analysis, market research, product positioning |
-| `implementation` | How-to research that directly informed or will inform a code change |
-| `exploratory` | Early ideation, naming exercises, speculative ideas without a clear spec |
+| `internal-architecture`   | DorkOS-specific design decisions that may become ADRs or specs            |
+| `strategic`               | Competitive analysis, market research, product positioning                |
+| `implementation`          | How-to research that directly informed or will inform a code change       |
+| `exploratory`             | Early ideation, naming exercises, speculative ideas without a clear spec  |
 
 **Auto-detection rules:**
+
 - Research about an external library, framework, or industry pattern → `external-best-practices`
 - Research about how DorkOS itself should be designed or architected → `internal-architecture`
 - Research about competitors, market positioning, or product strategy → `strategic`

@@ -43,10 +43,26 @@ const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: 
 
 /** Human-readable labels and descriptions for each permission mode. */
 const PERMISSION_MODES: { value: PermissionMode; label: string; description: string }[] = [
-  { value: 'default', label: 'Default', description: 'Agent asks for approval before using any tools' },
-  { value: 'plan', label: 'Plan Only', description: 'Agent can read files but asks before making changes' },
-  { value: 'acceptEdits', label: 'Accept Edits', description: 'Agent can read and write files; asks before running shell commands' },
-  { value: 'bypassPermissions', label: 'Full Access', description: 'Agent can use all tools without asking for approval' },
+  {
+    value: 'default',
+    label: 'Default',
+    description: 'Agent asks for approval before using any tools',
+  },
+  {
+    value: 'plan',
+    label: 'Plan Only',
+    description: 'Agent can read files but asks before making changes',
+  },
+  {
+    value: 'acceptEdits',
+    label: 'Accept Edits',
+    description: 'Agent can read and write files; asks before running shell commands',
+  },
+  {
+    value: 'bypassPermissions',
+    label: 'Full Access',
+    description: 'Agent can use all tools without asking for approval',
+  },
 ];
 
 export interface BindingAdvancedSectionProps {
@@ -102,7 +118,13 @@ export function BindingAdvancedSection({
         open={open}
         onOpenChange={onOpenChange}
         trigger="Advanced"
-        badge={hasChanges ? <Badge variant="secondary" className="text-xs">Modified</Badge> : undefined}
+        badge={
+          hasChanges ? (
+            <Badge variant="secondary" className="text-xs">
+              Modified
+            </Badge>
+          ) : undefined
+        }
       >
         {/* Session strategy selector */}
         <div className="space-y-1.5 px-4 py-3">
@@ -120,7 +142,7 @@ export function BindingAdvancedSection({
             </SelectContent>
           </Select>
           {selectedStrategy && (
-            <p className="text-xs text-muted-foreground">{selectedStrategy.description}</p>
+            <p className="text-muted-foreground text-xs">{selectedStrategy.description}</p>
           )}
         </div>
 
@@ -140,16 +162,19 @@ export function BindingAdvancedSection({
             </SelectContent>
           </Select>
           {selectedPermissionMode && (
-            <p className="text-xs text-muted-foreground">{selectedPermissionMode.description}</p>
+            <p className="text-muted-foreground text-xs">{selectedPermissionMode.description}</p>
           )}
         </div>
 
         {/* Permission toggles */}
         <div className="space-y-2.5 px-4 py-3">
-          <p className="text-xs font-medium text-muted-foreground">Permissions</p>
+          <p className="text-muted-foreground text-xs font-medium">Permissions</p>
           <div className="flex cursor-pointer items-center justify-between gap-3">
-            <Label htmlFor="perm-initiate" className="flex cursor-pointer items-center gap-1.5 text-xs font-normal">
-              <Shield className="size-3 text-muted-foreground" />
+            <Label
+              htmlFor="perm-initiate"
+              className="flex cursor-pointer items-center gap-1.5 text-xs font-normal"
+            >
+              <Shield className="text-muted-foreground size-3" />
               Allow agent to initiate messages
             </Label>
             <Switch
@@ -190,9 +215,9 @@ export function BindingAdvancedSection({
           <AlertDialogHeader>
             <AlertDialogTitle>Enable Full Access?</AlertDialogTitle>
             <AlertDialogDescription>
-              Any user who can send messages through this adapter (e.g., members of your
-              Slack workspace) will be able to trigger unrestricted agent actions, including
-              file system access and command execution.
+              Any user who can send messages through this adapter (e.g., members of your Slack
+              workspace) will be able to trigger unrestricted agent actions, including file system
+              access and command execution.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

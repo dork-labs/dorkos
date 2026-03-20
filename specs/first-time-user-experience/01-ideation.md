@@ -64,6 +64,7 @@ status: ideation
 ### Primary Components/Modules
 
 **CLI & Server Entry:**
+
 - `packages/cli/src/cli.ts` (150 lines) — Entry point, flag parsing, config precedence, first-run detection
 - `packages/cli/src/init-wizard.ts` (88 lines) — Interactive setup prompts (port, theme, tunnel, cwd)
 - `apps/server/src/index.ts` — Server startup, feature initialization, service composition
@@ -71,11 +72,13 @@ status: ideation
 - `apps/server/src/lib/feature-flag.ts` (31 lines) — Runtime feature flag factory
 
 **Client App Shell & Navigation:**
+
 - `apps/client/src/App.tsx` — Main container, sidebar/chat layout, keyboard shortcuts
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` — Session list, panel toggles, theme switcher
 - `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx` — Settings tabs
 
 **Empty State Components (all need redesign):**
+
 - `apps/client/src/layers/shared/ui/FeatureDisabledState.tsx` — Will be less needed with features-on-by-default, but kept for explicit opt-out cases
 - `apps/client/src/layers/features/mesh/ui/MeshEmptyState.tsx` — Reusable empty state
 - `apps/client/src/layers/features/mesh/ui/TopologyEmptyState.tsx` — Topology-specific empty state
@@ -83,11 +86,13 @@ status: ideation
 - `apps/client/src/layers/features/relay/ui/RelayPanel.tsx` — Relay empty state (inline)
 
 **Feature Module Panels:**
+
 - `apps/client/src/layers/features/pulse/ui/` — Schedule list, create dialog, run history
 - `apps/client/src/layers/features/relay/ui/` — Activity feed, message trace, adapter management
 - `apps/client/src/layers/features/mesh/ui/` — Agent registry, topology graph, discovery
 
 **Obsidian Plugin (lighter scope):**
+
 - `apps/obsidian-plugin/src/` — Plugin lifecycle, CopilotView, React mounting
 
 ### Shared Dependencies
@@ -118,12 +123,14 @@ npm install -g dorkos
 **Critical change: Features enabled by default.** When no env var or config entry exists, Pulse, Relay, and Mesh will be **enabled**. Users can explicitly disable with `DORKOS_PULSE_ENABLED=false`, `DORKOS_RELAY_ENABLED=false`, `DORKOS_MESH_ENABLED=false`.
 
 This inverts the current pattern:
+
 - Current: `undefined` → disabled, `true` → enabled
 - New: `undefined` → enabled, `false` → disabled
 
 ### Potential Blast Radius
 
 **High Priority (FTUE core):**
+
 - New `features/onboarding/` FSD module — the functional onboarding flow (agent discovery, pulse presets, adapter setup), persistent progress tracking, first-run detection
 - Feature flag default inversion (server + shared config schema + CLI flags)
 - Server-side filesystem scanner API — endpoint for discovering agent directories (CLAUDE.md, .claude/, .dork/agent.json)
@@ -133,6 +140,7 @@ This inverts the current pattern:
 - All empty state components across Chat, Pulse, Relay, Mesh (rich visual previews)
 
 **Medium Priority (integration):**
+
 - SessionSidebar — persistent progress card for incomplete onboarding
 - Mesh panel — integration with onboarding's agent discovery (shared registration flow)
 - Pulse panel — integration with onboarding's preset creation (shared schedule creation)
@@ -141,6 +149,7 @@ This inverts the current pattern:
 - Celebrations infra — confetti/delight animation for agent discovery moment
 
 **Low Priority (polish + future):**
+
 - Settings dialog field-level help text
 - Status bar informational improvements
 - CLI post-setup summary
@@ -172,14 +181,14 @@ The research covered 5 structured rounds with 22+ web searches, analyzing academ
 
 ### Best-in-Class Examples
 
-| Tool | Brilliant Insight | Transferable to DorkOS |
-|------|-------------------|------------------------|
-| **Linear** | Theme selection first — low-stakes personalization before any demands. Teaches keyboard shortcuts early — signals "this is for power users" | Start with personalization (theme, cwd), teach command palette early |
-| **Vercel** | Zero-config deployments — value before understanding | `dorkos` must "just work" with zero config on first run |
-| **Stripe** | Docs ARE the FTUE. Time-to-first-API-call is the north star | README is the first UI. Time from install to first session under 3 minutes |
-| **Arc** | 90-second feature introduction, hands-on, with immediate escape hatch | Each module should have a ~90-second interactive "why this exists" available on demand |
-| **Notion** | Template-based workspace preloading solves blank canvas paralysis | Empty states should show visual previews of what populated state looks like |
-| **Raycast** | Lead with universal features, let extensions be discovered through use | Chat is the entry surface; command palette surfaces everything else |
+| Tool        | Brilliant Insight                                                                                                                           | Transferable to DorkOS                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Linear**  | Theme selection first — low-stakes personalization before any demands. Teaches keyboard shortcuts early — signals "this is for power users" | Start with personalization (theme, cwd), teach command palette early                   |
+| **Vercel**  | Zero-config deployments — value before understanding                                                                                        | `dorkos` must "just work" with zero config on first run                                |
+| **Stripe**  | Docs ARE the FTUE. Time-to-first-API-call is the north star                                                                                 | README is the first UI. Time from install to first session under 3 minutes             |
+| **Arc**     | 90-second feature introduction, hands-on, with immediate escape hatch                                                                       | Each module should have a ~90-second interactive "why this exists" available on demand |
+| **Notion**  | Template-based workspace preloading solves blank canvas paralysis                                                                           | Empty states should show visual previews of what populated state looks like            |
+| **Raycast** | Lead with universal features, let extensions be discovered through use                                                                      | Chat is the entry surface; command palette surfaces everything else                    |
 
 ### Why Product Tours Are Wrong for DorkOS
 
@@ -192,6 +201,7 @@ The research covered 5 structured rounds with 22+ web searches, analyzing academ
 ### Progressive Disclosure as Permanent Architecture
 
 Progressive disclosure is not a temporary onboarding state — it's the product's permanent information architecture. The hierarchy:
+
 1. **Primary surface**: Chat (always visible, always the default)
 2. **Secondary surface**: Pulse, Relay, Mesh tabs (visible but lower visual weight)
 3. **Tertiary surface**: Configuration, advanced settings, agent identity
@@ -202,6 +212,7 @@ Research finding: designs with more than 2 levels of disclosure nesting have low
 ### Empty States as Primary FTUE Vehicle
 
 Nielsen Norman Group research: well-designed empty states are more memorable and effective than forced tutorials because they're encountered naturally. The three functions:
+
 1. **Communicate system status**: Empty because nothing exists yet, not because of an error
 2. **Provide learning cues**: Show what you'd find here if populated
 3. **Enable direct task pathways**: One clear action button
@@ -211,6 +222,7 @@ Design formula: two parts instruction, one part delight. Instruction must be com
 ### The "Considerate Interface" Framework (Alan Cooper)
 
 Key principles for DorkOS FTUE:
+
 - **Takes an Interest**: Remember last cwd, last theme, last session
 - **Is Forthcoming**: When creating a schedule, show next 3 run times. When opening a session, show git status
 - **Keeps Informed Without Interruption**: Status bar, quiet badges — not modals or alerts
@@ -221,6 +233,7 @@ Key principles for DorkOS FTUE:
 ### The Anti-Persona Filter
 
 If a design decision makes DorkOS easier for Jordan (non-technical, wants templates and no-code), it probably makes it worse for Kai. Specific signals to preserve:
+
 - Technical terminology: sessions, schedules, cwd — never softened
 - Configuration visibility: env vars and config files are features, not obstacles
 - Architectural transparency: the README leads with what the tool IS, not what it promises
@@ -228,6 +241,7 @@ If a design decision makes DorkOS easier for Jordan (non-technical, wants templa
 ### Potential Solutions
 
 **1. Passive Progressive Disclosure + Empty States Only**
+
 - Description: No welcome modal, no tour, no guided flow. Chat is the default. Each module has rich empty states with visual previews. Users discover features by clicking tabs
 - Pros: Respects expert users, natural discovery, permanent not temporary, research-backed
 - Cons: Risk of underdiscovery of Pulse/Relay/Mesh if users never click the tabs. Misses the opportunity to create magic moments. Doesn't leverage DorkOS's unique ability to discover existing agents on the user's machine
@@ -235,6 +249,7 @@ If a design decision makes DorkOS easier for Jordan (non-technical, wants templa
 - Maintenance: Low
 
 **2. Goal-Driven First-Run**
+
 - Description: On first web client open, show a 2-3 option selector: "What brings you here?" → routes to the relevant module
 - Pros: Immediately relevant experience, maps to JTBD framework
 - Cons: Adds one step before value, can feel like a survey, risks Jordan-ification
@@ -242,6 +257,7 @@ If a design decision makes DorkOS easier for Jordan (non-technical, wants templa
 - Maintenance: Low
 
 **3. Functional Onboarding (Recommended)**
+
 - Description: A guided first-run experience that DOES real things — discovers real agents on the machine, creates real schedules from presets, configures real adapters. Each step produces tangible output. Not a tour that shows features, but a wizard that activates the product. Persistent across sessions — if the user exits mid-flow, remaining steps are offered on the next visit via a subtle, non-intrusive mechanism
 - Pros: Creates genuine "magic moments" (discovering 5 agents you already have is delightful). Each step produces real value — the user walks away with a working system. Leverages DorkOS's unique capabilities that no other product has. Persistent progress respects the user's time. Expert users still feel respected because the onboarding is doing real work, not explaining concepts
 - Cons: Higher implementation complexity. Must gracefully handle edge cases (no agents found, adapter auth failures, schedule creation errors). Must remain non-blocking — the user must be able to skip at any point and use Chat immediately
@@ -249,6 +265,7 @@ If a design decision makes DorkOS easier for Jordan (non-technical, wants templa
 - Maintenance: Medium (presets config, adapter catalog, and AgentTemplate hooks need upkeep)
 
 **4. Hybrid: Functional Onboarding + Progressive Empty States**
+
 - Description: Combine Approach 3's functional onboarding flow for first-run with Approach 1's rich empty states as the permanent fallback. If the user skips or exits onboarding, each module's empty state still guides them. If they complete onboarding, the empty states are already populated
 - Pros: Best of both worlds. Magic moments for engaged users, graceful fallback for skip-happy experts. The empty states serve double duty — they work during onboarding AND independently
 - Cons: Requires designing both systems, though they share components
@@ -278,6 +295,7 @@ If a design decision makes DorkOS easier for Jordan (non-technical, wants templa
 The first and most magical step. DorkOS scans the user's filesystem for directories that contain agent markers.
 
 **What we scan for (broadest net — any AI-configured project):**
+
 - Directories with `CLAUDE.md` files (Claude Code projects)
 - Directories with `.claude/` directories (Claude Code configuration)
 - Directories with `.dork/agent.json` manifests (already-configured DorkOS agents)
@@ -300,10 +318,12 @@ When the user confirms a project, DorkOS creates a `.dork/agent.json` manifest i
 After the sequence: the user can review the discovered agents, deselect any they don't want registered, then confirm. All confirmed agents get `.dork/agent.json` manifests created and are registered in Mesh.
 
 **If multiple agents found:**
+
 - Emphasize the networking aspect: "These {N} agents can now talk to each other. A scheduling agent can ask a finance agent to approve a budget. A docs agent can verify code examples against the real codebase."
 - Show the topology graph with connections between agents
 
 **If no agents found — guided agent creation:**
+
 - Don't treat this as failure — treat it as opportunity
 - "No agents found yet — let's create your first one."
 - **Guided inline flow:** Pick a project directory (defaults to cwd where dorkos was launched) → name the agent → optional persona sentence → Create. Creates `.dork/agent.json`. The naming step is the personalization/investment moment
@@ -315,6 +335,7 @@ After the sequence: the user can review the discovered agents, deselect any they
 After agent discovery, transition naturally: "Now that your agents are set up, want them to work while you sleep?"
 
 **Preset schedules** (loaded from `~/.dork/pulse/presets.json`, created with defaults on first run):
+
 - "Codebase health check" — Weekly lint + typecheck + test run with a report
 - "Dependency audit" — Weekly check for outdated/vulnerable packages
 - "Documentation sync" — Daily verify that docs match implementation
@@ -322,6 +343,7 @@ After agent discovery, transition naturally: "Now that your agents are set up, w
 - "Custom" — Write your own prompt and schedule
 
 **The UI:**
+
 - Each preset shown as a card with: name, description, cron expression (human-readable), and the prompt that will be used
 - User toggles on/off the ones they want. Can edit the cron expression or prompt before confirming
 - For each selected preset, the user picks which agent(s) it applies to (from the agents discovered in Step 1)
@@ -329,6 +351,7 @@ After agent discovery, transition naturally: "Now that your agents are set up, w
 - Delight moment: "Your first schedule runs at {time}. You'll have results waiting for you."
 
 **If the user has no interest in scheduling:**
+
 - "Skip for now" is always available and prominent
 - The Pulse empty state will guide them later
 
@@ -337,11 +360,13 @@ After agent discovery, transition naturally: "Now that your agents are set up, w
 After scheduling (or skipping it): "Want your agents to reach you when they're done?"
 
 **Available adapters:**
+
 - **Telegram** — "Get notified on Telegram when agents finish work, runs complete, or errors occur"
 - **Webhooks** — "Send events to any URL — Slack incoming webhook, Discord, custom endpoints"
 - Future adapters shown as "coming soon" cards
 
 **The flow:**
+
 - Each adapter card shows what it does and what's needed to set it up (e.g., Telegram bot token)
 - Selecting an adapter launches the existing `AdapterSetupWizard` (configure → test → confirm)
 - On successful test: celebration + "Connected! Your agents can now reach you on Telegram."
@@ -352,6 +377,7 @@ After scheduling (or skipping it): "Want your agents to reach you when they're d
 **The key principle:** The onboarding is valuable enough to offer again, but never aggressive enough to annoy.
 
 **Implementation:**
+
 - Track onboarding completion state in `~/.dork/config.json` (e.g., `onboarding: { completedSteps: ['mesh'], dismissedAt: null }`)
 - If the user exits mid-flow, the next visit shows a subtle, contextual reminder — NOT a modal or banner that blocks the UI
 - **Display mechanism:** A small card or collapsible section in the session sidebar (below the session list) that says something like: "Continue setup — Pulse and Relay are ready to configure" with direct links to each remaining step
@@ -369,6 +395,7 @@ After scheduling (or skipping it): "Want your agents to reach you when they're d
 #### AgentTemplates (Future Extension Point)
 
 When AgentTemplates are implemented:
+
 - They appear in Step 1 when no agents are discovered: "No agents found. Start with a template?"
 - They also appear when creating a new agent from any context (Mesh panel, agent settings)
 - A template is a folder structure (CLAUDE.md, .claude/commands/, .dork/agent.json, etc.) that gets installed into a directory
@@ -379,24 +406,24 @@ When AgentTemplates are implemented:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | FTUE scope and priority | Full journey, web-first | Design the complete path from npm install through module activation. Invest most depth in web client (desktop + mobile). CLI and Obsidian plugin get lighter treatment with extension points |
-| 2 | Empty state richness | Contextual + visual preview | Each module's empty state explains purpose in 2 sentences, shows a small visual preview of what populated state looks like (e.g., mini topology graph, sample schedule card), and provides one clear action. Research shows visual previews outperform pure text |
-| 3 | Feature activation model | **Features enabled by default** | Pulse, Relay, and Mesh are enabled when no env var exists. Inverts the current disabled-by-default pattern. Eliminates the entire "discover features behind flags" problem. Users can explicitly disable with `=false` |
-| 4 | Mobile FTUE approach | Responsive adaptation | One FTUE design that adapts to screen size via existing responsive patterns (useIsMobile, ResponsiveDialog). Full-screen onboarding flow uses full-width sheets on mobile. Cards stack vertically. Touch-optimized tap targets |
-| 5 | Onboarding approach | **Functional onboarding + empty state fallback** | A 3-step guided flow (Discover Agents → Enable Pulse Presets → Connect Adapters) that does real work at each step — not a product tour. Every step produces tangible output. Rich empty states serve as permanent fallback for users who skip |
-| 6 | Onboarding UI container | **Full-screen flow** | The onboarding takes over the entire viewport — no sidebar, no tabs, just the flow. Each step gets the full canvas. When the flow completes, it transitions into the full product (sidebar slides in, populated). A prominent "Skip all" is always visible. The onboarding IS the first product experience |
-| 7 | Agent definition (what to scan for) | **Any AI-configured project (broadest)** | Scan for CLAUDE.md, .claude/, .cursor/, .github/copilot, .dork/agent.json, or any AI-related config in git repositories. Maximizes discoveries. When confirmed, projects get `.dork/agent.json` manifests, upgrading them to DorkOS agents with networking and scheduling |
-| 8 | Scan scope | **Full home directory with exclusions** | Scan everything under ~/ excluding node_modules, .git internals, vendor, Library/, etc. Show results progressively as found. The staggered entrance animation makes even longer scans feel dynamic |
-| 9 | Pulse presets source | **Server-side JSON at `~/.dork/pulse/presets.json`** | Created with defaults on first run (health check, dependency audit, docs sync, code review). Fully user-editable. If corrupted/deleted, re-created with defaults on next server start |
-| 10 | Onboarding state persistence | **Server-side config** | `onboarding` key in `~/.dork/config.json`: `{ completedSteps, skippedSteps, dismissedAt }`. Server exposes via config API. Persists across browsers, devices, and client types (web + Obsidian). Single source of truth |
-| 11 | Persistent progress display | **Sidebar card with step links** | Small collapsible card below session list in sidebar. Shows remaining steps as clickable links. Permanently dismissable. On mobile, appears at top of session drawer. Clicking a step re-enters the full-screen onboarding at that step |
-| 12 | Discovery celebration | **Three-beat sequence** | Beat 1: Staggered card entrance as agents are found. Beat 2: Confetti burst + "Found {N} agents!" announcement. Beat 3: Cards morph into topology graph showing connections forming. Total: ~3-4 seconds of choreographed delight |
-| 13 | No agents found experience | **Guided agent creation** | "No agents found yet — let's create your first one." Inline flow: pick directory → name agent → optional persona → Create. The naming step is the investment moment. Future: AgentTemplate cards appear before manual creation |
-| 14 | Discovery re-entry | **Re-scannable from Mesh panel** | After onboarding, the Mesh panel gets a "Discover agents" button that re-runs the same scan. Discovery is a permanent product capability, not a one-time onboarding feature |
-| 15 | Visual design quality | **Elevated within design system** | Same calm tech palette (off-white/near-black, blue accent) but turned up: larger headline typography (24-32px), more generous whitespace (16-24pt), smoother spring animations (300-500ms), richer micro-interactions (hover states, focus rings, press feedback). Minimal, elegant, extremely polished. The most cinematic surface in the product |
-| 16 | AgentTemplates | **Future extension point** | The onboarding flow has a clear insertion point for AgentTemplates (installable folder structures). Shows when no agents are discovered. Out of scope for implementation but designed into the flow |
+| #   | Decision                            | Choice                                               | Rationale                                                                                                                                                                                                                                                                                                                                          |
+| --- | ----------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | FTUE scope and priority             | Full journey, web-first                              | Design the complete path from npm install through module activation. Invest most depth in web client (desktop + mobile). CLI and Obsidian plugin get lighter treatment with extension points                                                                                                                                                       |
+| 2   | Empty state richness                | Contextual + visual preview                          | Each module's empty state explains purpose in 2 sentences, shows a small visual preview of what populated state looks like (e.g., mini topology graph, sample schedule card), and provides one clear action. Research shows visual previews outperform pure text                                                                                   |
+| 3   | Feature activation model            | **Features enabled by default**                      | Pulse, Relay, and Mesh are enabled when no env var exists. Inverts the current disabled-by-default pattern. Eliminates the entire "discover features behind flags" problem. Users can explicitly disable with `=false`                                                                                                                             |
+| 4   | Mobile FTUE approach                | Responsive adaptation                                | One FTUE design that adapts to screen size via existing responsive patterns (useIsMobile, ResponsiveDialog). Full-screen onboarding flow uses full-width sheets on mobile. Cards stack vertically. Touch-optimized tap targets                                                                                                                     |
+| 5   | Onboarding approach                 | **Functional onboarding + empty state fallback**     | A 3-step guided flow (Discover Agents → Enable Pulse Presets → Connect Adapters) that does real work at each step — not a product tour. Every step produces tangible output. Rich empty states serve as permanent fallback for users who skip                                                                                                      |
+| 6   | Onboarding UI container             | **Full-screen flow**                                 | The onboarding takes over the entire viewport — no sidebar, no tabs, just the flow. Each step gets the full canvas. When the flow completes, it transitions into the full product (sidebar slides in, populated). A prominent "Skip all" is always visible. The onboarding IS the first product experience                                         |
+| 7   | Agent definition (what to scan for) | **Any AI-configured project (broadest)**             | Scan for CLAUDE.md, .claude/, .cursor/, .github/copilot, .dork/agent.json, or any AI-related config in git repositories. Maximizes discoveries. When confirmed, projects get `.dork/agent.json` manifests, upgrading them to DorkOS agents with networking and scheduling                                                                          |
+| 8   | Scan scope                          | **Full home directory with exclusions**              | Scan everything under ~/ excluding node_modules, .git internals, vendor, Library/, etc. Show results progressively as found. The staggered entrance animation makes even longer scans feel dynamic                                                                                                                                                 |
+| 9   | Pulse presets source                | **Server-side JSON at `~/.dork/pulse/presets.json`** | Created with defaults on first run (health check, dependency audit, docs sync, code review). Fully user-editable. If corrupted/deleted, re-created with defaults on next server start                                                                                                                                                              |
+| 10  | Onboarding state persistence        | **Server-side config**                               | `onboarding` key in `~/.dork/config.json`: `{ completedSteps, skippedSteps, dismissedAt }`. Server exposes via config API. Persists across browsers, devices, and client types (web + Obsidian). Single source of truth                                                                                                                            |
+| 11  | Persistent progress display         | **Sidebar card with step links**                     | Small collapsible card below session list in sidebar. Shows remaining steps as clickable links. Permanently dismissable. On mobile, appears at top of session drawer. Clicking a step re-enters the full-screen onboarding at that step                                                                                                            |
+| 12  | Discovery celebration               | **Three-beat sequence**                              | Beat 1: Staggered card entrance as agents are found. Beat 2: Confetti burst + "Found {N} agents!" announcement. Beat 3: Cards morph into topology graph showing connections forming. Total: ~3-4 seconds of choreographed delight                                                                                                                  |
+| 13  | No agents found experience          | **Guided agent creation**                            | "No agents found yet — let's create your first one." Inline flow: pick directory → name agent → optional persona → Create. The naming step is the investment moment. Future: AgentTemplate cards appear before manual creation                                                                                                                     |
+| 14  | Discovery re-entry                  | **Re-scannable from Mesh panel**                     | After onboarding, the Mesh panel gets a "Discover agents" button that re-runs the same scan. Discovery is a permanent product capability, not a one-time onboarding feature                                                                                                                                                                        |
+| 15  | Visual design quality               | **Elevated within design system**                    | Same calm tech palette (off-white/near-black, blue accent) but turned up: larger headline typography (24-32px), more generous whitespace (16-24pt), smoother spring animations (300-500ms), richer micro-interactions (hover states, focus rings, press feedback). Minimal, elegant, extremely polished. The most cinematic surface in the product |
+| 16  | AgentTemplates                      | **Future extension point**                           | The onboarding flow has a clear insertion point for AgentTemplates (installable folder structures). Shows when no agents are discovered. Out of scope for implementation but designed into the flow                                                                                                                                                |
 
 ---
 
@@ -407,6 +434,7 @@ When AgentTemplates are implemented:
 **Minute 0:** Reads README. Sees architecture description first (not marketing). Sees `npm install -g dorkos`. Copies. Runs.
 
 **Minute 1:** `dorkos` starts. Clean terminal output:
+
 ```
 DorkOS v1.x.x
 Server: http://localhost:4242
@@ -415,6 +443,7 @@ Features: Chat | Pulse | Relay | Mesh
 
 New to DorkOS? Start a session at http://localhost:4242
 ```
+
 No ASCII art. No "Welcome!" Greppable, informative, clean. The "New to DorkOS?" line appears on first run only.
 
 **Minute 2:** Opens web UI. First-time detection triggers the functional onboarding.
@@ -498,6 +527,7 @@ The flow then continues to Pulse and Relay as normal.
 **First open on mobile:** Same onboarding flow, responsive layout. Agent discovery works identically (the scan is server-side). Cards stack vertically. The topology graph is replaced with a simpler list view on small screens. Preset schedule selection uses full-width cards.
 
 **Key mobile adaptations:**
+
 - Onboarding steps use full-screen sheets (Drawer) instead of inline sections
 - Agent cards are stacked, touch-optimized with large tap targets
 - The topology graph preview is simplified or replaced with a count badge ("6 agents networked")

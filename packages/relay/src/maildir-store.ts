@@ -72,9 +72,7 @@ export type ClaimResult =
 /**
  * Result of a fail operation — moves a message from `cur/` to `failed/`.
  */
-export type FailResult =
-  | { ok: true; path: string }
-  | { ok: false; error: string };
+export type FailResult = { ok: true; path: string } | { ok: false; error: string };
 
 // === MaildirStore ===
 
@@ -265,7 +263,7 @@ export class MaildirStore {
   async failDirect(
     endpointHash: string,
     envelope: RelayEnvelope,
-    reason: string,
+    reason: string
   ): Promise<FailResult> {
     const messageId = envelope.id;
     const filename = messageId + FILE_EXT;
@@ -343,7 +341,7 @@ export class MaildirStore {
   async readEnvelope(
     endpointHash: string,
     subdir: MaildirSubdir,
-    messageId: string,
+    messageId: string
   ): Promise<RelayEnvelope | null> {
     const filename = messageId + FILE_EXT;
     const filePath = path.join(this.endpointDir(endpointHash), subdir, filename);
@@ -367,7 +365,7 @@ export class MaildirStore {
     const reasonPath = path.join(
       this.endpointDir(endpointHash),
       'failed',
-      `${messageId}.reason.json`,
+      `${messageId}.reason.json`
     );
 
     try {
@@ -426,7 +424,11 @@ export class MaildirStore {
  * @param data - String content to write.
  */
 async function writeFileExclusive(filePath: string, data: string): Promise<void> {
-  const handle = await fs.open(filePath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, FILE_MODE);
+  const handle = await fs.open(
+    filePath,
+    constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+    FILE_MODE
+  );
   try {
     await handle.writeFile(data, 'utf-8');
   } finally {

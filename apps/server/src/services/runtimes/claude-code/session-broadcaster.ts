@@ -61,7 +61,7 @@ export class SessionBroadcaster {
 
   constructor(
     private transcriptReader: TranscriptReader,
-    private lockManager?: SessionLockManager,
+    private lockManager?: SessionLockManager
   ) {}
 
   /**
@@ -101,12 +101,15 @@ export class SessionBroadcaster {
     // Enforce per-session SSE connection limit
     const sessionClients = this.clients.get(sessionId);
     if (sessionClients && sessionClients.size >= SSE.MAX_CLIENTS_PER_SESSION) {
-      res.status(503).json({ error: 'Too many connections for this session', code: 'SSE_SESSION_LIMIT' });
+      res
+        .status(503)
+        .json({ error: 'Too many connections for this session', code: 'SSE_SESSION_LIMIT' });
       return;
     }
 
     // Generate clientId if not provided
-    const resolvedClientId = clientId ?? `unknown-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const resolvedClientId =
+      clientId ?? `unknown-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // Add client to map
     if (!this.clients.has(sessionId)) {
@@ -426,10 +429,7 @@ export class SessionBroadcaster {
               data: { sessionId, timestamp: new Date().toISOString() },
             } as StreamEvent);
           } catch (err) {
-            logger.error(
-              `[SessionBroadcaster] Callback error for session ${sessionId}:`,
-              err
-            );
+            logger.error(`[SessionBroadcaster] Callback error for session ${sessionId}:`, err);
           }
         }
       }

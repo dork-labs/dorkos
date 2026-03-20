@@ -117,7 +117,7 @@ identity_territory:
 ```yaml
 anti_positioning:
   villain: "The villain isn't a company. It's a moment: 7am, laptop open, CI red since 2:47am. The agent could have caught it. The terminal was closed. Nobody was watching. The most powerful coding agent in the world was useless because you weren't sitting in front of it."
-  villain_pattern: "The dead terminal (agent shipped code, told no one). The re-introduction (re-explaining context for the hundredth time). The 15-tab juggle (five projects, which agent is doing what?). The flow-killer (alt-tab to terminal, lose 15 minutes of mental state for a 10-second answer)."
+  villain_pattern: 'The dead terminal (agent shipped code, told no one). The re-introduction (re-explaining context for the hundredth time). The 15-tab juggle (five projects, which agent is doing what?). The flow-killer (alt-tab to terminal, lose 15 minutes of mental state for a 10-second answer).'
   external_problem: "AI agents are powerful but isolated. Each session starts from scratch. They can't run on a schedule. They can't tell you what they did. They can't message each other. The coordination layer is missing — so everything falls on you to connect manually."
   internal_problem: "You have more ideas than hours. You pay for the most powerful AI coding agent available, and it has no way to run independently. You have agents that can ship real code, and you're still manually invoking every session, copying context between them, and checking terminals to see if anything happened. The tools are brilliant — they just can't coordinate."
   philosophical_problem: "We gave people Slack because teammates can't coordinate in isolation. We gave applications an OS because software needs files, scheduling, and a way to talk to other programs. AI agents work like teammates — but right now, they start every day with amnesia, work alone, and have no way to reach you. That's a missing layer."
@@ -127,8 +127,7 @@ anti_positioning:
 
 ## Benefit Validation — Draft Review
 
-*Cross-reference of user's initial benefit hypotheses against deep research.*
-
+_Cross-reference of user's initial benefit hypotheses against deep research._
 
 | Draft Benefit            | Verdict   | Evidence Strength    | Notes                                                                                                                                                                           |
 | ------------------------ | --------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -138,11 +137,9 @@ anti_positioning:
 | **Better Multi-tasking** | VALIDATED | Very Strong          | Power users run 4-20 concurrent sessions. Sessions last up to 7+ hours. Every existing tool is terminal-only. No browser-based dashboard exists outside DorkOS.                 |
 | **Agent Todo Lists**     | PARTIAL   | Moderate             | Pattern is validated but should be reframed as "autonomous improvement" / "self-improving software."                                                                            |
 
-
 ### Missed Opportunities Identified by Research
 
-*Benefits the product delivers that were absent from the initial draft. All six are now covered by Value Ladders.*
-
+_Benefits the product delivers that were absent from the initial draft. All six are now covered by Value Ladders._
 
 | Missed Benefit                        | Strength        | Why It Matters                                                                                                                                                                                                       | Covered By |
 | ------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
@@ -153,276 +150,275 @@ anti_positioning:
 | **Session Visibility Across Clients** | High            | All sessions visible regardless of origin (CLI, browser, Obsidian). Remote Control handles only one session.                                                                                                         | VL-03      |
 | **Notification Routing**              | High (concrete) | Relay adapters route messages to Telegram, Slack, or webhooks via subject-based routing. Agents choose their notification channel. Most-wanted Remote Control feature is mobile approval — Relay already enables it. | VL-04      |
 
-
 ---
 
 ## Phase 2: Value Ladders
 
-*Each ladder follows the 5-layer model: Feature → Mechanism → Functional → Emotional → Identity, with Proof Anchor and Persona Resonance. Organized by benefit theme rather than internal module.*
+_Each ladder follows the 5-layer model: Feature → Mechanism → Functional → Emotional → Identity, with Proof Anchor and Persona Resonance. Organized by benefit theme rather than internal module._
 
 ### VL-01: Autonomous Execution
 
 ```yaml
-id: "autonomous-execution"
-feature_name: "Scheduled Agent Execution"
-module: "Pulse"
+id: 'autonomous-execution'
+feature_name: 'Scheduled Agent Execution'
+module: 'Pulse'
 
 # Layer 1: Feature
-feature: "Cron-based agent scheduling with overrun protection, isolated sessions per run, SQLite-backed run history, configurable concurrency limits, and pending_approval state for agent-created schedules."
+feature: 'Cron-based agent scheduling with overrun protection, isolated sessions per run, SQLite-backed run history, configurable concurrency limits, and pending_approval state for agent-created schedules.'
 
 # Layer 2: Mechanism
 mechanism:
   alternative: "Manually invoke Claude Code from the terminal every time you want work done. Or: cobble together shell scripts + cron + caffeinate hacks to keep your Mac awake. Cowork's scheduling only runs while your computer is awake and the Claude Desktop app is open (documented by Simon Willison, Feb 25 2026)."
-  differentiator: "Pulse runs independently — not tied to your IDE or terminal window. Run it on your laptop, a home server, or a $5 VPS. Overrun protection prevents duplicate runs. Pending_approval gates prevent runaway autonomous execution."
+  differentiator: 'Pulse runs independently — not tied to your IDE or terminal window. Run it on your laptop, a home server, or a $5 VPS. Overrun protection prevents duplicate runs. Pending_approval gates prevent runaway autonomous execution.'
 
 # Layer 3: Functional Benefit
-functional: "Your agents ship code, triage issues, and run audits overnight. You wake up to completed pull requests, not a stale terminal waiting for your next prompt."
+functional: 'Your agents ship code, triage issues, and run audits overnight. You wake up to completed pull requests, not a stale terminal waiting for your next prompt.'
 
 # Layer 4: Emotional Benefit
 emotional: "Relief — the system you designed keeps moving forward. For the first time, progress happens on schedule, and you can focus on what matters without anxiety about what's not getting done."
 
 # Layer 5: Identity Benefit
-identity: "I am someone who builds a team that works autonomously. My projects ship around the clock — what used to take a week ships overnight because I designed a system that keeps my ideas moving forward."
+identity: 'I am someone who builds a team that works autonomously. My projects ship around the clock — what used to take a week ships overnight because I designed a system that keeps my ideas moving forward.'
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Independent cron scheduling (not tied to your IDE), vs. Cowork scheduling that breaks on Mac sleep"
+  type: 'contrast'
+  spec: 'Independent cron scheduling (not tied to your IDE), vs. Cowork scheduling that breaks on Mac sleep'
   translation: "Your agent keeps running when you close the terminal. Cowork's doesn't."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 3 (Functional)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 3 (Functional)'
     why: "Kai's trigger is waking up to broken CI. Pulse directly prevents this scenario. The functional outcome is the most emotionally resonant."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 4 (Emotional)"
-    why: "Priya wants flow. Knowing scheduled tasks are executing frees her to focus on architecture without worrying about operational gaps."
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 4 (Emotional)'
+    why: 'Priya wants flow. Knowing scheduled tasks are executing frees her to focus on architecture without worrying about operational gaps.'
 ```
 
 ### VL-02: Remote Agent Access
 
 ```yaml
-id: "remote-agent-access"
-feature_name: "Browser-Based Agent Management with Remote Access"
-module: "Console + Engine (Tunnel)"
+id: 'remote-agent-access'
+feature_name: 'Browser-Based Agent Management with Remote Access'
+module: 'Console + Engine (Tunnel)'
 
 # Layer 1: Feature
-feature: "Browser-based command center (React 19, Tailwind, shadcn/ui) accessible from any device. Optional ngrok tunnel for remote access. Rich markdown rendering, tool approval flows, session history with ETag caching. Terminal-independent — sessions are derived from JSONL transcript files, not tied to a running terminal process."
+feature: 'Browser-based command center (React 19, Tailwind, shadcn/ui) accessible from any device. Optional ngrok tunnel for remote access. Rich markdown rendering, tool approval flows, session history with ETag caching. Terminal-independent — sessions are derived from JSONL transcript files, not tied to a running terminal process.'
 
 # Layer 2: Mechanism
 mechanism:
-  alternative: "SSH into your machine and attach to a tmux session. Or: use Claude Code Remote Control (launched Feb 24, 2026 — Max plan only, one session at a time, terminal must stay open, early-stage with auth bugs and API 500s). Or: build your own Telegram bot from scratch (claude-code-telegram, 1.8K stars on GitHub)."
-  differentiator: "DorkOS Console is a full web UI — not a remote terminal session. All sessions visible simultaneously. Works from any browser on any device. No terminal dependency. No plan restrictions."
+  alternative: 'SSH into your machine and attach to a tmux session. Or: use Claude Code Remote Control (launched Feb 24, 2026 — Max plan only, one session at a time, terminal must stay open, early-stage with auth bugs and API 500s). Or: build your own Telegram bot from scratch (claude-code-telegram, 1.8K stars on GitHub).'
+  differentiator: 'DorkOS Console is a full web UI — not a remote terminal session. All sessions visible simultaneously. Works from any browser on any device. No terminal dependency. No plan restrictions.'
 
 # Layer 3: Functional Benefit
-functional: "Check on your agents from your phone at a coffee shop. Approve a tool call from your tablet on the couch. Review what your overnight agents shipped before you sit down at your desk."
+functional: 'Check on your agents from your phone at a coffee shop. Approve a tool call from your tablet on the couch. Review what your overnight agents shipped before you sit down at your desk.'
 
 # Layer 4: Emotional Benefit
 emotional: "Freedom from being chained to your desk. You can walk away from your laptop and still stay connected to your agents — without the anxiety of wondering what's happening."
 
 # Layer 5: Identity Benefit
-identity: "I am someone who stays connected to my team from anywhere, not someone who babysits a terminal. My agents reach me wherever I am."
+identity: 'I am someone who stays connected to my team from anywhere, not someone who babysits a terminal. My agents reach me wherever I am.'
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Full browser UI with multi-session visibility vs. Remote Control (one session, terminal-dependent, Max plan only)"
-  translation: "See all your agents at once, from any device, without keeping a terminal open."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  type: 'contrast'
+  spec: 'Full browser UI with multi-session visibility vs. Remote Control (one session, terminal-dependent, Max plan only)'
+  translation: 'See all your agents at once, from any device, without keeping a terminal open.'
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 3 (Functional)"
-    why: "Kai runs 5+ projects. Checking agents from his phone while AFK is the specific workflow he wants."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 4 (Emotional)"
-    why: "Priya values flow. Being able to glance at agent status from her phone without breaking context is emotional relief."
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 3 (Functional)'
+    why: 'Kai runs 5+ projects. Checking agents from his phone while AFK is the specific workflow he wants.'
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 4 (Emotional)'
+    why: 'Priya values flow. Being able to glance at agent status from her phone without breaking context is emotional relief.'
 ```
 
 ### VL-03: Multi-Session Command Center
 
 ```yaml
-id: "multi-session-command-center"
-feature_name: "Visual Multi-Session Agent Management"
-module: "Console"
+id: 'multi-session-command-center'
+feature_name: 'Visual Multi-Session Agent Management'
+module: 'Console'
 
 # Layer 1: Feature
-feature: "Browser-based UI with visual agent identity (name, color, icon), session status in browser tab titles (working/done/waiting via favicon changes), tab management for concurrent sessions, real-time session sync across clients via SSE, session lock to prevent concurrent writes."
+feature: 'Browser-based UI with visual agent identity (name, color, icon), session status in browser tab titles (working/done/waiting via favicon changes), tab management for concurrent sessions, real-time session sync across clients via SSE, session lock to prevent concurrent writes.'
 
 # Layer 2: Mechanism
 mechanism:
   alternative: "Multiple terminal windows or tmux panes. Memorize session names. Manually switch between panes to check status. No visual indicators — you read terminal output to figure out what's happening. Tools like Claude Squad and Agent of Empires help, but they're terminal-only with no notifications or mobile access."
-  differentiator: "Browsers have been solving multi-tab management for decades. DorkOS brings that UX to agent sessions — named tabs, visual status, color-coded agents, status-aware favicons. Power users run 4-20 concurrent sessions; terminal tools break down at this scale."
+  differentiator: 'Browsers have been solving multi-tab management for decades. DorkOS brings that UX to agent sessions — named tabs, visual status, color-coded agents, status-aware favicons. Power users run 4-20 concurrent sessions; terminal tools break down at this scale.'
 
 # Layer 3: Functional Benefit
-functional: "Glance at your browser tabs and instantly know: which agents are working, which are done, and which need your attention. No terminal-switching, no memorization, no cognitive overhead."
+functional: 'Glance at your browser tabs and instantly know: which agents are working, which are done, and which need your attention. No terminal-switching, no memorization, no cognitive overhead.'
 
 # Layer 4: Emotional Benefit
-emotional: "Calm clarity instead of cognitive chaos. Ten agents running in parallel, each making progress — and you know the state of all of them at a glance, the way you know which browser tabs are playing audio."
+emotional: 'Calm clarity instead of cognitive chaos. Ten agents running in parallel, each making progress — and you know the state of all of them at a glance, the way you know which browser tabs are playing audio.'
 
 # Layer 5: Identity Benefit
-identity: "I am someone who runs a team, not someone who juggles terminals. My agents have names, colors, and status — and together they multiply what I can accomplish."
+identity: 'I am someone who runs a team, not someone who juggles terminals. My agents have names, colors, and status — and together they multiply what I can accomplish.'
 
 # Proof Anchor
 proof:
-  type: "human_metric"
-  spec: "Visual agent identity system: name + color + icon per agent, status-aware favicons (working/done/waiting), real-time SSE sync"
-  translation: "Know the status of 10 agents in a single glance — the way you scan browser tabs."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  type: 'human_metric'
+  spec: 'Visual agent identity system: name + color + icon per agent, status-aware favicons (working/done/waiting), real-time SSE sync'
+  translation: 'Know the status of 10 agents in a single glance — the way you scan browser tabs.'
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 3 (Functional)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 3 (Functional)'
     why: "Kai runs 10-20 sessions. The 'which session is doing what' problem is his daily friction. Tab-based management is the direct answer."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 5 (Identity)"
-    why: "Priya manages architecture across services. A visual command center reinforces her identity as a technical leader who operates at a systems level."
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 5 (Identity)'
+    why: 'Priya manages architecture across services. A visual command center reinforces her identity as a technical leader who operates at a systems level.'
 ```
 
 ### VL-04: Agent Communication & Notification Routing
 
 ```yaml
-id: "agent-communication"
-feature_name: "Built-In Messaging Between Agents and the Channels You Already Use"
-module: "Relay"
+id: 'agent-communication'
+feature_name: 'Built-In Messaging Between Agents and the Channels You Already Use'
+module: 'Relay'
 
 # Layer 1: Feature
-feature: "Built-in messaging between your agents and the channels you already use. Telegram, webhooks, browser — agents send notifications to where you are. Agents can also message each other across project boundaries. Plugin adapter system means new channels are easy to add. Messages persist even when terminals close."
+feature: 'Built-in messaging between your agents and the channels you already use. Telegram, webhooks, browser — agents send notifications to where you are. Agents can also message each other across project boundaries. Plugin adapter system means new channels are easy to add. Messages persist even when terminals close.'
 
 # Layer 2: Mechanism
 mechanism:
-  alternative: "Agents output to the terminal only. If you want notifications, you build a custom Telegram bot from scratch (claude-code-telegram took the community months to build, has 1.8K stars). If you want agents to coordinate, you copy-paste between sessions. If you want mobile push notifications for approval prompts — the #1 most-wanted feature in the Remote Control ecosystem — you have zero options. Claude Code Agent Teams provides in-terminal messaging but dies when the terminal closes, works only within a single machine, and is experimental."
+  alternative: 'Agents output to the terminal only. If you want notifications, you build a custom Telegram bot from scratch (claude-code-telegram took the community months to build, has 1.8K stars). If you want agents to coordinate, you copy-paste between sessions. If you want mobile push notifications for approval prompts — the #1 most-wanted feature in the Remote Control ecosystem — you have zero options. Claude Code Agent Teams provides in-terminal messaging but dies when the terminal closes, works only within a single machine, and is experimental.'
   differentiator: "Relay comes with Telegram and webhook adapters built in — no custom bot code, no third-party glue. Adding a new channel is a plugin, not a project. Agents can message each other, not just you. It's like giving your agents Slack — they can reach the right person (or agent) on the right channel without you routing everything manually."
 
 # Layer 3: Functional Benefit
-functional: "Get a Telegram message when your agent finishes a task. Have your research agent notify your coding agent when it finds something relevant. Your agents can reach you — and each other — without you playing messenger."
+functional: 'Get a Telegram message when your agent finishes a task. Have your research agent notify your coding agent when it finds something relevant. Your agents can reach you — and each other — without you playing messenger.'
 
 # Layer 4: Emotional Benefit
 emotional: "Connected — your agents aren't screaming into the void of a terminal. They can reach you on Telegram while you're at lunch, ping your webhook when a deploy finishes, or quietly queue a message for when you're back at your desk. You choose how and when they reach you."
 
 # Layer 5: Identity Benefit
-identity: "I am someone whose agents can communicate — with me and with each other — not someone who manually copies context between chat windows."
+identity: 'I am someone whose agents can communicate — with me and with each other — not someone who manually copies context between chat windows.'
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Built-in Telegram + webhook adapters with plugin system for new channels, vs. DIY Telegram bots or no notification path at all"
-  translation: "Telegram notifications? Built in. Webhooks for Slack? Built in. A new channel? Write an adapter plugin. No custom bot code. No glue."
+  type: 'contrast'
+  spec: 'Built-in Telegram + webhook adapters with plugin system for new channels, vs. DIY Telegram bots or no notification path at all'
+  translation: 'Telegram notifications? Built in. Webhooks for Slack? Built in. A new channel? Write an adapter plugin. No custom bot code. No glue.'
   social: "[PLACEHOLDER — NEEDS CUSTOMER DATA: 'I set up Telegram notifications in 5 minutes...']"
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 3 (Functional)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 3 (Functional)'
     why: "Kai wants Telegram notifications when agents need him. This is his trigger scenario — checking his phone while AFK and seeing agent status. Relay's built-in Telegram adapter is the direct implementation, no custom bot required."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 4 (Emotional)"
-    why: "Priya values seamless context flow across her multi-service architecture. Agents that route notifications to the right channel without her manual intervention reinforces her sense of integrated systems under her governance."
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 4 (Emotional)'
+    why: 'Priya values seamless context flow across her multi-service architecture. Agents that route notifications to the right channel without her manual intervention reinforces her sense of integrated systems under her governance.'
 ```
 
 ### VL-05: Agent Network
 
 ```yaml
-id: "agent-network"
-feature_name: "Agent Discovery, Registry, and Network Topology"
-module: "Mesh"
+id: 'agent-network'
+feature_name: 'Agent Discovery, Registry, and Network Topology'
+module: 'Mesh'
 
 # Layer 1: Feature
-feature: "Pluggable discovery strategies (Claude Code, Cursor, Codex, custom patterns) that scan for agent-capable project directories. Intentional registration workflow with human/agent approval. .dork/agent.json portable identity manifests. Network topology with namespace isolation (default-allow within project, default-deny across). Access control rules authored by Mesh, enforced by Relay. Topology visualization and agent health monitoring."
+feature: 'Pluggable discovery strategies (Claude Code, Cursor, Codex, custom patterns) that scan for agent-capable project directories. Intentional registration workflow with human/agent approval. .dork/agent.json portable identity manifests. Network topology with namespace isolation (default-allow within project, default-deny across). Access control rules authored by Mesh, enforced by Relay. Topology visualization and agent health monitoring.'
 
 # Layer 2: Mechanism
 mechanism:
-  alternative: "You are the router. You remember which project has which agent, what each agent can do, and manually relay messages between them. Enterprise solutions exist (Kong MCP Registry, Gravitee Agent Mesh) but require Kubernetes and a platform team. Framework-level coordination (CrewAI, LangGraph) is Python-only, in-process, and single-machine."
-  differentiator: "Mesh brings enterprise agent discovery to a single developer. Automatic scanning finds agent-capable projects. Registration is intentional — no agent joins the network without approval. Access control is per-namespace. No Kubernetes, no platform team required."
+  alternative: 'You are the router. You remember which project has which agent, what each agent can do, and manually relay messages between them. Enterprise solutions exist (Kong MCP Registry, Gravitee Agent Mesh) but require Kubernetes and a platform team. Framework-level coordination (CrewAI, LangGraph) is Python-only, in-process, and single-machine.'
+  differentiator: 'Mesh brings enterprise agent discovery to a single developer. Automatic scanning finds agent-capable projects. Registration is intentional — no agent joins the network without approval. Access control is per-namespace. No Kubernetes, no platform team required.'
 
 # Layer 3: Functional Benefit
-functional: "Mesh scans your projects, finds agent-capable directories, and presents the full roster to each agent. Your scheduling agent knows a finance agent exists. Your research agent is available to any agent that needs context. You approve which agents join the network."
+functional: 'Mesh scans your projects, finds agent-capable directories, and presents the full roster to each agent. Your scheduling agent knows a finance agent exists. Your research agent is available to any agent that needs context. You approve which agents join the network.'
 
 # Layer 4: Emotional Benefit
 emotional: "The thrill of building something that coordinates itself. Your agents aren't isolated anymore — they form a network that you designed, governed by rules you set."
 
 # Layer 5: Identity Benefit
-identity: "I am someone who operates an agent workforce, not someone who manages disconnected tools. I built a mesh — not a pile of scripts."
+identity: 'I am someone who operates an agent workforce, not someone who manages disconnected tools. I built a mesh — not a pile of scripts.'
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Automatic discovery + intentional registration + namespace isolation vs. manual tracking in your head"
-  translation: "Mesh finds your agents. You approve who joins. They coordinate through governed channels — like DNS and firewall rules for AI agents."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  type: 'contrast'
+  spec: 'Automatic discovery + intentional registration + namespace isolation vs. manual tracking in your head'
+  translation: 'Mesh finds your agents. You approve who joins. They coordinate through governed channels — like DNS and firewall rules for AI agents.'
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 5 (Identity)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 5 (Identity)'
     why: "Operating a mesh of agents across 5 projects is Kai's aspiration. This is what transforms 'indie hacker with scripts' into 'builder with a workforce.'"
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 3 (Functional)"
-    why: "Priya manages architecture across services. Mesh surfacing agent capabilities across her projects directly serves her cross-service coordination workflow."
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 3 (Functional)'
+    why: 'Priya manages architecture across services. Mesh surfacing agent capabilities across her projects directly serves her cross-service coordination workflow.'
 ```
 
 ### VL-06: Unified Environment
 
 ```yaml
-id: "unified-environment"
-feature_name: "Cross-Platform Agent Access (Browser + Obsidian + CLI)"
-module: "Console + Engine (Transport Interface)"
+id: 'unified-environment'
+feature_name: 'Cross-Platform Agent Access (Browser + Obsidian + CLI)'
+module: 'Console + Engine (Transport Interface)'
 
 # Layer 1: Feature
-feature: "Transport interface that decouples the UI from its backend. Two adapters: HttpTransport for standalone web use, DirectTransport for embedded use in Obsidian (in-process, no network hop). Same React UI, different delivery mechanisms. Sessions visible from any client — CLI, browser, or Obsidian — because all use the same JSONL transcript files as the single source of truth."
+feature: 'Transport interface that decouples the UI from its backend. Two adapters: HttpTransport for standalone web use, DirectTransport for embedded use in Obsidian (in-process, no network hop). Same React UI, different delivery mechanisms. Sessions visible from any client — CLI, browser, or Obsidian — because all use the same JSONL transcript files as the single source of truth.'
 
 # Layer 2: Mechanism
 mechanism:
-  alternative: "Use Claude Code in the terminal. Use a separate Obsidian AI plugin for notes (shallow chatbot wrapper, no deep integration). Copy-paste between them. Sessions started in one tool are invisible in the other. GitHub Copilot spans IDEs (VS Code, JetBrains, Eclipse, Xcode) but has no Obsidian integration and no standalone web UI. No product has designed for Obsidian + browser + CLI from the ground up."
-  differentiator: "DorkOS is the only agent system designed for knowledge workers who think in Obsidian and build in code. DirectTransport means zero network overhead in Obsidian. Sessions started in Obsidian appear in the browser and vice versa. One source of truth, three surfaces."
+  alternative: 'Use Claude Code in the terminal. Use a separate Obsidian AI plugin for notes (shallow chatbot wrapper, no deep integration). Copy-paste between them. Sessions started in one tool are invisible in the other. GitHub Copilot spans IDEs (VS Code, JetBrains, Eclipse, Xcode) but has no Obsidian integration and no standalone web UI. No product has designed for Obsidian + browser + CLI from the ground up.'
+  differentiator: 'DorkOS is the only agent system designed for knowledge workers who think in Obsidian and build in code. DirectTransport means zero network overhead in Obsidian. Sessions started in Obsidian appear in the browser and vice versa. One source of truth, three surfaces.'
 
 # Layer 3: Functional Benefit
-functional: "Query your coding agent from inside Obsidian without leaving your architecture document. See the same session later from your browser. Start a session from the CLI and check on it from your phone."
+functional: 'Query your coding agent from inside Obsidian without leaving your architecture document. See the same session later from your browser. Start a session from the CLI and check on it from your phone.'
 
 # Layer 4: Emotional Benefit
-emotional: "Flow — your thinking environment and doing environment are finally the same place. No context-switching between Obsidian and terminal. Your train of thought stays intact."
+emotional: 'Flow — your thinking environment and doing environment are finally the same place. No context-switching between Obsidian and terminal. Your train of thought stays intact.'
 
 # Layer 5: Identity Benefit
 identity: "I am someone who unifies thinking and doing. My tools don't fragment my attention — they converge into one system."
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Transport interface with HttpTransport (web) and DirectTransport (Obsidian, in-process) sharing JSONL source of truth, vs. separate terminal + separate Obsidian plugin with no shared state"
-  translation: "Start a session in Obsidian, check it from your browser, approve a tool call from your phone. Same session. No copy-paste."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  type: 'contrast'
+  spec: 'Transport interface with HttpTransport (web) and DirectTransport (Obsidian, in-process) sharing JSONL source of truth, vs. separate terminal + separate Obsidian plugin with no shared state'
+  translation: 'Start a session in Obsidian, check it from your browser, approve a tool call from your phone. Same session. No copy-paste.'
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 3 (Functional)"
-    why: "Kai values multi-surface access. Checking agents from any device fits his workflow of managing 5+ projects."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 4 (Emotional)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 3 (Functional)'
+    why: 'Kai values multi-surface access. Checking agents from any device fits his workflow of managing 5+ projects.'
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 4 (Emotional)'
     why: "This is Priya's trigger scenario — querying agents from Obsidian. Flow preservation is her core emotional need."
 ```
 
 ### VL-07: Trust & Oversight
 
 ```yaml
-id: "trust-oversight"
-feature_name: "Configurable Permissions and Full Transparency"
-module: "Engine (Tool Approvals + Session Locking + JSONL Transcripts)"
+id: 'trust-oversight'
+feature_name: 'Configurable Permissions and Full Transparency'
+module: 'Engine (Tool Approvals + Session Locking + JSONL Transcripts)'
 
 # Layer 1: Feature
-feature: "Configurable permission modes — from approve-every-tool-call to fully autonomous execution. Session locking with client ID tracking to prevent concurrent writes. JSONL transcript files as the single source of truth for all session data — every message, tool call, and result recorded. Permission mode surfaced in UI. Pending_approval gates for agent-created schedules. Task tracking with status updates."
+feature: 'Configurable permission modes — from approve-every-tool-call to fully autonomous execution. Session locking with client ID tracking to prevent concurrent writes. JSONL transcript files as the single source of truth for all session data — every message, tool call, and result recorded. Permission mode surfaced in UI. Pending_approval gates for agent-created schedules. Task tracking with status updates.'
 
 # Layer 2: Mechanism
 mechanism:
   alternative: "Trust the agent and hope for the best — with no way to review what happened. Or: run with --dangerously-skip-permissions and accept the risk (SaaStr July 2025: an autonomous agent executed DROP DATABASE during a code freeze). GitHub Copilot requires 'two human approvals' for agent PRs — a blunt gate with no middle ground. 46% of developers don't trust AI outputs (Stack Overflow 2025). The result: people hold back from autonomous execution because they have no safety net."
-  differentiator: "DorkOS gives you the safety net that makes autonomous execution comfortable. Choose your permission mode — from approve-every-call to fully autonomous. Every session is recorded, so you can review what happened instead of hovering in real-time. Open source means you can read the code that runs your agents. The guardrails exist so you can step away."
+  differentiator: 'DorkOS gives you the safety net that makes autonomous execution comfortable. Choose your permission mode — from approve-every-call to fully autonomous. Every session is recorded, so you can review what happened instead of hovering in real-time. Open source means you can read the code that runs your agents. The guardrails exist so you can step away.'
 
 # Layer 3: Functional Benefit
-functional: "Let your agents run autonomously — and review everything they did in the morning. Set the permission mode that matches your comfort level. Open source, self-hosted, every session recorded. No DROP DATABASE surprises, even at full autonomy."
+functional: 'Let your agents run autonomously — and review everything they did in the morning. Set the permission mode that matches your comfort level. Open source, self-hosted, every session recorded. No DROP DATABASE surprises, even at full autonomy.'
 
 # Layer 4: Emotional Benefit
 emotional: "Confidence. You can let your agents run autonomously because you built the guardrails. You're not anxious about what they might do — you designed the boundaries."
@@ -432,35 +428,35 @@ identity: "I am someone who trusts their agents because I built the guardrails. 
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Configurable permission modes + open source + full session history vs. --dangerously-skip-permissions (all or nothing) with no visibility"
-  translation: "Run autonomous. Review in the morning. Open source, self-hosted, every session recorded. The safety net exists so you can actually let go."
+  type: 'contrast'
+  spec: 'Configurable permission modes + open source + full session history vs. --dangerously-skip-permissions (all or nothing) with no visibility'
+  translation: 'Run autonomous. Review in the morning. Open source, self-hosted, every session recorded. The safety net exists so you can actually let go.'
   social: "[PLACEHOLDER — NEEDS CUSTOMER DATA: 'I finally let my agents run overnight because I know I can review everything they did...']"
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 4 (Emotional)"
-    why: "Kai wants to sleep while agents run. The guardrails are what make that possible — not because he approves every action, but because he knows every action is recorded and reviewable. Autonomy without a safety net is just anxiety."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 3 (Functional)"
-    why: "Priya manages architecture across teams. Audit trails and approval flows are functional requirements for her technical leadership role."
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 4 (Emotional)'
+    why: 'Kai wants to sleep while agents run. The guardrails are what make that possible — not because he approves every action, but because he knows every action is recorded and reviewable. Autonomy without a safety net is just anxiety.'
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 3 (Functional)'
+    why: 'Priya manages architecture across teams. Audit trails and approval flows are functional requirements for her technical leadership role.'
 ```
 
 ### VL-08: Persistent Memory
 
 ```yaml
-id: "persistent-memory"
-feature_name: "Persistent Context Across All Agent Sessions"
-module: "Wing"
+id: 'persistent-memory'
+feature_name: 'Persistent Context Across All Agent Sessions'
+module: 'Wing'
 
 # Layer 1: Feature
-feature: "Persistent memory layer that survives across all agent sessions. Life coordination and commitment tracking. Proactive context surfacing — agents automatically receive relevant context about goals, priorities, and commitments. Context builder injects runtime context (env info, git status, agent identity, persona) into every session via XML blocks."
+feature: 'Persistent memory layer that survives across all agent sessions. Life coordination and commitment tracking. Proactive context surfacing — agents automatically receive relevant context about goals, priorities, and commitments. Context builder injects runtime context (env info, git status, agent identity, persona) into every session via XML blocks.'
 
 # Layer 2: Mechanism
 mechanism:
   alternative: "Every session starts from scratch. You re-explain your goals, preferences, and priorities every time. Manually maintain per-project CLAUDE.md files (captures project context, not personal context). 95% of organizations see no measurable ROI from AI systems due to context loss between sessions (MIT report). 'AI amnesia' is the #1 reported frustration across developer communities."
-  differentiator: "Wing provides a persistent personal context layer — not just project context (CLAUDE.md) but life context (goals, commitments, priorities). The context builder automatically injects relevant context into every session. Agents know what you care about without you saying it."
+  differentiator: 'Wing provides a persistent personal context layer — not just project context (CLAUDE.md) but life context (goals, commitments, priorities). The context builder automatically injects relevant context into every session. Agents know what you care about without you saying it.'
 
 # Layer 3: Functional Benefit
 functional: "An agent running a scheduled task at 3am already knows your project priorities, coding preferences, and commitments — without you writing a single prompt. No more 'let me give you some context' preamble."
@@ -473,38 +469,38 @@ identity: "I am someone who builds systems that learn and remember. My tools don
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Persistent memory layer + automatic context injection vs. blank-slate sessions where you re-explain everything"
-  translation: "Your agents start every session knowing who you are and what you care about. No more repeating yourself."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  type: 'contrast'
+  spec: 'Persistent memory layer + automatic context injection vs. blank-slate sessions where you re-explain everything'
+  translation: 'Your agents start every session knowing who you are and what you care about. No more repeating yourself.'
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 3 (Functional)"
-    why: "Kai runs agents overnight. They must know his priorities without being prompted. Functional outcome is directly valuable."
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 4 (Emotional)"
-    why: "Priya values deep context. An agent that understands her architectural thinking without explanation resonates emotionally as a true collaborator."
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 3 (Functional)'
+    why: 'Kai runs agents overnight. They must know his priorities without being prompted. Functional outcome is directly valuable.'
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 4 (Emotional)'
+    why: 'Priya values deep context. An agent that understands her architectural thinking without explanation resonates emotionally as a true collaborator.'
 ```
 
 ### VL-09: Autonomous Improvement
 
 ```yaml
-id: "autonomous-improvement"
-feature_name: "Self-Improving Software via Feedback Loops"
-module: "Loop + Pulse"
+id: 'autonomous-improvement'
+feature_name: 'Self-Improving Software via Feedback Loops'
+module: 'Loop + Pulse'
 
 # Layer 1: Feature
-feature: "Loop collects signals from real-world data (analytics, error logs, user feedback), forms hypotheses, and dispatches prepared tasks with detailed instructions. Pulse polls Loop on a schedule, receives the next priority task, and executes it as an isolated agent session. Outcomes feed back to Loop as new signals. Zero AI in Loop itself — fully deterministic data system with human-authored templates."
+feature: 'Loop collects signals from real-world data (analytics, error logs, user feedback), forms hypotheses, and dispatches prepared tasks with detailed instructions. Pulse polls Loop on a schedule, receives the next priority task, and executes it as an isolated agent session. Outcomes feed back to Loop as new signals. Zero AI in Loop itself — fully deterministic data system with human-authored templates.'
 
 # Layer 2: Mechanism
 mechanism:
-  alternative: "You manually check analytics, read error logs, and decide what to work on next based on gut feeling. No systematic hypothesis testing. No feedback loops. Work priorities are decided by whoever last looked at a dashboard — not by actual signal data."
-  differentiator: "Loop separates signal collection (deterministic, no AI) from task execution (AI agents). The feedback loop is structural, not manual. Hypotheses are formed from data. Tasks are dispatched with prepared instructions. Outcomes are measured against the hypothesis. Human-authored templates mean the system does exactly what you designed — no hallucinated priorities."
+  alternative: 'You manually check analytics, read error logs, and decide what to work on next based on gut feeling. No systematic hypothesis testing. No feedback loops. Work priorities are decided by whoever last looked at a dashboard — not by actual signal data.'
+  differentiator: 'Loop separates signal collection (deterministic, no AI) from task execution (AI agents). The feedback loop is structural, not manual. Hypotheses are formed from data. Tasks are dispatched with prepared instructions. Outcomes are measured against the hypothesis. Human-authored templates mean the system does exactly what you designed — no hallucinated priorities.'
 
 # Layer 3: Functional Benefit
-functional: "Your software improves overnight. Loop detects a bounce rate spike, hypothesizes the cause, dispatches an agent to fix it via Pulse, and measures the outcome. You wake up to a PR with a fix and a validation report."
+functional: 'Your software improves overnight. Loop detects a bounce rate spike, hypothesizes the cause, dispatches an agent to fix it via Pulse, and measures the outcome. You wake up to a PR with a fix and a validation report.'
 
 # Layer 4: Emotional Benefit
 emotional: "Empowerment — your software is learning, not just running. The anxiety of 'what am I missing in the data?' is replaced by confidence that the system is watching."
@@ -514,30 +510,30 @@ identity: "I am someone who builds self-improving systems. My software doesn't j
 
 # Proof Anchor
 proof:
-  type: "contrast"
-  spec: "Automated signal → hypothesis → dispatch → measurement loop vs. manual analytics checking + gut-feel prioritization"
-  translation: "Loop watches your metrics around the clock. It finds the problem, writes the fix, and measures the result — then tells you what it did."
-  social: "[PLACEHOLDER — NEEDS CUSTOMER DATA]"
+  type: 'contrast'
+  spec: 'Automated signal → hypothesis → dispatch → measurement loop vs. manual analytics checking + gut-feel prioritization'
+  translation: 'Loop watches your metrics around the clock. It finds the problem, writes the fix, and measures the result — then tells you what it did.'
+  social: '[PLACEHOLDER — NEEDS CUSTOMER DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 5 (Identity)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 5 (Identity)'
     why: "Self-improving systems is the apex of Kai's builder identity. This is what separates 'running AI tools' from 'building a self-improving team.'"
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 3 (Functional)"
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 3 (Functional)'
     why: "Systematic hypothesis testing and outcome measurement aligns with Priya's engineering rigor. This is her method applied to the product itself."
 ```
 
 ### VL-10: Open Foundation
 
 ```yaml
-id: "open-foundation"
-feature_name: "Open-Source, Local-First, Self-Hosted Agent OS"
-module: "All (MIT-licensed, local execution, npm install)"
+id: 'open-foundation'
+feature_name: 'Open-Source, Local-First, Self-Hosted Agent OS'
+module: 'All (MIT-licensed, local execution, npm install)'
 
 # Layer 1: Feature
-feature: "Entire platform is MIT-licensed open source. Installs via npm. Runs locally on your machine. Sessions stored as local JSONL files. Agent runs in your shell. Orchestration layer is entirely yours. No cloud dependency. No vendor lock-in. Pluggable agent adapters mean you bring your own agent (Claude Code first, others coming)."
+feature: 'Entire platform is MIT-licensed open source. Installs via npm. Runs locally on your machine. Sessions stored as local JSONL files. Agent runs in your shell. Orchestration layer is entirely yours. No cloud dependency. No vendor lock-in. Pluggable agent adapters mean you bring your own agent (Claude Code first, others coming).'
 
 # Layer 2: Mechanism
 mechanism:
@@ -551,28 +547,28 @@ functional: "Install in one command. Run on your machine. See the source code. F
 emotional: "Control and transparency. It runs on your machine, you can read every line of code, and you can change anything you want. The honest acknowledgment of what DorkOS does and doesn't control builds real trust."
 
 # Layer 5: Identity Benefit
-identity: "I am someone who builds on open foundations. My agent system is mine — I can read it, change it, and run it wherever I want."
+identity: 'I am someone who builds on open foundations. My agent system is mine — I can read it, change it, and run it wherever I want.'
 
 # Proof Anchor
 proof:
-  type: "human_metric"
-  spec: "MIT license, npm install, local JSONL storage, open-source on GitHub"
+  type: 'human_metric'
+  spec: 'MIT license, npm install, local JSONL storage, open-source on GitHub'
   translation: "`npm install -g dorkos`. That's it. Your machine. Your agents. Your rules."
-  social: "[PLACEHOLDER — NEEDS GITHUB STAR COUNT / COMMUNITY DATA]"
+  social: '[PLACEHOLDER — NEEDS GITHUB STAR COUNT / COMMUNITY DATA]'
 
 # Persona Resonance
 resonance:
-  - persona: "Kai Nakamura"
-    primary_layer: "Layer 5 (Identity)"
+  - persona: 'Kai Nakamura'
+    primary_layer: 'Layer 5 (Identity)'
     why: "Kai is an indie hacker who values control. Open source + local-first is not just a feature — it's a prerequisite. His anti-adoption signals explicitly list 'if it required a cloud account.'"
-  - persona: "Priya Sharma"
-    primary_layer: "Layer 4 (Emotional)"
-    why: "Priya values transparency and auditability. An open-source system she can inspect and extend aligns with her architectural leadership role."
+  - persona: 'Priya Sharma'
+    primary_layer: 'Layer 4 (Emotional)'
+    why: 'Priya values transparency and auditability. An open-source system she can inspect and extend aligns with her architectural leadership role.'
 ```
 
 ### Persona-Benefit Matrix
 
-*Which layer resonates most for each persona-feature pair:*
+_Which layer resonates most for each persona-feature pair:_
 
 ```
                               Kai (Primary)     Priya (Secondary)
@@ -819,23 +815,23 @@ Everything else comes from DorkOS.
 ```yaml
 # Tier 1: Numeric Proof (most credible for developers)
 numeric_proofs:
-  - "[PLACEHOLDER: GitHub star count when available]"
-  - "[PLACEHOLDER: npm downloads when available]"
-  - "Pulse keeps running when you close the terminal. Cowork requires your Mac to stay awake."
-  - "All sessions visible in one place — CLI, browser, or Obsidian."
+  - '[PLACEHOLDER: GitHub star count when available]'
+  - '[PLACEHOLDER: npm downloads when available]'
+  - 'Pulse keeps running when you close the terminal. Cowork requires your Mac to stay awake.'
+  - 'All sessions visible in one place — CLI, browser, or Obsidian.'
 
 # Tier 2: Identity-Anchor Quotes
 identity_quotes:
-  - "[PLACEHOLDER — Need: A quote from a respected developer/indie hacker about running agents overnight]"
-  - "[PLACEHOLDER — Need: A quote about multi-session management from a power user]"
-  - "[PLACEHOLDER — Need: A quote about the Obsidian integration from a knowledge worker]"
+  - '[PLACEHOLDER — Need: A quote from a respected developer/indie hacker about running agents overnight]'
+  - '[PLACEHOLDER — Need: A quote about multi-session management from a power user]'
+  - '[PLACEHOLDER — Need: A quote about the Obsidian integration from a knowledge worker]'
 
 # Tier 3: Community Signals
 community_signals:
-  - "[PLACEHOLDER: GitHub stars]"
-  - "[PLACEHOLDER: Contributors]"
-  - "[PLACEHOLDER: npm weekly downloads]"
-  - "MIT-licensed. Open source. Self-hosted."
+  - '[PLACEHOLDER: GitHub stars]'
+  - '[PLACEHOLDER: Contributors]'
+  - '[PLACEHOLDER: npm weekly downloads]'
+  - 'MIT-licensed. Open source. Self-hosted.'
 
 # Anti-pattern: No generic testimonials. No "Great product!" quotes.
 # Developer audiences see through these immediately.
@@ -850,6 +846,7 @@ All copy generated from this Value Architecture must pass the **Apple test**: Wo
 **Core thesis:** "Intelligence doesn't scale. Coordination does."
 
 **Principles:**
+
 - Pro-human — AI agents are tools for human creativity and empowerment
 - Never imply agents are better, smarter, or more capable than people
 - Don't make people feel bad for human needs (sleep, connection, belonging)
@@ -863,7 +860,6 @@ All copy generated from this Value Architecture must pass the **Apple test**: Wo
 ## Appendix A: Research-Backed Evidence Index
 
 Key findings used to validate and build Value Ladders, by source:
-
 
 | Finding                                                              | Source                               | Used In                     |
 | -------------------------------------------------------------------- | ------------------------------------ | --------------------------- |
@@ -884,7 +880,6 @@ Key findings used to validate and build Value Ladders, by source:
 | Agent Teams: experimental, terminal-only, no cross-machine           | Claude Code Docs                     | VL-04, Comparison           |
 | Google A2A protocol failed to achieve adoption                       | Multiple sources                     | VL-04 (Relay fills the gap) |
 
-
 ## Appendix B: Research References
 
 - `research/20260227_agent_communication_use_cases.md` — Multi-agent patterns, OpenClaw, Claude Code Teams, centralized research agents
@@ -896,22 +891,21 @@ Key findings used to validate and build Value Ladders, by source:
 ## Appendix C: Version History
 
 ```yaml
-version: "1.0"
-status: "draft"
-last_updated: "2026-02-27"
+version: '1.0'
+status: 'draft'
+last_updated: '2026-02-27'
 changelog:
-  - date: "2026-02-27"
-    change: "Initial Value Architecture applied to DorkOS"
-    scope: "All phases (1-4)"
-    research: "3 deep research reports, 100+ sources"
-  - date: "2026-02-27"
+  - date: '2026-02-27'
+    change: 'Initial Value Architecture applied to DorkOS'
+    scope: 'All phases (1-4)'
+    research: '3 deep research reports, 100+ sources'
+  - date: '2026-02-27'
     change: "Review Gate 1 complete — 'agents as teammates' reframe cascaded through all phases. Review Gate 2 in progress — L3 corrections applied (VL-01 stale terminal, VL-04 remove approval-to-Telegram, VL-05 Mesh discovers agents, VL-07 autonomy-first reframe, VL-08 3am agent clarity). VL-07 major reframe: trust features enable autonomy rather than requiring constant approval."
-    scope: "1C, 1D, VL-01 through VL-10, Message House, Headline Bank, Activation Templates"
-  - date: "2026-02-27"
+    scope: '1C, 1D, VL-01 through VL-10, Message House, Headline Bank, Activation Templates'
+  - date: '2026-02-27'
     change: "Comprehensive language reframe: removed 'server-side' (→ independent/not tied to IDE), 'infrastructure' (→ system/foundation/layer), 'audit trail'/'session locking' from marketing layers, 'universal message bus' (→ Apple-style outcome language), 'renting' metaphor, 'can talk' (→ connected). Pillar 2 tagline: 'Agents, Connected'. Relay proof reframed from reliability to connectivity/flexibility. Control pillar refocused on open source + self-hosted + transparency. Productivity woven into 1C, VL-01, VL-03, Hero, Discovery, Advocacy, Headline Bank."
-    scope: "All phases — 40+ edits across entire document"
-  - date: "2026-03-02"
+    scope: 'All phases — 40+ edits across entire document'
+  - date: '2026-03-02'
     change: "Pro-human positioning shift. Removed anti-human framing: 'YOU'RE THE BOTTLENECK', 'better code than you at 3am', 'you are the scheduler/memory/messenger/router'. Replaced with empowerment framing: 'Intelligence doesn't scale. Coordination does.' Primary tagline changed from 'Your AI Never Sleeps' to coordination thesis. Added Human-Empowerment Positioning guideline section. Updated VL-01 identity, VL-03 identity, 1D anti-positioning, Headline Bank Pillar 1, 4B/4C activation templates."
-    scope: "1D, VL-01, VL-03, Headline Bank, 4B, 4C, new Positioning Guideline section"
+    scope: '1D, VL-01, VL-03, Headline Bank, 4B, 4C, new Positioning Guideline section'
 ```
-

@@ -10,12 +10,12 @@
 
 8 tasks across 4 phases. Transforms the Mesh Panel from a passive, tab-heavy interface into a progressive disclosure system with two visual modes (Mode A: Discovery-only for zero agents, Mode B: full tabbed interface when agents exist).
 
-| Phase | Name | Tasks | Size |
-|-------|------|-------|------|
-| 1 | Config + API Foundation | 3 | 1S + 1S + 1M |
-| 2 | Discovery Components | 3 | 1M + 1S + 1L |
-| 3 | MeshPanel Rewrite | 1 | 1L |
-| 4 | Tests + Polish | 2 | 1L + 1M |
+| Phase | Name                    | Tasks | Size         |
+| ----- | ----------------------- | ----- | ------------ |
+| 1     | Config + API Foundation | 3     | 1S + 1S + 1M |
+| 2     | Discovery Components    | 3     | 1M + 1S + 1L |
+| 3     | MeshPanel Rewrite       | 1     | 1L           |
+| 4     | Tests + Polish          | 2     | 1L + 1M      |
 
 ---
 
@@ -84,6 +84,7 @@ Reusable empty state card with icon, headline, description, and optional CTA but
 **New file:** `apps/client/src/layers/features/mesh/ui/__tests__/DiscoveryView.test.tsx`
 
 Extracted from the inline `DiscoveryTab` in MeshPanel. Supports two layouts via `fullBleed` prop:
+
 - **Mode A (fullBleed):** Centered hero with Radar icon, headline, scan input, advanced options, results
 - **Mode B (compact):** Just scan input and results
 
@@ -101,6 +102,7 @@ Uses `ScanRootInput` for path management and `useMeshScanRoots` for config persi
 **Modified:** `apps/client/src/layers/features/mesh/index.ts` (add new exports)
 
 Major rewrite of MeshPanel:
+
 - **Mode A** (no agents): Renders `<DiscoveryView fullBleed />` only. No tabs, no stats header.
 - **Mode B** (agents exist): Full tabbed interface with controlled tab state, AnimatePresence transitions, contextual empty states using `MeshEmptyState`.
 - Controlled `Tabs` with `value={activeTab}` for CTA-driven tab switching (empty state "Go to Discovery" buttons).
@@ -117,6 +119,7 @@ Major rewrite of MeshPanel:
 **Modified:** `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx`
 
 Rewrite test suite to cover:
+
 - Disabled state (unchanged)
 - Mode A: No tablist, discovery headline visible, scan button visible
 - Mode B: Tablist with 5 tabs, topology graph rendered
@@ -148,18 +151,18 @@ Final polish: verify `prefers-reduced-motion` is respected, config persistence r
 
 ## Files Changed
 
-| File | Action |
-|------|--------|
-| `packages/shared/src/config-schema.ts` | Modified (add scanRoots) |
-| `apps/server/src/routes/config.ts` | Modified (add boundary) |
-| `apps/client/src/layers/entities/mesh/model/use-mesh-scan-roots.ts` | **New** |
-| `apps/client/src/layers/entities/mesh/index.ts` | Modified (add export) |
-| `apps/client/src/layers/features/mesh/ui/ScanRootInput.tsx` | **New** |
-| `apps/client/src/layers/features/mesh/ui/MeshEmptyState.tsx` | **New** |
-| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx` | **New** |
-| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | Modified (major rewrite) |
-| `apps/client/src/layers/features/mesh/index.ts` | Modified (add exports) |
-| `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx` | Modified (rewrite) |
-| `apps/client/src/layers/features/mesh/ui/__tests__/ScanRootInput.test.tsx` | **New** |
-| `apps/client/src/layers/features/mesh/ui/__tests__/MeshEmptyState.test.tsx` | **New** |
-| `apps/client/src/layers/features/mesh/ui/__tests__/DiscoveryView.test.tsx` | **New** |
+| File                                                                        | Action                   |
+| --------------------------------------------------------------------------- | ------------------------ |
+| `packages/shared/src/config-schema.ts`                                      | Modified (add scanRoots) |
+| `apps/server/src/routes/config.ts`                                          | Modified (add boundary)  |
+| `apps/client/src/layers/entities/mesh/model/use-mesh-scan-roots.ts`         | **New**                  |
+| `apps/client/src/layers/entities/mesh/index.ts`                             | Modified (add export)    |
+| `apps/client/src/layers/features/mesh/ui/ScanRootInput.tsx`                 | **New**                  |
+| `apps/client/src/layers/features/mesh/ui/MeshEmptyState.tsx`                | **New**                  |
+| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx`                 | **New**                  |
+| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx`                     | Modified (major rewrite) |
+| `apps/client/src/layers/features/mesh/index.ts`                             | Modified (add exports)   |
+| `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx`         | Modified (rewrite)       |
+| `apps/client/src/layers/features/mesh/ui/__tests__/ScanRootInput.test.tsx`  | **New**                  |
+| `apps/client/src/layers/features/mesh/ui/__tests__/MeshEmptyState.test.tsx` | **New**                  |
+| `apps/client/src/layers/features/mesh/ui/__tests__/DiscoveryView.test.tsx`  | **New**                  |

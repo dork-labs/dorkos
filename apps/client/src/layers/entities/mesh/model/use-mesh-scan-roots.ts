@@ -33,7 +33,7 @@ export function useMeshScanRoots() {
 
   const setScanRoots = useCallback(
     (newRoots: string[]) => saveScanRoots(newRoots),
-    [saveScanRoots],
+    [saveScanRoots]
   );
 
   return { roots, boundary, isSaving, setScanRoots };

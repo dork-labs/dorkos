@@ -103,7 +103,15 @@ describe('pulse-presets', () => {
 
     it('mutations to returned array do not affect future calls', () => {
       const first = getDefaultPresets();
-      first.push({ id: 'extra', name: 'Extra', description: 'd', prompt: 'p', cron: '* * * * *', timezone: 'UTC', category: 'test' });
+      first.push({
+        id: 'extra',
+        name: 'Extra',
+        description: 'd',
+        prompt: 'p',
+        cron: '* * * * *',
+        timezone: 'UTC',
+        category: 'test',
+      });
 
       const second = getDefaultPresets();
       expect(second).toHaveLength(4);
@@ -113,7 +121,15 @@ describe('pulse-presets', () => {
   describe('loadPresets', () => {
     it('loads presets from JSON file', async () => {
       const mockPresets = [
-        { id: 'custom', name: 'Custom', description: 'd', prompt: 'p', cron: '* * * * *', timezone: 'UTC', category: 'test' },
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: 'd',
+          prompt: 'p',
+          cron: '* * * * *',
+          timezone: 'UTC',
+          category: 'test',
+        },
       ];
       vi.mocked(readFile).mockResolvedValue(JSON.stringify(mockPresets));
 
@@ -121,7 +137,7 @@ describe('pulse-presets', () => {
       expect(result).toEqual(mockPresets);
       expect(readFile).toHaveBeenCalledWith(
         path.join('/home/user/.dork', 'pulse', 'presets.json'),
-        'utf-8',
+        'utf-8'
       );
     });
 
@@ -167,14 +183,13 @@ describe('pulse-presets', () => {
 
       await ensureDefaultPresets('/home/user/.dork');
 
-      expect(mkdir).toHaveBeenCalledWith(
-        path.join('/home/user/.dork', 'pulse'),
-        { recursive: true },
-      );
+      expect(mkdir).toHaveBeenCalledWith(path.join('/home/user/.dork', 'pulse'), {
+        recursive: true,
+      });
       expect(writeFile).toHaveBeenCalledWith(
         path.join('/home/user/.dork', 'pulse', 'presets.json'),
         expect.any(String),
-        'utf-8',
+        'utf-8'
       );
 
       // Verify the written content is valid JSON with 4 presets
@@ -211,10 +226,7 @@ describe('pulse-presets', () => {
 
       await ensureDefaultPresets('/custom/path');
 
-      expect(mkdir).toHaveBeenCalledWith(
-        path.join('/custom/path', 'pulse'),
-        { recursive: true },
-      );
+      expect(mkdir).toHaveBeenCalledWith(path.join('/custom/path', 'pulse'), { recursive: true });
     });
 
     it('written JSON is valid and matches default presets', async () => {
@@ -278,7 +290,7 @@ describe('pulse-presets', () => {
 
       expect(readFile).toHaveBeenCalledWith(
         path.join('/custom/dork/home', 'pulse', 'presets.json'),
-        'utf-8',
+        'utf-8'
       );
     });
   });

@@ -71,12 +71,12 @@ Full research: `research/20260302_faq_section_best_practices_developer_tools.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Placement in page flow | After IdentityClose, before InstallMoment | Standard conversion funnel — neutralize objections right before the install CTA |
-| 2 | Question count & format | 7 questions with accordion | Covers five concern buckets without bloat. Research says 7-10 is the sweet spot. |
-| 3 | Define "agent" | Yes, as Q1 | The site never explains the term. Setting the foundation for every other answer. |
-| 4 | Name Claude Code | Yes, in FAQ answers only | FAQ is the place for specifics. Marketing narrative stays vendor-agnostic. |
+| #   | Decision                | Choice                                    | Rationale                                                                        |
+| --- | ----------------------- | ----------------------------------------- | -------------------------------------------------------------------------------- |
+| 1   | Placement in page flow  | After IdentityClose, before InstallMoment | Standard conversion funnel — neutralize objections right before the install CTA  |
+| 2   | Question count & format | 7 questions with accordion                | Covers five concern buckets without bloat. Research says 7-10 is the sweet spot. |
+| 3   | Define "agent"          | Yes, as Q1                                | The site never explains the term. Setting the foundation for every other answer. |
+| 4   | Name Claude Code        | Yes, in FAQ answers only                  | FAQ is the place for specifics. Marketing narrative stays vendor-agnostic.       |
 
 ## 7) FAQ Copy Draft
 
@@ -115,14 +115,17 @@ DorkOS is free and open source. The agents themselves use API credits from their
 ## 8) Implementation Plan
 
 ### Files to create:
+
 1. `apps/site/src/layers/features/marketing/lib/faq-items.ts` — FaqItem interface + faqItems array
 2. `apps/site/src/layers/features/marketing/ui/FAQSection.tsx` — Accordion section component
 
 ### Files to modify:
+
 3. `apps/site/src/layers/features/marketing/index.ts` — Add exports for FAQSection and faqItems
 4. `apps/site/src/app/(marketing)/page.tsx` — Import FAQSection, add between IdentityClose and InstallMoment
 
 ### Component structure:
+
 - `bg-cream-secondary` background (alternates from surrounding sections)
 - `max-w-2xl` content width
 - Orange monospace eyebrow: "Questions"

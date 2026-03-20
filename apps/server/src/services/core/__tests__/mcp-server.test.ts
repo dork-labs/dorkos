@@ -239,7 +239,11 @@ describe('createExternalMcpServer', () => {
     const toolNames = registeredTools.map((t) => t.name);
 
     const coreTools = toolNames.filter(
-      (n) => !n.startsWith('pulse_') && !n.startsWith('relay_') && !n.startsWith('binding_') && !n.startsWith('mesh_')
+      (n) =>
+        !n.startsWith('pulse_') &&
+        !n.startsWith('relay_') &&
+        !n.startsWith('binding_') &&
+        !n.startsWith('mesh_')
     );
     const pulseTools = toolNames.filter((n) => n.startsWith('pulse_'));
     const relayTools = toolNames.filter((n) => n.startsWith('relay_'));

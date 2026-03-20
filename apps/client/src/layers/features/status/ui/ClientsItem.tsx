@@ -66,18 +66,13 @@ export function ClientsItem({ clientCount, clients, lockInfo, pulse }: ClientsIt
         <p className="text-muted-foreground mb-2 text-xs font-medium">Connected clients</p>
         <ul className="space-y-1.5">
           {clients.map((client, i) => (
-            <li
-              key={`${client.type}-${i}`}
-              className="flex items-center justify-between text-xs"
-            >
+            <li key={`${client.type}-${i}`} className="flex items-center justify-between text-xs">
               <span>{CLIENT_TYPE_LABELS[client.type]}</span>
               <span className="text-muted-foreground">{relativeTime(client.connectedAt)}</span>
             </li>
           ))}
         </ul>
-        {isLocked && (
-          <p className="mt-2 text-xs text-amber-500">Locked by another client</p>
-        )}
+        {isLocked && <p className="mt-2 text-xs text-amber-500">Locked by another client</p>}
       </PopoverContent>
     </Popover>
   );

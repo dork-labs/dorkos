@@ -56,12 +56,14 @@ Three parallel tasks that unify all final/submitted/approved/denied states to ma
 **Size**: Medium | **Priority**: High | **Dependencies**: None | **Parallel with**: Task 4.2, Task 4.3
 
 Replace multi-line submitted state with compact single-row matching ToolCallCard:
+
 - `bg-muted/50` neutral background (not status-tinted)
 - `shadow-msg-tool` shadow, `py-1` compact padding, `transition-all duration-150`
 - Single row: green Check icon + `header: value` (single-question) or `N questions answered` (multi-question)
 - Add `data-testid="question-prompt-submitted"`
 
 **Files modified:**
+
 - `apps/client/src/layers/features/chat/ui/QuestionPrompt.tsx`
 
 ---
@@ -71,6 +73,7 @@ Replace multi-line submitted state with compact single-row matching ToolCallCard
 **Size**: Medium | **Priority**: High | **Dependencies**: None | **Parallel with**: Task 4.1, Task 4.3
 
 Replace decided state with compact single-row:
+
 - `bg-muted/50` neutral background (not status-tinted)
 - `shadow-msg-tool` shadow, `py-1` compact padding, `transition-all duration-150`
 - Approved: green Check icon + `font-mono text-3xs` tool name + green "Approved" pill badge
@@ -78,6 +81,7 @@ Replace decided state with compact single-row:
 - Auto-denied timeout message preserved below the row
 
 **Files modified:**
+
 - `apps/client/src/layers/features/chat/ui/ToolApproval.tsx`
 
 ---
@@ -87,11 +91,13 @@ Replace decided state with compact single-row:
 **Size**: Small | **Priority**: High | **Dependencies**: None | **Parallel with**: Task 4.1, Task 4.2
 
 Replace raw `<button>` elements with shared `<Button>` from `@/layers/shared/ui`:
+
 - Approve: `Button size="sm"` with `bg-status-success` override
 - Deny: `Button size="sm" variant="destructive"`
 - Import `Button` from `@/layers/shared/ui`
 
 **Files modified:**
+
 - `apps/client/src/layers/features/chat/ui/ToolApproval.tsx`
 
 ---
@@ -105,12 +111,14 @@ Two parallel tasks for updating test suites after the component changes.
 **Size**: Medium | **Priority**: High | **Dependencies**: Task 4.1 | **Parallel with**: Task 5.2
 
 Update submitted state test assertions:
+
 - `header: value` format for single-question, `N questions answered` for multi-question
 - `bg-muted/50`, `shadow-msg-tool`, `py-1` on container
 - Use `data-testid="question-prompt-submitted"` for targeting
 - Add check icon color assertion
 
 **Files modified:**
+
 - `apps/client/src/layers/features/chat/__tests__/QuestionPrompt.test.tsx`
 
 ---
@@ -120,6 +128,7 @@ Update submitted state test assertions:
 **Size**: Medium | **Priority**: High | **Dependencies**: Task 4.2, Task 4.3 | **Parallel with**: Task 5.1
 
 Update decided state test assertions:
+
 - Approved: check icon with `text-status-success`, neutral `bg-muted/50`, `shadow-msg-tool`
 - Denied: X icon with `text-status-error`, neutral `bg-muted/50`, `shadow-msg-tool`
 - Add tool name mono styling test (`font-mono text-3xs`)
@@ -127,6 +136,7 @@ Update decided state test assertions:
 - Verify pending state tests still pass with Button component
 
 **Files modified:**
+
 - `apps/client/src/layers/features/chat/__tests__/ToolApproval.test.tsx`
 
 ---
@@ -138,6 +148,7 @@ Update decided state test assertions:
 **Size**: Small | **Priority**: Medium | **Dependencies**: Task 5.1, Task 5.2
 
 Cross-component consistency check in dev playground:
+
 - All final states match ToolCallCard: `bg-muted/50`, `shadow-msg-tool`, `py-1`, `rounded-msg-tool`
 - Status colors only on icons and badges (not container backgrounds)
 - ToolApproval pending buttons use shared Button component
@@ -165,12 +176,12 @@ Phase 6:                          │
 
 ## Summary
 
-| Phase | Tasks | Status |
-|-------|-------|--------|
-| Phase 1: Foundation | 2 tasks | DONE |
-| Phase 2: Core Redesign | 2 tasks | DONE |
-| Phase 3: Testing & Polish | 2 tasks | DONE |
-| Phase 4: Compact Final States | 3 tasks (parallel) | Pending |
-| Phase 5: Testing | 2 tasks (parallel) | Pending |
-| Phase 6: Verification | 1 task | Pending |
-| **Total** | **12 tasks** | **6 done, 6 pending** |
+| Phase                         | Tasks              | Status                |
+| ----------------------------- | ------------------ | --------------------- |
+| Phase 1: Foundation           | 2 tasks            | DONE                  |
+| Phase 2: Core Redesign        | 2 tasks            | DONE                  |
+| Phase 3: Testing & Polish     | 2 tasks            | DONE                  |
+| Phase 4: Compact Final States | 3 tasks (parallel) | Pending               |
+| Phase 5: Testing              | 2 tasks (parallel) | Pending               |
+| Phase 6: Verification         | 1 task             | Pending               |
+| **Total**                     | **12 tasks**       | **6 done, 6 pending** |

@@ -1,5 +1,5 @@
 ---
-title: "DorkOS Mesh: Service Discovery & Agent Discovery Patterns"
+title: 'DorkOS Mesh: Service Discovery & Agent Discovery Patterns'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -56,6 +56,7 @@ All three tools centralize service state in a distributed key-value store with h
 **Key insight for Mesh:** The ZooKeeper ephemeral node pattern maps cleanly to the local filesystem. Each project's presence (or absence) of `.claude/agent.json` is the "node." File watchers replace ZooKeeper's watch primitive. The session expiry mechanism is not needed for a local filesystem since files persist until explicitly deleted — liveness is handled differently (a running process indicator, a PID file, or a heartbeat socket).
 
 **Registration Modes:**
+
 - **Self-registration**: The agent process registers itself on startup (Consul, Eureka). Requires the agent to know about the registry.
 - **Third-party registration**: An external process (a DorkOS Mesh daemon) watches the filesystem and registers agents on their behalf. The agent only needs to have the right files in place.
 
@@ -74,6 +75,7 @@ The A2A protocol uses a `.well-known/agent-card.json` pattern that is essentiall
 #### 1.3 Kubernetes Service Discovery
 
 Kubernetes combines three mechanisms:
+
 1. **DNS-based**: Each Service gets a DNS entry `<service>.<namespace>.svc.cluster.local`. Pods discover services by querying DNS. CoreDNS watches the Kubernetes API for Service objects and creates/removes DNS entries.
 2. **Environment variables**: Kubernetes injects `<SERVICE_NAME>_SERVICE_HOST` and `<SERVICE_NAME>_SERVICE_PORT` into every Pod's environment at creation time.
 3. **kube-proxy / iptables**: Traffic to service IPs is intercepted by kube-proxy and forwarded to healthy backend pods.
@@ -85,10 +87,12 @@ The Kubernetes pattern demonstrates server-side discovery: a central control pla
 #### 1.4 Client-Side vs. Server-Side Discovery
 
 **Client-side discovery**: The client queries a registry, gets a list of service instances, applies its own load-balancing logic, and connects directly. Used by: Netflix Eureka + Ribbon, Consul with client agents.
+
 - Pro: No additional network hop, no LB bottleneck
 - Con: Client must implement discovery logic; tight coupling to registry client library
 
 **Server-side discovery**: A load balancer or API gateway sits in front of services. Clients connect to the LB, which queries the registry and routes. Used by: Kubernetes Services, AWS ELB + Route 53.
+
 - Pro: Clients are simple; discovery logic is centralized
 - Con: LB is a single point of failure; extra network hop
 
@@ -101,6 +105,7 @@ The Kubernetes pattern demonstrates server-side discovery: a central control pla
 #### 2.1 systemd Unit File Scanning
 
 systemd discovers services by scanning well-known directories in priority order:
+
 1. `/etc/systemd/system/` — administrator-defined units (highest priority)
 2. `/run/systemd/system/` — runtime units
 3. `/lib/systemd/system/` — vendor/package units (lowest priority)
@@ -108,6 +113,7 @@ systemd discovers services by scanning well-known directories in priority order:
 Unit files are INI-format files with a `.service`, `.socket`, `.timer`, or other extension. systemd runs `systemctl daemon-reload` to re-scan — it does not watch directories live; it scans on demand.
 
 **Key patterns from systemd:**
+
 - **Priority layering**: Higher-priority directories override lower-priority ones. A file in `/etc/` with the same name as one in `/lib/` takes precedence.
 - **Aliases via symlinks**: A symlink in a unit directory is an alias. `systemctl enable foo.service` creates a symlink from a `wants/` or `requires/` directory.
 - **Drop-in directories**: `foo.service.d/override.conf` fragments extend a unit without replacing it. This is a powerful extension mechanism.
@@ -120,6 +126,7 @@ Unit files are INI-format files with a `.service`, `.socket`, `.timer`, or other
 npm discovers packages via `node_modules/` directory scanning. Node's module resolution algorithm walks up the directory tree looking for `node_modules/` directories, then reads `package.json` to find the package's entry point. The `exports` field in `package.json` provides a structured capability map: conditional exports declare what a package exposes under what conditions (ESM vs. CJS, browser vs. Node.js, development vs. production).
 
 **Key patterns from npm:**
+
 - **Convention-driven**: Every package has `package.json` at its root. No registration step; presence of the file is the declaration.
 - **Hierarchical resolution**: Node walks up the directory tree. This is a form of lexicographic priority — closer `node_modules/` directories win.
 - **Capability declaration via `exports`**: The `exports` field is a structured capability map. A package declares what it can provide under different conditions.
@@ -131,6 +138,7 @@ npm discovers packages via `node_modules/` directory scanning. Node's module res
 Next.js treats the filesystem as a declaration of HTTP routes. `app/dashboard/page.tsx` → `/dashboard`. Special filenames (`layout.tsx`, `loading.tsx`, `error.tsx`) have reserved meanings. Parenthesized directories `(group)` create route groups without affecting the URL.
 
 **Key patterns from Next.js:**
+
 - **Filesystem as truth**: Zero configuration required; the file's existence is its registration.
 - **Reserved filenames**: Well-known names (`page.tsx`, `layout.tsx`) have defined roles. All other files are inert.
 - **Colocation**: Route-specific components (loading states, error boundaries) live alongside the route file. No central config file.
@@ -146,18 +154,15 @@ VS Code discovers extensions by scanning `~/.vscode/extensions/` for directories
   "name": "my-extension",
   "publisher": "acme",
   "contributes": {
-    "commands": [
-      { "command": "acme.doThing", "title": "Do the Thing" }
-    ],
-    "languages": [
-      { "id": "myLang", "extensions": [".mylang"] }
-    ]
+    "commands": [{ "command": "acme.doThing", "title": "Do the Thing" }],
+    "languages": [{ "id": "myLang", "extensions": [".mylang"] }]
   },
   "activationEvents": ["onLanguage:myLang"]
 }
 ```
 
 **Key patterns from VS Code:**
+
 - **Structured capability declaration**: `contributes` is a typed, schema-validated map of capabilities.
 - **Lazy activation**: Extensions declare when they should activate (`activationEvents`). This prevents loading every extension for every task.
 - **Publisher namespace**: `publisher.name` provides a namespaced identifier, preventing collisions.
@@ -183,6 +188,7 @@ Obsidian discovers plugins by scanning `.obsidian/plugins/<plugin-id>/` director
 ```
 
 **Key patterns from Obsidian:**
+
 - **Directory name = ID**: The directory name is the canonical identifier. The manifest's `id` must match it.
 - **Version gating**: `minAppVersion` prevents loading incompatible plugins. Mesh agents could declare a `minMeshVersion` for protocol compatibility.
 - **Restart-required changes**: Obsidian's simplicity comes at a cost — no hot-reload of manifests. Mesh should support hot-reload via file watchers.
@@ -194,6 +200,7 @@ Obsidian discovers plugins by scanning `.obsidian/plugins/<plugin-id>/` director
 #### 3.1 package.json as a Universal Manifest Pattern
 
 `package.json` demonstrates the power of a well-specified, JSON-schema-validated manifest. Its anatomy:
+
 - **Identity**: `name`, `version`, `description`, `author`
 - **Entry points**: `main`, `exports`, `bin`
 - **Capabilities**: `scripts`, `peerDependencies`, `engines`
@@ -204,12 +211,14 @@ The extensibility pattern — well-known top-level keys for recognized tools, ar
 #### 3.2 MCP Tool Manifests
 
 MCP (Model Context Protocol) defines a capability negotiation handshake:
+
 1. Client sends `initialize` with `clientInfo` and `capabilities`
 2. Server responds with `serverInfo` and `capabilities` (listing supported features: tools, resources, prompts, sampling, roots)
 3. Client sends `initialized` notification
 4. Client calls `tools/list` to get the full tool manifest
 
 Each tool in the manifest has:
+
 ```json
 {
   "name": "read_file",
@@ -228,7 +237,7 @@ MCP uses JSON-RPC 2.0 over stdio (for local tools) or HTTP+SSE (for remote tools
 
 **Key insight:** MCP's two-phase design (static manifest declaration + dynamic capability negotiation at connection time) is powerful. The static manifest (file on disk) answers "can this agent handle this type of task?" The dynamic negotiation answers "which specific version of the protocol do we share?"
 
-#### 3.3 Claude Code Subagent Manifests (.claude/agents/*.md)
+#### 3.3 Claude Code Subagent Manifests (.claude/agents/\*.md)
 
 Claude Code's own agent system uses YAML frontmatter in Markdown files:
 
@@ -242,13 +251,13 @@ permissionMode: default
 maxTurns: 50
 memory: user
 ---
-
 System prompt content here...
 ```
 
 **Discovery mechanism:** Claude Code scans `.claude/agents/` at session start. User-level agents live in `~/.claude/agents/`. CLI-defined agents are passed as JSON. Priority order: CLI > project > user > plugin.
 
 **Key patterns:**
+
 - **Description-as-routing**: The `description` field is what Claude uses to decide when to delegate. This is semantic routing — the description is a natural language capability declaration.
 - **Priority layering**: The same agent name at a higher-priority location overrides lower-priority definitions. Identical to systemd's `/etc/` vs. `/lib/` priority.
 - **Tool allowlist/denylist**: `tools` (allowlist) and `disallowedTools` (denylist) are explicit capability constraints.
@@ -287,6 +296,7 @@ Google's Agent2Agent protocol (released April 2025) defines the `Agent Card` as 
 ```
 
 A2A defines three discovery strategies:
+
 1. **Well-known URI**: Agents publish at `/.well-known/agent-card.json`
 2. **Curated registries**: A central service indexes agent cards; clients query by capability/tag
 3. **Direct configuration**: Hardcoded URL or env var (for tightly coupled systems)
@@ -302,10 +312,10 @@ services:
   web:
     image: nginx
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.web.rule=Host(`example.com`)"
-      - "com.example.team=backend"
-      - "com.example.environment=production"
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.web.rule=Host(`example.com`)'
+      - 'com.example.team=backend'
+      - 'com.example.environment=production'
 ```
 
 Labels are key-value pairs. Tools like Traefik, Prometheus, and Watchtower watch Docker containers and read specific label namespaces to configure themselves. This is a powerful extensibility mechanism: the core label system is untyped, but each tool defines a typed sub-namespace.
@@ -319,6 +329,7 @@ Labels are key-value pairs. Tools like Traefik, Prometheus, and Watchtower watch
 #### 4.1 Event-Based File Watching
 
 **Mechanism:** OS kernel notifies userspace of filesystem events without polling.
+
 - **macOS:** FSEvents API — reports changes at the directory level, with some coalescing. Highly efficient; used by Spotlight, Time Machine.
 - **Linux:** inotify — reports individual file events (create, modify, delete, move). Per-inode watches.
 - **Windows:** ReadDirectoryChangesW — reports changes within a directory tree.
@@ -330,20 +341,21 @@ import chokidar from 'chokidar';
 
 const watcher = chokidar.watch('~/.dork/mesh/', {
   persistent: true,
-  ignoreInitial: false,  // emit 'add' for existing files
-  depth: 2,              // watch subdirectories up to 2 levels deep
-  usePolling: false,     // use native events
+  ignoreInitial: false, // emit 'add' for existing files
+  depth: 2, // watch subdirectories up to 2 levels deep
+  usePolling: false, // use native events
 });
 
 watcher
-  .on('add', path => discoverAgent(path))
-  .on('change', path => refreshAgent(path))
-  .on('unlink', path => removeAgent(path));
+  .on('add', (path) => discoverAgent(path))
+  .on('change', (path) => refreshAgent(path))
+  .on('unlink', (path) => removeAgent(path));
 ```
 
 **Performance:** Near-zero CPU when idle. Sub-100ms latency on local filesystems. Scales to hundreds of watched paths.
 
 **Limitations:**
+
 - Watching deeply nested directories can exhaust OS inotify watch limits on Linux (default 8192). Configurable via `/proc/sys/fs/inotify/max_user_watches`.
 - On macOS, FSEvents coalesces rapid changes — multiple writes to the same file within a short window may produce a single event.
 - Does not work reliably for network-mounted filesystems (NFS, SMB, Docker volumes on macOS).
@@ -355,6 +367,7 @@ watcher
 **Mechanism:** A timer fires periodically and compares current filesystem state against cached state.
 
 **When polling is appropriate:**
+
 - Network filesystems where kernel events are not delivered to the local machine
 - Docker volumes on macOS (where filesystem events from inside the container don't propagate)
 - Extremely high-change-rate directories where event storms are a problem
@@ -369,11 +382,13 @@ watcher
 **Mechanism:** Agents explicitly register themselves with the Mesh registry via API or CLI.
 
 **When manual registration is appropriate:**
+
 - Systems where filesystem conventions cannot be enforced (third-party agents, remote agents)
 - High-security environments where filesystem scanning is prohibited
 - Agents that are ephemeral (running in memory, not backed by persistent files)
 
 **Tradeoffs:**
+
 - **Pro:** Explicit, intentional. No accidental registration of directories that happen to have `.claude/`.
 - **Pro:** Enables transient registrations (agents that exist only while a process runs).
 - **Con:** Registration requires agent cooperation. Existing Claude Code projects do not self-register.
@@ -473,6 +488,7 @@ MeshService startup
 #### 5.3 Agent Identity
 
 Agent identity should be stable across restarts. Options:
+
 1. **Directory path hash**: SHA-256 of the canonical project path. Stable as long as the directory doesn't move.
 2. **Declared ID in manifest**: `agent.json#id` field. User-controlled, portable (survives directory renames).
 3. **Git remote URL**: If the project is a git repo, the remote URL is a stable, globally unique identifier.
@@ -531,6 +547,7 @@ When an orchestrator needs an agent for a task, it queries Mesh with a capabilit
 ```
 
 Mesh routes by:
+
 1. **Tag matching** (hard filter): only agents with overlapping tags in their skills
 2. **Description similarity** (soft rank): fuzzy match of intent against agent/skill descriptions
 3. **Active preference**: prefer currently active agents over discovered-but-idle agents
@@ -542,21 +559,21 @@ For v1, simple tag intersection is sufficient. Semantic matching (embeddings) is
 
 ### 6. Prior Art Summary Table
 
-| System | Manifest File | Discovery Mechanism | Live Updates | Capability Declaration |
-|--------|--------------|--------------------|--------------|-----------------------|
-| Consul | Agent config file | HTTP API / config scan | Health checks | Service tags, metadata |
-| etcd | None (key-value) | Key range scan | TTL leases + watch | Custom key structure |
-| ZooKeeper | None (znodes) | Hierarchical namespace | Ephemeral nodes + watches | Custom node data |
-| DNS-SD/mDNS | None | UDP multicast | TTL expiry | TXT records |
-| systemd | `.service` files | Directory scan | `daemon-reload` | INI file sections |
-| npm | `package.json` | `node_modules/` walk | N/A (build time) | `exports`, `scripts` |
-| VS Code | `package.json#contributes` | `~/.vscode/extensions/` scan | Restart required | `contributes` typed map |
-| Obsidian | `manifest.json` | `.obsidian/plugins/` scan | Restart required | Untyped manifest |
-| Next.js | File name convention | Directory walk | Hot Module Replacement | Reserved filenames |
-| Claude Code | `.claude/agents/*.md` | Directory scan | Session restart | YAML frontmatter |
-| A2A Protocol | `agent-card.json` | `/.well-known/` + registry | Agent-initiated | `skills` + `capabilities` |
-| MCP | None (runtime) | Configuration + `initialize` | N/A (per-connection) | Capability negotiation |
-| **Mesh (proposed)** | `.claude/agent.json` | Directory scan + chokidar | File watcher | JSON `skills` + `capabilities` |
+| System              | Manifest File              | Discovery Mechanism          | Live Updates              | Capability Declaration         |
+| ------------------- | -------------------------- | ---------------------------- | ------------------------- | ------------------------------ |
+| Consul              | Agent config file          | HTTP API / config scan       | Health checks             | Service tags, metadata         |
+| etcd                | None (key-value)           | Key range scan               | TTL leases + watch        | Custom key structure           |
+| ZooKeeper           | None (znodes)              | Hierarchical namespace       | Ephemeral nodes + watches | Custom node data               |
+| DNS-SD/mDNS         | None                       | UDP multicast                | TTL expiry                | TXT records                    |
+| systemd             | `.service` files           | Directory scan               | `daemon-reload`           | INI file sections              |
+| npm                 | `package.json`             | `node_modules/` walk         | N/A (build time)          | `exports`, `scripts`           |
+| VS Code             | `package.json#contributes` | `~/.vscode/extensions/` scan | Restart required          | `contributes` typed map        |
+| Obsidian            | `manifest.json`            | `.obsidian/plugins/` scan    | Restart required          | Untyped manifest               |
+| Next.js             | File name convention       | Directory walk               | Hot Module Replacement    | Reserved filenames             |
+| Claude Code         | `.claude/agents/*.md`      | Directory scan               | Session restart           | YAML frontmatter               |
+| A2A Protocol        | `agent-card.json`          | `/.well-known/` + registry   | Agent-initiated           | `skills` + `capabilities`      |
+| MCP                 | None (runtime)             | Configuration + `initialize` | N/A (per-connection)      | Capability negotiation         |
+| **Mesh (proposed)** | `.claude/agent.json`       | Directory scan + chokidar    | File watcher              | JSON `skills` + `capabilities` |
 
 ---
 
@@ -593,6 +610,7 @@ For v1, Mesh is local-only. Design the agent card format so that each agent can 
 **8. Three-Level Priority: System > User > Project**
 
 Following systemd's pattern:
+
 - `~/.dork/agents/` — user-level agent defaults, available in all projects
 - `.claude/agent.json` — project-level agent declaration (highest priority for this project)
 - `~/.dork/mesh-config.json` — global scan roots and mesh-wide defaults

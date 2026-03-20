@@ -82,4 +82,3 @@ For new items, ask:
 - No Won't-Have items (scope creep risk)
 - Dependencies creating bottlenecks
 - Items stuck In Progress too long
-

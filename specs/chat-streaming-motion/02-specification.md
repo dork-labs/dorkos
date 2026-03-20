@@ -46,12 +46,12 @@ Both issues are solvable with existing tools — `streamdown` already ships an `
 
 ## Technical Dependencies
 
-| Dependency | Version | Status | Purpose |
-|---|---|---|---|
-| `streamdown` | ^2.4.0 | Already installed | `animated` prop, `isAnimating` prop |
-| `use-stick-to-bottom` | latest | **New dependency** | Spring-based scroll for streaming |
-| `motion/react` | existing | Already installed | Unaffected (message entry animations) |
-| `@tanstack/react-virtual` | existing | Already installed | Unaffected (virtualization) |
+| Dependency                | Version  | Status             | Purpose                               |
+| ------------------------- | -------- | ------------------ | ------------------------------------- |
+| `streamdown`              | ^2.4.0   | Already installed  | `animated` prop, `isAnimating` prop   |
+| `use-stick-to-bottom`     | latest   | **New dependency** | Spring-based scroll for streaming     |
+| `motion/react`            | existing | Already installed  | Unaffected (message entry animations) |
+| `@tanstack/react-virtual` | existing | Already installed  | Unaffected (virtualization)           |
 
 ## Detailed Design
 
@@ -83,8 +83,8 @@ export const DEFAULT_TEXT_EFFECT: TextEffectConfig = {
 
 /** Map from TextEffectMode → streamdown's animation preset name. */
 const MODE_TO_ANIMATION: Record<TextEffectMode, AnimateOptions['animation'] | undefined> = {
-  'none': undefined,
-  'fade': 'fadeIn',
+  none: undefined,
+  fade: 'fadeIn',
   'blur-in': 'blurIn',
   'slide-up': 'slideUp',
 };
@@ -93,9 +93,7 @@ const MODE_TO_ANIMATION: Record<TextEffectMode, AnimateOptions['animation'] | un
  * Resolve a TextEffectConfig into streamdown's `animated` prop value.
  * Returns `false` when mode is 'none' (disables animation entirely).
  */
-export function resolveStreamdownAnimation(
-  config: TextEffectConfig
-): false | AnimateOptions {
+export function resolveStreamdownAnimation(config: TextEffectConfig): false | AnimateOptions {
   const animation = MODE_TO_ANIMATION[config.mode];
   if (!animation) return false;
   return {
@@ -123,8 +121,13 @@ export function useTextEffectConfig(
 ```
 
 **Export from barrel:** Add to `apps/client/src/layers/shared/lib/index.ts`:
+
 ```typescript
-export { DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation, useTextEffectConfig } from './text-effects';
+export {
+  DEFAULT_TEXT_EFFECT,
+  resolveStreamdownAnimation,
+  useTextEffectConfig,
+} from './text-effects';
 export type { TextEffectMode, TextEffectConfig } from './text-effects';
 ```
 
@@ -133,6 +136,7 @@ export type { TextEffectMode, TextEffectConfig } from './text-effects';
 **Modified file:** `apps/client/src/layers/features/chat/ui/StreamingText.tsx`
 
 Changes:
+
 - Accept optional `textEffect` prop of type `TextEffectConfig`
 - Default to `DEFAULT_TEXT_EFFECT` when not provided
 - Call `resolveStreamdownAnimation()` and pass result to Streamdown's `animated` prop
@@ -208,8 +212,8 @@ import { useStickToBottom } from 'use-stick-to-bottom';
 
 // Inside MessageList:
 const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
-  resize: 'smooth',      // Spring-animated resize following
-  initial: 'smooth',     // Spring-animated initial scroll
+  resize: 'smooth', // Spring-animated resize following
+  initial: 'smooth', // Spring-animated initial scroll
 });
 ```
 
@@ -233,6 +237,7 @@ The key challenge is that TanStack Virtual uses absolute positioning (`transform
 **What gets removed:**
 
 The following custom scroll logic in `MessageList.tsx` is replaced by `use-stick-to-bottom`:
+
 - ResizeObserver on `contentRef` (lines 207-232)
 - Message count fallback effect (lines 234-244)
 - `scrollToBottom` callback (lines 246-251)
@@ -289,8 +294,10 @@ Pass down to both controls and chat panel.
 Add an effect controls row below the existing transport controls:
 
 ```tsx
-{/* Effect controls */}
-<div className="flex items-center gap-3 mt-2 pt-2 border-t border-dashed">
+{
+  /* Effect controls */
+}
+<div className="mt-2 flex items-center gap-3 border-t border-dashed pt-2">
   <span className="text-muted-foreground text-xs">Text Effect</span>
   <Select value={textEffectMode} onValueChange={onTextEffectModeChange}>
     <SelectTrigger className="h-7 w-32 text-xs">
@@ -304,7 +311,7 @@ Add an effect controls row below the existing transport controls:
     </SelectContent>
   </Select>
 
-  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
     <Switch
       checked={animationEnabled}
       onCheckedChange={onAnimationEnabledChange}
@@ -312,7 +319,7 @@ Add an effect controls row below the existing transport controls:
     />
     Animation
   </label>
-</div>
+</div>;
 ```
 
 **Modified file:** `apps/client/src/dev/simulator/SimulatorChatPanel.tsx`
@@ -329,24 +336,29 @@ interface SimulatorChatPanelProps {
 ## User Experience
 
 **During streaming:**
+
 - Each word of the assistant's response fades/blurs in individually over ~150ms
 - The scroll smoothly follows new content with spring physics (no jumps)
 - The blinking cursor remains at the end of the last word (existing behavior)
 
 **After streaming completes:**
+
 - All animation spans are removed from the DOM (streamdown handles this automatically when `isAnimating` is `false`)
 - No visual difference from current behavior for completed messages
 
 **When user scrolls up during streaming:**
+
 - Auto-scroll detaches (built into `use-stick-to-bottom`)
 - "New messages" and "Scroll to bottom" buttons appear (existing behavior via `useScrollOverlay`)
 - Clicking either button smooth-scrolls to bottom and re-engages auto-follow
 
 **Reduced motion:**
+
 - `prefers-reduced-motion: reduce` auto-disables all text animation
 - Text appears instantly as today (zero regression)
 
 **In the simulator:**
+
 - The effect mode dropdown lets the developer switch between none/fade/blur-in/slide-up in real time
 - The animation toggle enables/disables the entire text effect system
 - Each of the 9 existing scenarios renders correctly with all effect modes
@@ -356,6 +368,7 @@ interface SimulatorChatPanelProps {
 ### Unit Tests
 
 **`layers/shared/lib/__tests__/text-effects.test.ts`:**
+
 - `resolveStreamdownAnimation` returns `false` for mode `'none'`
 - `resolveStreamdownAnimation` maps `'blur-in'` → `{ animation: 'blurIn', ... }`
 - `resolveStreamdownAnimation` maps `'fade'` → `{ animation: 'fadeIn', ... }`
@@ -364,6 +377,7 @@ interface SimulatorChatPanelProps {
 - `useTextEffectConfig` returns `mode: 'none'` when `matchMedia('(prefers-reduced-motion: reduce)')` matches
 
 **`layers/features/chat/__tests__/StreamingText.test.tsx`:**
+
 - Passes `animated` prop to Streamdown when `textEffect` mode is not `'none'`
 - Passes `animated={false}` when `textEffect.mode` is `'none'`
 - Passes `isAnimating={true}` when `isStreaming` is true
@@ -371,6 +385,7 @@ interface SimulatorChatPanelProps {
 - Defaults to `DEFAULT_TEXT_EFFECT` when no `textEffect` prop provided
 
 **`layers/features/chat/__tests__/MessageList.test.tsx`:**
+
 - Existing tests pass (may need mock updates for `use-stick-to-bottom`)
 - Mock `use-stick-to-bottom` to return `{ scrollRef, contentRef, isAtBottom: true, scrollToBottom: vi.fn() }`
 - `scrollToBottom` is exposed via imperative handle
@@ -395,14 +410,14 @@ interface SimulatorChatPanelProps {
 
 ## Performance Considerations
 
-| Concern | Mitigation |
-|---|---|
-| Span proliferation during streaming | Word-level splitting: ~180 spans per 1000 chars. Acceptable. Character-level (~1000 spans) explicitly avoided via `sep: 'word'`. |
-| Residual DOM nodes on completed messages | Streamdown excludes animation spans when `isAnimating={false}`. No residual overhead. |
-| GPU compositing | Only `opacity`, `transform`, and `filter: blur()` are animated — all GPU-composited, no layout thrashing. |
-| `filter: blur()` cost | One-shot mount animation (< 8px blur) is acceptable. Not continuously animated. |
-| `will-change` | Never applied to individual word spans. Only on containing message wrapper if needed. |
-| Spring scroll overhead | `use-stick-to-bottom` uses requestAnimationFrame internally. Minimal overhead vs. existing RAF-based scroll. |
+| Concern                                  | Mitigation                                                                                                                       |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Span proliferation during streaming      | Word-level splitting: ~180 spans per 1000 chars. Acceptable. Character-level (~1000 spans) explicitly avoided via `sep: 'word'`. |
+| Residual DOM nodes on completed messages | Streamdown excludes animation spans when `isAnimating={false}`. No residual overhead.                                            |
+| GPU compositing                          | Only `opacity`, `transform`, and `filter: blur()` are animated — all GPU-composited, no layout thrashing.                        |
+| `filter: blur()` cost                    | One-shot mount animation (< 8px blur) is acceptable. Not continuously animated.                                                  |
+| `will-change`                            | Never applied to individual word spans. Only on containing message wrapper if needed.                                            |
+| Spring scroll overhead                   | `use-stick-to-bottom` uses requestAnimationFrame internally. Minimal overhead vs. existing RAF-based scroll.                     |
 
 ## Security Considerations
 

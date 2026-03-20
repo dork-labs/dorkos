@@ -33,12 +33,10 @@ export async function startWebhookMode(
   adapterId: string,
   webhookUrl: string | undefined,
   webhookPort: number | undefined,
-  webhookSecret: string | undefined,
+  webhookSecret: string | undefined
 ): Promise<Server> {
   if (!webhookUrl) {
-    throw new Error(
-      `TelegramAdapter(${adapterId}): webhookUrl is required when mode is 'webhook'`,
-    );
+    throw new Error(`TelegramAdapter(${adapterId}): webhookUrl is required when mode is 'webhook'`);
   }
 
   // Auto-generate secret if not provided in config

@@ -52,17 +52,17 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role | Needs Changes |
-|---|---|---|
-| `packages/cli/package.json` | Published package version (0.1.0) | Version sync during release |
-| `packages/cli/scripts/build.ts` | Injects `__CLI_VERSION__` at build time | May need to read VERSION file instead |
-| `packages/cli/src/cli.ts` | CLI entry point (already has `--version`/`-v`) | Add startup banner, update notification |
-| `package.json` (root) | Workspace root version | Sync during release |
-| `apps/server/src/routes/health.ts` | Returns version in health check | Already works (reads from package.json) |
-| `apps/server/src/routes/config.ts` | Returns ServerConfig with version | Already works |
-| `apps/client/src/layers/features/settings/` | Shows version in settings | Already shows version from config |
-| `apps/client/src/layers/features/status/` | Status bar items | Add version/update indicator |
-| `.claude/commands/system/release.md` | Release orchestrator | Major overhaul needed |
+| File                                        | Role                                           | Needs Changes                           |
+| ------------------------------------------- | ---------------------------------------------- | --------------------------------------- |
+| `packages/cli/package.json`                 | Published package version (0.1.0)              | Version sync during release             |
+| `packages/cli/scripts/build.ts`             | Injects `__CLI_VERSION__` at build time        | May need to read VERSION file instead   |
+| `packages/cli/src/cli.ts`                   | CLI entry point (already has `--version`/`-v`) | Add startup banner, update notification |
+| `package.json` (root)                       | Workspace root version                         | Sync during release                     |
+| `apps/server/src/routes/health.ts`          | Returns version in health check                | Already works (reads from package.json) |
+| `apps/server/src/routes/config.ts`          | Returns ServerConfig with version              | Already works                           |
+| `apps/client/src/layers/features/settings/` | Shows version in settings                      | Already shows version from config       |
+| `apps/client/src/layers/features/status/`   | Status bar items                               | Add version/update indicator            |
+| `.claude/commands/system/release.md`        | Release orchestrator                           | Major overhaul needed                   |
 
 **Shared Dependencies:**
 
@@ -71,6 +71,7 @@ status: ideation
 - `apps/client/src/layers/shared/lib/http-transport.ts` — `HttpTransport` (fetches config/health)
 
 **Data Flow (Version):**
+
 ```
 VERSION file (source of truth)
   → packages/cli/package.json (synced at release time)
@@ -82,6 +83,7 @@ VERSION file (source of truth)
 ```
 
 **Potential Blast Radius:**
+
 - Direct: 8-10 files (new + modified)
 - New files: `VERSION`, `CHANGELOG.md`, update-check module
 - Modified: CLI entry, release command, possibly StatusLine
@@ -92,29 +94,38 @@ VERSION file (source of truth)
 ## 4) Answers to Open Questions
 
 ### Q: What version are we currently on?
+
 **A: 0.1.0** — specified in `package.json` (root) and `packages/cli/package.json`.
 
 ### Q: Where and how is that specified? Is it handled correctly? Is it DRY?
+
 **A:** Version lives in two package.json files. The build script reads from `packages/cli/package.json` and injects via esbuild `define`. It works but is **not DRY** — root and CLI versions can drift with no sync mechanism. See Section 5 for the fix.
 
 ### Q: How does our system currently handle versioning?
+
 **A:** Manual `npm version patch` in `packages/cli/`, then `npm publish -w packages/cli`. No changelog, no git tags, no release notes, no update notifications. The `/system:release` command exists but references files that don't exist (`VERSION`, `CHANGELOG.md`).
 
 ### Q: Are we following best practices?
+
 **A:** Not yet. Missing: git tags, changelog, single version source of truth, `--version` CLI flag, update notifications, release automation. The esbuild injection pattern is solid though.
 
 ### Q: Best practices for displaying version numbers?
+
 **A:**
+
 - **CLI `--version` flag**: Universal standard. `dorkos --version` → `0.1.0`. Every CLI tool supports this.
 - **Startup banner**: Show version + port on server start. Pattern: `DorkOS v0.1.0 ready on http://localhost:4242`
 - **Web UI**: Version in Settings dialog (already done via ServerConfig). Optionally in status bar as a subtle item.
 - **Examples**: Vite shows `vite v6.1.2` on dev start. Next.js shows `ready - started server on 0.0.0.0:3000`. npm shows version on `npm --version`.
 
 ### Q: Where should the version number be kept?
+
 **A:** Root `VERSION` file as single source of truth. The `/system:release` command syncs it to `packages/cli/package.json` and root `package.json` during release. The build script reads from `packages/cli/package.json` (already injected by release). This is the pattern used by life-os-starter and many non-npm projects.
 
 ### Q: Should it be displayed in the terminal when people start the app?
+
 **A:** Yes. Standard pattern:
+
 ```
   DorkOS v0.1.0
   Server:  http://localhost:4242
@@ -122,15 +133,20 @@ VERSION file (source of truth)
 ```
 
 ### Q: Should we have -v --version commands in the CLI? Do we?
+
 **A:** Yes, and **we already do.** `packages/cli/src/cli.ts` has `parseArgs` with `version: { type: 'boolean', short: 'v' }`. Running `dorkos --version` or `dorkos -v` prints `__CLI_VERSION__` and exits. This is already implemented correctly.
 
 ### Q: Should we display the version in the client? If so, where?
+
 **A:** Yes — already visible in Settings dialog. Additionally:
+
 - Status bar: subtle version badge (leftmost or rightmost item)
 - When an update is available: status bar item turns into an update indicator
 
 ### Q: How do we make it so that people who install the package are notified of new versions automatically?
+
 **A:** Use the `update-notifier` pattern (npm's own approach):
+
 1. On CLI startup, check npm registry in background (non-blocking)
 2. Cache result for 24 hours (in `~/.dork/cache/`)
 3. If newer version exists, display a boxed message:
@@ -142,18 +158,23 @@ VERSION file (source of truth)
    ```
 
 ### Q: What are the normal patterns for update notification?
+
 **A:**
+
 - **CLI**: `update-notifier` or `simple-update-notifier` — used by npm, Yeoman, Gatsby, Angular CLI. Checks npm registry, caches for configurable interval, shows boxed message.
 - **Web UI**: Banner/toast pattern — subtle, non-intrusive. Grafana shows "New version available" in the footer. Home Assistant shows an update badge on the settings icon.
 
 ### Q: How do we show update availability in the UI?
+
 **A:** Two-tier approach:
+
 1. **Status bar**: Add "Update available" badge item when server reports newer version
 2. **Settings dialog**: Show current version vs latest, with update instructions
 
 The server already has a `/api/health` endpoint that includes version. We could add a `latestVersion` field (fetched from npm registry, cached) to `ServerConfig` or a new `/api/update-check` endpoint.
 
 ### Q: Do we show this in the console during startup?
+
 **A:** Yes, after the startup banner if an update is available. Non-blocking — the check happens in background, result shown from cache if available.
 
 ---
@@ -163,6 +184,7 @@ The server already has a `/api/health` endpoint that includes version. We could 
 ### From life-os-starter Analysis
 
 The life-os-starter repo has a mature system with:
+
 - `VERSION` file as source of truth
 - Post-commit changelog auto-population (conventional commits)
 - `/system:release` orchestrator with subagent analysis
@@ -236,32 +258,32 @@ User runs `dorkos` CLI
 
 ### Files to Create
 
-| File | Purpose |
-|---|---|
-| `VERSION` | Single source of truth for version (plain text) |
-| `packages/cli/src/update-check.ts` | npm registry check with caching |
+| File                               | Purpose                                         |
+| ---------------------------------- | ----------------------------------------------- |
+| `VERSION`                          | Single source of truth for version (plain text) |
+| `packages/cli/src/update-check.ts` | npm registry check with caching                 |
 
 > **Note:** `CHANGELOG.md` already exists with a `[0.1.0]` release and empty `[Unreleased]` section. No need to create it.
 
 ### Files to Modify
 
-| File | Changes |
-|---|---|
-| `packages/cli/src/cli.ts` | Add `--version` flag, startup banner, update notification |
-| `packages/cli/scripts/build.ts` | Optional: read from VERSION instead of package.json |
-| `.claude/commands/system/release.md` | Major overhaul: fix file refs, add npm publish, fix URLs |
-| `apps/server/src/routes/health.ts` | Optionally add `latestVersion` field |
-| `apps/client/src/layers/features/status/` | Add version/update status bar item |
-| `specs/manifest.json` | Add this spec |
+| File                                      | Changes                                                   |
+| ----------------------------------------- | --------------------------------------------------------- |
+| `packages/cli/src/cli.ts`                 | Add `--version` flag, startup banner, update notification |
+| `packages/cli/scripts/build.ts`           | Optional: read from VERSION instead of package.json       |
+| `.claude/commands/system/release.md`      | Major overhaul: fix file refs, add npm publish, fix URLs  |
+| `apps/server/src/routes/health.ts`        | Optionally add `latestVersion` field                      |
+| `apps/client/src/layers/features/status/` | Add version/update status bar item                        |
+| `specs/manifest.json`                     | Add this spec                                             |
 
 ### Claude Code Harness Components
 
-| Component | Type | Purpose |
-|---|---|---|
-| `/system:release` | Command | Orchestrates full release (existing, needs overhaul) |
-| `/writing-changelogs` | Skill | Guides user-friendly changelog entry writing (existing) |
-| `CHANGELOG.md` backfill | Script logic | Analyze commits since last tag, generate missing entries (new, in release command) |
-| Release analyzer | Subagent | Auto-detect bump type from changelog + commits (existing pattern in release command) |
+| Component               | Type         | Purpose                                                                              |
+| ----------------------- | ------------ | ------------------------------------------------------------------------------------ |
+| `/system:release`       | Command      | Orchestrates full release (existing, needs overhaul)                                 |
+| `/writing-changelogs`   | Skill        | Guides user-friendly changelog entry writing (existing)                              |
+| `CHANGELOG.md` backfill | Script logic | Analyze commits since last tag, generate missing entries (new, in release command)   |
+| Release analyzer        | Subagent     | Auto-detect bump type from changelog + commits (existing pattern in release command) |
 
 ---
 

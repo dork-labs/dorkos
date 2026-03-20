@@ -33,7 +33,7 @@ test.beforeEach(async ({ request }) => {
   // Seed a test agent so the chat UI has an agent to select and enables the send button.
   // The agent is created at ~/tmp/dorkos-e2e-agent, within the default home-directory boundary.
   const seedRes = await request.post(`${API_URL}/api/test/seed-agent`);
-  ({ agentDir } = await seedRes.json() as { agentDir: string });
+  ({ agentDir } = (await seedRes.json()) as { agentDir: string });
 });
 
 test.describe('TestModeRuntime — mock browser tests', () => {

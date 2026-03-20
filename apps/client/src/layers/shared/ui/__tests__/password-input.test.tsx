@@ -27,7 +27,9 @@ describe('PasswordInput', () => {
 
   it('respects controlled showPassword prop', () => {
     const onChange = vi.fn();
-    render(<PasswordInput showPassword={true} onShowPasswordChange={onChange} placeholder="controlled" />);
+    render(
+      <PasswordInput showPassword={true} onShowPasswordChange={onChange} placeholder="controlled" />
+    );
     const input = screen.getByPlaceholderText('controlled');
     expect(input).toHaveAttribute('type', 'text');
   });

@@ -10,7 +10,7 @@ Generated: 2026-03-05
 6 tasks across 3 phases. All phases must complete in order; within Phase 1, tasks 1.1 and 1.2 are independent and can be done in parallel.
 
 | ID  | Phase | Subject                                          | Size   | Priority |
-|-----|-------|--------------------------------------------------|--------|----------|
+| --- | ----- | ------------------------------------------------ | ------ | -------- |
 | 1.1 | 1     | Add progress payload schemas to relay-schemas.ts | small  | high     |
 | 1.2 | 1     | Add relay_dispatch and relay_unregister_endpoint | medium | high     |
 | 1.3 | 1     | Export handlers and update RELAY_TOOLS constant  | small  | high     |
@@ -37,9 +37,9 @@ export const RelayProgressPayloadSchema = z
   .object({
     type: z.literal('progress'),
     step: z.number().int().min(1).describe('Monotonically increasing step counter'),
-    step_type: z.enum(['message', 'tool_result']).describe(
-      'message = assistant text block completed; tool_result = tool execution completed'
-    ),
+    step_type: z
+      .enum(['message', 'tool_result'])
+      .describe('message = assistant text block completed; tool_result = tool execution completed'),
     text: z.string().describe('Text content of this progress step'),
     done: z.literal(false),
   })
@@ -141,7 +141,10 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
     try {
       const removed = await deps.relayCore!.unregisterEndpoint(args.subject);
       if (!removed) {
-        return jsonContent({ error: `Endpoint not found: ${args.subject}`, code: 'ENDPOINT_NOT_FOUND' }, true);
+        return jsonContent(
+          { error: `Endpoint not found: ${args.subject}`, code: 'ENDPOINT_NOT_FOUND' },
+          true
+        );
       }
       return jsonContent({ success: true, subject: args.subject });
     } catch (e) {
@@ -185,6 +188,7 @@ tool(
 ```
 
 **4. Raise relay_query timeout cap** in the `relay_query` tool schema:
+
 - Change `.max(120000)` to `.max(600000)`
 - Update description: `'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_dispatch instead.'`
 
@@ -193,17 +197,27 @@ tool(
 ### Task 1.3 — Export handlers and update RELAY_TOOLS
 
 **Files:**
+
 - `apps/server/src/services/core/mcp-tools/index.ts`
 - `apps/server/src/services/core/tool-filter.ts`
 
 **Depends on:** 1.2
 
 **index.ts:** Add the two new handlers to the relay-tools export line:
+
 ```typescript
-export { createRelaySendHandler, createRelayInboxHandler, createRelayListEndpointsHandler, createRelayRegisterEndpointHandler, createRelayDispatchHandler, createRelayUnregisterEndpointHandler } from './relay-tools.js';
+export {
+  createRelaySendHandler,
+  createRelayInboxHandler,
+  createRelayListEndpointsHandler,
+  createRelayRegisterEndpointHandler,
+  createRelayDispatchHandler,
+  createRelayUnregisterEndpointHandler,
+} from './relay-tools.js';
 ```
 
 **tool-filter.ts:** Add two entries to `RELAY_TOOLS`:
+
 ```typescript
 const RELAY_TOOLS = [
   'mcp__dorkos__relay_send',
@@ -211,7 +225,7 @@ const RELAY_TOOLS = [
   'mcp__dorkos__relay_list_endpoints',
   'mcp__dorkos__relay_register_endpoint',
   'mcp__dorkos__relay_query',
-  'mcp__dorkos__relay_dispatch',           // NEW
+  'mcp__dorkos__relay_dispatch', // NEW
   'mcp__dorkos__relay_unregister_endpoint', // NEW
 ] as const;
 ```
@@ -223,18 +237,21 @@ No changes needed in `buildAllowedTools()` — it already pushes `...RELAY_TOOLS
 ### Task 1.4 — Update mcp-tool-server and tool-filter tests
 
 **Files:**
+
 - `apps/server/src/services/core/__tests__/mcp-tool-server.test.ts`
 - `apps/server/src/services/core/__tests__/tool-filter.test.ts`
 
 **Depends on:** 1.2, 1.3
 
 **mcp-tool-server.test.ts changes:**
+
 1. Update tool count: `toHaveLength(14)` → `toHaveLength(16)`, comment `(4 core + 5 pulse + 5 relay)` → `(4 core + 5 pulse + 7 relay)`
 2. Add to "registers tools with correct names": `expect(toolNames).toContain('relay_dispatch')` and `expect(toolNames).toContain('relay_unregister_endpoint')`
 3. Import the two new handlers from `'../mcp-tools/index.js'`
 4. Add `makeRelayCoreMock()` helper and full handler test suites for `createRelayDispatchHandler` and `createRelayUnregisterEndpointHandler` (RELAY_DISABLED, success path, auto-unregister on rejection, ENDPOINT_NOT_FOUND)
 
 **tool-filter.test.ts changes:**
+
 1. Add test: `relay_dispatch` and `relay_unregister_endpoint` included when `relay=true`
 2. Add test: both excluded when `relay=false`
 3. Update existing relay exclusion test to assert the new tools are also absent
@@ -253,6 +270,7 @@ Verification: `pnpm vitest run apps/server/src/services/core/__tests__/mcp-tool-
 This is the core behavioral change. Three parts: split the inbox type check, rewrite the event loop body, add the `publishDispatchProgress()` helper.
 
 **Split the inbox check (replace the existing `isInboxReplyTo` line):**
+
 ```typescript
 const isDispatchInbox = envelope.replyTo?.startsWith('relay.inbox.dispatch.');
 // Non-dispatch inbox replyTo (relay.inbox.query.* etc.) → existing aggregated behavior
@@ -260,12 +278,14 @@ const isQueryInbox = envelope.replyTo?.startsWith('relay.inbox.') && !isDispatch
 ```
 
 **Add buffer vars before the `for await` loop:**
+
 ```typescript
 let stepCounter = 0;
 let messageBuffer = '';
 ```
 
 **New event loop body:**
+
 ```typescript
 for await (const event of eventStream) {
   if (controller.signal.aborted) break;
@@ -280,14 +300,26 @@ for await (const event of eventStream) {
       }
       if (event.type === 'tool_call_start' && messageBuffer) {
         stepCounter++;
-        await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+        await this.publishDispatchProgress(
+          envelope,
+          stepCounter,
+          'message',
+          messageBuffer,
+          ccaSessionKey
+        );
         messageBuffer = '';
       }
       if (event.type === 'tool_result') {
         stepCounter++;
         const data = event.data as { content?: string; tool_use_id?: string };
         const text = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-        await this.publishDispatchProgress(envelope, stepCounter, 'tool_result', text, ccaSessionKey);
+        await this.publishDispatchProgress(
+          envelope,
+          stepCounter,
+          'tool_result',
+          text,
+          ccaSessionKey
+        );
       }
     } else if (isQueryInbox) {
       if (event.type === 'text_delta') {
@@ -302,11 +334,18 @@ for await (const event of eventStream) {
 ```
 
 **New post-loop publish logic (replaces existing `if (isInboxReplyTo ...)` block):**
+
 ```typescript
 if (isDispatchInbox && envelope.replyTo && this.relay) {
   if (messageBuffer) {
     stepCounter++;
-    await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+    await this.publishDispatchProgress(
+      envelope,
+      stepCounter,
+      'message',
+      messageBuffer,
+      ccaSessionKey
+    );
   }
   await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
 }
@@ -317,6 +356,7 @@ if (isQueryInbox && envelope.replyTo && this.relay && collectedText) {
 ```
 
 **New private helper after `publishAgentResult()`:**
+
 ```typescript
 private async publishDispatchProgress(
   originalEnvelope: RelayEnvelope,
@@ -339,8 +379,13 @@ private async publishDispatchProgress(
 ```
 
 **Update `publishAgentResult()` payload** — add `done: true`:
+
 ```typescript
-await this.relay.publish(originalEnvelope.replyTo, { type: 'agent_result', text, done: true }, opts);
+await this.relay.publish(
+  originalEnvelope.replyTo,
+  { type: 'agent_result', text, done: true },
+  opts
+);
 ```
 
 ---
@@ -382,6 +427,7 @@ Replace the `RELAY_TOOLS_CONTEXT` constant's string value entirely. Key changes:
 - Update IMPORTANT note to include `relay_dispatch` in the list of tools for initiating new messages
 
 New RELAY_TOOLS_CONTEXT:
+
 ```
 <relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.

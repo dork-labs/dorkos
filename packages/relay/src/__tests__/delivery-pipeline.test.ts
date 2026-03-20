@@ -119,7 +119,7 @@ describe('DeliveryPipeline', () => {
 
       expect(deps.signalEmitter.emit).toHaveBeenCalledWith(
         endpoint.subject,
-        expect.objectContaining({ type: 'backpressure', state: 'warning' }),
+        expect.objectContaining({ type: 'backpressure', state: 'warning' })
       );
     });
 
@@ -137,7 +137,13 @@ describe('DeliveryPipeline', () => {
     it('rejects to DLQ when budget is exceeded', async () => {
       const endpoint = createEndpoint();
       const envelope = createEnvelope({
-        budget: { maxHops: 5, hopCount: 6, ttl: Date.now() + 3_600_000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          maxHops: 5,
+          hopCount: 6,
+          ttl: Date.now() + 3_600_000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
       });
 
       const result = await pipeline.deliverToEndpoint(endpoint, envelope);

@@ -54,26 +54,27 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role | Change needed |
-|---|---|---|
-| `apps/client/src/layers/shared/ui/sidebar.tsx` | Shadcn Sidebar primitive (NEW) | Install via `pnpm dlx shadcn@latest add sidebar` |
-| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Main sidebar component | Major refactor — use SidebarHeader/Content/Footer, remove dialog ownership |
-| `apps/client/src/layers/features/session-list/ui/AgentHeader.tsx` | Agent identity header | Refactor — remove close button from row, give header breathing room |
-| `apps/client/src/layers/features/session-list/ui/SessionItem.tsx` | Session list items | Minor — wrap in SidebarMenuItem/SidebarMenuButton |
-| `apps/client/src/App.tsx` | Root layout | Major — replace custom overlay/push layout with SidebarProvider, add DialogHost |
-| `apps/client/src/layers/shared/model/app-store.ts` | Zustand store | Minor — add `agentDialogOpen`/`setAgentDialogOpen` (currently local state in SessionSidebar) |
-| `apps/client/src/index.css` | CSS variables | Add `--sidebar-*` variable declarations |
-| `contributing/design-system.md` | Design system docs | Update sidebar section |
+| File                                                                 | Role                           | Change needed                                                                                |
+| -------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/shared/ui/sidebar.tsx`                       | Shadcn Sidebar primitive (NEW) | Install via `pnpm dlx shadcn@latest add sidebar`                                             |
+| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Main sidebar component         | Major refactor — use SidebarHeader/Content/Footer, remove dialog ownership                   |
+| `apps/client/src/layers/features/session-list/ui/AgentHeader.tsx`    | Agent identity header          | Refactor — remove close button from row, give header breathing room                          |
+| `apps/client/src/layers/features/session-list/ui/SessionItem.tsx`    | Session list items             | Minor — wrap in SidebarMenuItem/SidebarMenuButton                                            |
+| `apps/client/src/App.tsx`                                            | Root layout                    | Major — replace custom overlay/push layout with SidebarProvider, add DialogHost              |
+| `apps/client/src/layers/shared/model/app-store.ts`                   | Zustand store                  | Minor — add `agentDialogOpen`/`setAgentDialogOpen` (currently local state in SessionSidebar) |
+| `apps/client/src/index.css`                                          | CSS variables                  | Add `--sidebar-*` variable declarations                                                      |
+| `contributing/design-system.md`                                      | Design system docs             | Update sidebar section                                                                       |
 
 **New files to create:**
 
-| File | Role |
-|---|---|
+| File                                                                    | Role                                     |
+| ----------------------------------------------------------------------- | ---------------------------------------- |
 | `apps/client/src/layers/features/session-list/ui/AgentContextChips.tsx` | Glanceable Pulse/Relay/Mesh status chips |
-| `apps/client/src/layers/features/session-list/ui/SidebarFooterBar.tsx` | Footer with branding + settings + theme |
+| `apps/client/src/layers/features/session-list/ui/SidebarFooterBar.tsx`  | Footer with branding + settings + theme  |
 
 **Shared dependencies:**
-- `@/layers/shared/ui` — Sidebar*, Tooltip, ResponsiveDialog (existing)
+
+- `@/layers/shared/ui` — Sidebar\*, Tooltip, ResponsiveDialog (existing)
 - `@/layers/shared/model` — app-store (Zustand), useIsMobile, useTheme
 - `@/layers/shared/lib` — cn, shortenHomePath, groupSessionsByTime
 - `@/layers/entities/pulse` — usePulseEnabled, useActiveRunCount, useCompletedRunBadge
@@ -100,6 +101,7 @@ App.tsx
 ```
 
 **Potential blast radius:**
+
 - Direct: ~8 files (SessionSidebar, AgentHeader, App.tsx, app-store, index.css, new chips, new footer)
 - Indirect: ~3 files (embedded mode in App.tsx preserved, onboarding ProgressCard repositioned)
 - Tests: ~3 test files (SessionSidebar.test.tsx, AgentHeader.test.tsx — simplified, SessionItem.test.tsx — minor)
@@ -111,6 +113,7 @@ App.tsx
 ### Potential Solutions
 
 **1. Full Shadcn Sidebar Migration (Recommended)**
+
 - Description: Replace the custom motion.dev layout with `SidebarProvider` + `Sidebar` + `SidebarInset` for the standalone path. Keep embedded mode unchanged. Controlled `open`/`onOpenChange` bridges to Zustand.
 - Pros: Eliminates ~200 lines of custom sidebar/overlay code; free mobile Sheet with backdrop, swipe-to-close, auto-close-on-nav; built-in keyboard shortcut (Cmd+B); collapsible icon mode available for future; ARIA accessibility handled
 - Cons: Requires `--sidebar-*` CSS variables in index.css; mobile/desktop state separation (minor Zustand update); SidebarProvider wraps most of App.tsx
@@ -118,6 +121,7 @@ App.tsx
 - Maintenance: Low (Shadcn-maintained)
 
 **2. Partial Migration (Menu Components Only)**
+
 - Description: Keep App.tsx layout, use SidebarMenu/SidebarMenuItem inside SessionSidebar for consistent item styling
 - Pros: Minimal layout disruption; motion animations preserved
 - Cons: Still maintaining 392-line monolith; menu components are tightly coupled to SidebarProvider context (may not work standalone); doesn't fix the mobile overlay complexity
@@ -125,6 +129,7 @@ App.tsx
 - Maintenance: High (still custom overlay code)
 
 **3. Shadcn Sheet for Mobile Only**
+
 - Description: Keep desktop push sidebar, replace mobile overlay with Shadcn Sheet
 - Pros: Gets native Sheet on mobile; desktop animation stays custom
 - Cons: Bifurcated implementation; misses unified state management
@@ -148,14 +153,14 @@ App.tsx
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Sidebar component | Shadcn Sidebar (full migration) | Battle-tested, handles mobile/desktop, built-in keyboard shortcuts, ARIA accessibility. Deletes ~200 lines of custom code. |
-| 2 | Dialog ownership | Lift all to App.tsx `DialogHost` | Sidebar becomes pure navigation. Dialogs survive sidebar unmount on mobile. Zustand already has all state. |
-| 3 | Agent context section | Glanceable status chips in SidebarFooter | iOS Control Center-inspired — compact, always visible, tappable to open full panels. Shows Pulse/Relay/Mesh status for current agent. |
-| 4 | Sidebar trigger placement | `SidebarTrigger` in `SidebarInset` header | Removes the close button from the agent header row, eliminating the compression problem. Standard Shadcn pattern. |
-| 5 | Embedded mode | Keep custom overlay unchanged | Shadcn's DOM structure (SidebarInset as sibling) doesn't fit Obsidian's ItemView container. Separate code paths. |
-| 6 | Mobile state | Let Shadcn own mobile Sheet state internally | Desktop `sidebarOpen` connects to Zustand. Mobile Sheet state doesn't need persistence (resets each visit — correct UX). Simplest approach. |
-| 7 | Sidebar width | Keep 320px via `--sidebar-width: 20rem` | Current width works well. Design system says 256px but 320px has been the shipped width. |
-| 8 | CSS integration | Add `--sidebar-*` variables to `index.css` | Required by Shadcn Sidebar. Calibrated to pure neutral gray palette. Sidebar background slightly different from main background for subtle visual distinction. |
-| 9 | Keyboard shortcut | Remove custom Cmd+B handler, use Shadcn built-in | Shadcn Sidebar has `SIDEBAR_KEYBOARD_SHORTCUT = "b"` built in. One fewer custom effect in App.tsx. |
+| #   | Decision                  | Choice                                           | Rationale                                                                                                                                                      |
+| --- | ------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Sidebar component         | Shadcn Sidebar (full migration)                  | Battle-tested, handles mobile/desktop, built-in keyboard shortcuts, ARIA accessibility. Deletes ~200 lines of custom code.                                     |
+| 2   | Dialog ownership          | Lift all to App.tsx `DialogHost`                 | Sidebar becomes pure navigation. Dialogs survive sidebar unmount on mobile. Zustand already has all state.                                                     |
+| 3   | Agent context section     | Glanceable status chips in SidebarFooter         | iOS Control Center-inspired — compact, always visible, tappable to open full panels. Shows Pulse/Relay/Mesh status for current agent.                          |
+| 4   | Sidebar trigger placement | `SidebarTrigger` in `SidebarInset` header        | Removes the close button from the agent header row, eliminating the compression problem. Standard Shadcn pattern.                                              |
+| 5   | Embedded mode             | Keep custom overlay unchanged                    | Shadcn's DOM structure (SidebarInset as sibling) doesn't fit Obsidian's ItemView container. Separate code paths.                                               |
+| 6   | Mobile state              | Let Shadcn own mobile Sheet state internally     | Desktop `sidebarOpen` connects to Zustand. Mobile Sheet state doesn't need persistence (resets each visit — correct UX). Simplest approach.                    |
+| 7   | Sidebar width             | Keep 320px via `--sidebar-width: 20rem`          | Current width works well. Design system says 256px but 320px has been the shipped width.                                                                       |
+| 8   | CSS integration           | Add `--sidebar-*` variables to `index.css`       | Required by Shadcn Sidebar. Calibrated to pure neutral gray palette. Sidebar background slightly different from main background for subtle visual distinction. |
+| 9   | Keyboard shortcut         | Remove custom Cmd+B handler, use Shadcn built-in | Shadcn Sidebar has `SIDEBAR_KEYBOARD_SHORTCUT = "b"` built in. One fewer custom effect in App.tsx.                                                             |

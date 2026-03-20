@@ -13,18 +13,18 @@ slug: world-class-documentation
 
 ## Task Overview
 
-| # | Phase | Task | Dependencies | Parallel Group |
-|---|-------|------|-------------|----------------|
-| 1 | P1 | Fix API docs bug and all navigation gaps | None | A |
-| 2 | P2 | Rewrite quickstart page with Fumadocs components | 1 | B |
-| 3 | P2 | Enhance index landing page with hero and Cards | 1 | B |
-| 4 | P2 | Enhance installation page with multi-target Tabs | 1 | B |
-| 5 | P2 | Enhance CLI usage guide with TypeTable and Steps | 1 | B |
-| 6 | P3 | Enhance slash-commands and tunnel-setup guides | 1 | B |
-| 7 | P4 | Enhance integrations and self-hosting pages | 1 | B |
-| 8 | P5 | Enhance contributing section pages | 1 | B |
-| 9 | P6 | Create concepts section (3 new pages) | 1 | B |
-| 10 | Final | Build verification and link audit | 2-9 | C |
+| #   | Phase | Task                                             | Dependencies | Parallel Group |
+| --- | ----- | ------------------------------------------------ | ------------ | -------------- |
+| 1   | P1    | Fix API docs bug and all navigation gaps         | None         | A              |
+| 2   | P2    | Rewrite quickstart page with Fumadocs components | 1            | B              |
+| 3   | P2    | Enhance index landing page with hero and Cards   | 1            | B              |
+| 4   | P2    | Enhance installation page with multi-target Tabs | 1            | B              |
+| 5   | P2    | Enhance CLI usage guide with TypeTable and Steps | 1            | B              |
+| 6   | P3    | Enhance slash-commands and tunnel-setup guides   | 1            | B              |
+| 7   | P4    | Enhance integrations and self-hosting pages      | 1            | B              |
+| 8   | P5    | Enhance contributing section pages               | 1            | B              |
+| 9   | P6    | Create concepts section (3 new pages)            | 1            | B              |
+| 10  | Final | Build verification and link audit                | 2-9          | C              |
 
 **Parallel execution:** Tasks 2-9 can ALL run in parallel after Task 1 completes. Task 10 runs after all content tasks finish.
 
@@ -49,17 +49,20 @@ Fix the broken API docs rendering and all meta.json navigation gaps.
 Remove the `'use client'` directive at line 1. The `APIPage` component from `fumadocs-openapi/ui` is an async Server Component that performs file I/O to load the OpenAPI spec. The `'use client'` directive forces it into client rendering where async I/O fails with "suspended by uncached promise" errors.
 
 **Before:**
+
 ```typescript
-'use client'
-export { APIPage } from '@/lib/openapi'
+'use client';
+export { APIPage } from '@/lib/openapi';
 ```
 
 **After:**
+
 ```typescript
-export { APIPage } from '@/lib/openapi'
+export { APIPage } from '@/lib/openapi';
 ```
 
 Then regenerate the API docs:
+
 ```bash
 npm run docs:export-api
 npm run generate:api-docs -w apps/web
@@ -70,6 +73,7 @@ npm run generate:api-docs -w apps/web
 **File:** `docs/meta.json`
 
 Add `integrations`, `self-hosting`, and `concepts` to the pages array. Final order:
+
 ```json
 {
   "title": "Documentation",
@@ -91,6 +95,7 @@ Add `integrations`, `self-hosting`, and `concepts` to the pages array. Final ord
 **File:** `docs/guides/meta.json`
 
 Add the 3 missing guide pages. Final state:
+
 ```json
 {
   "title": "Guides",
@@ -110,6 +115,7 @@ Add the 3 missing guide pages. Final state:
 **File:** `docs/concepts/meta.json` (NEW directory + file)
 
 Create directory `docs/concepts/` and meta.json:
+
 ```json
 {
   "title": "Concepts",
@@ -156,10 +162,10 @@ The rewritten page must include:
 ### Fumadocs Components to Use
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 ```
 
 ### Source Files for Accuracy
@@ -213,7 +219,7 @@ The page has a title, one-paragraph description, and three sections of bullet-po
 ### Fumadocs Components to Use
 
 ```tsx
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Cards, Card } from 'fumadocs-ui/components/card';
 ```
 
 ### Acceptance Criteria
@@ -254,10 +260,10 @@ The page covers npm-only installation with plain markdown. No Fumadocs component
 ### Fumadocs Components to Use
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 ```
 
 ### Acceptance Criteria
@@ -306,10 +312,10 @@ The page has substantial content with plain markdown tables and code blocks. Nee
 ### Fumadocs Components to Use
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 ```
 
 ### Source Files for Accuracy
@@ -363,11 +369,11 @@ Both pages have substantive content in plain markdown. Need Fumadocs component a
 ### Fumadocs Components to Use
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
-import { Files, Folder, File } from 'fumadocs-ui/components/files'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
 ```
 
 ### Source Files for Accuracy
@@ -434,11 +440,11 @@ All 4 pages have substantive content in plain markdown. Need Fumadocs component 
 ### Fumadocs Components to Use
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 ```
 
 ### Source Files for Accuracy
@@ -504,12 +510,12 @@ All 3 pages have substantive content in plain markdown. Need Fumadocs component 
 ### Fumadocs Components to Use
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
-import { Files, Folder, File } from 'fumadocs-ui/components/files'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
 ```
 
 ### Source Files for Accuracy
@@ -547,6 +553,7 @@ Task 1 creates `docs/concepts/meta.json`. This task creates the actual content p
 ### Page 1: `docs/concepts/architecture.mdx`
 
 **Frontmatter:**
+
 ```yaml
 ---
 title: Architecture
@@ -555,6 +562,7 @@ description: How DorkOS connects to Claude Code and where your data lives
 ```
 
 **Content outline:**
+
 1. **What DorkOS is** — A web UI + REST/SSE API for Claude Code, built with the Claude Agent SDK
 2. **System diagram** — ASCII art or description: User -> DorkOS Client -> Transport -> DorkOS Server -> Claude Agent SDK -> Claude API
 3. **Three deployment modes** — `<Cards>` showing:
@@ -567,6 +575,7 @@ description: How DorkOS connects to Claude Code and where your data lives
 ### Page 2: `docs/concepts/sessions.mdx`
 
 **Frontmatter:**
+
 ```yaml
 ---
 title: Sessions
@@ -575,6 +584,7 @@ description: How DorkOS manages conversation sessions using SDK transcript files
 ```
 
 **Content outline:**
+
 1. **What is a session?** — A conversation with Claude Code, stored as a JSONL file
 2. **Where sessions live** — `~/.claude/projects/{project-slug}/{session-id}.jsonl`
 3. **Session ID** — UUID derived from the JSONL filename
@@ -588,6 +598,7 @@ description: How DorkOS manages conversation sessions using SDK transcript files
 ### Page 3: `docs/concepts/transport.mdx`
 
 **Frontmatter:**
+
 ```yaml
 ---
 title: Transport
@@ -596,6 +607,7 @@ description: The abstraction that lets DorkOS run as a web app or an Obsidian pl
 ```
 
 **Content outline:**
+
 1. **Why Transport exists** — Decouple the UI from the backend. Same React app, different communication layer. This is the hexagonal architecture "port".
 2. **HttpTransport** — `<Card>` or section: REST/SSE over the network. Used by standalone web mode. Constructor takes `{ baseUrl }`.
 3. **DirectTransport** — `<Card>` or section: In-process function calls. Used by Obsidian plugin. Constructor takes service instances. No network overhead.
@@ -607,9 +619,9 @@ description: The abstraction that lets DorkOS run as a web app or an Obsidian pl
 ### Fumadocs Components to Use
 
 ```tsx
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
-import { Files, Folder, File } from 'fumadocs-ui/components/files'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
 ```
 
 ### Acceptance Criteria
@@ -637,9 +649,11 @@ Verify the entire documentation site builds successfully and all internal links 
 ### Steps
 
 1. **Build the web app:**
+
    ```bash
    npm run build -w apps/web
    ```
+
    Must succeed with zero errors. This catches MDX syntax errors, broken imports, missing frontmatter, and invalid Fumadocs component usage.
 
 2. **Navigation audit** — Verify every page listed in a `meta.json` has a corresponding `.mdx` file:
@@ -690,12 +704,12 @@ After Task 1 completes, Tasks 2-9 have NO dependencies on each other and can all
 All pages should use these imports as needed:
 
 ```tsx
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Files, Folder, File } from 'fumadocs-ui/components/files'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Files, Folder, File } from 'fumadocs-ui/components/files';
 ```
 
 Code block highlighting: `// [!code highlight]` on key lines.
@@ -704,15 +718,15 @@ Code block highlighting: `// [!code highlight]` on key lines.
 
 Always verify content against source code, not just the spec:
 
-| Topic | Source File |
-|---|---|
-| CLI flags | `packages/cli/src/cli.ts` |
-| Config subcommands | `packages/cli/src/config-commands.ts` |
-| Transport interface | `packages/shared/src/transport.ts` |
-| StreamEvent types | `packages/shared/src/schemas.ts` |
-| Command registry | `apps/server/src/services/command-registry.ts` |
-| Tunnel config | `apps/server/src/services/tunnel-manager.ts` |
-| Server routes | `apps/server/src/routes/` |
-| Testing patterns | `.claude/rules/testing.md`, `packages/test-utils/` |
-| Architecture | `contributing/architecture.md` |
-| Configuration | `contributing/configuration.md` |
+| Topic               | Source File                                        |
+| ------------------- | -------------------------------------------------- |
+| CLI flags           | `packages/cli/src/cli.ts`                          |
+| Config subcommands  | `packages/cli/src/config-commands.ts`              |
+| Transport interface | `packages/shared/src/transport.ts`                 |
+| StreamEvent types   | `packages/shared/src/schemas.ts`                   |
+| Command registry    | `apps/server/src/services/command-registry.ts`     |
+| Tunnel config       | `apps/server/src/services/tunnel-manager.ts`       |
+| Server routes       | `apps/server/src/routes/`                          |
+| Testing patterns    | `.claude/rules/testing.md`, `packages/test-utils/` |
+| Architecture        | `contributing/architecture.md`                     |
+| Configuration       | `contributing/configuration.md`                    |

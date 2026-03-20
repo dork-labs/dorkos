@@ -10,7 +10,9 @@ DorkOS runs in several modes. Pick the install method that fits your workflow.
 ## Prerequisites
 
 <Callout type="info">
-  All installation methods require a Claude API key from the [Anthropic Console](https://console.anthropic.com/). Non-Docker methods also require [Node.js](https://nodejs.org/) 18 or later.
+  All installation methods require a Claude API key from the [Anthropic
+  Console](https://console.anthropic.com/). Non-Docker methods also require
+  [Node.js](https://nodejs.org/) 18 or later.
 </Callout>
 
 ## Choose Your Install Method
@@ -56,11 +58,9 @@ The server starts on port 4242 and opens your browser automatically.
 </Steps>
 
 <Callout type="info">
-  **CI/Automation:** Skip interactive prompts with `--no-prompt`:
-  ```bash
-  curl -fsSL https://dorkos.ai/install | bash -s -- --no-prompt
-  ```
-  Pin a specific version: `curl -fsSL https://dorkos.ai/install | bash -s 1.2.3`
+  **CI/Automation:** Skip interactive prompts with `--no-prompt`: ```bash curl -fsSL
+  https://dorkos.ai/install | bash -s -- --no-prompt ``` Pin a specific version: `curl -fsSL
+  https://dorkos.ai/install | bash -s 1.2.3`
 </Callout>
 
 </Tab>
@@ -123,7 +123,8 @@ The server starts on port 4242 and opens your browser automatically.
 </Steps>
 
 <Callout type="info">
-  Pass flags to customize startup: `dorkos --port 8080 --dir ~/projects/my-app`. Run `dorkos --help` for all options.
+  Pass flags to customize startup: `dorkos --port 8080 --dir ~/projects/my-app`. Run `dorkos --help`
+  for all options.
 </Callout>
 
 </Tab>
@@ -162,9 +163,7 @@ dorkos
 </Step>
 </Steps>
 
-<Callout type="info">
-  Update via `brew upgrade dorkos`.
-</Callout>
+<Callout type="info">Update via `brew upgrade dorkos`.</Callout>
 
 </Tab>
 
@@ -196,7 +195,9 @@ Navigate to [http://localhost:4242](http://localhost:4242) in your browser.
 </Steps>
 
 <Callout type="info">
-  For persistent data, custom ports, Docker Compose, and production hardening, see the [Docker deployment guide](/docs/self-hosting/docker). Pin a specific version for reproducible deployments: `ghcr.io/dork-labs/dorkos:0.12.0`.
+  For persistent data, custom ports, Docker Compose, and production hardening, see the [Docker
+  deployment guide](/docs/self-hosting/docker). Pin a specific version for reproducible deployments:
+  `ghcr.io/dork-labs/dorkos:0.12.0`.
 </Callout>
 
 </Tab>
@@ -237,7 +238,8 @@ Open the DorkOS plugin settings and enter your Anthropic API key.
 </Steps>
 
 <Callout type="warn">
-  The Obsidian plugin requires Node.js 18+ installed on your system. It runs the same Claude Agent SDK as the CLI but in-process via the DirectTransport adapter — no network hop.
+  The Obsidian plugin requires Node.js 18+ installed on your system. It runs the same Claude Agent
+  SDK as the CLI but in-process via the DirectTransport adapter — no network hop.
 </Callout>
 
 </Tab>
@@ -389,19 +391,20 @@ Restart the running server after rebuilding. Database migrations run automatical
 <Callout type="info">
   If an update causes issues, pin a specific version to roll back:
 
-  ```bash tab="npm"
-  npm install -g dorkos@0.11.0
-  ```
+```bash tab="npm"
+npm install -g dorkos@0.11.0
+```
 
-  ```bash tab="Homebrew"
-  brew install dorkos-ai/tap/dorkos@0.11.0
-  ```
+```bash tab="Homebrew"
+brew install dorkos-ai/tap/dorkos@0.11.0
+```
 
-  ```bash tab="Docker"
-  docker pull ghcr.io/dork-labs/dorkos:0.11.0
-  ```
+```bash tab="Docker"
+docker pull ghcr.io/dork-labs/dorkos:0.11.0
+```
 
-  Replace `0.11.0` with the version you want. Available versions are listed on [npm](https://www.npmjs.com/package/dorkos?activeTab=versions) and [GitHub Releases](https://github.com/dork-labs/dorkos/releases).
+Replace `0.11.0` with the version you want. Available versions are listed on [npm](https://www.npmjs.com/package/dorkos?activeTab=versions) and [GitHub Releases](https://github.com/dork-labs/dorkos/releases).
+
 </Callout>
 
 ## Next Steps

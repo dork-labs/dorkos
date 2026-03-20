@@ -86,9 +86,13 @@ describe('ToolCallCard truncation', () => {
     const longProgress = 'p'.repeat(6000);
     render(
       <ToolCallCard
-        toolCall={makeToolCall({ progressOutput: longProgress, result: undefined, status: 'running' })}
+        toolCall={makeToolCall({
+          progressOutput: longProgress,
+          result: undefined,
+          status: 'running',
+        })}
         defaultExpanded
-      />,
+      />
     );
 
     const pre = screen.getByText(/^p+$/);
@@ -100,9 +104,13 @@ describe('ToolCallCard truncation', () => {
     const shortProgress = 'progress output';
     render(
       <ToolCallCard
-        toolCall={makeToolCall({ progressOutput: shortProgress, result: undefined, status: 'running' })}
+        toolCall={makeToolCall({
+          progressOutput: shortProgress,
+          result: undefined,
+          status: 'running',
+        })}
         defaultExpanded
-      />,
+      />
     );
 
     expect(screen.getByText(shortProgress)).toBeInTheDocument();
@@ -113,20 +121,14 @@ describe('ToolCallCard truncation', () => {
 describe('ToolCallCard HookRow', () => {
   it('renders hook name when hooks are present', () => {
     render(
-      <ToolCallCard
-        toolCall={makeToolCall({ hooks: [makeHook({ hookName: 'pre-commit' })] })}
-      />,
+      <ToolCallCard toolCall={makeToolCall({ hooks: [makeHook({ hookName: 'pre-commit' })] })} />
     );
 
     expect(screen.getByText('pre-commit')).toBeInTheDocument();
   });
 
   it('shows a spinner for a running hook', () => {
-    render(
-      <ToolCallCard
-        toolCall={makeToolCall({ hooks: [makeHook({ status: 'running' })] })}
-      />,
-    );
+    render(<ToolCallCard toolCall={makeToolCall({ hooks: [makeHook({ status: 'running' })] })} />);
 
     const spinner = document.querySelector('.animate-spin');
     expect(spinner).toBeInTheDocument();
@@ -136,7 +138,7 @@ describe('ToolCallCard HookRow', () => {
     render(
       <ToolCallCard
         toolCall={makeToolCall({ hooks: [makeHook({ status: 'success', hookName: 'lint' })] })}
-      />,
+      />
     );
 
     const hookName = screen.getByText('lint');
@@ -147,9 +149,11 @@ describe('ToolCallCard HookRow', () => {
     render(
       <ToolCallCard
         toolCall={makeToolCall({
-          hooks: [makeHook({ status: 'error', hookName: 'type-check', stderr: 'Type error found' })],
+          hooks: [
+            makeHook({ status: 'error', hookName: 'type-check', stderr: 'Type error found' }),
+          ],
         })}
-      />,
+      />
     );
 
     const hookName = screen.getByText('type-check');
@@ -163,7 +167,7 @@ describe('ToolCallCard HookRow', () => {
         toolCall={makeToolCall({
           hooks: [makeHook({ status: 'error', stderr: 'fatal: type mismatch' })],
         })}
-      />,
+      />
     );
 
     expect(screen.getByText('fatal: type mismatch')).toBeInTheDocument();
@@ -175,7 +179,7 @@ describe('ToolCallCard HookRow', () => {
         toolCall={makeToolCall({
           hooks: [makeHook({ status: 'success', hookName: 'lint', stderr: 'warning: unused var' })],
         })}
-      />,
+      />
     );
 
     // Output not visible before click
@@ -186,17 +190,13 @@ describe('ToolCallCard HookRow', () => {
   });
 
   it('does not render hook section when hooks array is empty', () => {
-    const { container } = render(
-      <ToolCallCard toolCall={makeToolCall({ hooks: [] })} />,
-    );
+    const { container } = render(<ToolCallCard toolCall={makeToolCall({ hooks: [] })} />);
 
     expect(container.querySelector('.border-border\\/50')).not.toBeInTheDocument();
   });
 
   it('does not render hook section when hooks is undefined', () => {
-    const { container } = render(
-      <ToolCallCard toolCall={makeToolCall({ hooks: undefined })} />,
-    );
+    const { container } = render(<ToolCallCard toolCall={makeToolCall({ hooks: undefined })} />);
 
     expect(container.querySelector('.border-border\\/50')).not.toBeInTheDocument();
   });

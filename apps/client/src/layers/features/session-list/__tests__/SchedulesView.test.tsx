@@ -71,7 +71,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 }
 
 /** Minimal schedule fixture with required fields filled. */
-function makeSchedule(overrides: Partial<PulseSchedule> & { id: string; name: string }): PulseSchedule {
+function makeSchedule(
+  overrides: Partial<PulseSchedule> & { id: string; name: string }
+): PulseSchedule {
   return {
     status: 'active',
     enabled: true,
@@ -96,9 +98,33 @@ describe('SchedulesView', () => {
     mockActiveRunCount.mockReturnValue({ data: 0 });
     mockPresets.mockReturnValue({
       data: [
-        { id: 'health-check', name: 'Health Check', description: 'Desc', prompt: 'Prompt', cron: '0 8 * * 1', timezone: 'UTC', category: 'maintenance' },
-        { id: 'dependency-audit', name: 'Dependency Audit', description: 'Desc', prompt: 'Prompt', cron: '0 9 * * 1', timezone: 'UTC', category: 'security' },
-        { id: 'docs-sync', name: 'Docs Sync', description: 'Desc', prompt: 'Prompt', cron: '0 10 * * *', timezone: 'UTC', category: 'documentation' },
+        {
+          id: 'health-check',
+          name: 'Health Check',
+          description: 'Desc',
+          prompt: 'Prompt',
+          cron: '0 8 * * 1',
+          timezone: 'UTC',
+          category: 'maintenance',
+        },
+        {
+          id: 'dependency-audit',
+          name: 'Dependency Audit',
+          description: 'Desc',
+          prompt: 'Prompt',
+          cron: '0 9 * * 1',
+          timezone: 'UTC',
+          category: 'security',
+        },
+        {
+          id: 'docs-sync',
+          name: 'Docs Sync',
+          description: 'Desc',
+          prompt: 'Prompt',
+          cron: '0 10 * * *',
+          timezone: 'UTC',
+          category: 'documentation',
+        },
       ],
     });
   });
@@ -218,9 +244,7 @@ describe('SchedulesView', () => {
 
   it('shows empty state when agentId is provided but no schedules match', () => {
     mockSchedules.mockReturnValue({
-      data: [
-        makeSchedule({ id: 's1', name: 'Other Agent Task', agentId: 'agent-b' }),
-      ],
+      data: [makeSchedule({ id: 's1', name: 'Other Agent Task', agentId: 'agent-b' })],
     });
     render(<SchedulesView toolStatus="enabled" agentId="agent-a" />, { wrapper: Wrapper });
     expect(screen.getByText('No schedules yet.')).toBeInTheDocument();

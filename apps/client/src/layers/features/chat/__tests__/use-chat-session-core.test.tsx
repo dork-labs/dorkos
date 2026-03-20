@@ -274,14 +274,14 @@ describe('useChatSession — core', () => {
         _content: string,
         _onEvent: (event: StreamEvent) => void,
         signal?: AbortSignal,
-        _cwd?: string,
+        _cwd?: string
       ) => {
         return new Promise<void>((resolve, reject) => {
           signal?.addEventListener('abort', () => {
             reject(new DOMException('The operation was aborted.', 'AbortError'));
           });
         });
-      },
+      }
     );
     const transport = createMockTransport({ sendMessage });
 
@@ -378,7 +378,7 @@ describe('useChatSession — core', () => {
       expect.any(Function),
       expect.any(AbortSignal),
       '/test/cwd',
-      expect.objectContaining({ clientMessageId: expect.any(String) }),
+      expect.objectContaining({ clientMessageId: expect.any(String) })
     );
   });
 
@@ -427,14 +427,14 @@ describe('useChatSession — core', () => {
           _content: string,
           _onEvent: (event: StreamEvent) => void,
           signal?: AbortSignal,
-          _cwd?: string,
+          _cwd?: string
         ) => {
           return new Promise<void>((resolve, reject) => {
             signal?.addEventListener('abort', () => {
               reject(new DOMException('The operation was aborted.', 'AbortError'));
             });
           });
-        },
+        }
       );
       const transport = createMockTransport({ sendMessage });
 
@@ -496,7 +496,7 @@ describe('useChatSession — core', () => {
           _sessionId: string,
           _content: string,
           onEvent: (event: StreamEvent) => void,
-          signal?: AbortSignal,
+          signal?: AbortSignal
         ) => {
           fireEvents = (events: StreamEvent[]) => {
             for (const event of events) onEvent(event);
@@ -507,7 +507,7 @@ describe('useChatSession — core', () => {
             });
             (sendMessage as unknown as { _resolve: () => void })._resolve = resolve;
           });
-        },
+        }
       );
       const transport = createMockTransport({ sendMessage });
 

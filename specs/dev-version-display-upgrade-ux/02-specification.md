@@ -23,6 +23,7 @@ Fix the dev-mode version bug where the server reports `0.0.0` and the status bar
 In dev mode (`pnpm dev`), the server starts via `tsx watch` without esbuild bundling. The `__CLI_VERSION__` constant is never injected, so `apps/server/src/lib/version.ts` falls back to reading `apps/server/package.json` — which is intentionally `0.0.0` (non-published workspace package). The update-checker unconditionally fetches npm registry and returns the latest published version (e.g., `0.9.0`). The client sees `0.0.0 < 0.9.0` and renders "Upgrade available" — a false positive that appears every dev session.
 
 Secondary issues:
+
 - The npm registry fetch in dev mode is unnecessary network traffic
 - Users cannot dismiss upgrade notifications for versions they choose to skip
 - The Settings ServerTab duplicates `isNewer()` logic from VersionItem
@@ -151,15 +152,17 @@ router.get('/', async (_req, res) => {
 Add `isDevMode` to `ServerConfigSchema`:
 
 ```typescript
-export const ServerConfigSchema = z
-  .object({
-    version: z.string().openapi({ description: 'Current server version' }),
-    latestVersion: z.string().nullable()
-      .openapi({ description: 'Latest available version from npm, or null if dev mode or unknown' }),
-    isDevMode: z.boolean()
-      .openapi({ description: 'Whether the server is running a development build' }),
-    // ...rest unchanged
-  })
+export const ServerConfigSchema = z.object({
+  version: z.string().openapi({ description: 'Current server version' }),
+  latestVersion: z
+    .string()
+    .nullable()
+    .openapi({ description: 'Latest available version from npm, or null if dev mode or unknown' }),
+  isDevMode: z
+    .boolean()
+    .openapi({ description: 'Whether the server is running a development build' }),
+  // ...rest unchanged
+});
 ```
 
 **File:** `packages/shared/src/config-schema.ts`
@@ -290,15 +293,16 @@ if (showStatusBarVersion && serverConfig) {
 Note: The `dismissedUpgradeVersions` will need to be read from the config response. Since config is fetched via `transport.getConfig()`, the dismiss list needs to be part of the config response or fetched from the `ui` config section. The simplest approach: read from the `serverConfig` which already includes the full config, or add a separate read. Since `GET /api/config` currently doesn't return `UserConfig` (it returns `ServerConfig` — runtime info), the dismiss list should be added to the `ServerConfig` response from the server by reading `configManager.get('ui')?.dismissedUpgradeVersions`.
 
 **Updated `routes/config.ts`:**
+
 ```typescript
 res.json({
   // ...existing fields...
-  dismissedUpgradeVersions:
-    configManager.get('ui')?.dismissedUpgradeVersions ?? [],
+  dismissedUpgradeVersions: configManager.get('ui')?.dismissedUpgradeVersions ?? [],
 });
 ```
 
 And add to `ServerConfigSchema`:
+
 ```typescript
 dismissedUpgradeVersions: z.array(z.string())
   .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),
@@ -358,8 +362,9 @@ Extract `isNewer()` and `isFeatureUpdate()` from VersionItem into a shared utili
 **File:** `turbo.json`
 
 Rename in `globalPassThroughEnv`:
+
 ```json
-"DORKOS_VERSION_OVERRIDE"  // was "DORKOS_VERSION"
+"DORKOS_VERSION_OVERRIDE" // was "DORKOS_VERSION"
 ```
 
 **File:** `contributing/configuration.md`

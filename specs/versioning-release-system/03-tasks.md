@@ -21,9 +21,11 @@ status: decomposed
 **Objective**: Establish the single source of truth for the DorkOS version.
 
 **Files to create:**
+
 - `VERSION` at repo root
 
 **Files to modify:**
+
 - `specs/manifest.json` — update spec status to `implementing`
 
 **Implementation:**
@@ -37,6 +39,7 @@ printf "0.1.0" > VERSION
 Edit `specs/manifest.json`: change the `versioning-release-system` entry's `status` from `"specified"` to `"implementing"`.
 
 **Acceptance criteria:**
+
 - `VERSION` file exists at repo root
 - `cat VERSION` outputs exactly `0.1.0`
 - Spec manifest shows `implementing` status
@@ -53,18 +56,21 @@ Edit `specs/manifest.json`: change the `versioning-release-system` entry's `stat
 **Implementation:**
 
 1. Identify the correct commit SHA:
+
 ```bash
 npm info dorkos time --json  # Find publish date
 git log --oneline --after="<date>" --before="<date+1day>"  # Correlate
 ```
 
 2. Create annotated tag:
+
 ```bash
 git tag -a v0.1.0 -m "Release v0.1.0" <commit-sha>
 git push origin v0.1.0
 ```
 
 **Acceptance criteria:**
+
 - `v0.1.0` annotated tag exists on the correct commit
 - `git describe --tags` returns `v0.1.0` or `v0.1.0-N-gSHA`
 - Tag is pushed to origin
@@ -80,6 +86,7 @@ git push origin v0.1.0
 **Objective**: Implement npm registry version check with file-based 24h caching and 3s timeout.
 
 **Files to create:**
+
 - `packages/cli/src/update-check.ts`
 
 **Implementation:**
@@ -134,10 +141,13 @@ export async function checkForUpdate(currentVersion: string): Promise<string | n
 
     // 3. Write cache
     await mkdir(join(homedir(), '.dork', 'cache'), { recursive: true });
-    await writeFile(CACHE_PATH, JSON.stringify({
-      latestVersion: data.version,
-      checkedAt: Date.now(),
-    }));
+    await writeFile(
+      CACHE_PATH,
+      JSON.stringify({
+        latestVersion: data.version,
+        checkedAt: Date.now(),
+      })
+    );
 
     return isNewer(data.version, currentVersion) ? data.version : null;
   } catch {
@@ -160,6 +170,7 @@ export function isNewer(a: string, b: string): boolean {
 ```
 
 Key design decisions:
+
 - File-based cache at `~/.dork/cache/update-check.json` (survives process restarts)
 - 24-hour cache TTL (CLI is short-lived, don't check every run)
 - 3-second fetch timeout (don't delay startup)
@@ -167,6 +178,7 @@ Key design decisions:
 - `isNewer` exported for direct testing
 
 **Acceptance criteria:**
+
 - Module exports `checkForUpdate(currentVersion: string): Promise<string | null>`
 - Module exports `isNewer(a: string, b: string): boolean`
 - Cache is read/written to `~/.dork/cache/update-check.json`
@@ -182,6 +194,7 @@ Key design decisions:
 **Objective**: Display version, local URL, and network URL after server starts. Fire-and-forget update check with boxed notification.
 
 **Files to modify:**
+
 - `packages/cli/src/cli.ts`
 
 **Implementation:**
@@ -220,27 +233,30 @@ if (networkUrl) {
 console.log('');
 
 // Non-blocking update check (fire-and-forget)
-checkForUpdate(__CLI_VERSION__).then((latestVersion) => {
-  if (latestVersion) {
-    const msg = `Update available: ${__CLI_VERSION__} → ${latestVersion}`;
-    const cmd = 'Run npm update -g dorkos to update';
-    const width = Math.max(msg.length, cmd.length) + 6;
-    const pad = (s: string) => `│   ${s}${' '.repeat(width - s.length - 6)}   │`;
-    console.log('');
-    console.log(`┌${'─'.repeat(width - 2)}┐`);
-    console.log(pad(msg));
-    console.log(pad(cmd));
-    console.log(`└${'─'.repeat(width - 2)}┘`);
-    console.log('');
-  }
-}).catch(() => {
-  // Silently ignore — never interrupt server
-});
+checkForUpdate(__CLI_VERSION__)
+  .then((latestVersion) => {
+    if (latestVersion) {
+      const msg = `Update available: ${__CLI_VERSION__} → ${latestVersion}`;
+      const cmd = 'Run npm update -g dorkos to update';
+      const width = Math.max(msg.length, cmd.length) + 6;
+      const pad = (s: string) => `│   ${s}${' '.repeat(width - s.length - 6)}   │`;
+      console.log('');
+      console.log(`┌${'─'.repeat(width - 2)}┐`);
+      console.log(pad(msg));
+      console.log(pad(cmd));
+      console.log(`└${'─'.repeat(width - 2)}┘`);
+      console.log('');
+    }
+  })
+  .catch(() => {
+    // Silently ignore — never interrupt server
+  });
 ```
 
 2. Move the `import` for `checkForUpdate` and `networkInterfaces` to the top of the file (with other imports).
 
 **Banner output example:**
+
 ```
   DorkOS v0.1.0
   Local:   http://localhost:4242
@@ -248,6 +264,7 @@ checkForUpdate(__CLI_VERSION__).then((latestVersion) => {
 ```
 
 **Update notification example (if newer version exists):**
+
 ```
 ┌─────────────────────────────────────────┐
 │   Update available: 0.1.0 → 0.2.0      │
@@ -256,6 +273,7 @@ checkForUpdate(__CLI_VERSION__).then((latestVersion) => {
 ```
 
 **Acceptance criteria:**
+
 - `dorkos` shows startup banner with version and Local URL after server starts
 - Network URL is shown if a non-internal IPv4 interface exists, omitted otherwise
 - Update check fires after banner, does not block server startup
@@ -271,6 +289,7 @@ checkForUpdate(__CLI_VERSION__).then((latestVersion) => {
 **Objective**: Full test coverage for the CLI update check module.
 
 **Files to create:**
+
 - `packages/cli/src/__tests__/update-check.test.ts`
 
 **Implementation:**
@@ -332,10 +351,12 @@ describe('checkForUpdate', () => {
   });
 
   it('returns cached result when cache is fresh', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-      latestVersion: '0.2.0',
-      checkedAt: Date.now() - 1000, // 1 second ago
-    }));
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        latestVersion: '0.2.0',
+        checkedAt: Date.now() - 1000, // 1 second ago
+      })
+    );
 
     const result = await checkForUpdate('0.1.0');
     expect(result).toBe('0.2.0');
@@ -343,20 +364,24 @@ describe('checkForUpdate', () => {
   });
 
   it('returns null from cache when current version is up to date', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-      latestVersion: '0.1.0',
-      checkedAt: Date.now() - 1000,
-    }));
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        latestVersion: '0.1.0',
+        checkedAt: Date.now() - 1000,
+      })
+    );
 
     const result = await checkForUpdate('0.1.0');
     expect(result).toBeNull();
   });
 
   it('fetches from registry when cache is stale', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-      latestVersion: '0.1.0',
-      checkedAt: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
-    }));
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        latestVersion: '0.1.0',
+        checkedAt: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
+      })
+    );
     vi.mocked(mkdir).mockResolvedValue(undefined);
     vi.mocked(writeFile).mockResolvedValue(undefined);
     mockFetch.mockResolvedValue({
@@ -442,6 +467,7 @@ describe('checkForUpdate', () => {
 ```
 
 **Test cases (10 total):**
+
 1. `isNewer` — major version higher
 2. `isNewer` — minor version higher
 3. `isNewer` — patch version higher
@@ -459,6 +485,7 @@ describe('checkForUpdate', () => {
 15. `checkForUpdate` — writes cache after fetch
 
 **Acceptance criteria:**
+
 - All tests pass with `npx vitest run packages/cli/src/__tests__/update-check.test.ts`
 - No real network or file I/O (all mocked)
 - Tests cover cache hit, cache miss, network failure, version comparison
@@ -474,6 +501,7 @@ describe('checkForUpdate', () => {
 **Objective**: Provide latest version info to the config endpoint via an in-memory cached npm registry check.
 
 **Files to create:**
+
 - `apps/server/src/services/update-checker.ts`
 
 **Implementation:**
@@ -539,6 +567,7 @@ export function resetCache(): void {
 ```
 
 **Acceptance criteria:**
+
 - Module exports `getLatestVersion(): Promise<string | null>`
 - In-memory cache with 1-hour TTL
 - 5-second fetch timeout
@@ -555,6 +584,7 @@ export function resetCache(): void {
 **Objective**: Wire the update checker into the API response, fix the server version to use the correct source.
 
 **Files to modify:**
+
 - `packages/shared/src/schemas.ts` — add `latestVersion` to `ServerConfigSchema`
 - `apps/server/src/routes/config.ts` — include `latestVersion` in response, fix version source
 - `apps/server/src/routes/health.ts` — fix version to not read from server package.json (0.0.0)
@@ -570,7 +600,10 @@ Add `latestVersion` field to `ServerConfigSchema`:
 export const ServerConfigSchema = z
   .object({
     version: z.string().openapi({ description: 'Current server version' }),
-    latestVersion: z.string().nullable().openapi({ description: 'Latest available version from npm, or null if unknown' }),
+    latestVersion: z
+      .string()
+      .nullable()
+      .openapi({ description: 'Latest available version from npm, or null if unknown' }),
     port: z.number().int(),
     uptime: z.number(),
     workingDirectory: z.string(),
@@ -611,14 +644,15 @@ import { getLatestVersion } from '../services/update-checker.js';
 
 // Add at top:
 declare const __CLI_VERSION__: string;
-const SERVER_VERSION = typeof __CLI_VERSION__ !== 'undefined'
-  ? __CLI_VERSION__
-  : (() => {
-      // Dev mode fallback: read from root package.json
-      const { createRequire } = await import('module');
-      const req = createRequire(import.meta.url);
-      return (req('../../../package.json') as { version: string }).version;
-    })();
+const SERVER_VERSION =
+  typeof __CLI_VERSION__ !== 'undefined'
+    ? __CLI_VERSION__
+    : (() => {
+        // Dev mode fallback: read from root package.json
+        const { createRequire } = await import('module');
+        const req = createRequire(import.meta.url);
+        return (req('../../../package.json') as { version: string }).version;
+      })();
 ```
 
 Note: The dev-mode fallback needs careful handling since the server isn't bundled in dev. A simpler approach: keep the `createRequire` pattern for dev, but read from `../../package.json` (the root package.json which the release command keeps in sync). For the bundled build, `__CLI_VERSION__` takes precedence.
@@ -676,6 +710,7 @@ if (typeof __CLI_VERSION__ !== 'undefined') {
 ```
 
 **Acceptance criteria:**
+
 - `ServerConfigSchema` includes `latestVersion: z.string().nullable()`
 - `GET /api/config` returns `latestVersion` field (string or null)
 - `GET /api/health` returns correct version (not `0.0.0`)
@@ -692,9 +727,11 @@ if (typeof __CLI_VERSION__ !== 'undefined') {
 **Objective**: Add a version badge to the status bar with update indicator.
 
 **Files to create:**
+
 - `apps/client/src/layers/features/status/ui/VersionItem.tsx`
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/status/ui/StatusLine.tsx` — add VersionItem as last entry
 - `apps/client/src/layers/features/status/index.ts` — export VersionItem
 - `apps/client/src/layers/shared/model/app-store.ts` — add `showStatusBarVersion` toggle
@@ -730,7 +767,7 @@ export function VersionItem({ version, latestVersion }: VersionItemProps) {
         className={cn(
           'cursor-default text-xs',
           hasUpdate
-            ? 'text-amber-600 dark:text-amber-400 cursor-pointer hover:underline'
+            ? 'cursor-pointer text-amber-600 hover:underline dark:text-amber-400'
             : 'text-muted-foreground'
         )}
         onClick={() => hasUpdate && setShowTooltip(!showTooltip)}
@@ -741,14 +778,18 @@ export function VersionItem({ version, latestVersion }: VersionItemProps) {
 
       {showTooltip && hasUpdate && (
         <div
-          className="bg-popover text-popover-foreground border-border absolute bottom-full right-0 z-50 mb-2 w-64 rounded-md border p-3 text-xs shadow-md"
+          className="bg-popover text-popover-foreground border-border absolute right-0 bottom-full z-50 mb-2 w-64 rounded-md border p-3 text-xs shadow-md"
           role="tooltip"
         >
           <p className="font-medium">
             Update available: v{version} → v{latestVersion}
           </p>
           <p className="text-muted-foreground mt-1">
-            Run <code className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">npm update -g dorkos</code> to update
+            Run{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">
+              npm update -g dorkos
+            </code>{' '}
+            to update
           </p>
         </div>
       )}
@@ -769,6 +810,7 @@ function isNewer(a: string, b: string): boolean {
 **2. App store** (`apps/client/src/layers/shared/model/app-store.ts`):
 
 Add `showStatusBarVersion` boolean toggle following the existing pattern:
+
 - Add to `AppState` interface: `showStatusBarVersion: boolean;`
 - Add to `BOOL_KEYS`: `showStatusBarVersion: 'dorkos-show-status-bar-version'`
 - Add to `BOOL_DEFAULTS`: `showStatusBarVersion: true`
@@ -801,6 +843,7 @@ Note: StatusLine needs access to the server config. This can come from a hook (`
 Add: `export { VersionItem } from './ui/VersionItem';`
 
 **Acceptance criteria:**
+
 - VersionItem renders `v{version}` when no update available
 - VersionItem renders `↑ v{latestVersion}` with accent color when update exists
 - Clicking update badge shows tooltip with instructions
@@ -817,6 +860,7 @@ Add: `export { VersionItem } from './ui/VersionItem';`
 **Objective**: Show a colored update notice row when a newer version is available.
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/settings/ui/ServerTab.tsx`
 
 **Implementation:**
@@ -824,21 +868,29 @@ Add: `export { VersionItem } from './ui/VersionItem';`
 After the version `ConfigRow` (line 27), add conditional update notice:
 
 ```tsx
-<ConfigRow label="Version" value={config.version} />
+<ConfigRow label="Version" value={config.version} />;
 
-{/* Update notice — shown when latestVersion is newer */}
-{config.latestVersion && isNewer(config.latestVersion, config.version) && (
-  <div className="bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 -mx-1 rounded border px-2 py-1.5">
-    <div className="flex items-center justify-between">
-      <span className="text-amber-800 dark:text-amber-200 text-sm font-medium">
-        Update available: v{config.latestVersion}
-      </span>
+{
+  /* Update notice — shown when latestVersion is newer */
+}
+{
+  config.latestVersion && isNewer(config.latestVersion, config.version) && (
+    <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+          Update available: v{config.latestVersion}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+        Run{' '}
+        <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[10px] dark:bg-amber-900/50">
+          npm update -g dorkos
+        </code>{' '}
+        to update
+      </p>
     </div>
-    <p className="text-amber-700 dark:text-amber-300 mt-0.5 text-xs">
-      Run <code className="bg-amber-100 dark:bg-amber-900/50 rounded px-1 py-0.5 font-mono text-[10px]">npm update -g dorkos</code> to update
-    </p>
-  </div>
-)}
+  );
+}
 ```
 
 Add the `isNewer` helper function to the file (same implementation as in VersionItem):
@@ -856,6 +908,7 @@ function isNewer(a: string, b: string): boolean {
 Note: If `isNewer` is needed in 3+ places, consider extracting to `packages/shared/src/version-utils.ts`. For now, 2 places is acceptable (VersionItem + ServerTab).
 
 **Acceptance criteria:**
+
 - Settings > Server tab shows colored update notice when `latestVersion` is newer
 - Notice includes version and `npm update -g dorkos` command
 - Notice uses amber/warning colors (not alarming)
@@ -870,6 +923,7 @@ Note: If `isNewer` is needed in 3+ places, consider extracting to `packages/shar
 **Objective**: Unit tests for the server-side update checker service.
 
 **Files to create:**
+
 - `apps/server/src/services/__tests__/update-checker.test.ts`
 
 **Implementation:**
@@ -972,6 +1026,7 @@ describe('update-checker', () => {
 ```
 
 **Test cases (6 total):**
+
 1. First call fetches and caches
 2. Returns cached value within TTL
 3. Re-fetches after TTL expires
@@ -980,6 +1035,7 @@ describe('update-checker', () => {
 6. Returns stale cache on non-ok response
 
 **Acceptance criteria:**
+
 - All tests pass with `npx vitest run apps/server/src/services/__tests__/update-checker.test.ts`
 - No real network I/O (fetch is mocked)
 - Tests verify caching behavior, TTL, and error handling
@@ -993,6 +1049,7 @@ describe('update-checker', () => {
 **Objective**: UI tests for the version badge component.
 
 **Files to create:**
+
 - `apps/client/src/layers/features/status/__tests__/VersionItem.test.tsx`
 
 **Implementation:**
@@ -1009,16 +1066,19 @@ import { VersionItem } from '../ui/VersionItem';
 
 // Mock motion/react to render plain elements
 vi.mock('motion/react', () => ({
-  motion: new Proxy({}, {
-    get: (_target, prop) => {
-      if (typeof prop === 'string') {
-        return ({ children, ...props }: any) => {
-          const Tag = prop as keyof JSX.IntrinsicElements;
-          return <Tag {...props}>{children}</Tag>;
-        };
-      }
-    },
-  }),
+  motion: new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (typeof prop === 'string') {
+          return ({ children, ...props }: any) => {
+            const Tag = prop as keyof JSX.IntrinsicElements;
+            return <Tag {...props}>{children}</Tag>;
+          };
+        }
+      },
+    }
+  ),
   AnimatePresence: ({ children }: any) => children,
 }));
 
@@ -1069,6 +1129,7 @@ describe('VersionItem', () => {
 ```
 
 **Test cases (7 total):**
+
 1. Renders current version when `latestVersion` is null
 2. Renders current version when `latestVersion` equals `version`
 3. Renders update indicator when `latestVersion` is newer
@@ -1078,6 +1139,7 @@ describe('VersionItem', () => {
 7. Correct aria-label for current version
 
 **Acceptance criteria:**
+
 - All tests pass
 - Tests verify visual output, click interaction, and accessibility
 - Motion library is mocked
@@ -1093,6 +1155,7 @@ describe('VersionItem', () => {
 **Objective**: Complete rewrite of `.claude/commands/system/release.md` with VERSION file support, correct GitHub URLs, npm publish, and GitHub Release creation.
 
 **Files to modify:**
+
 - `.claude/commands/system/release.md` — complete rewrite
 
 **Implementation:**
@@ -1116,12 +1179,14 @@ The release command must be completely rewritten to:
    - Use the `/writing-changelogs` skill for user-friendly language
 
 7. **Add Phase 5 npm publish step**:
+
    ```
    AskUserQuestion: "Publish to npm?"
    If yes: npm publish -w packages/cli
    ```
 
 8. **Fix Phase 5 file updates**: VERSION sync flow:
+
    ```bash
    # 5.2: Update VERSION
    printf "0.6.0" > VERSION
@@ -1135,6 +1200,7 @@ The release command must be completely rewritten to:
    ```
 
 9. **Fix Phase 6 report URLs**:
+
    ```
    - npm: https://www.npmjs.com/package/dorkos
    - Tag: https://github.com/dork-labs/dorkos/releases/tag/v{version}
@@ -1142,6 +1208,7 @@ The release command must be completely rewritten to:
    ```
 
 10. **Update commit message**:
+
     ```
     chore(release): v{version}
 
@@ -1149,6 +1216,7 @@ The release command must be completely rewritten to:
     ```
 
 Key structural changes:
+
 - Phase 1: Parse arguments (unchanged)
 - Phase 2: Pre-flight checks — use `cat VERSION` and `git log` instead of Python script
 - Phase 3: Version analysis — subagent for auto-detect (unchanged approach)
@@ -1157,6 +1225,7 @@ Key structural changes:
 - Phase 6: Report — fix all URLs to dork-labs/dorkos, add npm URL
 
 **Acceptance criteria:**
+
 - Command reads version from `VERSION` file (not package.json)
 - Command syncs VERSION to both package.json files during release
 - All GitHub URLs reference `dork-labs/dorkos`
@@ -1189,21 +1258,26 @@ Key structural changes:
 ## Parallel Execution Opportunities
 
 After Task 1.1 completes, these can start simultaneously:
+
 - **Task 1.2** (git tag — manual)
 - **Task 2.1** (CLI update check module)
 - **Task 3.1** (server update checker)
 - **Task 4.1** (release command rewrite)
 
 After Task 2.1:
+
 - **Task 2.2** and **Task 2.3** can run in parallel
 
 After Task 3.1:
+
 - **Task 3.2** and **Task 3.5** can run in parallel
 
 After Task 3.2:
+
 - **Task 3.3** and **Task 3.4** can run in parallel
 
 After Task 3.3:
+
 - **Task 3.6** can start
 
 ## Critical Path

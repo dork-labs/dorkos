@@ -59,7 +59,7 @@ export function buildTopologyElements(
   bindings: AdapterBinding[] | undefined,
   bindingCountByAdapter: Map<string, number>,
   handleDeleteBinding: (edgeId: string) => void,
-  callbacks: AgentNodeCallbacks,
+  callbacks: AgentNodeCallbacks
 ): TopologyElements {
   if (!namespaces.length) {
     return {
@@ -76,8 +76,7 @@ export function buildTopologyElements(
 
   // --- Adapter nodes (left side) ---
   // Filter out CCA — it's an internal runtime, not a relay topology node.
-  const externalAdapters =
-    adapters?.filter((a) => a.config.type !== 'claude-code') ?? [];
+  const externalAdapters = adapters?.filter((a) => a.config.type !== 'claude-code') ?? [];
 
   if (relayEnabled && externalAdapters.length > 0) {
     for (const adapter of externalAdapters) {
@@ -171,16 +170,13 @@ export function buildTopologyElements(
                 maxCallsPerHour: agent.budget.maxCallsPerHour,
               }
             : undefined,
-          behavior: agent.behavior
-            ? { responseMode: agent.behavior.responseMode }
-            : undefined,
+          behavior: agent.behavior ? { responseMode: agent.behavior.responseMode } : undefined,
           color: typedAgent.color ?? null,
           emoji: typedAgent.icon ?? null,
           projectPath: typedAgent.projectPath ?? '',
           onOpenSettings: (id: string) =>
             callbacks.onOpenSettings?.(id, typedAgent.projectPath ?? ''),
-          onViewHealth: (id: string) =>
-            callbacks.onSelectAgent?.(id, typedAgent.projectPath ?? ''),
+          onViewHealth: (id: string) => callbacks.onSelectAgent?.(id, typedAgent.projectPath ?? ''),
           onOpenChat: (_id: string, path: string) => callbacks.onOpenChat?.(path),
         } satisfies AgentNodeData,
       };

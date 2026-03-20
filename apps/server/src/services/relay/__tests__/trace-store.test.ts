@@ -231,7 +231,7 @@ describe('TraceStore', () => {
         telegramEvents.every((e) => {
           const m = JSON.parse(e.metadata!);
           return m.adapterId === 'telegram-1';
-        }),
+        })
       ).toBe(true);
     });
 
@@ -317,19 +317,34 @@ describe('TraceStore', () => {
         messageId: 'msg-001',
         traceId: 'trace-001',
         subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '111', channelType: 'dm', displayName: 'Alice' },
+        metadata: {
+          adapterId: 'telegram-1',
+          chatId: '111',
+          channelType: 'dm',
+          displayName: 'Alice',
+        },
       });
       store.insertSpan({
         messageId: 'msg-002',
         traceId: 'trace-002',
         subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '111', channelType: 'dm', displayName: 'Alice' },
+        metadata: {
+          adapterId: 'telegram-1',
+          chatId: '111',
+          channelType: 'dm',
+          displayName: 'Alice',
+        },
       });
       store.insertSpan({
         messageId: 'msg-003',
         traceId: 'trace-003',
         subject: 'relay.human.telegram',
-        metadata: { adapterId: 'telegram-1', chatId: '222', channelType: 'group', displayName: 'Dev Team' },
+        metadata: {
+          adapterId: 'telegram-1',
+          chatId: '222',
+          channelType: 'group',
+          displayName: 'Dev Team',
+        },
       });
 
       const chats = store.getObservedChats('telegram-1');
@@ -462,7 +477,7 @@ describe('TraceStore', () => {
       });
 
       const rows = db.all<{ sent_at: string }>(
-        sql`SELECT sent_at FROM relay_traces WHERE message_id = 'ts-check'`,
+        sql`SELECT sent_at FROM relay_traces WHERE message_id = 'ts-check'`
       );
       expect(rows).toHaveLength(1);
 
@@ -484,7 +499,7 @@ describe('TraceStore', () => {
       store.updateSpan('ts-deliver', { status: 'delivered', deliveredAt });
 
       const rows = db.all<{ delivered_at: string }>(
-        sql`SELECT delivered_at FROM relay_traces WHERE message_id = 'ts-deliver'`,
+        sql`SELECT delivered_at FROM relay_traces WHERE message_id = 'ts-deliver'`
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].delivered_at).toBe(deliveredAt);
@@ -500,7 +515,7 @@ describe('TraceStore', () => {
 
       // These queries use the actual column names — would fail if columns used camelCase
       const rows = db.all<{ sent_at: string; delivered_at: string | null }>(
-        sql`SELECT sent_at, delivered_at FROM relay_traces WHERE message_id = 'col-check'`,
+        sql`SELECT sent_at, delivered_at FROM relay_traces WHERE message_id = 'col-check'`
       );
       expect(rows).toHaveLength(1);
       expect(typeof rows[0].sent_at).toBe('string');
@@ -520,7 +535,12 @@ describe('TraceStore', () => {
         messageId: 'msg-oc-1',
         traceId: 'trace-oc-1',
         subject: 'relay.agent.session-1',
-        metadata: { adapterId: 'telegram-1', chatId: '111', channelType: 'dm', displayName: 'Alice' },
+        metadata: {
+          adapterId: 'telegram-1',
+          chatId: '111',
+          channelType: 'dm',
+          displayName: 'Alice',
+        },
       });
 
       vi.setSystemTime(new Date('2026-03-10T11:00:00.000Z'));
@@ -528,7 +548,12 @@ describe('TraceStore', () => {
         messageId: 'msg-oc-2',
         traceId: 'trace-oc-2',
         subject: 'relay.agent.session-2',
-        metadata: { adapterId: 'telegram-1', chatId: '111', channelType: 'dm', displayName: 'Alice' },
+        metadata: {
+          adapterId: 'telegram-1',
+          chatId: '111',
+          channelType: 'dm',
+          displayName: 'Alice',
+        },
       });
 
       vi.setSystemTime(new Date('2026-03-10T12:00:00.000Z'));
@@ -536,7 +561,12 @@ describe('TraceStore', () => {
         messageId: 'msg-oc-3',
         traceId: 'trace-oc-3',
         subject: 'relay.agent.session-3',
-        metadata: { adapterId: 'telegram-1', chatId: '222', channelType: 'group', displayName: 'Dev Team' },
+        metadata: {
+          adapterId: 'telegram-1',
+          chatId: '222',
+          channelType: 'group',
+          displayName: 'Dev Team',
+        },
       });
 
       vi.useRealTimers();

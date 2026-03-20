@@ -31,7 +31,7 @@ export async function deny(
   deps: DenialDeps,
   filePath: string,
   reason?: string,
-  denier = DEFAULT_REGISTRAR,
+  denier = DEFAULT_REGISTRAR
 ): Promise<void> {
   deps.denialList.deny(filePath, 'manual', reason, denier);
 }

@@ -1,9 +1,20 @@
 ---
-title: "Streaming Message Integrity: Optimistic Update, ID Reconciliation, and Event-Sourcing Patterns"
+title: 'Streaming Message Integrity: Optimistic Update, ID Reconciliation, and Event-Sourcing Patterns'
 date: 2026-03-19
 type: implementation
 status: active
-tags: [chat, streaming, optimistic-ui, tanstack-query, SSE, deduplication, event-sourcing, id-reconciliation, message-integrity]
+tags:
+  [
+    chat,
+    streaming,
+    optimistic-ui,
+    tanstack-query,
+    SSE,
+    deduplication,
+    event-sourcing,
+    id-reconciliation,
+    message-integrity,
+  ]
 feature_slug: streaming-message-integrity
 searches_performed: 13
 sources_count: 28
@@ -52,6 +63,7 @@ Slack's architecture separates message identity into two layers:
   API calls reference.
 
 The reconciliation flow:
+
 ```
 User sends message
   → client creates temp bubble with client_msg_id UUID
@@ -97,7 +109,7 @@ onCacheEntryAdded: async (arg, { updateCachedData, cacheDataLoaded, cacheEntryRe
   };
   await cacheEntryRemoved;
   ws.close();
-}
+};
 ```
 
 The pattern: **initial fetch populates the cache; streaming updates patch it in-place**. There is
@@ -105,11 +117,13 @@ no post-stream replace because the streaming handler IS the cache update mechani
 architecturally equivalent to the proposed DorkOS solution's "skip the replace, let polling append."
 
 **Pros:**
+
 - Canonical pattern, actively maintained
 - No ID mismatch (streaming updates patch the same cache entry that history populated)
 - Works natively with `invalidateQueries` for refresh cycles
 
 **Cons:**
+
 - Requires restructuring so the SSE handler is the `queryFn`, not external React state
 - DorkOS's streaming state is intentionally in local React state (not TanStack Query cache) for
   streaming performance reasons — moving it to the cache would be a large refactor
@@ -151,7 +165,7 @@ onSettled: async () => {
   if (queryClient.isMutating() === 1) {
     await queryClient.invalidateQueries({ queryKey: ['messages'] });
   }
-}
+};
 ```
 
 **DorkOS mapping:** The streaming session is effectively a long-running mutation. The "skip
@@ -207,6 +221,7 @@ Projection (reducer):
 ### Real-World Example: Rapport (React/Redux/Elixir)
 
 Rapport, a real-time collaboration app, uses this pattern:
+
 - Phoenix (Elixir) pushes events over WebSocket channels
 - Redux actions are the client-side events (every SSE/WS message dispatches an action)
 - Redux reducers are the projections
@@ -217,19 +232,20 @@ action arrives, the reducer can apply deduplication logic centrally rather than 
 
 ### Event Sourcing vs Tagged-Dedup: Tradeoffs
 
-| Dimension | Event Sourcing | Tagged-Dedup (Proposed) |
-|---|---|---|
-| Structural change | Large — new event log type, reducer, projection layer | Minimal — add `_streaming` flag, update dedup logic |
-| Dedup approach | History events are filtered by log position | Tagged messages match server messages by role+content |
-| Error part preservation | Natural — events are never discarded | Explicit — client-only parts carried over on dedup match |
-| Future extensibility | Any new event type is trivially addable | Each new part type must be explicitly preserved in dedup |
-| Debuggability | Excellent — replay log to reproduce any state | Moderate — must trace flag state across renders |
-| Implementation risk | High — fundamental data model change | Low — additive, backwards-compatible |
-| Right for these two bugs | No — over-engineers for current need | Yes — targeted fix |
+| Dimension                | Event Sourcing                                        | Tagged-Dedup (Proposed)                                  |
+| ------------------------ | ----------------------------------------------------- | -------------------------------------------------------- |
+| Structural change        | Large — new event log type, reducer, projection layer | Minimal — add `_streaming` flag, update dedup logic      |
+| Dedup approach           | History events are filtered by log position           | Tagged messages match server messages by role+content    |
+| Error part preservation  | Natural — events are never discarded                  | Explicit — client-only parts carried over on dedup match |
+| Future extensibility     | Any new event type is trivially addable               | Each new part type must be explicitly preserved in dedup |
+| Debuggability            | Excellent — replay log to reproduce any state         | Moderate — must trace flag state across renders          |
+| Implementation risk      | High — fundamental data model change                  | Low — additive, backwards-compatible                     |
+| Right for these two bugs | No — over-engineers for current need                  | Yes — targeted fix                                       |
 
 ### When Event Sourcing Is Worth It
 
 Event sourcing on the client makes sense when:
+
 - Multiple event sources (SSE, WebSocket, polling, user actions) must all contribute to the same
   mutable state
 - Time-travel debugging is a requirement
@@ -251,17 +267,17 @@ The canonical pattern from production systems (documented in multiple sources):
 // Step 1: Client creates with temp ID
 const tempId = crypto.randomUUID();
 const optimisticMessage = { id: tempId, temporaryId: tempId, role: 'user', content };
-setMessages(prev => [...prev, optimisticMessage]);
+setMessages((prev) => [...prev, optimisticMessage]);
 
 // Step 2: Server confirms with permanent ID
 const serverMessage = await api.send({ content });
 
 // Step 3: Remap — find by temporaryId, update primary id
-setMessages(prev => prev.map(m =>
-  m.temporaryId === tempId
-    ? { ...m, id: serverMessage.id, temporaryId: undefined }
-    : m
-));
+setMessages((prev) =>
+  prev.map((m) =>
+    m.temporaryId === tempId ? { ...m, id: serverMessage.id, temporaryId: undefined } : m
+  )
+);
 ```
 
 The `temporaryId` stays as a secondary attribute until the remap is complete. After remap, dedup
@@ -289,6 +305,7 @@ The remap research report (`20260312_fix_chat_stream_remap_bugs.md`) already ide
 is the industry standard — client propagates its UUID, server echoes it in the confirmation event.
 
 For DorkOS specifically:
+
 - Server: include the SDK-assigned JSONL message UUID in the `done` event
 - Client: on `done` event, update `assistantIdRef.current` message's `id` to the server-assigned ID
 - Result: when polling resumes, ID-based dedup works natively — no tagged-message logic needed
@@ -299,6 +316,7 @@ This is more surgical than the tagged-dedup approach but requires server changes
 
 When the session ID changes (the remap case), the TanStack Query cache key `['messages', sessionId]`
 changes. This means:
+
 - The old session's cache entry is abandoned (not invalidated, just orphaned)
 - A new cache entry is created for the new session ID
 - The new entry starts empty and the background query fetches history
@@ -306,6 +324,7 @@ changes. This means:
 This is the correct behavior — the data for the old session ID is irrelevant once remapped. The
 UX problem (empty flash) is a consequence of the cache key change, not a bug in TanStack Query.
 The fix is either:
+
 - Keep messages in local state through the remap (don't clear `messages[]`)
 - Or show a loading indicator that bridges the gap
 
@@ -338,6 +357,7 @@ source of truth?
 is the immediate display truth.** The reconciliation makes them converge without a visible replace.
 
 In DorkOS:
+
 - **During streaming:** local `messages[]` is truth
 - **After streaming:** local `messages[]` remains truth (proposed fix: stop resetting `historySeededRef`)
 - **When polling returns:** server history is merged in, with client-only parts preserved
@@ -354,6 +374,7 @@ heuristics. The Vercel AI SDK community explicitly flagged content-based reconci
 when assistant content differs between streaming state and JSONL serialization.
 
 For DorkOS, the risk is bounded:
+
 - User message content is exact (we submitted it, the server stores it verbatim)
 - Assistant message is matched by position relative to the matched user message — no content match
 - The tagged set is bounded at 0-2 messages per turn
@@ -380,6 +401,7 @@ cache second" architecture DorkOS uses.
 ## Immediate Fix (Tagged-Dedup): Confirmed Correct
 
 The proposed solution (Steps 1-4 in the spec) is:
+
 - Aligned with industry practice (nonce/temp-ID reconciliation)
 - Consistent with TanStack Query's "cancel in-flight fetches, don't replace optimistic state"
 - Lower risk than any alternative that requires server changes
@@ -396,6 +418,7 @@ and eliminates the need for the `_streaming` tag entirely.
 ## Event Sourcing: Deferred but Worth Designing For
 
 Event sourcing is the right long-term architecture if DorkOS needs to support:
+
 - Session replay / time-travel debugging for agent runs
 - Multi-stream (subagent) parallel message lists
 - Audit log / history diffing between streaming state and persisted state

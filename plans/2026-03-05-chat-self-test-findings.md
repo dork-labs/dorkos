@@ -1,6 +1,7 @@
 # Chat Self-Test Findings — 2026-03-05
 
 ## Test Config
+
 - URL: `http://localhost:4241/?dir=/Users/doriancollier/Keep/temp/empty`
 - Session ID (URL): `fd7dfe59-...` (client-facing relay UUID)
 - Session ID (JSONL): `db97cafb-8e3c-4d18-b24b-24bcd524ad55` (SDK-assigned)
@@ -41,6 +42,7 @@ export function sendSSEEvent(res: Response, event: StreamEvent): void {
 5. Client receives no further SSE events — appears frozen
 
 **Code path:**
+
 ```
 agentManager.sendMessage() → async generator yields StreamEvent
   → routes/sessions.ts:261 for await → sendSSEEvent(res, event)
@@ -129,6 +131,7 @@ All session titles also show `Agent-ID: fd7dfe59...` instead of the actual user 
 **A.** `apps/server/src/services/session/transcript-parser.ts` — `parseTranscript()` function, around line 226.
 
 The parser already skips several internal message types:
+
 ```typescript
 if (text.startsWith('<task-notification>')) continue;
 if (text.startsWith('<command-name>')) continue;
@@ -138,6 +141,7 @@ if (text.startsWith('<local-command')) continue;
 But `<relay_context>` is not in this list. When relay is enabled, the `ClaudeCodeAdapter` (`packages/relay/src/adapters/claude-code-adapter.ts:782`) prepends `<relay_context>...</relay_context>\n\ncontent` to every dispatched message. This appears verbatim in the JSONL and is parsed as a regular user message.
 
 **Fix for A:**
+
 ```typescript
 // In transcript-parser.ts, alongside other special-message filters:
 if (text.startsWith('<relay_context>')) continue;
@@ -146,6 +150,7 @@ if (text.startsWith('<relay_context>')) continue;
 **B.** `apps/server/src/services/session/transcript-reader.ts` — `extractSessionMeta()`, around line 247.
 
 Title extraction also checks for special message types but is missing `<relay_context>`:
+
 ```typescript
 if (
   text.startsWith('<local-command') ||
@@ -158,13 +163,14 @@ if (
 ```
 
 **Fix for B:**
+
 ```typescript
 if (
   text.startsWith('<local-command') ||
   text.startsWith('<command-name>') ||
   text.startsWith('<command-message>') ||
   text.startsWith('<task-notification>') ||
-  text.startsWith('<relay_context>')   // ← add this
+  text.startsWith('<relay_context>') // ← add this
 ) {
   continue;
 }
@@ -176,13 +182,14 @@ if (
 
 ### 4. Model / Permission Mode Selectors Reset Each Other — **Bug**
 
-**Observed:** In Phase 3 (test configuration), opening the model selector and choosing a model caused the permission mode display to reset to "Default". Opening the permission mode selector and choosing a value caused the model to reset to `claude-sonnet-4-6`. Setting permission mode *last* (after model) preserved both values.
+**Observed:** In Phase 3 (test configuration), opening the model selector and choosing a model caused the permission mode display to reset to "Default". Opening the permission mode selector and choosing a value caused the model to reset to `claude-sonnet-4-6`. Setting permission mode _last_ (after model) preserved both values.
 
 **Expected:** Selecting one field should not affect the other. Both should persist independently.
 
 **Root cause:** Two compounding issues:
 
 **A. Server PATCH response may return incomplete data** (`apps/server/src/routes/sessions.ts` lines 130-151):
+
 ```typescript
 // The PATCH reads session from disk (may lack one field)
 const session = await transcriptReader.getSession(cwd, sessionId);
@@ -196,6 +203,7 @@ res.json(session ?? { id: sessionId, permissionMode, model });
 If `session.model` or `session.permissionMode` is not yet persisted to JSONL (i.e., it was only set in-memory), the response may omit the field entirely.
 
 **B. Client sets TanStack Query cache with full replacement** (`apps/client/src/layers/entities/session/model/use-session-status.ts`):
+
 ```typescript
 queryClient.setQueryData(['session', sessionId, selectedCwd], updated);
 ```
@@ -203,6 +211,7 @@ queryClient.setQueryData(['session', sessionId, selectedCwd], updated);
 `updated` comes from the server response. If the response is missing `permissionMode`, the cache loses the previously-displayed value. The priority chain `permissionMode = localPermissionMode ?? session?.permissionMode ?? 'default'` falls through to `'default'` because `localPermissionMode` was cleared after the model mutation resolved.
 
 **Fix (client-side, targeted):** Merge the PATCH response with the existing cache instead of replacing:
+
 ```typescript
 queryClient.setQueryData(['session', sessionId, selectedCwd], (old) => ({
   ...old,
@@ -213,6 +222,7 @@ queryClient.setQueryData(['session', sessionId, selectedCwd], (old) => ({
 This ensures a model update doesn't clobber a recently-set permission mode (and vice versa). The server-side fix (always returning both fields) would also be beneficial but the client-side merge is the safer minimal fix.
 
 **Files:**
+
 - `apps/client/src/layers/entities/session/model/use-session-status.ts` — `setQueryData` call (primary fix)
 - `apps/server/src/routes/sessions.ts` lines 130-151 (secondary fix: always return complete session)
 
@@ -236,9 +246,9 @@ This ensures a model update doesn't clobber a recently-set permission mode (and 
 
 ## Priority Summary
 
-| # | Issue | Severity | Files to Change |
-|---|-------|----------|-----------------|
-| 1 | SSE streaming freeze (backpressure ignored) | P0 — CRITICAL | `stream-adapter.ts`, `routes/sessions.ts` |
-| 2 | Hard refresh → blank chat (ID mismatch) | P0 — CRITICAL | `routes/sessions.ts` |
-| 3 | `<relay_context>` shown as chat messages | P1 — High | `transcript-parser.ts`, `transcript-reader.ts` |
-| 4 | Model/permission mode selectors reset | P2 — Medium | `use-session-status.ts` |
+| #   | Issue                                       | Severity      | Files to Change                                |
+| --- | ------------------------------------------- | ------------- | ---------------------------------------------- |
+| 1   | SSE streaming freeze (backpressure ignored) | P0 — CRITICAL | `stream-adapter.ts`, `routes/sessions.ts`      |
+| 2   | Hard refresh → blank chat (ID mismatch)     | P0 — CRITICAL | `routes/sessions.ts`                           |
+| 3   | `<relay_context>` shown as chat messages    | P1 — High     | `transcript-parser.ts`, `transcript-reader.ts` |
+| 4   | Model/permission mode selectors reset       | P2 — Medium   | `use-session-status.ts`                        |

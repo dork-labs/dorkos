@@ -28,11 +28,7 @@
             "$ref": "#/components/schemas/TunnelStatus"
           }
         },
-        "required": [
-          "status",
-          "version",
-          "uptime"
-        ]
+        "required": ["status", "version", "uptime"]
       },
       "TunnelStatus": {
         "type": "object",
@@ -41,30 +37,16 @@
             "type": "boolean"
           },
           "url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "port": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": ["integer", "null"]
           },
           "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "connected",
-          "url",
-          "port",
-          "startedAt"
-        ]
+        "required": ["connected", "url", "port", "startedAt"]
       },
       "Session": {
         "type": "object",
@@ -100,22 +82,11 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "title",
-          "createdAt",
-          "updatedAt",
-          "permissionMode"
-        ]
+        "required": ["id", "title", "createdAt", "updatedAt", "permissionMode"]
       },
       "PermissionMode": {
         "type": "string",
-        "enum": [
-          "default",
-          "plan",
-          "acceptEdits",
-          "bypassPermissions"
-        ]
+        "enum": ["default", "plan", "acceptEdits", "bypassPermissions"]
       },
       "ErrorResponse": {
         "type": "object",
@@ -125,9 +96,7 @@
           },
           "details": {}
         },
-        "required": [
-          "error"
-        ]
+        "required": ["error"]
       },
       "CreateSessionRequest": {
         "type": "object",
@@ -148,10 +117,7 @@
           },
           "role": {
             "type": "string",
-            "enum": [
-              "user",
-              "assistant"
-            ]
+            "enum": ["user", "assistant"]
           },
           "content": {
             "type": "string"
@@ -195,11 +161,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "role",
-          "content"
-        ]
+        "required": ["id", "role", "content"]
       },
       "HistoryToolCall": {
         "type": "object",
@@ -218,9 +180,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "complete"
-            ]
+            "enum": ["complete"]
           },
           "questions": {
             "type": "array",
@@ -235,11 +195,7 @@
             }
           }
         },
-        "required": [
-          "toolCallId",
-          "toolName",
-          "status"
-        ]
+        "required": ["toolCallId", "toolName", "status"]
       },
       "QuestionItem": {
         "type": "object",
@@ -260,12 +216,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "header",
-          "question",
-          "options",
-          "multiSelect"
-        ]
+        "required": ["header", "question", "options", "multiSelect"]
       },
       "QuestionOption": {
         "type": "object",
@@ -277,36 +228,27 @@
             "type": "string"
           }
         },
-        "required": [
-          "label"
-        ]
+        "required": ["label"]
       },
       "TextPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": [
-              "text"
-            ]
+            "enum": ["text"]
           },
           "text": {
             "type": "string"
           }
         },
-        "required": [
-          "type",
-          "text"
-        ]
+        "required": ["type", "text"]
       },
       "ToolCallPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": [
-              "tool_call"
-            ]
+            "enum": ["tool_call"]
           },
           "toolCallId": {
             "type": "string"
@@ -322,19 +264,11 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "pending",
-              "running",
-              "complete",
-              "error"
-            ]
+            "enum": ["pending", "running", "complete", "error"]
           },
           "interactiveType": {
             "type": "string",
-            "enum": [
-              "approval",
-              "question"
-            ]
+            "enum": ["approval", "question"]
           },
           "questions": {
             "type": "array",
@@ -349,19 +283,11 @@
             }
           }
         },
-        "required": [
-          "type",
-          "toolCallId",
-          "toolName",
-          "status"
-        ]
+        "required": ["type", "toolCallId", "toolName", "status"]
       },
       "MessageType": {
         "type": "string",
-        "enum": [
-          "command",
-          "compaction"
-        ]
+        "enum": ["command", "compaction"]
       },
       "TaskItem": {
         "type": "object",
@@ -397,19 +323,11 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "subject",
-          "status"
-        ]
+        "required": ["id", "subject", "status"]
       },
       "TaskStatus": {
         "type": "string",
-        "enum": [
-          "pending",
-          "in_progress",
-          "completed"
-        ]
+        "enum": ["pending", "in_progress", "completed"]
       },
       "UpdateSessionRequest": {
         "type": "object",
@@ -433,9 +351,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "content"
-        ]
+        "required": ["content"]
       },
       "ApprovalRequest": {
         "type": "object",
@@ -444,9 +360,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "toolCallId"
-        ]
+        "required": ["toolCallId"]
       },
       "SubmitAnswersRequest": {
         "type": "object",
@@ -461,10 +375,7 @@
             }
           }
         },
-        "required": [
-          "toolCallId",
-          "answers"
-        ]
+        "required": ["toolCallId", "answers"]
       },
       "BrowseDirectoryResponse": {
         "type": "object",
@@ -479,17 +390,10 @@
             }
           },
           "parent": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "path",
-          "entries",
-          "parent"
-        ]
+        "required": ["path", "entries", "parent"]
       },
       "DirectoryEntry": {
         "type": "object",
@@ -504,11 +408,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "name",
-          "path",
-          "isDirectory"
-        ]
+        "required": ["name", "path", "isDirectory"]
       },
       "CommandRegistry": {
         "type": "object",
@@ -523,10 +423,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "commands",
-          "lastScanned"
-        ]
+        "required": ["commands", "lastScanned"]
       },
       "CommandEntry": {
         "type": "object",
@@ -556,13 +453,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "namespace",
-          "command",
-          "fullCommand",
-          "description",
-          "filePath"
-        ]
+        "required": ["namespace", "command", "fullCommand", "description", "filePath"]
       }
     },
     "parameters": {}
@@ -570,9 +461,7 @@
   "paths": {
     "/api/health": {
       "get": {
-        "tags": [
-          "Health"
-        ],
+        "tags": ["Health"],
         "summary": "Health check",
         "responses": {
           "200": {
@@ -590,9 +479,7 @@
     },
     "/api/sessions": {
       "post": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Create a new session",
         "requestBody": {
           "content": {
@@ -627,9 +514,7 @@
         }
       },
       "get": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "List all sessions",
         "parameters": [
           {
@@ -681,9 +566,7 @@
     },
     "/api/sessions/{id}": {
       "get": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Get session details",
         "parameters": [
           {
@@ -720,9 +603,7 @@
         }
       },
       "patch": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Update session settings",
         "parameters": [
           {
@@ -780,9 +661,7 @@
     },
     "/api/sessions/{id}/messages": {
       "get": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Get message history",
         "parameters": [
           {
@@ -810,9 +689,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "messages"
-                  ]
+                  "required": ["messages"]
                 }
               }
             }
@@ -820,9 +697,7 @@
         }
       },
       "post": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Send message (SSE stream response)",
         "description": "Sends a message to the Claude agent and streams the response as Server-Sent Events. Event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, approval_required, question_prompt, error, done, session_status, task_update. Each SSE message has the format: `event: message\\ndata: {\"type\":\"<type>\",\"data\":{...}}\\n\\n`",
         "parameters": [
@@ -872,9 +747,7 @@
     },
     "/api/sessions/{id}/tasks": {
       "get": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Get task state from session transcript",
         "parameters": [
           {
@@ -902,9 +775,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "tasks"
-                  ]
+                  "required": ["tasks"]
                 }
               }
             }
@@ -924,9 +795,7 @@
     },
     "/api/sessions/{id}/approve": {
       "post": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Approve pending tool call",
         "parameters": [
           {
@@ -960,9 +829,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ]
+                  "required": ["ok"]
                 }
               }
             }
@@ -992,9 +859,7 @@
     },
     "/api/sessions/{id}/deny": {
       "post": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Deny pending tool call",
         "parameters": [
           {
@@ -1028,9 +893,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ]
+                  "required": ["ok"]
                 }
               }
             }
@@ -1060,9 +923,7 @@
     },
     "/api/sessions/{id}/submit-answers": {
       "post": {
-        "tags": [
-          "Sessions"
-        ],
+        "tags": ["Sessions"],
         "summary": "Submit answers for AskUserQuestion",
         "parameters": [
           {
@@ -1096,9 +957,7 @@
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "ok"
-                  ]
+                  "required": ["ok"]
                 }
               }
             }
@@ -1128,9 +987,7 @@
     },
     "/api/directory": {
       "get": {
-        "tags": [
-          "Directory"
-        ],
+        "tags": ["Directory"],
         "summary": "Browse directories",
         "description": "Browse directories on the server filesystem. Restricted to the home directory for security.",
         "parameters": [
@@ -1145,10 +1002,7 @@
           },
           {
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ],
+              "type": ["boolean", "null"],
               "default": false
             },
             "required": false,
@@ -1202,9 +1056,7 @@
     },
     "/api/directory/default": {
       "get": {
-        "tags": [
-          "Directory"
-        ],
+        "tags": ["Directory"],
         "summary": "Get default working directory",
         "description": "Returns the server's default working directory (process.cwd()).",
         "responses": {
@@ -1219,9 +1071,7 @@
                       "type": "string"
                     }
                   },
-                  "required": [
-                    "path"
-                  ]
+                  "required": ["path"]
                 }
               }
             }
@@ -1231,18 +1081,13 @@
     },
     "/api/commands": {
       "get": {
-        "tags": [
-          "Commands"
-        ],
+        "tags": ["Commands"],
         "summary": "List all slash commands",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
+              "enum": ["true", "false"]
             },
             "required": false,
             "name": "refresh",

@@ -1,4 +1,5 @@
 # Task Breakdown: DorkOS Configuration File System
+
 Generated: 2026-02-16
 Source: specs/dorkos-config-file-system/02-specification.md
 Last Decompose: 2026-02-16
@@ -18,6 +19,7 @@ Add a persistent user configuration file at `~/.dork/config.json` that integrate
 **Can run parallel with**: None (foundation)
 
 **Files to create/modify**:
+
 - Create `packages/shared/src/config-schema.ts`
 - Modify `packages/shared/package.json` (add export entry)
 
@@ -33,19 +35,25 @@ export const SENSITIVE_CONFIG_KEYS = ['tunnel.authtoken', 'tunnel.auth'] as cons
 
 export const UserConfigSchema = z.object({
   version: z.literal(1),
-  server: z.object({
-    port: z.number().int().min(1024).max(65535).default(4242),
-    cwd: z.string().nullable().default(null),
-  }).default({}),
-  tunnel: z.object({
-    enabled: z.boolean().default(false),
-    domain: z.string().nullable().default(null),
-    authtoken: z.string().nullable().default(null),
-    auth: z.string().nullable().default(null),
-  }).default({}),
-  ui: z.object({
-    theme: z.enum(['light', 'dark', 'system']).default('system'),
-  }).default({}),
+  server: z
+    .object({
+      port: z.number().int().min(1024).max(65535).default(4242),
+      cwd: z.string().nullable().default(null),
+    })
+    .default({}),
+  tunnel: z
+    .object({
+      enabled: z.boolean().default(false),
+      domain: z.string().nullable().default(null),
+      authtoken: z.string().nullable().default(null),
+      auth: z.string().nullable().default(null),
+    })
+    .default({}),
+  ui: z
+    .object({
+      theme: z.enum(['light', 'dark', 'system']).default('system'),
+    })
+    .default({}),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -64,6 +72,7 @@ Add export entry to `packages/shared/package.json` in the `"exports"` map:
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `UserConfigSchema` parses minimal input (`{ version: 1 }`) with all defaults filled
 - [ ] `UserConfigSchema` rejects invalid port (< 1024, > 65535, non-integer)
 - [ ] `UserConfigSchema` rejects invalid theme value
@@ -83,6 +92,7 @@ Add export entry to `packages/shared/package.json` in the `"exports"` map:
 **Can run parallel with**: Task 1.3 (after 1.1 is done)
 
 **Files to create**:
+
 - Create `packages/shared/src/__tests__/config-schema.test.ts`
 
 **Implementation**:
@@ -90,11 +100,7 @@ Add export entry to `packages/shared/package.json` in the `"exports"` map:
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import {
-  UserConfigSchema,
-  USER_CONFIG_DEFAULTS,
-  SENSITIVE_CONFIG_KEYS,
-} from '../config-schema';
+import { UserConfigSchema, USER_CONFIG_DEFAULTS, SENSITIVE_CONFIG_KEYS } from '../config-schema';
 import type { UserConfig } from '../config-schema';
 
 describe('UserConfigSchema', () => {
@@ -109,27 +115,19 @@ describe('UserConfigSchema', () => {
   });
 
   it('rejects invalid port below 1024', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, server: { port: 80 } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, server: { port: 80 } })).toThrow();
   });
 
   it('rejects invalid port above 65535', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, server: { port: 70000 } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, server: { port: 70000 } })).toThrow();
   });
 
   it('rejects non-integer port', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, server: { port: 4242.5 } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, server: { port: 4242.5 } })).toThrow();
   });
 
   it('rejects invalid theme value', () => {
-    expect(() =>
-      UserConfigSchema.parse({ version: 1, ui: { theme: 'blue' } })
-    ).toThrow();
+    expect(() => UserConfigSchema.parse({ version: 1, ui: { theme: 'blue' } })).toThrow();
   });
 
   it('accepts null for nullable fields', () => {
@@ -177,6 +175,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] All 10 test cases pass
 - [ ] Tests cover schema parsing, validation errors, defaults, sensitive keys, and JSON Schema generation
 - [ ] Run with: `npx vitest run packages/shared/src/__tests__/config-schema.test.ts`
@@ -190,12 +189,14 @@ describe('USER_CONFIG_DEFAULTS', () => {
 **Can run parallel with**: Task 1.2 (after 1.1 is done)
 
 **Files to create/modify**:
+
 - Run `npm install conf@^15.1.0 -w packages/cli -w apps/server`
 - Create `apps/server/src/services/config-manager.ts`
 
 **Implementation**:
 
 Install dependency:
+
 ```bash
 npm install conf@^15.1.0 -w packages/cli -w apps/server
 ```
@@ -208,7 +209,11 @@ import { z } from 'zod';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS, SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
+import {
+  UserConfigSchema,
+  USER_CONFIG_DEFAULTS,
+  SENSITIVE_CONFIG_KEYS,
+} from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 
 const jsonSchema = z.toJSONSchema(UserConfigSchema, { target: 'draft-2020-12' });
@@ -267,7 +272,9 @@ class ConfigManager {
   }
 
   /** Whether this is the first time the config file has been created */
-  get isFirstRun(): boolean { return this._isFirstRun; }
+  get isFirstRun(): boolean {
+    return this._isFirstRun;
+  }
 
   /** Get a top-level config section */
   get<K extends keyof UserConfig>(key: K): UserConfig[K] {
@@ -318,7 +325,7 @@ class ConfigManager {
       if (error instanceof z.ZodError) {
         return {
           valid: false,
-          errors: error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+          errors: error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
         };
       }
       throw error;
@@ -341,6 +348,7 @@ export function initConfigManager(dorkHome?: string): ConfigManager {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `conf` installed in both `packages/cli` and `apps/server`
 - [ ] `initConfigManager()` creates a ConfigManager instance
 - [ ] `get()` returns default values for unset keys
@@ -365,6 +373,7 @@ export function initConfigManager(dorkHome?: string): ConfigManager {
 **Can run parallel with**: None
 
 **Files to create**:
+
 - Create `apps/server/src/services/__tests__/config-manager.test.ts`
 
 **Implementation**:
@@ -502,11 +511,13 @@ describe('ConfigManager', () => {
 ```
 
 **Notes on mocking**:
+
 - Uses real temp directories via `os.tmpdir()` for integration tests with `conf`
 - Each test gets a fresh temp dir via `beforeEach`/`afterEach`
 - Corrupt config test writes invalid JSON to simulate corruption
 
 **Acceptance Criteria**:
+
 - [ ] All 13 test cases pass
 - [ ] Tests cover: init, first run detection, get/set, dot-path access, sensitive keys, reset, validate, corrupt config recovery, path
 - [ ] Tests use real temp directories (no mocking of `conf`)
@@ -523,6 +534,7 @@ describe('ConfigManager', () => {
 **Can run parallel with**: Task 2.3
 
 **Files to create**:
+
 - Create `packages/cli/src/config-commands.ts`
 
 **Implementation**:
@@ -721,6 +733,7 @@ export function handleConfigCommand(args: string[]): void {
 **Note on imports**: The import from `../../apps/server/src/services/config-manager.js` will need adjustment based on how esbuild bundles the CLI. The implementer should verify the import path works in the bundled CLI context.
 
 **Acceptance Criteria**:
+
 - [ ] All 8 config subcommands implemented (default, get, set, list, reset, edit, path, validate)
 - [ ] `parseConfigValue()` correctly converts types
 - [ ] `handleConfigSet()` warns on sensitive keys
@@ -737,6 +750,7 @@ export function handleConfigCommand(args: string[]): void {
 **Can run parallel with**: None
 
 **Files to modify**:
+
 - Modify `packages/cli/src/cli.ts`
 
 **Changes**:
@@ -807,6 +821,7 @@ if (cfgMgr.isFirstRun) {
 Update `--help` output to include subcommands and config file reference.
 
 **Acceptance Criteria**:
+
 - [ ] `dorkos config get server.port` works as standalone subcommand
 - [ ] `dorkos init` routes to the init wizard
 - [ ] Config values used as fallbacks when no CLI flag or env var set
@@ -825,6 +840,7 @@ Update `--help` output to include subcommands and config file reference.
 **Can run parallel with**: Task 2.1
 
 **Files to modify**:
+
 - Modify `packages/cli/scripts/build.ts`
 
 **Changes**:
@@ -854,6 +870,7 @@ external: ['dotenv', '../server/index.js', 'conf'],
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `conf` listed in esbuild externals for server bundle (step 2)
 - [ ] `conf` listed in esbuild externals for CLI entry (step 3)
 - [ ] `npm run build -w packages/cli` succeeds without bundling `conf`
@@ -867,6 +884,7 @@ external: ['dotenv', '../server/index.js', 'conf'],
 **Can run parallel with**: Task 2.2
 
 **Files to create**:
+
 - Create `packages/cli/src/__tests__/config-commands.test.ts`
 
 **Implementation**:
@@ -905,6 +923,7 @@ describe('parseConfigValue', () => {
 **Note**: The mock paths for config-manager will need adjustment based on how the CLI imports the config manager. The implementer should adjust the `vi.mock()` path accordingly for handler tests.
 
 **Acceptance Criteria**:
+
 - [ ] `parseConfigValue()` converts "true"/"false" to boolean
 - [ ] `parseConfigValue()` converts numeric strings to numbers
 - [ ] `parseConfigValue()` converts "null" to null
@@ -922,11 +941,13 @@ describe('parseConfigValue', () => {
 **Can run parallel with**: None
 
 **Files to create/modify**:
+
 - Run `npm install @inquirer/prompts@^8.2.0 -w packages/cli`
 - Modify `packages/cli/scripts/build.ts` (add `@inquirer/prompts` to externals)
 - Create `packages/cli/src/init-wizard.ts`
 
 **Install**:
+
 ```bash
 npm install @inquirer/prompts@^8.2.0 -w packages/cli
 ```
@@ -1033,6 +1054,7 @@ export async function runInitWizard(options: InitOptions): Promise<void> {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `@inquirer/prompts` installed in `packages/cli`
 - [ ] `@inquirer/prompts` added to esbuild externals
 - [ ] `dorkos init` prompts for port, theme, tunnel, working directory
@@ -1049,6 +1071,7 @@ export async function runInitWizard(options: InitOptions): Promise<void> {
 **Can run parallel with**: None
 
 **Files to create**:
+
 - Create `packages/cli/src/__tests__/init-wizard.test.ts`
 
 **Implementation**:
@@ -1146,6 +1169,7 @@ describe('runInitWizard', () => {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `--yes` test: no prompts called, defaults written
 - [ ] Prompt order test: port, theme, tunnel, cwd called in correct order
 - [ ] User choices written to config file
@@ -1163,6 +1187,7 @@ describe('runInitWizard', () => {
 **Can run parallel with**: Phase 2, Phase 3
 
 **Files to modify**:
+
 - Modify `apps/server/src/routes/config.ts` (add PATCH handler)
 - Modify `apps/server/src/index.ts` (call `initConfigManager()` at startup)
 
@@ -1189,7 +1214,7 @@ router.patch('/', (req, res) => {
     if (!parseResult.success) {
       return res.status(400).json({
         error: 'Validation failed',
-        details: parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+        details: parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
       });
     }
 
@@ -1197,7 +1222,9 @@ router.patch('/', (req, res) => {
     const patchKeys = flattenKeys(patch);
     for (const key of patchKeys) {
       if (SENSITIVE_CONFIG_KEYS.includes(key as any)) {
-        warnings.push(`'${key}' contains sensitive data. Consider using environment variables instead.`);
+        warnings.push(
+          `'${key}' contains sensitive data. Consider using environment variables instead.`
+        );
       }
     }
 
@@ -1219,8 +1246,12 @@ function deepMerge(target: Record<string, any>, source: Record<string, any>): Re
   const result = { ...target };
   for (const key of Object.keys(source)) {
     if (
-      source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key]) &&
-      target[key] !== null && typeof target[key] === 'object' && !Array.isArray(target[key])
+      source[key] !== null &&
+      typeof source[key] === 'object' &&
+      !Array.isArray(source[key]) &&
+      target[key] !== null &&
+      typeof target[key] === 'object' &&
+      !Array.isArray(target[key])
     ) {
       result[key] = deepMerge(target[key], source[key]);
     } else {
@@ -1256,6 +1287,7 @@ async function start() {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] PATCH with valid partial returns 200 + merged config
 - [ ] PATCH with invalid value returns 400 + Zod errors
 - [ ] PATCH with sensitive key includes warning
@@ -1272,6 +1304,7 @@ async function start() {
 **Can run parallel with**: Task 4.1
 
 **Files to modify**:
+
 - Modify `packages/shared/src/schemas.ts`
 
 **Add at end of file**:
@@ -1281,19 +1314,25 @@ async function start() {
 
 export const ConfigPatchRequestSchema = z
   .object({
-    server: z.object({
-      port: z.number().int().min(1024).max(65535).optional(),
-      cwd: z.string().nullable().optional(),
-    }).optional(),
-    tunnel: z.object({
-      enabled: z.boolean().optional(),
-      domain: z.string().nullable().optional(),
-      authtoken: z.string().nullable().optional(),
-      auth: z.string().nullable().optional(),
-    }).optional(),
-    ui: z.object({
-      theme: z.enum(['light', 'dark', 'system']).optional(),
-    }).optional(),
+    server: z
+      .object({
+        port: z.number().int().min(1024).max(65535).optional(),
+        cwd: z.string().nullable().optional(),
+      })
+      .optional(),
+    tunnel: z
+      .object({
+        enabled: z.boolean().optional(),
+        domain: z.string().nullable().optional(),
+        authtoken: z.string().nullable().optional(),
+        auth: z.string().nullable().optional(),
+      })
+      .optional(),
+    ui: z
+      .object({
+        theme: z.enum(['light', 'dark', 'system']).optional(),
+      })
+      .optional(),
   })
   .openapi('ConfigPatchRequest');
 
@@ -1321,6 +1360,7 @@ export type ConfigPatchResponse = z.infer<typeof ConfigPatchResponseSchema>;
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `ConfigPatchRequestSchema` validates partial config patches
 - [ ] `ConfigPatchResponseSchema` includes success, config, warnings
 - [ ] Both have `.openapi()` metadata
@@ -1335,6 +1375,7 @@ export type ConfigPatchResponse = z.infer<typeof ConfigPatchResponseSchema>;
 **Can run parallel with**: Task 4.2
 
 **Files to create**:
+
 - Create `apps/server/src/routes/__tests__/config.test.ts`
 
 **Implementation**:
@@ -1407,10 +1448,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('returns 200 for empty body (no-op)', async () => {
-    const response = await request(app)
-      .patch('/api/config')
-      .send({})
-      .expect(200);
+    const response = await request(app).patch('/api/config').send({}).expect(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.config.server.port).toBe(4242);
@@ -1419,6 +1457,7 @@ describe('PATCH /api/config', () => {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] Valid partial update returns 200
 - [ ] Invalid value returns 400 with details
 - [ ] Sensitive key includes warning
@@ -1436,9 +1475,11 @@ describe('PATCH /api/config', () => {
 **Can run parallel with**: Task 5.2
 
 **Files to create**:
+
 - Create `guides/configuration.md`
 
 **Content**: Comprehensive guide covering:
+
 - Config file location (`~/.dork/config.json`)
 - Available settings table with types and defaults
 - Precedence order (CLI flags > env vars > config > defaults)
@@ -1449,6 +1490,7 @@ describe('PATCH /api/config', () => {
 - PATCH /api/config endpoint reference
 
 **Acceptance Criteria**:
+
 - [ ] Guide covers all config topics
 - [ ] All settings documented with types and defaults
 - [ ] Examples included for common operations
@@ -1462,6 +1504,7 @@ describe('PATCH /api/config', () => {
 **Can run parallel with**: Task 5.1
 
 **Files to modify**:
+
 - Modify `CLAUDE.md` (add config commands, config section, ConfigManager to services list)
 - Modify `guides/architecture.md` (add ConfigManager service description)
 - Modify `guides/api-reference.md` (add PATCH /api/config endpoint)
@@ -1473,6 +1516,7 @@ describe('PATCH /api/config', () => {
 **api-reference.md**: Add PATCH /api/config endpoint with request/response schemas.
 
 **Acceptance Criteria**:
+
 - [ ] CLAUDE.md updated with config commands, config section, ConfigManager
 - [ ] architecture.md updated with ConfigManager service
 - [ ] api-reference.md updated with PATCH /api/config

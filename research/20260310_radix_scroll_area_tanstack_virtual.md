@@ -1,5 +1,5 @@
 ---
-title: "Radix ScrollArea + TanStack Virtual Integration Patterns"
+title: 'Radix ScrollArea + TanStack Virtual Integration Patterns'
 date: 2026-03-10
 type: external-best-practices
 status: active
@@ -198,8 +198,8 @@ const virtualizer = useVirtualizer({
   count: items.length,
   getScrollElement: () => viewportRef.current,
   estimateSize: () => 48,
-  useFlushSync: false,   // suppress React 19 warning
-})
+  useFlushSync: false, // suppress React 19 warning
+});
 ```
 
 This is a cosmetic change only — virtualization behavior is unaffected.

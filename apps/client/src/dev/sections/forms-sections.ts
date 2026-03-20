@@ -90,7 +90,16 @@ export const FORMS_SECTIONS: PlaygroundSection[] = [
     title: 'SettingRow',
     page: 'forms',
     category: 'Composed',
-    keywords: ['setting', 'row', 'toggle', 'switch', 'label', 'description', 'horizontal', 'settings'],
+    keywords: [
+      'setting',
+      'row',
+      'toggle',
+      'switch',
+      'label',
+      'description',
+      'horizontal',
+      'settings',
+    ],
   },
   {
     id: 'passwordinput',

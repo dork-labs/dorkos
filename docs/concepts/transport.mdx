@@ -3,8 +3,8 @@ title: Transport
 description: How the Transport interface enables DorkOS to run in multiple environments
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Transport
 
@@ -25,47 +25,47 @@ Transport defines methods for every operation the client needs, organized by dom
 
 ### Sessions
 
-| Method | Purpose |
-|---|---|
-| `createSession` | Start a new Claude conversation |
-| `listSessions` | Get all sessions, optionally filtered by directory |
-| `getSession` | Fetch metadata for a single session |
-| `updateSession` | Change session settings (permission mode, model) |
-| `getMessages` | Load message history for a session |
-| `sendMessage` | Send a message and stream the response |
-| `approveTool` | Approve a pending tool call |
-| `denyTool` | Deny a pending tool call |
-| `submitAnswers` | Respond to an interactive question prompt |
-| `getTasks` | Get the current task list for a session |
+| Method              | Purpose                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------ |
+| `createSession`     | Start a new Claude conversation                                                            |
+| `listSessions`      | Get all sessions, optionally filtered by directory                                         |
+| `getSession`        | Fetch metadata for a single session                                                        |
+| `updateSession`     | Change session settings (permission mode, model)                                           |
+| `getMessages`       | Load message history for a session                                                         |
+| `sendMessage`       | Send a message and stream the response                                                     |
+| `approveTool`       | Approve a pending tool call                                                                |
+| `denyTool`          | Deny a pending tool call                                                                   |
+| `submitAnswers`     | Respond to an interactive question prompt                                                  |
+| `getTasks`          | Get the current task list for a session                                                    |
 | `getLastMessageIds` | Get JSONL-assigned IDs for the last user/assistant messages (client-server reconciliation) |
 
 ### Filesystem and Config
 
-| Method | Purpose |
-|---|---|
-| `browseDirectory` | Browse the filesystem for directory selection |
-| `getDefaultCwd` | Get the server's default working directory |
-| `getCommands` | List available slash commands |
-| `listFiles` | List files in a directory |
-| `getGitStatus` | Get git branch and change information |
-| `getMcpConfig` | Read MCP server entries from `.mcp.json` in a project directory |
-| `health` | Server health check |
-| `getConfig` | Retrieve server configuration |
-| `updateConfig` | Partially update the persisted user config |
+| Method            | Purpose                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `browseDirectory` | Browse the filesystem for directory selection                   |
+| `getDefaultCwd`   | Get the server's default working directory                      |
+| `getCommands`     | List available slash commands                                   |
+| `listFiles`       | List files in a directory                                       |
+| `getGitStatus`    | Get git branch and change information                           |
+| `getMcpConfig`    | Read MCP server entries from `.mcp.json` in a project directory |
+| `health`          | Server health check                                             |
+| `getConfig`       | Retrieve server configuration                                   |
+| `updateConfig`    | Partially update the persisted user config                      |
 
 ### Runtime and Capabilities
 
-| Method | Purpose |
-|---|---|
-| `getModels` | List available Claude models |
+| Method            | Purpose                                          |
+| ----------------- | ------------------------------------------------ |
+| `getModels`       | List available Claude models                     |
 | `getCapabilities` | Get capability flags for all registered runtimes |
-| `startTunnel` | Start the ngrok tunnel and return the public URL |
-| `stopTunnel` | Stop the ngrok tunnel |
+| `startTunnel`     | Start the ngrok tunnel and return the public URL |
+| `stopTunnel`      | Stop the ngrok tunnel                            |
 
 ### File Uploads
 
-| Method | Purpose |
-|---|---|
+| Method        | Purpose                                                          |
+| ------------- | ---------------------------------------------------------------- |
 | `uploadFiles` | Upload files to the session's working directory for agent access |
 
 ### Pulse, Relay, Mesh
@@ -73,7 +73,8 @@ Transport defines methods for every operation the client needs, organized by dom
 Transport also exposes full Pulse scheduler methods (`listSchedules`, `createSchedule`, `triggerSchedule`, `listRuns`, etc.), Relay messaging methods (`sendRelayMessage`, `listRelayAdapters`, `getRelayTrace`, etc.), and Mesh discovery methods (`listMeshAgents`, `registerMeshAgent`, `getMeshTopology`, etc.). These follow the same pattern as the core session methods.
 
 <Callout type="info">
-The Transport interface is defined in `@dorkos/shared` so both the client and server reference the same types.
+  The Transport interface is defined in `@dorkos/shared` so both the client and server reference the
+  same types.
 </Callout>
 
 ## Streaming with Callbacks

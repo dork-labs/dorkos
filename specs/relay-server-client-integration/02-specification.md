@@ -116,52 +116,62 @@ Factory function `createRelayRouter(relayCore: RelayCore): Router` following `pu
 
 **Endpoints:**
 
-| Method | Path | Description | Request | Response |
-|--------|------|-------------|---------|----------|
-| `POST` | `/messages` | Send a message | `SendMessageRequestSchema` body | `{ messageId, deliveredTo, warnings? }` |
-| `GET` | `/messages` | List messages | Query: `subject?`, `status?`, `from?`, `cursor?`, `limit?` | `{ messages, nextCursor? }` |
-| `GET` | `/messages/:id` | Get single message | — | `RelayEnvelope` or 404 |
-| `GET` | `/endpoints` | List endpoints | — | `EndpointInfo[]` |
-| `POST` | `/endpoints` | Register endpoint | `{ subject, description? }` | `EndpointInfo` |
-| `DELETE` | `/endpoints/:subject` | Unregister | — | `{ success: true }` or 404 |
-| `GET` | `/endpoints/:subject/inbox` | Read inbox | Query: `status?`, `cursor?`, `limit?` | `{ messages, nextCursor? }` |
-| `GET` | `/dead-letters` | List DLQ | Query: `limit?` | `DeadLetterEntry[]` |
-| `GET` | `/metrics` | System metrics | — | `RelayMetrics` |
-| `GET` | `/stream` | SSE event stream | Query: `subject?` (pattern filter) | SSE events |
+| Method   | Path                        | Description        | Request                                                    | Response                                |
+| -------- | --------------------------- | ------------------ | ---------------------------------------------------------- | --------------------------------------- |
+| `POST`   | `/messages`                 | Send a message     | `SendMessageRequestSchema` body                            | `{ messageId, deliveredTo, warnings? }` |
+| `GET`    | `/messages`                 | List messages      | Query: `subject?`, `status?`, `from?`, `cursor?`, `limit?` | `{ messages, nextCursor? }`             |
+| `GET`    | `/messages/:id`             | Get single message | —                                                          | `RelayEnvelope` or 404                  |
+| `GET`    | `/endpoints`                | List endpoints     | —                                                          | `EndpointInfo[]`                        |
+| `POST`   | `/endpoints`                | Register endpoint  | `{ subject, description? }`                                | `EndpointInfo`                          |
+| `DELETE` | `/endpoints/:subject`       | Unregister         | —                                                          | `{ success: true }` or 404              |
+| `GET`    | `/endpoints/:subject/inbox` | Read inbox         | Query: `status?`, `cursor?`, `limit?`                      | `{ messages, nextCursor? }`             |
+| `GET`    | `/dead-letters`             | List DLQ           | Query: `limit?`                                            | `DeadLetterEntry[]`                     |
+| `GET`    | `/metrics`                  | System metrics     | —                                                          | `RelayMetrics`                          |
+| `GET`    | `/stream`                   | SSE event stream   | Query: `subject?` (pattern filter)                         | SSE events                              |
 
 **New Zod schemas** (added to `packages/shared/src/relay-schemas.ts`):
 
 ```typescript
-export const SendMessageRequestSchema = z.object({
-  subject: z.string().min(1),
-  payload: z.unknown(),
-  from: z.string().min(1),
-  replyTo: z.string().optional(),
-  budget: z.object({
-    maxHops: z.number().int().min(1).optional(),
-    ttl: z.number().int().optional(),
-    callBudgetRemaining: z.number().int().min(0).optional(),
-  }).optional(),
-}).openapi('SendMessageRequest');
+export const SendMessageRequestSchema = z
+  .object({
+    subject: z.string().min(1),
+    payload: z.unknown(),
+    from: z.string().min(1),
+    replyTo: z.string().optional(),
+    budget: z
+      .object({
+        maxHops: z.number().int().min(1).optional(),
+        ttl: z.number().int().optional(),
+        callBudgetRemaining: z.number().int().min(0).optional(),
+      })
+      .optional(),
+  })
+  .openapi('SendMessageRequest');
 
-export const MessageListQuerySchema = z.object({
-  subject: z.string().optional(),
-  status: z.enum(['new', 'cur', 'failed']).optional(),
-  from: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-}).openapi('MessageListQuery');
+export const MessageListQuerySchema = z
+  .object({
+    subject: z.string().optional(),
+    status: z.enum(['new', 'cur', 'failed']).optional(),
+    from: z.string().optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .openapi('MessageListQuery');
 
-export const InboxQuerySchema = z.object({
-  status: z.enum(['new', 'cur', 'failed']).optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-}).openapi('InboxQuery');
+export const InboxQuerySchema = z
+  .object({
+    status: z.enum(['new', 'cur', 'failed']).optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .openapi('InboxQuery');
 
-export const EndpointRegistrationSchema = z.object({
-  subject: z.string().min(1),
-  description: z.string().optional(),
-}).openapi('EndpointRegistration');
+export const EndpointRegistrationSchema = z
+  .object({
+    subject: z.string().min(1),
+    description: z.string().optional(),
+  })
+  .openapi('EndpointRegistration');
 ```
 
 **SSE Stream endpoint** (`GET /stream`):
@@ -201,7 +211,7 @@ export interface McpToolDeps {
   transcriptReader: TranscriptReader;
   defaultCwd: string;
   pulseStore?: PulseStore;
-  relayCore?: RelayCore;  // NEW
+  relayCore?: RelayCore; // NEW
 }
 
 function requireRelay(deps: McpToolDeps) {
@@ -214,12 +224,12 @@ function requireRelay(deps: McpToolDeps) {
 
 **Tools:**
 
-| Tool | Description | Params | Response |
-|------|-------------|--------|----------|
-| `relay_send` | Send a message to a subject | `subject`, `payload`, `from`, `replyTo?`, `budget?` | `{ messageId, deliveredTo }` |
-| `relay_inbox` | Read inbox for an endpoint | `endpoint_subject`, `limit?`, `status?` | `{ messages, count }` |
-| `relay_list_endpoints` | List registered endpoints | — | `{ endpoints, count }` |
-| `relay_register_endpoint` | Register a new endpoint | `subject`, `description?` | `{ endpoint }` |
+| Tool                      | Description                 | Params                                              | Response                     |
+| ------------------------- | --------------------------- | --------------------------------------------------- | ---------------------------- |
+| `relay_send`              | Send a message to a subject | `subject`, `payload`, `from`, `replyTo?`, `budget?` | `{ messageId, deliveredTo }` |
+| `relay_inbox`             | Read inbox for an endpoint  | `endpoint_subject`, `limit?`, `status?`             | `{ messages, count }`        |
+| `relay_list_endpoints`    | List registered endpoints   | —                                                   | `{ endpoints, count }`       |
+| `relay_register_endpoint` | Register a new endpoint     | `subject`, `description?`                           | `{ endpoint }`               |
 
 Error responses use `isError: true` with structured `{ error, code, hint }` payloads. Error codes: `RELAY_DISABLED`, `ACCESS_DENIED`, `BUDGET_EXCEEDED`, `INVALID_SUBJECT`, `ENDPOINT_NOT_FOUND`.
 
@@ -374,10 +384,10 @@ export { useRelayEventStream } from './model/use-relay-event-stream';
 
 ```tsx
 <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-  <Route className="size-8 text-muted-foreground/50" />
+  <Route className="text-muted-foreground/50 size-8" />
   <div>
     <p className="font-medium">Relay is not enabled</p>
-    <p className="mt-1 text-sm text-muted-foreground">
+    <p className="text-muted-foreground mt-1 text-sm">
       Relay enables inter-agent messaging. Start DorkOS with DORKOS_RELAY_ENABLED=true to enable it.
     </p>
   </div>
@@ -394,12 +404,12 @@ export { useRelayEventStream } from './model/use-relay-event-stream';
 
 **Status indicators:**
 
-| Status | Icon | Color class |
-|--------|------|------------|
-| `new` | `Clock` | `text-muted-foreground` |
-| `cur` | `Check` | `text-muted-foreground` |
-| `failed` | `AlertTriangle` | `text-destructive` |
-| `dead_letter` | `MailX` | `text-warning` (amber) |
+| Status        | Icon            | Color class             |
+| ------------- | --------------- | ----------------------- |
+| `new`         | `Clock`         | `text-muted-foreground` |
+| `cur`         | `Check`         | `text-muted-foreground` |
+| `failed`      | `AlertTriangle` | `text-destructive`      |
+| `dead_letter` | `MailX`         | `text-warning` (amber)  |
 
 **`index.ts`** barrel:
 

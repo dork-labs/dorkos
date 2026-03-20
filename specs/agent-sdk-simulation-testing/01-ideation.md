@@ -52,20 +52,24 @@ status: ideation
 ## 3) Codebase Map
 
 **AgentRuntime Interface:**
+
 - `packages/shared/src/agent-runtime.ts`
 - Core method: `sendMessage(id, content, opts?): AsyncGenerator<StreamEvent>` — yields stream events as SDK responds
 - Other methods: `watchSession`, `listSessions`, `getSession`, `getMessageHistory`, `getSessionTasks`, `approveTool`, `submitAnswers`, `acquireLock/releaseLock/isLocked`, `getCapabilities`, `getInternalSessionId`, `getSupportedModels`, `getCommands`, `checkSessionHealth`
 
 **Real SDK Pipeline (to simulate):**
+
 - `apps/server/src/services/runtimes/claude-code/message-sender.ts` — calls `query()`, pipes through mapper
 - `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts` — `SDKMessage` → `StreamEvent` (pure async generator)
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` — orchestrates the above
 
 **Existing Mock Infrastructure (to build on):**
+
 - `packages/test-utils/src/mock-factories.ts` — `createMockTransport`, `createMockSession`, `createMockStreamEvent`
 - `packages/test-utils/src/index.ts` — barrel to extend with new exports
 
 **Test Files Using Duplicated `mockRuntime` (to consolidate):**
+
 - `apps/server/src/routes/__tests__/sessions.test.ts`
 - `apps/server/src/routes/__tests__/sessions-interactive.test.ts`
 - `apps/server/src/routes/__tests__/sessions-relay.test.ts`
@@ -73,6 +77,7 @@ status: ideation
 - `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` (has the `query()` mock pattern)
 
 **Data Flow (what tests need to exercise):**
+
 ```
 Test: FakeAgentRuntime.sendMessage()
       ↓
@@ -123,19 +128,19 @@ TIER 3: Browser (Playwright)
 
 **Blast Radius:**
 
-| Area | Files | Change |
-|------|-------|--------|
-| New | `packages/test-utils/src/sdk-scenarios.ts` | SDKMessage scenario builders + `wrapSdkQuery` |
-| New | `packages/test-utils/src/fake-agent-runtime.ts` | `FakeAgentRuntime` class (Vitest, uses `vi.fn()`) |
-| New | `packages/test-utils/src/sse-test-helpers.ts` | `collectSseEvents` supertest helper |
-| Update | `packages/test-utils/src/index.ts` | Export new utilities |
-| Update | `packages/test-utils/src/__tests__/` | Tests for new utilities |
-| New | `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts` | `TestModeRuntime` (no `vi.fn()`, for live server) |
-| New | `apps/server/src/services/runtimes/test-mode/scenario-store.ts` | In-memory scenario store, control API |
-| Update | `apps/server/src/index.ts` | Check `DORKOS_TEST_RUNTIME`, register `TestModeRuntime` |
-| Update | `apps/server/src/routes/__tests__/sessions*.test.ts` | Replace duplicated `mockRuntime` |
-| Update | `apps/server/src/services/runtimes/claude-code/__tests__/` | Use shared scenario builders |
-| New | `apps/server/src/routes/__tests__/sessions-streaming.test.ts` | SSE integration tests |
+| Area   | Files                                                              | Change                                                  |
+| ------ | ------------------------------------------------------------------ | ------------------------------------------------------- |
+| New    | `packages/test-utils/src/sdk-scenarios.ts`                         | SDKMessage scenario builders + `wrapSdkQuery`           |
+| New    | `packages/test-utils/src/fake-agent-runtime.ts`                    | `FakeAgentRuntime` class (Vitest, uses `vi.fn()`)       |
+| New    | `packages/test-utils/src/sse-test-helpers.ts`                      | `collectSseEvents` supertest helper                     |
+| Update | `packages/test-utils/src/index.ts`                                 | Export new utilities                                    |
+| Update | `packages/test-utils/src/__tests__/`                               | Tests for new utilities                                 |
+| New    | `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts` | `TestModeRuntime` (no `vi.fn()`, for live server)       |
+| New    | `apps/server/src/services/runtimes/test-mode/scenario-store.ts`    | In-memory scenario store, control API                   |
+| Update | `apps/server/src/index.ts`                                         | Check `DORKOS_TEST_RUNTIME`, register `TestModeRuntime` |
+| Update | `apps/server/src/routes/__tests__/sessions*.test.ts`               | Replace duplicated `mockRuntime`                        |
+| Update | `apps/server/src/services/runtimes/claude-code/__tests__/`         | Use shared scenario builders                            |
+| New    | `apps/server/src/routes/__tests__/sessions-streaming.test.ts`      | SSE integration tests                                   |
 
 ---
 
@@ -152,6 +157,7 @@ Research saved to: `research/20260311_agent_sdk_simulation_testing.md`
 ### Why JSONL Replay Doesn't Work Directly
 
 Real JSONL files at `~/.claude/projects/` contain **completed** messages in the SDK's storage format. The `query()` async generator yields **incremental streaming chunks** (`SDKMessage` objects — `content_block_delta`, `message_start`, etc.) — a structurally different format. To replay JSONL as streaming simulation, you'd need to:
+
 1. Parse the completed `message.content[]` blocks
 2. Synthetically re-chunk them into streaming `SDKMessage` events
 3. Feed those through `sdk-event-mapper.ts`
@@ -168,11 +174,15 @@ Extract the `async function*` pattern from `claude-code-runtime.test.ts` into `@
 
 ```typescript
 // packages/test-utils/src/sdk-scenarios.ts
-export function sdkSimpleText(text: string): () => AsyncIterable<SDKMessage>
-export function sdkToolCall(toolName: string, input: object, result: string): () => AsyncIterable<SDKMessage>
-export function sdkTodoWrite(tasks: TaskInput[]): () => AsyncIterable<SDKMessage>
-export function sdkError(message: string): () => AsyncIterable<SDKMessage>
-export function wrapSdkQuery(scenario: () => AsyncIterable<SDKMessage>): MockedFunction
+export function sdkSimpleText(text: string): () => AsyncIterable<SDKMessage>;
+export function sdkToolCall(
+  toolName: string,
+  input: object,
+  result: string
+): () => AsyncIterable<SDKMessage>;
+export function sdkTodoWrite(tasks: TaskInput[]): () => AsyncIterable<SDKMessage>;
+export function sdkError(message: string): () => AsyncIterable<SDKMessage>;
+export function wrapSdkQuery(scenario: () => AsyncIterable<SDKMessage>): MockedFunction;
 ```
 
 - **Pros:** Zero latency (< 1ms), zero new dependencies, TypeScript-typed against `SDKMessage` union, composable, tests `sdk-event-mapper.ts` in the pipeline
@@ -202,6 +212,7 @@ export class FakeAgentRuntime implements AgentRuntime {
 - **Maintenance:** Low (TypeScript error on AgentRuntime changes)
 
 **Note:** `FakeAgentRuntime.sendMessage` operates at the **StreamEvent level** (after the mapper), because the runtime's public interface is `AsyncGenerator<StreamEvent>`. The `wrapSdkQuery` function operates at the **SDKMessage level** (inside the runtime, mocking `query()` directly). Both are needed:
+
 - `wrapSdkQuery` → for testing `sdk-event-mapper.ts` + runtime internals
 - `FakeAgentRuntime` → for testing Express routes + session management + SSE delivery
 
@@ -215,7 +226,7 @@ export async function collectSseEvents(
   app: Express,
   sessionId: string,
   content: string
-): Promise<StreamEvent[]>
+): Promise<StreamEvent[]>;
 ```
 
 - **Complexity:** Low
@@ -256,7 +267,7 @@ export const scenarioStore = {
 
 ```typescript
 // Scenarios are simple async generators of StreamEvent — no SDK types needed
-const simpleTextScenario: ScenarioFn = async function*(content: string) {
+const simpleTextScenario: ScenarioFn = async function* (content: string) {
   yield { type: 'session_status', data: { sessionId: '...', model: 'claude-haiku-4-5' } };
   yield { type: 'text_delta', data: { text: 'Hello! ' } };
   yield { type: 'text_delta', data: { text: 'This is a simulated response.' } };
@@ -274,7 +285,7 @@ export const test = base.extend({
   mockRuntime: async ({ request }, use) => {
     // Configure the TestModeRuntime scenario before navigating
     await request.post('http://localhost:4242/api/test/scenario', {
-      data: { name: 'simpleText', text: 'Hello from mock!' }
+      data: { name: 'simpleText', text: 'Hello from mock!' },
     });
     await use(undefined);
   },
@@ -303,13 +314,14 @@ A separate tool that reads JSONL transcripts and emits StreamEvents for client r
 
 **Complete approach:** All four tiers together form a coherent testing pyramid:
 
-| Tier | Tool | Tests |
-|------|------|-------|
-| Unit | `wrapSdkQuery` + SDKMessage scenarios | `sdk-event-mapper.ts`, runtime internals |
-| Integration | `FakeAgentRuntime` + `collectSseEvents` | Express routes, SSE delivery, locking |
-| Browser | `TestModeRuntime` + Playwright | UI rendering, streaming UX, React client |
+| Tier        | Tool                                    | Tests                                    |
+| ----------- | --------------------------------------- | ---------------------------------------- |
+| Unit        | `wrapSdkQuery` + SDKMessage scenarios   | `sdk-event-mapper.ts`, runtime internals |
+| Integration | `FakeAgentRuntime` + `collectSseEvents` | Express routes, SSE delivery, locking    |
+| Browser     | `TestModeRuntime` + Playwright          | UI rendering, streaming UX, React client |
 
 **Test coverage unlocked:**
+
 1. **Unit**: `sdk-event-mapper.ts` in isolation — does the mapper produce the right StreamEvents?
 2. **Service**: `claude-code-runtime.ts` full flow — does the runtime handle tool approvals, session locking?
 3. **Route/Integration**: Express routes + SSE — does the route emit the right events in the right order?
@@ -319,19 +331,19 @@ A separate tool that reads JSONL transcripts and emits StreamEvents for client r
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | JSONL fixture replay | Defer to phase 2 | No existing translation layer from JSONL → SDKMessage format. The two formats are structurally incompatible without a new conversion layer. Programmatic scenarios deliver zero latency and type safety immediately. |
-| 2 | FakeAgentRuntime scope | Full AgentRuntime implementation | Eliminates 50-line duplicated mockRuntime across 4+ test files. TypeScript enforces the contract — if AgentRuntime grows new methods, tests fail to compile rather than silently pass. |
-| 3 | Simulation level | Both: SDKMessage (`wrapSdkQuery`) for Vitest, StreamEvent (`TestModeRuntime`) for browser | `wrapSdkQuery` tests the full pipeline including `sdk-event-mapper.ts`. `TestModeRuntime` operates at StreamEvent level — correct for browser tests which care about UI rendering, not SDK internals. |
-| 4 | Browser test support | TestModeRuntime + Playwright (Option A) | Enables zero-latency browser tests of the full React client against a live server. No Claude API calls, no flakiness from real streaming latency. Requires a test-only control endpoint gated by `DORKOS_TEST_RUNTIME`. |
-| 5 | SDK type location | Co-locate with claude-code service | `wrapSdkQuery` + SDKMessage scenario builders live in `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts` — within the existing ESLint import boundary. `packages/test-utils/` gets only `FakeAgentRuntime` (StreamEvent level, no SDK dependency). |
-| 6 | JSONL in FakeAgentRuntime | No — `watchSession()` is a no-op `vi.fn()` | Tests configure `getMessageHistory()` directly. No file I/O in tests — fully in-memory, zero latency. The session broadcaster is bypassed entirely. |
-| 7 | Multi-turn support | Scenario queue — `withScenarios([s1, s2, s3])` | FakeAgentRuntime keeps an internal queue and dequeues the next scenario on each `sendMessage()` call. Covers single-turn (one scenario) and multi-turn (array) with the same API. |
-| 8 | Test file migration | Include in this spec | If `FakeAgentRuntime` ships but existing tests don't use it, it's dead infrastructure. Migration is mechanical and immediately validates the new pattern at scale. |
-| 9 | Control endpoint security | Gate at route registration | `createApp()` only mounts `/api/test/*` routes when `DORKOS_TEST_RUNTIME=true`. Routes don't exist in production — no handler, no code path. |
-| 10 | Browser test server startup | Playwright `webServer` config | `apps/e2e/playwright.config.ts` starts the server with `DORKOS_TEST_RUNTIME=true` before tests and stops it after. Standard Playwright pattern — automatic, config in one place. |
-| 11 | Scenario naming | Shared constants in `packages/test-utils` | `TestScenario` enum in `packages/test-utils/src/test-scenarios.ts` imported by both `TestModeRuntime` and Playwright test files. TypeScript errors on rename — no string-coordination bugs. |
+| #   | Decision                    | Choice                                                                                    | Rationale                                                                                                                                                                                                                                                                  |
+| --- | --------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | JSONL fixture replay        | Defer to phase 2                                                                          | No existing translation layer from JSONL → SDKMessage format. The two formats are structurally incompatible without a new conversion layer. Programmatic scenarios deliver zero latency and type safety immediately.                                                       |
+| 2   | FakeAgentRuntime scope      | Full AgentRuntime implementation                                                          | Eliminates 50-line duplicated mockRuntime across 4+ test files. TypeScript enforces the contract — if AgentRuntime grows new methods, tests fail to compile rather than silently pass.                                                                                     |
+| 3   | Simulation level            | Both: SDKMessage (`wrapSdkQuery`) for Vitest, StreamEvent (`TestModeRuntime`) for browser | `wrapSdkQuery` tests the full pipeline including `sdk-event-mapper.ts`. `TestModeRuntime` operates at StreamEvent level — correct for browser tests which care about UI rendering, not SDK internals.                                                                      |
+| 4   | Browser test support        | TestModeRuntime + Playwright (Option A)                                                   | Enables zero-latency browser tests of the full React client against a live server. No Claude API calls, no flakiness from real streaming latency. Requires a test-only control endpoint gated by `DORKOS_TEST_RUNTIME`.                                                    |
+| 5   | SDK type location           | Co-locate with claude-code service                                                        | `wrapSdkQuery` + SDKMessage scenario builders live in `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts` — within the existing ESLint import boundary. `packages/test-utils/` gets only `FakeAgentRuntime` (StreamEvent level, no SDK dependency). |
+| 6   | JSONL in FakeAgentRuntime   | No — `watchSession()` is a no-op `vi.fn()`                                                | Tests configure `getMessageHistory()` directly. No file I/O in tests — fully in-memory, zero latency. The session broadcaster is bypassed entirely.                                                                                                                        |
+| 7   | Multi-turn support          | Scenario queue — `withScenarios([s1, s2, s3])`                                            | FakeAgentRuntime keeps an internal queue and dequeues the next scenario on each `sendMessage()` call. Covers single-turn (one scenario) and multi-turn (array) with the same API.                                                                                          |
+| 8   | Test file migration         | Include in this spec                                                                      | If `FakeAgentRuntime` ships but existing tests don't use it, it's dead infrastructure. Migration is mechanical and immediately validates the new pattern at scale.                                                                                                         |
+| 9   | Control endpoint security   | Gate at route registration                                                                | `createApp()` only mounts `/api/test/*` routes when `DORKOS_TEST_RUNTIME=true`. Routes don't exist in production — no handler, no code path.                                                                                                                               |
+| 10  | Browser test server startup | Playwright `webServer` config                                                             | `apps/e2e/playwright.config.ts` starts the server with `DORKOS_TEST_RUNTIME=true` before tests and stops it after. Standard Playwright pattern — automatic, config in one place.                                                                                           |
+| 11  | Scenario naming             | Shared constants in `packages/test-utils`                                                 | `TestScenario` enum in `packages/test-utils/src/test-scenarios.ts` imported by both `TestModeRuntime` and Playwright test files. TypeScript errors on rename — no string-coordination bugs.                                                                                |
 
 ---
 
@@ -348,8 +360,8 @@ import { query, Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 const agentQuery = query({ prompt: string, options: Options });
 
 // CRITICAL: query() result has these additional methods beyond [Symbol.asyncIterator]:
-agentQuery.supportedModels()     // called by claude-code-runtime to populate model list
-agentQuery.setPermissionMode()   // called by claude-code-runtime to set permission mode
+agentQuery.supportedModels(); // called by claude-code-runtime to populate model list
+agentQuery.setPermissionMode(); // called by claude-code-runtime to set permission mode
 ```
 
 **Implication for simulation:** `mockQueryResult()` must wrap every async generator with `vi.fn()` stubs for `supportedModels` and `setPermissionMode`. This is already done in `claude-code-runtime.test.ts` — the pattern must be extracted into the shared helper.
@@ -500,7 +512,7 @@ interface Options {
   settingSources: string[];
   systemPrompt: { type: 'preset'; preset: 'claude_code'; append: string };
   pathToClaudeCodeExecutable?: string;
-  resume?: string;              // SDK session ID for multi-turn
+  resume?: string; // SDK session ID for multi-turn
   permissionMode: 'default' | 'bypassPermissions' | 'plan' | 'acceptEdits';
   allowDangerouslySkipPermissions?: boolean;
   model?: string;

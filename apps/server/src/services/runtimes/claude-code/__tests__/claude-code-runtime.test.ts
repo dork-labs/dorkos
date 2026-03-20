@@ -111,45 +111,47 @@ describe('ClaudeCodeRuntime', () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          yield {
-            type: 'system',
-            subtype: 'init',
-            session_id: 'nonexistent',
-            tools: [],
-            mcp_servers: [],
-            model: 'test',
-            permissionMode: 'default',
-            slash_commands: [],
-            output_style: 'text',
-            skills: [],
-            plugins: [],
-            cwd: '/test',
-            apiKeySource: 'user',
-            uuid: 'uuid-1',
-          };
-          yield {
-            type: 'result',
-            subtype: 'success',
-            duration_ms: 100,
-            duration_api_ms: 80,
-            is_error: false,
-            num_turns: 1,
-            result: '',
-            stop_reason: 'end_turn',
-            total_cost_usd: 0.001,
-            usage: {
-              input_tokens: 10,
-              output_tokens: 5,
-              cache_read_input_tokens: 0,
-              cache_creation_input_tokens: 0,
-            },
-            modelUsage: {},
-            permission_denials: [],
-            uuid: 'uuid-2',
-            session_id: 'nonexistent',
-          };
-        })())
+        wrapSdkQuery(
+          (async function* () {
+            yield {
+              type: 'system',
+              subtype: 'init',
+              session_id: 'nonexistent',
+              tools: [],
+              mcp_servers: [],
+              model: 'test',
+              permissionMode: 'default',
+              slash_commands: [],
+              output_style: 'text',
+              skills: [],
+              plugins: [],
+              cwd: '/test',
+              apiKeySource: 'user',
+              uuid: 'uuid-1',
+            };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              duration_ms: 100,
+              duration_api_ms: 80,
+              is_error: false,
+              num_turns: 1,
+              result: '',
+              stop_reason: 'end_turn',
+              total_cost_usd: 0.001,
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+              modelUsage: {},
+              permission_denials: [],
+              uuid: 'uuid-2',
+              session_id: 'nonexistent',
+            };
+          })()
+        )
       );
 
       // Don't call ensureSession first - sendMessage should auto-create
@@ -217,40 +219,42 @@ describe('ClaudeCodeRuntime', () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          yield {
-            type: 'system',
-            subtype: 'init',
-            session_id: 'sdk-session-sp',
-            tools: [],
-            mcp_servers: [],
-            model: 'test',
-            permissionMode: 'default',
-            slash_commands: [],
-            output_style: 'text',
-            skills: [],
-            plugins: [],
-            cwd: '/test',
-            apiKeySource: 'user',
-            uuid: 'uuid-1',
-          };
-          yield {
-            type: 'result',
-            subtype: 'success',
-            duration_ms: 100,
-            duration_api_ms: 80,
-            is_error: false,
-            num_turns: 1,
-            result: '',
-            stop_reason: 'end_turn',
-            total_cost_usd: 0.001,
-            usage: { input_tokens: 10, output_tokens: 5 },
-            modelUsage: {},
-            permission_denials: [],
-            uuid: 'uuid-2',
-            session_id: 'sdk-session-sp',
-          };
-        })())
+        wrapSdkQuery(
+          (async function* () {
+            yield {
+              type: 'system',
+              subtype: 'init',
+              session_id: 'sdk-session-sp',
+              tools: [],
+              mcp_servers: [],
+              model: 'test',
+              permissionMode: 'default',
+              slash_commands: [],
+              output_style: 'text',
+              skills: [],
+              plugins: [],
+              cwd: '/test',
+              apiKeySource: 'user',
+              uuid: 'uuid-1',
+            };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              duration_ms: 100,
+              duration_api_ms: 80,
+              is_error: false,
+              num_turns: 1,
+              result: '',
+              stop_reason: 'end_turn',
+              total_cost_usd: 0.001,
+              usage: { input_tokens: 10, output_tokens: 5 },
+              modelUsage: {},
+              permission_denials: [],
+              uuid: 'uuid-2',
+              session_id: 'sdk-session-sp',
+            };
+          })()
+        )
       );
 
       agentManager.ensureSession('sp-test', { permissionMode: 'default' });
@@ -281,9 +285,11 @@ describe('ClaudeCodeRuntime', () => {
         callCount++;
         if (callCount === 1) {
           // First call: simulate a stale session resume failure
-          return wrapSdkQuery((async function* () {
-            throw new Error('Query closed before response received');
-          })());
+          return wrapSdkQuery(
+            (async function* () {
+              throw new Error('Query closed before response received');
+            })()
+          );
         }
         // Second call: succeed normally with content
         return wrapSdkQuery(sdkSimpleText('retry succeeded'));
@@ -309,9 +315,11 @@ describe('ClaudeCodeRuntime', () => {
       (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          throw new Error('Claude Code process exited with code 1');
-        })()),
+        wrapSdkQuery(
+          (async function* () {
+            throw new Error('Claude Code process exited with code 1');
+          })()
+        )
       );
 
       agentManager.ensureSession('stale-exit', { permissionMode: 'default', hasStarted: true });
@@ -333,47 +341,51 @@ describe('ClaudeCodeRuntime', () => {
       (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          yield {
-            type: 'system',
-            subtype: 'init',
-            session_id: 'cwd-test',
-            tools: [],
-            mcp_servers: [],
-            model: 'test',
-            permissionMode: 'default',
-            slash_commands: [],
-            output_style: 'text',
-            skills: [],
-            plugins: [],
-            cwd: '/correct/path',
-            apiKeySource: 'user',
-            uuid: 'uuid-1',
-          };
-          yield {
-            type: 'result',
-            subtype: 'success',
-            duration_ms: 100,
-            duration_api_ms: 80,
-            is_error: false,
-            num_turns: 1,
-            result: '',
-            stop_reason: 'end_turn',
-            total_cost_usd: 0.001,
-            usage: { input_tokens: 10, output_tokens: 5 },
-            modelUsage: {},
-            permission_denials: [],
-            uuid: 'uuid-2',
-            session_id: 'cwd-test',
-          };
-        })())
+        wrapSdkQuery(
+          (async function* () {
+            yield {
+              type: 'system',
+              subtype: 'init',
+              session_id: 'cwd-test',
+              tools: [],
+              mcp_servers: [],
+              model: 'test',
+              permissionMode: 'default',
+              slash_commands: [],
+              output_style: 'text',
+              skills: [],
+              plugins: [],
+              cwd: '/correct/path',
+              apiKeySource: 'user',
+              uuid: 'uuid-1',
+            };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              duration_ms: 100,
+              duration_api_ms: 80,
+              is_error: false,
+              num_turns: 1,
+              result: '',
+              stop_reason: 'end_turn',
+              total_cost_usd: 0.001,
+              usage: { input_tokens: 10, output_tokens: 5 },
+              modelUsage: {},
+              permission_denials: [],
+              uuid: 'uuid-2',
+              session_id: 'cwd-test',
+            };
+          })()
+        )
       );
 
       // Session created with empty cwd (simulating stale binding)
       agentManager.ensureSession('cwd-empty', { permissionMode: 'default', cwd: '' });
 
       const events = [];
-      for await (const event of agentManager.sendMessage('cwd-empty', 'hello', { cwd: '/correct/path' })) {
+      for await (const event of agentManager.sendMessage('cwd-empty', 'hello', {
+        cwd: '/correct/path',
+      })) {
         events.push(event);
       }
 
@@ -392,9 +404,11 @@ describe('ClaudeCodeRuntime', () => {
       (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          throw new Error('API key not found');
-        })())
+        wrapSdkQuery(
+          (async function* () {
+            throw new Error('API key not found');
+          })()
+        )
       );
 
       // Use hasStarted: true so the retry path is reachable — but non-resume errors should not retry
@@ -424,40 +438,42 @@ describe('ClaudeCodeRuntime', () => {
 
       // SDK yields only init + success result — no text_delta or tool_call_start
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          yield {
-            type: 'system',
-            subtype: 'init',
-            session_id: 'empty-stream',
-            tools: [],
-            mcp_servers: [],
-            model: 'test',
-            permissionMode: 'default',
-            slash_commands: [],
-            output_style: 'text',
-            skills: [],
-            plugins: [],
-            cwd: '/test',
-            apiKeySource: 'user',
-            uuid: 'uuid-1',
-          };
-          yield {
-            type: 'result',
-            subtype: 'success',
-            duration_ms: 100,
-            duration_api_ms: 80,
-            is_error: false,
-            num_turns: 1,
-            result: '',
-            stop_reason: 'end_turn',
-            total_cost_usd: 0.001,
-            usage: { input_tokens: 10, output_tokens: 5 },
-            modelUsage: {},
-            permission_denials: [],
-            uuid: 'uuid-2',
-            session_id: 'empty-stream',
-          };
-        })()),
+        wrapSdkQuery(
+          (async function* () {
+            yield {
+              type: 'system',
+              subtype: 'init',
+              session_id: 'empty-stream',
+              tools: [],
+              mcp_servers: [],
+              model: 'test',
+              permissionMode: 'default',
+              slash_commands: [],
+              output_style: 'text',
+              skills: [],
+              plugins: [],
+              cwd: '/test',
+              apiKeySource: 'user',
+              uuid: 'uuid-1',
+            };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              duration_ms: 100,
+              duration_api_ms: 80,
+              is_error: false,
+              num_turns: 1,
+              result: '',
+              stop_reason: 'end_turn',
+              total_cost_usd: 0.001,
+              usage: { input_tokens: 10, output_tokens: 5 },
+              modelUsage: {},
+              permission_denials: [],
+              uuid: 'uuid-2',
+              session_id: 'empty-stream',
+            };
+          })()
+        )
       );
 
       agentManager.ensureSession('empty', { permissionMode: 'default' });
@@ -478,9 +494,11 @@ describe('ClaudeCodeRuntime', () => {
 
       // Both calls throw 'session not found' — a genuine resume failure
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery((async function* () {
-          throw new Error('session not found');
-        })()),
+        wrapSdkQuery(
+          (async function* () {
+            throw new Error('session not found');
+          })()
+        )
       );
 
       agentManager.ensureSession('retry-exhaust', { permissionMode: 'default', hasStarted: true });
@@ -519,7 +537,9 @@ describe('ClaudeCodeRuntime', () => {
 
       const errorEvent = events.find((e) => e.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect((errorEvent!.data as Record<string, unknown>).message).toContain('Directory boundary violation');
+      expect((errorEvent!.data as Record<string, unknown>).message).toContain(
+        'Directory boundary violation'
+      );
     });
   });
 
@@ -699,9 +719,7 @@ describe('ClaudeCodeRuntime', () => {
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       // readManifest throws (no .dork/agent.json)
-      (readManifest as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error('ENOENT')
-      );
+      (readManifest as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('ENOENT'));
 
       agentManager.ensureSession('tf-5', { permissionMode: 'default' });
       const events = [];
@@ -710,10 +728,7 @@ describe('ClaudeCodeRuntime', () => {
       }
 
       // Should pass undefined for agentConfig (no manifest)
-      expect(resolveToolConfig).toHaveBeenCalledWith(
-        undefined,
-        expect.any(Object)
-      );
+      expect(resolveToolConfig).toHaveBeenCalledWith(undefined, expect.any(Object));
       // Should still complete without errors
       expect(events.find((e) => e.type === 'done')).toBeDefined();
       expect(events.find((e) => e.type === 'error')).toBeUndefined();
@@ -844,11 +859,7 @@ describe('ClaudeCodeRuntime', () => {
       });
 
       const result = await agentManager.getCommands();
-      expect(result.commands.map((c) => c.fullCommand)).toEqual([
-        '/alpha',
-        '/middle',
-        '/zebra',
-      ]);
+      expect(result.commands.map((c) => c.fullCommand)).toEqual(['/alpha', '/middle', '/zebra']);
     });
   });
 });

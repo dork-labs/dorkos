@@ -1,8 +1,4 @@
 {
   "title": "Self-Hosting",
-  "pages": [
-    "deployment",
-    "docker",
-    "reverse-proxy"
-  ]
+  "pages": ["deployment", "docker", "reverse-proxy"]
 }

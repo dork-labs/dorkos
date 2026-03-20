@@ -1,5 +1,5 @@
 ---
-title: "Loop MVP: The Autonomous Improvement Engine (v0.4)"
+title: 'Loop MVP: The Autonomous Improvement Engine (v0.4)'
 date: 2026-02-18
 type: exploratory
 status: superseded
@@ -8,6 +8,7 @@ tags: [loop, autonomous-improvement, mvp, ideation, agent-orchestration]
 ---
 
 # Loop MVP: The Autonomous Improvement Engine
+
 **Version:** 0.4 (MVP Scope)
 **Author:** Dorian Collier
 **Date:** February 2026
@@ -38,18 +39,21 @@ When Claude Opus 5 ships, every Loop installation worldwide gets better overnigh
 ### Why This Matters
 
 **For users:**
+
 - Run Loop fully on-premises with any model you choose — local LLMs, Claude, GPT, Gemini
 - No AI vendor lock-in. Swap models without touching Loop
 - No AI costs from Loop itself. Your only costs are the models you already pay for
 - No data leaves your infrastructure for AI processing (Loop stores data, agents process it locally)
 
 **For the product:**
+
 - No model fine-tuning to maintain. No prompt engineering regressions from API changes
 - No AI-specific infrastructure (GPU instances, embedding databases, vector stores)
 - The entire system is deterministic and testable with unit tests
 - Deployment is a standard web app: Node.js, Postgres, static React frontend
 
 **For the ecosystem:**
+
 - Any agent that can make HTTP calls works with Loop — DorkOS, Devin, Codex, Claude Code, custom agents
 - Any model works — the prompts are model-agnostic instructions
 - Open source means the prompt templates are community-improvable
@@ -64,11 +68,13 @@ When Claude Opus 5 ships, every Loop installation worldwide gets better overnigh
 The litepaper v2 had Loop dispatching work to DorkOS (push model). The MVP inverts this.
 
 **Push model (v2, complex):**
+
 ```
 Signal → Loop creates issue → Loop sends to DorkOS → DorkOS runs agent → Agent reports back
 ```
 
 **Pull model (MVP, simple):**
+
 ```
 Signal → Loop creates issue → DorkOS polls Loop on schedule → Loop returns issue + prompt → DorkOS runs agent → Agent reports results to Loop API
 ```
@@ -210,6 +216,7 @@ Issue {
 This means every issue is either a **root issue** (no parent) or a **child issue** (has parent, cannot have children). The loop chain (signal → hypothesis → tasks) is expressed as siblings under a common parent, not as a deep tree. Relations (`blocks`/`blocked_by`) handle execution ordering between siblings.
 
 **Why 1 level?**
+
 - Agents don't need to reason about deep hierarchies — they need a flat list of work
 - The dispatch endpoint is simpler (no recursive queries)
 - The dashboard is simpler (parent + children, never grandchildren)
@@ -348,18 +355,18 @@ Signal (N)
 
 **Key cardinalities:**
 
-| Relationship               | Cardinality    |
-|----------------------------|---------------|
-| Issue → Project            | N:1 (optional) |
-| Issue → Parent Issue       | N:1 (optional, 1 level max) |
-| Issue → Labels             | N:M            |
-| Issue → IssueRelations     | 1:N            |
-| Issue → Comments           | 1:N            |
-| Project → Goal             | 1:1 (optional) |
-| Signal → Issue             | 1:1            |
-| PromptTemplate → Versions  | 1:N            |
-| PromptVersion → Reviews    | 1:N            |
-| PromptTemplate → Project   | N:1 (optional) |
+| Relationship              | Cardinality                 |
+| ------------------------- | --------------------------- |
+| Issue → Project           | N:1 (optional)              |
+| Issue → Parent Issue      | N:1 (optional, 1 level max) |
+| Issue → Labels            | N:M                         |
+| Issue → IssueRelations    | 1:N                         |
+| Issue → Comments          | 1:N                         |
+| Project → Goal            | 1:1 (optional)              |
+| Signal → Issue            | 1:1                         |
+| PromptTemplate → Versions | 1:N                         |
+| PromptVersion → Reviews   | 1:N                         |
+| PromptTemplate → Project  | N:1 (optional)              |
 
 ---
 
@@ -401,14 +408,14 @@ PromptTemplate {
 
 **Example template conditions:**
 
-| Template | Conditions | Specificity |
-|----------|-----------|-------------|
-| `signal-triage` | `{ "type": "signal" }` | 10 |
-| `posthog-metric-triage` | `{ "type": "signal", "signalSource": "posthog" }` | 20 |
-| `sentry-error-triage` | `{ "type": "signal", "signalSource": "sentry" }` | 20 |
-| `task-execute` | `{ "type": "task" }` | 10 |
-| `task-execute-retry` | `{ "type": "task", "hasFailedSessions": true }` | 20 |
-| `task-execute-frontend` | `{ "type": "task", "labels": ["frontend"] }` | 15 |
+| Template                | Conditions                                        | Specificity |
+| ----------------------- | ------------------------------------------------- | ----------- |
+| `signal-triage`         | `{ "type": "signal" }`                            | 10          |
+| `posthog-metric-triage` | `{ "type": "signal", "signalSource": "posthog" }` | 20          |
+| `sentry-error-triage`   | `{ "type": "signal", "signalSource": "sentry" }`  | 20          |
+| `task-execute`          | `{ "type": "task" }`                              | 10          |
+| `task-execute-retry`    | `{ "type": "task", "hasFailedSessions": true }`   | 20          |
+| `task-execute-frontend` | `{ "type": "task", "labels": ["frontend"] }`      | 15          |
 
 A PostHog signal matches both `signal-triage` (specificity 10) and `posthog-metric-triage` (specificity 20). The more specific one wins. A task that previously failed matches `task-execute-retry` (specificity 20) over `task-execute` (specificity 10), so the agent gets instructions that include what went wrong last time.
 
@@ -417,65 +424,80 @@ A PostHog signal matches both `signal-triage` (specificity 10) and `posthog-metr
 The selected template is a Handlebars template that gets hydrated with the full system state. The template itself handles dynamic conditions:
 
 ```handlebars
-You are working on issue #{{issue.number}}: {{issue.title}}
+You are working on issue #{{issue.number}}:
+{{issue.title}}
 
 {{#if previousSessions}}
-## ⚠️ Previous Attempts
-This issue has been attempted {{previousSessions.length}} time(s) before:
-{{#each previousSessions}}
-- Attempt {{@index}}: {{this.status}} — {{this.agentSummary}}
-{{/each}}
-Review what went wrong and take a different approach.
+  ## ⚠️ Previous Attempts This issue has been attempted
+  {{previousSessions.length}}
+  time(s) before:
+  {{#each previousSessions}}
+    - Attempt
+    {{@index}}:
+    {{this.status}}
+    —
+    {{this.agentSummary}}
+  {{/each}}
+  Review what went wrong and take a different approach.
 {{/if}}
 
 {{#if parent}}
-## Parent Issue
-#{{parent.number}} [{{parent.type}}]: {{parent.title}}
-{{#if parent.hypothesis}}
-Hypothesis: {{parent.hypothesis.statement}} (confidence: {{parent.hypothesis.confidence}})
-{{/if}}
+  ## Parent Issue #{{parent.number}}
+  [{{parent.type}}]:
+  {{parent.title}}
+  {{#if parent.hypothesis}}
+    Hypothesis:
+    {{parent.hypothesis.statement}}
+    (confidence:
+    {{parent.hypothesis.confidence}})
+  {{/if}}
 {{/if}}
 
 {{#if siblings}}
-## Sibling Issues
-{{#each siblings}}
-- #{{this.number}} [{{this.status}}]: {{this.title}}
-{{/each}}
+  ## Sibling Issues
+  {{#each siblings}}
+    - #{{this.number}}
+    [{{this.status}}]:
+    {{this.title}}
+  {{/each}}
 {{/if}}
 
 {{#if goal}}
-## Goal
-{{goal.title}}
-Progress: {{goal.currentValue}}{{goal.unit}} → target {{goal.targetValue}}{{goal.unit}}
+  ## Goal
+  {{goal.title}}
+  Progress:
+  {{goal.currentValue}}{{goal.unit}}
+  → target
+  {{goal.targetValue}}{{goal.unit}}
 {{/if}}
 
 {{#if blocking}}
-## ⚡ Urgency
-These issues are waiting on you:
-{{#each blocking}}
-- #{{this.number}}: {{this.title}}
-{{/each}}
+  ## ⚡ Urgency These issues are waiting on you:
+  {{#each blocking}}
+    - #{{this.number}}:
+    {{this.title}}
+  {{/each}}
 {{/if}}
 ```
 
 **Template variables available:**
 
-| Variable | Source |
-|----------|--------|
-| `{{issue.*}}` | All issue fields (number, title, description, type, priority, status, signalSource, signalPayload, hypothesis) |
-| `{{parent.*}}` | Parent issue fields (if parentId set) |
-| `{{siblings}}` | Other children of the same parent |
-| `{{children}}` | Child issues (if this is a root issue) |
-| `{{project.*}}` | Project fields (name, description, status, health) |
-| `{{goal.*}}` | Goal fields (title, metric, targetValue, currentValue, unit) |
-| `{{labels}}` | Issue labels |
-| `{{blocking}}` | Issues this issue is blocking |
-| `{{blockedBy}}` | Issues blocking this issue |
-| `{{previousSessions}}` | Previous agent sessions on this issue (status, summary) |
-| `{{loopUrl}}` | Loop API base URL |
-| `{{loopToken}}` | API bearer token for callbacks |
-| `{{meta.templateId}}` | Template ID (for prompt reviews) |
-| `{{meta.versionId}}` | Version ID (for prompt reviews) |
+| Variable               | Source                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `{{issue.*}}`          | All issue fields (number, title, description, type, priority, status, signalSource, signalPayload, hypothesis) |
+| `{{parent.*}}`         | Parent issue fields (if parentId set)                                                                          |
+| `{{siblings}}`         | Other children of the same parent                                                                              |
+| `{{children}}`         | Child issues (if this is a root issue)                                                                         |
+| `{{project.*}}`        | Project fields (name, description, status, health)                                                             |
+| `{{goal.*}}`           | Goal fields (title, metric, targetValue, currentValue, unit)                                                   |
+| `{{labels}}`           | Issue labels                                                                                                   |
+| `{{blocking}}`         | Issues this issue is blocking                                                                                  |
+| `{{blockedBy}}`        | Issues blocking this issue                                                                                     |
+| `{{previousSessions}}` | Previous agent sessions on this issue (status, summary)                                                        |
+| `{{loopUrl}}`          | Loop API base URL                                                                                              |
+| `{{loopToken}}`        | API bearer token for callbacks                                                                                 |
+| `{{meta.templateId}}`  | Template ID (for prompt reviews)                                                                               |
+| `{{meta.versionId}}`   | Version ID (for prompt reviews)                                                                                |
 
 ### Prompt Versioning
 
@@ -565,16 +587,17 @@ Description: |
 This issue enters the dispatch queue like any other. An agent picks it up and gets a special `prompt-improvement` template:
 
 ```handlebars
-You are improving a prompt template for the Loop project tracker.
-
-## Template
-Name: {{template.name}} ({{template.slug}})
-Current version: v{{currentVersion.version}}
-Usage: {{currentVersion.usageCount}} dispatches, {{currentVersion.completionRate}}% completion rate
-
-## Current Template Content
+You are improving a prompt template for the Loop project tracker. ## Template Name:
+{{template.name}}
+({{template.slug}}) Current version: v{{currentVersion.version}}
+Usage:
+{{currentVersion.usageCount}}
+dispatches,
+{{currentVersion.completionRate}}% completion rate ## Current Template Content
 ```
+
 {{currentVersion.content}}
+
 ```
 
 ## Agent Reviews ({{reviews.length}} since last update)
@@ -646,6 +669,7 @@ POST /api/signals
 ```
 
 Loop creates a Signal record and a triage issue:
+
 ```
 Issue #31: "PostHog: sign-up conversion -12% (24h)"
 type: signal
@@ -698,6 +722,7 @@ POST /api/issues/:task-42/relations { "type": "blocks", "relatedIssueId": "<moni
 ```
 
 The resulting structure:
+
 ```
 Signal #31: "PostHog: sign-up conversion -12%"
 ├── Hypothesis #35: "OAuth redirect caused conversion drop"
@@ -803,14 +828,14 @@ GET    /api/dashboard/prompts      # Prompt health: usage counts, review scores,
 
 ## Tech Stack
 
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| **API** | Node.js + Hono | Fast, TypeScript-native, lightweight |
-| **Database** | PostgreSQL + Drizzle ORM | Relational integrity for issue hierarchies, JSONB for signal payloads |
-| **Templating** | Handlebars | Battle-tested, logic-light, easy for humans and agents to author |
-| **Frontend** | React 19 + Vite + Tailwind + shadcn/ui | Consistent with DorkOS ecosystem |
-| **Deployment** | Cloud (Render/Railway/Fly.io) | Public endpoints for webhooks, accessible by DorkOS instances |
-| **Auth** | API key (MVP) | Simple bearer token for agent access. Multi-user auth in v1. |
+| Layer          | Technology                             | Rationale                                                             |
+| -------------- | -------------------------------------- | --------------------------------------------------------------------- |
+| **API**        | Node.js + Hono                         | Fast, TypeScript-native, lightweight                                  |
+| **Database**   | PostgreSQL + Drizzle ORM               | Relational integrity for issue hierarchies, JSONB for signal payloads |
+| **Templating** | Handlebars                             | Battle-tested, logic-light, easy for humans and agents to author      |
+| **Frontend**   | React 19 + Vite + Tailwind + shadcn/ui | Consistent with DorkOS ecosystem                                      |
+| **Deployment** | Cloud (Render/Railway/Fly.io)          | Public endpoints for webhooks, accessible by DorkOS instances         |
+| **Auth**       | API key (MVP)                          | Simple bearer token for agent access. Multi-user auth in v1.          |
 
 No queue system. No MCP server. No AI runtime. No vector database. No GPU instances.
 
@@ -821,13 +846,17 @@ No queue system. No MCP server. No AI runtime. No vector database. No GPU instan
 The dashboard provides visibility into the loop. Five views:
 
 ### 1. Issue List
+
 Default view. Filterable table of all issues.
+
 - Columns: number, title, type, status, priority, project, labels, created, updated
 - Filters: status, type, project, label, priority
 - Click → issue detail panel
 
 ### 2. Issue Detail
+
 Side panel or full page showing:
+
 - Issue metadata (type, status, priority, project, labels)
 - Description (markdown rendered)
 - Parent issue (if child) or children (if root)
@@ -838,7 +867,9 @@ Side panel or full page showing:
 - Hypothesis data (if type=hypothesis)
 
 ### 3. Loop Activity
+
 A timeline/feed showing the loop in action:
+
 - Signal #31 received (PostHog: conversion -12%)
 - → Hypothesis #35 created (OAuth redirect friction, confidence 0.82)
 - → Task #42 created (Add loading spinner)
@@ -849,13 +880,17 @@ A timeline/feed showing the loop in action:
 This is the "wow" view — shows the autonomous loop working.
 
 ### 4. Goals Dashboard
+
 Overview of all active goals with progress indicators:
+
 - Goal title, target, current value, trend arrow
 - Linked project status
 - Issues contributing to this goal
 
 ### 5. Prompt Health
+
 Overview of all prompt templates with quality metrics:
+
 - Template name, slug, active version, usage count
 - Average review score (clarity, completeness, relevance)
 - Completion rate (% of dispatched issues that reached "done")
@@ -914,7 +949,7 @@ Five default templates ship with Loop, one per issue type.
 
 ### Signal Triage (`conditions: { "type": "signal" }`, specificity: 10)
 
-```handlebars
+````handlebars
 You are triaging a signal for the Loop project tracker.
 
 ## Signal
@@ -926,19 +961,22 @@ Severity: {{issue.priority_label}}
 Raw data:
 ```json
 {{json issue.signalPayload}}
-```
+````
+
 {{/if}}
 
 {{> project_and_goal_context}}
 
 ## Your Task
+
 1. Analyze this signal. Is it actionable or noise?
 2. If actionable, determine the likely cause and create a hypothesis issue as a child of this signal.
 3. If noise, mark this signal as canceled with an explanation.
 
 {{> api_reference}}
 {{> review_instructions}}
-```
+
+````
 
 ### Hypothesis Planning (`conditions: { "type": "hypothesis" }`, specificity: 10)
 
@@ -968,7 +1006,7 @@ Evidence:
 
 {{> api_reference}}
 {{> review_instructions}}
-```
+````
 
 ### Task Execution (`conditions: { "type": "task" }`, specificity: 10)
 
@@ -1076,45 +1114,45 @@ Templates use Handlebars partials for common sections:
 
 ## What's NOT in the MVP
 
-| Deferred | Why it can wait |
-|----------|----------------|
-| Teams / multi-team | Single team is fine for proving the loop |
-| Cycles | Continuous operation; measurement windows can come later |
-| Initiatives | Strategic layer; projects + goals are sufficient |
-| Workflow states as entities | Fixed status enum works; per-team customization is a v1 feature |
-| Customers / CRM | Signals don't need to know who sent them for MVP |
-| Custom views | Default views are sufficient |
-| Feedback widget | Manual signals via CLI/webhook are enough |
-| Multi-user auth | Single user + API key for MVP |
-| MCP server | REST API is sufficient; MCP is a nicer wrapper for later |
-| Multiple agent backends | DorkOS-only via Pulse polling |
-| Auto-merge pipeline | Agent creates PRs; human merges for MVP (safer) |
-| Hypothesis confidence calibration | Track manually; auto-calibration is v1 |
-| Signal deduplication | Simple title matching; semantic dedup is v1 |
-| Auto-promote prompt versions | Human approves for MVP; auto-promote is v1 |
+| Deferred                          | Why it can wait                                                 |
+| --------------------------------- | --------------------------------------------------------------- |
+| Teams / multi-team                | Single team is fine for proving the loop                        |
+| Cycles                            | Continuous operation; measurement windows can come later        |
+| Initiatives                       | Strategic layer; projects + goals are sufficient                |
+| Workflow states as entities       | Fixed status enum works; per-team customization is a v1 feature |
+| Customers / CRM                   | Signals don't need to know who sent them for MVP                |
+| Custom views                      | Default views are sufficient                                    |
+| Feedback widget                   | Manual signals via CLI/webhook are enough                       |
+| Multi-user auth                   | Single user + API key for MVP                                   |
+| MCP server                        | REST API is sufficient; MCP is a nicer wrapper for later        |
+| Multiple agent backends           | DorkOS-only via Pulse polling                                   |
+| Auto-merge pipeline               | Agent creates PRs; human merges for MVP (safer)                 |
+| Hypothesis confidence calibration | Track manually; auto-calibration is v1                          |
+| Signal deduplication              | Simple title matching; semantic dedup is v1                     |
+| Auto-promote prompt versions      | Human approves for MVP; auto-promote is v1                      |
 
 ---
 
 ## What IS in the MVP
 
-| Feature | Purpose |
-|---------|---------|
-| **Issues** (full CRUD, 1-level hierarchy) | The atomic unit — signals, hypotheses, plans, tasks, monitors |
-| **Projects** | Multi-project from day 1 |
-| **Goals** | Success indicators — "is the loop actually improving things?" |
-| **Labels** | Categorization — bugs vs features vs infrastructure |
-| **Issue Relations** | Blocking/blocked — execution ordering |
-| **Comments** | Agent + human communication on issues |
-| **Signals** | Raw incoming data with webhook endpoints |
-| **Dispatch endpoint** | Pull-based: selects template by conditions, hydrates, returns issue + prompt |
-| **Prompt templates** (conditions-based selection) | Right prompt for the right context |
-| **Prompt versioning** | Version history, rollback, usage metrics |
-| **Prompt reviews** | Agent feedback on prompt quality |
-| **Prompt improvement loop** | Auto-creates issues when prompt quality degrades |
-| **Priority logic** | Deterministic scoring for "what's next" |
-| **React dashboard** | Issue list, detail, loop activity, goals, prompt health |
-| **CLI** | Issue management, signal submission, triage, template management |
-| **Cloud deployment** | Public endpoints for webhooks |
+| Feature                                           | Purpose                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Issues** (full CRUD, 1-level hierarchy)         | The atomic unit — signals, hypotheses, plans, tasks, monitors                |
+| **Projects**                                      | Multi-project from day 1                                                     |
+| **Goals**                                         | Success indicators — "is the loop actually improving things?"                |
+| **Labels**                                        | Categorization — bugs vs features vs infrastructure                          |
+| **Issue Relations**                               | Blocking/blocked — execution ordering                                        |
+| **Comments**                                      | Agent + human communication on issues                                        |
+| **Signals**                                       | Raw incoming data with webhook endpoints                                     |
+| **Dispatch endpoint**                             | Pull-based: selects template by conditions, hydrates, returns issue + prompt |
+| **Prompt templates** (conditions-based selection) | Right prompt for the right context                                           |
+| **Prompt versioning**                             | Version history, rollback, usage metrics                                     |
+| **Prompt reviews**                                | Agent feedback on prompt quality                                             |
+| **Prompt improvement loop**                       | Auto-creates issues when prompt quality degrades                             |
+| **Priority logic**                                | Deterministic scoring for "what's next"                                      |
+| **React dashboard**                               | Issue list, detail, loop activity, goals, prompt health                      |
+| **CLI**                                           | Issue management, signal submission, triage, template management             |
+| **Cloud deployment**                              | Public endpoints for webhooks                                                |
 
 ---
 
@@ -1136,9 +1174,11 @@ The "no AI" architecture is the strongest competitive moat:
 ## Roadmap (Post-MVP)
 
 ### v0.1: The Loop Works
+
 Everything in the "What IS in the MVP" table above.
 
 ### v0.2: Refined Intelligence
+
 - More signal-source-specific prompt templates (PostHog, Sentry, GitHub)
 - Hypothesis tracking dashboard (hit rate, confidence calibration)
 - Auto-merge pipeline (agent PR → CI passes → auto-merge)
@@ -1147,12 +1187,14 @@ Everything in the "What IS in the MVP" table above.
 - Feedback widget (embeddable JS)
 
 ### v0.3: Team Scale
+
 - Multi-user auth (Better Auth or Clerk)
 - Teams + per-team workflow states (Linear-style)
 - Cycles (observation windows with metrics)
 - Custom views (saved filters)
 
 ### v1.0: Platform
+
 - MCP server (nicer agent interface than REST)
 - Multiple agent backend support
 - Initiatives (strategic hierarchy)
@@ -1180,6 +1222,7 @@ Everything in the "What IS in the MVP" table above.
 ## Summary
 
 Loop MVP is:
+
 - **A fully deterministic cloud web app** (Node.js + Hono + Postgres + Drizzle + React)
 - **With zero AI** — no LLM calls, no embeddings, no inference, no model dependencies
 - **With a data model** (Issues, Projects, Goals, Labels, Relations, Comments, Signals, PromptTemplates, PromptVersions, PromptReviews)

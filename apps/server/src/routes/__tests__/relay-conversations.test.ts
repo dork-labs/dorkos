@@ -4,7 +4,9 @@ import type { SubjectLabel } from '../../services/relay/subject-resolver.js';
 
 // === Helpers ===
 
-function makeMsg(overrides?: Partial<{ id: string; subject: string; status: string; createdAt: string }>) {
+function makeMsg(
+  overrides?: Partial<{ id: string; subject: string; status: string; createdAt: string }>
+) {
   return {
     id: 'msg-001',
     subject: 'relay.agent.session-abc',
@@ -14,7 +16,11 @@ function makeMsg(overrides?: Partial<{ id: string; subject: string; status: stri
   };
 }
 
-function makeDeadLetter(messageId: string, reason = 'TTL expired', from = 'relay.human.console.user1') {
+function makeDeadLetter(
+  messageId: string,
+  reason = 'TTL expired',
+  from = 'relay.human.console.user1'
+) {
   return {
     messageId,
     reason,
@@ -73,9 +79,21 @@ describe('buildConversations', () => {
 
   it('counts response chunks correctly', () => {
     const fromSubject = 'relay.human.console.user1';
-    const request = makeMsg({ id: 'req-1', subject: 'relay.agent.session-abc', status: 'delivered' });
-    const chunk1 = makeMsg({ id: 'chunk-1', subject: fromSubject, createdAt: '2024-01-01T00:00:01.000Z' });
-    const chunk2 = makeMsg({ id: 'chunk-2', subject: fromSubject, createdAt: '2024-01-01T00:00:02.000Z' });
+    const request = makeMsg({
+      id: 'req-1',
+      subject: 'relay.agent.session-abc',
+      status: 'delivered',
+    });
+    const chunk1 = makeMsg({
+      id: 'chunk-1',
+      subject: fromSubject,
+      createdAt: '2024-01-01T00:00:01.000Z',
+    });
+    const chunk2 = makeMsg({
+      id: 'chunk-2',
+      subject: fromSubject,
+      createdAt: '2024-01-01T00:00:02.000Z',
+    });
     const dl = makeDeadLetter('req-1', 'expired', fromSubject);
 
     const result = buildConversations([request, chunk1, chunk2], [dl], new Map());

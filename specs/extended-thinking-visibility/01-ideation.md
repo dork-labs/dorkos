@@ -108,11 +108,13 @@ The industry has converged on a **Progressive Disclosure Collapsible Block** as 
    - **Rejected for v1** — consider as opt-in view in future
 
 **Recommendation:** Solution 1 — Progressive Disclosure Accordion. Three reasons:
+
 1. **Honest by design** — collapsed chip always present; nothing silently discarded
 2. **Calm Tech alignment** — open when relevant (during streaming), collapsed when the answer is the focus
 3. **The Kai Test** — Kai debugging agent output wants to glance at reasoning, not scroll past walls of thinking text
 
 **Key implementation details from research:**
+
 - Use CSS `grid-template-rows: 0fr → 1fr` for collapse transition (no JS height measurement)
 - Buffer `thinking_delta` events and flush at ~50ms intervals via `requestAnimationFrame`
 - Cap expanded block at `max-h-64 overflow-y-auto` for long thinking sessions
@@ -120,14 +122,15 @@ The industry has converged on a **Progressive Disclosure Collapsible Block** as 
 - Follow the same structural contract as the planned SubagentBlock for visual consistency
 
 **Performance considerations:**
+
 - Thinking blocks can emit 100–10,000+ tokens — must efficiently append without re-rendering entire message list
 - Use ref-based buffer that flushes to state at controlled rate
 - CSS transitions over JS-driven height animations
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Stream thinking text live or show summary only? | Live streaming | Matches Claude.ai approach, satisfies "honest by design" principle. Users can watch the reasoning process in real-time during generation. |
-| 2 | FSD layer placement for ThinkingBlock.tsx | `features/chat/ui/` | Co-located with other chat message renderers (StreamingText, ToolCallCard). The thinking block is chat-specific and tightly coupled to streaming state. |
-| 3 | Collapsed label content | Elapsed time only | Show "Thought for 8s" — simple, human-readable, mirrors Claude.ai. Token count adds noise; can be added later as a tooltip enhancement. |
+| #   | Decision                                        | Choice              | Rationale                                                                                                                                               |
+| --- | ----------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Stream thinking text live or show summary only? | Live streaming      | Matches Claude.ai approach, satisfies "honest by design" principle. Users can watch the reasoning process in real-time during generation.               |
+| 2   | FSD layer placement for ThinkingBlock.tsx       | `features/chat/ui/` | Co-located with other chat message renderers (StreamingText, ToolCallCard). The thinking block is chat-specific and tightly coupled to streaming state. |
+| 3   | Collapsed label content                         | Elapsed time only   | Show "Thought for 8s" — simple, human-readable, mirrors Claude.ai. Token count adds noise; can be added later as a tooltip enhancement.                 |

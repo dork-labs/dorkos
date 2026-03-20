@@ -59,23 +59,23 @@ The Pulse scheduler was built as a functional prototype (Spec #43). It works, bu
 
 ### New Dependencies (client only)
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `sonner` | `^2.0.7` | Toast notifications (already used in `@dorkos/web`) |
-| `@radix-ui/react-tooltip` | `^1.x` | Tooltip for disabled Pulse icon |
-| `cmdk` | `^1.1.x` | Searchable timezone combobox (already used in `@dorkos/web`) |
+| Package                   | Version  | Purpose                                                      |
+| ------------------------- | -------- | ------------------------------------------------------------ |
+| `sonner`                  | `^2.0.7` | Toast notifications (already used in `@dorkos/web`)          |
+| `@radix-ui/react-tooltip` | `^1.x`   | Tooltip for disabled Pulse icon                              |
+| `cmdk`                    | `^1.1.x` | Searchable timezone combobox (already used in `@dorkos/web`) |
 
 ### Existing Dependencies (no changes)
 
-| Package | Version | Used For |
-|---------|---------|----------|
-| `motion` | `^12.33.0` | AnimatePresence, spring animations |
-| `@radix-ui/react-dialog` | `^1.1.15` | ResponsiveDialog foundation |
-| `@radix-ui/react-switch` | `^1.2.6` | Toggle switch |
-| `@radix-ui/react-dropdown-menu` | `^2.1.16` | Schedule row overflow menu |
-| `@tanstack/react-query` | `^5.62.0` | Data fetching hooks |
-| `lucide-react` | `latest` | Icons |
-| `cronstrue` | existing | Cron expression humanization |
+| Package                         | Version    | Used For                           |
+| ------------------------------- | ---------- | ---------------------------------- |
+| `motion`                        | `^12.33.0` | AnimatePresence, spring animations |
+| `@radix-ui/react-dialog`        | `^1.1.15`  | ResponsiveDialog foundation        |
+| `@radix-ui/react-switch`        | `^1.2.6`   | Toggle switch                      |
+| `@radix-ui/react-dropdown-menu` | `^2.1.16`  | Schedule row overflow menu         |
+| `@tanstack/react-query`         | `^5.62.0`  | Data fetching hooks                |
+| `lucide-react`                  | `latest`   | Icons                              |
+| `cronstrue`                     | existing   | Cron expression humanization       |
 
 ## Detailed Design
 
@@ -86,6 +86,7 @@ The current `GET /api/config` returns `ServerConfig` which does NOT include sche
 **File:** `apps/server/src/routes/config.ts`
 
 Add to the GET response object:
+
 ```typescript
 pulse: {
   enabled: !!schedulerService, // true when Pulse routes are mounted
@@ -95,6 +96,7 @@ pulse: {
 **File:** `packages/shared/src/schemas.ts`
 
 Extend `ServerConfigSchema` with:
+
 ```typescript
 pulse: z.object({
   enabled: z.boolean(),
@@ -110,6 +112,7 @@ This is the minimal server change needed. The client reads `config.pulse?.enable
 **File:** `apps/client/src/layers/shared/ui/tooltip.tsx`
 
 Add the standard shadcn Tooltip wrapper around `@radix-ui/react-tooltip`:
+
 - `Tooltip`, `TooltipTrigger`, `TooltipContent`, `TooltipProvider`
 - Export from `shared/ui/index.ts`
 - Mount `<TooltipProvider>` in `App.tsx` (wraps the entire app)
@@ -119,6 +122,7 @@ Add the standard shadcn Tooltip wrapper around `@radix-ui/react-tooltip`:
 **File:** `apps/client/src/layers/shared/ui/sonner.tsx`
 
 Wrap Sonner's `<Toaster />` with theme-aware styling (match the pattern from `@dorkos/web`):
+
 - Detect theme from `useTheme()` hook
 - Style with CSS variables to match the app's color tokens
 - Export and mount in `App.tsx`
@@ -128,6 +132,7 @@ Wrap Sonner's `<Toaster />` with theme-aware styling (match the pattern from `@d
 **File:** `apps/client/src/layers/shared/ui/command.tsx`
 
 Add the standard shadcn Command wrapper around `cmdk`:
+
 - `Command`, `CommandInput`, `CommandList`, `CommandEmpty`, `CommandGroup`, `CommandItem`
 - Export from `shared/ui/index.ts`
 
@@ -172,6 +177,7 @@ export function useSchedules(enabled = true) {
 #### 3c. Sidebar Behavior
 
 In `SessionSidebar.tsx`:
+
 - Fetch `usePulseEnabled()` hook
 - When disabled: render HeartPulse icon at `opacity-50`, wrap in `Tooltip` ("Pulse is disabled")
 - When enabled: render at full opacity, no tooltip
@@ -183,6 +189,7 @@ In `SessionSidebar.tsx`:
 **File:** `apps/client/src/layers/entities/pulse/model/use-runs.ts`
 
 Add a new hook:
+
 ```typescript
 export function useActiveRunCount(enabled = true) {
   const transport = useTransport();
@@ -190,7 +197,7 @@ export function useActiveRunCount(enabled = true) {
     queryKey: ['pulse', 'runs', { status: 'running' }],
     queryFn: async () => {
       const runs = await transport.listRuns({ limit: 10 });
-      return runs.filter(r => r.status === 'running').length;
+      return runs.filter((r) => r.status === 'running').length;
     },
     enabled,
     refetchInterval: 10_000,
@@ -199,10 +206,16 @@ export function useActiveRunCount(enabled = true) {
 ```
 
 In `SessionSidebar.tsx`, show a pulsing green dot when `activeRunCount > 0`:
+
 ```css
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 ```
 
@@ -215,6 +228,7 @@ Small `absolute` positioned dot (`size-2`, `bg-green-500`, `-top-0.5 -right-0.5`
 #### Container
 
 Replace the custom modal in `SessionSidebar.tsx` with:
+
 ```tsx
 <ResponsiveDialog open={pulseOpen} onOpenChange={setPulseOpen}>
   <ResponsiveDialogContent className="max-w-2xl gap-0 p-0">
@@ -232,17 +246,14 @@ When `usePulseEnabled()` returns `enabled: false`:
 
 ```tsx
 <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-  <HeartPulse className="size-8 text-muted-foreground/50" />
+  <HeartPulse className="text-muted-foreground/50 size-8" />
   <div>
     <p className="font-medium">Pulse is not enabled</p>
-    <p className="mt-1 text-sm text-muted-foreground">
-      Pulse runs AI agent tasks on a schedule. Start DorkOS with
-      the --pulse flag to enable it.
+    <p className="text-muted-foreground mt-1 text-sm">
+      Pulse runs AI agent tasks on a schedule. Start DorkOS with the --pulse flag to enable it.
     </p>
   </div>
-  <code className="mt-2 rounded-md bg-muted px-3 py-1.5 text-sm font-mono">
-    dorkos --pulse
-  </code>
+  <code className="bg-muted mt-2 rounded-md px-3 py-1.5 font-mono text-sm">dorkos --pulse</code>
 </div>
 ```
 
@@ -252,12 +263,11 @@ When enabled but `schedules.length === 0`:
 
 ```tsx
 <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-  <Clock className="size-8 text-muted-foreground/30" />
+  <Clock className="text-muted-foreground/30 size-8" />
   <div>
     <p className="font-medium">No schedules yet</p>
-    <p className="mt-1 text-sm text-muted-foreground">
-      Pulse runs AI agent tasks on a schedule — code reviews,
-      health checks, reports, and more.
+    <p className="text-muted-foreground mt-1 text-sm">
+      Pulse runs AI agent tasks on a schedule — code reviews, health checks, reports, and more.
     </p>
   </div>
   <button onClick={openCreateDialog} className="...primary button styles...">
@@ -273,11 +283,11 @@ Each schedule renders as a `ScheduleRow` component (extracted for file size):
 ```tsx
 <div className="space-y-2 p-4">
   <div className="flex items-center justify-between">
-    <h3 className="text-sm font-medium text-muted-foreground">Schedules</h3>
+    <h3 className="text-muted-foreground text-sm font-medium">Schedules</h3>
     <button onClick={openCreateDialog}>New Schedule</button>
   </div>
   <AnimatePresence initial={false}>
-    {schedules.map(schedule => (
+    {schedules.map((schedule) => (
       <motion.div
         key={schedule.id}
         initial={{ opacity: 0, y: 8 }}
@@ -303,13 +313,13 @@ Replace "Loading schedules..." with skeleton:
 
 ```tsx
 <div className="space-y-2 p-4">
-  {[1, 2, 3].map(i => (
+  {[1, 2, 3].map((i) => (
     <div key={i} className="rounded-lg border p-3">
       <div className="flex items-center gap-3">
-        <div className="size-2 animate-pulse rounded-full bg-muted" />
+        <div className="bg-muted size-2 animate-pulse rounded-full" />
         <div className="flex-1 space-y-1.5">
-          <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+          <div className="bg-muted h-4 w-32 animate-pulse rounded" />
+          <div className="bg-muted h-3 w-48 animate-pulse rounded" />
         </div>
       </div>
     </div>
@@ -340,6 +350,7 @@ Each schedule row contains:
 ```
 
 **Components:**
+
 - `StatusDot`: green (active+enabled), yellow (pending_approval), neutral-400 (disabled)
 - `Switch` from `shared/ui/switch.tsx`: inline toggle for enabled/disabled
 - Three-dot `DropdownMenu`: Edit, Run Now, Delete (with separator before Delete)
@@ -348,6 +359,7 @@ Each schedule row contains:
 - Expand/collapse: clicking the row toggles `RunHistoryPanel` with `AnimatePresence`
 
 **Three-dot menu items:**
+
 ```tsx
 <DropdownMenu>
   <DropdownMenuTrigger asChild>
@@ -371,14 +383,15 @@ Each schedule row contains:
 ```
 
 **Delete confirmation dialog:**
+
 ```tsx
 <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
   <DialogContent>
     <DialogHeader>
       <DialogTitle>Delete schedule</DialogTitle>
       <DialogDescription>
-        Delete "{schedule.name}"? This will also remove all run history.
-        This action cannot be undone.
+        Delete "{schedule.name}"? This will also remove all run history. This action cannot be
+        undone.
       </DialogDescription>
     </DialogHeader>
     <DialogFooter>
@@ -392,6 +405,7 @@ Each schedule row contains:
 ```
 
 **Run history expand (AnimatePresence):**
+
 ```tsx
 <AnimatePresence initial={false}>
   {expanded && (
@@ -402,7 +416,7 @@ Each schedule row contains:
       transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
       className="overflow-hidden"
     >
-      <div className="border-t px-3 pb-3 pt-2">
+      <div className="border-t px-3 pt-2 pb-3">
         <RunHistoryPanel scheduleId={schedule.id} />
       </div>
     </motion.div>
@@ -677,7 +691,7 @@ function RunStatusIcon({ status }: { status: PulseRun['status'] }) {
     case 'failed':
       return <XCircle className="size-(--size-icon-xs) text-red-500" />;
     case 'cancelled':
-      return <MinusCircle className="size-(--size-icon-xs) text-muted-foreground" />;
+      return <MinusCircle className="text-muted-foreground size-(--size-icon-xs)" />;
   }
 }
 ```
@@ -705,34 +719,30 @@ function formatRelativeTime(dateString: string): string {
 #### Desktop Layout
 
 ```tsx
-<div className="hidden md:grid grid-cols-[20px_56px_1fr_64px_20px] items-center gap-2 ...">
+<div className="hidden grid-cols-[20px_56px_1fr_64px_20px] items-center gap-2 md:grid ...">
   <RunStatusIcon status={run.status} />
-  <span className="truncate capitalize text-xs">{run.trigger}</span>
+  <span className="truncate text-xs capitalize">{run.trigger}</span>
   <span className="text-xs" title={absoluteTimestamp}>
     {formatRelativeTime(run.startedAt)}
   </span>
   <span className="text-xs">{formatDuration(run.durationMs)}</span>
-  <ChevronRight className="size-(--size-icon-xs) text-muted-foreground" />
+  <ChevronRight className="text-muted-foreground size-(--size-icon-xs)" />
 </div>
 ```
 
 #### Mobile Layout
 
 ```tsx
-<div className="md:hidden flex items-center gap-3 py-2">
+<div className="flex items-center gap-3 py-2 md:hidden">
   <RunStatusIcon status={run.status} />
   <div className="min-w-0 flex-1">
     <div className="flex items-center justify-between">
       <span className="text-xs capitalize">{run.trigger}</span>
-      <span className="text-xs text-muted-foreground">
-        {formatRelativeTime(run.startedAt)}
-      </span>
+      <span className="text-muted-foreground text-xs">{formatRelativeTime(run.startedAt)}</span>
     </div>
-    <span className="text-xs text-muted-foreground">
-      {formatDuration(run.durationMs)}
-    </span>
+    <span className="text-muted-foreground text-xs">{formatDuration(run.durationMs)}</span>
   </div>
-  <ChevronRight className="size-(--size-icon-xs) text-muted-foreground" />
+  <ChevronRight className="text-muted-foreground size-(--size-icon-xs)" />
 </div>
 ```
 
@@ -741,44 +751,49 @@ function formatRelativeTime(dateString: string): string {
 Below each run row, optionally show:
 
 ```tsx
-{run.outputSummary && (
-  <p className="mt-0.5 truncate text-xs text-muted-foreground pl-7">
-    {run.outputSummary.split('\n')[0]}
-  </p>
-)}
-{run.status === 'failed' && run.error && (
-  <p className="mt-0.5 truncate text-xs text-destructive pl-7">
-    {run.error}
-  </p>
-)}
+{
+  run.outputSummary && (
+    <p className="text-muted-foreground mt-0.5 truncate pl-7 text-xs">
+      {run.outputSummary.split('\n')[0]}
+    </p>
+  );
+}
+{
+  run.status === 'failed' && run.error && (
+    <p className="text-destructive mt-0.5 truncate pl-7 text-xs">{run.error}</p>
+  );
+}
 ```
 
 #### Skeleton Loading
 
 ```tsx
-{isLoading && (
-  <div className="space-y-2">
-    {[1, 2, 3].map(i => (
-      <div key={i} className="flex items-center gap-3 py-2">
-        <div className="size-3 animate-pulse rounded-full bg-muted" />
-        <div className="flex-1 space-y-1">
-          <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+{
+  isLoading && (
+    <div className="space-y-2">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="flex items-center gap-3 py-2">
+          <div className="bg-muted size-3 animate-pulse rounded-full" />
+          <div className="flex-1 space-y-1">
+            <div className="bg-muted h-3 w-24 animate-pulse rounded" />
+            <div className="bg-muted h-3 w-16 animate-pulse rounded" />
+          </div>
         </div>
-      </div>
-    ))}
-  </div>
-)}
+      ))}
+    </div>
+  );
+}
 ```
 
 ### 8. Toast Notifications
 
 **Mount in `App.tsx`:**
+
 ```tsx
 import { Toaster } from '@/layers/shared/ui/sonner';
 
 // Inside the component, after other providers:
-<Toaster />
+<Toaster />;
 ```
 
 **Usage in mutation hooks (narrow scope):**
@@ -913,6 +928,7 @@ All test files in `__tests__/` directories, using Vitest + React Testing Library
 #### Component Tests
 
 **PulsePanel.test.tsx:**
+
 - Renders disabled empty state when `usePulseEnabled` returns false
 - Renders schedule list empty state when enabled but no schedules
 - Renders skeleton loading state while fetching
@@ -922,6 +938,7 @@ All test files in `__tests__/` directories, using Vitest + React Testing Library
 - Purpose: Validates all PulsePanel states (disabled, empty, loading, populated) render correctly
 
 **ScheduleRow.test.tsx:**
+
 - Renders active schedule with Switch toggle and three-dot menu
 - Renders pending_approval schedule with Approve/Reject buttons
 - Toggle calls useUpdateSchedule with correct payload
@@ -932,6 +949,7 @@ All test files in `__tests__/` directories, using Vitest + React Testing Library
 - Purpose: Validates all schedule row interactions and state-dependent rendering
 
 **CreateScheduleDialog.test.tsx:**
+
 - Renders with correct title for create vs edit mode
 - Pre-fills form fields in edit mode
 - Cron preset click fills cron input and updates preview
@@ -943,6 +961,7 @@ All test files in `__tests__/` directories, using Vitest + React Testing Library
 - Purpose: Validates form behavior, progressive disclosure, and preset interaction
 
 **RunHistoryPanel.test.tsx:**
+
 - Renders skeleton while loading
 - Renders empty state when no runs
 - Renders Lucide status icons for each run status
@@ -956,17 +975,20 @@ All test files in `__tests__/` directories, using Vitest + React Testing Library
 #### Hook Tests
 
 **use-pulse-config.test.tsx:**
+
 - Returns enabled: true when config.pulse.enabled is true
 - Returns enabled: false when config.pulse is undefined
 - Shares cache with ['config'] query key
 - Purpose: Validates feature detection logic
 
 **use-schedules.test.tsx (updated):**
+
 - Skips fetch when enabled=false
 - Fetches when enabled=true
 - Purpose: Validates gated query behavior
 
 **use-runs.test.tsx (updated):**
+
 - useActiveRunCount returns count of running runs
 - useActiveRunCount skips polling when enabled=false
 - Purpose: Validates active run counting and polling gate

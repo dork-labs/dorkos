@@ -131,11 +131,13 @@ async function sendAndTrack(
   chatId: number,
   text: string,
   startTime: number,
-  callbacks: AdapterOutboundCallbacks,
+  callbacks: AdapterOutboundCallbacks
 ): Promise<DeliveryResult> {
   try {
     const html = formatForPlatform(text, 'telegram');
-    await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' } as Parameters<typeof bot.api.sendMessage>[2]);
+    await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' } as Parameters<
+      typeof bot.api.sendMessage
+    >[2]);
     callbacks.trackOutbound();
     return { success: true, durationMs: Date.now() - startTime };
   } catch (err) {
@@ -159,7 +161,17 @@ async function sendAndTrack(
  * @param opts - Delivery options
  */
 export async function deliverMessage(opts: TelegramDeliverOptions): Promise<DeliveryResult> {
-  const { adapterId, subject, envelope, bot, responseBuffers, state, callbacks, streaming, logger = noopLogger } = opts;
+  const {
+    adapterId,
+    subject,
+    envelope,
+    bot,
+    responseBuffers,
+    state,
+    callbacks,
+    streaming,
+    logger = noopLogger,
+  } = opts;
   const startTime = Date.now();
 
   // Guard: skip messages that originated from this adapter to prevent echo.
@@ -196,7 +208,9 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     if (now - buf.startedAt > BUFFER_TTL_MS) {
       responseBuffers.delete(id);
       state.lastDraftUpdate.delete(id);
-      logger.warn(`buffer: reaped stale buffer for chat ${id} (age: ${Math.round((now - buf.startedAt) / 1000)}s)`);
+      logger.warn(
+        `buffer: reaped stale buffer for chat ${id} (age: ${Math.round((now - buf.startedAt) / 1000)}s)`
+      );
     }
   }
 
@@ -219,7 +233,9 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
         const lastUpdate = state.lastDraftUpdate.get(chatId) ?? 0;
         if (Date.now() - lastUpdate >= DRAFT_UPDATE_INTERVAL_MS) {
           state.lastDraftUpdate.set(chatId, Date.now());
-          logger.debug(`stream: sendMessageDraft to chat ${chatId} (${responseBuffers.get(chatId)!.text.length} chars)`);
+          logger.debug(
+            `stream: sendMessageDraft to chat ${chatId} (${responseBuffers.get(chatId)!.text.length} chars)`
+          );
           try {
             await sendMessageDraft(bot, chatId, responseBuffers.get(chatId)!.text);
           } catch {
@@ -249,11 +265,19 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     // done: flush accumulated buffer as a single message
     if (eventType === 'done') {
       const buffered = responseBuffers.get(chatId);
-      logger.debug(`deliver: done for chat ${chatId} (buffered: ${buffered ? `${buffered.text.length} chars` : 'empty'})`);
+      logger.debug(
+        `deliver: done for chat ${chatId} (buffered: ${buffered ? `${buffered.text.length} chars` : 'empty'})`
+      );
       responseBuffers.delete(chatId);
       state.lastDraftUpdate.delete(chatId);
       if (buffered) {
-        return sendAndTrack(bot, chatId, truncateText(buffered.text, MAX_MESSAGE_LENGTH), startTime, callbacks);
+        return sendAndTrack(
+          bot,
+          chatId,
+          truncateText(buffered.text, MAX_MESSAGE_LENGTH),
+          startTime,
+          callbacks
+        );
       }
       return { success: true, durationMs: Date.now() - startTime };
     }
@@ -270,7 +294,13 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
         if (buffered?.text) {
           responseBuffers.delete(chatId);
           state.lastDraftUpdate.delete(chatId);
-          await sendAndTrack(bot, chatId, truncateText(buffered.text, MAX_MESSAGE_LENGTH), startTime, callbacks);
+          await sendAndTrack(
+            bot,
+            chatId,
+            truncateText(buffered.text, MAX_MESSAGE_LENGTH),
+            startTime,
+            callbacks
+          );
         }
 
         return handleApprovalRequired(bot, chatId, data, envelope, state, callbacks, startTime);
@@ -306,7 +336,7 @@ export async function handleTypingSignal(
   bot: Bot | null,
   subject: string,
   outboundState: TelegramOutboundState,
-  signalState: string,
+  signalState: string
 ): Promise<void> {
   if (!bot) return;
 
@@ -387,7 +417,7 @@ async function handleApprovalRequired(
   envelope: RelayEnvelope,
   state: TelegramOutboundState,
   callbacks: AdapterOutboundCallbacks,
-  startTime: number,
+  startTime: number
 ): Promise<DeliveryResult> {
   const agentId = extractAgentIdFromEnvelope(envelope) ?? 'unknown';
   const sessionId = extractSessionIdFromEnvelope(envelope) ?? 'unknown';
@@ -428,7 +458,7 @@ async function handleApprovalRequired(
             chatId,
             sent.message_id,
             `\u23F0 *Tool Approval Timed Out*\n~~\`${data.toolName}\`~~ ${toolDescription}`,
-            { parse_mode: 'Markdown' },
+            { parse_mode: 'Markdown' }
           );
         } catch {
           // best-effort — message may have been deleted

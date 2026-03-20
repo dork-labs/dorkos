@@ -55,7 +55,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     this: FakeAgentRuntime,
     _sessionId: string,
     content: string,
-    _opts?: MessageOpts,
+    _opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
@@ -66,24 +66,47 @@ export class FakeAgentRuntime implements AgentRuntime {
 
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
   hasSession = vi.fn<(sessionId: string) => boolean>(() => false);
-  updateSession = vi.fn<(sessionId: string, opts: { permissionMode?: PermissionMode; model?: string }) => boolean>(
-    () => true,
-  );
+  updateSession = vi.fn<
+    (sessionId: string, opts: { permissionMode?: PermissionMode; model?: string }) => boolean
+  >(() => true);
   listSessions = vi.fn<(projectDir: string) => Promise<Session[]>>().mockResolvedValue([]);
-  getSession = vi.fn<(projectDir: string, sessionId: string) => Promise<Session | null>>().mockResolvedValue(null);
-  getMessageHistory = vi.fn<(projectDir: string, sessionId: string) => Promise<HistoryMessage[]>>().mockResolvedValue([]);
-  getSessionTasks = vi.fn<(projectDir: string, sessionId: string) => Promise<TaskItem[]>>().mockResolvedValue([]);
-  getSessionETag = vi.fn<(projectDir: string, sessionId: string) => Promise<string | null>>().mockResolvedValue(null);
+  getSession = vi
+    .fn<(projectDir: string, sessionId: string) => Promise<Session | null>>()
+    .mockResolvedValue(null);
+  getMessageHistory = vi
+    .fn<(projectDir: string, sessionId: string) => Promise<HistoryMessage[]>>()
+    .mockResolvedValue([]);
+  getSessionTasks = vi
+    .fn<(projectDir: string, sessionId: string) => Promise<TaskItem[]>>()
+    .mockResolvedValue([]);
+  getSessionETag = vi
+    .fn<(projectDir: string, sessionId: string) => Promise<string | null>>()
+    .mockResolvedValue(null);
   readFromOffset = vi
-    .fn<(projectDir: string, sessionId: string, offset: number) => Promise<{ content: string; newOffset: number }>>()
+    .fn<
+      (
+        projectDir: string,
+        sessionId: string,
+        offset: number
+      ) => Promise<{ content: string; newOffset: number }>
+    >()
     .mockResolvedValue({ content: '', newOffset: 0 });
   watchSession = vi.fn<
-    (sessionId: string, projectDir: string, callback: (event: StreamEvent) => void, clientId?: string) => () => void
+    (
+      sessionId: string,
+      projectDir: string,
+      callback: (event: StreamEvent) => void,
+      clientId?: string
+    ) => () => void
   >(() => () => {});
-  acquireLock = vi.fn<(sessionId: string, clientId: string, res: SseResponse) => boolean>(() => true);
+  acquireLock = vi.fn<(sessionId: string, clientId: string, res: SseResponse) => boolean>(
+    () => true
+  );
   releaseLock = vi.fn<(sessionId: string, clientId: string) => void>();
   isLocked = vi.fn<(sessionId: string, clientId?: string) => boolean>(() => false);
-  getLockInfo = vi.fn<(sessionId: string) => { clientId: string; acquiredAt: number } | null>(() => null);
+  getLockInfo = vi.fn<(sessionId: string) => { clientId: string; acquiredAt: number } | null>(
+    () => null
+  );
   getCapabilities = vi.fn<() => RuntimeCapabilities>(() => ({
     type: 'fake' as const,
     supportsPermissionModes: true,
@@ -95,11 +118,15 @@ export class FakeAgentRuntime implements AgentRuntime {
   }));
   getSupportedModels = vi.fn<() => Promise<ModelOption[]>>().mockResolvedValue([]);
   getInternalSessionId = vi.fn<(sessionId: string) => string | undefined>();
-  getCommands = vi.fn<(forceRefresh?: boolean, cwd?: string) => Promise<CommandRegistry>>().mockResolvedValue({
-    commands: [],
-    lastScanned: '',
-  });
-  getLastMessageIds = vi.fn<(sessionId: string) => Promise<{ user: string; assistant: string } | null>>().mockResolvedValue(null);
+  getCommands = vi
+    .fn<(forceRefresh?: boolean, cwd?: string) => Promise<CommandRegistry>>()
+    .mockResolvedValue({
+      commands: [],
+      lastScanned: '',
+    });
+  getLastMessageIds = vi
+    .fn<(sessionId: string) => Promise<{ user: string; assistant: string } | null>>()
+    .mockResolvedValue(null);
   checkSessionHealth = vi.fn<() => void>();
   approveTool = vi.fn<(sessionId: string, toolCallId: string, approved: boolean) => boolean>();
   submitAnswers = vi

@@ -23,6 +23,7 @@ Elevate the Agent concept from a Mesh-only abstraction to a first-class entity a
 Agents currently live in `.dork/agent.json` (ADR-0024, ADR-0043) but are invisible outside the Mesh panel. Users see raw directory paths everywhere — sidebar, Pulse schedules, directory picker recents — even when a named agent exists. This creates a disconnect: the user thinks in terms of agents ("my backend bot", "my docs agent") but the UI speaks in paths (`/Users/me/projects/api`).
 
 Key gaps:
+
 - **No agent identity in the sidebar** — the most-visible surface shows only a folder icon + path
 - **No persona injection** — agents have no way to influence Claude's behavior per-project
 - **No visual identity** — agents lack color/emoji, making multi-agent workflows visually indistinct
@@ -52,14 +53,14 @@ Key gaps:
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `zod` | existing | Schema extensions for new manifest fields |
-| `@tanstack/react-query` | existing | Entity hooks for agent data fetching |
-| `zustand` | existing | Agent dialog open/close state |
-| `motion` | existing | Dialog animations |
-| `lucide-react` | existing | Icons (Settings, Plus, Palette, etc.) |
-| shadcn `Tabs`, `Dialog`, `Select`, `Switch`, `Badge` | existing | Agent Dialog UI primitives |
+| Dependency                                           | Version  | Purpose                                   |
+| ---------------------------------------------------- | -------- | ----------------------------------------- |
+| `zod`                                                | existing | Schema extensions for new manifest fields |
+| `@tanstack/react-query`                              | existing | Entity hooks for agent data fetching      |
+| `zustand`                                            | existing | Agent dialog open/close state             |
+| `motion`                                             | existing | Dialog animations                         |
+| `lucide-react`                                       | existing | Icons (Settings, Plus, Palette, etc.)     |
+| shadcn `Tabs`, `Dialog`, `Select`, `Switch`, `Badge` | existing | Agent Dialog UI primitives                |
 
 No new external dependencies required.
 
@@ -180,7 +181,11 @@ A lightweight route file that operates independently of Mesh. Not behind any fea
 ```typescript
 import { Router } from 'express';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
-import { ResolveAgentsRequestSchema, CreateAgentRequestSchema, UpdateAgentRequestSchema } from '@dorkos/shared/mesh-schemas';
+import {
+  ResolveAgentsRequestSchema,
+  CreateAgentRequestSchema,
+  UpdateAgentRequestSchema,
+} from '@dorkos/shared/mesh-schemas';
 import { validateBoundary } from '../lib/boundary.js';
 
 export function createAgentsRouter(): Router {
@@ -201,11 +206,14 @@ export function createAgentsRouter(): Router {
   // POST /api/agents/resolve
   router.post('/resolve', async (req, res) => {
     const result = ResolveAgentsRequestSchema.safeParse(req.body);
-    if (!result.success) return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    if (!result.success)
+      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
     const agents: Record<string, AgentManifest | null> = {};
-    await Promise.all(result.data.paths.map(async (p) => {
-      agents[p] = await readManifest(p);
-    }));
+    await Promise.all(
+      result.data.paths.map(async (p) => {
+        agents[p] = await readManifest(p);
+      })
+    );
     return res.json({ agents });
   });
 
@@ -213,7 +221,8 @@ export function createAgentsRouter(): Router {
   // POST /api/agents
   router.post('/', async (req, res) => {
     const result = CreateAgentRequestSchema.safeParse(req.body);
-    if (!result.success) return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    if (!result.success)
+      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
     // Generate ULID, populate defaults, write manifest
     // Return created manifest
   });
@@ -224,7 +233,8 @@ export function createAgentsRouter(): Router {
     const path = req.query.path as string;
     if (!path) return res.status(400).json({ error: 'path query parameter required' });
     const result = UpdateAgentRequestSchema.safeParse(req.body);
-    if (!result.success) return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    if (!result.success)
+      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
     // Read existing manifest, merge updates, write back
     // Return updated manifest
   });
@@ -255,7 +265,12 @@ export interface Transport {
   // Agent identity (always available, no feature flag)
   getAgentByPath(path: string): Promise<AgentManifest | null>;
   resolveAgents(paths: string[]): Promise<Record<string, AgentManifest | null>>;
-  createAgent(path: string, name?: string, description?: string, runtime?: string): Promise<AgentManifest>;
+  createAgent(
+    path: string,
+    name?: string,
+    description?: string,
+    runtime?: string
+  ): Promise<AgentManifest>;
   updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
 }
 ```
@@ -299,7 +314,7 @@ export function useCurrentAgent(cwd: string | null) {
     queryKey: agentKeys.byPath(cwd ?? ''),
     queryFn: () => transport.getAgentByPath(cwd!),
     enabled: !!cwd,
-    staleTime: 60_000,      // Agent config changes infrequently
+    staleTime: 60_000, // Agent config changes infrequently
     gcTime: 5 * 60_000,
   });
 }
@@ -321,8 +336,8 @@ Single source of truth for all visual identity rendering:
 
 ```typescript
 interface AgentVisual {
-  color: string;   // HSL color string
-  emoji: string;   // Single emoji character
+  color: string; // HSL color string
+  emoji: string; // Single emoji character
 }
 
 export function useAgentVisual(agent: AgentManifest | null | undefined, cwd: string): AgentVisual {
@@ -436,6 +451,7 @@ export function AgentHeader({ cwd, onOpenPicker, onOpenAgentDialog }: AgentHeade
 ```
 
 **Quick create flow** (`handleQuickCreate`):
+
 1. Call `createAgent` mutation with path=cwd, name derived from directory basename
 2. On success, open the Agent Dialog for further customization
 
@@ -522,24 +538,24 @@ export function AgentDialog({ agentPath, open, onOpenChange }: Props) {
 
 #### Tab 1: Identity
 
-| Field | Type | Maps to |
-|---|---|---|
-| Name | Text input | `agent.name` |
-| Description | Textarea (2-3 rows) | `agent.description` |
-| Color | Color input or preset palette | `agent.color` (null = deterministic) |
-| Emoji | Emoji picker (30-emoji grid from `EMOJI_SET`) | `agent.icon` (null = deterministic) |
-| Runtime | Select dropdown | `agent.runtime` ('claude-code' \| 'cursor' \| 'codex' \| 'other') |
-| Working Directory | Read-only text with copy button | Derived from CWD, not editable |
+| Field             | Type                                          | Maps to                                                           |
+| ----------------- | --------------------------------------------- | ----------------------------------------------------------------- |
+| Name              | Text input                                    | `agent.name`                                                      |
+| Description       | Textarea (2-3 rows)                           | `agent.description`                                               |
+| Color             | Color input or preset palette                 | `agent.color` (null = deterministic)                              |
+| Emoji             | Emoji picker (30-emoji grid from `EMOJI_SET`) | `agent.icon` (null = deterministic)                               |
+| Runtime           | Select dropdown                               | `agent.runtime` ('claude-code' \| 'cursor' \| 'codex' \| 'other') |
+| Working Directory | Read-only text with copy button               | Derived from CWD, not editable                                    |
 
 Color and emoji show "Reset to default" option that clears the override (sets to null), reverting to deterministic hash behavior.
 
 #### Tab 2: Persona
 
-| Field | Type | Maps to |
-|---|---|---|
-| Persona text | Textarea (8-10 rows, monospace) | `agent.persona` |
-| Enabled toggle | Switch | `agent.personaEnabled` |
-| Preview | Read-only code block | Rendered XML preview of injected context |
+| Field          | Type                            | Maps to                                  |
+| -------------- | ------------------------------- | ---------------------------------------- |
+| Persona text   | Textarea (8-10 rows, monospace) | `agent.persona`                          |
+| Enabled toggle | Switch                          | `agent.personaEnabled`                   |
+| Preview        | Read-only code block            | Rendered XML preview of injected context |
 
 Guidance text above the textarea: "This text is appended to Claude Code's system prompt for every session in this directory. Use it to define the agent's expertise, constraints, and personality."
 
@@ -547,13 +563,13 @@ The preview section shows a live rendering of the `<agent_identity>` and `<agent
 
 #### Tab 3: Capabilities
 
-| Field | Type | Maps to |
-|---|---|---|
-| Capabilities | Tag/chip input (comma-separated) | `agent.capabilities[]` |
-| Namespace | Text input | `agent.namespace` |
-| Response Mode | Select dropdown | `agent.behavior.responseMode` |
-| Max Hops | Number input | `agent.budget.maxHopsPerMessage` |
-| Max Calls/Hour | Number input | `agent.budget.maxCallsPerHour` |
+| Field          | Type                             | Maps to                          |
+| -------------- | -------------------------------- | -------------------------------- |
+| Capabilities   | Tag/chip input (comma-separated) | `agent.capabilities[]`           |
+| Namespace      | Text input                       | `agent.namespace`                |
+| Response Mode  | Select dropdown                  | `agent.behavior.responseMode`    |
+| Max Hops       | Number input                     | `agent.budget.maxHopsPerMessage` |
+| Max Calls/Hour | Number input                     | `agent.budget.maxCallsPerHour`   |
 
 This tab surfaces Mesh-related configuration in agent-centric language. No "Mesh" branding — it uses terms like "capabilities" and "behavior" that make sense even without Mesh context.
 
@@ -654,7 +670,7 @@ export async function buildSystemPromptAppend(cwd: string): Promise<string> {
   const [envResult, gitResult, agentResult] = await Promise.allSettled([
     buildEnvBlock(cwd),
     buildGitBlock(cwd),
-    buildAgentBlock(cwd),   // NEW
+    buildAgentBlock(cwd), // NEW
   ]);
 
   return [
@@ -688,6 +704,7 @@ async function buildAgentBlock(cwd: string): Promise<string> {
 ```
 
 **Key behavior:**
+
 - `<agent_identity>` is always included when a manifest exists (informational, not behavioral)
 - `<agent_persona>` is only included when `personaEnabled` is true (default) AND `persona` is non-empty
 - Uses `readManifest` from `@dorkos/shared/manifest` — no Mesh dependency
@@ -819,12 +836,14 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 ### Unit Tests
 
 **Schema tests** (`packages/shared/src/__tests__/mesh-schemas.test.ts`):
+
 - Validate that new fields (persona, personaEnabled, color, icon) parse correctly
 - Validate defaults (personaEnabled defaults to true)
 - Validate max length enforcement (persona max 4000 chars)
 - Validate UpdateAgentRequestSchema accepts partial updates
 
 **Manifest I/O tests** (`packages/shared/src/__tests__/manifest.test.ts`):
+
 - Moved from `packages/mesh/` — same tests, new location
 - Test readManifest returns null for missing file
 - Test writeManifest creates .dork directory if needed
@@ -832,6 +851,7 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 - Test new fields (persona, color, icon) persist correctly
 
 **Context builder tests** (`apps/server/src/services/core/__tests__/context-builder.test.ts`):
+
 - Test buildAgentBlock returns empty string when no manifest
 - Test buildAgentBlock includes identity block when manifest exists
 - Test persona block only included when personaEnabled is true AND persona is non-empty
@@ -840,6 +860,7 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 - Mock `readManifest` to avoid filesystem dependency
 
 **Agent routes tests** (`apps/server/src/routes/__tests__/agents.test.ts`):
+
 - Test GET /current returns 404 for unregistered path
 - Test GET /current returns manifest for registered path
 - Test POST /resolve returns agents for mixed registered/unregistered paths
@@ -850,6 +871,7 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 ### Component Tests
 
 **AgentHeader tests** (`apps/client/src/layers/features/session-list/ui/__tests__/AgentHeader.test.tsx`):
+
 - Test renders agent name when agent exists
 - Test renders folder icon + path when no agent
 - Test renders "+ Agent" button for unregistered dirs
@@ -857,12 +879,14 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 - Test loading state shows skeleton
 
 **AgentDialog tests** (`apps/client/src/layers/features/agent-settings/ui/__tests__/AgentDialog.test.tsx`):
+
 - Test all 4 tabs render and switch correctly
 - Test Identity tab fields are populated from agent data
 - Test Persona tab toggle controls injection preview
 - Test form submission triggers update mutation
 
 **DirectoryPicker tests** (`apps/client/src/layers/shared/ui/__tests__/DirectoryPicker.test.tsx`):
+
 - Test recent items show agent name when resolvedAgents provided
 - Test recent items show folder icon when no agent
 - Test mixed list (some agents, some plain dirs) renders correctly
@@ -870,11 +894,13 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 ### Integration Tests
 
 **Agent lifecycle** (server-side):
+
 - Create agent → read back → update → verify changes in file
 - Verify boundary enforcement prevents accessing agents outside boundary
 - Verify resolve endpoint handles concurrent requests
 
 **Persona injection** (server-side):
+
 - Verify full system prompt includes agent identity when manifest exists
 - Verify persona toggle controls inclusion
 - Verify graceful handling when manifest file is corrupt
@@ -905,12 +931,12 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 
 **Files to update:**
 
-| Document | Update |
-|---|---|
-| `contributing/architecture.md` | Add Agent entity layer to FSD layer table; document `/api/agents` endpoints |
-| `contributing/data-fetching.md` | Add agent query key patterns |
-| `docs/guides/agents.mdx` | NEW: User-facing guide for agent configuration |
-| `docs/guides/persona.mdx` | NEW: Guide for persona injection |
+| Document                        | Update                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| `contributing/architecture.md`  | Add Agent entity layer to FSD layer table; document `/api/agents` endpoints |
+| `contributing/data-fetching.md` | Add agent query key patterns                                                |
+| `docs/guides/agents.mdx`        | NEW: User-facing guide for agent configuration                              |
+| `docs/guides/persona.mdx`       | NEW: Guide for persona injection                                            |
 
 ## 12. Implementation Phases
 
@@ -919,6 +945,7 @@ This tool is always available (not guarded by `requireMesh`), enabling Claude to
 Schema extensions, manifest I/O extraction, agent API routes, Transport methods, context-builder persona injection.
 
 **Deliverables:**
+
 - Extended `AgentManifestSchema` with persona, personaEnabled, color, icon
 - `@dorkos/shared/manifest` module (extracted from mesh)
 - `GET/POST/PATCH /api/agents/*` endpoints (always available)
@@ -934,6 +961,7 @@ Schema extensions, manifest I/O extraction, agent API routes, Transport methods,
 New FSD entity layer and sidebar integration.
 
 **Deliverables:**
+
 - `entities/agent/` — useCurrentAgent, useCreateAgent, useUpdateAgent, useAgentVisual
 - `AgentHeader` component in session-list feature
 - Quick create flow ("+ Agent" → create manifest → open dialog)
@@ -945,6 +973,7 @@ New FSD entity layer and sidebar integration.
 The dedicated 4-tab Agent Settings Dialog.
 
 **Deliverables:**
+
 - `features/agent-settings/` — AgentDialog, IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab
 - Persona preview rendering
 - Color picker and emoji picker (30-emoji grid from EMOJI_SET)
@@ -958,6 +987,7 @@ The dedicated 4-tab Agent Settings Dialog.
 DirectoryPicker enhancements, Pulse integration, polish.
 
 **Deliverables:**
+
 - DirectoryPicker agent display in recents
 - useResolvedAgents hook for batch fetching
 - ScheduleRow agent display
@@ -970,9 +1000,9 @@ No unresolved questions — all decisions have been made during ideation and Ste
 
 ## 14. Related ADRs
 
-| ADR | Relevance |
-|---|---|
-| [ADR-0024: DorkOS-Native Agent Manifest Format](../../decisions/0024-dorkos-native-agent-manifest-format.md) | Establishes `.dork/agent.json` format that this spec extends |
+| ADR                                                                                                                     | Relevance                                                               |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [ADR-0024: DorkOS-Native Agent Manifest Format](../../decisions/0024-dorkos-native-agent-manifest-format.md)            | Establishes `.dork/agent.json` format that this spec extends            |
 | [ADR-0043: File as Canonical Source of Truth](../../decisions/0043-file-canonical-source-of-truth-for-mesh-registry.md) | File-first architecture that this spec depends on for Mesh independence |
 
 ## 15. References

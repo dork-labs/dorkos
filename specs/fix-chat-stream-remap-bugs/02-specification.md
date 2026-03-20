@@ -31,6 +31,7 @@ Both bugs are isolated to `apps/client/` — no server changes required.
 ### Session ID Remap Flow
 
 DorkOS's create-on-first-message pattern means:
+
 1. A new session starts with a client-generated UUID in the URL
 2. The user sends their first message; the server creates an SDK session with its own UUID
 3. The SSE stream for that first message ends with a `done` event that includes the SDK UUID
@@ -46,10 +47,12 @@ Two compounding failures:
 **Failure 1 — `setMessages([])` guard incorrectly blocks clearing:**
 
 In `use-chat-session.ts:164-172`:
+
 ```typescript
 useEffect(() => {
   historySeededRef.current = false;
-  if (statusRef.current !== 'streaming') {  // ← guard
+  if (statusRef.current !== 'streaming') {
+    // ← guard
     setMessages([]);
   }
 }, [sessionId, selectedCwd]);
@@ -63,7 +66,7 @@ The streaming assistant message in `messages[]` has `assistantIdRef.current` (a 
 
 ```typescript
 const currentIds = new Set(messagesRef.current.map((m) => m.id));
-const newMessages = history.filter((m) => !currentIds.has(m.id));  // dedup misses
+const newMessages = history.filter((m) => !currentIds.has(m.id)); // dedup misses
 ```
 
 **Root cause: `done` handler fires `onSessionIdChangeRef` BEFORE `setStatus('idle')`** (`stream-event-handler.ts:294-310`). When the session-change effect fires, `statusRef.current` is still `'streaming'`, so `setMessages([])` is skipped. The streaming buffer is never cleared. History then appends both the user bubble and the assistant message with a different UUID — duplicate.
@@ -71,6 +74,7 @@ const newMessages = history.filter((m) => !currentIds.has(m.id));  // dedup miss
 ### Why Bug #3 (Stale Model) Occurs
 
 The model priority chain in `use-session-status.ts:69`:
+
 ```typescript
 const model = localModel ?? streamingStatus?.model ?? session?.model ?? DEFAULT_MODEL;
 ```
@@ -120,6 +124,7 @@ No new dependencies required.
 **Location:** `done` case, lines 292–311
 
 **Current code:**
+
 ```typescript
 case 'done': {
   const doneData = data as { sessionId?: string };
@@ -145,6 +150,7 @@ case 'done': {
 ```
 
 **New code:**
+
 ```typescript
 case 'done': {
   const doneData = data as { sessionId?: string };
@@ -177,6 +183,7 @@ case 'done': {
 ```
 
 **Why this works:**
+
 - `setMessages([])` clears the streaming buffer. After the remap fires and the TanStack Query re-fetch completes, history becomes the sole source of truth.
 - `currentPartsRef.current = []` and `assistantCreatedRef.current = false` reset the streaming accumulator state. Without this, the next stream in the session would call `ensureAssistantMessage` with `assistantCreatedRef.current = true` and skip creating the message row.
 - Both refs are already in scope (destructured from `deps` at line 66–86); no interface changes.
@@ -194,21 +201,25 @@ case 'done': {
 **Location:** Line 69
 
 **Current code:**
+
 ```typescript
 // Priority: local optimistic > streaming live data > persisted session data > defaults
 const model = localModel ?? streamingStatus?.model ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 **New code:**
+
 ```typescript
 // Priority: local optimistic > streaming live data (only while streaming) > persisted session data > defaults
 // Gate streamingStatus?.model behind isStreaming: after streaming ends, session?.model is
 // the authoritative value (set via PATCH). Without this gate, the stale streamingStatus.model
 // permanently shadows session.model, making model changes invisible in the status bar.
-const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
+const model =
+  localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 **Why this works:**
+
 - During streaming, `streamingStatus?.model` correctly shows the live model from SSE events (important for cases where the model is set server-side).
 - After streaming (`isStreaming = false`), the chain falls through to `session?.model`, which is the PATCH-confirmed value from the query cache.
 - `streamingStatus` itself is NOT cleared — `streamingStatus.contextTokens` and `streamingStatus.costUsd` continue to function for context percentage and cost display (lines 72–78 are unchanged).
@@ -220,6 +231,7 @@ const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? ses
 ### Data Flow After Fixes
 
 **Bug #1 — Post-fix flow:**
+
 ```
 1. Stream active → messages[] = [user bubble (pendingUserContent), streaming assistant msg (client UUID)]
 2. done event fires → remap detected
@@ -231,6 +243,7 @@ const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? ses
 ```
 
 **Bug #3 — Post-fix flow:**
+
 ```
 1. Stream ends → isStreaming = false
 2. User selects Haiku → PATCH 200 → session.model = "claude-haiku-..."
@@ -252,6 +265,7 @@ const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? ses
 #### `use-session-status.test.tsx` — Add to `describe('useSessionStatus')`
 
 **Test: stale streamingStatus does not shadow session model after streaming**
+
 ```typescript
 it('does not use streamingStatus.model when isStreaming is false', async () => {
   // Purpose: Regression for Bug #3 — after a stream, the stale streamingStatus.model
@@ -259,7 +273,7 @@ it('does not use streamingStatus.model when isStreaming is false', async () => {
   const transport = createMockTransport({
     getSession: vi.fn().mockResolvedValue({
       id: 's1',
-      model: 'claude-haiku-4-5-20251001',  // PATCH-confirmed value
+      model: 'claude-haiku-4-5-20251001', // PATCH-confirmed value
       permissionMode: 'default',
     }),
   });
@@ -267,7 +281,8 @@ it('does not use streamingStatus.model when isStreaming is false', async () => {
   const streamingStatus = { model: 'claude-sonnet-4-6' }; // stale post-stream value
 
   const { result } = renderHook(
-    () => useSessionStatus('s1', streamingStatus as SessionStatusEvent, false /* isStreaming=false */),
+    () =>
+      useSessionStatus('s1', streamingStatus as SessionStatusEvent, false /* isStreaming=false */),
     { wrapper: createWrapper(transport) }
   );
 
@@ -279,6 +294,7 @@ it('does not use streamingStatus.model when isStreaming is false', async () => {
 ```
 
 **Test: streamingStatus.model IS used while streaming**
+
 ```typescript
 it('uses streamingStatus.model while isStreaming is true', async () => {
   // Purpose: Verify the fix doesn't break the live-streaming display of model name.
@@ -293,7 +309,8 @@ it('uses streamingStatus.model while isStreaming is true', async () => {
   const streamingStatus = { model: 'claude-opus-4-6' }; // live streaming value
 
   const { result } = renderHook(
-    () => useSessionStatus('s1', streamingStatus as SessionStatusEvent, true /* isStreaming=true */),
+    () =>
+      useSessionStatus('s1', streamingStatus as SessionStatusEvent, true /* isStreaming=true */),
     { wrapper: createWrapper(transport) }
   );
 
@@ -307,6 +324,7 @@ it('uses streamingStatus.model while isStreaming is true', async () => {
 The `createStreamEventHandler` function is a pure factory that can be tested in isolation:
 
 **Test: done event with remap clears streaming state**
+
 ```typescript
 describe('createStreamEventHandler', () => {
   it('clears messages and resets refs when done event carries a new sessionId', () => {
@@ -336,8 +354,9 @@ describe('createStreamEventHandler', () => {
     expect(assistantCreatedRef.current).toBe(false);
     expect(onSessionIdChangeRef.current).toHaveBeenCalledWith('sdk-uuid');
     // setMessages([]) must be called BEFORE onSessionIdChangeRef
-    expect(setMessages.mock.invocationCallOrder[0])
-      .toBeLessThan(onSessionIdChangeRef.current.mock.invocationCallOrder[0]);
+    expect(setMessages.mock.invocationCallOrder[0]).toBeLessThan(
+      onSessionIdChangeRef.current.mock.invocationCallOrder[0]
+    );
   });
 
   it('does NOT clear messages on done event when sessionId is unchanged', () => {
@@ -367,6 +386,7 @@ describe('createStreamEventHandler', () => {
 ### Non-Regression Tests
 
 Confirm these existing tests continue to pass without modification:
+
 - `use-session-status.test.tsx`: "holds optimistic model until server confirms via query cache"
 - Any existing test that exercises history loading on session switch
 - Any existing test for permission mode display

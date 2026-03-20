@@ -85,7 +85,9 @@ describe('useRegisteredAgents', () => {
     });
     const { Wrapper } = createWrapper(transport);
 
-    const { result } = renderHook(() => useRegisteredAgents(undefined, false), { wrapper: Wrapper });
+    const { result } = renderHook(() => useRegisteredAgents(undefined, false), {
+      wrapper: Wrapper,
+    });
 
     expect(result.current.isLoading).toBe(false);
     expect(result.current.fetchStatus).toBe('idle');
@@ -128,13 +130,21 @@ describe('useRegisterAgent', () => {
 
     const { result } = renderHook(() => useRegisterAgent(), { wrapper: Wrapper });
 
-    result.current.mutate({ path: '/agents/new', overrides: { name: 'Custom' }, approver: 'admin' });
+    result.current.mutate({
+      path: '/agents/new',
+      overrides: { name: 'Custom' },
+      approver: 'admin',
+    });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(transport.registerMeshAgent).toHaveBeenCalledWith('/agents/new', { name: 'Custom' }, 'admin');
+    expect(transport.registerMeshAgent).toHaveBeenCalledWith(
+      '/agents/new',
+      { name: 'Custom' },
+      'admin'
+    );
   });
 
   it('invalidates agents query on success', async () => {
@@ -346,9 +356,7 @@ describe('useUpdateAgent', () => {
 // ---------------------------------------------------------------------------
 describe('useDeniedAgents', () => {
   const mockDenied = {
-    denied: [
-      { path: '/agents/bad', reason: 'untrusted', deniedAt: '2026-01-01T00:00:00Z' },
-    ],
+    denied: [{ path: '/agents/bad', reason: 'untrusted', deniedAt: '2026-01-01T00:00:00Z' }],
   };
 
   beforeEach(() => {

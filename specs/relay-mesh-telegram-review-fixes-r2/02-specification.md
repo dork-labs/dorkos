@@ -304,7 +304,7 @@ export class DeliveryPipeline {
   async dispatchToSubscribers(
     endpoint: EndpointInfo,
     messageId: string,
-    envelope: RelayEnvelope,
+    envelope: RelayEnvelope
   ): Promise<void> {
     const handlers = this.deps.subscriptionRegistry.getSubscribers(endpoint.subject);
     if (handlers.length === 0) return;
@@ -339,7 +339,7 @@ export class WatcherManager {
     private readonly subscriptionRegistry: SubscriptionRegistry,
     private readonly sqliteIndex: SqliteIndex,
     private readonly circuitBreaker: CircuitBreakerManager,
-    private readonly wasDispatched?: (messageId: string) => boolean,
+    private readonly wasDispatched?: (messageId: string) => boolean
   ) {}
 
   // In handleNewMessage():
@@ -364,7 +364,7 @@ this.watcherManager = new WatcherManager(
   this.subscriptionRegistry,
   this.sqliteIndex,
   this.circuitBreaker,
-  (messageId) => this.deliveryPipeline.wasDispatched(messageId),
+  (messageId) => this.deliveryPipeline.wasDispatched(messageId)
 );
 ```
 
@@ -692,14 +692,18 @@ The SVG `<animateMotion>` with `<mpath xlinkHref={...}>` references the edge pat
 **Before:**
 
 ```tsx
-{/* Flow particle travelling along the edge */}
-{!prefersReducedMotion && (
-  <circle r={3} fill="var(--color-primary)" opacity={0.8}>
-    <animateMotion dur="3s" repeatCount="indefinite">
-      <mpath xlinkHref={`#${props.id}`} />
-    </animateMotion>
-  </circle>
-)}
+{
+  /* Flow particle travelling along the edge */
+}
+{
+  !prefersReducedMotion && (
+    <circle r={3} fill="var(--color-primary)" opacity={0.8}>
+      <animateMotion dur="3s" repeatCount="indefinite">
+        <mpath xlinkHref={`#${props.id}`} />
+      </animateMotion>
+    </circle>
+  );
+}
 ```
 
 **After:**
@@ -757,7 +761,7 @@ const handleNodeClick = useCallback(
     const targetZoom = Math.max(getZoom(), 1.0);
     setCenter(centerX, centerY, { zoom: targetZoom, duration: 350 });
   },
-  [setCenter, getZoom, layoutedNodes],
+  [setCenter, getZoom, layoutedNodes]
 );
 ```
 
@@ -783,7 +787,7 @@ const handleNodeClick = useCallback(
     const targetZoom = Math.max(getZoom(), 1.0);
     setCenter(centerX, centerY, { zoom: targetZoom, duration: 350 });
   },
-  [setCenter, getZoom],
+  [setCenter, getZoom]
 );
 ```
 
@@ -798,8 +802,14 @@ The `useTopology` hook refetches every 15 seconds (`refetchInterval: 15_000`). E
 ```typescript
 /** Stable fingerprint of the topology structure — only changes when nodes/edges actually change. */
 const topologyFingerprint = useMemo(() => {
-  const nodeIds = rawNodes.map((n) => `${n.id}:${n.type}:${n.parentId ?? ''}`).sort().join('|');
-  const edgeIds = rawEdges.map((e) => `${e.source}->${e.target}:${e.type}`).sort().join('|');
+  const nodeIds = rawNodes
+    .map((n) => `${n.id}:${n.type}:${n.parentId ?? ''}`)
+    .sort()
+    .join('|');
+  const edgeIds = rawEdges
+    .map((e) => `${e.source}->${e.target}:${e.type}`)
+    .sort()
+    .join('|');
   return `${nodeIds}::${edgeIds}`;
 }, [rawNodes, rawEdges]);
 ```
@@ -812,8 +822,8 @@ const topologyFingerprint = useMemo(() => {
 useEffect(() => {
   let cancelled = false;
   setIsLayouting(true);
-  applyElkLayout(rawNodes, rawEdges, useGroups)
-    // ...
+  applyElkLayout(rawNodes, rawEdges, useGroups);
+  // ...
 }, [rawNodes, rawEdges, useGroups, layoutVersion]);
 ```
 
@@ -823,8 +833,8 @@ useEffect(() => {
 useEffect(() => {
   let cancelled = false;
   setIsLayouting(true);
-  applyElkLayout(rawNodes, rawEdges, useGroups)
-    // ...
+  applyElkLayout(rawNodes, rawEdges, useGroups);
+  // ...
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fingerprint tracks structural changes
 }, [topologyFingerprint, useGroups, layoutVersion]);
 ```
@@ -892,89 +902,89 @@ Tests cover changed code only. No backfilling unrelated test gaps.
 
 **File:** `packages/relay/src/__tests__/adapters/telegram-adapter.test.ts`
 
-| Test | Covers |
-|------|--------|
-| Reconnection stops old bot before creating a new one | C1 |
-| `stop()` clears pending reconnect timer | C2 |
-| Reconnect timer does not fire after `stop()` is called | C2 |
-| `extractChatId` rejects float values like `123.456` | I3 |
-| `extractChatId` rejects float values in group format | I3 |
-| Webhook server uses `once` for error handler | I1 |
-| `stopWebhookServer` calls `closeAllConnections()` before `close()` | I2 |
+| Test                                                               | Covers |
+| ------------------------------------------------------------------ | ------ |
+| Reconnection stops old bot before creating a new one               | C1     |
+| `stop()` clears pending reconnect timer                            | C2     |
+| Reconnect timer does not fire after `stop()` is called             | C2     |
+| `extractChatId` rejects float values like `123.456`                | I3     |
+| `extractChatId` rejects float values in group format               | I3     |
+| Webhook server uses `once` for error handler                       | I1     |
+| `stopWebhookServer` calls `closeAllConnections()` before `close()` | I2     |
 
 ### Phase 2: Relay Tests
 
 **File:** `apps/server/src/services/relay/__tests__/binding-router.test.ts`
 
-| Test | Covers |
-|------|--------|
-| `loadSessionMap` discards non-array JSON and starts fresh | I6 |
-| `loadSessionMap` filters out malformed entries and keeps valid ones | I6 |
+| Test                                                                | Covers |
+| ------------------------------------------------------------------- | ------ |
+| `loadSessionMap` discards non-array JSON and starts fresh           | I6     |
+| `loadSessionMap` filters out malformed entries and keeps valid ones | I6     |
 
 **File:** `apps/server/src/services/relay/__tests__/binding-store.test.ts` (new or existing)
 
-| Test | Covers |
-|------|--------|
-| Rapid successive saves do not trigger spurious reloads | C3 |
+| Test                                                   | Covers |
+| ------------------------------------------------------ | ------ |
+| Rapid successive saves do not trigger spurious reloads | C3     |
 
 **File:** `packages/relay/src/__tests__/delivery-pipeline.test.ts`
 
-| Test | Covers |
-|------|--------|
-| `wasDispatched()` returns true for pipeline-dispatched message IDs | C4 |
-| `recentlyDispatched` set is capped at 10,000 entries | C4 |
+| Test                                                               | Covers |
+| ------------------------------------------------------------------ | ------ |
+| `wasDispatched()` returns true for pipeline-dispatched message IDs | C4     |
+| `recentlyDispatched` set is capped at 10,000 entries               | C4     |
 
 **File:** `packages/relay/src/__tests__/watcher-manager.test.ts`
 
-| Test | Covers |
-|------|--------|
-| `handleNewMessage` skips messages that were already dispatched | C4 |
+| Test                                                           | Covers |
+| -------------------------------------------------------------- | ------ |
+| `handleNewMessage` skips messages that were already dispatched | C4     |
 
 ### Phase 3: Mesh & Transport Tests
 
 **File:** `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx` (or a new transport test)
 
-| Test | Covers |
-|------|--------|
-| `useMeshScanRoots` calls `transport.updateConfig()` instead of raw fetch | C5 |
+| Test                                                                     | Covers |
+| ------------------------------------------------------------------------ | ------ |
+| `useMeshScanRoots` calls `transport.updateConfig()` instead of raw fetch | C5     |
 
 **File:** `packages/mesh/src/__tests__/mesh-core.test.ts`
 
-| Test | Covers |
-|------|--------|
-| `register()` removes manifest file when Relay registration fails | C6 |
-| `registerByPath()` removes manifest file when Relay registration fails | C6 |
+| Test                                                                   | Covers |
+| ---------------------------------------------------------------------- | ------ |
+| `register()` removes manifest file when Relay registration fails       | C6     |
+| `registerByPath()` removes manifest file when Relay registration fails | C6     |
 
 **File:** `apps/client/src/layers/features/mesh/ui/__tests__/CrossNamespaceEdge.test.tsx`
 
-| Test | Covers |
-|------|--------|
-| Does not render `<animateMotion>` or `<circle>` elements | I7 |
+| Test                                                     | Covers |
+| -------------------------------------------------------- | ------ |
+| Does not render `<animateMotion>` or `<circle>` elements | I7     |
 
 **File:** `apps/client/src/layers/features/mesh/ui/__tests__/TopologyGraph.test.tsx`
 
-| Test | Covers |
-|------|--------|
-| ELK layout is not re-triggered when refetch returns structurally identical data | I9 |
+| Test                                                                            | Covers |
+| ------------------------------------------------------------------------------- | ------ |
+| ELK layout is not re-triggered when refetch returns structurally identical data | I9     |
 
 **File:** `apps/client/src/layers/features/mesh/lib/__tests__/relative-time.test.ts` (new)
 
-| Test | Covers |
-|------|--------|
-| Returns "Never" for null input | I10 |
-| Returns "just now" for future dates | I10 |
-| Returns seconds/minutes/hours/days granularity | I10 |
-| Handles NaN dates gracefully | I10 |
+| Test                                           | Covers |
+| ---------------------------------------------- | ------ |
+| Returns "Never" for null input                 | I10    |
+| Returns "just now" for future dates            | I10    |
+| Returns seconds/minutes/hours/days granularity | I10    |
+| Handles NaN dates gracefully                   | I10    |
 
 ## Implementation Phases
 
 Execute in this order to minimize risk:
 
-| Phase | Issues | Files Changed | Risk |
-|-------|--------|---------------|------|
-| 1. Telegram | C1, C2, I1, I2, I3 | `packages/relay/src/adapters/telegram-adapter.ts`, test file | Low (isolated adapter, no cross-cutting changes) |
-| 2. Relay | C3, C4, I4, I5, I6 | `binding-store.ts`, `delivery-pipeline.ts`, `watcher-manager.ts`, `relay-core.ts`, `routes/relay.ts`, `binding-router.ts`, test files | Medium (core delivery pipeline change, but `claim()` atomicity prevents data corruption) |
-| 3. Mesh & Transport | C5, C6, I7, I8, I9, I10 | `transport.ts`, `http-transport.ts`, `direct-transport.ts`, `use-mesh-scan-roots.ts`, `mesh-core.ts`, `CrossNamespaceEdge.tsx`, `TopologyGraph.tsx`, `AgentNode.tsx`, `AgentHealthDetail.tsx`, new `relative-time.ts`, test files | Medium (Transport interface change requires all adapter implementations to be updated) |
+| Phase               | Issues                  | Files Changed                                                                                                                                                                                                                     | Risk                                                                                     |
+| ------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1. Telegram         | C1, C2, I1, I2, I3      | `packages/relay/src/adapters/telegram-adapter.ts`, test file                                                                                                                                                                      | Low (isolated adapter, no cross-cutting changes)                                         |
+| 2. Relay            | C3, C4, I4, I5, I6      | `binding-store.ts`, `delivery-pipeline.ts`, `watcher-manager.ts`, `relay-core.ts`, `routes/relay.ts`, `binding-router.ts`, test files                                                                                             | Medium (core delivery pipeline change, but `claim()` atomicity prevents data corruption) |
+| 3. Mesh & Transport | C5, C6, I7, I8, I9, I10 | `transport.ts`, `http-transport.ts`, `direct-transport.ts`, `use-mesh-scan-roots.ts`, `mesh-core.ts`, `CrossNamespaceEdge.tsx`, `TopologyGraph.tsx`, `AgentNode.tsx`, `AgentHealthDetail.tsx`, new `relative-time.ts`, test files | Medium (Transport interface change requires all adapter implementations to be updated)   |
 
 ## Acceptance Criteria
 

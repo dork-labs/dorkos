@@ -22,13 +22,25 @@ export default defineConfig([
   {
     files: ['src/layers/shared/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/entities/*', '@/layers/entities'], message: 'FSD violation: shared/ cannot import from entities/' },
-          { group: ['@/layers/features/*', '@/layers/features'], message: 'FSD violation: shared/ cannot import from features/' },
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: shared/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/entities/*', '@/layers/entities'],
+              message: 'FSD violation: shared/ cannot import from entities/',
+            },
+            {
+              group: ['@/layers/features/*', '@/layers/features'],
+              message: 'FSD violation: shared/ cannot import from features/',
+            },
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: shared/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -36,12 +48,21 @@ export default defineConfig([
   {
     files: ['src/layers/entities/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/features/*', '@/layers/features'], message: 'FSD violation: entities/ cannot import from features/' },
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: entities/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/features/*', '@/layers/features'],
+              message: 'FSD violation: entities/ cannot import from features/',
+            },
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: entities/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -49,11 +70,17 @@ export default defineConfig([
   {
     files: ['src/layers/features/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: features/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: features/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
 

@@ -53,24 +53,24 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role |
-|------|------|
-| `packages/shared/src/mesh-schemas.ts` | Agent manifest Zod schema (lines 45-60) |
-| `packages/mesh/src/manifest.ts` | `.dork/agent.json` file I/O (read/write/remove) |
-| `packages/mesh/src/agent-registry.ts` | SQLite-backed registry with Drizzle ORM |
-| `packages/mesh/src/mesh-core.ts` | Discovery + registration orchestration |
-| `packages/db/src/schema/mesh.ts` | DB schema: `agents` + `agentDenials` tables |
-| `apps/server/src/routes/mesh.ts` | REST endpoints for agent CRUD |
-| `apps/server/src/services/context-builder.ts` | System prompt context injection |
-| `apps/server/src/services/core/mcp-tool-server.ts` | MCP tools exposed to Claude sessions |
-| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Sidebar with directory breadcrumb |
-| `apps/client/src/layers/shared/ui/DirectoryPicker.tsx` | Directory selection dialog |
-| `apps/client/src/layers/features/pulse/ui/ScheduleRow.tsx` | Pulse schedule display |
-| `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx` | Schedule creation form |
-| `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx` | Settings dialog (4 tabs) |
-| `apps/client/src/layers/shared/lib/favicon-utils.ts` | Deterministic color/emoji from CWD hash |
-| `apps/client/src/layers/entities/mesh/` | 14 mesh entity hooks |
-| `apps/client/src/layers/features/mesh/ui/` | Mesh UI components (RegisterAgentDialog, AgentCard, etc.) |
+| File                                                                 | Role                                                      |
+| -------------------------------------------------------------------- | --------------------------------------------------------- |
+| `packages/shared/src/mesh-schemas.ts`                                | Agent manifest Zod schema (lines 45-60)                   |
+| `packages/mesh/src/manifest.ts`                                      | `.dork/agent.json` file I/O (read/write/remove)           |
+| `packages/mesh/src/agent-registry.ts`                                | SQLite-backed registry with Drizzle ORM                   |
+| `packages/mesh/src/mesh-core.ts`                                     | Discovery + registration orchestration                    |
+| `packages/db/src/schema/mesh.ts`                                     | DB schema: `agents` + `agentDenials` tables               |
+| `apps/server/src/routes/mesh.ts`                                     | REST endpoints for agent CRUD                             |
+| `apps/server/src/services/context-builder.ts`                        | System prompt context injection                           |
+| `apps/server/src/services/core/mcp-tool-server.ts`                   | MCP tools exposed to Claude sessions                      |
+| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Sidebar with directory breadcrumb                         |
+| `apps/client/src/layers/shared/ui/DirectoryPicker.tsx`               | Directory selection dialog                                |
+| `apps/client/src/layers/features/pulse/ui/ScheduleRow.tsx`           | Pulse schedule display                                    |
+| `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`  | Schedule creation form                                    |
+| `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx`     | Settings dialog (4 tabs)                                  |
+| `apps/client/src/layers/shared/lib/favicon-utils.ts`                 | Deterministic color/emoji from CWD hash                   |
+| `apps/client/src/layers/entities/mesh/`                              | 14 mesh entity hooks                                      |
+| `apps/client/src/layers/features/mesh/ui/`                           | Mesh UI components (RegisterAgentDialog, AgentCard, etc.) |
 
 **Shared dependencies:**
 
@@ -91,6 +91,7 @@ status: ideation
 ```
 
 For the new flow (agent identity in sidebar):
+
 ```
 selectedCwd (Zustand/URL)
   → GET /api/mesh/agents?path={cwd} [new endpoint or use existing getByPath]
@@ -121,18 +122,21 @@ Full research report: `research/20260226_agents_first_class_entity.md`
 **Potential solutions:**
 
 **1. Agent as Directory Alias (Minimal Lift)**
+
 - Show agent name instead of path everywhere; no schema changes, no behavior changes
 - Pros: Ship fast, no breaking changes, incremental
 - Cons: Agents remain second-class; no persona injection; misses the core opportunity
 - Complexity: Low | Maintenance: Low
 
 **2. Agent as First-Class Session Context (Medium Lift) — SELECTED**
+
 - Agent owns a working directory, has display identity + persona, is the context frame for sessions
 - Pros: Strong UX improvement, persona injection makes agents meaningfully different from folders, unregistered dirs still work, aligns with GitHub Copilot/OpenCode/Windsurf patterns
 - Cons: New FSD entity layer, schema extensions, context-builder dependency on manifest reader
 - Complexity: Medium | Maintenance: Medium
 
 **3. Agents as Navigation Axis (High Lift)**
+
 - Replace `?dir=` with `?agent=`, agent-centric sidebar, all features scoped to agents
 - Pros: Most coherent long-term vision
 - Cons: High risk, breaks `?dir=` woven through transport/sessions/Pulse/boundary checks, forces migration
@@ -140,12 +144,14 @@ Full research report: `research/20260226_agents_first_class_entity.md`
 - **Deferred** — right direction but not for beta
 
 **4. Agent Profile UI (Orthogonal) — INCLUDED with #2**
+
 - Standalone Agent Settings dialog for viewing/editing `.dork/agent.json`
 - Pros: Makes invisible visible, directly useful, ships incrementally
 - Cons: Alone, doesn't change how agents are perceived in daily use
 - Complexity: Low-Medium | Maintenance: Low
 
 **Industry patterns:**
+
 - GitHub Copilot: Agent name in mode dropdown, file-based config in `.github/agents/`
 - OpenCode: Tab key cycles agents, `@name` invokes subagents, markdown files with YAML frontmatter
 - Windsurf: Single named agent (Cascade) per workspace, always visible in chat header
@@ -156,12 +162,12 @@ Full research report: `research/20260226_agents_first_class_entity.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Agent Settings UX | Dedicated Agent Dialog | A new standalone dialog with tabs for Identity, Mesh, Pulse, and Relay config. Richer than a Settings tab; focused on the agent rather than app preferences. Opened by clicking agent name in sidebar. |
-| 2 | Agent visual identity | Deterministic color + emoji, user-overridable | Reuse existing `hashToHslColor()` / `hashToEmoji()` from `favicon-utils.ts`, hashing from agent ID (not CWD). If user overrides color/icon in agent config, the override is used everywhere — sidebar, Pulse, tab title, favicon. |
-| 3 | Unregistered directory treatment | Graceful fallback + gentle CTA | Dirs without `.dork/agent.json` show current folder path exactly as today. A subtle "+ Agent" text link or small icon next to the path lets users initialize an agent. Fully functional, zero degradation, non-pushy. |
-| 4 | Persona injection | Auto-inject with per-agent toggle | When a session's CWD has `.dork/agent.json` with a `persona` field, inject it into the system prompt via `context-builder.ts`. A `personaEnabled` boolean field (default `true`) on the manifest gives users control. The agent "knows" its name and role. |
+| #   | Decision                         | Choice                                        | Rationale                                                                                                                                                                                                                                                  |
+| --- | -------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Agent Settings UX                | Dedicated Agent Dialog                        | A new standalone dialog with tabs for Identity, Mesh, Pulse, and Relay config. Richer than a Settings tab; focused on the agent rather than app preferences. Opened by clicking agent name in sidebar.                                                     |
+| 2   | Agent visual identity            | Deterministic color + emoji, user-overridable | Reuse existing `hashToHslColor()` / `hashToEmoji()` from `favicon-utils.ts`, hashing from agent ID (not CWD). If user overrides color/icon in agent config, the override is used everywhere — sidebar, Pulse, tab title, favicon.                          |
+| 3   | Unregistered directory treatment | Graceful fallback + gentle CTA                | Dirs without `.dork/agent.json` show current folder path exactly as today. A subtle "+ Agent" text link or small icon next to the path lets users initialize an agent. Fully functional, zero degradation, non-pushy.                                      |
+| 4   | Persona injection                | Auto-inject with per-agent toggle             | When a session's CWD has `.dork/agent.json` with a `persona` field, inject it into the system prompt via `context-builder.ts`. A `personaEnabled` boolean field (default `true`) on the manifest gives users control. The agent "knows" its name and role. |
 
 ---
 
@@ -174,6 +180,7 @@ The Agent Dialog is the centerpiece of this feature. When a user clicks the agen
 **Proposed tab structure:**
 
 #### Tab 1: Identity
+
 - **Name** — editable text field (writes to `.dork/agent.json` name)
 - **Description** — multiline text (writes to description field)
 - **Color** — color picker or preset palette; shows current deterministic color as default
@@ -182,12 +189,14 @@ The Agent Dialog is the centerpiece of this feature. When a user clicks the agen
 - **Working directory** — read-only display of the agent's CWD with a copy button
 
 #### Tab 2: Persona
+
 - **System prompt** — rich textarea for the agent's persona text (writes to `persona` field)
 - **Persona enabled** — toggle switch (writes to `personaEnabled` field)
 - **Preview** — shows what the agent identity XML block looks like when injected
 - Guidance text: "This text is appended to Claude Code's system prompt for every session in this directory. Use it to define the agent's expertise, constraints, and personality."
 
 #### Tab 3: Capabilities
+
 - **Capabilities** — tag/chip editor for capability strings (writes to `capabilities[]`)
 - **Namespace** — text field for mesh namespace grouping
 - **Behavior** — response mode dropdown (always, direct-only, mention-only, silent)
@@ -195,6 +204,7 @@ The Agent Dialog is the centerpiece of this feature. When a user clicks the agen
 - This tab surfaces Mesh config in agent-centric language — no "Mesh" branding needed
 
 #### Tab 4: Connections
+
 - **Pulse schedules** — list of schedules linked to this agent's CWD, with quick links to edit
 - **Relay endpoints** — list of Relay endpoints registered for this agent
 - **Mesh health** — health status, last seen, heartbeat info
@@ -230,22 +240,26 @@ When no agent is registered:
 ### DirectoryPicker Enhancements
 
 **Recent view:**
+
 - Each recent directory that has a `.dork/agent.json` shows: `[colored dot] [emoji] Agent Name` instead of the raw path
 - The path is shown as secondary text below the agent name
 - Unregistered directories show the folder icon + path as today
 - Visual distinction makes it instantly clear which directories are "agents" vs plain folders
 
 **Browse view:**
+
 - When navigating into a directory with `.dork/agent.json`, show the agent name in the breadcrumb area
 - The "Select" button could say "Select" for plain dirs, "Open Agent" for agent dirs (optional polish)
 
 ### Pulse Integration
 
 **Schedule rows:**
+
 - When a schedule's CWD has a registered agent, show `[colored dot] Agent Name` instead of (or alongside) the schedule name
 - The CWD path becomes secondary info, visible on hover or in the expanded detail
 
 **Create/Edit Schedule Dialog:**
+
 - The DirectoryPicker already handles agent display (see above)
 - After selecting a dir with an agent, show the agent name prominently in the form
 - Consider: agent name as part of the schedule display name default
@@ -274,15 +288,18 @@ The persona block is only included when `personaEnabled` is true (default). The 
 ### Schema Changes
 
 **AgentManifest additions:**
+
 - `persona: z.string().max(4000).optional()` — System prompt text
 - `personaEnabled: z.boolean().default(true)` — Toggle for persona injection
 - `color: z.string().optional()` — CSS color override (e.g., "#6366f1")
 - `icon: z.string().optional()` — Emoji override
 
 **UpdateAgentRequest additions:**
+
 - Same four new fields added as optional
 
 **New API endpoints (or extensions):**
+
 - `GET /api/agents/current?path={cwd}` — Get agent for a CWD (works without Mesh enabled)
 - Or extend existing: `GET /api/mesh/agents?path={cwd}` — already possible via `getByPath`
 

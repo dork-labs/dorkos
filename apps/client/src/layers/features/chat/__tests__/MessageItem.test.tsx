@@ -446,9 +446,7 @@ describe('MessageItem', () => {
 
     // The 'Done' text should appear in a streamdown element, not as a bare text node
     // at the top level of the document
-    const doneInStreamdown = Array.from(streamdownElements).some(
-      (el) => el.textContent === 'Done'
-    );
+    const doneInStreamdown = Array.from(streamdownElements).some((el) => el.textContent === 'Done');
     expect(doneInStreamdown).toBe(true);
   });
 });

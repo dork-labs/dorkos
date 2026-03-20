@@ -1,5 +1,5 @@
 ---
-title: "Settings: Reset All Data & Restart Server — UX Patterns, Technical Approaches, and Recommendations"
+title: 'Settings: Reset All Data & Restart Server — UX Patterns, Technical Approaches, and Recommendations'
 date: 2026-03-01
 type: implementation
 status: active
@@ -69,6 +69,7 @@ This report covers two dangerous-action features for the DorkOS Settings dialog:
 #### Visual Design
 
 The industry standard from GitHub, Vercel, Supabase, and Resend:
+
 - A visually separated section at the **bottom** of the settings panel/page
 - Red border (`border-destructive`), warning icon (AlertTriangle), section heading "Danger Zone" or "Destructive Actions"
 - Buttons styled as destructive (red/outlined-red background) but **not immediately clickable** — either disabled until confirmation or triggering a modal
@@ -78,12 +79,13 @@ For DorkOS's `SettingsDialog`, this maps to a new tab "Danger" or a section at t
 
 #### Confirmation Patterns by Severity
 
-| Action | Pattern | Rationale |
-|---|---|---|
-| Reset All Data | Type "reset" to confirm | Irreversible, destroys all user data |
-| Restart Server | Two-step click confirm | Reversible (server comes back), lower stakes |
+| Action         | Pattern                 | Rationale                                    |
+| -------------- | ----------------------- | -------------------------------------------- |
+| Reset All Data | Type "reset" to confirm | Irreversible, destroys all user data         |
+| Restart Server | Two-step click confirm  | Reversible (server comes back), lower stakes |
 
 **Type-to-confirm implementation**:
+
 ```tsx
 const [confirmText, setConfirmText] = useState('');
 const canReset = confirmText === 'reset';
@@ -92,6 +94,7 @@ const canReset = confirmText === 'reset';
 ```
 
 **Two-step click for restart**:
+
 ```tsx
 const [armed, setArmed] = useState(false);
 // First click: setArmed(true), button label changes to "Click again to confirm"
@@ -127,6 +130,7 @@ AlertDialog (not regular Dialog — it's action-oriented)
 #### What Lives in `~/.dork` (DORK_HOME)
 
 From the server startup code, the following files/subdirectories exist:
+
 - `config.json` — ConfigManager (Conf library, file-watched internally)
 - `dork.db` — Drizzle consolidated SQLite database (open SQLite connection via `better-sqlite3`)
 - `logs/` — Log files (rotating file logger)
@@ -189,14 +193,15 @@ function spawnAndExit() {
   const child = spawn(process.argv[0], process.argv.slice(1), {
     detached: true,
     stdio: 'inherit',
-    env: process.env,  // Inherit all env vars set by CLI
+    env: process.env, // Inherit all env vars set by CLI
   });
-  child.unref();  // Allow parent to exit independently
+  child.unref(); // Allow parent to exit independently
   process.exit(0);
 }
 ```
 
 This works because:
+
 - `process.argv[0]` is `node` (or the CLI binary)
 - `process.argv.slice(1)` is the CLI entry script + its args
 - All env vars set during CLI startup (`DORK_HOME`, `DORKOS_PORT`, etc.) are inherited
@@ -211,9 +216,9 @@ Solution: Check `NODE_ENV` — if `development`, just `process.exit(0)`. If `pro
 ```typescript
 function triggerRestart() {
   if (process.env.NODE_ENV === 'development') {
-    process.exit(0);  // nodemon handles restart
+    process.exit(0); // nodemon handles restart
   } else {
-    spawnAndExit();   // spawn fresh process for CLI mode
+    spawnAndExit(); // spawn fresh process for CLI mode
   }
 }
 ```
@@ -245,7 +250,7 @@ async function waitForRestart() {
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
-    await new Promise(r => setTimeout(r, pollIntervalMs));
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
     try {
       const res = await fetch('/api/health');
       if (res.ok) {
@@ -272,6 +277,7 @@ POST /api/admin/restart  — server restart
 ```
 
 This groups dangerous administrative operations under a clear namespace. Register in `app.ts`:
+
 ```typescript
 import adminRoutes from './routes/admin.js';
 app.use('/api/admin', adminRoutes);
@@ -314,23 +320,23 @@ Direct Transport (Obsidian plugin): Both throw `new Error('Not supported in Obsi
 
 ### For Reset
 
-| Approach | Pros | Cons | Verdict |
-|---|---|---|---|
-| 1. Delete entire `~/.dork` dir | Clean slate, simplest code | Requires ordered teardown, implies restart | **Recommended** |
-| 2. Delete contents only | Directory stays | Same file-lock issues, more complex glob | Unnecessary complexity |
-| 3. Each service clears its own data | Surgical, no restart needed | Complex orchestration, stale in-memory state still exists | Too complex, fragile |
-| 4. Server-side orchestrated endpoint | What we're proposing | Requires exposing service refs to route | **Recommended** |
+| Approach                             | Pros                        | Cons                                                      | Verdict                |
+| ------------------------------------ | --------------------------- | --------------------------------------------------------- | ---------------------- |
+| 1. Delete entire `~/.dork` dir       | Clean slate, simplest code  | Requires ordered teardown, implies restart                | **Recommended**        |
+| 2. Delete contents only              | Directory stays             | Same file-lock issues, more complex glob                  | Unnecessary complexity |
+| 3. Each service clears its own data  | Surgical, no restart needed | Complex orchestration, stale in-memory state still exists | Too complex, fragile   |
+| 4. Server-side orchestrated endpoint | What we're proposing        | Requires exposing service refs to route                   | **Recommended**        |
 
 Verdict: **Delete entire directory + exit** is the right approach. Approach 1 and 4 are the same thing — a server-side endpoint that tears down services, deletes, and exits.
 
 ### For Restart
 
-| Approach | Pros | Cons | Verdict |
-|---|---|---|---|
-| 1. `process.exit(0)` only | Simple | Doesn't restart in CLI mode | Dev-mode only |
-| 2. spawn-and-exit | Works in CLI mode, inherits all env | Slightly more complex | **Recommended for production** |
-| 3. cluster module | Zero-downtime | Massive overkill for single-user local tool | Not appropriate |
-| 4. pm2/systemd | Reliable | External dependency, not DorkOS's concern | Out of scope |
+| Approach                  | Pros                                | Cons                                        | Verdict                        |
+| ------------------------- | ----------------------------------- | ------------------------------------------- | ------------------------------ |
+| 1. `process.exit(0)` only | Simple                              | Doesn't restart in CLI mode                 | Dev-mode only                  |
+| 2. spawn-and-exit         | Works in CLI mode, inherits all env | Slightly more complex                       | **Recommended for production** |
+| 3. cluster module         | Zero-downtime                       | Massive overkill for single-user local tool | Not appropriate                |
+| 4. pm2/systemd            | Reliable                            | External dependency, not DorkOS's concern   | Out of scope                   |
 
 Verdict: **spawn-and-exit in production, exit-only in development** (detect via `NODE_ENV`).
 
@@ -356,6 +362,7 @@ Verdict: **spawn-and-exit in production, exit-only in development** (detect via 
 ### Implementation
 
 **Server side:**
+
 - New `apps/server/src/routes/admin.ts` with `createAdminRouter(deps)` factory
 - `POST /api/admin/reset` — validates body, responds 200, then tears down services and calls `fs.rm` + `process.exit(0)` (spawn-and-exit in production)
 - `POST /api/admin/restart` — responds 200, then `process.exit(0)` (spawn-and-exit in production)
@@ -363,6 +370,7 @@ Verdict: **spawn-and-exit in production, exit-only in development** (detect via 
 - Mount in `index.ts` alongside other admin-type routes, passing the service references via the factory
 
 **Client side:**
+
 - Add `resetAllData()` and `restartServer()` methods to Transport interface + implementations
 - New `DangerSection.tsx` component in `apps/client/src/layers/features/settings/ui/`
 - New `ResetDialog.tsx` with type-to-confirm pattern
@@ -371,6 +379,7 @@ Verdict: **spawn-and-exit in production, exit-only in development** (detect via 
 - `ServerRestartOverlay.tsx` — full-screen overlay shown during restart/reset polling
 
 **File locations (following FSD and server conventions):**
+
 - `apps/server/src/routes/admin.ts` — new route file
 - `apps/client/src/layers/features/settings/ui/DangerSection.tsx`
 - `apps/client/src/layers/features/settings/ui/ResetDialog.tsx`

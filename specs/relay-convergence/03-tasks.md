@@ -10,14 +10,14 @@ lastDecompose: 2026-02-25
 
 ## Task Summary
 
-| Phase | Tasks | Description |
-|---|---|---|
-| Phase 1 | T1-T5 | Server Infrastructure (TraceStore, MessageReceiver, API, MCP) |
-| Phase 2 | T6-T8 | Pulse Migration (SchedulerService Relay path) |
-| Phase 3 | T9-T11 | Console Migration — Server (POST 202, SSE fan-in) |
-| Phase 4 | T12-T14 | Console Migration — Client (Transport, use-chat-session) |
-| Phase 5 | T15-T17 | Trace UI (hooks, timeline, metrics dashboard) |
-| Phase 6 | T18 | Documentation & Cleanup |
+| Phase   | Tasks   | Description                                                   |
+| ------- | ------- | ------------------------------------------------------------- |
+| Phase 1 | T1-T5   | Server Infrastructure (TraceStore, MessageReceiver, API, MCP) |
+| Phase 2 | T6-T8   | Pulse Migration (SchedulerService Relay path)                 |
+| Phase 3 | T9-T11  | Console Migration — Server (POST 202, SSE fan-in)             |
+| Phase 4 | T12-T14 | Console Migration — Client (Transport, use-chat-session)      |
+| Phase 5 | T15-T17 | Trace UI (hooks, timeline, metrics dashboard)                 |
+| Phase 6 | T18     | Documentation & Cleanup                                       |
 
 **Total: 18 tasks**
 
@@ -63,6 +63,7 @@ T1 → T2 → T3 → T9 → T10 → T12 → T13 → T14 → T18
 
 **Blocked by:** None
 **Files:**
+
 - `packages/shared/src/relay-schemas.ts` — Add schemas
 - `packages/shared/src/types.ts` — Re-export types
 
@@ -71,40 +72,44 @@ T1 → T2 → T3 → T9 → T10 → T12 → T13 → T14 → T18
 Add the following to `packages/shared/src/relay-schemas.ts`:
 
 ```typescript
-export const TraceSpanSchema = z.object({
-  messageId: z.string(),
-  traceId: z.string(),
-  spanId: z.string(),
-  parentSpanId: z.string().nullable(),
-  subject: z.string(),
-  fromEndpoint: z.string(),
-  toEndpoint: z.string(),
-  status: z.enum(['pending', 'delivered', 'processed', 'failed', 'dead_lettered']),
-  budgetHopsUsed: z.number().int().nullable(),
-  budgetTtlRemainingMs: z.number().int().nullable(),
-  sentAt: z.number().int(),
-  deliveredAt: z.number().int().nullable(),
-  processedAt: z.number().int().nullable(),
-  error: z.string().nullable(),
-}).openapi('TraceSpan');
+export const TraceSpanSchema = z
+  .object({
+    messageId: z.string(),
+    traceId: z.string(),
+    spanId: z.string(),
+    parentSpanId: z.string().nullable(),
+    subject: z.string(),
+    fromEndpoint: z.string(),
+    toEndpoint: z.string(),
+    status: z.enum(['pending', 'delivered', 'processed', 'failed', 'dead_lettered']),
+    budgetHopsUsed: z.number().int().nullable(),
+    budgetTtlRemainingMs: z.number().int().nullable(),
+    sentAt: z.number().int(),
+    deliveredAt: z.number().int().nullable(),
+    processedAt: z.number().int().nullable(),
+    error: z.string().nullable(),
+  })
+  .openapi('TraceSpan');
 
 export type TraceSpan = z.infer<typeof TraceSpanSchema>;
 
-export const DeliveryMetricsSchema = z.object({
-  totalMessages: z.number().int(),
-  deliveredCount: z.number().int(),
-  failedCount: z.number().int(),
-  deadLetteredCount: z.number().int(),
-  avgDeliveryLatencyMs: z.number().nullable(),
-  p95DeliveryLatencyMs: z.number().nullable(),
-  activeEndpoints: z.number().int(),
-  budgetRejections: z.object({
-    hopLimit: z.number().int(),
-    ttlExpired: z.number().int(),
-    cycleDetected: z.number().int(),
-    budgetExhausted: z.number().int(),
-  }),
-}).openapi('DeliveryMetrics');
+export const DeliveryMetricsSchema = z
+  .object({
+    totalMessages: z.number().int(),
+    deliveredCount: z.number().int(),
+    failedCount: z.number().int(),
+    deadLetteredCount: z.number().int(),
+    avgDeliveryLatencyMs: z.number().nullable(),
+    p95DeliveryLatencyMs: z.number().nullable(),
+    activeEndpoints: z.number().int(),
+    budgetRejections: z.object({
+      hopLimit: z.number().int(),
+      ttlExpired: z.number().int(),
+      cycleDetected: z.number().int(),
+      budgetExhausted: z.number().int(),
+    }),
+  })
+  .openapi('DeliveryMetrics');
 
 export type DeliveryMetrics = z.infer<typeof DeliveryMetricsSchema>;
 
@@ -124,6 +129,7 @@ export type PulseDispatchPayload = z.infer<typeof PulseDispatchPayloadSchema>;
 ```
 
 **Acceptance Criteria:**
+
 - [ ] TraceSpanSchema validates all required fields (messageId, traceId, spanId, subject, fromEndpoint, toEndpoint, status, sentAt)
 - [ ] TraceSpanSchema allows nullable optional fields (parentSpanId, deliveredAt, processedAt, error, budgetHopsUsed, budgetTtlRemainingMs)
 - [ ] DeliveryMetricsSchema includes budgetRejections sub-object with all four rejection types
@@ -137,6 +143,7 @@ export type PulseDispatchPayload = z.infer<typeof PulseDispatchPayloadSchema>;
 
 **Blocked by:** T1
 **Files:**
+
 - `apps/server/src/services/relay/trace-store.ts` — New service
 - `apps/server/src/services/relay/__tests__/trace-store.test.ts` — Unit tests
 
@@ -208,7 +215,22 @@ export class TraceStore {
       INSERT INTO message_traces (message_id, trace_id, span_id, parent_span_id, subject, from_endpoint, to_endpoint, status, budget_hops_used, budget_ttl_remaining_ms, sent_at, delivered_at, processed_at, error)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(span.messageId, span.traceId, span.spanId, span.parentSpanId, span.subject, span.fromEndpoint, span.toEndpoint, span.status, span.budgetHopsUsed, span.budgetTtlRemainingMs, span.sentAt, span.deliveredAt, span.processedAt, span.error);
+    stmt.run(
+      span.messageId,
+      span.traceId,
+      span.spanId,
+      span.parentSpanId,
+      span.subject,
+      span.fromEndpoint,
+      span.toEndpoint,
+      span.status,
+      span.budgetHopsUsed,
+      span.budgetTtlRemainingMs,
+      span.sentAt,
+      span.deliveredAt,
+      span.processedAt,
+      span.error
+    );
   }
 
   /** Update span status (e.g., pending -> delivered -> processed). */
@@ -223,34 +245,62 @@ export class TraceStore {
     }
     if (fields.length === 0) return;
     values.push(messageId);
-    this.db.prepare(`UPDATE message_traces SET ${fields.join(', ')} WHERE message_id = ?`).run(...values);
+    this.db
+      .prepare(`UPDATE message_traces SET ${fields.join(', ')} WHERE message_id = ?`)
+      .run(...values);
   }
 
   /** Get a single span by message ID. */
   getSpanByMessageId(messageId: string): TraceSpan | null {
-    const row = this.db.prepare('SELECT * FROM message_traces WHERE message_id = ?').get(messageId) as Record<string, unknown> | undefined;
+    const row = this.db
+      .prepare('SELECT * FROM message_traces WHERE message_id = ?')
+      .get(messageId) as Record<string, unknown> | undefined;
     return row ? this.rowToSpan(row) : null;
   }
 
   /** Get all spans for a trace (conversation thread). */
   getTrace(traceId: string): TraceSpan[] {
-    const rows = this.db.prepare('SELECT * FROM message_traces WHERE trace_id = ? ORDER BY sent_at').all(traceId) as Record<string, unknown>[];
+    const rows = this.db
+      .prepare('SELECT * FROM message_traces WHERE trace_id = ? ORDER BY sent_at')
+      .all(traceId) as Record<string, unknown>[];
     return rows.map(this.rowToSpan);
   }
 
   /** Get delivery metrics (aggregate queries). */
   getMetrics(): DeliveryMetrics {
-    const total = this.db.prepare('SELECT COUNT(*) as count FROM message_traces').get() as { count: number };
-    const delivered = this.db.prepare("SELECT COUNT(*) as count FROM message_traces WHERE status IN ('delivered', 'processed')").get() as { count: number };
-    const failed = this.db.prepare("SELECT COUNT(*) as count FROM message_traces WHERE status = 'failed'").get() as { count: number };
-    const deadLettered = this.db.prepare("SELECT COUNT(*) as count FROM message_traces WHERE status = 'dead_lettered'").get() as { count: number };
-    const latency = this.db.prepare("SELECT AVG(delivered_at - sent_at) as avg_ms FROM message_traces WHERE delivered_at IS NOT NULL").get() as { avg_ms: number | null };
-    const p95 = this.db.prepare(`
+    const total = this.db.prepare('SELECT COUNT(*) as count FROM message_traces').get() as {
+      count: number;
+    };
+    const delivered = this.db
+      .prepare(
+        "SELECT COUNT(*) as count FROM message_traces WHERE status IN ('delivered', 'processed')"
+      )
+      .get() as { count: number };
+    const failed = this.db
+      .prepare("SELECT COUNT(*) as count FROM message_traces WHERE status = 'failed'")
+      .get() as { count: number };
+    const deadLettered = this.db
+      .prepare("SELECT COUNT(*) as count FROM message_traces WHERE status = 'dead_lettered'")
+      .get() as { count: number };
+    const latency = this.db
+      .prepare(
+        'SELECT AVG(delivered_at - sent_at) as avg_ms FROM message_traces WHERE delivered_at IS NOT NULL'
+      )
+      .get() as { avg_ms: number | null };
+    const p95 = this.db
+      .prepare(
+        `
       SELECT (delivered_at - sent_at) as latency_ms FROM message_traces
       WHERE delivered_at IS NOT NULL ORDER BY latency_ms
       LIMIT 1 OFFSET (SELECT CAST(COUNT(*) * 0.95 AS INTEGER) FROM message_traces WHERE delivered_at IS NOT NULL)
-    `).get() as { latency_ms: number } | undefined;
-    const endpoints = this.db.prepare("SELECT COUNT(DISTINCT to_endpoint) as count FROM message_traces WHERE status != 'dead_lettered'").get() as { count: number };
+    `
+      )
+      .get() as { latency_ms: number } | undefined;
+    const endpoints = this.db
+      .prepare(
+        "SELECT COUNT(DISTINCT to_endpoint) as count FROM message_traces WHERE status != 'dead_lettered'"
+      )
+      .get() as { count: number };
 
     return {
       totalMessages: total.count,
@@ -270,7 +320,9 @@ export class TraceStore {
   }
 
   private countByError(errorPattern: string): number {
-    const row = this.db.prepare("SELECT COUNT(*) as count FROM message_traces WHERE error LIKE ?").get(`%${errorPattern}%`) as { count: number };
+    const row = this.db
+      .prepare('SELECT COUNT(*) as count FROM message_traces WHERE error LIKE ?')
+      .get(`%${errorPattern}%`) as { count: number };
     return row.count;
   }
 
@@ -296,6 +348,7 @@ export class TraceStore {
 ```
 
 **Tests:**
+
 - Insert span and retrieve by messageId
 - Insert span, update status to 'delivered' with deliveredAt, verify update persisted
 - Insert multiple spans with same traceId, retrieve via getTrace(), verify ordering by sent_at
@@ -305,6 +358,7 @@ export class TraceStore {
 - getSpanByMessageId() returns null for non-existent ID
 
 **Acceptance Criteria:**
+
 - [ ] SQLite table created with all columns matching schema
 - [ ] Indexes on trace_id, subject, sent_at (DESC), and partial index on status='dead_lettered'
 - [ ] insertSpan, updateSpan, getSpanByMessageId, getTrace, getMetrics all work correctly
@@ -317,6 +371,7 @@ export class TraceStore {
 
 **Blocked by:** T2
 **Files:**
+
 - `apps/server/src/services/relay/message-receiver.ts` — New service
 - `apps/server/src/services/relay/__tests__/message-receiver.test.ts` — Unit tests
 
@@ -330,7 +385,11 @@ import type { StreamEvent } from '@dorkos/shared/types';
 
 export interface SchedulerAgentManager {
   ensureSession(sessionId: string, opts?: { cwd?: string; permissionMode?: string }): Promise<void>;
-  sendMessage(sessionId: string, content: string, opts?: { cwd?: string; permissionMode?: string }): AsyncIterable<StreamEvent>;
+  sendMessage(
+    sessionId: string,
+    content: string,
+    opts?: { cwd?: string; permissionMode?: string }
+  ): AsyncIterable<StreamEvent>;
 }
 
 export interface MessageReceiverDeps {
@@ -351,7 +410,10 @@ export class MessageReceiver {
 
   private async handleAgentMessage(envelope: RelayEnvelope): Promise<void> {
     const sessionId = extractSessionId(envelope.subject);
-    const payload = envelope.payload as { content: string; platformData?: { cwd?: string; permissionMode?: string } };
+    const payload = envelope.payload as {
+      content: string;
+      platformData?: { cwd?: string; permissionMode?: string };
+    };
 
     this.deps.traceStore.updateSpan(envelope.id, { status: 'processing', processedAt: Date.now() });
 
@@ -376,7 +438,10 @@ export class MessageReceiver {
         }
       }
 
-      this.deps.traceStore.updateSpan(envelope.id, { status: 'delivered', deliveredAt: Date.now() });
+      this.deps.traceStore.updateSpan(envelope.id, {
+        status: 'delivered',
+        deliveredAt: Date.now(),
+      });
     } catch (error) {
       this.deps.traceStore.updateSpan(envelope.id, {
         status: 'failed',
@@ -407,6 +472,7 @@ function extractSessionId(subject: string): string {
 ```
 
 **Tests:**
+
 - handleAgentMessage extracts correct sessionId from subject `relay.agent.{sessionId}`
 - handleAgentMessage calls agentManager.ensureSession and sendMessage with correct params
 - handleAgentMessage publishes response events to replyTo subject with incremented hop count
@@ -416,6 +482,7 @@ function extractSessionId(subject: string): string {
 - start() subscribes to both relay.agent.> and relay.system.pulse.> subjects
 
 **Acceptance Criteria:**
+
 - [ ] Subscribes to relay.agent.> and relay.system.pulse.> subjects
 - [ ] Correctly extracts sessionId from relay.agent.{sessionId} subject
 - [ ] Calls agentManager.ensureSession and sendMessage
@@ -430,6 +497,7 @@ function extractSessionId(subject: string): string {
 
 **Blocked by:** T2
 **Files:**
+
 - `apps/server/src/routes/relay.ts` — Add GET /messages/:id/trace and GET /metrics
 - `apps/server/src/services/core/mcp-tool-server.ts` — Add relay_get_trace and relay_get_metrics tools
 
@@ -459,7 +527,8 @@ router.get('/metrics', (_req, res) => {
 
 ```typescript
 tool('relay_get_trace', {
-  description: 'Get the full delivery trace for a message by ID. Returns all trace spans sharing the same traceId, showing the message delivery timeline.',
+  description:
+    'Get the full delivery trace for a message by ID. Returns all trace spans sharing the same traceId, showing the message delivery timeline.',
   parameters: z.object({ messageId: z.string().describe('The message ID to get trace for') }),
   handler: async ({ messageId }) => {
     if (!deps.traceStore) return { error: 'Tracing not enabled' };
@@ -471,7 +540,8 @@ tool('relay_get_trace', {
 });
 
 tool('relay_get_metrics', {
-  description: 'Get aggregate delivery metrics including message counts, latency, DLQ depth, and budget rejection breakdown.',
+  description:
+    'Get aggregate delivery metrics including message counts, latency, DLQ depth, and budget rejection breakdown.',
   parameters: z.object({}),
   handler: async () => {
     if (!deps.traceStore) return { error: 'Tracing not enabled' };
@@ -488,11 +558,12 @@ export interface McpToolDeps {
   defaultCwd: string;
   pulseStore: PulseStore | null;
   relayCore: RelayCore | null;
-  traceStore: TraceStore | null;  // ADD THIS
+  traceStore: TraceStore | null; // ADD THIS
 }
 ```
 
 **Acceptance Criteria:**
+
 - [ ] GET /api/relay/messages/:id/trace returns 404 when Relay disabled
 - [ ] GET /api/relay/messages/:id/trace returns 404 when message not found
 - [ ] GET /api/relay/messages/:id/trace returns { traceId, spans[] } for valid message
@@ -507,6 +578,7 @@ export interface McpToolDeps {
 
 **Blocked by:** T2, T3
 **Files:**
+
 - `apps/server/src/index.ts` — Initialization order
 - `apps/server/src/services/relay/index.ts` — Re-export new services
 
@@ -555,6 +627,7 @@ export type { MessageReceiverDeps, SchedulerAgentManager } from './message-recei
 ```
 
 **Acceptance Criteria:**
+
 - [ ] TraceStore initializes only when Relay is enabled
 - [ ] MessageReceiver starts after RelayCore and AgentManager are available
 - [ ] SessionBroadcaster.setRelay() called when Relay enabled
@@ -571,6 +644,7 @@ export type { MessageReceiverDeps, SchedulerAgentManager } from './message-recei
 
 **Blocked by:** T3
 **Files:**
+
 - `apps/server/src/services/pulse/scheduler-service.ts` — Add relay dep, branch executeRun
 
 **Changes:**
@@ -581,7 +655,7 @@ export type { MessageReceiverDeps, SchedulerAgentManager } from './message-recei
 export interface SchedulerServiceDeps {
   agentManager: SchedulerAgentManager;
   pulseStore: PulseStore;
-  relay?: RelayCore | null;  // ADD THIS
+  relay?: RelayCore | null; // ADD THIS
 }
 
 export class SchedulerService {
@@ -608,6 +682,7 @@ private async executeRun(schedule: PulseSchedule, run: PulseRun): Promise<void> 
 3. Extract current `executeRun` body into `executeRunDirect()` — no changes to existing logic.
 
 **Acceptance Criteria:**
+
 - [ ] SchedulerService accepts optional `relay` in deps
 - [ ] executeRun branches on isRelayEnabled() && this.relay
 - [ ] Existing executeRun logic preserved in executeRunDirect()
@@ -620,6 +695,7 @@ private async executeRun(schedule: PulseSchedule, run: PulseRun): Promise<void> 
 
 **Blocked by:** T6
 **Files:**
+
 - `apps/server/src/services/pulse/scheduler-service.ts` — Add executeRunViaRelay method
 - `apps/server/src/services/pulse/__tests__/scheduler-service.test.ts` — Add Relay path tests
 
@@ -658,6 +734,7 @@ private async executeRunViaRelay(schedule: PulseSchedule, run: PulseRun): Promis
 ```
 
 **Tests:**
+
 - executeRunViaRelay publishes envelope with correct subject `relay.system.pulse.{scheduleId}`
 - Envelope contains all PulseDispatchPayload fields
 - When deliveredCount is 0, run is marked as failed
@@ -665,6 +742,7 @@ private async executeRunViaRelay(schedule: PulseSchedule, run: PulseRun): Promis
 - Default ttlMs is 3_600_000 when schedule.maxRuntime is undefined
 
 **Acceptance Criteria:**
+
 - [ ] Publishes to `relay.system.pulse.{scheduleId}` subject
 - [ ] Envelope contains complete PulseDispatchPayload
 - [ ] replyTo set to `relay.system.pulse.{scheduleId}.response`
@@ -678,6 +756,7 @@ private async executeRunViaRelay(schedule: PulseSchedule, run: PulseRun): Promis
 
 **Blocked by:** T7
 **Files:**
+
 - `apps/server/src/services/relay/message-receiver.ts` — Enhance handlePulseMessage
 - `apps/server/src/services/relay/__tests__/message-receiver.test.ts` — Add Pulse lifecycle tests
 
@@ -755,6 +834,7 @@ private async handlePulseMessage(envelope: RelayEnvelope): Promise<void> {
 ```
 
 **Tests:**
+
 - Valid PulseDispatchPayload updates run to 'running', then 'completed' on success
 - Invalid payload results in dead_lettered trace
 - AbortController timeout respects budget TTL
@@ -763,6 +843,7 @@ private async handlePulseMessage(envelope: RelayEnvelope): Promise<void> {
 - Response events published to replyTo with incremented hop count
 
 **Acceptance Criteria:**
+
 - [ ] Validates payload with PulseDispatchPayloadSchema.safeParse
 - [ ] Rejects invalid payloads to dead letter queue
 - [ ] Updates PulseStore run lifecycle: running -> completed/failed
@@ -779,6 +860,7 @@ private async handlePulseMessage(envelope: RelayEnvelope): Promise<void> {
 
 **Blocked by:** T3
 **Files:**
+
 - `apps/server/src/routes/sessions.ts` — Branch on isRelayEnabled
 - `apps/server/src/routes/__tests__/sessions.test.ts` — Add Relay path tests
 
@@ -820,7 +902,10 @@ router.post('/:id/messages', async (req, res) => {
         sendSSEEvent(res, event);
       }
     } catch (err) {
-      sendSSEEvent(res, { type: 'error', data: { message: err instanceof Error ? err.message : 'Unknown error' } });
+      sendSSEEvent(res, {
+        type: 'error',
+        data: { message: err instanceof Error ? err.message : 'Unknown error' },
+      });
     } finally {
       agentManager.releaseLock(sessionId, clientId);
       endSSEStream(res);
@@ -830,6 +915,7 @@ router.post('/:id/messages', async (req, res) => {
 ```
 
 **Tests:**
+
 - Relay enabled: POST returns 202 with { messageId, traceId, deliveredCount }
 - Relay enabled: relay.publish called with correct subject and payload
 - Relay enabled: Console endpoint registered via relay.registerEndpoint
@@ -837,6 +923,7 @@ router.post('/:id/messages', async (req, res) => {
 - Lock acquisition still works in Relay path
 
 **Acceptance Criteria:**
+
 - [ ] Returns 202 with receipt when Relay enabled
 - [ ] Returns SSE stream when Relay disabled
 - [ ] Receipt contains messageId, traceId, deliveredCount
@@ -850,6 +937,7 @@ router.post('/:id/messages', async (req, res) => {
 
 **Blocked by:** T9
 **Files:**
+
 - `apps/server/src/services/session/session-broadcaster.ts` — Add setRelay and fan-in
 
 **Implementation:**
@@ -866,7 +954,8 @@ export class SessionBroadcaster {
   registerClient(sessionId: string, vaultRoot: string, res: Response): void {
     // ... existing client registration and watcher setup ...
 
-    const clientId = req.headers?.['x-client-id'] as string ?? res.getHeader?.('x-client-id') as string;
+    const clientId =
+      (req.headers?.['x-client-id'] as string) ?? (res.getHeader?.('x-client-id') as string);
     if (this.relay && clientId) {
       const consoleSubject = `relay.human.console.${clientId}`;
       this.relay.subscribe(consoleSubject, (envelope) => {
@@ -879,6 +968,7 @@ export class SessionBroadcaster {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] setRelay stores RelayCore reference
 - [ ] When Relay enabled and clientId present, subscribes to relay.human.console.{clientId}
 - [ ] Relay events written as SSE `event: relay_message` with JSON payload
@@ -891,32 +981,37 @@ export class SessionBroadcaster {
 
 **Blocked by:** T10
 **Files:**
+
 - `packages/shared/src/schemas.ts` — Add relay SSE event type schemas
 - `apps/server/src/services/session/session-broadcaster.ts` — Emit relay_receipt and message_delivered events
 
 **New SSE event types on GET /api/sessions/:id/stream:**
 
-| Event Type | Data | When |
-|---|---|---|
-| `sync_connected` | `{ sessionId }` | On initial connection (existing) |
-| `sync_update` | `{ sessionId, timestamp }` | JSONL file change (existing) |
-| `relay_message` | StreamEvent | Agent response chunk via Relay |
-| `relay_receipt` | `{ messageId, traceId }` | Message accepted by Relay |
-| `message_delivered` | `{ messageId, subject, status }` | Delivery confirmation |
+| Event Type          | Data                             | When                             |
+| ------------------- | -------------------------------- | -------------------------------- |
+| `sync_connected`    | `{ sessionId }`                  | On initial connection (existing) |
+| `sync_update`       | `{ sessionId, timestamp }`       | JSONL file change (existing)     |
+| `relay_message`     | StreamEvent                      | Agent response chunk via Relay   |
+| `relay_receipt`     | `{ messageId, traceId }`         | Message accepted by Relay        |
+| `message_delivered` | `{ messageId, subject, status }` | Delivery confirmation            |
 
 **Schema additions:**
 
 ```typescript
-export const RelayReceiptEventSchema = z.object({
-  messageId: z.string(),
-  traceId: z.string(),
-}).openapi('RelayReceiptEvent');
+export const RelayReceiptEventSchema = z
+  .object({
+    messageId: z.string(),
+    traceId: z.string(),
+  })
+  .openapi('RelayReceiptEvent');
 
-export const MessageDeliveredEventSchema = z.object({
-  messageId: z.string(),
-  subject: z.string(),
-  status: z.enum(['delivered', 'failed', 'dead_lettered']),
-}).openapi('MessageDeliveredEvent');
+export const MessageDeliveredEventSchema = z
+  .object({
+    messageId: z.string(),
+    subject: z.string(),
+    status: z.enum(['delivered', 'failed', 'dead_lettered']),
+  })
+  .openapi('MessageDeliveredEvent');
 ```
 
 **SessionBroadcaster fan-in event type detection:**
@@ -932,6 +1027,7 @@ if (envelope.payload?.type === 'relay_receipt') {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] RelayReceiptEventSchema and MessageDeliveredEventSchema added to schemas.ts
 - [ ] SSE stream emits relay_message, relay_receipt, message_delivered events
 - [ ] Existing sync_connected and sync_update events unchanged
@@ -944,6 +1040,7 @@ if (envelope.payload?.type === 'relay_receipt') {
 
 **Blocked by:** T10
 **Files:**
+
 - `packages/shared/src/transport.ts` — Add sendMessageRelay, getRelayTrace, getRelayDeliveryMetrics
 - `apps/client/src/layers/shared/lib/transports/http-transport.ts` — Implement
 - `apps/client/src/layers/shared/lib/transports/direct-transport.ts` — Stub
@@ -1030,6 +1127,7 @@ getRelayDeliveryMetrics: vi.fn().mockResolvedValue({
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Transport interface has sendMessageRelay, getRelayTrace, getRelayDeliveryMetrics
 - [ ] HttpTransport implements all three methods
 - [ ] DirectTransport throws for all three methods
@@ -1042,6 +1140,7 @@ getRelayDeliveryMetrics: vi.fn().mockResolvedValue({
 
 **Blocked by:** T12
 **Files:**
+
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts` — Protocol branching
 
 **Implementation:**
@@ -1087,6 +1186,7 @@ eventSource.addEventListener('message_delivered', (e) => {
 Key: `handleStreamEvent()` / `createStreamEventHandler()` is reused for both protocols. Same event processing, different transport.
 
 **Acceptance Criteria:**
+
 - [ ] handleSubmit branches on relayEnabled
 - [ ] Relay path: POST returns JSON receipt (not SSE)
 - [ ] Relay path: response events arrive via EventSource relay_message events
@@ -1101,6 +1201,7 @@ Key: `handleStreamEvent()` / `createStreamEventHandler()` is reused for both pro
 
 **Blocked by:** T13
 **Files:**
+
 - `apps/client/src/layers/features/chat/model/__tests__/use-chat-session.test.ts` — Add Relay protocol tests
 
 **Tests to add:**
@@ -1140,6 +1241,7 @@ describe('use-chat-session Relay protocol', () => {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Tests verify sendMessageRelay called when relay enabled
 - [ ] Tests verify sendMessage called when relay disabled
 - [ ] Tests verify relay_message events processed correctly
@@ -1155,6 +1257,7 @@ describe('use-chat-session Relay protocol', () => {
 
 **Blocked by:** T4, T12
 **Files:**
+
 - `apps/client/src/layers/entities/relay/model/use-message-trace.ts` — New hook
 - `apps/client/src/layers/entities/relay/model/use-delivery-metrics.ts` — New hook
 - `apps/client/src/layers/entities/relay/index.ts` — Update barrel exports
@@ -1201,6 +1304,7 @@ export { useDeliveryMetrics } from './model/use-delivery-metrics';
 ```
 
 **Acceptance Criteria:**
+
 - [ ] useMessageTrace disabled when messageId is null, enabled otherwise
 - [ ] useMessageTrace has 30s staleTime
 - [ ] useDeliveryMetrics has 30s staleTime and 30s refetchInterval
@@ -1213,6 +1317,7 @@ export { useDeliveryMetrics } from './model/use-delivery-metrics';
 
 **Blocked by:** T15
 **Files:**
+
 - `apps/client/src/layers/features/relay/ui/MessageTrace.tsx` — New component
 - `apps/client/src/layers/features/relay/ui/__tests__/MessageTrace.test.tsx` — Tests
 - `apps/client/src/layers/features/relay/index.ts` — Update barrel
@@ -1259,23 +1364,44 @@ export function MessageTrace({ messageId, onClose }: MessageTraceProps) {
     <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-medium">Message Trace: {traceId.slice(0, 8)}</h3>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">x</button>
+        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
+          x
+        </button>
       </div>
       <div className="space-y-0">
         {spans.map((span, i) => (
-          <TraceSpanRow key={span.spanId} span={span} prevSpan={spans[i - 1]} isLast={i === spans.length - 1} />
+          <TraceSpanRow
+            key={span.spanId}
+            span={span}
+            prevSpan={spans[i - 1]}
+            isLast={i === spans.length - 1}
+          />
         ))}
       </div>
       {spans.length > 0 && (
         <div className="mt-2 border-t pt-2 text-xs text-neutral-500">
-          Total: {formatDuration(spans[spans.length - 1].deliveredAt ?? spans[spans.length - 1].processedAt ?? Date.now(), spans[0].sentAt)}
+          Total:{' '}
+          {formatDuration(
+            spans[spans.length - 1].deliveredAt ??
+              spans[spans.length - 1].processedAt ??
+              Date.now(),
+            spans[0].sentAt
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function TraceSpanRow({ span, prevSpan, isLast }: { span: TraceSpan; prevSpan?: TraceSpan; isLast: boolean }) {
+function TraceSpanRow({
+  span,
+  prevSpan,
+  isLast,
+}: {
+  span: TraceSpan;
+  prevSpan?: TraceSpan;
+  isLast: boolean;
+}) {
   const delta = prevSpan ? formatDelta(span.sentAt, prevSpan.sentAt) : formatTimestamp(span.sentAt);
   return (
     <div className="flex gap-3">
@@ -1288,9 +1414,13 @@ function TraceSpanRow({ span, prevSpan, isLast }: { span: TraceSpan; prevSpan?: 
           <span className="text-sm font-medium capitalize">{span.status}</span>
           <span className="text-xs text-neutral-500">{delta}</span>
         </div>
-        <div className="text-xs text-neutral-500">{span.fromEndpoint} &rarr; {span.toEndpoint}</div>
+        <div className="text-xs text-neutral-500">
+          {span.fromEndpoint} &rarr; {span.toEndpoint}
+        </div>
         {span.budgetHopsUsed != null && (
-          <div className="text-xs text-neutral-400">Hops: {span.budgetHopsUsed}, TTL remaining: {span.budgetTtlRemainingMs}ms</div>
+          <div className="text-xs text-neutral-400">
+            Hops: {span.budgetHopsUsed}, TTL remaining: {span.budgetTtlRemainingMs}ms
+          </div>
         )}
         {span.error && <div className="text-xs text-red-500">{span.error}</div>}
       </div>
@@ -1314,6 +1444,7 @@ function formatDuration(end: number, start: number): string {
 ```
 
 **Tests:**
+
 - Renders trace spans with correct status colors
 - Shows latency deltas between spans
 - Shows error messages for failed spans
@@ -1322,6 +1453,7 @@ function formatDuration(end: number, start: number): string {
 - Handles empty spans array
 
 **Acceptance Criteria:**
+
 - [ ] Vertical timeline with colored status dots
 - [ ] Latency deltas between spans
 - [ ] Budget consumption shown at each hop
@@ -1336,6 +1468,7 @@ function formatDuration(end: number, start: number): string {
 
 **Blocked by:** T15
 **Files:**
+
 - `apps/client/src/layers/features/relay/ui/DeliveryMetrics.tsx` — New component
 - `apps/client/src/layers/features/relay/ui/__tests__/DeliveryMetrics.test.tsx` — Tests
 - `apps/client/src/layers/features/relay/index.ts` — Update barrel
@@ -1355,8 +1488,11 @@ export function DeliveryMetrics() {
   if (error) return <div className="p-4 text-sm text-red-500">Failed to load metrics</div>;
   if (!metrics) return null;
 
-  const totalRejections = metrics.budgetRejections.hopLimit + metrics.budgetRejections.ttlExpired
-    + metrics.budgetRejections.cycleDetected + metrics.budgetRejections.budgetExhausted;
+  const totalRejections =
+    metrics.budgetRejections.hopLimit +
+    metrics.budgetRejections.ttlExpired +
+    metrics.budgetRejections.cycleDetected +
+    metrics.budgetRejections.budgetExhausted;
 
   return (
     <div className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
@@ -1364,20 +1500,51 @@ export function DeliveryMetrics() {
       <div className="grid grid-cols-2 gap-4">
         <MetricCard label="Total Messages" value={metrics.totalMessages} />
         <MetricCard label="Delivered" value={metrics.deliveredCount} />
-        <MetricCard label="Failed" value={metrics.failedCount} variant={metrics.failedCount > 0 ? 'warning' : 'default'} />
-        <MetricCard label="Dead Lettered" value={metrics.deadLetteredCount} variant={metrics.deadLetteredCount > 0 ? 'destructive' : 'default'} badge={metrics.deadLetteredCount > 0} />
-        <MetricCard label="Avg Latency" value={metrics.avgDeliveryLatencyMs != null ? `${metrics.avgDeliveryLatencyMs.toFixed(1)}ms` : 'N/A'} />
-        <MetricCard label="P95 Latency" value={metrics.p95DeliveryLatencyMs != null ? `${metrics.p95DeliveryLatencyMs.toFixed(1)}ms` : 'N/A'} />
+        <MetricCard
+          label="Failed"
+          value={metrics.failedCount}
+          variant={metrics.failedCount > 0 ? 'warning' : 'default'}
+        />
+        <MetricCard
+          label="Dead Lettered"
+          value={metrics.deadLetteredCount}
+          variant={metrics.deadLetteredCount > 0 ? 'destructive' : 'default'}
+          badge={metrics.deadLetteredCount > 0}
+        />
+        <MetricCard
+          label="Avg Latency"
+          value={
+            metrics.avgDeliveryLatencyMs != null
+              ? `${metrics.avgDeliveryLatencyMs.toFixed(1)}ms`
+              : 'N/A'
+          }
+        />
+        <MetricCard
+          label="P95 Latency"
+          value={
+            metrics.p95DeliveryLatencyMs != null
+              ? `${metrics.p95DeliveryLatencyMs.toFixed(1)}ms`
+              : 'N/A'
+          }
+        />
         <MetricCard label="Active Endpoints" value={metrics.activeEndpoints} />
       </div>
       {totalRejections > 0 && (
         <div className="space-y-1">
           <h4 className="text-xs font-medium text-neutral-500">Budget Rejections</h4>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            {metrics.budgetRejections.hopLimit > 0 && <span>Hop limit: {metrics.budgetRejections.hopLimit}</span>}
-            {metrics.budgetRejections.ttlExpired > 0 && <span>TTL expired: {metrics.budgetRejections.ttlExpired}</span>}
-            {metrics.budgetRejections.cycleDetected > 0 && <span>Cycle detected: {metrics.budgetRejections.cycleDetected}</span>}
-            {metrics.budgetRejections.budgetExhausted > 0 && <span>Exhausted: {metrics.budgetRejections.budgetExhausted}</span>}
+            {metrics.budgetRejections.hopLimit > 0 && (
+              <span>Hop limit: {metrics.budgetRejections.hopLimit}</span>
+            )}
+            {metrics.budgetRejections.ttlExpired > 0 && (
+              <span>TTL expired: {metrics.budgetRejections.ttlExpired}</span>
+            )}
+            {metrics.budgetRejections.cycleDetected > 0 && (
+              <span>Cycle detected: {metrics.budgetRejections.cycleDetected}</span>
+            )}
+            {metrics.budgetRejections.budgetExhausted > 0 && (
+              <span>Exhausted: {metrics.budgetRejections.budgetExhausted}</span>
+            )}
           </div>
         </div>
       )}
@@ -1385,19 +1552,33 @@ export function DeliveryMetrics() {
   );
 }
 
-function MetricCard({ label, value, variant = 'default', badge = false }: {
+function MetricCard({
+  label,
+  value,
+  variant = 'default',
+  badge = false,
+}: {
   label: string;
   value: string | number;
   variant?: 'default' | 'warning' | 'destructive';
   badge?: boolean;
 }) {
-  const colorClass = variant === 'destructive' ? 'text-red-500' : variant === 'warning' ? 'text-yellow-500' : 'text-neutral-900 dark:text-neutral-100';
+  const colorClass =
+    variant === 'destructive'
+      ? 'text-red-500'
+      : variant === 'warning'
+        ? 'text-yellow-500'
+        : 'text-neutral-900 dark:text-neutral-100';
   return (
     <div className="space-y-1">
       <div className="text-xs text-neutral-500">{label}</div>
       <div className={`text-lg font-semibold ${colorClass}`}>
         {value}
-        {badge && <Badge variant="destructive" className="ml-2 text-xs">!</Badge>}
+        {badge && (
+          <Badge variant="destructive" className="ml-2 text-xs">
+            !
+          </Badge>
+        )}
       </div>
     </div>
   );
@@ -1405,6 +1586,7 @@ function MetricCard({ label, value, variant = 'default', badge = false }: {
 ```
 
 **Tests:**
+
 - Renders all metric values
 - DLQ warning badge when deadLetteredCount > 0
 - Budget rejections section hidden when all zero
@@ -1412,6 +1594,7 @@ function MetricCard({ label, value, variant = 'default', badge = false }: {
 - Loading and error states
 
 **Acceptance Criteria:**
+
 - [ ] Shows all metric values
 - [ ] DLQ warning badge when depth > 0
 - [ ] Latency display (avg/p95)
@@ -1428,6 +1611,7 @@ function MetricCard({ label, value, variant = 'default', badge = false }: {
 
 **Blocked by:** T8, T11, T14, T16, T17
 **Files:**
+
 - `CLAUDE.md` — Update services list, session architecture, SSE protocol
 - `contributing/architecture.md` — Add converged data flow diagram, receipt+SSE protocol
 - `contributing/api-reference.md` — Document new endpoints and SSE events
@@ -1467,6 +1651,7 @@ Additional event types when Relay is enabled: `relay_message` (agent response ch
 **contributing/data-fetching.md:** Add useMessageTrace and useDeliveryMetrics hook patterns.
 
 **Acceptance Criteria:**
+
 - [ ] CLAUDE.md services list updated
 - [ ] CLAUDE.md Session Architecture describes Relay convergence
 - [ ] CLAUDE.md SSE protocol lists new event types

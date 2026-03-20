@@ -169,9 +169,9 @@ Slack message → @slack/bolt event handler → inbound.ts (parse to StandardPay
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Streaming approach | Native Streaming API (`chat.startStream`/`appendStream`/`stopStream`) | First-class Slack support for AI agents, avoids `chat.update` rate limits, ChatGPT-like UX |
-| 2 | Threading behavior | Always thread replies | Keeps channels clean, naturally scopes agent sessions per-thread. No config surface needed. |
-| 3 | Connection mode | Socket Mode only | No public URL required — perfect for self-hosted. Slack's recommendation for single-tenant. Simpler setup. |
-| 4 | Format conversion | Shared `formatForPlatform()` in `payload-utils.ts` | Centralizes Markdown-to-platform conversion. Benefits Telegram (HTML), Slack (mrkdwn), webhooks (plain text), and future adapters. |
+| #   | Decision           | Choice                                                                | Rationale                                                                                                                          |
+| --- | ------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Streaming approach | Native Streaming API (`chat.startStream`/`appendStream`/`stopStream`) | First-class Slack support for AI agents, avoids `chat.update` rate limits, ChatGPT-like UX                                         |
+| 2   | Threading behavior | Always thread replies                                                 | Keeps channels clean, naturally scopes agent sessions per-thread. No config surface needed.                                        |
+| 3   | Connection mode    | Socket Mode only                                                      | No public URL required — perfect for self-hosted. Slack's recommendation for single-tenant. Simpler setup.                         |
+| 4   | Format conversion  | Shared `formatForPlatform()` in `payload-utils.ts`                    | Centralizes Markdown-to-platform conversion. Benefits Telegram (HTML), Slack (mrkdwn), webhooks (plain text), and future adapters. |

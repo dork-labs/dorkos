@@ -62,14 +62,14 @@ A full Jobs/Ive design critique and independent bindings code review converged o
 
 ### Existing Dependencies (no changes)
 
-| Package | Used For |
-|---------|----------|
-| `motion` (motion.dev) | AnimatePresence, spring animations for tab transitions and mode switch |
-| `@tanstack/react-query` | Data fetching hooks, SSE cache injection |
-| `lucide-react` | Icons (AlertTriangle, Shield, ShieldCheck, ChevronDown) |
-| `sonner` | Toast notifications |
-| `zod` | Schema validation for binding permissions |
-| shadcn/ui primitives | Tabs, Badge, Button, Dialog, Collapsible, Tooltip |
+| Package                 | Used For                                                               |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `motion` (motion.dev)   | AnimatePresence, spring animations for tab transitions and mode switch |
+| `@tanstack/react-query` | Data fetching hooks, SSE cache injection                               |
+| `lucide-react`          | Icons (AlertTriangle, Shield, ShieldCheck, ChevronDown)                |
+| `sonner`                | Toast notifications                                                    |
+| `zod`                   | Schema validation for binding permissions                              |
+| shadcn/ui primitives    | Tabs, Badge, Button, Dialog, Collapsible, Tooltip                      |
 
 No new external dependencies required.
 
@@ -157,8 +157,15 @@ export function useAddAdapter() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ type, id, config }: { type: string; id: string; config: Record<string, unknown> }) =>
-      transport.addRelayAdapter(type, id, config),
+    mutationFn: ({
+      type,
+      id,
+      config,
+    }: {
+      type: string;
+      id: string;
+      config: Record<string, unknown>;
+    }) => transport.addRelayAdapter(type, id, config),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });
@@ -231,6 +238,7 @@ TabsList: Connections | Activity
 The default tab changes from `'activity'` to `'connections'` — connections are the primary configuration surface, and a user opening the Relay Panel for the first time should see their adapters, not an empty activity feed.
 
 **State changes:**
+
 - Remove `selectedEndpoint` state (Endpoints tab removed)
 - Update `activeTab` default from `'activity'` to `'connections'`
 - Remove `onBindClick` callback (no standalone Bindings tab to switch to)
@@ -247,6 +255,7 @@ The `onBindClick` prop is removed since there is no standalone Bindings tab to n
 #### 2.3 Remove Endpoints Tab Components
 
 **Files to delete:**
+
 - `apps/client/src/layers/features/relay/ui/EndpointList.tsx`
 - `apps/client/src/layers/features/relay/ui/InboxView.tsx`
 
@@ -280,11 +289,11 @@ Replace the four raw-number stats bar with a semantic status indicator. The bar 
 
 **Three states:**
 
-| State | Condition | Display | Color |
-|-------|-----------|---------|-------|
-| Healthy | All adapters connected, failure rate < 5% | "3 connections active" with latency on hover | Green dot (`bg-emerald-500`) |
-| Degraded | Any adapter disconnected OR failure rate 5-50% | Specific problem: "Telegram: 12 failures in last hour" | Amber dot (`bg-amber-500`) |
-| Critical | Failure rate > 50% OR zero adapters connected | "90% failure rate — X messages failed today" | Red dot (`bg-red-500`) |
+| State    | Condition                                      | Display                                                | Color                        |
+| -------- | ---------------------------------------------- | ------------------------------------------------------ | ---------------------------- |
+| Healthy  | All adapters connected, failure rate < 5%      | "3 connections active" with latency on hover           | Green dot (`bg-emerald-500`) |
+| Degraded | Any adapter disconnected OR failure rate 5-50% | Specific problem: "Telegram: 12 failures in last hour" | Amber dot (`bg-amber-500`)   |
+| Critical | Failure rate > 50% OR zero adapters connected  | "90% failure rate — X messages failed today"           | Red dot (`bg-red-500`)       |
 
 **Computation logic:**
 
@@ -294,11 +303,12 @@ type HealthState = 'healthy' | 'degraded' | 'critical';
 function computeHealthState(
   metrics: DeliveryMetrics,
   connected: number,
-  total: number,
+  total: number
 ): { state: HealthState; message: string } {
-  const failureRate = metrics.totalMessages > 0
-    ? (metrics.failedCount + metrics.deadLetteredCount) / metrics.totalMessages
-    : 0;
+  const failureRate =
+    metrics.totalMessages > 0
+      ? (metrics.failedCount + metrics.deadLetteredCount) / metrics.totalMessages
+      : 0;
 
   if (total === 0) {
     return { state: 'healthy', message: 'No connections configured' };
@@ -378,14 +388,17 @@ const AggregatedDeadLettersResponseSchema = z.object({
 router.get('/dead-letters/aggregated', async (_req, res) => {
   const deadLetters = await relayCore.getDeadLetters();
 
-  const groups = new Map<string, {
-    source: string;
-    reason: string;
-    count: number;
-    firstSeen: string;
-    lastSeen: string;
-    sample: unknown;
-  }>();
+  const groups = new Map<
+    string,
+    {
+      source: string;
+      reason: string;
+      count: number;
+      firstSeen: string;
+      lastSeen: string;
+      sample: unknown;
+    }
+  >();
 
   for (const dl of deadLetters) {
     const key = `${dl.source ?? 'unknown'}::${dl.reason}`;
@@ -515,11 +528,21 @@ The transition between modes uses `AnimatePresence` for a smooth crossfade:
 ```tsx
 <AnimatePresence mode="wait">
   {hasConfiguredAdapters ? (
-    <motion.div key="mode-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div
+      key="mode-b"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
       {/* Tabbed interface */}
     </motion.div>
   ) : (
-    <motion.div key="mode-a" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div
+      key="mode-a"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
       <RelayEmptyState onAddAdapter={() => setShowCatalog(true)} />
     </motion.div>
   )}
@@ -533,6 +556,7 @@ The transition between modes uses `AnimatePresence` for a smooth crossfade:
 The component already exists with hardcoded example message rows. It is currently dead code — not imported anywhere.
 
 **Changes:**
+
 - Update copy to follow the what/why/what-to-do-next pattern:
   - **What:** "Connect your agents to the world"
   - **Why:** "Relay routes messages between your agents and external platforms like Telegram and Slack"
@@ -658,11 +682,11 @@ export const AdapterBindingSchema = z
 
 **Field semantics:**
 
-| Field | Default | Meaning |
-|-------|---------|---------|
+| Field         | Default | Meaning                                                                                                |
+| ------------- | ------- | ------------------------------------------------------------------------------------------------------ |
 | `canInitiate` | `false` | Agent can send unprompted messages to external platform. Conservative default prevents overnight spam. |
-| `canReply` | `true` | Agent can respond when a human sends a message through the adapter. |
-| `canReceive` | `true` | Inbound messages from the adapter are delivered to the agent. |
+| `canReply`    | `true`  | Agent can respond when a human sends a message through the adapter.                                    |
+| `canReceive`  | `true`  | Inbound messages from the adapter are delivered to the agent.                                          |
 
 All fields have defaults, making this a backward-compatible schema addition. Existing bindings stored on disk will parse correctly with Zod defaults applied.
 
@@ -702,7 +726,10 @@ if (!binding.canReply) {
 ```typescript
 // When an agent publishes to relay.human.* with no inbound context:
 if (!binding.canInitiate) {
-  logger.warn('[BindingRouter] Blocked agent-initiated message — canInitiate=false for binding %s', binding.id);
+  logger.warn(
+    '[BindingRouter] Blocked agent-initiated message — canInitiate=false for binding %s',
+    binding.id
+  );
   // Dead-letter the message instead of silently dropping
   return;
 }
@@ -725,7 +752,7 @@ The Advanced section is collapsed by default. Uses shadcn `Collapsible` primitiv
 
 ```tsx
 <Collapsible>
-  <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground">
+  <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1.5 text-xs">
     <ChevronRight className="size-3 transition-transform data-[state=open]:rotate-90" />
     Advanced
   </CollapsibleTrigger>
@@ -787,11 +814,11 @@ Remove any code that strips `projectPath` and `agentDir` fields from bindings. T
 
 Delete the following files after all imports have been removed:
 
-| File | Reason |
-|------|--------|
-| `apps/client/src/layers/features/relay/ui/BindingList.tsx` | Bindings shown inline in AdapterCard; standalone list is redundant |
-| `apps/client/src/layers/features/relay/ui/EndpointList.tsx` | Endpoints tab removed; endpoints are an implementation detail |
-| `apps/client/src/layers/features/relay/ui/InboxView.tsx` | Part of Endpoints tab; removed with it |
+| File                                                        | Reason                                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| `apps/client/src/layers/features/relay/ui/BindingList.tsx`  | Bindings shown inline in AdapterCard; standalone list is redundant |
+| `apps/client/src/layers/features/relay/ui/EndpointList.tsx` | Endpoints tab removed; endpoints are an implementation detail      |
+| `apps/client/src/layers/features/relay/ui/InboxView.tsx`    | Part of Endpoints tab; removed with it                             |
 
 #### 8.4 Update Specs Manifest
 
@@ -809,52 +836,52 @@ Update the manifest entries for superseded specs:
 
 ### Client — Modified
 
-| File | Change |
-|------|--------|
-| `features/relay/ui/RelayPanel.tsx` | 4 tabs to 2, Mode A/B, extract AdaptersTab, remove endpoint/binding state |
-| `features/relay/ui/RelayHealthBar.tsx` | Semantic status indicator (healthy/degraded/critical) |
-| `features/relay/ui/DeadLetterSection.tsx` | Aggregated failure cards, dismiss/view-sample actions |
-| `features/relay/ui/ActivityFeed.tsx` | Dead letters as filter toggle, activity empty state |
-| `features/relay/ui/RelayEmptyState.tsx` | Updated copy (what/why/next), wired into Mode A |
-| `features/relay/ui/AdapterSetupWizard.tsx` | Remove adapter ID field, add Back/Cancel buttons |
-| `features/relay/ui/wizard/StepIndicator.tsx` | Visual stepper (active/complete/pending states) |
-| `features/relay/ui/wizard/ConfigureStep.tsx` | Remove adapter ID field from rendered fields |
-| `features/relay/ui/AdapterCard.tsx` | Permission indicators, hide default session badge |
-| `features/relay/ui/ConversationRow.tsx` | Fix `extractAdapterId` regex |
-| `features/mesh/ui/BindingDialog.tsx` | Add Advanced section with permissions + session strategy |
-| `entities/relay/model/use-relay-event-stream.ts` | SSE injects into `['relay', 'conversations']` |
-| `entities/relay/model/use-adapter-catalog.ts` | Remove duplicate toast from `useAddAdapter` |
-| `entities/relay/model/use-dead-letters.ts` | Add `useAggregatedDeadLetters` hook, `AggregatedDeadLetter` type |
-| `features/relay/index.ts` | Update barrel exports |
+| File                                             | Change                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------- |
+| `features/relay/ui/RelayPanel.tsx`               | 4 tabs to 2, Mode A/B, extract AdaptersTab, remove endpoint/binding state |
+| `features/relay/ui/RelayHealthBar.tsx`           | Semantic status indicator (healthy/degraded/critical)                     |
+| `features/relay/ui/DeadLetterSection.tsx`        | Aggregated failure cards, dismiss/view-sample actions                     |
+| `features/relay/ui/ActivityFeed.tsx`             | Dead letters as filter toggle, activity empty state                       |
+| `features/relay/ui/RelayEmptyState.tsx`          | Updated copy (what/why/next), wired into Mode A                           |
+| `features/relay/ui/AdapterSetupWizard.tsx`       | Remove adapter ID field, add Back/Cancel buttons                          |
+| `features/relay/ui/wizard/StepIndicator.tsx`     | Visual stepper (active/complete/pending states)                           |
+| `features/relay/ui/wizard/ConfigureStep.tsx`     | Remove adapter ID field from rendered fields                              |
+| `features/relay/ui/AdapterCard.tsx`              | Permission indicators, hide default session badge                         |
+| `features/relay/ui/ConversationRow.tsx`          | Fix `extractAdapterId` regex                                              |
+| `features/mesh/ui/BindingDialog.tsx`             | Add Advanced section with permissions + session strategy                  |
+| `entities/relay/model/use-relay-event-stream.ts` | SSE injects into `['relay', 'conversations']`                             |
+| `entities/relay/model/use-adapter-catalog.ts`    | Remove duplicate toast from `useAddAdapter`                               |
+| `entities/relay/model/use-dead-letters.ts`       | Add `useAggregatedDeadLetters` hook, `AggregatedDeadLetter` type          |
+| `features/relay/index.ts`                        | Update barrel exports                                                     |
 
 ### Client — New
 
-| File | Purpose |
-|------|---------|
+| File                                   | Purpose                                                  |
+| -------------------------------------- | -------------------------------------------------------- |
 | `features/relay/ui/ConnectionsTab.tsx` | Extracted from RelayPanel's inner `AdaptersTab` function |
 
 ### Client — Deleted
 
-| File | Reason |
-|------|--------|
-| `features/relay/ui/BindingList.tsx` | Redundant with inline AdapterCard bindings |
-| `features/relay/ui/EndpointList.tsx` | Endpoints tab removed |
-| `features/relay/ui/InboxView.tsx` | Part of removed Endpoints tab |
+| File                                 | Reason                                     |
+| ------------------------------------ | ------------------------------------------ |
+| `features/relay/ui/BindingList.tsx`  | Redundant with inline AdapterCard bindings |
+| `features/relay/ui/EndpointList.tsx` | Endpoints tab removed                      |
+| `features/relay/ui/InboxView.tsx`    | Part of removed Endpoints tab              |
 
 ### Server — Modified
 
-| File | Change |
-|------|--------|
-| `services/relay/trace-store.ts` | Add `since` param to `getMetrics()` for 24h date filter |
-| `services/relay/adapter-manager.ts` | Auto-clean orphan bindings on `removeAdapter()` |
-| `services/relay/binding-store.ts` | Remove legacy `projectPath`/`agentDir` field stripping |
-| `services/relay/binding-router.ts` | Enforce `canInitiate`/`canReply`/`canReceive` permissions |
-| `routes/relay.ts` | Add `GET /api/relay/dead-letters/aggregated`, add `DELETE /api/relay/dead-letters` |
+| File                                | Change                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------------------------- |
+| `services/relay/trace-store.ts`     | Add `since` param to `getMetrics()` for 24h date filter                            |
+| `services/relay/adapter-manager.ts` | Auto-clean orphan bindings on `removeAdapter()`                                    |
+| `services/relay/binding-store.ts`   | Remove legacy `projectPath`/`agentDir` field stripping                             |
+| `services/relay/binding-router.ts`  | Enforce `canInitiate`/`canReply`/`canReceive` permissions                          |
+| `routes/relay.ts`                   | Add `GET /api/relay/dead-letters/aggregated`, add `DELETE /api/relay/dead-letters` |
 
 ### Shared — Modified
 
-| File | Change |
-|------|--------|
+| File                                           | Change                                                                |
+| ---------------------------------------------- | --------------------------------------------------------------------- |
 | `packages/shared/src/relay-adapter-schemas.ts` | Add `canInitiate`, `canReply`, `canReceive` to `AdapterBindingSchema` |
 
 ---

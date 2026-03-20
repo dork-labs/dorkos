@@ -25,12 +25,12 @@ Open [http://localhost:4242](http://localhost:4242).
 
 Every release publishes the image with multiple tags:
 
-| Tag | Example | Description |
-|-----|---------|-------------|
-| `latest` | `ghcr.io/dork-labs/dorkos:latest` | Most recent non-prerelease version |
-| Exact version | `ghcr.io/dork-labs/dorkos:0.12.0` | Pinned to a specific release |
-| Minor track | `ghcr.io/dork-labs/dorkos:0.12` | Tracks the latest patch within a minor version |
-| Commit SHA | `ghcr.io/dork-labs/dorkos:sha-abc1234` | Pinned to a specific build commit |
+| Tag           | Example                                | Description                                    |
+| ------------- | -------------------------------------- | ---------------------------------------------- |
+| `latest`      | `ghcr.io/dork-labs/dorkos:latest`      | Most recent non-prerelease version             |
+| Exact version | `ghcr.io/dork-labs/dorkos:0.12.0`      | Pinned to a specific release                   |
+| Minor track   | `ghcr.io/dork-labs/dorkos:0.12`        | Tracks the latest patch within a minor version |
+| Commit SHA    | `ghcr.io/dork-labs/dorkos:sha-abc1234` | Pinned to a specific build commit              |
 
 For production deployments, pin to an exact version:
 
@@ -64,14 +64,36 @@ This confirms the image was built by GitHub Actions from the official repository
 
 Pass environment variables with `-e` or an env file. All [standard environment variables](/docs/self-hosting/deployment#environment-variables) are supported.
 
-<TypeTable type={{
-  "ANTHROPIC_API_KEY": { type: "string", description: "Claude API key (required)" },
-  "DORKOS_PORT": { type: "number", description: "Server port inside the container", default: "'4242'" },
-  "DORKOS_HOST": { type: "string", description: "Bind address — always 0.0.0.0 in Docker (set automatically by the image)", default: "'0.0.0.0'" },
-  "DORKOS_DEFAULT_CWD": { type: "string", description: "Default working directory for agent sessions", default: "'/workspace'" },
-  "DORKOS_BOUNDARY": { type: "string", description: "Directory boundary for file access", default: "Home directory" },
-  "NODE_ENV": { type: "string", description: "Set to 'production' for production mode", default: "'production'" },
-}} />
+<TypeTable
+  type={{
+    ANTHROPIC_API_KEY: { type: 'string', description: 'Claude API key (required)' },
+    DORKOS_PORT: {
+      type: 'number',
+      description: 'Server port inside the container',
+      default: "'4242'",
+    },
+    DORKOS_HOST: {
+      type: 'string',
+      description: 'Bind address — always 0.0.0.0 in Docker (set automatically by the image)',
+      default: "'0.0.0.0'",
+    },
+    DORKOS_DEFAULT_CWD: {
+      type: 'string',
+      description: 'Default working directory for agent sessions',
+      default: "'/workspace'",
+    },
+    DORKOS_BOUNDARY: {
+      type: 'string',
+      description: 'Directory boundary for file access',
+      default: 'Home directory',
+    },
+    NODE_ENV: {
+      type: 'string',
+      description: "Set to 'production' for production mode",
+      default: "'production'",
+    },
+  }}
+/>
 
 ### Custom port
 
@@ -118,6 +140,7 @@ docker run -d --name dorkos \
 ```
 
 Docker manages the volume lifecycle. Inspect it with `docker volume inspect dorkos-data`.
+
 </Tab>
 
 <Tab value="Host Directory">
@@ -131,6 +154,7 @@ docker run -d --name dorkos \
 ```
 
 Useful for backup or inspection — the data directory is directly accessible on the host.
+
 </Tab>
 
 </Tabs>
@@ -151,7 +175,8 @@ docker run -d --name dorkos \
 ```
 
 <Callout type="warn">
-  Set `DORKOS_BOUNDARY` to the mounted directory to restrict agent file access. Without it, agents can access the entire container filesystem.
+  Set `DORKOS_BOUNDARY` to the mounted directory to restrict agent file access. Without it, agents
+  can access the entire container filesystem.
 </Callout>
 
 ## Docker Compose
@@ -165,14 +190,14 @@ services:
     container_name: dorkos
     restart: unless-stopped
     ports:
-      - "4242:4242"
+      - '4242:4242'
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
     volumes:
       - dorkos-data:/root/.dork
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4242/api/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:4242/api/health']
       interval: 30s
       timeout: 5s
       retries: 3
@@ -201,14 +226,14 @@ services:
     container_name: dorkos
     restart: unless-stopped
     expose:
-      - "4242"
+      - '4242'
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - NODE_ENV=production
     volumes:
       - dorkos-data:/root/.dork
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4242/api/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:4242/api/health']
       interval: 30s
       timeout: 5s
       retries: 3
@@ -218,8 +243,8 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -240,7 +265,8 @@ dorkos.example.com {
 ```
 
 <Callout type="info">
-  `flush_interval -1` disables response buffering, which is required for SSE streaming. See the [reverse proxy guide](/docs/self-hosting/reverse-proxy) for nginx configuration.
+  `flush_interval -1` disables response buffering, which is required for SSE streaming. See the
+  [reverse proxy guide](/docs/self-hosting/reverse-proxy) for nginx configuration.
 </Callout>
 
 ## Health Check
@@ -344,6 +370,7 @@ Data in the `dorkos-data` volume persists across updates.
 **Cause**: The server is binding to `localhost` inside the container.
 
 **Fix**: The official image sets `DORKOS_HOST=0.0.0.0` automatically. If you're using a custom image, ensure this variable is set.
+
 </Step>
 
 <Step>
@@ -356,6 +383,7 @@ docker logs dorkos
 ```
 
 Common causes: missing `ANTHROPIC_API_KEY`, port already in use on the host, or insufficient memory.
+
 </Step>
 
 <Step>
@@ -364,6 +392,7 @@ Common causes: missing `ANTHROPIC_API_KEY`, port already in use on the host, or 
 **Cause**: No volume mounted for `/root/.dork`.
 
 **Fix**: Add `-v dorkos-data:/root/.dork` to persist configuration and session data.
+
 </Step>
 
 </Steps>

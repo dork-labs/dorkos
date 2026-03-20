@@ -1,9 +1,20 @@
 ---
-title: "Subagent Activity & Streaming UI Patterns — Inline Display, Collapsible Blocks, Tool Summaries"
+title: 'Subagent Activity & Streaming UI Patterns — Inline Display, Collapsible Blocks, Tool Summaries'
 date: 2026-03-16
 type: external-best-practices
 status: active
-tags: [subagent, streaming, tool-calls, collapsible, aria, animation, chat-ui, agent-activity, task-tool]
+tags:
+  [
+    subagent,
+    streaming,
+    tool-calls,
+    collapsible,
+    aria,
+    animation,
+    chat-ui,
+    agent-activity,
+    task-tool,
+  ]
 searches_performed: 14
 sources_count: 28
 ---
@@ -37,6 +48,7 @@ Messages from within a subagent context include:
 ```
 
 **Background task display format** (from DEV.to analysis):
+
 ```
 Background Tasks:
   ⏳ ac88940: Research Laravel packages (running, 18 min)
@@ -90,6 +102,7 @@ The `/fleet` command in GitHub Copilot CLI is the most direct parallel to DorkOS
 - VS Code 1.107 (Nov 2025) introduced multi-agent orchestration with a session list showing: agent name, status badge, progress indicator, file change count
 
 **Key visual elements confirmed:**
+
 - Each subagent gets its own expandable session entry
 - Status is live-updated (running / stalled / complete)
 - File change count is surfaced as a "cost" metric
@@ -117,6 +130,7 @@ This is exactly the pattern for subagent blocks in a chat UI.
 #### Perplexity AI Deep Research
 
 Perplexity uses a sidebar progress panel for multi-step research, showing:
+
 - Stage label: "Interpreting query" → "Searching" → "Synthesizing"
 - Live count: "Searched 47 sources"
 - Elapsed time per stage
@@ -163,6 +177,7 @@ The correct semantic structure for a collapsible activity block:
 ```
 
 **Critical rules from W3C WAI-ARIA:**
+
 - `aria-expanded` lives on the **button** (the control), NOT on the region
 - `aria-controls` on the button points to the `id` of the region
 - `role="region"` on the region requires an accessible name (`aria-label` or `aria-labelledby`)
@@ -170,6 +185,7 @@ The correct semantic structure for a collapsible activity block:
 - Using `hidden` attribute (not just `display:none`) is the most reliable cross-reader approach; the `hidden` attribute maps to `aria-hidden` semantically and prevents all AT access
 
 **Keyboard behavior requirements:**
+
 - `Enter` or `Space` on the button triggers expand/collapse
 - Focus must not be trapped inside the region — only on the button
 - The region itself is not focusable; its contents are (normal tab order)
@@ -177,6 +193,7 @@ The correct semantic structure for a collapsible activity block:
 #### Animation: The CSS Grid Rows Trick (Recommended)
 
 Height animation is the hardest part of collapsible streaming content because:
+
 1. `height: auto` is not animatable with CSS transitions directly
 2. Animating `height: Xpx` requires measuring DOM height (JavaScript)
 3. Content is **growing dynamically** during streaming — any height measurement is stale instantly
@@ -187,12 +204,12 @@ Height animation is the hardest part of collapsible streaming content because:
 /* Wrapper element */
 .collapsible-wrapper {
   display: grid;
-  grid-template-rows: 0fr;         /* collapsed: 0 height */
+  grid-template-rows: 0fr; /* collapsed: 0 height */
   transition: grid-template-rows 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .collapsible-wrapper.is-open {
-  grid-template-rows: 1fr;         /* expanded: full auto height */
+  grid-template-rows: 1fr; /* expanded: full auto height */
 }
 
 /* Inner element must have overflow: hidden */
@@ -204,7 +221,8 @@ Height animation is the hardest part of collapsible streaming content because:
 ```
 
 **Why this works for streaming content:**
-- `1fr` resolves to the *current* content height at any point in time
+
+- `1fr` resolves to the _current_ content height at any point in time
 - As streaming text is appended, `1fr` auto-expands — no re-measurement needed
 - `grid-template-rows` is GPU-composited (uses FLIP internally in modern browsers)
 - No layout thrash because the transition is on the **row sizing**, not on `height`
@@ -256,7 +274,7 @@ The specific problem: if a subagent is streaming tokens while the block is colla
 const shouldAnimate = !isStreaming;
 const collapseTransition = shouldAnimate
   ? { type: 'spring', stiffness: 280, damping: 32 }
-  : { duration: 0 };  // instant snap during active streaming
+  : { duration: 0 }; // instant snap during active streaming
 ```
 
 **The "render into hidden region" problem:**
@@ -274,9 +292,7 @@ When a long collapsible block collapses, the page may scroll unexpectedly becaus
 ```typescript
 // Before collapsing, record the distance from the bottom of the viewport
 const scrollLock = () => {
-  const scrollBottom = document.documentElement.scrollHeight
-    - window.scrollY
-    - window.innerHeight;
+  const scrollBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
 
   return () => {
     // After animation, restore the bottom-relative scroll position
@@ -320,17 +336,17 @@ Group by semantic category, not by tool name:
 
 ```typescript
 type ToolCategory =
-  | 'files_read'         // Read, Glob, Grep
-  | 'files_written'      // Write, Edit
-  | 'commands_run'       // Bash
-  | 'searches'           // WebSearch, Grep (web)
-  | 'web_fetches'        // WebFetch
-  | 'subagents_spawned'  // Agent / Task
-  | 'mcp_calls'          // mcp__dorkos__*
+  | 'files_read' // Read, Glob, Grep
+  | 'files_written' // Write, Edit
+  | 'commands_run' // Bash
+  | 'searches' // WebSearch, Grep (web)
+  | 'web_fetches' // WebFetch
+  | 'subagents_spawned' // Agent / Task
+  | 'mcp_calls'; // mcp__dorkos__*
 
 function categorizeToolCall(name: string): ToolCategory | null {
   if (['Read', 'Glob'].includes(name)) return 'files_read';
-  if (name === 'Grep') return 'files_read';  // file grep
+  if (name === 'Grep') return 'files_read'; // file grep
   if (['Write', 'Edit'].includes(name)) return 'files_written';
   if (name === 'Bash') return 'commands_run';
   if (name === 'WebSearch') return 'searches';
@@ -350,10 +366,11 @@ Read 12 files · Ran 3 searches · 1 subagent
 ```
 
 Rules:
+
 - Only show categories with count > 0
 - File reads and writes separate: "Read 12, wrote 3" — users care about mutations
 - "1 subagent" vs "3 subagents" — concise, no verb needed for subagents
-- Separator is ` · ` (middle dot)
+- Separator is `·` (middle dot)
 - Max 3–4 categories; if more, truncate to top-3 by count + "and more"
 
 **Tier 2 — Expanded detail (inside the collapsible):**
@@ -435,7 +452,7 @@ acc.subagents.push({
 // Update elapsedMs for the matching subagent entry
 
 // When tool_result arrives with matching tool_use_id:
-const subagent = acc.subagents.find(s => s.id === block.tool_use_id);
+const subagent = acc.subagents.find((s) => s.id === block.tool_use_id);
 if (subagent) {
   subagent.status = 'completed';
   subagent.elapsedMs = Date.now() - subagent.startedAt;
@@ -457,6 +474,7 @@ Combining all findings, here is the concrete component shape for DorkOS:
 ```
 
 While streaming (expanded, no animation — just opens):
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ▼ code-reviewer · running                              ⏱ 8s │
@@ -469,6 +487,7 @@ While streaming (expanded, no animation — just opens):
 ```
 
 After completion (collapsed back to summary):
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ▶ code-reviewer · completed                           14s │
@@ -477,6 +496,7 @@ After completion (collapsed back to summary):
 ```
 
 User expands after completion:
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ▼ code-reviewer · completed                           14s │
@@ -540,7 +560,7 @@ Parent conversation text resumes below all subagent blocks after all complete.
 
 ### The Parent-Level Activity Badge
 
-For the parent message that *spawned* subagents, show an aggregate badge before the subagent blocks:
+For the parent message that _spawned_ subagents, show an aggregate badge before the subagent blocks:
 
 ```
 Delegating to 3 subagents...
@@ -567,12 +587,21 @@ DorkOS's current `claude-code-runtime.ts` processes SDK messages. To detect suba
 
 // 1. Subagent spawn event (parent context)
 if (block.type === 'tool_use' && (block.name === 'Agent' || block.name === 'Task')) {
-  emit({ type: 'subagent_spawned', toolUseId: block.id, description: block.input.description, agentType: block.input.subagent_type });
+  emit({
+    type: 'subagent_spawned',
+    toolUseId: block.id,
+    description: block.input.description,
+    agentType: block.input.subagent_type,
+  });
 }
 
 // 2. Subagent activity (messages with parent_tool_use_id)
 if (msg.parent_tool_use_id) {
-  emit({ type: 'subagent_message', parentToolUseId: msg.parent_tool_use_id, content: msg.message.content });
+  emit({
+    type: 'subagent_message',
+    parentToolUseId: msg.parent_tool_use_id,
+    content: msg.message.content,
+  });
 }
 
 // 3. Subagent completion (tool result back in parent)
@@ -589,9 +618,15 @@ DorkOS's server-to-client SSE stream currently emits `text_delta`, `tool_use`, `
 
 ```typescript
 // Proposed SSE event additions:
-{ type: 'subagent_start',    toolUseId, agentType, description }
-{ type: 'subagent_activity', toolUseId, content }   // forwarded subagent tool_use events
-{ type: 'subagent_end',      toolUseId, result, durationMs }
+{
+  type: ('subagent_start', toolUseId, agentType, description);
+}
+{
+  type: ('subagent_activity', toolUseId, content);
+} // forwarded subagent tool_use events
+{
+  type: ('subagent_end', toolUseId, result, durationMs);
+}
 ```
 
 Or more simply: tag existing events with `parentToolUseId` so the client can bucket them.
@@ -617,7 +652,7 @@ Given DorkOS's FSD layers:
     type="button"
     aria-expanded={isExpanded}
     aria-controls={`subagent-detail-${toolUseId}`}
-    onClick={() => setIsExpanded(v => !v)}
+    onClick={() => setIsExpanded((v) => !v)}
     className="..."
   >
     <ChevronIcon aria-hidden="true" />
@@ -673,7 +708,7 @@ Given DorkOS's FSD layers:
 
 ## Research Gaps & Limitations
 
-- **Claude Code CLI exact visual format for subagents while running**: The CLI does not stream subagent token output to the parent terminal. There is no publicly documented exact format for what the parent terminal shows *while* a subagent is running (spinner? silence?). The task list display format (ID + status + elapsed) is confirmed for background tasks specifically.
+- **Claude Code CLI exact visual format for subagents while running**: The CLI does not stream subagent token output to the parent terminal. There is no publicly documented exact format for what the parent terminal shows _while_ a subagent is running (spinner? silence?). The task list display format (ID + status + elapsed) is confirmed for background tasks specifically.
 - **Claude.ai thinking block collapse timing**: The exact delay before auto-collapse on Claude.ai's thinking blocks is not documented. The 1.5s recommendation is inferred from UX best practice, not measured.
 - **assistant-ui ToolGroup source code**: The fetch of the assistant-ui docs returned 404 for some pages. The behavior description (auto-expand during streaming, collapsible after) is from search result snippets, not direct source inspection.
 - **`grid-template-rows` + motion.dev interaction**: When using motion.dev's `layout` prop alongside the CSS grid trick, there may be conflicts where both try to manage height. Testing required to confirm the cleanest approach for DorkOS's existing `motion.dev` usage.

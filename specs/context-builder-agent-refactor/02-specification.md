@@ -54,12 +54,12 @@ Separately, `agent-manager.ts` at 579 lines exceeds the project's 500-line hard 
 
 ## Technical Dependencies
 
-| Dependency | Version | Notes |
-|---|---|---|
-| `@anthropic-ai/claude-agent-sdk` | current | `Options.systemPrompt` with `preset: 'claude_code'` |
-| Node.js `os` module | built-in | `platform()`, `release()`, `hostname()` |
-| `services/git-status.ts` | internal | `getGitStatus(cwd)` reused as-is |
-| `lib/boundary.ts` | internal | Transitively used by `git-status.ts` |
+| Dependency                       | Version  | Notes                                               |
+| -------------------------------- | -------- | --------------------------------------------------- |
+| `@anthropic-ai/claude-agent-sdk` | current  | `Options.systemPrompt` with `preset: 'claude_code'` |
+| Node.js `os` module              | built-in | `platform()`, `release()`, `hostname()`             |
+| `services/git-status.ts`         | internal | `getGitStatus(cwd)` reused as-is                    |
+| `lib/boundary.ts`                | internal | Transitively used by `git-status.ts`                |
 
 ---
 
@@ -133,6 +133,7 @@ export function resolveClaudeCliPath(): string | undefined { ... }
 The `mapSdkMessage()` private method extracted from `AgentManager` as a standalone pure async generator. This is the **functional core** — given an SDK message, yield DorkOS `StreamEvent` objects.
 
 **Key constraints:**
+
 - Exported as `export async function* mapSdkMessage(...)` — no class wrapper
 - `ToolState` is passed in by reference (mutable struct owned by the caller's streaming loop)
 - Does not touch I/O, the SDK iterator, or the session Map
@@ -156,15 +157,15 @@ export async function* mapSdkMessage(
 
 **Handled message types:**
 
-| SDK message type | Output StreamEvents |
-|---|---|
-| `system/init` | `session_status` (with model) |
-| `stream_event/content_block_start` (tool_use) | `tool_call_start` |
-| `stream_event/content_block_delta` (text) | `text_delta` |
-| `stream_event/content_block_delta` (input_json) | `tool_call_delta` |
-| `stream_event/content_block_stop` | `tool_call_end`, optional `task_update` |
-| `tool_use_summary` | `tool_result` per preceding tool use |
-| `result` | `session_status` (with cost/tokens), `done` |
+| SDK message type                                | Output StreamEvents                         |
+| ----------------------------------------------- | ------------------------------------------- |
+| `system/init`                                   | `session_status` (with model)               |
+| `stream_event/content_block_start` (tool_use)   | `tool_call_start`                           |
+| `stream_event/content_block_delta` (text)       | `text_delta`                                |
+| `stream_event/content_block_delta` (input_json) | `tool_call_delta`                           |
+| `stream_event/content_block_stop`               | `tool_call_end`, optional `task_update`     |
+| `tool_use_summary`                              | `tool_result` per preceding tool use        |
+| `result`                                        | `session_status` (with cost/tokens), `done` |
 
 ### 4. `agent-manager.ts` (REFACTORED, ~240 lines)
 
@@ -205,8 +206,9 @@ async *sendMessage(sessionId, content, opts?) {
 Builds a fresh context string on every invocation. Never throws — all errors result in partial context (git failures produce `Is git repo: false`).
 
 **Exported API:**
+
 ```typescript
-export async function buildSystemPromptAppend(cwd: string): Promise<string>
+export async function buildSystemPromptAppend(cwd: string): Promise<string>;
 ```
 
 **Output format** — XML key-value blocks mirroring Claude Code's own `<env>` structure:
@@ -235,19 +237,20 @@ Working tree: dirty (2 modified, 1 staged, 3 untracked, 0 conflicted)
 
 **`<env>` block fields (always present):**
 
-| Field | Source | Notes |
-|---|---|---|
-| `Working directory` | `cwd` parameter | Absolute path |
-| `Product` | Hardcoded `"DorkOS"` | |
-| `Version` | `process.env.DORKOS_VERSION ?? 'development'` | |
-| `Port` | `process.env.DORKOS_PORT ?? '4242'` | |
-| `Platform` | `os.platform()` | `darwin`, `linux`, `win32` |
-| `OS Version` | `os.release()` | Kernel release string |
-| `Node.js` | `process.version` | e.g. `v22.14.0` |
-| `Hostname` | `os.hostname()` | |
-| `Date` | `new Date().toISOString()` | ISO 8601 UTC |
+| Field               | Source                                        | Notes                      |
+| ------------------- | --------------------------------------------- | -------------------------- |
+| `Working directory` | `cwd` parameter                               | Absolute path              |
+| `Product`           | Hardcoded `"DorkOS"`                          |                            |
+| `Version`           | `process.env.DORKOS_VERSION ?? 'development'` |                            |
+| `Port`              | `process.env.DORKOS_PORT ?? '4242'`           |                            |
+| `Platform`          | `os.platform()`                               | `darwin`, `linux`, `win32` |
+| `OS Version`        | `os.release()`                                | Kernel release string      |
+| `Node.js`           | `process.version`                             | e.g. `v22.14.0`            |
+| `Hostname`          | `os.hostname()`                               |                            |
+| `Date`              | `new Date().toISOString()`                    | ISO 8601 UTC               |
 
 **`<git_status>` block — non-git directory:**
+
 ```
 <git_status>
 Is git repo: false
@@ -256,41 +259,44 @@ Is git repo: false
 
 **`<git_status>` block — git directory fields:**
 
-| Field | Condition | Source |
-|---|---|---|
-| `Is git repo` | Always | `true` |
-| `Current branch` | Always | `GitStatusResponse.branch` |
-| `Main branch (use for PRs)` | Always | Hardcoded `main` |
-| `Ahead of origin: N commits` | Only when `ahead > 0` | `GitStatusResponse.ahead` |
-| `Behind origin: N commits` | Only when `behind > 0` | `GitStatusResponse.behind` |
-| `Detached HEAD: true` | Only when `detached === true` | `GitStatusResponse.detached` |
-| `Working tree: clean` | When all counts are 0 | `GitStatusResponse.clean` |
-| `Working tree: dirty (...)` | When any count > 0 | Counts with >0 shown only |
+| Field                        | Condition                     | Source                       |
+| ---------------------------- | ----------------------------- | ---------------------------- |
+| `Is git repo`                | Always                        | `true`                       |
+| `Current branch`             | Always                        | `GitStatusResponse.branch`   |
+| `Main branch (use for PRs)`  | Always                        | Hardcoded `main`             |
+| `Ahead of origin: N commits` | Only when `ahead > 0`         | `GitStatusResponse.ahead`    |
+| `Behind origin: N commits`   | Only when `behind > 0`        | `GitStatusResponse.behind`   |
+| `Detached HEAD: true`        | Only when `detached === true` | `GitStatusResponse.detached` |
+| `Working tree: clean`        | When all counts are 0         | `GitStatusResponse.clean`    |
+| `Working tree: dirty (...)`  | When any count > 0            | Counts with >0 shown only    |
 
 **Working tree dirty format example:**
+
 ```
 Working tree: dirty (2 modified, 1 staged, 3 untracked)
 ```
+
 (Only non-zero counts appear in the parenthetical.)
 
 **`git_status` is explicitly excluded from including:**
+
 - Recent commits / git log (the `claude_code` preset already includes these)
 - Remote URL
 - Stash count
 - File names (GitStatusResponse has counts only; not extended in this spec)
 
 **Error handling:**
+
 ```typescript
 export async function buildSystemPromptAppend(cwd: string): Promise<string> {
-  const [envBlock, gitBlock] = await Promise.allSettled([
-    buildEnvBlock(cwd),
-    buildGitBlock(cwd),
-  ]);
+  const [envBlock, gitBlock] = await Promise.allSettled([buildEnvBlock(cwd), buildGitBlock(cwd)]);
   // Always returns a string, never throws
   return [
     envBlock.status === 'fulfilled' ? envBlock.value : '',
     gitBlock.status === 'fulfilled' ? gitBlock.value : '',
-  ].filter(Boolean).join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 ```
 
@@ -321,6 +327,7 @@ HTTP POST /api/sessions/:id/messages
 ## API Changes
 
 None. `AgentManager`'s public API is unchanged:
+
 - `ensureSession()`, `sendMessage()`, `updateSession()`, `approveTool()`, `submitAnswers()`
 - `checkSessionHealth()`, `hasSession()`, `getSdkSessionId()`
 - `acquireLock()`, `releaseLock()`, `isLocked()`, `getLockInfo()`
@@ -338,20 +345,20 @@ Mock targets: `vi.mock('../../services/git-status.js')`, `vi.mock('node:os')`, `
 
 **Test cases:**
 
-| Test | Purpose |
-|---|---|
-| Returns string containing `<env>` block | Verifies basic structure |
-| `<env>` contains all required fields | Field presence |
-| `Date` field is valid ISO 8601 | Format validation |
-| `Version` defaults to `'development'` when env unset | Fallback behavior |
-| `<git_status>` shows `Is git repo: false` for non-git dirs | Error path |
-| `<git_status>` shows branch when git repo | Happy path |
-| `Ahead of origin` line omitted when ahead=0 | Conditional field |
-| `Ahead of origin` shown when ahead>0 | Conditional field |
-| `Working tree: clean` when all counts zero | Clean state |
-| `Working tree: dirty` shows only non-zero counts | Count filtering |
-| `Detached HEAD` shown only when detached | Conditional field |
-| Git failure → still returns env block (no throw) | Error resilience |
+| Test                                                       | Purpose                  |
+| ---------------------------------------------------------- | ------------------------ |
+| Returns string containing `<env>` block                    | Verifies basic structure |
+| `<env>` contains all required fields                       | Field presence           |
+| `Date` field is valid ISO 8601                             | Format validation        |
+| `Version` defaults to `'development'` when env unset       | Fallback behavior        |
+| `<git_status>` shows `Is git repo: false` for non-git dirs | Error path               |
+| `<git_status>` shows branch when git repo                  | Happy path               |
+| `Ahead of origin` line omitted when ahead=0                | Conditional field        |
+| `Ahead of origin` shown when ahead>0                       | Conditional field        |
+| `Working tree: clean` when all counts zero                 | Clean state              |
+| `Working tree: dirty` shows only non-zero counts           | Count filtering          |
+| `Detached HEAD` shown only when detached                   | Conditional field        |
+| Git failure → still returns env block (no throw)           | Error resilience         |
 
 ### New: `sdk-event-mapper.test.ts`
 
@@ -359,19 +366,19 @@ Mock targets: `vi.mock('../build-task-event.js')`, `vi.mock('../../lib/logger.js
 
 **Test cases:**
 
-| Test | Purpose |
-|---|---|
-| `system/init` → emits `session_status` with model | Init message handling |
-| `system/init` → sets `session.sdkSessionId` | Session ID assignment |
-| `content_block_start` (tool_use) → emits `tool_call_start` | Tool start |
-| `content_block_delta` (text_delta, not in tool) → emits `text_delta` | Text streaming |
-| `content_block_delta` (input_json, in tool) → emits `tool_call_delta` | Tool input streaming |
-| `content_block_stop` (in tool) → emits `tool_call_end` | Tool end |
-| Task tool stop → also emits `task_update` | Task event building |
-| `tool_use_summary` → emits `tool_result` per tool ID | Summary handling |
-| `result` → emits `session_status` + `done` | Result handling |
-| `result` with usage → includes cost and token counts | Usage fields |
-| Unknown message type → yields nothing, no throw | Unknown message safety |
+| Test                                                                  | Purpose                |
+| --------------------------------------------------------------------- | ---------------------- |
+| `system/init` → emits `session_status` with model                     | Init message handling  |
+| `system/init` → sets `session.sdkSessionId`                           | Session ID assignment  |
+| `content_block_start` (tool_use) → emits `tool_call_start`            | Tool start             |
+| `content_block_delta` (text_delta, not in tool) → emits `text_delta`  | Text streaming         |
+| `content_block_delta` (input_json, in tool) → emits `tool_call_delta` | Tool input streaming   |
+| `content_block_stop` (in tool) → emits `tool_call_end`                | Tool end               |
+| Task tool stop → also emits `task_update`                             | Task event building    |
+| `tool_use_summary` → emits `tool_result` per tool ID                  | Summary handling       |
+| `result` → emits `session_status` + `done`                            | Result handling        |
+| `result` with usage → includes cost and token counts                  | Usage fields           |
+| Unknown message type → yields nothing, no throw                       | Unknown message safety |
 
 ### Updated: `agent-manager.test.ts`
 
@@ -450,13 +457,13 @@ Trivial — `makeUserPrompt` yields one object; `resolveClaudeCliPath` returns s
 
 ## File Size Targets
 
-| File | Target Lines | Status |
-|---|---|---|
-| `agent-manager.ts` | ~240 | Refactored |
-| `sdk-event-mapper.ts` | ~140 | New |
-| `context-builder.ts` | ~100 | New |
-| `lib/sdk-utils.ts` | ~40 | New |
-| `agent-types.ts` | ~35 | New |
+| File                  | Target Lines | Status     |
+| --------------------- | ------------ | ---------- |
+| `agent-manager.ts`    | ~240         | Refactored |
+| `sdk-event-mapper.ts` | ~140         | New        |
+| `context-builder.ts`  | ~100         | New        |
+| `lib/sdk-utils.ts`    | ~40          | New        |
+| `agent-types.ts`      | ~35          | New        |
 
 ---
 

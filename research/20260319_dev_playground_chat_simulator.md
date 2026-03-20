@@ -1,9 +1,19 @@
 ---
-title: "Dev Playground Chat Simulator — Streaming Simulation Approach"
+title: 'Dev Playground Chat Simulator — Streaming Simulation Approach'
 date: 2026-03-19
 type: implementation
 status: active
-tags: [dev-playground, chat, streaming, simulation, animation, useReducer, async-generator, scenario-playback]
+tags:
+  [
+    dev-playground,
+    chat,
+    streaming,
+    simulation,
+    animation,
+    useReducer,
+    async-generator,
+    scenario-playback,
+  ]
 feature_slug: dev-playground-chat-simulator
 searches_performed: 4
 sources_count: 12
@@ -24,15 +34,18 @@ The DorkOS codebase already has strong foundations for a chat simulator: `mock-c
 Parse real `~/.claude/projects/{slug}/*.jsonl` files from the server and replay them event-by-event in the client.
 
 **How it works:**
+
 - A dev-only server endpoint streams a JSONL file as SSE events, or the client fetches the raw file
 - The client replays the events through the existing `stream-event-handler.ts` pipeline
 
 **Pros:**
+
 - Exercises the real end-to-end event parsing and rendering code path
 - Real transcripts surface real-world message shapes and edge cases
 - Zero scenario authoring needed once a good session has been recorded
 
 **Cons:**
+
 - Requires a running server (breaks playground's offline-capable nature)
 - Real transcripts have gaps (tool_progress every 16ms) — replay timing is either too fast or requires complex time-scaling
 - Transcript files can be large; client must buffer before replay can begin
@@ -48,11 +61,13 @@ Parse real `~/.claude/projects/{slug}/*.jsonl` files from the server and replay 
 Developer clicks "Next" to advance to the next step in a scripted scenario. Each step renders the next message or event.
 
 **Pros:**
+
 - Completely deterministic — developer controls exactly what is on screen
 - Easy to implement: just `currentStep++` with each button click
 - Good for "show me state X" inspection
 
 **Cons:**
+
 - Removes the most important thing to observe: **animation timing and transition behavior**
 - Cannot show streaming text — you either render the full message instantly or split text into many awkward manual steps
 - Two or three key use cases (watching the inference indicator appear, watching text stream in character-by-character, watching tool cards animate from pending to complete) are completely unobservable
@@ -67,6 +82,7 @@ Developer clicks "Next" to advance to the next step in a scripted scenario. Each
 Pre-authored `SimScenario[]` arrays define a sequence of `SimStep` objects. A `useSimulator` hook processes them automatically over time using a configurable tick engine.
 
 **How it works:**
+
 - Each `SimStep` describes what should happen: append a user message, stream text characters, append a tool call, update tool call status, etc.
 - The simulator maintains a local `ChatMessage[]` state (no server, no Transport)
 - Text streaming is character-by-character (or configurable chunk size)
@@ -74,6 +90,7 @@ Pre-authored `SimScenario[]` arrays define a sequence of `SimStep` objects. A `u
 - Speed is a multiplier: `1.0` = normal, `2.0` = 2× faster, `0.25` = slow-motion
 
 **Pros:**
+
 - Directly demonstrates the animations that matter: message entrance, text streaming, tool call state transitions, inference indicator
 - Scenarios are static TypeScript — typed, lintable, co-located with the page
 - Easy to add new scenarios: one export per scenario
@@ -83,6 +100,7 @@ Pre-authored `SimScenario[]` arrays define a sequence of `SimStep` objects. A `u
 - Deterministic for visual regression testing (reproducible playback)
 
 **Cons:**
+
 - Requires authoring each scenario manually (not derived from real sessions)
 - Text streaming is simulated (not tied to real token arrival timing)
 - The scenario format must evolve as new message types are added
@@ -110,7 +128,12 @@ export type SimStep =
   | { type: 'stream_text'; messageId: string; chunk: string }
   | { type: 'set_streaming'; streaming: boolean }
   | { type: 'append_tool_call'; messageId: string; toolCall: ToolCallState }
-  | { type: 'update_tool_call'; messageId: string; toolCallId: string; patch: Partial<ToolCallState> }
+  | {
+      type: 'update_tool_call';
+      messageId: string;
+      toolCallId: string;
+      patch: Partial<ToolCallState>;
+    }
   | { type: 'set_status'; status: ChatStatus }
   | { type: 'set_waiting'; waiting: boolean; waitingType?: 'approval' | 'question' }
   | { type: 'delay'; ms: number };
@@ -270,15 +293,15 @@ No Transport, no TanStack Query, no server calls. The simulator is entirely clie
 
 ### Recommended Initial Scenarios (7 scenarios)
 
-| ID | Label | What it demonstrates |
-|----|-------|----------------------|
-| `simple-conversation` | Simple Conversation | User message → assistant text streaming → done |
-| `tool-call-sequence` | Tool Call Sequence | Text → 3 tool calls (pending→running→complete) → more text |
-| `tool-approval` | Tool Approval | Text → approval pending (shows ToolApproval component) → approved → text |
-| `question-prompt` | Question Prompt | Text → AskUserQuestion with options (shows QuestionPrompt component) → answered → text |
-| `error-states` | Error States | Streaming text → execution_error → inference stops |
-| `multi-tool-chain` | Multi-Tool Chain | Mixed Read/Write/Bash tool calls with hooks, subagent blocks |
-| `full-kitchen-sink` | Kitchen Sink | All message types in sequence: user → text → tool calls → subagent → question → more text → done |
+| ID                    | Label               | What it demonstrates                                                                             |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------ |
+| `simple-conversation` | Simple Conversation | User message → assistant text streaming → done                                                   |
+| `tool-call-sequence`  | Tool Call Sequence  | Text → 3 tool calls (pending→running→complete) → more text                                       |
+| `tool-approval`       | Tool Approval       | Text → approval pending (shows ToolApproval component) → approved → text                         |
+| `question-prompt`     | Question Prompt     | Text → AskUserQuestion with options (shows QuestionPrompt component) → answered → text           |
+| `error-states`        | Error States        | Streaming text → execution_error → inference stops                                               |
+| `multi-tool-chain`    | Multi-Tool Chain    | Mixed Read/Write/Bash tool calls with hooks, subagent blocks                                     |
+| `full-kitchen-sink`   | Kitchen Sink        | All message types in sequence: user → text → tool calls → subagent → question → more text → done |
 
 ### File Location
 
@@ -309,6 +332,7 @@ This mirrors the existing `showcases/` structure. Scenario files import from `mo
 ### Realistic Chunk Sizes
 
 Real Claude streaming produces token chunks that average 3–7 characters. For realistic visual behavior:
+
 - Default chunk size: 5 characters
 - Default chunk delay: 35ms (roughly 28 chunks/sec)
 - This produces ~140 characters/second — perceptually similar to real Claude output
@@ -316,6 +340,7 @@ Real Claude streaming produces token chunks that average 3–7 characters. For r
 ### Delay Between Events
 
 Realistic timing for a scenario:
+
 - User message appears: instant
 - Inference indicator appears: 150ms delay after user message
 - First text chunk: 200ms after inference indicator (LLM "first token" latency)
@@ -343,6 +368,7 @@ The simulator is dev-only tooling, lives entirely in `apps/client/src/dev/`. It 
 ### No New Dependencies
 
 The simulator needs zero new npm packages:
+
 - State machine: `useReducer` (built into React)
 - Tick engine: `setTimeout` via `useEffect` (built into browser)
 - Animations: `motion/react` (already installed, used by MessageList internally)
@@ -364,7 +390,13 @@ Add `'simulator'` to the `Page` type and add a `SIMULATOR_SECTIONS` export for t
 ```typescript
 // sections/simulator-sections.ts
 export const SIMULATOR_SECTIONS: PlaygroundSection[] = [
-  { id: 'chat-simulator', title: 'Chat Simulator', page: 'simulator', category: 'Simulator', keywords: ['playback', 'streaming', 'animation', 'demo', 'replay'] },
+  {
+    id: 'chat-simulator',
+    title: 'Chat Simulator',
+    page: 'simulator',
+    category: 'Simulator',
+    keywords: ['playback', 'streaming', 'animation', 'demo', 'replay'],
+  },
 ];
 ```
 
@@ -375,10 +407,13 @@ if (path.startsWith('/dev/simulator')) return { page: 'simulator', anchor };
 ```
 
 ```tsx
-{page === 'simulator' && <SimulatorPage />}
+{
+  page === 'simulator' && <SimulatorPage />;
+}
 ```
 
 Add to `FEATURES_NAV`:
+
 ```typescript
 { id: 'simulator', label: 'Simulator', icon: Play },
 ```

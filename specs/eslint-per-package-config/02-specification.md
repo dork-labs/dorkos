@@ -47,17 +47,17 @@ ADR-0085 encapsulates the Claude Agent SDK inside `ClaudeCodeRuntime`. A lint ru
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `eslint` | `^9.39.2` (already installed) | Core linter |
-| `@eslint/js` | `^9.39.2` (already installed) | JS recommended rules |
-| `typescript-eslint` | `^8.55.0` (already installed) | TS rules (syntax-only) |
-| `eslint-plugin-jsdoc` | `^62.5.5` (already installed) | TSDoc enforcement |
-| `eslint-plugin-react` | `^7.37.5` (already installed) | React rules |
-| `eslint-plugin-react-hooks` | `^7.0.1` (already installed) | Hooks + Compiler rules |
-| `eslint-plugin-jsx-a11y` | `^6.10.2` (already installed) | Accessibility |
-| `eslint-config-prettier` | `^10.1.8` (already installed) | Prettier compat (always last) |
-| `eslint/config` | Built into ESLint 9.15+ | `defineConfig()` helper |
+| Dependency                  | Version                       | Purpose                       |
+| --------------------------- | ----------------------------- | ----------------------------- |
+| `eslint`                    | `^9.39.2` (already installed) | Core linter                   |
+| `@eslint/js`                | `^9.39.2` (already installed) | JS recommended rules          |
+| `typescript-eslint`         | `^8.55.0` (already installed) | TS rules (syntax-only)        |
+| `eslint-plugin-jsdoc`       | `^62.5.5` (already installed) | TSDoc enforcement             |
+| `eslint-plugin-react`       | `^7.37.5` (already installed) | React rules                   |
+| `eslint-plugin-react-hooks` | `^7.0.1` (already installed)  | Hooks + Compiler rules        |
+| `eslint-plugin-jsx-a11y`    | `^6.10.2` (already installed) | Accessibility                 |
+| `eslint-config-prettier`    | `^10.1.8` (already installed) | Prettier compat (always last) |
+| `eslint/config`             | Built into ESLint 9.15+       | `defineConfig()` helper       |
 
 No new dependencies are introduced. All plugins move from root `devDependencies` to `@dorkos/eslint-config`'s `dependencies`.
 
@@ -124,6 +124,7 @@ All ESLint plugin dependencies live here. Consuming packages add only `"@dorkos/
 **`packages/eslint-config/base.js`:**
 
 Contains the universal rules applied to all packages:
+
 - `@eslint/js` recommended rules
 - `typescript-eslint` recommended (syntax-only, no type-checking)
 - General TypeScript overrides (unused-vars pattern, no-explicit-any as warn, etc.)
@@ -138,6 +139,7 @@ The `process.env` carve-outs are NOT in `base.js` — each package adds its own 
 **`packages/eslint-config/react.js`:**
 
 Extends `base.js` and adds:
+
 - `eslint-plugin-react` (flat recommended, `react-in-jsx-scope` off, `prop-types` off)
 - `eslint-plugin-react-hooks` (recommended-latest + React Compiler rules as warnings)
 - `eslint-plugin-jsx-a11y` (recommended, with accessibility warnings)
@@ -150,6 +152,7 @@ Extends `base.js`. Currently identical to base but provides semantic separation 
 **`packages/eslint-config/test.js`:**
 
 An overlay config (not standalone — applied on top of any other config) that relaxes rules for test files:
+
 - `@typescript-eslint/no-explicit-any`: off
 - `@typescript-eslint/no-non-null-assertion`: off
 - `@typescript-eslint/no-unsafe-*` family: off
@@ -185,13 +188,25 @@ export default defineConfig([
   {
     files: ['src/layers/shared/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/entities/*', '@/layers/entities'], message: 'FSD violation: shared/ cannot import from entities/' },
-          { group: ['@/layers/features/*', '@/layers/features'], message: 'FSD violation: shared/ cannot import from features/' },
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: shared/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/entities/*', '@/layers/entities'],
+              message: 'FSD violation: shared/ cannot import from entities/',
+            },
+            {
+              group: ['@/layers/features/*', '@/layers/features'],
+              message: 'FSD violation: shared/ cannot import from features/',
+            },
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: shared/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -199,12 +214,21 @@ export default defineConfig([
   {
     files: ['src/layers/entities/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/features/*', '@/layers/features'], message: 'FSD violation: entities/ cannot import from features/' },
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: entities/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/features/*', '@/layers/features'],
+              message: 'FSD violation: entities/ cannot import from features/',
+            },
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: entities/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -212,11 +236,17 @@ export default defineConfig([
   {
     files: ['src/layers/features/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: features/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: features/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -258,16 +288,30 @@ export default defineConfig([
       'src/**/__tests__/**',
     ],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [{
-          group: ['@anthropic-ai/claude-agent-sdk', '@anthropic-ai/claude-agent-sdk/*'],
-          message: 'Claude Agent SDK imports are confined to services/runtimes/claude-code/. Import from the AgentRuntime interface instead.',
-        }],
-        paths: [
-          { name: 'os', importNames: ['homedir'], message: "Use the resolved dorkHome parameter. See .claude/rules/dork-home.md" },
-          { name: 'node:os', importNames: ['homedir'], message: "Use the resolved dorkHome parameter. See .claude/rules/dork-home.md" },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@anthropic-ai/claude-agent-sdk', '@anthropic-ai/claude-agent-sdk/*'],
+              message:
+                'Claude Agent SDK imports are confined to services/runtimes/claude-code/. Import from the AgentRuntime interface instead.',
+            },
+          ],
+          paths: [
+            {
+              name: 'os',
+              importNames: ['homedir'],
+              message: 'Use the resolved dorkHome parameter. See .claude/rules/dork-home.md',
+            },
+            {
+              name: 'node:os',
+              importNames: ['homedir'],
+              message: 'Use the resolved dorkHome parameter. See .claude/rules/dork-home.md',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -310,11 +354,7 @@ import { defineConfig } from 'eslint/config';
 import baseConfig from '@dorkos/eslint-config/base';
 import testConfig from '@dorkos/eslint-config/test';
 
-export default defineConfig([
-  { ignores: ['dist/**', '.turbo/**'] },
-  ...baseConfig,
-  ...testConfig,
-]);
+export default defineConfig([{ ignores: ['dist/**', '.turbo/**'] }, ...baseConfig, ...testConfig]);
 ```
 
 Packages without tests (icons) omit `testConfig`.
@@ -360,13 +400,7 @@ import baseConfig from '@dorkos/eslint-config/base';
 
 export default defineConfig([
   {
-    ignores: [
-      'apps/**',
-      'packages/**',
-      'node_modules/**',
-      '.scratch/**',
-      'coverage/**',
-    ],
+    ignores: ['apps/**', 'packages/**', 'node_modules/**', '.scratch/**', 'coverage/**'],
   },
   ...baseConfig,
 ]);
@@ -380,10 +414,10 @@ Move `apps/server/src/lib/sdk-utils.ts` to `apps/server/src/services/runtimes/cl
 
 **Import path updates (2 files):**
 
-| File | Old Import | New Import |
-|---|---|---|
-| `apps/server/src/routes/config.ts` | `'../lib/sdk-utils.js'` | `'../services/runtimes/claude-code/sdk-utils.js'` |
-| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | `'../../../lib/sdk-utils.js'` | `'./sdk-utils.js'` |
+| File                                                                   | Old Import                    | New Import                                        |
+| ---------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------- |
+| `apps/server/src/routes/config.ts`                                     | `'../lib/sdk-utils.js'`       | `'../services/runtimes/claude-code/sdk-utils.js'` |
+| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | `'../../../lib/sdk-utils.js'` | `'./sdk-utils.js'`                                |
 
 This eliminates the need for any carve-out in the SDK confinement rule — the only file importing `@anthropic-ai/claude-agent-sdk` is already inside `runtimes/claude-code/`.
 
@@ -403,6 +437,7 @@ Changed from `"^build"` to `"^lint"`. This ensures that when `@dorkos/eslint-con
 ### `package.json` Updates
 
 **Root `package.json`:** Remove all ESLint-related dependencies from `devDependencies`:
+
 - `@eslint/js`
 - `eslint-config-prettier`
 - `eslint-plugin-jsdoc`
@@ -422,6 +457,7 @@ Keep `eslint` in root `devDependencies` (needed for root-level linting).
 (`eslint` is hoisted from root — no need to add per-package unless Turbo cache correctness requires it. If cache issues arise, add `"eslint": "^9"` per-package.)
 
 **Packages missing `lint` script:** Add `"lint": "eslint ."` to:
+
 - `packages/cli/package.json`
 - `packages/db/package.json`
 - `packages/test-utils/package.json`
@@ -432,58 +468,59 @@ Keep `eslint` in root `devDependencies` (needed for root-level linting).
 
 **New files (17):**
 
-| File | Lines (est.) | Purpose |
-|---|---|---|
-| `packages/eslint-config/package.json` | 20 | Shared config package manifest |
-| `packages/eslint-config/base.js` | 80 | Base JS/TS/TSDoc/env/prettier rules |
-| `packages/eslint-config/react.js` | 50 | React/hooks/a11y extension |
-| `packages/eslint-config/node.js` | 10 | Node.js extension |
-| `packages/eslint-config/test.js` | 25 | Test file relaxations overlay |
-| `apps/client/eslint.config.js` | 45 | Client config (FSD rules) |
-| `apps/server/eslint.config.js` | 55 | Server config (SDK+homedir ban) |
-| `apps/obsidian-plugin/eslint.config.js` | 15 | Obsidian plugin config |
-| `apps/e2e/eslint.config.js` | 10 | E2E test config |
-| `packages/shared/eslint.config.js` | 10 | Shared package config |
-| `packages/relay/eslint.config.js` | 10 | Relay package config |
-| `packages/mesh/eslint.config.js` | 10 | Mesh package config |
-| `packages/cli/eslint.config.js` | 20 | CLI package config |
-| `packages/db/eslint.config.js` | 10 | DB package config |
-| `packages/test-utils/eslint.config.js` | 10 | Test utils config |
-| `packages/icons/eslint.config.js` | 10 | Icons package config |
-| `apps/server/src/services/runtimes/claude-code/sdk-utils.ts` | 44 | Moved from `lib/sdk-utils.ts` |
+| File                                                         | Lines (est.) | Purpose                             |
+| ------------------------------------------------------------ | ------------ | ----------------------------------- |
+| `packages/eslint-config/package.json`                        | 20           | Shared config package manifest      |
+| `packages/eslint-config/base.js`                             | 80           | Base JS/TS/TSDoc/env/prettier rules |
+| `packages/eslint-config/react.js`                            | 50           | React/hooks/a11y extension          |
+| `packages/eslint-config/node.js`                             | 10           | Node.js extension                   |
+| `packages/eslint-config/test.js`                             | 25           | Test file relaxations overlay       |
+| `apps/client/eslint.config.js`                               | 45           | Client config (FSD rules)           |
+| `apps/server/eslint.config.js`                               | 55           | Server config (SDK+homedir ban)     |
+| `apps/obsidian-plugin/eslint.config.js`                      | 15           | Obsidian plugin config              |
+| `apps/e2e/eslint.config.js`                                  | 10           | E2E test config                     |
+| `packages/shared/eslint.config.js`                           | 10           | Shared package config               |
+| `packages/relay/eslint.config.js`                            | 10           | Relay package config                |
+| `packages/mesh/eslint.config.js`                             | 10           | Mesh package config                 |
+| `packages/cli/eslint.config.js`                              | 20           | CLI package config                  |
+| `packages/db/eslint.config.js`                               | 10           | DB package config                   |
+| `packages/test-utils/eslint.config.js`                       | 10           | Test utils config                   |
+| `packages/icons/eslint.config.js`                            | 10           | Icons package config                |
+| `apps/server/src/services/runtimes/claude-code/sdk-utils.ts` | 44           | Moved from `lib/sdk-utils.ts`       |
 
 **Modified files (15):**
 
-| File | Change |
-|---|---|
-| `eslint.config.js` (root) | Thinned to ~15 lines |
-| `turbo.json` | `lint.dependsOn` → `["^lint"]` |
-| `package.json` (root) | Remove ESLint plugin devDeps |
-| `apps/client/package.json` | Add `@dorkos/eslint-config` devDep |
-| `apps/server/package.json` | Add `@dorkos/eslint-config` devDep |
-| `apps/obsidian-plugin/package.json` | Add `@dorkos/eslint-config` devDep |
-| `apps/e2e/package.json` | Add devDep + `lint` script |
-| `packages/shared/package.json` | Add `@dorkos/eslint-config` devDep |
-| `packages/relay/package.json` | Add `@dorkos/eslint-config` devDep |
-| `packages/mesh/package.json` | Add `@dorkos/eslint-config` devDep |
-| `packages/cli/package.json` | Add devDep + `lint` script |
-| `packages/db/package.json` | Add devDep + `lint` script |
-| `packages/test-utils/package.json` | Add devDep + `lint` script |
-| `apps/server/src/routes/config.ts` | Update sdk-utils import path |
-| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Update sdk-utils import path |
+| File                                                                   | Change                             |
+| ---------------------------------------------------------------------- | ---------------------------------- |
+| `eslint.config.js` (root)                                              | Thinned to ~15 lines               |
+| `turbo.json`                                                           | `lint.dependsOn` → `["^lint"]`     |
+| `package.json` (root)                                                  | Remove ESLint plugin devDeps       |
+| `apps/client/package.json`                                             | Add `@dorkos/eslint-config` devDep |
+| `apps/server/package.json`                                             | Add `@dorkos/eslint-config` devDep |
+| `apps/obsidian-plugin/package.json`                                    | Add `@dorkos/eslint-config` devDep |
+| `apps/e2e/package.json`                                                | Add devDep + `lint` script         |
+| `packages/shared/package.json`                                         | Add `@dorkos/eslint-config` devDep |
+| `packages/relay/package.json`                                          | Add `@dorkos/eslint-config` devDep |
+| `packages/mesh/package.json`                                           | Add `@dorkos/eslint-config` devDep |
+| `packages/cli/package.json`                                            | Add devDep + `lint` script         |
+| `packages/db/package.json`                                             | Add devDep + `lint` script         |
+| `packages/test-utils/package.json`                                     | Add devDep + `lint` script         |
+| `apps/server/src/routes/config.ts`                                     | Update sdk-utils import path       |
+| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Update sdk-utils import path       |
 
 **Deleted files (2):**
 
-| File | Reason |
-|---|---|
-| `apps/server/src/lib/sdk-utils.ts` | Moved to `runtimes/claude-code/` |
-| (root `eslint.config.js` is **replaced**, not deleted) | |
+| File                                                   | Reason                           |
+| ------------------------------------------------------ | -------------------------------- |
+| `apps/server/src/lib/sdk-utils.ts`                     | Moved to `runtimes/claude-code/` |
+| (root `eslint.config.js` is **replaced**, not deleted) |                                  |
 
 ## User Experience
 
 This is a developer-facing infrastructure change. No end-user impact.
 
 **Developer impact:**
+
 - Each package now has a self-contained `eslint.config.js` — readable in isolation
 - IDE ESLint integration works per-package (no need to understand root context)
 - `pnpm lint` still works from root (Turborepo orchestrates)
@@ -546,10 +583,12 @@ import { ChatPanel } from '@/layers/features/chat'; // Should error
 ## Performance Considerations
 
 **Positive impact:**
+
 - Turborepo lint cache becomes granular per-package — changing one package only re-lints that package
 - Parallel lint execution: Turborepo can lint independent packages concurrently (already supported)
 
 **Neutral:**
+
 - Total cold-lint time should be roughly equivalent (same number of files, same rules)
 - `pnpm install` adds one internal workspace dependency per package (negligible)
 
@@ -563,10 +602,10 @@ The SDK confinement rule adds a security-adjacent benefit: it prevents accidenta
 
 **Updates needed:**
 
-| Document | Change |
-|---|---|
-| `CLAUDE.md` | Update "Code Quality" section to describe per-package ESLint config pattern and `@dorkos/eslint-config` package |
-| `contributing/architecture.md` | Add section on ESLint architecture (shared config package + per-package pattern) |
+| Document                       | Change                                                                                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`                    | Update "Code Quality" section to describe per-package ESLint config pattern and `@dorkos/eslint-config` package |
+| `contributing/architecture.md` | Add section on ESLint architecture (shared config package + per-package pattern)                                |
 
 No new documentation files needed.
 
@@ -587,6 +626,7 @@ This is a single-phase, atomic migration (one PR). The implementation order with
 ### Step 2: Create Per-Package Configs
 
 For each package (in any order):
+
 1. Create `eslint.config.js` importing from `@dorkos/eslint-config`
 2. Add package-local rules (FSD for client, SDK+homedir for server, env carve-outs)
 3. Add `"@dorkos/eslint-config": "workspace:*"` to package's `devDependencies`
@@ -622,11 +662,11 @@ No open questions remain — all decisions were made during ideation and the int
 
 ## Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| ADR-0002 | Adopt Feature-Sliced Design | FSD boundary enforcement rules move to `apps/client/eslint.config.js` |
-| ADR-0042 | Manual Zod Env Validation, Not T3 Env | `process.env` discipline rule and carve-out pattern stays, just moves to per-package configs |
-| ADR-0085 | AgentRuntime Interface as Universal Abstraction | SDK confinement rule enforces the boundary that ADR-0085 establishes architecturally |
+| ADR      | Title                                           | Relevance                                                                                    |
+| -------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| ADR-0002 | Adopt Feature-Sliced Design                     | FSD boundary enforcement rules move to `apps/client/eslint.config.js`                        |
+| ADR-0042 | Manual Zod Env Validation, Not T3 Env           | `process.env` discipline rule and carve-out pattern stays, just moves to per-package configs |
+| ADR-0085 | AgentRuntime Interface as Universal Abstraction | SDK confinement rule enforces the boundary that ADR-0085 establishes architecturally         |
 
 ## References
 

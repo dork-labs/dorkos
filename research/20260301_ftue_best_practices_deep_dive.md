@@ -74,6 +74,7 @@ For multi-module products, progressive disclosure solves the "where do I even st
 The Nielsen Norman Group's research establishes a practical limit: **designs with more than 2 levels of disclosure nesting have low usability** because users get lost. DorkOS has 4+ modules — this means the top-level view must be clean enough that the 4 modules feel like a flat, scannable list, not a hierarchy of nested features.
 
 Implementation patterns that work:
+
 - **Accordions**: Progressive expansion within a single view (good for settings, configuration)
 - **"Show more" / "Show details"** links: The macOS print dialog is the canonical example — minimal by default, full options on demand
 - **Contextual tooltips**: Appear when users hover or focus relevant controls — not on page load
@@ -108,16 +109,19 @@ Jeff Atwood's influential post "Making Considerate Software" (citing Alan Cooper
 Vercel's developer experience success is documented extensively. Their approach can be summarized as **"the deployment works before you understand how it works."** The FTUE is: push to GitHub, and things deploy. No configuration wizard. No "set up your build settings" dialog. Sensible defaults that work for the common case.
 
 **What Vercel does brilliantly:**
+
 - Zero-config deployments eliminate the "cold start" — users see value before they understand the product
 - Starter kits and templates preload the workspace with something meaningful, avoiding blank-slate paralysis
 - Every push creates a preview URL — the product proves itself on first use
 - Documentation is framed as "getting started" not "learning the system"
 
 **What fails:**
+
 - The web UI is feature-heavy; discovering advanced capabilities requires significant exploration
 - Team onboarding is less elegant than individual onboarding
 
 **Transferable to DorkOS:**
+
 - The `dorkos` command starting the server without requiring any configuration is the Vercel equivalent. It must "just work" on first run.
 - Pre-populating the session view with something (or at least pointing clearly to how to create something) eliminates the cold start
 - A sensible default working directory (inferred from the current `cwd` or configured `DORKOS_DEFAULT_CWD`) removes the first friction point
@@ -131,12 +135,14 @@ For DorkOS, the README and the docs site are the first touchpoint — not the we
 **The "Time to First Call" metric** is Stripe's north-star. For DorkOS, the equivalent is: **time from `npm install -g dorkos` to first visible agent session in the UI.** Every second counts.
 
 **What Stripe does brilliantly:**
+
 - Test mode requires no approval, no production access — immediate value without permissions hurdles
 - Code examples are copy-paste runnable
 - Error messages include actionable recovery steps (not just what went wrong, but what to do)
 - Documentation treats developers as smart people who want to understand, not be guided
 
 **Transferable to DorkOS:**
+
 - The FTUE begins in the README, not in the web UI
 - The `dorkos init` wizard (or equivalent) should produce a running system in under 5 minutes, not require configuring env vars manually
 - Error messages from the CLI must be diagnostic and actionable, not generic
@@ -155,11 +161,12 @@ Linear's onboarding is studied as a case study in doing more with less. Their fl
 
 The flow was built without A/B testing — designed end-to-end with a clear mental model of the user, rather than optimized screen-by-screen. This cohesion shows. Each step has a clear reason for existing at that moment.
 
-The keyboard shortcut tutorial is counterintuitive genius. It teaches the *power-user interface* as the entry point, not the basic UI. This signals that Linear is designed for people who want mastery, not people who want simplicity. For Kai, this is exactly right.
+The keyboard shortcut tutorial is counterintuitive genius. It teaches the _power-user interface_ as the entry point, not the basic UI. This signals that Linear is designed for people who want mastery, not people who want simplicity. For Kai, this is exactly right.
 
 The theme selection comes first because it's **low-stakes personalization** — it's easy, it's personal, and it sets a tone of agency before any demands are made. This is Fogg Model insight applied elegantly: start with minimum ability required, maximum user control.
 
 **Transferable to DorkOS:**
+
 - Start with something that makes the tool feel personalized before asking anything of the user (theme, cwd, agent name)
 - Teach keyboard shortcuts / command palette early — this signals to power users that they're in the right place
 - Frame team/collaboration features through domain-based access (no explicit invite flows initially)
@@ -175,15 +182,18 @@ Arc Browser's introduction of its Max AI feature is a model for introducing adva
 - **Opt-out respected** — revert to traditional search with one click
 
 **What Arc does brilliantly:**
+
 - Time-bounds the feature introduction — creates a mental commitment before showing anything
 - Leverages existing behaviors (pinching gestures) rather than inventing new interaction patterns
 - Provides immediate escape hatch — trust comes from having an out, not from being locked in
 
 **What fails:**
+
 - Safari users found the vertical tabs and shortcut-key reliance difficult — old habits compete with new paradigms
 - Extensions weren't introduced in onboarding, leading to significant features going undiscovered
 
 **Transferable to DorkOS:**
+
 - Each module (Pulse, Relay, Mesh) should have a ~90-second "why this exists" introduction accessible on demand
 - Introductions should be interactive (run your first schedule) not explanatory (here's how schedules work)
 - Power features of each module should be discoverable within the module, not introduced in the global FTUE
@@ -195,6 +205,7 @@ Notion's most studied FTUE challenge is the "blank canvas problem" — an infini
 Research on Notion's approach: users who start with templates show significantly higher retention than those who start from scratch. The templates serve as "training grounds" — users learn what the tool can do by seeing real examples and customizing them rather than reading abstract explanations.
 
 For DorkOS, the blank canvas problem appears in multiple places:
+
 - First open: no sessions, empty sidebar
 - Pulse: no schedules, empty schedule list
 - Relay: no endpoints, no messages
@@ -203,6 +214,7 @@ For DorkOS, the blank canvas problem appears in multiple places:
 Each of these is a potential abandonment point if not handled with care.
 
 **Transferable to DorkOS:**
+
 - Pre-seed the UI with a demo session or "demo mode" that shows what a populated DorkOS looks like
 - Empty states for each module should show a minimal example of what the module does, not just a "create your first X" prompt
 - Alternatively: a sample schedule that runs immediately on first activation, so Kai sees the tool working within seconds
@@ -212,11 +224,13 @@ Each of these is a potential abandonment point if not handled with care.
 Raycast's onboarding handles the "this tool can do anything" complexity by **leading with the two most universal features** (search and window management) and letting everything else be discovered through use and the extension store.
 
 Their walkthrough command structure is notable:
+
 - Users complete tasks and track progress
 - Features are demonstrated by using them, not describing them
 - The extension store is treated as a feature to discover, not a surface to explain upfront
 
 **Transferable to DorkOS:**
+
 - The extension system (slash commands, `.claude/commands/`) should be discoverable within the UI via Command Palette, not explained in onboarding
 - The command palette IS the power-user interface — if Kai finds it, he finds everything
 
@@ -237,6 +251,7 @@ Self-hosted tools face a distinct challenge: the user must configure infrastruct
 ### 3.1 The Multi-Module Discovery Problem
 
 DorkOS has 4 distinct modules with different purposes:
+
 - **Chat**: Foundation — AI agent interaction
 - **Pulse**: Scheduling — autonomous background execution
 - **Relay**: Messaging — inter-agent communication
@@ -281,12 +296,14 @@ For DorkOS's modules:
 Developer tools with configurable infrastructure face a specific problem: the configuration IS the product. Env vars, JSON files, feature flags — these aren't obstacles to value; they're expressions of value. But they're only empowering if the user understands what each option does and why they'd want it.
 
 **The empowering configuration pattern:**
+
 1. Show what works with zero configuration (sensible defaults)
 2. Explain what additional configuration unlocks (not what it does technically, but what it enables functionally)
 3. Make configuration reversible and low-stakes
 4. Confirm what's been configured before moving on
 
 **The burdensome configuration pattern:**
+
 1. Require decisions before showing anything
 2. Technical explanations of config fields without functional context
 3. No defaults — every field blank
@@ -307,11 +324,13 @@ Expert users — and Kai is explicitly expert-level — come to a new tool with 
 This isn't impatience. It's a signal. The expert user has allocated mental bandwidth to their goal, not to learning your product. Onboarding that requires them to set aside their goal and adopt yours is a cognitive tax that erodes trust.
 
 **What experts actually need in FTUE:**
+
 1. Confirmation that they're in the right place (the product does what they came to do)
 2. The fastest possible path to their first meaningful action
 3. **Discovery hooks** — affordances that make advanced features findable when they're ready, without demanding engagement before they're ready
 
 **What experts explicitly do not need:**
+
 - Explanation of what the product does (they read the README)
 - Feature showcases (they want to use, not observe)
 - Confirmation prompts (they made their decision; they installed the tool)
@@ -322,6 +341,7 @@ This isn't impatience. It's a signal. The expert user has allocated mental bandw
 The balance is subtle. Expert users don't want to be helped they didn't ask for, but they do appreciate **help they discover at the right moment**. The design challenge is: how do you provide guidance without patronizing?
 
 **The "pull" model vs. the "push" model:**
+
 - **Push**: Onboarding delivers information to the user (product tours, coach marks, tooltips that appear automatically)
 - **Pull**: The user finds information when they need it (documentation links, contextual tooltips on hover, help icons next to complex fields)
 
@@ -332,6 +352,7 @@ Expert users strongly prefer pull. They resist push. The principle: **never inte
 ### 4.3 The Anti-Persona Filter (Jordan, The Prompt Dabbler)
 
 Jordan is a non-technical user who wants a hosted, no-code dashboard. Building FTUE with Jordan in mind would mean:
+
 - Explaining what an "agent" is
 - Providing templates for common use cases with no customization
 - Hiding configuration entirely
@@ -342,6 +363,7 @@ Building FTUE for Kai means the opposite of all of those things. The filter is:
 **If a design decision makes DorkOS easier for Jordan, it probably makes it worse for Kai.**
 
 Specific anti-Jordan signals to preserve:
+
 - Technical terminology should not be softened (sessions, not "conversations"; schedules, not "automations"; cwd, not "workspace folder")
 - Configuration should be visible, not hidden — Kai wants to know what the flags are
 - The README should lead with architecture, not benefits
@@ -356,6 +378,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 ### 5.1 Taxonomy of FTUE Approaches with DorkOS Assessment
 
 #### Product Tours
+
 **What it is:** A linear, step-by-step walkthrough of the product's key features, usually with modals, tooltips, or coach marks.
 
 **Pros:** Systematic coverage, easy to implement with tools like Appcues or Chameleon, can be tracked analytically.
@@ -365,6 +388,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **DorkOS verdict:** **Hard no.** The target personas will immediately close any product tour and lose trust. If tours are implemented at all (e.g., for `dorkos init`), they must be: (a) CLI-based, not web UI-based, (b) explicitly opt-in, (c) 3 steps maximum, (d) interactive (user does something, not just reads).
 
 #### Progressive Disclosure
+
 **What it is:** The product's permanent information architecture reveals complexity only as users need it. Not a temporary onboarding state — a design philosophy.
 
 **Pros:** Respects users at all skill levels simultaneously. Scales from first-time to power user. Reduces cognitive load without hiding capability.
@@ -374,6 +398,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **DorkOS verdict:** **Primary FTUE strategy.** Chat is always the primary view. Pulse, Relay, Mesh are always secondary (tabs/nav items). Within each module, configuration is always secondary to usage. Within usage, advanced options are always secondary to basic operations.
 
 #### Empty State Driven Onboarding
+
 **What it is:** The first thing a user sees in any module is a well-designed empty state that explains the module's purpose, shows what it would look like populated, and provides a single clear action to populate it.
 
 **Pros:** Contextually appropriate (appears only when the user navigates to the relevant section). Non-intrusive (doesn't interrupt flow). Teaches by doing rather than explaining.
@@ -383,6 +408,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **DorkOS verdict:** **Primary FTUE mechanism for module discovery.** Every tab in DorkOS should have a world-class empty state. This is the highest-leverage design work for the FTUE.
 
 #### Task-Driven / Goal-Driven Onboarding
+
 **What it is:** The product asks the user what they want to accomplish and routes them to the relevant workflow. LinkedIn does this ("Are you here to job-hunt, recruit, or network?"). Typeform does this. Some developer tools do this with a role selector.
 
 **Pros:** Highly relevant experience for diverse user bases. Demonstrates that the product understands different use cases.
@@ -392,6 +418,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **DorkOS verdict:** **Potentially valuable for `dorkos init` wizard, not for the web UI FTUE.** The init wizard could ask "What do you want to do first?" with options like "Chat with an agent", "Schedule an agent to run automatically", "Connect this agent to others". This routes the user into relevant module documentation / setup steps without feeling like a survey. In the web UI, task-driven onboarding is implicit — the Chat tab is the default because Chat is the primary job.
 
 #### Configuration as Onboarding
+
 **What it is:** The act of configuring the tool (setting env vars, editing JSON) IS the onboarding — it forces the user to understand the tool's architecture by building it.
 
 **Pros:** Matches the mental model of experienced developers. Produces expertise, not just familiarity. Aligns with the "read the source code" philosophy.
@@ -401,6 +428,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **DorkOS verdict:** **Secondary mechanism for module activation.** Feature flags (DORKOS_RELAY_ENABLED etc.) should be surfaced in the UI with clear env var instructions when a user navigates to a disabled module. This makes configuration contextually appropriate rather than front-loaded.
 
 #### Documentation as Onboarding
+
 **What it is:** The README, the docs site, and the in-code comments ARE the onboarding. Tools like Stripe treat time-to-first-API-call as the north-star metric, with docs as the primary activation path.
 
 **Pros:** Ideal for expert users who prefer reading over guided experiences. Permanent reference, not a one-time flow. Highly compatible with the "no marketing language" preference.
@@ -426,6 +454,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **Minute 5:** The schedule is created. He sees the next run time. He understands the tool is doing what he needed it to do — enabling autonomous agent execution. He closes the browser and lets it run overnight.
 
 **What made this work:**
+
 - No friction between install and first session
 - Sensible cwd inference — no configuration decision required
 - Empty states explained secondary features at exactly the right moment (when he chose to navigate there)
@@ -446,6 +475,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 **Minute 5:** She closes the plugin panel and thinks: "I want this running while I write." She doesn't need to configure anything else right now. The deep integrations (Relay, Mesh) can wait until she needs them.
 
 **What made this work:**
+
 - The plugin's entry point is the vault, not the server — her world, her terms
 - No context switching required — Claude Code lives in Obsidian
 - The agent identity feature satisfied her "clean architecture" instinct — she can name and shape the tool
@@ -456,6 +486,7 @@ The goal is not to be exclusionary, but to be **specifically useful** to the peo
 The Jordan filter is active throughout FTUE design. For each decision, ask: "Would this design decision make Jordan more comfortable?" If yes, it probably needs reconsideration.
 
 **Jordan-ification patterns to avoid:**
+
 - Replacing `cwd` with "project folder" in the UI (obfuscates, doesn't clarify)
 - A "What would you like to build today?" welcome modal with use case templates (assumes users don't know what they want)
 - Hiding the `.env` configuration in favor of a GUI settings panel (removes power user access)
@@ -471,9 +502,11 @@ This framework covers the full journey from CLI install to multi-module discover
 ---
 
 #### Layer 0: Pre-Install (README + Docs)
+
 **The principle:** The README is the first UI. Treat it as a product surface.
 
 **Concrete implementation:**
+
 - Open with architecture description, not marketing pitch. First paragraph is technical: "DorkOS is an OS-layer for AI agents — a web interface and REST/SSE API for Claude Code, built on the Claude Agent SDK."
 - Second paragraph: the feature list, stated plainly. Pulse. Relay. Mesh. Each in one sentence.
 - Third: `npm install -g dorkos` as a standalone code block.
@@ -484,10 +517,13 @@ This framework covers the full journey from CLI install to multi-module discover
 ---
 
 #### Layer 1: CLI First Run (`dorkos`)
+
 **The principle:** The terminal is the first product surface. Make it speak clearly.
 
 **Concrete implementation:**
+
 - On first run with no `.env`, DorkOS starts with sensible defaults and outputs a clean startup message:
+
   ```
   DorkOS v1.x.x
   Server: http://localhost:4242
@@ -496,6 +532,7 @@ This framework covers the full journey from CLI install to multi-module discover
 
   To enable additional features, see: https://dorkos.ai/docs/configuration
   ```
+
 - No "Welcome to DorkOS!" message. No ASCII art. Output that is greppable, informative, and clean.
 - On first run only, append a single line: "New to DorkOS? Start a session at http://localhost:4242" — then never again (store a first-run flag).
 - `dorkos --help` is comprehensive, includes all env vars, links to docs.
@@ -504,9 +541,11 @@ This framework covers the full journey from CLI install to multi-module discover
 ---
 
 #### Layer 2: Web UI First Open
+
 **The principle:** The web UI should confirm the user's hypothesis, not introduce itself.
 
 **Concrete implementation:**
+
 - No welcome modal on first open.
 - No product tour.
 - No "Let's get started" checklist (unless explicitly opt-in from a `dorkos init` choice).
@@ -526,9 +565,11 @@ This framework covers the full journey from CLI install to multi-module discover
 ---
 
 #### Layer 3: Module Discovery (Progressive Disclosure via Empty States)
+
 **The principle:** Modules explain themselves when visited, not before.
 
 **Pulse Empty State:**
+
 ```
 No schedules yet.
 
@@ -541,6 +582,7 @@ Example: Run a codebase health check every Monday at 9am.
 ```
 
 **Relay Empty State:**
+
 ```
 Relay is not enabled.
 
@@ -554,6 +596,7 @@ DORKOS_RELAY_ENABLED=true  [Copy]
 ```
 
 **Mesh Empty State:**
+
 ```
 No agents registered.
 
@@ -566,9 +609,11 @@ Register an agent to see the topology graph.
 ---
 
 #### Layer 4: Feature Activation (Configuration as Progressive Unlock)
+
 **The principle:** Feature flags are power-user affordances, not setup burdens.
 
 **Concrete implementation:**
+
 - Disabled modules show their empty states with env var instructions (as above)
 - The Settings panel has a "Features" section that shows which features are active and which are available, with copy-able env var blocks for each
 - No GUI toggle that secretly sets env vars — transparency about what's happening in the config layer is a feature, not a bug, for Kai
@@ -576,9 +621,11 @@ Register an agent to see the topology graph.
 ---
 
 #### Layer 5: Return Use / Habit Formation (The Investment Phase)
+
 **The principle:** After the first 5 minutes, FTUE is over. Habit formation begins.
 
 **Concrete implementation:**
+
 - Sessions are remembered — the sidebar shows recent sessions with titles extracted from first message
 - The cwd is remembered — no re-configuration on every launch
 - Agent identity (name, persona) can be set and is persisted — Kai can name his main agent, building the "investment" that drives return

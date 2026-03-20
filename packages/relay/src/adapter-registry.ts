@@ -59,7 +59,9 @@ export class AdapterRegistry implements AdapterRegistryLike {
    */
   async register(adapter: RelayAdapter): Promise<void> {
     if (!this.relay) {
-      throw new Error('AdapterRegistry: relay not set — call setRelay() before registering adapters');
+      throw new Error(
+        'AdapterRegistry: relay not set — call setRelay() before registering adapters'
+      );
     }
 
     const existing = this.adapters.get(adapter.id);
@@ -141,7 +143,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    context?: AdapterContext,
+    context?: AdapterContext
   ): Promise<DeliveryResult | null> {
     const adapter = this.getBySubject(subject);
     if (!adapter) return null;
@@ -156,9 +158,7 @@ export class AdapterRegistry implements AdapterRegistryLike {
    * have been given a chance to stop.
    */
   async shutdown(): Promise<void> {
-    const results = await Promise.allSettled(
-      [...this.adapters.values()].map((a) => a.stop()),
-    );
+    const results = await Promise.allSettled([...this.adapters.values()].map((a) => a.stop()));
 
     // Log individual failures but don't throw
     for (const result of results) {

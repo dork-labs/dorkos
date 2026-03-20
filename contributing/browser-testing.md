@@ -77,15 +77,15 @@ import { test, expect } from '../../fixtures';
 
 The fixture file (`fixtures/index.ts`) provides seven pre-instantiated Page Objects:
 
-| Fixture | Class | Auto-navigates? |
-|---------|-------|-----------------|
-| `basePage` | `BasePage` | No |
-| `chatPage` | `ChatPage` | Yes — calls `goto()` which navigates and ensures a session is active |
-| `agentSidebar` | `AgentSidebarPage` | No |
-| `settingsPage` | `SettingsPage` | No |
-| `pulsePage` | `PulsePage` | No — call `pulsePage.open()` to open the dialog |
-| `meshPage` | `MeshPage` | No — call `meshPage.open()` to open the dialog |
-| `relayPage` | `RelayPage` | No — call `relayPage.open()` to open the dialog |
+| Fixture        | Class              | Auto-navigates?                                                      |
+| -------------- | ------------------ | -------------------------------------------------------------------- |
+| `basePage`     | `BasePage`         | No                                                                   |
+| `chatPage`     | `ChatPage`         | Yes — calls `goto()` which navigates and ensures a session is active |
+| `agentSidebar` | `AgentSidebarPage` | No                                                                   |
+| `settingsPage` | `SettingsPage`     | No                                                                   |
+| `pulsePage`    | `PulsePage`        | No — call `pulsePage.open()` to open the dialog                      |
+| `meshPage`     | `MeshPage`         | No — call `meshPage.open()` to open the dialog                       |
+| `relayPage`    | `RelayPage`        | No — call `relayPage.open()` to open the dialog                      |
 
 ### Use Page Object Models
 
@@ -117,6 +117,7 @@ test('pulse dialog opens @smoke', async ({ basePage, pulsePage }) => {
 ### Selector Strategy
 
 Priority order:
+
 1. `getByRole()` — Semantic, resilient to UI changes
 2. `data-testid` — Stable contract between test and implementation
 3. CSS class — Last resort, fragile
@@ -144,15 +145,15 @@ test.describe('Feature — Description @smoke', () => { ... });
 
 ## Running Tests
 
-| Command | Description |
-|---------|-------------|
-| `pnpm test:browser` | Run all tests via Turbo |
-| `pnpm test:browser:ui` | Playwright interactive UI mode |
-| `cd apps/e2e && npx playwright test` | Run directly (faster iteration) |
-| `cd apps/e2e && npx playwright test --grep @smoke` | Smoke tests only |
-| `cd apps/e2e && npx playwright test tests/chat/` | Specific feature |
-| `cd apps/e2e && PWDEBUG=1 npx playwright test <file>` | Debug mode |
-| `cd apps/e2e && npx playwright show-report` | View HTML report |
+| Command                                               | Description                     |
+| ----------------------------------------------------- | ------------------------------- |
+| `pnpm test:browser`                                   | Run all tests via Turbo         |
+| `pnpm test:browser:ui`                                | Playwright interactive UI mode  |
+| `cd apps/e2e && npx playwright test`                  | Run directly (faster iteration) |
+| `cd apps/e2e && npx playwright test --grep @smoke`    | Smoke tests only                |
+| `cd apps/e2e && npx playwright test tests/chat/`      | Specific feature                |
+| `cd apps/e2e && PWDEBUG=1 npx playwright test <file>` | Debug mode                      |
+| `cd apps/e2e && npx playwright show-report`           | View HTML report                |
 
 The `webServer` config in `playwright.config.ts` auto-starts both Express and Vite dev servers if they're not already running. Set `reuseExistingServer: true` (default in dev) to reuse running servers for faster feedback.
 
@@ -162,14 +163,14 @@ The `webServer` config in `playwright.config.ts` auto-starts both Express and Vi
 
 Smart routing based on arguments:
 
-| Usage | Behavior |
-|-------|----------|
-| `/browsertest run` | Run entire suite |
-| `/browsertest run chat` | Run all chat feature tests |
-| `/browsertest chat messaging` | Run existing test OR create new one |
-| `/browsertest debug chat-messaging` | Debug a specific failing test |
-| `/browsertest maintain` | Audit suite health, update stale tests |
-| `/browsertest report` | Show test health dashboard |
+| Usage                                  | Behavior                                              |
+| -------------------------------------- | ----------------------------------------------------- |
+| `/browsertest run`                     | Run entire suite                                      |
+| `/browsertest run chat`                | Run all chat feature tests                            |
+| `/browsertest chat messaging`          | Run existing test OR create new one                   |
+| `/browsertest debug chat-messaging`    | Debug a specific failing test                         |
+| `/browsertest maintain`                | Audit suite health, update stale tests                |
+| `/browsertest report`                  | Show test health dashboard                            |
 | `/browsertest create chat file-upload` | Explore feature, write test, iterate until 3/3 stable |
 
 ### `/browsertest:maintain` — Suite Health Audit
@@ -198,7 +199,15 @@ Audits all tests, categorizes them as healthy/stale/broken/orphaned, and auto-fi
     }
   },
   "runHistory": [
-    { "id": "2026-02-25T10-30-00", "timestamp": "...", "total": 8, "passed": 7, "failed": 1, "skipped": 0, "duration": 45000 }
+    {
+      "id": "2026-02-25T10-30-00",
+      "timestamp": "...",
+      "total": 8,
+      "passed": 7,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 45000
+    }
   ]
 }
 ```
@@ -241,6 +250,7 @@ Before starting, the command reads `apps/e2e/GOTCHAS.md` (known anti-patterns) a
 ### AI-Assisted Debugging
 
 Use `/browsertest debug <test-name>` which:
+
 1. Runs the failing test with JSON reporter for error details
 2. Uses Playwright MCP to inspect current page state
 3. Classifies as TEST bug or CODE bug
@@ -255,6 +265,7 @@ The `/browsertest:maintain` command compares `relatedCode` modification dates ag
 ### Auto-Update Flow
 
 When a stale test is detected:
+
 1. AI navigates to the feature using Playwright MCP
 2. Captures current accessibility tree
 3. Compares with test expectations
@@ -278,11 +289,11 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 
 ### Port Layout
 
-| Port | Service |
-|------|---------|
-| `DORKOS_PORT` (6242) | Real Express server |
-| `VITE_PORT` (6241) | Vite client proxying to real server |
-| `MOCK_PORT` (4243) | Test-mode Express server |
+| Port                    | Service                             |
+| ----------------------- | ----------------------------------- |
+| `DORKOS_PORT` (6242)    | Real Express server                 |
+| `VITE_PORT` (6241)      | Vite client proxying to real server |
+| `MOCK_PORT` (4243)      | Test-mode Express server            |
 | `MOCK_VITE_PORT` (6244) | Vite client proxying to mock server |
 
 ### Test Control API
@@ -307,7 +318,7 @@ await chatPage.goto(undefined, { dir: agentDir });
 
 // Set a specific scenario
 await request.post(`${API_URL}/api/test/scenario`, {
-  data: { name: 'simple-text' },  // 'tool-call', 'todo-write', 'error'
+  data: { name: 'simple-text' }, // 'tool-call', 'todo-write', 'error'
 });
 ```
 

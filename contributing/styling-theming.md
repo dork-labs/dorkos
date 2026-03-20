@@ -6,21 +6,21 @@ This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI compo
 
 ## Key Files
 
-| Concept             | Location                                       |
-| ------------------- | ---------------------------------------------- |
+| Concept             | Location                                                            |
+| ------------------- | ------------------------------------------------------------------- |
 | Theme configuration | `apps/client/src/index.css` (via `@theme inline` + `:root`/`.dark`) |
-| Design system spec  | `contributing/design-system.md`                      |
-| Shadcn components   | `apps/client/src/layers/shared/ui/` (barrel export)           |
-| Animation patterns  | `contributing/animations.md`                         |
-| cn() utility        | `apps/client/src/layers/shared/lib/utils.ts`               |
-| Theme hook          | `apps/client/src/layers/shared/model/use-theme.ts`                        |
+| Design system spec  | `contributing/design-system.md`                                     |
+| Shadcn components   | `apps/client/src/layers/shared/ui/` (barrel export)                 |
+| Animation patterns  | `contributing/animations.md`                                        |
+| cn() utility        | `apps/client/src/layers/shared/lib/utils.ts`                        |
+| Theme hook          | `apps/client/src/layers/shared/model/use-theme.ts`                  |
 
 ## When to Use What
 
 | Scenario                                   | Approach                                             | Why                                        |
 | ------------------------------------------ | ---------------------------------------------------- | ------------------------------------------ |
 | Need semantic color (background, text)     | Use tokens (`bg-background`, `text-foreground`)      | Automatic dark mode, consistent design     |
-| Need arbitrary color (brand not in tokens) | Add to `@theme` in index.css                       | Reusable, theme-aware                      |
+| Need arbitrary color (brand not in tokens) | Add to `@theme` in index.css                         | Reusable, theme-aware                      |
 | Need conditional classes                   | Use `cn()` utility                                   | Type-safe, handles conflicts correctly     |
 | Need component variants                    | Use built-in variants (`variant="outline"`)          | Consistent API, pre-styled                 |
 | Need custom component styling              | Pass `className` prop                                | Override defaults without editing source   |
@@ -119,13 +119,17 @@ export function ThemeToggle() {
 Apply dark mode variants with `dark:` prefix, but prefer semantic tokens which handle both modes automatically:
 
 ```tsx
-{/* Prefer tokens — no dark: variant needed */}
+{
+  /* Prefer tokens — no dark: variant needed */
+}
 <div className="bg-background text-foreground">
   <p className="text-muted-foreground">Muted text</p>
-</div>
+</div>;
 
-{/* Only use dark: when tokens don't cover the case */}
-<div className="bg-gray-100 dark:bg-gray-900">...</div>
+{
+  /* Only use dark: when tokens don't cover the case */
+}
+<div className="bg-gray-100 dark:bg-gray-900">...</div>;
 ```
 
 ### Conditional Classes with cn()
@@ -388,16 +392,16 @@ export function Button(props) {
 
 The "Calm Tech" design language specifications:
 
-| Element                 | Specification                                      |
-| ----------------------- | -------------------------------------------------- |
-| **Fonts**               | System UI stack (user-configurable via Settings)   |
-| **Colors**              | HSL tokens via `:root`/`.dark` — never pure black/white |
-| **Base radius**         | 8px (`--radius: 0.5rem`)                           |
-| **Button height**       | 36px default (`--size-btn-md: 2.25rem`)            |
-| **Card padding**        | 24px (`p-6`)                                       |
-| **Animation duration**  | 100-300ms (fast to slower)                         |
-| **Shadow hierarchy**    | soft → elevated → floating → modal                 |
-| **Container widths**    | narrow (42rem), default (56rem), wide (72rem)      |
+| Element                | Specification                                           |
+| ---------------------- | ------------------------------------------------------- |
+| **Fonts**              | System UI stack (user-configurable via Settings)        |
+| **Colors**             | HSL tokens via `:root`/`.dark` — never pure black/white |
+| **Base radius**        | 8px (`--radius: 0.5rem`)                                |
+| **Button height**      | 36px default (`--size-btn-md: 2.25rem`)                 |
+| **Card padding**       | 24px (`p-6`)                                            |
+| **Animation duration** | 100-300ms (fast to slower)                              |
+| **Shadow hierarchy**   | soft → elevated → floating → modal                      |
+| **Container widths**   | narrow (42rem), default (56rem), wide (72rem)           |
 
 ### Core Principles
 
@@ -423,12 +427,12 @@ The "Calm Tech" design language specifications:
 
    ```css
    :root {
-     --warning: 38 92% 50%;           /* amber-500 equivalent */
+     --warning: 38 92% 50%; /* amber-500 equivalent */
      --warning-foreground: 0 0% 9%;
    }
 
    .dark {
-     --warning: 38 92% 60%;           /* slightly lighter in dark mode */
+     --warning: 38 92% 60%; /* slightly lighter in dark mode */
      --warning-foreground: 0 0% 9%;
    }
    ```

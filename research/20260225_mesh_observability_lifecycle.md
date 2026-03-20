@@ -1,5 +1,5 @@
 ---
-title: "Mesh Observability & Lifecycle — Research Findings"
+title: 'Mesh Observability & Lifecycle — Research Findings'
 date: 2026-02-25
 type: internal-architecture
 status: archived
@@ -68,20 +68,23 @@ React Flow (`@xyflow/react` v12) is the clear choice for the topology graph: it 
 ### 6. Service Mesh Dashboard Design Patterns (Kiali / Consul / Grafana)
 
 **Kiali (Istio's service mesh console):**
+
 - Four-tier health classification: NA (grey) → Healthy (green) → Degraded (orange) → Failure (red).
-- Health is a *composite* of multiple indicators (traffic success rate, pod status).
+- Health is a _composite_ of multiple indicators (traffic success rate, pod status).
 - Nodes and edges are both colored — edges show traffic flow health.
 - Graph type switcher: service topology vs. workload topology vs. application topology.
 - "Find/hide" filter to highlight specific nodes; ranking by inbound edge count.
 - Per-node badges: circuit breaker, fault injection, virtual service.
 
 **HashiCorp Consul UI:**
+
 - Topology visualization shows sidecar proxies and upstream/downstream dependencies.
 - Services have health checks (passing / warning / critical), displayed as colored dots.
 - Filters by namespace, datacenter, service type.
 - Explicitly described as "overview, not a comprehensive monitoring tool" — links out to Grafana.
 
 **Key design pattern consensus:**
+
 1. Color-coded status (green/yellow/red) is universally understood — use it.
 2. Aggregate summary stats at the top (X active, Y inactive, Z stale) before the graph.
 3. Topology graph is a secondary view; the primary view is a filterable list/table.
@@ -91,8 +94,9 @@ React Flow (`@xyflow/react` v12) is the clear choice for the topology graph: it 
 ### 7. Agent Health Monitoring Patterns
 
 **Heartbeat vs. message-based detection:**
-- *Heartbeat* (push): Agent actively publishes a signal on an interval. Faster detection, predictable load.
-- *Message-based* (pull): Health inferred from last activity timestamp. Zero extra traffic, but detection lag equals polling interval.
+
+- _Heartbeat_ (push): Agent actively publishes a signal on an interval. Faster detection, predictable load.
+- _Message-based_ (pull): Health inferred from last activity timestamp. Zero extra traffic, but detection lag equals polling interval.
 - For DorkOS: message-based is simpler since the Relay already timestamps all messages. Use a `last_seen_at` column updated on any Relay publish. Add an optional explicit heartbeat signal on `mesh.agent.lifecycle.heartbeat` for agents that want faster health detection.
 
 **Standard thresholds from production systems:**
@@ -118,6 +122,7 @@ REMOVED
 Thresholds should be configurable constants in `packages/mesh/src/health.ts` with sensible defaults (5 min active, 30 min stale), not hardcoded magic numbers.
 
 **State transition events** should be emitted as Relay signals:
+
 - `mesh.agent.lifecycle.joined` — agent registered
 - `mesh.agent.lifecycle.heartbeat` — explicit ping from agent
 - `mesh.agent.lifecycle.status_changed` — active↔inactive↔stale transition
@@ -126,16 +131,19 @@ Thresholds should be configurable constants in `packages/mesh/src/health.ts` wit
 ### 8. Graph Layout for 10–50 Nodes
 
 **Force-directed (`d3-force` or React Flow's built-in):**
+
 - Pros: Emerges organically, good for dense or irregular topologies. No manual positioning required.
 - Cons: Non-deterministic; same graph may render differently on each load. Can produce hairball patterns with many edges. Poor for showing hierarchy.
 - Verdict: Good default for a mesh where all agents are peers.
 
 **Dagre (tree/hierarchical):**
+
 - Pros: Deterministic, clean left-to-right or top-to-bottom flow. Shows runtime hierarchy (Claude Code → Cursor → Codex as tiers).
 - Cons: Requires directed edges; looks artificial for true peer-to-peer meshes.
 - Verdict: Best if you want to group by runtime or project. React Flow has a first-party dagre example.
 
 **ELK (Eclipse Layout Kernel via elkjs):**
+
 - Pros: Most powerful — supports group nodes, sub-flows, mixed layouts. Can cluster by attribute (runtime, project).
 - Cons: Heavier import (~200 KB); more configuration. Does not support `parentNode` — uses `children` arrays instead.
 - Verdict: Best if agents need to be visually grouped (e.g., all Claude Code agents in one cluster, all Cursor agents in another).
@@ -166,12 +174,14 @@ export function AgentTopologyNode({ data, selected }: NodeProps<AgentNodeData>) 
   return (
     <>
       <Handle type="target" position={Position.Left} />
-      <div className={cn('rounded-xl border p-3 min-w-[160px]', selected && 'ring-2 ring-ring')}>
+      <div className={cn('min-w-[160px] rounded-xl border p-3', selected && 'ring-ring ring-2')}>
         <div className="flex items-center gap-2">
           <StatusDot status={data.health} />
           <span className="text-sm font-medium">{data.agent.name}</span>
         </div>
-        <Badge variant="secondary" className="mt-1 text-xs">{data.agent.runtime}</Badge>
+        <Badge variant="secondary" className="mt-1 text-xs">
+          {data.agent.runtime}
+        </Badge>
       </div>
       <Handle type="source" position={Position.Right} />
     </>
@@ -227,22 +237,22 @@ The `MessageReceiver` in the server should subscribe to `mesh.agent.lifecycle.>`
 
 New routes on the existing `mesh.ts` router:
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/mesh/topology` | Return nodes + edges as `{ nodes: AgentTopologyNode[], edges: AgentEdge[] }` |
-| `GET` | `/api/mesh/health` | Return health summary `{ active: N, inactive: N, stale: N, agents: AgentHealthEntry[] }` |
-| `GET` | `/api/mesh/lifecycle/stream` | SSE stream of `mesh.agent.lifecycle.*` events |
-| `POST` | `/api/mesh/agents/:id/heartbeat` | Explicit heartbeat touch (updates `last_seen_at`) |
+| Method | Path                             | Purpose                                                                                  |
+| ------ | -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GET`  | `/api/mesh/topology`             | Return nodes + edges as `{ nodes: AgentTopologyNode[], edges: AgentEdge[] }`             |
+| `GET`  | `/api/mesh/health`               | Return health summary `{ active: N, inactive: N, stale: N, agents: AgentHealthEntry[] }` |
+| `GET`  | `/api/mesh/lifecycle/stream`     | SSE stream of `mesh.agent.lifecycle.*` events                                            |
+| `POST` | `/api/mesh/agents/:id/heartbeat` | Explicit heartbeat touch (updates `last_seen_at`)                                        |
 
 ### MCP Diagnostic Tools
 
 New tools in `mcp-tool-server.ts` under the mesh tools section:
 
-| Tool name | Description |
-|---|---|
-| `mesh_topology` | Returns full topology graph as nodes and edges |
-| `mesh_health_summary` | Returns active/inactive/stale counts |
-| `mesh_agent_health` | Returns health detail for a single agent by ID |
+| Tool name               | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| `mesh_topology`         | Returns full topology graph as nodes and edges    |
+| `mesh_health_summary`   | Returns active/inactive/stale counts              |
+| `mesh_agent_health`     | Returns health detail for a single agent by ID    |
 | `mesh_lifecycle_events` | Returns recent lifecycle events from SQLite trace |
 
 ### Client-Side FSD Structure
@@ -266,6 +276,7 @@ features/mesh/
 ```
 
 New entity hooks under `entities/mesh/`:
+
 - `useMeshTopology` — fetches topology data for the graph
 - `useMeshHealth` — fetches aggregate health metrics
 - `useMeshLifecycleStream` — SSE subscription for lifecycle events
@@ -319,6 +330,7 @@ New entity hooks under `entities/mesh/`:
 ### Potential Solutions (Graph Library)
 
 **1. @xyflow/react (React Flow v12)**
+
 - Description: The dominant React node-graph library; used for workflow builders, diagrams, and topology views. Nodes are React components.
 - Pros: React 19 + Tailwind 4 explicitly supported; custom nodes are plain React components (can embed shadcn/ui badges, icons, status dots); first-party dagre + ELK layout examples; excellent DX and documentation; 2.9M weekly downloads; Zustand integration aligns with existing DorkOS state; lazy/viewport-based rendering available.
 - Cons: Bundle size is meaningful (~150-200 KB min+gz estimated; CSS must be imported separately); requires defining `nodeTypes` outside component tree to avoid bugs; not designed for graph-theory analysis (but DorkOS doesn't need that).
@@ -328,6 +340,7 @@ New entity hooks under `entities/mesh/`:
 - Maintenance: High (2.9M weekly downloads, active xyflow org)
 
 **2. Cytoscape.js + react-cytoscapejs**
+
 - Description: Graph theory library with canvas/SVG rendering. Strong analysis primitives (shortest path, clustering).
 - Pros: Excellent algorithm support; actively maintained core library; good for data-heavy graph analysis.
 - Cons: 365 KB min / 112 KB gzip for the core alone; React wrapper renders to canvas/SVG, not React components — cannot embed shadcn Badge natively; wrapper (Plotly's) last active 2023; imperative API fights React's declarative model.
@@ -337,6 +350,7 @@ New entity hooks under `entities/mesh/`:
 - Maintenance: Medium (core active, wrapper sporadic)
 
 **3. @react-sigma/core (Sigma.js)**
+
 - Description: WebGL-based graph renderer for large graphs (1,000+ nodes). React bindings for sigma.js v3.
 - Pros: Handles massive graphs without performance degradation; actively maintained (v5 recent).
 - Cons: WebGL adds a significant dependency; custom node rendering requires a custom WebGL renderer (no React components as nodes); complete overkill for 10–50 nodes; poor DX for status dashboards.
@@ -346,6 +360,7 @@ New entity hooks under `entities/mesh/`:
 - Maintenance: Medium
 
 **4. vis-network**
+
 - Description: Mature network graph library with a long history. Used in many academic and enterprise tools.
 - Pros: Powerful built-in physics simulation; easy to get started.
 - Cons: Fragmented React wrapper ecosystem; sporadic release cadence; imperative DOM API; uncertain React 19 / concurrent mode compatibility.
@@ -355,6 +370,7 @@ New entity hooks under `entities/mesh/`:
 - Maintenance: Low
 
 **5. Custom SVG + d3-force**
+
 - Description: Build the rendering layer from scratch using React SVG + d3-force physics for positioning.
 - Pros: Zero library constraints; exactly the look and behavior you want; d3-force module alone is ~10 KB.
 - Cons: Must implement drag, zoom/pan, edge rendering, tooltip, selection, animated layout transitions from scratch; not advisable when React Flow provides all of this.
@@ -437,6 +453,7 @@ For 10–50 agents in a single-machine mesh:
 **Rationale:** It is the only library in the evaluation that (a) has explicitly confirmed React 19 + Tailwind 4 compatibility, (b) allows custom node components to be full React components (enabling embedded shadcn/ui Badge, status dot, and agent metadata), (c) ships with first-party layout adapters (dagre, ELK) with copy-paste examples, and (d) has by far the strongest community and maintenance signals (2.9M weekly downloads, active xyflow org). For 10–50 nodes it is trivially within its performance envelope.
 
 **Caveats:**
+
 1. Confirm bundle size via `bundlephobia.com/@xyflow/react` before implementation — if it exceeds 200 KB gzipped, load it lazily with `React.lazy()` since the Topology tab is not on the critical path.
 2. The `nodeTypes` constant must be declared outside the `ReactFlow` parent component or the graph will re-mount nodes on every render — this is a known React Flow footgun documented in their performance guide.
 3. Import `@xyflow/react/dist/style.css` in `global.css` (not in a component file) per the Tailwind 4 migration notes.

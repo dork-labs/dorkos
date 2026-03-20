@@ -138,8 +138,8 @@ describe('--log-level CLI flag', () => {
       delete process.env.DORKOS_LOG_LEVEL;
       // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
       const logLevel = process.env.DORKOS_LOG_LEVEL
-        // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
-        ? parseInt(process.env.DORKOS_LOG_LEVEL, 10)
+        ? // eslint-disable-next-line no-restricted-syntax -- testing env var parsing behavior
+          parseInt(process.env.DORKOS_LOG_LEVEL, 10)
         : undefined;
       expect(logLevel).toBeUndefined();
     });

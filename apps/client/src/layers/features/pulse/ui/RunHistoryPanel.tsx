@@ -12,7 +12,14 @@ import { toast } from 'sonner';
 import { useRuns, useCancelRun } from '@/layers/entities/pulse';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton } from '@/layers/shared/ui';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+} from '@/layers/shared/ui';
 import type { PulseRun, PulseRunStatus } from '@dorkos/shared/types';
 
 // ---------------------------------------------------------------------------
@@ -68,13 +75,13 @@ function StatusIcon({ status }: { status: PulseRun['status'] }) {
     case 'failed':
       return (
         <span title="Failed" aria-label="Failed">
-          <XCircle className="size-3.5 text-destructive" />
+          <XCircle className="text-destructive size-3.5" />
         </span>
       );
     case 'cancelled':
       return (
         <span title="Cancelled" aria-label="Cancelled">
-          <MinusCircle className="size-3.5 text-muted-foreground" />
+          <MinusCircle className="text-muted-foreground size-3.5" />
         </span>
       );
     default:
@@ -85,10 +92,14 @@ function StatusIcon({ status }: { status: PulseRun['status'] }) {
 /** TriggerIcon renders a Clock for scheduled runs and a Play for manual runs. */
 function TriggerIcon({ trigger }: { trigger: PulseRun['trigger'] }) {
   if (trigger === 'scheduled') {
-    return <Clock className="mr-1 inline size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />;
+    return (
+      <Clock className="text-muted-foreground/70 mr-1 inline size-3 shrink-0" aria-hidden="true" />
+    );
   }
   if (trigger === 'manual') {
-    return <Play className="mr-1 inline size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />;
+    return (
+      <Play className="text-muted-foreground/70 mr-1 inline size-3 shrink-0" aria-hidden="true" />
+    );
   }
   return null;
 }
@@ -178,15 +189,15 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
         'grid grid-cols-[20px_56px_1fr_64px_72px_20px] items-center gap-2',
         'rounded-md border border-transparent px-2 py-2 text-xs transition-colors',
         isClickable && [
-          'cursor-pointer hover:bg-muted/50 hover:border-border',
-          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-none',
+          'hover:bg-muted/50 hover:border-border cursor-pointer',
+          'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none',
         ],
         run.status === 'failed' && 'bg-destructive/5'
       )}
     >
       <StatusIcon status={run.status} />
 
-      <span className="truncate capitalize text-muted-foreground">
+      <span className="text-muted-foreground truncate capitalize">
         <TriggerIcon trigger={run.trigger} />
         {run.trigger}
       </span>
@@ -196,12 +207,12 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
           {run.startedAt ? <RunTimestamp date={run.startedAt} /> : '-'}
         </span>
         {run.outputSummary && (
-          <span className="truncate text-muted-foreground" title={run.outputSummary}>
+          <span className="text-muted-foreground truncate" title={run.outputSummary}>
             {firstLine(run.outputSummary)}
           </span>
         )}
         {run.status === 'failed' && run.error && (
-          <span className="truncate text-destructive" title={run.error}>
+          <span className="text-destructive truncate" title={run.error}>
             {firstLine(run.error)}
           </span>
         )}
@@ -219,7 +230,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
               'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium',
               'text-muted-foreground transition-colors',
               'hover:bg-accent hover:text-accent-foreground',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
               'disabled:pointer-events-none disabled:opacity-50'
             )}
           >
@@ -230,7 +241,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
 
       <span className="flex items-center justify-end">
         {isClickable && (
-          <ChevronRight className="size-3.5 text-muted-foreground/50" aria-hidden="true" />
+          <ChevronRight className="text-muted-foreground/50 size-3.5" aria-hidden="true" />
         )}
       </span>
     </div>
@@ -255,7 +266,12 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
   const [previousRuns, setPreviousRuns] = useState<PulseRun[]>([]);
 
   const status = statusFilter === 'all' ? undefined : statusFilter;
-  const { data: currentPage = [], isLoading } = useRuns({ scheduleId, status, limit: LIMIT, offset });
+  const { data: currentPage = [], isLoading } = useRuns({
+    scheduleId,
+    status,
+    limit: LIMIT,
+    offset,
+  });
   const cancelRun = useCancelRun();
   const [, setActiveSession] = useSessionId();
   const [selectedCwd, setSelectedCwd] = useDirectoryState();
@@ -263,7 +279,7 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
   // Combine previously loaded runs with current page
   const allRuns = useMemo(
     () => (offset === 0 ? currentPage : [...previousRuns, ...currentPage]),
-    [offset, currentPage, previousRuns],
+    [offset, currentPage, previousRuns]
   );
 
   const handleLoadMore = useCallback(() => {
@@ -302,7 +318,7 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
     return (
       <div className="space-y-2">
         <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
-        <p className="py-4 text-center text-xs text-muted-foreground">
+        <p className="text-muted-foreground py-4 text-center text-xs">
           {statusFilter === 'all' ? 'No runs yet' : `No ${statusFilter} runs`}
         </p>
       </div>
@@ -313,7 +329,7 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
     <div className="space-y-0.5">
       <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
       {/* Column headers — desktop only */}
-      <div className="hidden sm:grid sm:grid-cols-[20px_56px_1fr_64px_72px_20px] sm:gap-2 sm:px-2 sm:pb-1 sm:text-xs sm:font-medium sm:text-muted-foreground">
+      <div className="sm:text-muted-foreground hidden sm:grid sm:grid-cols-[20px_56px_1fr_64px_72px_20px] sm:gap-2 sm:px-2 sm:pb-1 sm:text-xs sm:font-medium">
         <span />
         <span>Trigger</span>
         <span>Started</span>
@@ -343,7 +359,7 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
           type="button"
           onClick={handleLoadMore}
           disabled={isLoading}
-          className="mt-1 w-full rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
+          className="text-muted-foreground hover:bg-muted/50 hover:text-foreground mt-1 w-full rounded-md py-1.5 text-xs transition-colors disabled:opacity-50"
         >
           {isLoading ? 'Loading...' : 'Load more'}
         </button>

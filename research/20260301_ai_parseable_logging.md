@@ -1,5 +1,5 @@
 ---
-title: "AI-Parseable Log Design: Research Findings"
+title: 'AI-Parseable Log Design: Research Findings'
 date: 2026-03-01
 type: external-best-practices
 status: active
@@ -48,15 +48,16 @@ JSON is verbose: special characters, repeated field names, and whitespace inflat
 - JSON adds ~30–40% overhead vs. plain text due to keys, quotes, brackets
 - Effective ratio for NDJSON logs: **1 token ≈ 3–3.5 characters**
 
-| File Size | Est. Characters | Est. Tokens (JSON) |
-|-----------|----------------|---------------------|
-| 100 KB | ~100,000 chars | ~28,000–33,000 tokens |
-| 200 KB | ~200,000 chars | ~57,000–67,000 tokens |
-| 500 KB | ~500,000 chars | ~143,000–167,000 tokens |
-| 1 MB | ~1,000,000 chars | ~285,000–333,000 tokens |
-| 10 MB | ~10,000,000 chars | ~2.5M–3.3M tokens |
+| File Size | Est. Characters   | Est. Tokens (JSON)      |
+| --------- | ----------------- | ----------------------- |
+| 100 KB    | ~100,000 chars    | ~28,000–33,000 tokens   |
+| 200 KB    | ~200,000 chars    | ~57,000–67,000 tokens   |
+| 500 KB    | ~500,000 chars    | ~143,000–167,000 tokens |
+| 1 MB      | ~1,000,000 chars  | ~285,000–333,000 tokens |
+| 10 MB     | ~10,000,000 chars | ~2.5M–3.3M tokens       |
 
 **Current model context windows** (as of early 2026):
+
 - Claude 3.5/Sonnet 4: 200K tokens
 - GPT-4o: 128K tokens
 - Gemini 1.5 Pro: 1M tokens (but performance degrades with "context rot" at long ranges)
@@ -76,6 +77,7 @@ Research from Epoch AI (2025) confirms that LLM performance degrades at the extr
 #### Chunk-Friendly Design Principle
 
 Each NDJSON line must be self-contained and meaningful in isolation. An AI agent analyzing a single line should be able to understand the event without reading surrounding lines. This means:
+
 - No multi-line log entries (stack traces must be a single JSON string field)
 - No log entries that reference "the previous line" or "above"
 - Complete context in every entry (session ID, request ID, component name)
@@ -86,11 +88,11 @@ Each NDJSON line must be self-contained and meaningful in isolation. An AI agent
 
 #### Strategy Comparison
 
-| Strategy | Pros | Cons |
-|----------|------|------|
-| **Size-only** | Bounded file sizes | Files can span multiple days; hard to correlate with time |
-| **Time-only (daily)** | Easy to reason about by date | High-traffic days produce huge files |
-| **Hybrid (daily + size)** | Bounded by both; best for AI consumption | Slightly more complex naming |
+| Strategy                  | Pros                                     | Cons                                                      |
+| ------------------------- | ---------------------------------------- | --------------------------------------------------------- |
+| **Size-only**             | Bounded file sizes                       | Files can span multiple days; hard to correlate with time |
+| **Time-only (daily)**     | Easy to reason about by date             | High-traffic days produce huge files                      |
+| **Hybrid (daily + size)** | Bounded by both; best for AI consumption | Slightly more complex naming                              |
 
 **Verdict**: Hybrid rotation is the modern standard. Tools like `pino-roll`, `winston-daily-rotate-file`, and logrotate all support it.
 
@@ -106,15 +108,15 @@ const transport = pino.transport({
   target: 'pino-roll',
   options: {
     file: join(process.env.DORK_HOME ?? '~/.dork', 'logs', 'app.log'),
-    frequency: 'daily',         // Rotate at midnight UTC
-    dateFormat: 'yyyy-MM-dd',   // Produces: app.2026-03-01.log
-    size: '10m',                // Also rotate when file exceeds 10 MB
-    mkdir: true,                // Auto-create log directory
-    limit: { count: 14 },       // Keep last 14 rotated files (2 weeks)
+    frequency: 'daily', // Rotate at midnight UTC
+    dateFormat: 'yyyy-MM-dd', // Produces: app.2026-03-01.log
+    size: '10m', // Also rotate when file exceeds 10 MB
+    mkdir: true, // Auto-create log directory
+    limit: { count: 14 }, // Keep last 14 rotated files (2 weeks)
     extension: '.log',
     // Optional: symlink current.log -> active file for tail-following
     symlink: true,
-  }
+  },
 });
 
 const logger = pino({ level: 'info' }, transport);
@@ -123,6 +125,7 @@ const logger = pino({ level: 'info' }, transport);
 **Resulting file pattern**: `~/.dork/logs/app.2026-03-01.log`, `app.2026-03-01.1.log` (intra-day rotation when size exceeded)
 
 **Size recommendation by log volume**:
+
 - Low traffic (developer tool, <100 req/min): `size: '10m'`, `limit.count: 14`
 - Medium traffic: `size: '50m'`, `limit.count: 7`
 - High traffic: `size: '100m'`, `limit.count: 3`, add compression
@@ -140,8 +143,8 @@ const transport = new winston.transports.DailyRotateFile({
   datePattern: 'YYYY-MM-DD',
   dirname: '~/.dork/logs',
   maxSize: '10m',
-  maxFiles: '14d',           // Keep 14 days (string with 'd' suffix)
-  compress: true,            // gzip archives
+  maxFiles: '14d', // Keep 14 days (string with 'd' suffix)
+  compress: true, // gzip archives
   zippedArchive: true,
 });
 ```
@@ -188,6 +191,7 @@ Every log line should include these fields in this order (order aids human scann
 ```
 
 **Field naming conventions** (OpenTelemetry Semantic Conventions baseline):
+
 - `time` — ISO 8601 with milliseconds and `Z` suffix (not `timestamp`, not `ts`, not Unix epoch integers)
 - `level` — lowercase string: `trace`, `debug`, `info`, `warn`, `error`, `fatal`
 - `msg` — human-readable message (Pino uses `msg`; Winston uses `message`; pick one and be consistent)
@@ -198,6 +202,7 @@ Every log line should include these fields in this order (order aids human scann
 - `err` — for errors, use structured error object: `{ "type": "Error", "message": "...", "stack": "..." }`
 
 **Error log example**:
+
 ```json
 {
   "time": "2026-03-01T14:23:45.123Z",
@@ -277,6 +282,7 @@ The universally correct format for log filenames that sort chronologically with 
 ```
 
 **Examples**:
+
 ```
 dorkos.2026-03-01.log
 dorkos.2026-03-01.1.log
@@ -285,6 +291,7 @@ dorkos.2026-03-02.log
 ```
 
 **Why this works**:
+
 - ISO 8601 dates are lexicographically ordered (year → month → day, most-significant first)
 - `ls -l` sorts them chronologically without any special flags
 - Easily parsed by regex: `\d{4}-\d{2}-\d{2}`
@@ -310,6 +317,7 @@ dorkos-error.{YYYY-MM-DD}.log
 ```
 
 Keeping error logs separate means:
+
 - An AI agent can load only the error file for diagnosis (much smaller context)
 - Error logs can have longer retention (30 days vs. 7 for debug logs)
 - Monitoring tools can watch a single small file for alerting
@@ -331,23 +339,25 @@ app.log.2026-03-01     # Extension after date; inconsistent
 
 #### By Log Level and Type
 
-| Log Type | Recommended Retention | Rationale |
-|----------|----------------------|-----------|
-| **Trace/Debug** | 3–7 days | High volume; rarely needed after initial debugging |
-| **Info** | 7–14 days | Standard operational visibility window |
-| **Error** | 30 days | Post-incident investigation window |
-| **Fatal/Audit** | 90 days | Compliance; rare events need longer history |
+| Log Type        | Recommended Retention | Rationale                                          |
+| --------------- | --------------------- | -------------------------------------------------- |
+| **Trace/Debug** | 3–7 days              | High volume; rarely needed after initial debugging |
+| **Info**        | 7–14 days             | Standard operational visibility window             |
+| **Error**       | 30 days               | Post-incident investigation window                 |
+| **Fatal/Audit** | 90 days               | Compliance; rare events need longer history        |
 
 **For DorkOS (developer tool, local deployment)**: 7-day retention with `limit.count: 14` (2 weeks of daily files) provides good coverage without disk bloat.
 
 #### Storage Budgeting
 
 At 10 MB/day cap with 14-day retention:
+
 - Maximum uncompressed storage: 140 MB
 - With gzip compression (~70% reduction): ~42 MB
 - Highly reasonable for a local developer tool
 
 At 50 MB/day cap with 7-day retention:
+
 - Maximum uncompressed: 350 MB
 - With compression: ~105 MB
 
@@ -385,6 +395,7 @@ async function pruneOldLogs(logDir: string, maxAgeDays: number) {
 Given DorkOS is a local developer tool with the Server at `~/.dork/`, here are the concrete recommendations:
 
 ### Log Directory Structure
+
 ```
 ~/.dork/
 └── logs/
@@ -396,40 +407,44 @@ Given DorkOS is a local developer tool with the Server at `~/.dork/`, here are t
 ```
 
 ### Pino Configuration
+
 ```javascript
 const pinoRollOptions = {
   file: join(dorkHome, 'logs', 'dorkos.log'),
   frequency: 'daily',
   dateFormat: 'yyyy-MM-dd',
-  size: '10m',            // Rotate if file exceeds 10 MB mid-day
+  size: '10m', // Rotate if file exceeds 10 MB mid-day
   mkdir: true,
-  symlink: true,          // current.log -> active file (easy to tail)
-  limit: { count: 14 },  // Keep 14 rotated files (~2 weeks)
+  symlink: true, // current.log -> active file (easy to tail)
+  limit: { count: 14 }, // Keep 14 rotated files (~2 weeks)
 };
 ```
 
 ### NDJSON Field Schema
+
 ```typescript
 interface LogEntry {
-  time: string;           // ISO 8601: "2026-03-01T14:23:45.123Z"
-  level: string;          // "trace" | "debug" | "info" | "warn" | "error" | "fatal"
-  msg: string;            // Human-readable message
-  component: string;      // "agent-manager" | "transcript-reader" | etc.
+  time: string; // ISO 8601: "2026-03-01T14:23:45.123Z"
+  level: string; // "trace" | "debug" | "info" | "warn" | "error" | "fatal"
+  msg: string; // Human-readable message
+  component: string; // "agent-manager" | "transcript-reader" | etc.
   correlationId?: string; // Request-scoped trace ID
-  sessionId?: string;     // Claude session UUID
-  durationMs?: number;    // Duration with units in name
-  err?: {                 // Structured error (not string)
+  sessionId?: string; // Claude session UUID
+  durationMs?: number; // Duration with units in name
+  err?: {
+    // Structured error (not string)
     type: string;
     message: string;
     stack?: string;
     code?: number;
   };
-  pid: number;            // Added by pino automatically
-  hostname: string;       // Added by pino automatically
+  pid: number; // Added by pino automatically
+  hostname: string; // Added by pino automatically
 }
 ```
 
 ### Retention Policy
+
 - Info logs: 14 days (`limit.count: 14` in pino-roll)
 - Error logs (separate stream): 30 days
 - No cold-tier needed for a local developer tool

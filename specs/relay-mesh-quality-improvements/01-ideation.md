@@ -59,22 +59,23 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role |
-|------|------|
-| `features/relay/ui/AdapterCard.tsx` | Configured adapter instance card (item 2: error truncation) |
-| `features/relay/ui/CatalogCard.tsx` | Available adapter type card (item 1: CATEGORY_COLORS) |
-| `features/relay/ui/RelayPanel.tsx` | Main relay panel with tabs (item 3: new Bindings tab) |
-| `features/relay/lib/status-colors.ts` | Pattern template for color constant extraction (item 1) |
-| `entities/binding/model/*.ts` | Existing binding hooks — useBindings, useCreateBinding, useDeleteBinding (item 3) |
-| `features/mesh/ui/BindingDialog.tsx` | Binding creation dialog — reusable for edit mode (item 3) |
-| `packages/relay/src/relay-core.ts` | Relay orchestrator to split (item 4) |
-| `packages/relay/src/adapters/telegram-adapter.ts` | Telegram adapter to split (item 4) |
-| `packages/relay/src/adapters/claude-code-adapter.ts` | Claude Code adapter to split (item 4) |
-| `packages/mesh/src/mesh-core.ts` | Mesh orchestrator to split (item 4) |
-| `packages/shared/src/relay-schemas.ts` | Schema file to split (item 4) |
-| `apps/server/src/services/relay/trace-store.ts` | Trace system to extend (item 6) |
+| File                                                 | Role                                                                              |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `features/relay/ui/AdapterCard.tsx`                  | Configured adapter instance card (item 2: error truncation)                       |
+| `features/relay/ui/CatalogCard.tsx`                  | Available adapter type card (item 1: CATEGORY_COLORS)                             |
+| `features/relay/ui/RelayPanel.tsx`                   | Main relay panel with tabs (item 3: new Bindings tab)                             |
+| `features/relay/lib/status-colors.ts`                | Pattern template for color constant extraction (item 1)                           |
+| `entities/binding/model/*.ts`                        | Existing binding hooks — useBindings, useCreateBinding, useDeleteBinding (item 3) |
+| `features/mesh/ui/BindingDialog.tsx`                 | Binding creation dialog — reusable for edit mode (item 3)                         |
+| `packages/relay/src/relay-core.ts`                   | Relay orchestrator to split (item 4)                                              |
+| `packages/relay/src/adapters/telegram-adapter.ts`    | Telegram adapter to split (item 4)                                                |
+| `packages/relay/src/adapters/claude-code-adapter.ts` | Claude Code adapter to split (item 4)                                             |
+| `packages/mesh/src/mesh-core.ts`                     | Mesh orchestrator to split (item 4)                                               |
+| `packages/shared/src/relay-schemas.ts`               | Schema file to split (item 4)                                                     |
+| `apps/server/src/services/relay/trace-store.ts`      | Trace system to extend (item 6)                                                   |
 
 **Shared dependencies:**
+
 - `@/layers/shared/ui` — Badge, Button, Switch, DropdownMenu, AlertDialog, Tooltip, Collapsible, Select, Tabs
 - `@/layers/shared/lib` — `cn()` utility
 - `@dorkos/shared/relay-schemas` — Zod schemas and TypeScript types
@@ -82,6 +83,7 @@ status: ideation
 - `motion/react` — animations
 
 **Data flow:**
+
 - Adapter status: Backend adapter → AdapterStatus → GET /api/relay/adapters/catalog → useAdapterCatalog() → AdapterCard
 - Bindings: Backend binding store → GET /api/relay/bindings → useBindings() → topology graph / (new) BindingList
 - Traces: Backend trace store → GET /api/relay/trace/metrics → useDeliveryMetrics() → RelayHealthBar
@@ -90,6 +92,7 @@ status: ideation
 **Feature flags/config:** None affected.
 
 **Potential blast radius:**
+
 - Item 1 (CATEGORY_COLORS): 2 files — AdapterCard, CatalogCard
 - Item 2 (Error UX): 1 file — AdapterCard
 - Item 3 (Binding list): 3 new files + 1 modified (RelayPanel). Reuses existing hooks.
@@ -181,9 +184,9 @@ All 5 improvements use proven patterns already in the codebase. The facade patte
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Error display pattern | Collapsible expand | WCAG compliant (keyboard accessible via Radix aria management). HoverCard explicitly documented as "inaccessible to keyboard users." Follows existing DeadLetterSection expand pattern in codebase. |
-| 2 | Binding list placement | New 'Bindings' tab in RelayPanel | Gives bindings first-class visibility alongside Activity, Endpoints, Adapters. Tab pattern is established. Keeps Adapters tab focused on adapter lifecycle. |
-| 3 | Backend split scope | Split all 5 files | All exceed the 500-line "must split" threshold. Facade pattern keeps public API stable. Comprehensive but each file splits independently. |
-| 4 | Event log data source | Extend existing trace system | Zero new infrastructure — reuses TraceStore, relay_traces table, and SSE stream. Adapter events are just new trace event types with an adapter-filtered query endpoint. |
+| #   | Decision               | Choice                           | Rationale                                                                                                                                                                                           |
+| --- | ---------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Error display pattern  | Collapsible expand               | WCAG compliant (keyboard accessible via Radix aria management). HoverCard explicitly documented as "inaccessible to keyboard users." Follows existing DeadLetterSection expand pattern in codebase. |
+| 2   | Binding list placement | New 'Bindings' tab in RelayPanel | Gives bindings first-class visibility alongside Activity, Endpoints, Adapters. Tab pattern is established. Keeps Adapters tab focused on adapter lifecycle.                                         |
+| 3   | Backend split scope    | Split all 5 files                | All exceed the 500-line "must split" threshold. Facade pattern keeps public API stable. Comprehensive but each file splits independently.                                                           |
+| 4   | Event log data source  | Extend existing trace system     | Zero new infrastructure — reuses TraceStore, relay_traces table, and SSE stream. Adapter events are just new trace event types with an adapter-filtered query endpoint.                             |

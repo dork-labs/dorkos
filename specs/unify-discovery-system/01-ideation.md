@@ -58,17 +58,17 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|---|---|
-| `apps/server/src/services/discovery/discovery-scanner.ts` | Scanner A — standalone BFS (to be replaced) |
-| `packages/mesh/src/discovery-engine.ts` | Scanner B — strategy-based BFS (to be replaced) |
-| `apps/server/src/routes/discovery.ts` | SSE discovery endpoint (to be updated) |
-| `apps/server/src/routes/mesh.ts` | Mesh routes incl. batch discover (discover route to be removed) |
-| `apps/client/src/layers/features/onboarding/model/use-discovery-scan.ts` | Onboarding SSE hook (to be replaced) |
-| `apps/client/src/layers/entities/mesh/model/use-mesh-discover.ts` | Mesh batch discover hook (to be replaced) |
-| `apps/client/src/layers/features/onboarding/ui/AgentDiscoveryStep.tsx` | Onboarding UI (to be updated) |
-| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx` | Mesh discovery UI (to be updated) |
-| `packages/shared/src/transport.ts` | Transport interface (add scan method) |
+| File                                                                     | Role                                                            |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `apps/server/src/services/discovery/discovery-scanner.ts`                | Scanner A — standalone BFS (to be replaced)                     |
+| `packages/mesh/src/discovery-engine.ts`                                  | Scanner B — strategy-based BFS (to be replaced)                 |
+| `apps/server/src/routes/discovery.ts`                                    | SSE discovery endpoint (to be updated)                          |
+| `apps/server/src/routes/mesh.ts`                                         | Mesh routes incl. batch discover (discover route to be removed) |
+| `apps/client/src/layers/features/onboarding/model/use-discovery-scan.ts` | Onboarding SSE hook (to be replaced)                            |
+| `apps/client/src/layers/entities/mesh/model/use-mesh-discover.ts`        | Mesh batch discover hook (to be replaced)                       |
+| `apps/client/src/layers/features/onboarding/ui/AgentDiscoveryStep.tsx`   | Onboarding UI (to be updated)                                   |
+| `apps/client/src/layers/features/mesh/ui/DiscoveryView.tsx`              | Mesh discovery UI (to be updated)                               |
+| `packages/shared/src/transport.ts`                                       | Transport interface (add scan method)                           |
 
 **Shared Dependencies:**
 
@@ -140,17 +140,20 @@ Research saved to `research/20260306_filesystem_discovery_unification.md`.
 **Potential Solutions:**
 
 **1. New unified scanner (chosen)**
+
 - Combine Scanner B's strategy pattern + registered/denied filtering with Scanner A's broader exclude patterns
 - Single async generator in `packages/mesh/` (or a new shared location)
 - Pros: Clean design, best of both, single source of truth
 - Cons: More work than just fixing the root default
 
 **2. Keep Scanner B, delete Scanner A**
+
 - Wrap `discovery-engine.ts` in SSE for the discovery route
 - Pros: Less code to write, strategy pattern already exists
 - Cons: Different exclude patterns would be lost
 
 **3. Minimal fix — just pass correct root**
+
 - Change `DEFAULT_CWD` to boundary in `routes/discovery.ts`
 - Pros: 1-line fix, ships in minutes
 - Cons: Doesn't address any DRY violations, transport bypass, or state sharing
@@ -159,9 +162,9 @@ Research saved to `research/20260306_filesystem_discovery_unification.md`.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Which scanner to keep | New unified scanner | Combines best of both: Scanner B's strategy pattern + Scanner A's comprehensive exclude list. Clean slate avoids inheriting either's quirks. |
-| 2 | Default scan root for onboarding | Boundary (home dir) | Simple, guaranteed to find everything. Smart directory probing can be added later as an optimization. Boundary already defaults to `os.homedir()`. |
-| 3 | Transport abstraction | Add `scan()` to Transport interface | Async generator method on Transport. HttpTransport wraps SSE, DirectTransport calls scanner directly. Enables Obsidian plugin support. Consistent with hexagonal architecture. |
-| 4 | State management | Shared Zustand store | Onboarding scan results persist — mesh panel shows them immediately without re-scanning. Store lives in `entities/discovery/` or `shared/model/`. |
+| #   | Decision                         | Choice                              | Rationale                                                                                                                                                                      |
+| --- | -------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Which scanner to keep            | New unified scanner                 | Combines best of both: Scanner B's strategy pattern + Scanner A's comprehensive exclude list. Clean slate avoids inheriting either's quirks.                                   |
+| 2   | Default scan root for onboarding | Boundary (home dir)                 | Simple, guaranteed to find everything. Smart directory probing can be added later as an optimization. Boundary already defaults to `os.homedir()`.                             |
+| 3   | Transport abstraction            | Add `scan()` to Transport interface | Async generator method on Transport. HttpTransport wraps SSE, DirectTransport calls scanner directly. Enables Obsidian plugin support. Consistent with hexagonal architecture. |
+| 4   | State management                 | Shared Zustand store                | Onboarding scan results persist — mesh panel shows them immediately without re-scanning. Store lives in `entities/discovery/` or `shared/model/`.                              |

@@ -1,5 +1,5 @@
 ---
-title: "Agent Client Protocol (ACP) Analysis for DorkOS"
+title: 'Agent Client Protocol (ACP) Analysis for DorkOS'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -72,6 +72,7 @@ DorkOS uses a **tightly-coupled, SDK-first integration** with Claude Code via th
 **SDK Entry Point:** A single import in `agent-manager.ts` provides `query`, `Options`, and `SDKMessage` from `@anthropic-ai/claude-code`. Every agent interaction flows through the `AgentManager.sendMessage()` async generator.
 
 **Session Lifecycle:**
+
 1. `POST /api/sessions` creates an in-memory session (no SDK call yet)
 2. First `POST /api/sessions/:id/messages` triggers `query()` with `systemPrompt: { type: 'preset', preset: 'claude_code', append: runtimeContext }`
 3. Subsequent messages use `resume: sdkSessionId` for continuity
@@ -81,15 +82,15 @@ DorkOS uses a **tightly-coupled, SDK-first integration** with Claude Code via th
 
 **Event Mapping:** `sdk-event-mapper.ts` is a pure async generator that transforms SDK message types into DorkOS `StreamEvent` types:
 
-| SDK Message | DorkOS StreamEvent |
-|---|---|
-| `system/init` | `session_status` |
-| `content_block_start` (tool_use) | `tool_call_start` |
-| `content_block_delta` (text) | `text_delta` |
-| `content_block_delta` (json) | `tool_call_delta` |
-| `content_block_stop` | `tool_call_end` + optional `task_update` |
-| `tool_use_summary` | `tool_result` |
-| `result` | `session_status` + `done` |
+| SDK Message                      | DorkOS StreamEvent                       |
+| -------------------------------- | ---------------------------------------- |
+| `system/init`                    | `session_status`                         |
+| `content_block_start` (tool_use) | `tool_call_start`                        |
+| `content_block_delta` (text)     | `text_delta`                             |
+| `content_block_delta` (json)     | `tool_call_delta`                        |
+| `content_block_stop`             | `tool_call_end` + optional `task_update` |
+| `tool_use_summary`               | `tool_result`                            |
+| `result`                         | `session_status` + `done`                |
 
 **Tool Approval:** The SDK's `canUseTool(toolName, input, context)` callback is intercepted by `interactive-handlers.ts`. For `AskUserQuestion` tools it pushes a `question_prompt` event; for other tools in `default` permission mode it pushes `approval_required`. Both create pending promises that resolve when the client calls `POST /approve` or `POST /submit-answers`.
 
@@ -121,38 +122,38 @@ DorkOS uses a **tightly-coupled, SDK-first integration** with Claude Code via th
 
 ### What's Built (Engine + Console)
 
-| Litepaper Promise | Current Status | Notes |
-|---|---|---|
-| REST + SSE API with OpenAPI docs | **Implemented** | 9 route groups, Scalar docs UI, auto-generated from Zod |
-| JSONL transcripts as source of truth | **Implemented** | TranscriptReader reads SDK files directly |
-| Pluggable agent adapters | **Partially** | Architecture supports it (Transport interface, adapter pattern), but only Claude Code adapter exists. No `AgentAdapter` abstraction layer on the server. |
-| Optional tunnel for remote access | **Implemented** | ngrok integration with auth |
-| Directory boundary enforcement | **Implemented** | BoundaryError with symlink resolution |
-| MCP tool server | **Implemented** | In-process SDK MCP server with DorkOS tools |
-| Browser-based command center | **Implemented** | React 19 SPA with chat, approvals, session management |
-| Tool approval flows | **Implemented** | Full approve/deny/question lifecycle |
-| Session sync across clients | **Implemented** | chokidar file watching + SSE broadcast |
-| Slash command palette | **Implemented** | Scans .claude/commands/, fuzzy search |
+| Litepaper Promise                    | Current Status  | Notes                                                                                                                                                    |
+| ------------------------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| REST + SSE API with OpenAPI docs     | **Implemented** | 9 route groups, Scalar docs UI, auto-generated from Zod                                                                                                  |
+| JSONL transcripts as source of truth | **Implemented** | TranscriptReader reads SDK files directly                                                                                                                |
+| Pluggable agent adapters             | **Partially**   | Architecture supports it (Transport interface, adapter pattern), but only Claude Code adapter exists. No `AgentAdapter` abstraction layer on the server. |
+| Optional tunnel for remote access    | **Implemented** | ngrok integration with auth                                                                                                                              |
+| Directory boundary enforcement       | **Implemented** | BoundaryError with symlink resolution                                                                                                                    |
+| MCP tool server                      | **Implemented** | In-process SDK MCP server with DorkOS tools                                                                                                              |
+| Browser-based command center         | **Implemented** | React 19 SPA with chat, approvals, session management                                                                                                    |
+| Tool approval flows                  | **Implemented** | Full approve/deny/question lifecycle                                                                                                                     |
+| Session sync across clients          | **Implemented** | chokidar file watching + SSE broadcast                                                                                                                   |
+| Slash command palette                | **Implemented** | Scans .claude/commands/, fuzzy search                                                                                                                    |
 
 ### What's Coming (Pulse — "Coming Soon")
 
-| Litepaper Promise | Current Status | Notes |
-|---|---|---|
-| Cron-based scheduling | **Implemented** | croner with overrun protection |
+| Litepaper Promise               | Current Status  | Notes                                    |
+| ------------------------------- | --------------- | ---------------------------------------- |
+| Cron-based scheduling           | **Implemented** | croner with overrun protection           |
 | Isolated agent sessions per run | **Implemented** | Each run gets its own session ID + JSONL |
-| Run history and retention | **Implemented** | SQLite (better-sqlite3) with WAL mode |
-| Configurable concurrency | **Implemented** | maxConcurrentRuns cap |
-| API for CRUD and triggering | **Implemented** | Full REST API + UI |
+| Run history and retention       | **Implemented** | SQLite (better-sqlite3) with WAL mode    |
+| Configurable concurrency        | **Implemented** | maxConcurrentRuns cap                    |
+| API for CRUD and triggering     | **Implemented** | Full REST API + UI                       |
 
 Pulse is further along than the litepaper suggests — it's functional, not just "coming soon."
 
 ### What's Not Built (Relay, Mesh, Wing)
 
-| Module | Litepaper Promise | Current Reality |
-|---|---|---|
+| Module    | Litepaper Promise                                                                                                    | Current Reality                                                                                               |
+| --------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Relay** | Universal message bus with Maildir+SQLite, NATS-style subjects, budget envelopes, dead letter queue, plugin adapters | **Not started.** Specs exist (`specs/relay-core-library/`), ADRs written (0010-0013), research done. No code. |
-| **Mesh** | Agent discovery via `.dork/agent.json` manifests, network topology, namespace isolation, access control | **Not started.** Litepaper written. No specs or code. |
-| **Wing** | Persistent memory, life coordination, proactive context | **Not started.** Litepaper written. No specs or code. |
+| **Mesh**  | Agent discovery via `.dork/agent.json` manifests, network topology, namespace isolation, access control              | **Not started.** Litepaper written. No specs or code.                                                         |
+| **Wing**  | Persistent memory, life coordination, proactive context                                                              | **Not started.** Litepaper written. No specs or code.                                                         |
 
 ### The "Agent-Agnostic" Gap
 
@@ -214,6 +215,7 @@ Client (Editor/IDE)          Agent (Coding Agent)
 ### Key Protocol Elements
 
 **Methods (Agent-side, client → agent):**
+
 - `initialize` — Negotiate capabilities, protocol version
 - `authenticate` — Optional authentication
 - `session/new` — Create a new session (cwd, MCP servers, config)
@@ -223,6 +225,7 @@ Client (Editor/IDE)          Agent (Coding Agent)
 - `session/set_mode` — Switch operating mode
 
 **Methods (Client-side, agent → client):**
+
 - `session/request_permission` — Ask user to approve tool call
 - `fs/read_text_file` — Read file contents (capability-gated)
 - `fs/write_text_file` — Write file contents (capability-gated)
@@ -233,6 +236,7 @@ Client (Editor/IDE)          Agent (Coding Agent)
 - `terminal/release` — Release terminal resources
 
 **Notifications (Agent → Client):**
+
 - `session/update` — Streams progress: message chunks, tool calls with live status, plan entries, command updates, mode changes
 
 **Content Block Types:** text, image, audio, resource, resource_link — reuses MCP types where possible.
@@ -252,6 +256,7 @@ Client (Editor/IDE)          Agent (Coding Agent)
 ### ACP vs. MCP Relationship
 
 ACP and MCP are **complementary**, not competing:
+
 - **MCP** handles the "what" — what tools and data can agents access (vertical: agent ↔ tools/databases/APIs)
 - **ACP** handles the "where" — how agents and editors/clients communicate (horizontal: client ↔ agent)
 
@@ -260,6 +265,7 @@ ACP reuses MCP's JSON representations for content blocks where possible.
 ### Claude Code + ACP Status
 
 GitHub issue [#6686](https://github.com/anthropics/claude-code/issues/6686) requested native ACP support in Claude Code. It was **closed as "not planned"** by Anthropic, despite 440 thumbs up and significant community interest. Community workarounds exist:
+
 - `@zed-industries/claude-code-acp` — npm package published by Zed
 - Third-party implementations for Neovim and other editors
 - Known stability issues (crashes, "prompt too long" errors, path resolution bugs)
@@ -273,6 +279,7 @@ The implication: Anthropic does not plan to make Claude Code a native ACP server
 ### Analysis Framework
 
 I'll evaluate ACP through three lenses:
+
 1. **As a replacement** for the current Claude Agent SDK integration
 2. **As an addition** alongside the SDK integration
 3. **As the agent-agnostic abstraction layer** the litepaper promises
@@ -282,6 +289,7 @@ I'll evaluate ACP through three lenses:
 ACP cannot replace the Claude Agent SDK for DorkOS's current use case. Here's why:
 
 **ACP is designed for editors, not orchestrators.** The protocol assumes a human is sitting in an editor, invoking an agent for a specific task. DorkOS is an orchestration layer that schedules unattended agent runs (Pulse), manages sessions across multiple clients, and exposes programmatic APIs. ACP's stdio subprocess model doesn't support:
+
 - Multiple concurrent sessions dispatched by a scheduler
 - Persistent session state across server restarts
 - Session sharing across multiple connected clients
@@ -289,12 +297,14 @@ ACP cannot replace the Claude Agent SDK for DorkOS's current use case. Here's wh
 - MCP tool injection (DorkOS exposes its own tools to the agent)
 
 **ACP's transport is wrong for DorkOS.** ACP uses stdio (subprocess per agent), while DorkOS needs:
+
 - A persistent server process managing many agent sessions
 - SSE streaming to multiple browser clients simultaneously
 - Session locking for concurrent client access
 - File-watching for cross-client sync
 
 **The current SDK integration is deeper than ACP allows.** DorkOS uses:
+
 - `systemPrompt: { type: 'preset', preset: 'claude_code', append }` — ACP has no equivalent for injecting runtime context into a preset system prompt
 - `canUseTool` callback with programmable approval logic — ACP's `session/request_permission` is simpler (binary approve/deny, no input modification)
 - `includePartialMessages: true` for streaming content block deltas — ACP's streaming is at the `session/update` notification level
@@ -308,6 +318,7 @@ ACP cannot replace the Claude Agent SDK for DorkOS's current use case. Here's wh
 DorkOS could expose an ACP server interface, making itself appear as an "agent" to ACP-compatible editors. This would let Zed, JetBrains, Neovim, etc. connect to DorkOS instead of directly to Claude Code.
 
 **What this would look like:**
+
 ```
 Zed Editor ──ACP (stdio)──► DorkOS Engine ──SDK──► Claude Code
 ```
@@ -315,12 +326,14 @@ Zed Editor ──ACP (stdio)──► DorkOS Engine ──SDK──► Claude Co
 The user opens Zed, configures DorkOS as their ACP agent, and gets the DorkOS experience (Pulse scheduling, Relay messaging, session history, MCP tools) through their editor.
 
 **Pros:**
+
 - DorkOS becomes discoverable in the ACP agent registry (25+ agents, 40+ clients)
 - Users who prefer Zed/JetBrains/Neovim get DorkOS capabilities without the browser Console
 - Aligns with the litepaper's "developer-first" principle
 - Doesn't require changing the current architecture — just adds a new entry point
 
 **Cons:**
+
 - ACP's current transport is stdio only — DorkOS is a persistent server, not a subprocess
 - The most valuable DorkOS features (Pulse, Relay, session management) don't map to ACP's editor-focused protocol
 - ACP assumes the agent has direct file system access; DorkOS mediates all file access through boundaries
@@ -343,12 +356,14 @@ DorkOS Engine ──────┤─ ACP ─► Codex CLI (via codex-acp)
 ```
 
 **What works:**
+
 - ACP standardizes the core loop: create session → send prompt → stream updates → handle tool approvals → get result
 - ACP's capabilities system handles per-agent feature detection (does this agent support session resumption? file system access?)
 - Many agents already have ACP support (Gemini CLI, goose, Cline) or community bridges (Claude Code, Codex)
 - ACP handles the "how to talk to an agent" problem generically
 
 **What doesn't work:**
+
 - **Loss of Claude Code-specific features:** DorkOS's deep SDK integration (preset system prompts, `canUseTool` with input modification, in-process MCP servers, JSONL transcript access) would be lost. ACP is a lowest-common-denominator interface.
 - **ACP's file/terminal model inverts DorkOS's architecture:** In ACP, the agent calls the client for file access (`fs/read_text_file`) and terminal access (`terminal/create`). In DorkOS, the agent has direct file system access (it runs on the same machine). DorkOS would need to implement ACP's client-side methods even though the agent doesn't need mediated access.
 - **Stdio subprocess model vs. persistent sessions:** DorkOS needs session persistence across server restarts. ACP agents are subprocesses that die when the connection closes. Session resumption requires explicit `session/load` and agent support.
@@ -369,6 +384,7 @@ DorkOS Engine
 ```
 
 In this model:
+
 - Claude Code keeps its native SDK adapter (best experience, full feature set)
 - Other agents get ACP support via a generic `AcpAdapter` (reduced feature set, but functional)
 - The `AgentAdapter` interface is DorkOS-defined, with ACP as one implementation strategy
@@ -381,16 +397,16 @@ ACP's core value proposition is **editor portability** — any editor can use an
 
 These are complementary but orthogonal concerns:
 
-| Concern | ACP Solves? | DorkOS Needs? |
-|---|---|---|
-| Editor ↔ agent communication | Yes | No (DorkOS has its own Console) |
-| Agent-agnostic interface | Partially | Yes (litepaper promise) |
-| Session management at scale | No | Yes (Pulse, multi-client) |
-| Inter-agent communication | No | Yes (Relay) |
-| Agent discovery & topology | No | Yes (Mesh) |
-| Unattended autonomous execution | No | Yes (Pulse + Loop) |
-| Tool injection / MCP extension | Partially | Yes (MCP tool server) |
-| Budget & safety enforcement | No | Yes (Relay budget envelopes) |
+| Concern                         | ACP Solves? | DorkOS Needs?                   |
+| ------------------------------- | ----------- | ------------------------------- |
+| Editor ↔ agent communication    | Yes         | No (DorkOS has its own Console) |
+| Agent-agnostic interface        | Partially   | Yes (litepaper promise)         |
+| Session management at scale     | No          | Yes (Pulse, multi-client)       |
+| Inter-agent communication       | No          | Yes (Relay)                     |
+| Agent discovery & topology      | No          | Yes (Mesh)                      |
+| Unattended autonomous execution | No          | Yes (Pulse + Loop)              |
+| Tool injection / MCP extension  | Partially   | Yes (MCP tool server)           |
+| Budget & safety enforcement     | No          | Yes (Relay budget envelopes)    |
 
 ACP and DorkOS overlap only on "agent-agnostic interface" — and even there, ACP's interface is optimized for interactive editor use, while DorkOS needs programmatic orchestration.
 
@@ -401,6 +417,7 @@ ACP and DorkOS overlap only on "agent-agnostic interface" — and even there, AC
 ### Do Not Adopt ACP as a Core Protocol
 
 ACP solves editor-agent interoperability. DorkOS is not an editor — it's an orchestration layer. Adopting ACP as the core agent interface would:
+
 - Force DorkOS into a lowest-common-denominator integration with Claude Code (losing deep SDK features)
 - Add complexity for a protocol designed around editor UX patterns (file mediation, terminal abstraction) that DorkOS doesn't need
 - Not address DorkOS's actual needs (scheduling, messaging, agent discovery)
@@ -416,11 +433,15 @@ interface AgentAdapter {
   resumeSession(sessionId: string): Promise<boolean>;
 
   // Message exchange (async generator for streaming)
-  sendMessage(sessionId: string, content: string, opts?: {
-    permissionMode?: PermissionMode;
-    systemPromptAppend?: string;
-    mcpServers?: Record<string, unknown>;
-  }): AsyncGenerator<StreamEvent>;
+  sendMessage(
+    sessionId: string,
+    content: string,
+    opts?: {
+      permissionMode?: PermissionMode;
+      systemPromptAppend?: string;
+      mcpServers?: Record<string, unknown>;
+    }
+  ): AsyncGenerator<StreamEvent>;
 
   // Tool approval (programmable)
   setToolApprovalHandler(handler: ToolApprovalHandler): void;
@@ -434,6 +455,7 @@ interface AgentAdapter {
 ```
 
 This interface would have multiple implementations:
+
 - `ClaudeCodeSdkAdapter` — current deep integration, first-class experience
 - `AcpClientAdapter` — wraps any ACP agent via subprocess, generic but functional
 - Future: `OpenCodeAdapter`, `CodexAdapter`, etc. (either native or via ACP)
@@ -494,5 +516,6 @@ Relay is higher priority than ACP because Relay enables agent-to-agent communica
 ### Disambiguation
 
 **Note:** There are two protocols with "ACP" in the name:
+
 1. **Agent Client Protocol** (agentclientprotocol.com) — By Anthropic/Zed/JetBrains, for editor-to-agent communication. **This is the protocol analyzed in this document.**
 2. **Agent Communication Protocol** (Linux Foundation/IBM) — For agent-to-agent communication over HTTP REST. This is a different protocol with different goals, more analogous to what Relay aims to be.

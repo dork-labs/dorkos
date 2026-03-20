@@ -16,6 +16,7 @@ status: draft
 Copy the existing Next.js 16 codebase from `/Users/doriancollier/Keep/144/144x.co` into `apps/web/`. Then strip the following features and their associated files:
 
 **Remove these features/files:**
+
 - **BetterAuth:** `src/layers/features/auth/`, `api/auth/`, `src/layers/shared/api/auth.ts`
 - **Prisma/DB:** `prisma/`, `src/layers/shared/api/errors.ts` (if DB-specific)
 - **User entity:** `src/layers/entities/user/`
@@ -31,6 +32,7 @@ Copy the existing Next.js 16 codebase from `/Users/doriancollier/Keep/144/144x.c
 - **pnpm files:** `pnpm-lock.yaml`, `pnpm-workspace.yaml`
 
 **Keep these features:**
+
 - PostHog analytics (client init, reverse proxy, server-side client)
 - Contact section (terminal-style email reveal)
 - Motion animations
@@ -41,6 +43,7 @@ Copy the existing Next.js 16 codebase from `/Users/doriancollier/Keep/144/144x.c
 - Marketing route group `(marketing)` with Hero, ProjectsGrid, PhilosophyCards, ContactSection
 
 **Remove these npm dependencies from package.json:**
+
 - `better-auth`, `@prisma/adapter-better-sqlite3`
 - `prisma`, `@prisma/client`, `better-sqlite3`
 - `@modelcontextprotocol/sdk`, `mcp-handler`
@@ -126,6 +129,7 @@ Merge these with existing turbo.json config (do not overwrite existing outputs o
 **Dependencies:** Task 1.1, Task 1.2
 
 Install Fumadocs packages in `apps/web`:
+
 - `fumadocs-mdx`
 - `fumadocs-core`
 - `fumadocs-ui`
@@ -136,7 +140,7 @@ Create `apps/web/source.config.ts`:
 import { defineDocs, defineConfig } from 'fumadocs-mdx/config';
 
 export const docs = defineDocs({
-  dir: '../../docs',  // Points to repo root docs/ directory
+  dir: '../../docs', // Points to repo root docs/ directory
 });
 
 export default defineConfig();
@@ -236,6 +240,7 @@ Create `apps/web/components/mdx-components.tsx` for MDX component overrides (exp
 **Dependencies:** Task 2.2
 
 Install packages in `apps/web`:
+
 - `fumadocs-openapi`
 - `shiki`
 
@@ -337,11 +342,13 @@ export const siteConfig = {
 ```
 
 Update `apps/web/app/layout.tsx` metadata:
+
 - Change title from "Dorkian" to "DorkOS"
 - Change description from "Independent studio..." to "A web UI for Claude Code"
 - Update openGraph metadata to use siteConfig values
 
 Update `apps/web/app/(marketing)/layout.tsx`:
+
 - Change JSON-LD schema from `Organization` (Dorkian) to `SoftwareApplication` (DorkOS)
 - Reference siteConfig for all string values
 
@@ -357,17 +364,21 @@ Update all components that hardcode site name, description, or URLs to use `site
 **Dependencies:** Task 4.1
 
 Update projects data file (likely `apps/web/layers/features/marketing/lib/projects.ts`):
+
 - Replace the 6 portfolio projects with DorkOS feature highlights (placeholder content)
 - Each item should have: title, description, image/icon placeholder
 
 Update philosophy items (likely `apps/web/layers/features/marketing/lib/philosophy.ts`):
+
 - Replace studio values with DorkOS design principles (e.g., "Open Source", "Developer First", "Privacy Respecting")
 - Use placeholder descriptions
 
 Update contact section:
+
 - Change email to `siteConfig.contactEmail` (`hey@dorkos.ai`)
 
 Update OG image generation (`apps/web/app/opengraph-image.tsx`):
+
 - Change branding text from Dorkian to DorkOS
 - Keep Calm Tech style (cream/charcoal/orange color palette)
 
@@ -402,6 +413,7 @@ export default async function sitemap() {
 ```
 
 Create `apps/web/app/(public)/` route group with placeholder legal pages:
+
 - `apps/web/app/(public)/layout.tsx` — Simple layout wrapper
 - `apps/web/app/(public)/privacy/page.tsx` — Placeholder privacy policy
 - `apps/web/app/(public)/terms/page.tsx` — Placeholder terms of service
@@ -436,16 +448,19 @@ Create `apps/web/app/not-found.tsx` with a styled 404 page matching the Calm Tec
 This task covers the full Vercel deployment pipeline. Steps:
 
 1. **Install Vercel CLI** (if not already installed):
+
    ```bash
    npm i -g vercel
    vercel login
    ```
 
 2. **Link project to Vercel:**
+
    ```bash
    cd apps/web
    vercel link
    ```
+
    During `vercel link`, select:
    - Scope: `dork-labs` (or personal account)
    - Link to existing project? No, create new
@@ -456,12 +471,14 @@ This task covers the full Vercel deployment pipeline. Steps:
    - Development command: `next dev --turbopack`
 
 3. **Set environment variables:**
+
    ```bash
    vercel env add NEXT_PUBLIC_POSTHOG_KEY production preview development
    vercel env add NEXT_PUBLIC_POSTHOG_HOST production preview development
    ```
 
 4. **Create `apps/web/vercel.json`:**
+
    ```json
    {
      "ignoreCommand": "npx turbo-ignore"
@@ -469,18 +486,22 @@ This task covers the full Vercel deployment pipeline. Steps:
    ```
 
 5. **Deploy preview:**
+
    ```bash
    cd apps/web
    vercel deploy
    ```
 
 6. **Configure domain:**
+
    ```bash
    vercel domains add dorkos.ai
    ```
+
    (User must manually update DNS records at their domain registrar)
 
 7. **Deploy production:**
+
    ```bash
    vercel deploy --prod
    ```
@@ -512,6 +533,7 @@ Update the following documentation files:
    - Deployment info (Vercel, `dorkos.ai`)
 
 3. **Update `CLAUDE.md`:** Add `apps/web` to the monorepo structure diagram:
+
    ```
    ├── apps/
    │   ├── client/           # @dorkos/client - React 19 SPA

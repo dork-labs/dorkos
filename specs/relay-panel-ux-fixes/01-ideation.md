@@ -16,7 +16,7 @@ status: ideation
 
 ## Executive Summary
 
-The Relay Panel redesign moved from four system-architecture tabs to two. That was right. But the execution stopped halfway. We removed the Bindings tab and the Endpoints tab — good, they mirrored internals — but we forgot to give users a way to do what those tabs *did*. We removed the noun and forgot to preserve the verb.
+The Relay Panel redesign moved from four system-architecture tabs to two. That was right. But the execution stopped halfway. We removed the Bindings tab and the Endpoints tab — good, they mirrored internals — but we forgot to give users a way to do what those tabs _did_. We removed the noun and forgot to preserve the verb.
 
 The result is a panel that looks cleaner but is functionally broken. A user who needs to add a second binding to an adapter, edit any binding, or delete a binding simply cannot. The only binding creation path is the wizard's final step (first-time setup only) and the "Route" button on dead letter conversations. After that initial moment, bindings are frozen in amber.
 
@@ -30,11 +30,12 @@ This is not a minor gap. This is the core interaction of the entire panel.
 
 **What we see:** `ResponsiveDialogTitle` reads simply "Relay".
 
-**Steve:** "Relay" is a system concept. It tells the user nothing about what they're looking at or what they can do. When I open this dialog, I need to know: what is this *for*? Compare: "Pulse Scheduler" — that tells me exactly what I'm about to do. "Relay" is like naming the Finder "Filesystem."
+**Steve:** "Relay" is a system concept. It tells the user nothing about what they're looking at or what they can do. When I open this dialog, I need to know: what is this _for_? Compare: "Pulse Scheduler" — that tells me exactly what I'm about to do. "Relay" is like naming the Finder "Filesystem."
 
 **Jony:** The title should earn its space. It should orient the user in a single glance. "Relay" is technically accurate and emotionally vacant. It communicates nothing about the user's relationship to this surface.
 
 **Recommendation:**
+
 - Rename to **"Connections"** — this is what users think about. "How are my agents connected to the world?"
 - Alternative: **"Adapters & Activity"** — descriptive but less elegant
 - The `sr-only` description says "Inter-agent messaging activity and endpoints" — this is engineer-speak. Nobody thinks "I need to check my inter-agent messaging endpoints."
@@ -52,6 +53,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The failure is in the information architecture. The health bar aggregates metrics. The activity feed shows individual conversations. The dead letter section shows aggregated failures. But the dead letter section is hidden behind a toggle. So the click target scrolls to a section that doesn't exist until the user manually presses "Failures." This is a two-step interaction disguised as a one-step interaction.
 
 **Root cause analysis:**
+
 1. `handleFailedClick` calls `setActiveTab('activity')` then `deadLetterRef.current?.scrollIntoView()`
 2. But `DeadLetterSection` only renders when `showFailures` is `true`
 3. `showFailures` defaults to `false`
@@ -59,6 +61,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 5. The `setTimeout(..., 0)` was meant to wait for tab render, but it doesn't wait for the Failures toggle
 
 **Recommendation:**
+
 - When the health bar status is clicked, it should: (a) switch to Activity tab, (b) set `showFailures = true`, AND (c) scroll to dead letters
 - The `handleFailedClick` in `RelayPanel.tsx` needs to pass a signal to `ActivityFeed` that auto-opens the failures section
 - Better yet: if there are dead letters, the Failures section should be open by default. Hiding known failures behind a toggle is hiding the fire alarm behind a cabinet door.
@@ -71,17 +74,19 @@ This is not a minor gap. This is the core interaction of the entire panel.
 
 **What we see:** A tiny BarChart3 icon button that opens a "Delivery Metrics" dialog with total/delivered/failed/dead-letter counts, latency, and budget rejections.
 
-**Steve:** Why is this a separate dialog? The user already has the Activity tab open. They're already looking at the relay panel. Why do they need to open *another* dialog on top of the dialog they're in? Dialog-on-dialog is a symptom of not knowing where information belongs.
+**Steve:** Why is this a separate dialog? The user already has the Activity tab open. They're already looking at the relay panel. Why do they need to open _another_ dialog on top of the dialog they're in? Dialog-on-dialog is a symptom of not knowing where information belongs.
 
 **Jony:** The metrics dashboard contains precisely the information that should contextualize the Activity tab. When I'm looking at my message activity, I want to see "how are things going overall" as ambient context — not as a popup I have to explicitly request.
 
 **Current metrics shown:**
+
 - Total messages / Delivered / Failed / Dead Letter (counts)
 - Avg latency / P95 latency
 - Active subjects count
 - Budget rejections (hop limit, TTL expired, cycle detected, budget exhausted)
 
 **Recommendation:**
+
 - Remove the DeliveryMetrics dialog entirely
 - Place a compact metrics summary at the top of the Activity tab — 4 stat cards: Total, Delivered, Failed, Dead Letter
 - Or, integrate metrics into the health bar itself with a hover tooltip (which already exists! The healthy state already has a tooltip showing "X messages today, Y failed, Zms avg latency")
@@ -103,6 +108,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Investigation needed:** The `useRelayConversations` hook may only return conversations observed during the current SSE session, not historical ones. If so, the activity feed is not a "feed" — it's a real-time monitor that starts empty every time you open the panel. That's a completely different mental model than what users expect.
 
 **Recommendation:**
+
 - The Activity tab MUST show historical data. If conversations are SSE-only, the server needs to persist and serve them via REST.
 - If conversations ARE served via REST but the query returns empty, debug why
 - The empty state should NEVER appear when the health bar shows active message counts. These two surfaces must be consistent.
@@ -115,6 +121,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 ### 5. Activity Tab — "Failed" Filter vs. "Failures" Button
 
 **What we see:** Two controls that sound like the same thing:
+
 1. Status dropdown with "Failed" option — filters conversation list to `status === 'failed'`
 2. "Failures" button (with AlertTriangle icon) — toggles visibility of DeadLetterSection
 
@@ -123,16 +130,19 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The distinction is real but the labeling collapses it. A "failed" conversation is one that was attempted and failed during delivery. A "dead letter" is a message that was rejected before delivery (hop limit, cycle, budget). These are different categories of failure, but to the user, they're all "things that went wrong."
 
 **What each control does:**
+
 - **"Failed" in status dropdown:** Filters the conversation list to show only conversations with `status === 'failed'`. These are messages that found a route but delivery failed.
-- **"Failures" button:** Toggles a *completely separate section* (`DeadLetterSection`) that shows aggregated dead letters — messages that never found a route or were rejected by budget policies.
+- **"Failures" button:** Toggles a _completely separate section_ (`DeadLetterSection`) that shows aggregated dead letters — messages that never found a route or were rejected by budget policies.
 
 **Problems:**
+
 1. The names are too similar — "Failed" vs. "Failures"
 2. They operate on different data sources (conversations vs. dead letters)
 3. One is a filter (modifies the existing list), the other is a toggle (shows/hides a section)
 4. The "Failures" button has a red dot badge — but only when dead letters exist AND the section is closed. This is alarm fatigue: the dot appears every time you close the section, even after you've reviewed the failures.
 
 **Recommendation:**
+
 - Merge the concepts. All failures — whether delivery failures or dead letters — should appear in one unified view.
 - Replace the "Failures" toggle button with a **"Failed & Rejected"** filter option in the status dropdown (or just "Failed" that includes both)
 - Dead letter cards can appear inline in the conversation list, sorted by time, with a distinct visual treatment (different card style, warning colors)
@@ -145,33 +155,38 @@ This is not a minor gap. This is the core interaction of the entire panel.
 ### 6. Binding Management — The Missing Feature
 
 **What we see:** Nowhere in the current interface can a user:
+
 - Add a binding to an existing adapter (only during initial wizard setup)
 - Edit any binding (session strategy, permissions, chat filter)
 - Delete a binding
 - View a full list of all bindings across adapters
 
-**Steve:** You removed the Bindings tab because it was "redundant with inline AdapterCard bindings." But AdapterCard only *displays* binding rows — it has no create, edit, or delete actions. You deleted the only CRUD surface and replaced it with a read-only display. That's like removing the Trash can from the Finder because "files are already shown in their folders."
+**Steve:** You removed the Bindings tab because it was "redundant with inline AdapterCard bindings." But AdapterCard only _displays_ binding rows — it has no create, edit, or delete actions. You deleted the only CRUD surface and replaced it with a read-only display. That's like removing the Trash can from the Finder because "files are already shown in their folders."
 
 **Jony:** The BindingList component still exists in the codebase (`apps/client/src/layers/features/relay/ui/BindingList.tsx`) with full create, edit, duplicate, and delete functionality. But nothing imports it. It's dead code. The BindingDialog also exists with complete edit mode support. Both are orphaned.
 
 **Where bindings CAN be created today:**
+
 1. Wizard BindStep — only during first-time adapter setup
 2. ConversationRow "Route" button — only from dead letter/activity conversations
 3. ConversationRow "More options..." — opens BindingDialog in create mode
 
 **Where bindings CANNOT be managed:**
+
 - AdapterCard shows bindings but has no add/edit/delete actions
 - ConnectionsTab has no binding management
 - No "Manage Bindings" option in the adapter kebab menu
 - No way to reach the BindingDialog in edit mode from anywhere
 
 **Consequences:**
+
 - If a user creates an adapter and skips the bind step, they can never add a binding later (except through dead letter routing)
 - If a user sets the wrong session strategy, they can never change it
 - If a user enables `canInitiate` by mistake, they can never disable it
 - If a user wants to remove a binding, they must remove and re-add the entire adapter
 
 **Recommendation:**
+
 - Add a **"Manage Bindings"** action to the AdapterCard kebab menu — opens BindingList filtered to that adapter
 - Or: add inline binding management directly on AdapterCard — add button, click-to-edit on each binding row, delete on each row
 - The AdapterCard already has the binding data and agent lookup. It just needs the verbs.
@@ -190,6 +205,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The binding rows are well-crafted individually. The decision to suppress default values (per-chat strategy, default permissions) is correct — it respects the principle of showing only what's meaningful. But the "and X more" overflow text is not interactive. It should expand or link to a full binding view.
 
 **Recommendation:**
+
 - Make each `AdapterBindingRow` clickable — opens BindingDialog in edit mode for that binding
 - Add a small "+" button after the binding rows — opens BindingDialog in create mode pre-filled with the adapter
 - Make "and X more" clickable — expands to show all bindings, or opens a binding list sheet
@@ -203,11 +219,12 @@ This is not a minor gap. This is the core interaction of the entire panel.
 
 **What we see:** The final wizard step lets users select one agent and one session strategy. It creates a single binding.
 
-**Steve:** This is fine for first-time setup. One adapter, one agent, get started. But it's the *only* place in the entire UI where you can create a binding (outside of dead letter routing). That means if you want to bind an adapter to multiple agents — which is the whole point of the binding architecture — you have to use a workaround.
+**Steve:** This is fine for first-time setup. One adapter, one agent, get started. But it's the _only_ place in the entire UI where you can create a binding (outside of dead letter routing). That means if you want to bind an adapter to multiple agents — which is the whole point of the binding architecture — you have to use a workaround.
 
 **Jony:** The wizard is well-structured. The step progression (Configure → Test → Confirm → Bind) is clear. The issue isn't the wizard itself — it's that the wizard is the only door into binding creation for normal flows.
 
 **Recommendation:**
+
 - Wizard BindStep is fine as-is for initial setup
 - Post-wizard binding management should be accessible from AdapterCard
 - Consider adding a brief "you can add more bindings later from the adapter card" note on the BindStep
@@ -225,10 +242,12 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The interaction is well-considered. The quick route (select agent, create binding) covers the 80% case. "More options..." covers the 20%. The pre-population from conversation metadata (adapterId, chatId, channelType) is thoughtful.
 
 **Issues:**
+
 - The `extractAdapterId` function uses regex on subjects, which the spec noted as broken (pattern mismatch). Was this fixed? If not, quick-route creates bindings with empty adapter IDs.
 - The route popover doesn't show existing bindings for context — you might create a duplicate
 
 **Recommendation:**
+
 - Verify `extractAdapterId` works correctly with current subject patterns
 - Show a brief note in the popover if a binding already exists for this adapter: "Binding exists: → AgentName"
 - This is a secondary binding creation path and it works. The primary path (from AdapterCard) is what's missing.
@@ -246,6 +265,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The transition from Mode A to Mode B (empty → populated) uses AnimatePresence with a smooth fade. The ghost preview is appropriately subtle — 20% opacity, pointer-events-none. The copy is human, not technical.
 
 **Recommendation:**
+
 - No changes needed. This is one of the best screens in the panel.
 
 **Severity:** None. Well designed.
@@ -261,6 +281,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The disconnect is that this empty state appears even when adapters ARE configured and HAVE bindings. The activity feed is empty because no messages have been exchanged yet (or because history isn't loaded — see issue #4). The "Set up an adapter" CTA is misleading in this context.
 
 **Recommendation:**
+
 - Change copy to: "No activity yet" / "Messages will appear here as your agents communicate."
 - Remove or change the "Set up an adapter" CTA — if adapters are configured, this is confusing. Replace with: "Send a test message" which opens the ComposeMessageDialog
 - If activity is truly real-time-only (no history), say so: "Live activity monitor — messages appear as they arrive"
@@ -278,12 +299,14 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The visual language is good — color-coded reason badges (orange for hop limit, purple for cycle detected, red for budget exhausted) create immediate pattern recognition. The "View Sample" dialog showing raw JSON is the right level of technical detail for the audience.
 
 **Issues:**
+
 - The section is only visible when `showFailures` is toggled on
 - The health bar click should auto-show this section (see issue #2)
 - "Dismiss All" has no confirmation dialog — one click permanently removes all dead letters for a group
 - After dismissing, there's no undo
 
 **Recommendation:**
+
 - Dead letters should be visible by default when they exist — don't hide problems
 - Or: integrate dead letter cards into the conversation list with a distinct visual treatment
 - Add a confirmation step to "Dismiss All" — "Dismiss 847 dead letters from telegram/hop_limit?"
@@ -302,6 +325,7 @@ This is not a minor gap. This is the core interaction of the entire panel.
 **Jony:** The stat cards use color coding: green for delivered, red for failed (only when > 0), yellow for dead letter (only when > 0). This is correct — color only when meaningful. The conditional rendering of budget rejections (only when non-zero) is good — don't show empty categories.
 
 **Recommendation:**
+
 - Move this data to the top of the Activity tab as a compact summary row
 - Format: `1,234 total | 1,100 delivered | 134 failed | 0 dead letter | 45ms avg`
 - Budget rejections should appear in dead letter section, not here
@@ -385,6 +409,6 @@ The path forward: make AdapterCard the single source of truth for adapter + bind
 
 > "Design is not just what it looks like and feels like. Design is how it works."
 
-The Relay Panel *looks* cleaner after the redesign. But it doesn't *work* — you can't manage bindings, the health bar lies about what clicking will show, and the activity feed contradicts the health bar.
+The Relay Panel _looks_ cleaner after the redesign. But it doesn't _work_ — you can't manage bindings, the health bar lies about what clicking will show, and the activity feed contradicts the health bar.
 
 Ship would have been rejected. Go back and make it work.

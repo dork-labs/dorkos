@@ -166,6 +166,7 @@ corrected without fixing them.
 **SDK Concurrency Finding:**
 
 A comment in `apps/server/src/services/core/agent-manager.ts` (line ~80) states:
+
 > "Each SDK query() call needs its own McpServer instance because the SDK's internal Protocol can only
 > be connected to one transport at a time. Reusing the same instance across concurrent queries causes
 > 'Already connected to a transport' errors."
@@ -198,12 +199,12 @@ approach (likely option 1 with a simple async queue) as part of the implementati
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How to expose `projectPath` from MeshCore | Add `getProjectPath(agentId): string \| undefined` method | Clean, minimal, additive-only change. `buildContext()` doesn't need to know about `AgentRegistryEntry` internals. Confirmed by user. |
-| 2 | How to fix meshCore initialization order | Move `meshCore` construction before `adapterManager` in `index.ts` | MeshCore has no dependency on AdapterManager, so reordering is safe and produces the minimal possible diff. Confirmed by user. |
-| 3 | Session strategy for concurrent agent-to-agent messages | **Open — defer to specification phase** | User requested research first. SDK disallows concurrent queries on the same session. Two viable approaches (shared session + queue vs. per-sender sessions). Not needed for the wiring fix; should be designed in the spec with explicit concurrency testing. |
-| 4 | `context-builder.ts` documentation label | Change `{theirSessionId}` to `{theirAgentId}` in `RELAY_TOOLS_CONTEXT` | The label has always been misleading — the value is a Mesh agent ID, not an SDK session UUID. Agents following the incorrect label would construct wrong relay subjects. Fixing label does not change any runtime behavior. |
+| #   | Decision                                                | Choice                                                                 | Rationale                                                                                                                                                                                                                                                     |
+| --- | ------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | How to expose `projectPath` from MeshCore               | Add `getProjectPath(agentId): string \| undefined` method              | Clean, minimal, additive-only change. `buildContext()` doesn't need to know about `AgentRegistryEntry` internals. Confirmed by user.                                                                                                                          |
+| 2   | How to fix meshCore initialization order                | Move `meshCore` construction before `adapterManager` in `index.ts`     | MeshCore has no dependency on AdapterManager, so reordering is safe and produces the minimal possible diff. Confirmed by user.                                                                                                                                |
+| 3   | Session strategy for concurrent agent-to-agent messages | **Open — defer to specification phase**                                | User requested research first. SDK disallows concurrent queries on the same session. Two viable approaches (shared session + queue vs. per-sender sessions). Not needed for the wiring fix; should be designed in the spec with explicit concurrency testing. |
+| 4   | `context-builder.ts` documentation label                | Change `{theirSessionId}` to `{theirAgentId}` in `RELAY_TOOLS_CONTEXT` | The label has always been misleading — the value is a Mesh agent ID, not an SDK session UUID. Agents following the incorrect label would construct wrong relay subjects. Fixing label does not change any runtime behavior.                                   |
 
 ---
 
@@ -211,12 +212,12 @@ approach (likely option 1 with a simple async queue) as part of the implementati
 
 Three files need code changes; one needs a doc-only update:
 
-| File | Change Type | Summary |
-|------|-------------|---------|
-| `apps/server/src/index.ts` | Init reorder | Construct `MeshCore` before `AdapterManager`; pass `meshCore` in `AdapterManagerDeps` |
-| `packages/mesh/src/mesh-core.ts` | New method | Add `getProjectPath(agentId: string): string \| undefined` reading `AgentRegistryEntry.projectPath` |
-| `apps/server/src/services/relay/adapter-manager.ts` | Bug fix | Fix `AdapterManagerDeps.meshCore` type to match real `MeshCore` API; update `buildContext()` to call `getProjectPath()` |
-| `apps/server/src/services/core/context-builder.ts` | Docs only | Change `{theirSessionId}` → `{theirAgentId}` in `RELAY_TOOLS_CONTEXT` |
+| File                                                | Change Type  | Summary                                                                                                                 |
+| --------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/index.ts`                          | Init reorder | Construct `MeshCore` before `AdapterManager`; pass `meshCore` in `AdapterManagerDeps`                                   |
+| `packages/mesh/src/mesh-core.ts`                    | New method   | Add `getProjectPath(agentId: string): string \| undefined` reading `AgentRegistryEntry.projectPath`                     |
+| `apps/server/src/services/relay/adapter-manager.ts` | Bug fix      | Fix `AdapterManagerDeps.meshCore` type to match real `MeshCore` API; update `buildContext()` to call `getProjectPath()` |
+| `apps/server/src/services/core/context-builder.ts`  | Docs only    | Change `{theirSessionId}` → `{theirAgentId}` in `RELAY_TOOLS_CONTEXT`                                                   |
 
 **Test additions:**
 

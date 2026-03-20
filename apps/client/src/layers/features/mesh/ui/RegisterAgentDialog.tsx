@@ -79,7 +79,7 @@ export function RegisterAgentDialog({ open, onOpenChange }: Props) {
           onOpenChange(false);
           resetForm();
         },
-      },
+      }
     );
   }
 
@@ -167,7 +167,7 @@ export function RegisterAgentDialog({ open, onOpenChange }: Props) {
                 onChange={(e) => setCapabilities(e.target.value)}
                 placeholder="code-review, testing, refactoring"
               />
-              <p className="text-xs text-muted-foreground">Comma-separated list of capabilities</p>
+              <p className="text-muted-foreground text-xs">Comma-separated list of capabilities</p>
             </div>
           </div>
         </form>

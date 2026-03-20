@@ -539,14 +539,14 @@ body {
 }
 
 /* Radix ScrollArea inside command palette: fade scrollbar in/out */
-[cmdk-list] [data-slot="scroll-area-scrollbar"] {
+[cmdk-list] [data-slot='scroll-area-scrollbar'] {
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
-[cmdk-list]:hover [data-slot="scroll-area-scrollbar"],
-[cmdk-list] [data-slot="scroll-area-viewport"]:hover ~ [data-slot="scroll-area-scrollbar"],
-[cmdk-list] [data-state="visible"][data-slot="scroll-area-scrollbar"] {
+[cmdk-list]:hover [data-slot='scroll-area-scrollbar'],
+[cmdk-list] [data-slot='scroll-area-viewport']:hover ~ [data-slot='scroll-area-scrollbar'],
+[cmdk-list] [data-state='visible'][data-slot='scroll-area-scrollbar'] {
   opacity: 1;
 }
 

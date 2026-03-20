@@ -48,20 +48,16 @@ export function CollapsibleCard({
       className={cn(
         'bg-muted/50 mt-px text-sm first:mt-1',
         variant === 'default' &&
-          'hover:border-border rounded-msg-tool border shadow-msg-tool transition-all duration-150 hover:shadow-msg-tool-hover',
-        variant === 'thinking' &&
-          'rounded-msg-tool border-l-2 border-muted-foreground/20',
-        className,
+          'hover:border-border rounded-msg-tool shadow-msg-tool hover:shadow-msg-tool-hover border transition-all duration-150',
+        variant === 'thinking' && 'rounded-msg-tool border-muted-foreground/20 border-l-2',
+        className
       )}
       {...dataProps}
     >
       <button
         onClick={() => !disabled && onToggle()}
         disabled={disabled}
-        className={cn(
-          'flex w-full items-center gap-2 px-3 py-1',
-          disabled && 'cursor-default',
-        )}
+        className={cn('flex w-full items-center gap-2 px-3 py-1', disabled && 'cursor-default')}
         aria-expanded={ariaExpanded}
         aria-label={ariaLabel}
       >
@@ -72,10 +68,12 @@ export function CollapsibleCard({
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
             className="ml-auto"
           >
-            <ChevronDown className={cn(
-              'size-(--size-icon-xs)',
-              variant === 'thinking' && 'text-muted-foreground',
-            )} />
+            <ChevronDown
+              className={cn(
+                'size-(--size-icon-xs)',
+                variant === 'thinking' && 'text-muted-foreground'
+              )}
+            />
           </motion.div>
         )}
       </button>
@@ -89,9 +87,7 @@ export function CollapsibleCard({
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
             className="overflow-hidden"
           >
-            <div className="border-t px-3 pt-1 pb-3">
-              {children}
-            </div>
+            <div className="border-t px-3 pt-1 pb-3">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,5 +1,5 @@
 ---
-title: "Client Direct SSE — Removing Relay From the Web Client Transport Path"
+title: 'Client Direct SSE — Removing Relay From the Web Client Transport Path'
 date: 2026-03-12
 type: implementation
 status: active
@@ -109,12 +109,14 @@ After reading the current source (552 lines), the relay-specific code is:
 12. `stalenessTimerRef` cleanup in relay effect cleanup and unmount effect
 
 **Lines that become simpler:**
+
 - `executeSubmission` becomes a single path (the current `else` block, lines 428-440)
 - The legacy EventSource effect drops the `relayEnabled` guard
 - `historyQuery.refetchInterval` drops `|| relayEnabled`
 - The cleanup unmount effect drops `stalenessTimerRef` cleanup
 
 **Lines that stay identical:**
+
 - All of `executeSubmission` below the relay block
 - All of `streamEventHandler` usage
 - `handleSubmit`, `submitContent`, `stop`
@@ -125,6 +127,7 @@ After reading the current source (552 lines), the relay-specific code is:
 ### Estimated Line Count After Removal
 
 The current file is 552 lines. Removal deletes approximately:
+
 - `waitForStreamReady` function: 18 lines
 - `resetStalenessTimer` callback: 20 lines
 - Relay EventSource effect: 63 lines
@@ -141,6 +144,7 @@ halves by eliminating the relay branch.
 After removal of the relay path from `use-chat-session.ts`, `transport.sendMessageRelay()` is no
 longer called from the chat feature. However the method must remain on the `Transport` interface
 because:
+
 1. It may be used by future programmatic relay send use cases (e.g., agent-to-agent from UI)
 2. It is already implemented in both `HttpTransport` (via `relay-methods.ts`) and
    `DirectTransport` (throws "not supported in embedded mode")
@@ -154,6 +158,7 @@ implementations intact. Only remove the client-side call site in `use-chat-sessi
 
 `useRelayEnabled` is imported in 22 files across the client. After removing it from
 `use-chat-session.ts`, the remaining usages are all legitimate display/configuration concerns:
+
 - `ConnectionsView.tsx` — shows relay connection status
 - `CapabilitiesTab.tsx` — displays relay capability in agent settings
 - `TopologyGraph.tsx` — renders relay edges in mesh topology
@@ -173,7 +178,7 @@ After relay removal, the only EventSource effect in `use-chat-session.ts` is the
 
 ```typescript
 useEffect(() => {
-  if (!sessionId || relayEnabled) return;  // <-- remove the relayEnabled guard
+  if (!sessionId || relayEnabled) return; // <-- remove the relayEnabled guard
   if (isStreaming) return;
 
   const url = `/api/sessions/${sessionId}/stream`;
@@ -219,17 +224,20 @@ carry streaming response events.
 
 Production SSE is well-understood for LLM streaming. The direct POST-response-as-stream pattern
 is the canonical approach used by:
+
 - Anthropic's streaming API (Content-Type: text/event-stream on the POST response)
 - OpenAI streaming completions (same pattern)
 - Vercel AI SDK (useChat hook uses direct SSE)
 - MCP Streamable HTTP transport spec (POST response IS the stream)
 
 Key production reliability features already present in the DorkOS direct SSE path:
+
 - `AbortController` signal for cancellation (client-side)
 - Async generator iteration with proper cleanup via `parseSSEStream`
 - `X-Client-Id` header for session locking
 
 Key production reliability features NOT currently present but advisable for hardening:
+
 - `Last-Event-ID` replay buffer for reconnect recovery (if the stream connection drops)
 - SSE keepalive ping from server (prevents proxy timeout on long-running agents)
 
@@ -254,6 +262,7 @@ duality problem.
 ### Approach A: Clean Removal (Recommended)
 
 Remove all relay code paths from `use-chat-session.ts`. Delete:
+
 - `waitForStreamReady()` function
 - `streamReadyRef` and all uses
 - `correlationIdRef` and all uses
@@ -266,6 +275,7 @@ Remove all relay code paths from `use-chat-session.ts`. Delete:
 Server-side: no changes needed. The relay infrastructure stays intact for external adapters.
 
 **Pros:**
+
 - Eliminates an entire category of streaming bugs at the root — not by patching but by removing
   the code that enables them
 - ~129 lines of net deletion — the file gets cleaner
@@ -277,6 +287,7 @@ Server-side: no changes needed. The relay infrastructure stays intact for extern
 - The code accurately reflects the system model: web client uses SSE directly
 
 **Cons:**
+
 - If relay routing of web client messages was intentional for some other reason (e.g., message
   audit logging via relay), that capability is lost. Review whether the relay adapter audit trail
   captures web client messages and whether that matters.
@@ -300,11 +311,13 @@ Change `useRelayEnabled()` in the chat hook to always return `false`, or add a s
 `useRelayForChat()` that defaults to false regardless of relay server state.
 
 **Pros:**
+
 - Zero regression risk — relay path still accessible if needed
 - Provides an escape hatch if the direct SSE path surfaces a new bug
 - Relay behavior can still be tested manually
 
 **Cons:**
+
 - Dead code is a maintenance liability. Every developer reading `use-chat-session.ts` must
   understand both paths. "Disabled by default" code invites accidental re-enabling.
 - The relay code is already proven buggy. Keeping dead buggy code is worse than deleting it.
@@ -323,10 +336,12 @@ Phase 2: Remove relay code after validation period (next sprint).
 Phase 3: Clean up related config/state (following sprint).
 
 **Pros:**
+
 - Lower risk per phase
 - Validation window before full deletion
 
 **Cons:**
+
 - Three times the effort of Approach A for the same end state
 - During Phase 1, both paths coexist — the relay path is still reachable in testing
 - The "fallback" in Phase 1 is meaningless because we want to STOP using relay, not fall back to it
@@ -426,8 +441,8 @@ Before executing:
    - Message audit logging (relay captures all messages in the relay store)
    - Multi-consumer delivery (web UI + external adapter simultaneously)
    - Message persistence/replay for reconnect scenarios
-   If any of these are needed for the web client (not external adapters), they must be
-   implemented on the direct path before removal.
+     If any of these are needed for the web client (not external adapters), they must be
+     implemented on the direct path before removal.
 
 3. **Update the relay-path test file**: `use-chat-session-relay.test.ts` tests relay-specific
    behavior. After removal, delete this file. Ensure general `use-chat-session` coverage is
@@ -479,6 +494,7 @@ incorrect one.
 ## Sources and Evidence
 
 **Internal research (primary sources):**
+
 - "The relay path adds a pub/sub hop that creates four compounding failure modes in the web
   client" — `research/20260306_sse_relay_delivery_race_conditions.md`
 - "Two relay-mode-only bugs in `useChatSession.ts`" (message duplication, 503 storm) —
@@ -492,8 +508,9 @@ incorrect one.
 - Direct source inspection: `apps/client/src/layers/shared/lib/direct-transport.ts`
 
 **External sources:**
+
 - [Server-Sent Events vs Streamable HTTP](https://zivukushingai.medium.com/server-sent-events-vs-streamable-http-complete-developer-guide-ff55bb0d76d4) — SSE as the standard for LLM streaming
-- [SSE in 2025 — Why Direct POST-as-Stream Wins](https://procedure.tech/blogs/the-streaming-backbone-of-llms-why-server-sent-events-(sse)-still-wins-in-2025) — industry consensus on direct SSE
+- [SSE in 2025 — Why Direct POST-as-Stream Wins](<https://procedure.tech/blogs/the-streaming-backbone-of-llms-why-server-sent-events-(sse)-still-wins-in-2025>) — industry consensus on direct SSE
 - [MDN: Using server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) — Last-Event-ID reconnect pattern
 - [LaunchDarkly: Feature Flag Technical Debt](https://docs.launchdarkly.com/guides/flags/technical-debt) — when to remove vs archive flags
 - [How to Remove Old Feature Flags Without Breaking Code](https://tggl.io/blog/how-to-remove-old-feature-flags-without-breaking-your-code) — safe deletion checklist

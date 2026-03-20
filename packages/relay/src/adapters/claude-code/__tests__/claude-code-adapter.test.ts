@@ -21,7 +21,7 @@ function createMockAgentManager(): AgentRuntimeLike {
         yield { type: 'text_delta', data: { text: 'Hello ' } } as StreamEvent;
         yield { type: 'text_delta', data: { text: 'world' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
-      })(),
+      })()
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
   };
@@ -150,7 +150,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(result.success).toBe(true);
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
       'session-abc',
-      expect.objectContaining({ cwd: '/projects/myapp' }),
+      expect.objectContaining({ cwd: '/projects/myapp' })
     );
     const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
     expect(sendArgs[0]).toBe('session-abc');
@@ -192,7 +192,7 @@ describe('ClaudeCodeAdapter', () => {
     const cappedAdapter = new ClaudeCodeAdapter(
       'capped',
       { maxConcurrent: 1, defaultCwd: '/tmp' },
-      { agentManager: hangingManager, traceStore },
+      { agentManager: hangingManager, traceStore }
     );
     await cappedAdapter.start(relay);
 
@@ -238,15 +238,15 @@ describe('ClaudeCodeAdapter', () => {
     await adapter.deliver(envelope.subject, envelope);
 
     expect(traceStore.insertSpan).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'pending', messageId: 'msg-001' }),
+      expect.objectContaining({ status: 'pending', messageId: 'msg-001' })
     );
     expect(traceStore.updateSpan).toHaveBeenCalledWith(
       'msg-001',
-      expect.objectContaining({ status: 'delivered' }),
+      expect.objectContaining({ status: 'delivered' })
     );
     expect(traceStore.updateSpan).toHaveBeenCalledWith(
       'msg-001',
-      expect.objectContaining({ status: 'processed' }),
+      expect.objectContaining({ status: 'processed' })
     );
   });
 
@@ -254,7 +254,7 @@ describe('ClaudeCodeAdapter', () => {
     vi.mocked(agentManager.sendMessage).mockReturnValue(
       (async function* () {
         throw new Error('Agent session crashed');
-      })(),
+      })()
     );
     await adapter.start(relay);
     const envelope = createTestEnvelope();
@@ -264,7 +264,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(result.error).toMatch(/Agent session crashed/);
     expect(traceStore.updateSpan).toHaveBeenCalledWith(
       'msg-001',
-      expect.objectContaining({ status: 'failed' }),
+      expect.objectContaining({ status: 'failed' })
     );
   });
 
@@ -308,14 +308,10 @@ describe('ClaudeCodeAdapter', () => {
     await adapter.deliver(envelope.subject, envelope);
 
     const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
-    expect(ensureCall[1]).toEqual(
-      expect.objectContaining({ permissionMode: 'bypassPermissions' }),
-    );
+    expect(ensureCall[1]).toEqual(expect.objectContaining({ permissionMode: 'bypassPermissions' }));
 
     const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
-    expect(sendCall[2]).toEqual(
-      expect.objectContaining({ permissionMode: 'bypassPermissions' }),
-    );
+    expect(sendCall[2]).toEqual(expect.objectContaining({ permissionMode: 'bypassPermissions' }));
   });
 
   it('uses context.agent.directory when Mesh context is provided', async () => {
@@ -329,7 +325,7 @@ describe('ClaudeCodeAdapter', () => {
 
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
       'session-abc',
-      expect.objectContaining({ cwd: '/mesh/agent/dir' }),
+      expect.objectContaining({ cwd: '/mesh/agent/dir' })
     );
   });
 
@@ -346,7 +342,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(result.success).toBe(true);
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
       'session-abc',
-      expect.objectContaining({ cwd: '/my/project' }),
+      expect.objectContaining({ cwd: '/my/project' })
     );
     const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
     expect(sendArgs[2]).toEqual(expect.objectContaining({ cwd: '/my/project' }));
@@ -366,7 +362,7 @@ describe('ClaudeCodeAdapter', () => {
 
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
       'session-abc',
-      expect.objectContaining({ cwd: '/payload/path' }),
+      expect.objectContaining({ cwd: '/payload/path' })
     );
   });
 
@@ -383,7 +379,7 @@ describe('ClaudeCodeAdapter', () => {
 
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
       'session-abc',
-      expect.objectContaining({ cwd: '/projects/myapp' }),
+      expect.objectContaining({ cwd: '/projects/myapp' })
     );
   });
 
@@ -399,11 +395,11 @@ describe('ClaudeCodeAdapter', () => {
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
       'run-1',
       'Check the budget',
-      expect.anything(),
+      expect.anything()
     );
     expect(pulseStore.updateRun).toHaveBeenCalledWith(
       'run-1',
-      expect.objectContaining({ status: 'completed' }),
+      expect.objectContaining({ status: 'completed' })
     );
   });
 
@@ -417,7 +413,7 @@ describe('ClaudeCodeAdapter', () => {
 
     expect(result.success).toBe(false);
     expect(traceStore.insertSpan).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'failed' }),
+      expect.objectContaining({ status: 'failed' })
     );
   });
 
@@ -440,7 +436,7 @@ describe('ClaudeCodeAdapter', () => {
     // PulseStore should be updated (failed or cancelled)
     expect(pulseStore.updateRun).toHaveBeenCalledWith(
       'run-1',
-      expect.objectContaining({ status: expect.stringMatching(/failed|cancelled/) }),
+      expect.objectContaining({ status: expect.stringMatching(/failed|cancelled/) })
     );
   });
 
@@ -449,9 +445,20 @@ describe('ClaudeCodeAdapter', () => {
   describe('agent message delivery', () => {
     it('skips sendMessage and marks trace processed for every StreamEvent payload type', async () => {
       const STREAM_EVENT_TYPES = [
-        'text_delta', 'tool_call_start', 'tool_call_end', 'tool_call_delta',
-        'tool_result', 'session_status', 'approval_required', 'question_prompt',
-        'error', 'done', 'task_update', 'relay_message', 'relay_receipt', 'message_delivered',
+        'text_delta',
+        'tool_call_start',
+        'tool_call_end',
+        'tool_call_delta',
+        'tool_result',
+        'session_status',
+        'approval_required',
+        'question_prompt',
+        'error',
+        'done',
+        'task_update',
+        'relay_message',
+        'relay_receipt',
+        'message_delivered',
       ] as const;
 
       await adapter.start(relay);
@@ -469,7 +476,7 @@ describe('ClaudeCodeAdapter', () => {
         expect(agentManager.sendMessage, `type=${type}`).not.toHaveBeenCalled();
         expect(traceStore.updateSpan).toHaveBeenCalledWith(
           envelope.id,
-          expect.objectContaining({ status: 'processed', processedAt: expect.any(Number) }),
+          expect.objectContaining({ status: 'processed', processedAt: expect.any(Number) })
         );
       }
     });
@@ -484,7 +491,7 @@ describe('ClaudeCodeAdapter', () => {
           yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
           yield { type: 'text_delta', data: { text: ' world' } } as StreamEvent;
           yield { type: 'done', data: {} } as StreamEvent;
-        })(),
+        })()
       );
 
       await adapter.start(relay);
@@ -504,7 +511,7 @@ describe('ClaudeCodeAdapter', () => {
 
       // No raw text_delta payloads published (progress uses dispatch_progress type)
       const hasTextDelta = calls.some(
-        ([, payload]) => (payload as Record<string, unknown>).type === 'text_delta',
+        ([, payload]) => (payload as Record<string, unknown>).type === 'text_delta'
       );
       expect(hasTextDelta).toBe(false);
     });
@@ -515,7 +522,7 @@ describe('ClaudeCodeAdapter', () => {
           yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
           yield { type: 'text_delta', data: { text: ' world' } } as StreamEvent;
           yield { type: 'done', data: {} } as StreamEvent;
-        })(),
+        })()
       );
 
       await adapter.start(relay);
@@ -551,7 +558,7 @@ describe('ClaudeCodeAdapter', () => {
       const adapterWithStore = new ClaudeCodeAdapter(
         'cca-persist',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, agentSessionStore },
+        { agentManager, traceStore, agentSessionStore }
       );
       await adapterWithStore.start(relay);
 
@@ -565,14 +572,12 @@ describe('ClaudeCodeAdapter', () => {
     it('uses persisted SDK session ID on subsequent delivery (not raw subject key)', async () => {
       const sdkUUID = 'sdk-uuid-0000-bbbb-1234567890ab';
       // Store already has a mapping from a previous delivery
-      const agentSessionStore = createMockAgentSessionStore(
-        new Map([['agent-ulid-002', sdkUUID]]),
-      );
+      const agentSessionStore = createMockAgentSessionStore(new Map([['agent-ulid-002', sdkUUID]]));
 
       const adapterWithStore = new ClaudeCodeAdapter(
         'cca-resume',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, agentSessionStore },
+        { agentManager, traceStore, agentSessionStore }
       );
       await adapterWithStore.start(relay);
 
@@ -583,12 +588,12 @@ describe('ClaudeCodeAdapter', () => {
       // hasStarted is true because the store has a real SDK session ID to resume.
       expect(agentManager.ensureSession).toHaveBeenCalledWith(
         sdkUUID,
-        expect.objectContaining({ permissionMode: 'default', hasStarted: true }),
+        expect.objectContaining({ permissionMode: 'default', hasStarted: true })
       );
       expect(agentManager.sendMessage).toHaveBeenCalledWith(
         sdkUUID,
         expect.stringContaining('Run the budget report'),
-        expect.anything(),
+        expect.anything()
       );
       // set() must NOT be called — the mapping already exists
       expect(agentSessionStore.set).not.toHaveBeenCalled();
@@ -630,16 +635,14 @@ describe('ClaudeCodeAdapter', () => {
 
       const serializedManager: AgentRuntimeLike = {
         ensureSession: vi.fn(),
-        sendMessage: vi.fn()
-          .mockReturnValueOnce(hangingStream)
-          .mockReturnValueOnce(quickStream),
+        sendMessage: vi.fn().mockReturnValueOnce(hangingStream).mockReturnValueOnce(quickStream),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
       };
 
       const serializedAdapter = new ClaudeCodeAdapter(
         'serialized',
         { defaultCwd: '/tmp', maxConcurrent: 10 },
-        { agentManager: serializedManager, traceStore },
+        { agentManager: serializedManager, traceStore }
       );
       await serializedAdapter.start(relay);
 
@@ -676,28 +679,30 @@ describe('ClaudeCodeAdapter', () => {
 
       const streamForA = (async function* () {
         startedAgents.push('AGENT_A');
-        await new Promise<void>((resolve) => { resolveA = resolve; });
+        await new Promise<void>((resolve) => {
+          resolveA = resolve;
+        });
         yield { type: 'done', data: {} } as StreamEvent;
       })();
 
       const streamForB = (async function* () {
         startedAgents.push('AGENT_B');
-        await new Promise<void>((resolve) => { resolveB = resolve; });
+        await new Promise<void>((resolve) => {
+          resolveB = resolve;
+        });
         yield { type: 'done', data: {} } as StreamEvent;
       })();
 
       const parallelManager: AgentRuntimeLike = {
         ensureSession: vi.fn(),
-        sendMessage: vi.fn()
-          .mockReturnValueOnce(streamForA)
-          .mockReturnValueOnce(streamForB),
+        sendMessage: vi.fn().mockReturnValueOnce(streamForA).mockReturnValueOnce(streamForB),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
       };
 
       const parallelAdapter = new ClaudeCodeAdapter(
         'parallel',
         { defaultCwd: '/tmp', maxConcurrent: 10 },
-        { agentManager: parallelManager, traceStore },
+        { agentManager: parallelManager, traceStore }
       );
       await parallelAdapter.start(relay);
 
@@ -732,7 +737,7 @@ describe('ClaudeCodeAdapter', () => {
         yield { type: 'text_delta', data: { text: longText } } as StreamEvent;
         yield { type: 'text_delta', data: { text: longText } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
-      })(),
+      })()
     );
 
     await adapter.start(relay);
@@ -752,7 +757,7 @@ describe('ClaudeCodeAdapter', () => {
         (async function* () {
           yield { type: 'text_delta', data: { text: 'hello' } } as StreamEvent;
           throw new Error('SDK stream error');
-        })(),
+        })()
       );
 
       await adapter.start(relay);
@@ -777,7 +782,7 @@ describe('ClaudeCodeAdapter', () => {
         (async function* () {
           yield { type: 'text_delta', data: { text: 'hello' } } as StreamEvent;
           yield { type: 'done', data: {} } as StreamEvent;
-        })(),
+        })()
       );
 
       await adapter.start(relay);
@@ -787,7 +792,7 @@ describe('ClaudeCodeAdapter', () => {
 
       const publishCalls = vi.mocked(relay.publish).mock.calls;
       const doneCalls = publishCalls.filter(
-        ([, payload]) => (payload as Record<string, unknown>).type === 'done',
+        ([, payload]) => (payload as Record<string, unknown>).type === 'done'
       );
       expect(doneCalls).toHaveLength(1);
     });
@@ -806,7 +811,7 @@ describe('ClaudeCodeAdapter', () => {
         (async function* () {
           yield { type: 'text_delta', data: { text: 'hello' } } as StreamEvent;
           yield { type: 'done', data: {} } as StreamEvent;
-        })(),
+        })()
       );
 
       await adapter.start(relay);
@@ -817,7 +822,7 @@ describe('ClaudeCodeAdapter', () => {
       // done event should still have been published despite earlier publish failure
       const publishCalls = vi.mocked(relay.publish).mock.calls;
       const donePublish = publishCalls.find(
-        ([, payload]) => (payload as Record<string, unknown>).type === 'done',
+        ([, payload]) => (payload as Record<string, unknown>).type === 'done'
       );
       expect(donePublish).toBeDefined();
     });
@@ -835,7 +840,7 @@ describe('ClaudeCodeAdapter', () => {
       const adapterWithLogger = new ClaudeCodeAdapter(
         'diagnostic-test',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, logger: mockLogger },
+        { agentManager, traceStore, logger: mockLogger }
       );
       await adapterWithLogger.start({
         ...relay,
@@ -847,9 +852,7 @@ describe('ClaudeCodeAdapter', () => {
       await adapterWithLogger.deliver(envelope.subject, envelope);
 
       // Warning should be logged for text_delta events with deliveredTo=0
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('delivered to 0'),
-      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('delivered to 0'));
     });
 
     it('does not log warning for done events with deliveredTo=0', async () => {
@@ -864,13 +867,13 @@ describe('ClaudeCodeAdapter', () => {
       vi.mocked(agentManager.sendMessage).mockReturnValue(
         (async function* () {
           yield { type: 'done', data: {} } as StreamEvent;
-        })(),
+        })()
       );
 
       const adapterWithLogger = new ClaudeCodeAdapter(
         'diagnostic-done',
         { defaultCwd: '/tmp' },
-        { agentManager, traceStore, logger: mockLogger },
+        { agentManager, traceStore, logger: mockLogger }
       );
       await adapterWithLogger.start({
         ...relay,
@@ -882,8 +885,8 @@ describe('ClaudeCodeAdapter', () => {
       await adapterWithLogger.deliver(envelope.subject, envelope);
 
       // No warning for done events
-      const warnCalls = mockLogger.warn.mock.calls.filter(
-        ([msg]: [string]) => msg.includes('delivered to 0'),
+      const warnCalls = mockLogger.warn.mock.calls.filter(([msg]: [string]) =>
+        msg.includes('delivered to 0')
       );
       expect(warnCalls).toHaveLength(0);
     });
@@ -901,7 +904,8 @@ describe('ClaudeCodeAdapter', () => {
             platform: 'slack',
             maxLength: 4000,
             supportedFormats: ['text', 'mrkdwn'],
-            formattingInstructions: 'FORMATTING RULES (you MUST follow these):\n- Do NOT use Markdown tables',
+            formattingInstructions:
+              'FORMATTING RULES (you MUST follow these):\n- Do NOT use Markdown tables',
           },
         },
       });
@@ -926,7 +930,8 @@ describe('ClaudeCodeAdapter', () => {
             platform: 'telegram',
             maxLength: 4096,
             supportedFormats: ['text', 'markdown'],
-            formattingInstructions: 'FORMATTING RULES (you MUST follow these):\n- Do NOT use Markdown tables',
+            formattingInstructions:
+              'FORMATTING RULES (you MUST follow these):\n- Do NOT use Markdown tables',
           },
         },
       });

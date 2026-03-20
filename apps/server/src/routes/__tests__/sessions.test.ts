@@ -38,7 +38,6 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
-
 // Dynamically import after mocks are set up
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
@@ -290,7 +289,9 @@ describe('Sessions Routes', () => {
     it('approves pending tool call', async () => {
       fakeRuntime.approveTool.mockReturnValue(true);
 
-      const res = await request(app).post(`/api/sessions/${S1}/approve`).send({ toolCallId: 'tc1' });
+      const res = await request(app)
+        .post(`/api/sessions/${S1}/approve`)
+        .send({ toolCallId: 'tc1' });
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
@@ -300,7 +301,9 @@ describe('Sessions Routes', () => {
     it('returns 404 when no pending approval', async () => {
       fakeRuntime.approveTool.mockReturnValue(false);
 
-      const res = await request(app).post(`/api/sessions/${S1}/approve`).send({ toolCallId: 'tc1' });
+      const res = await request(app)
+        .post(`/api/sessions/${S1}/approve`)
+        .send({ toolCallId: 'tc1' });
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('No pending approval');
@@ -336,20 +339,36 @@ describe('Sessions Routes', () => {
     /** Helper: make an SSE request with AbortController so it doesn't hang. */
     async function sseRequest(url: string) {
       const controller = new AbortController();
-      const responsePromise = new Promise<{ status: number; headers: Record<string, string>; body: string }>((resolve) => {
+      const responsePromise = new Promise<{
+        status: number;
+        headers: Record<string, string>;
+        body: string;
+      }>((resolve) => {
         const req = request(app).get(url);
         // Supertest doesn't support AbortController natively, so use .buffer(true) + custom parser
-        req.buffer(true).parse(
-          (res: { statusCode: number; headers: Record<string, string>; on: (event: string, handler: (chunk: Buffer) => void) => void }, callback: (err: null, data: string) => void) => {
-            let data = '';
-            res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-            // Give the route enough time to call watchSession and write initial SSE events
-            setTimeout(() => {
-              resolve({ status: res.statusCode, headers: res.headers, body: data });
-              callback(null, data);
-            }, 150);
-          },
-        ).end();
+        req
+          .buffer(true)
+          .parse(
+            (
+              res: {
+                statusCode: number;
+                headers: Record<string, string>;
+                on: (event: string, handler: (chunk: Buffer) => void) => void;
+              },
+              callback: (err: null, data: string) => void
+            ) => {
+              let data = '';
+              res.on('data', (chunk: Buffer) => {
+                data += chunk.toString();
+              });
+              // Give the route enough time to call watchSession and write initial SSE events
+              setTimeout(() => {
+                resolve({ status: res.statusCode, headers: res.headers, body: data });
+                callback(null, data);
+              }, 150);
+            }
+          )
+          .end();
       });
       const result = await responsePromise;
       controller.abort();
@@ -377,7 +396,7 @@ describe('Sessions Routes', () => {
         S1,
         expect.any(String),
         expect.any(Function),
-        undefined,
+        undefined
       );
     });
 
@@ -393,7 +412,7 @@ describe('Sessions Routes', () => {
         INTERNAL_ID,
         expect.any(String),
         expect.any(Function),
-        undefined,
+        undefined
       );
     });
 
@@ -407,7 +426,7 @@ describe('Sessions Routes', () => {
         S1,
         expect.any(String),
         expect.any(Function),
-        undefined,
+        undefined
       );
     });
   });
@@ -445,10 +464,7 @@ describe('Sessions Routes', () => {
 
       await request(app).get(`/api/sessions/${S1}/messages`);
 
-      expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(
-        expect.any(String),
-        S1
-      );
+      expect(fakeRuntime.getMessageHistory).toHaveBeenCalledWith(expect.any(String), S1);
     });
 
     it('GET /:id uses internal session ID for metadata lookup', async () => {
@@ -464,10 +480,7 @@ describe('Sessions Routes', () => {
       const res = await request(app).get(`/api/sessions/${S1}`);
 
       expect(res.status).toBe(200);
-      expect(fakeRuntime.getSession).toHaveBeenCalledWith(
-        expect.any(String),
-        'sdk-uuid-456'
-      );
+      expect(fakeRuntime.getSession).toHaveBeenCalledWith(expect.any(String), 'sdk-uuid-456');
     });
 
     it('GET /:id/tasks uses internal session ID', async () => {
@@ -475,10 +488,7 @@ describe('Sessions Routes', () => {
 
       await request(app).get(`/api/sessions/${S1}/tasks`);
 
-      expect(fakeRuntime.getSessionTasks).toHaveBeenCalledWith(
-        expect.any(String),
-        'sdk-uuid-789'
-      );
+      expect(fakeRuntime.getSessionTasks).toHaveBeenCalledWith(expect.any(String), 'sdk-uuid-789');
     });
   });
 
@@ -512,7 +522,9 @@ describe('Sessions Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get(`/api/sessions/${S1}/messages`).query({ cwd: '/tmp/evil' });
+      const res = await request(app)
+        .get(`/api/sessions/${S1}/messages`)
+        .query({ cwd: '/tmp/evil' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');

@@ -1,5 +1,5 @@
 ---
-title: "DorkOS Logging System Code Review"
+title: 'DorkOS Logging System Code Review'
 date: 2026-03-01
 type: internal-architecture
 status: active
@@ -24,6 +24,7 @@ The server has a well-designed centralized logger (`consola` + NDJSON file repor
 ## 1. What Works Well
 
 ### Server Logger (`apps/server/src/lib/logger.ts`)
+
 - **Centralized module** — single `createConsola()` instance, imported by 19 source files
 - **NDJSON file persistence** — structured, machine-parseable log entries to `~/.dork/logs/dorkos.log`
 - **Automatic rotation** — 10MB threshold, retain 7 rotated files, silent failure on IO errors
@@ -33,6 +34,7 @@ The server has a well-designed centralized logger (`consola` + NDJSON file repor
 - **Consistent tag pattern** — `logger.info('[Feature] message')` used across index.ts, routes, and services
 
 ### Structured Error Context
+
 - Error handler middleware logs `err.message` + `err.stack` — full context for debugging
 - Scheduler service logs operation names alongside errors for traceability
 - Agent routes log structured `{ err }` objects
@@ -45,13 +47,14 @@ The server has a well-designed centralized logger (`consola` + NDJSON file repor
 
 **Severity: HIGH** — These are runtime services whose diagnostics are lost.
 
-| Package | Files | `console.*` Calls | Impact |
-|---------|-------|-------------------|--------|
-| `@dorkos/relay` | 4 files | 7 `console.warn` calls | Adapter failures, plugin load errors invisible in log file |
-| `@dorkos/mesh` | 2 files | 2 calls (`console.warn` + `console.error`) | Discovery errors, reconciliation failures invisible |
-| `packages/cli` | 4 files | ~40 calls | CLI output (acceptable — user-facing) |
+| Package         | Files   | `console.*` Calls                          | Impact                                                     |
+| --------------- | ------- | ------------------------------------------ | ---------------------------------------------------------- |
+| `@dorkos/relay` | 4 files | 7 `console.warn` calls                     | Adapter failures, plugin load errors invisible in log file |
+| `@dorkos/mesh`  | 2 files | 2 calls (`console.warn` + `console.error`) | Discovery errors, reconciliation failures invisible        |
+| `packages/cli`  | 4 files | ~40 calls                                  | CLI output (acceptable — user-facing)                      |
 
 **Specific locations:**
+
 - `relay/src/adapter-registry.ts:72,159` — adapter shutdown failures
 - `relay/src/adapter-plugin-loader.ts:95,148,153` — plugin load errors
 - `relay/src/adapters/claude-code-adapter.ts:311` — missing replyTo warning
@@ -87,24 +90,24 @@ The server has a well-designed centralized logger (`consola` + NDJSON file repor
 
 The server logger uses `[Feature]` prefixes, but the format varies:
 
-| Pattern | Example | Files |
-|---------|---------|-------|
+| Pattern                | Example                                 | Files                   |
+| ---------------------- | --------------------------------------- | ----------------------- |
 | `[Feature]` (brackets) | `logger.info('[Pulse] Routes mounted')` | index.ts, most services |
-| `Feature:` (colon) | `logger.info('Pulse: started with...')` | scheduler-service.ts |
-| `[Feature] operation` | `logger.error('[DorkOS Error]', ...)` | error-handler.ts |
-| `Class:` | `logger.warn('BindingRouter: ...')` | binding-router.ts |
-| No prefix | `logger.info('Shutting down...')` | index.ts |
+| `Feature:` (colon)     | `logger.info('Pulse: started with...')` | scheduler-service.ts    |
+| `[Feature] operation`  | `logger.error('[DorkOS Error]', ...)`   | error-handler.ts        |
+| `Class:`               | `logger.warn('BindingRouter: ...')`     | binding-router.ts       |
+| No prefix              | `logger.info('Shutting down...')`       | index.ts                |
 
 **Not severe** — but makes grep/filtering harder.
 
 ### I5. Inconsistent Error Object Passing
 
-| Pattern | Example | Problem |
-|---------|---------|---------|
-| `{ err }` | `logger.error('[agents] GET /current failed', { err })` | `err` is full Error object — serializes poorly to JSON |
-| `{ error: msg }` | `logger.error('[Pulse] Failed to init', { error: msg })` | Only message string — loses stack trace |
-| Positional args | `logger.error('[DorkOS Error]', err.message, err.stack)` | Stack as separate arg — OK but inconsistent |
-| Direct error | `logger.warn('...:', err)` | Whole Error object as string arg |
+| Pattern          | Example                                                  | Problem                                                |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| `{ err }`        | `logger.error('[agents] GET /current failed', { err })`  | `err` is full Error object — serializes poorly to JSON |
+| `{ error: msg }` | `logger.error('[Pulse] Failed to init', { error: msg })` | Only message string — loses stack trace                |
+| Positional args  | `logger.error('[DorkOS Error]', err.message, err.stack)` | Stack as separate arg — OK but inconsistent            |
+| Direct error     | `logger.warn('...:', err)`                               | Whole Error object as string arg                       |
 
 The NDJSON file reporter flattens the first object arg into the JSON entry, so `{ err }` puts a serialized Error (with all its properties) into the log. This works but the shape varies across call sites.
 
@@ -144,6 +147,7 @@ In `createFileReporter()`, the loop assigns `context` to the **last** object arg
 ## 5. Code Organization Assessment
 
 ### Strengths
+
 - Logger is a clean, focused 99-line module — well under the 300-line limit
 - Single responsibility: init, file reporter, rotation
 - Proper TSDoc on the module and `initLogger()`
@@ -151,11 +155,13 @@ In `createFileReporter()`, the loop assigns `context` to the **last** object arg
 - `request-logger.ts` middleware is minimal and privacy-aware
 
 ### DRY Assessment
+
 - **Logger import is consistent** — all 19 server files use `import { logger } from '../lib/logger.js'`
 - **No duplicated logging utilities** — single module, no parallel implementations
 - **CLI console calls are appropriate** — CLI is user-facing terminal output, not structured logging
 
 ### File Organization
+
 - `lib/logger.ts` — appropriate location for cross-cutting infrastructure
 - `middleware/request-logger.ts` — appropriate separation of HTTP logging concern
 - `middleware/error-handler.ts` — appropriate separation of error logging concern
@@ -202,6 +208,7 @@ In `createFileReporter()`, the loop assigns `context` to the **last** object arg
 ### Priority 3: Fix Client `verboseLogging` (MEDIUM)
 
 Two options:
+
 - **Option A:** Implement it — gate debug-level `console.debug()` calls behind the flag in key hooks (`useChatSession`, `useRelayEventStream`, transport layer)
 - **Option B:** Remove it — delete the setting, the localStorage key, and the Settings UI toggle
 
@@ -222,6 +229,7 @@ Recommendation: **Option A** — it's useful for debugging SSE/Relay issues.
 ### Priority 6: Startup Summary Log (LOW)
 
 Add a single structured log entry after all initialization:
+
 ```typescript
 logger.info('[Startup] Server ready', {
   port: PORT,
@@ -243,14 +251,14 @@ logger.info('[Startup] Server ready', {
 
 ## 8. Summary Matrix
 
-| Area | Grade | Notes |
-|------|-------|-------|
-| Server logger module | **A** | Clean, tested, NDJSON + rotation |
-| Server log usage | **B+** | Consistent imports, good coverage, minor format inconsistencies |
-| Package logging | **D** | Raw `console.*`, no file persistence, no injection |
-| Client logging | **D** | Virtually none, broken `verboseLogging` flag, no error boundary |
-| CLI logging | **B** | Appropriate for terminal tool — `console.*` is correct here |
-| Security | **A** | No PII, no body/header logging, prod error hiding |
-| DRYness | **A-** | Single logger module, no duplication |
-| Test coverage | **A** | Logger tests + middleware tests comprehensive |
-| Observability | **C** | No request IDs, no UI log viewer, no startup summary |
+| Area                 | Grade  | Notes                                                           |
+| -------------------- | ------ | --------------------------------------------------------------- |
+| Server logger module | **A**  | Clean, tested, NDJSON + rotation                                |
+| Server log usage     | **B+** | Consistent imports, good coverage, minor format inconsistencies |
+| Package logging      | **D**  | Raw `console.*`, no file persistence, no injection              |
+| Client logging       | **D**  | Virtually none, broken `verboseLogging` flag, no error boundary |
+| CLI logging          | **B**  | Appropriate for terminal tool — `console.*` is correct here     |
+| Security             | **A**  | No PII, no body/header logging, prod error hiding               |
+| DRYness              | **A-** | Single logger module, no duplication                            |
+| Test coverage        | **A**  | Logger tests + middleware tests comprehensive                   |
+| Observability        | **C**  | No request IDs, no UI log viewer, no startup summary            |

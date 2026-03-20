@@ -1,9 +1,22 @@
 ---
-title: "SDK Error Observability — Child Process Errors, Circuit Breakers, Empty Stream Detection, Adapter Surfacing"
+title: 'SDK Error Observability — Child Process Errors, Circuit Breakers, Empty Stream Detection, Adapter Surfacing'
 date: 2026-03-18
 type: implementation
 status: active
-tags: [error-handling, observability, circuit-breaker, retry, child-process, streaming, slack, telegram, sdk, 529, overloaded]
+tags:
+  [
+    error-handling,
+    observability,
+    circuit-breaker,
+    retry,
+    child-process,
+    streaming,
+    slack,
+    telegram,
+    sdk,
+    529,
+    overloaded,
+  ]
 feature_slug: sdk-error-observability
 searches_performed: 10
 sources_count: 18
@@ -35,6 +48,7 @@ produced.
 **`sdk-event-mapper.ts` — SDK result error mapping is correct and complete.**
 
 Lines 14-28: `mapErrorCategory()` maps all four SDK `result` subtypes to `ErrorCategory`:
+
 - `error_max_turns` → `max_turns`
 - `error_during_execution` → `execution_error`
 - `error_max_budget_usd` → `budget_exceeded`
@@ -59,10 +73,11 @@ self-heal from `session not found` / `enoent` / `query closed before response` w
 **Gap 1: Recursive retry has no depth guard — can loop infinitely.**
 
 `message-sender.ts` lines 327-336:
+
 ```typescript
 if (session.hasStarted && isResumeFailure(err)) {
   session.hasStarted = false;
-  yield* executeSdkQuery(sessionId, content, session, opts, messageOpts);
+  yield * executeSdkQuery(sessionId, content, session, opts, messageOpts);
   return;
 }
 ```
@@ -108,6 +123,7 @@ message.
 The Claude Code CLI is a Node.js subprocess managed by the Claude Agent SDK. When it encounters
 HTTP 529 (Overloaded), it retries internally for approximately 4 minutes using its own built-in
 retry logic. After exhausting retries, it exits with code 1. The SDK converts this into:
+
 ```
 Error: Claude Code process exited with code 1
 ```
@@ -125,10 +141,12 @@ trigger a new-session retry) and `TRANSIENT_PATTERNS` (errors that should surfac
 a retry suggestion). Keep "process exited with code 1" only in `TRANSIENT_PATTERNS`.
 
 Pros:
+
 - Minimal code change — reorganize existing constants
 - Immediately breaks the infinite loop
 
 Cons:
+
 - "process exited with code 1" currently means BOTH stale session AND HTTP 529. By removing it from
   `RESUME_PATTERNS`, stale sessions that happen to exit with code 1 (rather than "session not found")
   would no longer self-heal. The remaining patterns (`query closed before response`, `enoent`,
@@ -148,10 +166,12 @@ markers. The JSONL may contain an `SDKResultMessage` with `subtype: 'error_durin
 `errors: ['529 Overloaded']` if the SDK managed to write it before the process crashed.
 
 Pros:
+
 - Could recover the actual HTTP error code
 - Already have the transcript reader (`TranscriptReader`)
 
 Cons:
+
 - Race condition: the JSONL may not be written if the process crashed before completing the result
   message
 - Adds I/O in the error handling path
@@ -166,9 +186,11 @@ DorkOS wrapped the Claude CLI in a shell script that captures stderr and appends
 log location, the parent could read that log on error.
 
 Pros:
+
 - Recovers the actual error reason
 
 Cons:
+
 - Complex platform-specific shell scripting
 - Fragile: SDK may change how it invokes the CLI
 - Not worth the maintenance burden for this diagnostic enhancement
@@ -219,6 +241,7 @@ export async function* executeSdkQuery(
 ```
 
 Pros:
+
 - Minimal change — one parameter, one guard condition
 - Preserves the self-healing stale-session behavior for `retryDepth < MAX_RESUME_RETRIES`
 - Breaks the infinite loop unconditionally on exhaustion
@@ -226,6 +249,7 @@ Pros:
 - No external dependency
 
 Cons:
+
 - Still retries a 529 up to `MAX_RESUME_RETRIES` times before surfacing (acceptable — 2 retries
   is better than infinity)
 - Does not add backoff delay between retries
@@ -238,10 +262,12 @@ Track a `retryCount` in the `AgentSession` struct. Reset on success. Block retry
 threshold. This prevents rapid user re-submits from each triggering their own retry chains.
 
 Pros:
+
 - Covers concurrent-call scenario
 - State persists across multiple sends to the same session
 
 Cons:
+
 - Adds mutable state to `AgentSession`
 - Session-level counter may prevent legitimate retries in a later healthy request
 - More complex than the parameter approach
@@ -254,11 +280,13 @@ Use `opossum` npm package to wrap the SDK `query()` call with a full circuit bre
 → half-open states with configurable `errorThresholdPercentage` and `resetTimeout`.
 
 Pros:
+
 - Industry-standard pattern
 - Half-open state probes service health automatically
 - Emits events (open, close, halfOpen) that can be logged
 
 Cons:
+
 - Opossum wraps a Promise-returning function, not an async generator. The SDK `query()` returns
   an async iterable, not a Promise. Adapting requires collecting all events into a Promise, losing
   streaming. This is a fundamental incompatibility.
@@ -330,6 +358,7 @@ if (contentEventCount === 0 && !emittedError) {
 ```
 
 Pros:
+
 - Turns a silent failure into an observable error
 - The error reaches the client inline (via `ErrorPart` path from existing `stream-event-handler.ts`)
 - The error reaches Slack/Telegram adapters via `handleError()` in their outbound modules
@@ -337,6 +366,7 @@ Pros:
 - The `logger.warn` gives server-side observability even before the client path is wired
 
 Cons:
+
 - Does not explain WHY the stream was empty (still opaque at the root cause level)
 - Tool-approval sessions legitimately yield zero text content before waiting for approval — need
   to exclude `approval_required` and `question_prompt` from the "empty" definition, OR only check
@@ -353,9 +383,11 @@ treating it as a sign the SDK process crashed immediately. Longer durations sugg
 the full 4-minute retry cycle (529 scenario).
 
 Pros:
+
 - Potentially distinguishes "crashed immediately" from "ran out of options after retries"
 
 Cons:
+
 - Arbitrary threshold — the SDK's internal retry duration varies
 - Tool-use sessions can legitimately complete quickly (< 500ms)
 - Wrong axis: time is not the right signal; content is
@@ -407,23 +439,25 @@ field from the StreamEvent. Once Problem 2 and 3 fixes produce well-formed error
 When yielding error events from `executeSdkQuery` (catch block and empty-stream guard), set the
 `message` field to a user-friendly string rather than the raw SDK error string:
 
-| Scenario | `message` for Slack/Telegram |
-|---|---|
+| Scenario                                             | `message` for Slack/Telegram                                                                         |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `process exited with code 1` (after retry exhausted) | "The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a minute." |
-| Empty stream (zero content) | "The agent didn't respond. The service may be temporarily unavailable." |
-| `boundary violation` | "The request was rejected — the agent's working directory is outside allowed bounds." |
-| Auth / billing error (detected via keyword) | "Authentication failed. Check your API key configuration." |
+| Empty stream (zero content)                          | "The agent didn't respond. The service may be temporarily unavailable."                              |
+| `boundary violation`                                 | "The request was rejected — the agent's working directory is outside allowed bounds."                |
+| Auth / billing error (detected via keyword)          | "Authentication failed. Check your API key configuration."                                           |
 
 These messages are set in `executeSdkQuery` before yielding the error event, not in the adapter.
 This keeps the message logic close to the source of the error.
 
 Pros:
+
 - Single source of truth for user-facing copy
 - Both the web UI (via `ErrorMessageBlock`) and adapter platforms (Slack/Telegram) receive the
   same message
 - No adapter-specific logic needed
 
 Cons:
+
 - The message must be general enough to work in plain text (Slack/Telegram don't render React)
 - Cannot show a "Retry" button in Slack/Telegram — the error must be actionable through text alone
 
@@ -433,10 +467,12 @@ Have `handleError()` in the outbound modules read the `category` field from the 
 and render category-specific messages (matching the copy table in `20260316_error_categorization_retry.md`).
 
 Pros:
+
 - Adapters can use platform-native formatting (Slack Block Kit, Telegram inline keyboards)
 - Categories could trigger different Slack message structures (a Block Kit error card vs. plain text)
 
 Cons:
+
 - Duplicates copy logic in multiple adapters (Slack, Telegram, future adapters)
 - The `category` field is only available for SDK result subtypes — not for catch-block errors
   unless the error event explicitly carries it (which Approach A does)
@@ -478,28 +514,28 @@ errors identified in this investigation:
 
 ### Complete Classification
 
-| Error Source | Detection | Category | Retry Strategy | User Message |
-|---|---|---|---|---|
-| SDK result `error_max_turns` | `result.subtype === 'error_max_turns'` | `max_turns` | None | "The agent reached its turn limit." |
-| SDK result `error_during_execution` | `result.subtype === 'error_during_execution'` | `execution_error` | Manual | "The agent stopped due to an error." |
-| SDK result `error_max_budget_usd` | `result.subtype === 'error_max_budget_usd'` | `budget_exceeded` | None | "The agent hit its cost limit." |
-| SDK result `error_max_structured_output_retries` | `result.subtype === 'error_max_structured_output_retries'` | `output_format_error` | None | "The agent couldn't produce the required format." |
-| Stale session resume | `isResumeFailure(err)` AND `retryDepth < MAX_RESUME_RETRIES` | (internal) | Auto, transparent | (no user message — retried silently) |
-| Generic process crash (after retry exhaustion) | `isResumeFailure(err)` AND `retryDepth >= MAX_RESUME_RETRIES` | `execution_error` | Manual | "The agent stopped unexpectedly. Try again." |
-| Auth / billing (keyword heuristic) | `message.includes('authentication')` etc. | `execution_error` | None | "Authentication failed. Check your API key." |
-| Empty stream (zero content) | `contentEventCount === 0 && !emittedError` | `execution_error` | Manual | "The agent didn't respond. The service may be unavailable." |
-| Boundary violation | `validateBoundary()` throws | (no category — transport error) | None | "Directory boundary violation: {path}" |
-| TTL timeout (adapter path) | `controller.signal.aborted` | (no category — adapter-level) | Manual | (not surfaced to user — already logged in agent-handler.ts) |
+| Error Source                                     | Detection                                                     | Category                        | Retry Strategy    | User Message                                                |
+| ------------------------------------------------ | ------------------------------------------------------------- | ------------------------------- | ----------------- | ----------------------------------------------------------- |
+| SDK result `error_max_turns`                     | `result.subtype === 'error_max_turns'`                        | `max_turns`                     | None              | "The agent reached its turn limit."                         |
+| SDK result `error_during_execution`              | `result.subtype === 'error_during_execution'`                 | `execution_error`               | Manual            | "The agent stopped due to an error."                        |
+| SDK result `error_max_budget_usd`                | `result.subtype === 'error_max_budget_usd'`                   | `budget_exceeded`               | None              | "The agent hit its cost limit."                             |
+| SDK result `error_max_structured_output_retries` | `result.subtype === 'error_max_structured_output_retries'`    | `output_format_error`           | None              | "The agent couldn't produce the required format."           |
+| Stale session resume                             | `isResumeFailure(err)` AND `retryDepth < MAX_RESUME_RETRIES`  | (internal)                      | Auto, transparent | (no user message — retried silently)                        |
+| Generic process crash (after retry exhaustion)   | `isResumeFailure(err)` AND `retryDepth >= MAX_RESUME_RETRIES` | `execution_error`               | Manual            | "The agent stopped unexpectedly. Try again."                |
+| Auth / billing (keyword heuristic)               | `message.includes('authentication')` etc.                     | `execution_error`               | None              | "Authentication failed. Check your API key."                |
+| Empty stream (zero content)                      | `contentEventCount === 0 && !emittedError`                    | `execution_error`               | Manual            | "The agent didn't respond. The service may be unavailable." |
+| Boundary violation                               | `validateBoundary()` throws                                   | (no category — transport error) | None              | "Directory boundary violation: {path}"                      |
+| TTL timeout (adapter path)                       | `controller.signal.aborted`                                   | (no category — adapter-level)   | Manual            | (not surfaced to user — already logged in agent-handler.ts) |
 
 ### Retryability Rules
 
-| Category | Auto-retry in server | Manual retry UI affordance |
-|---|---|---|
-| `max_turns` | No | No (retrying hits same limit) |
-| `execution_error` | Stale session only (transparent) | Yes (user sees error + retry button) |
-| `budget_exceeded` | No | No |
-| `output_format_error` | No | No |
-| Boundary violation | No | No |
+| Category              | Auto-retry in server             | Manual retry UI affordance           |
+| --------------------- | -------------------------------- | ------------------------------------ |
+| `max_turns`           | No                               | No (retrying hits same limit)        |
+| `execution_error`     | Stale session only (transparent) | Yes (user sees error + retry button) |
+| `budget_exceeded`     | No                               | No                                   |
+| `output_format_error` | No                               | No                                   |
+| Boundary violation    | No                               | No                                   |
 
 ### Classification Priority for Catch-Block Errors
 
@@ -540,6 +576,7 @@ messages. No adapter code changes are needed for basic error surfacing.
 Based on the SDK source and GitHub issues (anthropics/claude-agent-sdk-typescript#72), exit code 1
 is used for ALL subprocess failures. There is no way to recover the HTTP 529 status code from the
 thrown Error object in the parent process. The practical response is:
+
 - Log the error as "agent process stopped unexpectedly (exit code 1)"
 - Show a user-friendly "try again" message without speculating about 529
 - Let the server logs capture the event count and duration for post-hoc diagnosis

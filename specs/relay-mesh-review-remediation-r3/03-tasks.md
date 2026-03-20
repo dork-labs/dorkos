@@ -6,12 +6,12 @@
 
 ## Summary
 
-| Phase | Name | Tasks | Findings Covered |
-|-------|------|-------|-----------------|
-| 1 | Critical Fixes | 4 | C1, C2, C3, C4 |
-| 2 | High-Severity Fixes | 10 | H1-H10 |
-| 3 | Medium-Severity Fixes | 10 | M1-M21 |
-| **Total** | | **24** | **36 findings** |
+| Phase     | Name                  | Tasks  | Findings Covered |
+| --------- | --------------------- | ------ | ---------------- |
+| 1         | Critical Fixes        | 4      | C1, C2, C3, C4   |
+| 2         | High-Severity Fixes   | 10     | H1-H10           |
+| 3         | Medium-Severity Fixes | 10     | M1-M21           |
+| **Total** |                       | **24** | **36 findings**  |
 
 ---
 
@@ -26,6 +26,7 @@ All Phase 1 tasks are independent and can run in parallel.
 **Files:** `apps/server/src/routes/mesh.ts`
 
 Add `validateBoundary()` calls to four endpoints that accept filesystem paths:
+
 - `POST /discover` — validate each root path
 - `POST /agents` — validate `projectPath`
 - `POST /deny` — validate `path`
@@ -129,7 +130,7 @@ Replace all in-place status mutations (`this.status.state = ...`) with immutable
 
 ---
 
-### 2.7 Fix O(n*m) dead-letter lookup in conversations endpoint (H7)
+### 2.7 Fix O(n\*m) dead-letter lookup in conversations endpoint (H7)
 
 **Size:** Small | **Priority:** Medium | **Dependencies:** None | **Parallel:** All P2
 
@@ -287,6 +288,7 @@ Phase 3:                       |    |
 ## Verification
 
 After all tasks complete:
+
 - `pnpm typecheck` — zero type errors
 - `pnpm test -- --run` — all tests pass
 - `pnpm build` — all packages build

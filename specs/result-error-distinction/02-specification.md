@@ -187,6 +187,7 @@ if (message.type === 'result') {
 ```
 
 **Key design decisions:**
+
 - `session_status` always emits first — even failed queries have cost/token data worth capturing
 - `error` emits between `session_status` and `done` — the client needs error info before cleanup
 - `done` always emits — it resets streaming state (timers, token counters, text streaming flag) and this cleanup is required regardless of success/error
@@ -332,6 +333,7 @@ export function ErrorMessageBlock({ category, message, details, onRetry }: Error
 ```
 
 **Design system compliance:**
+
 - `rounded-xl` (16px card radius per design system)
 - `p-4` (16px padding, on 8pt grid)
 - `my-2` (8px vertical margin)
@@ -375,8 +377,15 @@ if (part.type === 'error') {
 `AssistantMessageContent` needs access to the retry function. Get it from `MessageContext`:
 
 ```typescript
-const { sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry } =
-  useMessageContext();
+const {
+  sessionId,
+  isStreaming,
+  activeToolCallId,
+  onToolRef,
+  focusedOptionIndex,
+  onToolDecided,
+  onRetry,
+} = useMessageContext();
 ```
 
 This requires adding `onRetry` to the `MessageContext` type and threading it from `ChatPanel` → `MessageList` → `MessageContext`.
@@ -402,19 +411,22 @@ Pass `handleRetry` into the message context provider. The `ErrorMessageBlock` re
 
 After this change, there are two distinct error display paths:
 
-| Error Source | Path | Display |
-|---|---|---|
-| SDK result error | `sdk-event-mapper` → `error` StreamEvent (with `category`) → `stream-event-handler` → `ErrorPart` in message parts → `ErrorMessageBlock` inline | Inline in message stream |
-| Transport error (network, SSE) | `use-chat-session.ts` catch block → `setError()` → `ChatPanel` banner | Banner above input |
-| SESSION_LOCKED | `use-chat-session.ts` catch block → `setSessionBusy()` → busy indicator | Session busy indicator (3s auto-clear) |
+| Error Source                   | Path                                                                                                                                            | Display                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| SDK result error               | `sdk-event-mapper` → `error` StreamEvent (with `category`) → `stream-event-handler` → `ErrorPart` in message parts → `ErrorMessageBlock` inline | Inline in message stream               |
+| Transport error (network, SSE) | `use-chat-session.ts` catch block → `setError()` → `ChatPanel` banner                                                                           | Banner above input                     |
+| SESSION_LOCKED                 | `use-chat-session.ts` catch block → `setSessionBusy()` → busy indicator                                                                         | Session busy indicator (3s auto-clear) |
 
 ## User Experience
 
 ### Success Path (unchanged)
+
 Agent completes → "Done" state → session status shows cost/tokens → input re-enables.
 
 ### Error Path (new)
+
 Agent fails → inline error block appears at the end of the assistant message:
+
 - Red-tinted card with icon + category heading + description
 - Collapsible "Details" disclosure with raw error text
 - "Retry" button (only for `execution_error`)
@@ -423,12 +435,12 @@ Agent fails → inline error block appears at the end of the assistant message:
 
 ### Category-Specific UX
 
-| Category | What User Sees | Available Actions |
-|---|---|---|
-| `max_turns` | "Turn limit reached" — muted red card | Send new message, start new session |
-| `execution_error` | "Agent stopped unexpectedly" + details | **Retry button**, send new message |
-| `budget_exceeded` | "Cost limit reached" | Send new message (budget resets per session) |
-| `output_format_error` | "Output format error" | Send new message with different phrasing |
+| Category              | What User Sees                         | Available Actions                            |
+| --------------------- | -------------------------------------- | -------------------------------------------- |
+| `max_turns`           | "Turn limit reached" — muted red card  | Send new message, start new session          |
+| `execution_error`     | "Agent stopped unexpectedly" + details | **Retry button**, send new message           |
+| `budget_exceeded`     | "Cost limit reached"                   | Send new message (budget resets per session) |
+| `output_format_error` | "Output format error"                  | Send new message with different phrasing     |
 
 ## Testing Strategy
 
@@ -437,6 +449,7 @@ Agent fails → inline error block appears at the end of the assistant message:
 Add a new `describe('result messages')` block:
 
 **Test 1: Success result yields session_status + done**
+
 ```typescript
 it('yields session_status and done for success result', async () => {
   const events = await collectEvents(
@@ -452,6 +465,7 @@ it('yields session_status and done for success result', async () => {
 ```
 
 **Test 2: Error result yields session_status + error + done**
+
 ```typescript
 it('yields session_status, error, and done for error result', async () => {
   const events = await collectEvents(
@@ -478,6 +492,7 @@ it('yields session_status, error, and done for error result', async () => {
 **Test 3-5: One test per remaining error subtype** (`error_max_turns`, `error_max_budget_usd`, `error_max_structured_output_retries`) — verify correct category mapping.
 
 **Test 6: Error result with no errors array**
+
 ```typescript
 it('uses fallback message when errors array is empty', async () => {
   const events = await collectEvents(
@@ -492,6 +507,7 @@ it('uses fallback message when errors array is empty', async () => {
 ```
 
 **Test 7: Session status includes cost/tokens even on error**
+
 ```typescript
 it('includes session status data even when result is error', async () => {
   const events = await collectEvents(
@@ -526,12 +542,14 @@ function makeResultMessage(subtype: string, errors?: string[]): SDKMessage {
 ### Unit Tests: Stream Event Handler
 
 **Test: Categorized error appends ErrorPart to message parts**
+
 - Send an `error` event with `category: 'execution_error'`
 - Verify an `ErrorPart` is appended to the current assistant message's parts
 - Verify `setError()` is NOT called (no banner)
 - Verify `setStatus('error')` IS called
 
 **Test: Uncategorized error sets banner state**
+
 - Send an `error` event without `category`
 - Verify `setError()` IS called
 - Verify no `ErrorPart` is appended
@@ -539,22 +557,26 @@ function makeResultMessage(subtype: string, errors?: string[]): SDKMessage {
 ### Component Tests: ErrorMessageBlock
 
 **Test: Renders category heading and description**
+
 - Render with `category: 'max_turns'`
 - Verify "Turn limit reached" heading and description text
 
 **Test: Shows retry button only for execution_error**
+
 - Render with `category: 'execution_error'` and `onRetry` prop
 - Verify retry button is present
 - Render with `category: 'max_turns'` and `onRetry` prop
 - Verify retry button is NOT present
 
 **Test: Collapsible details**
+
 - Render with `details: 'raw error text'`
 - Verify details are hidden by default
 - Click "Details" button
 - Verify details are visible
 
 **Test: Retry button calls onRetry**
+
 - Render with `category: 'execution_error'` and mock `onRetry`
 - Click retry button
 - Verify `onRetry` was called

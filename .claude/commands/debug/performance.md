@@ -380,9 +380,7 @@ for (const id of sessionIds) {
 }
 
 // GOOD: Parallel with concurrency limit
-const results = await Promise.all(
-  sessionIds.map(id => readTranscript(id))
-);
+const results = await Promise.all(sessionIds.map((id) => readTranscript(id)));
 ```
 
 ### 5.4 Memory Leak Fixes

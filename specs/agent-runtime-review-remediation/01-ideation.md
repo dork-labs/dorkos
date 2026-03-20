@@ -53,33 +53,36 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role |
-|------|------|
-| `packages/shared/src/agent-runtime.ts` | Universal `AgentRuntime` interface + `SseResponse`, `RuntimeCapabilities`, DI method signatures |
-| `apps/server/src/services/core/runtime-registry.ts` | Registry of runtimes keyed by type; routes call `getDefault()` |
-| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Claude Code runtime (687 lines) — session mgmt, messaging, SDK integration |
-| `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` | Watches JSONL files, broadcasts sync events via SSE |
-| `apps/server/src/services/runtimes/claude-code/session-lock.ts` | Session write locks with TTL; accepts Express `Response` |
-| `apps/server/src/services/runtimes/claude-code/transcript-reader.ts` | Reads SDK JSONL transcripts; has stale module-level singleton |
-| `apps/server/src/services/runtimes/claude-code/command-registry.ts` | Scans `.claude/commands/` for slash commands |
-| `apps/server/src/services/core/index.ts` | Barrel that leaks claude-code internals via re-exports |
-| `apps/server/src/routes/relay.ts` | Route that bypasses RuntimeRegistry |
-| `apps/server/src/routes/commands.ts` | Route that bypasses RuntimeRegistry |
-| `apps/server/src/routes/sessions.ts` | Route with correct RuntimeRegistry usage (reference) |
-| `apps/obsidian-plugin/src/views/CopilotView.tsx` | External consumer with stale import paths |
-| `packages/relay/src/adapters/claude-code-adapter.ts` | Uses stale `AgentManagerLike` naming |
+| File                                                                   | Role                                                                                            |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `packages/shared/src/agent-runtime.ts`                                 | Universal `AgentRuntime` interface + `SseResponse`, `RuntimeCapabilities`, DI method signatures |
+| `apps/server/src/services/core/runtime-registry.ts`                    | Registry of runtimes keyed by type; routes call `getDefault()`                                  |
+| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Claude Code runtime (687 lines) — session mgmt, messaging, SDK integration                      |
+| `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` | Watches JSONL files, broadcasts sync events via SSE                                             |
+| `apps/server/src/services/runtimes/claude-code/session-lock.ts`        | Session write locks with TTL; accepts Express `Response`                                        |
+| `apps/server/src/services/runtimes/claude-code/transcript-reader.ts`   | Reads SDK JSONL transcripts; has stale module-level singleton                                   |
+| `apps/server/src/services/runtimes/claude-code/command-registry.ts`    | Scans `.claude/commands/` for slash commands                                                    |
+| `apps/server/src/services/core/index.ts`                               | Barrel that leaks claude-code internals via re-exports                                          |
+| `apps/server/src/routes/relay.ts`                                      | Route that bypasses RuntimeRegistry                                                             |
+| `apps/server/src/routes/commands.ts`                                   | Route that bypasses RuntimeRegistry                                                             |
+| `apps/server/src/routes/sessions.ts`                                   | Route with correct RuntimeRegistry usage (reference)                                            |
+| `apps/obsidian-plugin/src/views/CopilotView.tsx`                       | External consumer with stale import paths                                                       |
+| `packages/relay/src/adapters/claude-code-adapter.ts`                   | Uses stale `AgentManagerLike` naming                                                            |
 
 **Shared dependencies:**
+
 - `runtimeRegistry` — correct routes import from `services/core/runtime-registry.ts`
 - `app.locals.sessionBroadcaster` — escape hatch for session sync
 - `@dorkos/shared/agent-runtime` — interface contract all runtimes implement
 
 **Data flow (correct pattern):**
+
 ```
 Route → runtimeRegistry.getDefault() → runtime.method() → response
 ```
 
 **Data flow (incorrect patterns being fixed):**
+
 ```
 relay.ts:    Route → import transcriptReader singleton → transcriptReader.getSession()
 commands.ts: Route → CommandRegistryService cache → registry.getCommands()
@@ -87,6 +90,7 @@ sessions.ts: Route → app.locals.sessionBroadcaster → broadcaster.registerCli
 ```
 
 **Potential blast radius:**
+
 - Direct: ~15 files need changes
 - Tests: 4 test files renamed + relocated (2,180 lines)
 - Packages: `@dorkos/shared` (interface), `@dorkos/relay` (type naming)
@@ -102,31 +106,31 @@ Full research saved at `research/20260306_agent_runtime_interface_design_pattern
 
 ### SseResponse Interface (Issue #5)
 
-| Approach | Description | Verdict |
-|----------|-------------|---------|
-| **Narrow to `'close'` event** | `on(event: 'close', cb: () => void): void` — express intent, eliminate cast | **Recommended** |
-| Keep current, update lock manager | No interface change but remains too broad | Rejected |
-| Use Express Response directly | Couples session-lock to Express | Rejected |
+| Approach                          | Description                                                                 | Verdict         |
+| --------------------------------- | --------------------------------------------------------------------------- | --------------- |
+| **Narrow to `'close'` event**     | `on(event: 'close', cb: () => void): void` — express intent, eliminate cast | **Recommended** |
+| Keep current, update lock manager | No interface change but remains too broad                                   | Rejected        |
+| Use Express Response directly     | Couples session-lock to Express                                             | Rejected        |
 
 Narrowing `SseResponse` to declare `on(event: 'close', ...)` follows the hexagonal port principle: the shared interface declares what the application needs. Express satisfies it structurally.
 
 ### watchSession() Design (Issue #6)
 
-| Approach | Description | Verdict |
-|----------|-------------|---------|
+| Approach                                | Description                                                                                                   | Verdict         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------- |
 | **Make it real via registerCallback()** | Add callback path to SessionBroadcaster; implement watchSession(); remove getSessionBroadcaster() from routes | **Recommended** |
-| Remove from interface | Sacrifices abstraction; routes need type narrowing | Rejected |
-| Keep stub + TODO | Misleading contract | Rejected |
+| Remove from interface                   | Sacrifices abstraction; routes need type narrowing                                                            | Rejected        |
+| Keep stub + TODO                        | Misleading contract                                                                                           | Rejected        |
 
 VS Code `FileSystemWatcher` precedent: change notification belongs on the interface, returns `() => void` unsubscribe.
 
 ### Cross-Package DI (Issue #7)
 
-| Approach | Description | Verdict |
-|----------|-------------|---------|
+| Approach                             | Description                                                                       | Verdict         |
+| ------------------------------------ | --------------------------------------------------------------------------------- | --------------- |
 | **Narrow port interfaces in shared** | Define `AgentRegistryPort` + `RelayPort` capturing only methods the runtime calls | **Recommended** |
-| unknown + internal type guards | Zero type safety at call sites | Rejected |
-| Generic type parameters | Identical to unknown in practice | Rejected |
+| unknown + internal type guards       | Zero type safety at call sites                                                    | Rejected        |
+| Generic type parameters              | Identical to unknown in practice                                                  | Rejected        |
 
 TypeScript structural typing means `MeshCore` satisfies `AgentRegistryPort` without `implements` — no circular deps.
 
@@ -136,8 +140,8 @@ Immediate removal recommended for internal monorepo. Grep all consumers, batch-m
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | watchSession() handling | Make it real now | User decision. Invest ~3 files to make the interface honest. Routes call `runtime.watchSession()` instead of `app.locals.sessionBroadcaster`. Clean abstraction today. |
-| 2 | Shim removal strategy | Immediate removal | User decision. Internal monorepo with no external npm consumers — no deprecation window needed. Grep + batch-migrate + delete + typecheck. |
-| 3 | Spec scope | All 4 groups in one spec | User decision. All 12 issues are cleanup from the same refactor (~15-20 file changes). Keeps remediation atomic. |
+| #   | Decision                | Choice                   | Rationale                                                                                                                                                              |
+| --- | ----------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | watchSession() handling | Make it real now         | User decision. Invest ~3 files to make the interface honest. Routes call `runtime.watchSession()` instead of `app.locals.sessionBroadcaster`. Clean abstraction today. |
+| 2   | Shim removal strategy   | Immediate removal        | User decision. Internal monorepo with no external npm consumers — no deprecation window needed. Grep + batch-migrate + delete + typecheck.                             |
+| 3   | Spec scope              | All 4 groups in one spec | User decision. All 12 issues are cleanup from the same refactor (~15-20 file changes). Keeps remediation atomic.                                                       |

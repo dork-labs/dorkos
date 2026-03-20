@@ -55,12 +55,12 @@ Without this spec, autonomous agents can freely message, overload, and enumerate
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `better-sqlite3` | existing | Budget counter table, namespace column migration |
-| `@dorkos/relay` | workspace | AccessControl, BudgetEnforcer, subject-matcher |
-| `@dorkos/shared` | workspace | New Zod schemas for topology types |
-| `chokidar` | existing | AccessControl hot-reload (already in Relay) |
+| Dependency       | Version   | Purpose                                          |
+| ---------------- | --------- | ------------------------------------------------ |
+| `better-sqlite3` | existing  | Budget counter table, namespace column migration |
+| `@dorkos/relay`  | workspace | AccessControl, BudgetEnforcer, subject-matcher   |
+| `@dorkos/shared` | workspace | New Zod schemas for topology types               |
+| `chokidar`       | existing  | AccessControl hot-reload (already in Relay)      |
 
 No new external packages required.
 
@@ -71,6 +71,7 @@ No new external packages required.
 New module. Pure functions, no side effects.
 
 **Derivation algorithm:**
+
 1. Accept `(projectPath, scanRoot, manifestNamespace?)`
 2. If `manifestNamespace` is provided and non-empty, use it as the namespace
 3. Otherwise, compute `path.relative(scanRoot, projectPath)` and take the first path segment
@@ -91,7 +92,7 @@ New module. Pure functions, no side effects.
 export function resolveNamespace(
   projectPath: string,
   scanRoot: string,
-  manifestNamespace?: string,
+  manifestNamespace?: string
 ): string;
 
 export function normalizeNamespace(raw: string): string;
@@ -189,7 +190,7 @@ Extend `unregisterAgent()` to also clean up access rules when the last agent in 
 
 When registering, map manifest budget to Relay endpoint budget:
 
-- `agent.budget.maxHopsPerMessage` → Used as `maxHops` in the Relay budget when messages are published *from* this agent
+- `agent.budget.maxHopsPerMessage` → Used as `maxHops` in the Relay budget when messages are published _from_ this agent
 - `agent.budget.maxCallsPerHour` → Tracked via a `budget_counters` SQLite table using 1-minute time buckets (ADR 0014 sliding window algorithm)
 
 **Budget counter schema** (added to `mesh.db` as migration version 3):
@@ -239,7 +240,7 @@ export class TopologyManager {
   constructor(
     private registry: AgentRegistry,
     private relayBridge: RelayBridge,
-    private relayCore?: RelayCore,
+    private relayCore?: RelayCore
   ) {}
 
   /** Get the topology view filtered by caller's namespace access. */
@@ -266,6 +267,7 @@ export class TopologyManager {
 Extend MeshCore to compose the new modules:
 
 **Constructor changes:**
+
 - Accept optional `scanRoots` in `MeshOptions` for namespace derivation context
 - Create `TopologyManager` instance
 - Store default scan root for registration
@@ -403,6 +405,7 @@ Also update `mesh_list` to accept optional `callerNamespace` parameter for invis
 #### 9.1. New Entity Hooks (`apps/client/src/layers/entities/mesh/model/`)
 
 **`use-mesh-topology.ts`:**
+
 ```typescript
 export function useTopology(namespace?: string) {
   return useQuery({
@@ -413,11 +416,15 @@ export function useTopology(namespace?: string) {
 ```
 
 **`use-mesh-access.ts`:**
+
 ```typescript
 export function useUpdateAccessRule() {
   return useMutation({
-    mutationFn: (rule: { sourceNamespace: string; targetNamespace: string; action: 'allow' | 'deny' }) =>
-      transport.put('/api/mesh/topology/access', rule),
+    mutationFn: (rule: {
+      sourceNamespace: string;
+      targetNamespace: string;
+      action: 'allow' | 'deny';
+    }) => transport.put('/api/mesh/topology/access', rule),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mesh', 'topology'] }),
   });
 }
@@ -436,11 +443,13 @@ export function useAgentAccess(agentId: string) {
 New component added as a fourth tab in MeshPanel ("Topology").
 
 **Layout:**
+
 - **Namespace Groups** — Agents grouped by namespace, each group collapsible
 - **Cross-Project Rules** — Table of current access rules with add/remove buttons
 - **Per-Agent Budget** — Shows each agent's budget constraints (maxHops, callsPerHour)
 
 **Interactions:**
+
 - Toggle cross-namespace access via a rule editor (source namespace dropdown, target namespace dropdown, allow/deny toggle)
 - View per-agent budget from manifest (read-only display, editing is via agent update)
 
@@ -494,6 +503,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 ### Unit Tests
 
 **`packages/mesh/src/__tests__/namespace-resolver.test.ts`** (NEW)
+
 - Derives namespace from scan root and project path correctly
 - Uses manifest override when provided
 - Normalizes special characters to hyphens
@@ -501,6 +511,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 - Handles edge cases: trailing slashes, same-level paths, deeply nested paths
 
 **`packages/mesh/src/__tests__/topology.test.ts`** (NEW)
+
 - Returns only visible namespaces for a given caller
 - Invisible boundary: omits namespaces without access (not 403, just absent)
 - Lists cross-namespace rules correctly
@@ -509,6 +520,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 - Admin view (`*`) returns all namespaces
 
 **`packages/mesh/src/__tests__/budget-mapper.test.ts`** (NEW)
+
 - Maps maxHopsPerMessage to Relay maxHops
 - Tracks call counts in sliding window
 - Rejects when maxCallsPerHour exceeded
@@ -516,6 +528,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 - Handles concurrent calls within same minute bucket
 
 **`packages/mesh/src/__tests__/mesh-core.test.ts`** (MODIFY)
+
 - Registration stores namespace and scan_root
 - list() with callerNamespace filters by access
 - unregister() cleans up access rules when last agent in namespace
@@ -524,6 +537,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 ### Integration Tests
 
 **`packages/mesh/src/__tests__/relay-integration.test.ts`** (NEW)
+
 - Register two agents in same namespace → messages flow
 - Register two agents in different namespaces → messages blocked
 - Add cross-namespace allow rule → messages flow
@@ -533,6 +547,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 ### Server Tests
 
 **`apps/server/src/routes/__tests__/mesh-topology.test.ts`** (NEW)
+
 - GET /topology returns namespace-grouped agents
 - GET /topology?namespace=X returns filtered view
 - PUT /topology/access validates request body
@@ -542,12 +557,14 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 - GET /agents with callerNamespace filters results
 
 **`apps/server/src/services/core/__tests__/mcp-mesh-tools.test.ts`** (MODIFY)
+
 - mesh_query_topology returns filtered topology
 - mesh_list with callerNamespace respects invisible boundaries
 
 ### Client Tests
 
 **`apps/client/src/layers/features/mesh/ui/__tests__/TopologyPanel.test.tsx`** (NEW)
+
 - Renders namespace groups with agent counts
 - Renders cross-namespace rule table
 - Add rule form submits correct payload
@@ -610,7 +627,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 
 ## Open Questions
 
-*No open questions — all key decisions were resolved during ideation (see Section 6 of 01-ideation.md).*
+_No open questions — all key decisions were resolved during ideation (see Section 6 of 01-ideation.md)._
 
 ## Related ADRs
 

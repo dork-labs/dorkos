@@ -1,5 +1,5 @@
 ---
-title: "Agent Messaging Transport Libraries for Node.js/TypeScript"
+title: 'Agent Messaging Transport Libraries for Node.js/TypeScript'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -44,6 +44,7 @@ The `wildcard-match` package (~300k weekly downloads, tiny, ESM/CJS/UMD) covers 
 ### 3. EventEmitter2 Is the Closest Existing Fit for In-Process Pub/Sub With Wildcards
 
 `eventemitter2` (MIT, ~7.3M weekly downloads, 2.9k GitHub stars) extends Node's EventEmitter with:
+
 - Namespace/wildcard subscriptions using `*` (single segment) and `**` (multi-segment) on `.`-delimited event names
 - TTL (times-to-listen), async listeners, `emitAsync()`, `waitFor()`
 - Browser + Worker environment compatibility
@@ -56,6 +57,7 @@ The wildcard syntax is `foo.*` and `foo.**`, which maps cleanly onto a NATS-styl
 ### 4. No Library Combines Wildcard Pub/Sub With SQLite Persistence
 
 This is the key gap. After exhaustive searching, there is no npm package that provides all of:
+
 - NATS-style (or MQTT-style) topic/subject routing with wildcards
 - Durable message storage (SQLite or file-based)
 - Embeddable in a Node.js process
@@ -65,12 +67,12 @@ The ecosystem has these as separate primitives that must be composed manually.
 
 ### 5. SQLite-Based Queue Libraries Exist but Are Job Queues, Not Message Routers
 
-| Package | Downloads/wk | Last Published | External Deps | Notes |
-|---|---|---|---|---|
-| `liteque` | Low (~65 GitHub stars) | Jan 2025 (v0.8.0) | None (SQLite bundled) | TypeScript, Zod validation, Drizzle ORM, job-queue semantics only |
-| `node-persistent-queue` | ~174 | 2 years ago | None (sqlite3) | Simple FIFO queue, no routing |
-| `node-sqlite-queue` | Very low | Unmaintained | None (sqlite3) | Similar to above |
-| `better-queue-sqlite` | ~175 | 3 years ago | `better-queue` | SQLite store plugin for better-queue |
+| Package                 | Downloads/wk           | Last Published    | External Deps         | Notes                                                             |
+| ----------------------- | ---------------------- | ----------------- | --------------------- | ----------------------------------------------------------------- |
+| `liteque`               | Low (~65 GitHub stars) | Jan 2025 (v0.8.0) | None (SQLite bundled) | TypeScript, Zod validation, Drizzle ORM, job-queue semantics only |
+| `node-persistent-queue` | ~174                   | 2 years ago       | None (sqlite3)        | Simple FIFO queue, no routing                                     |
+| `node-sqlite-queue`     | Very low               | Unmaintained      | None (sqlite3)        | Similar to above                                                  |
+| `better-queue-sqlite`   | ~175                   | 3 years ago       | `better-queue`        | SQLite store plugin for better-queue                              |
 
 None of these support topic-based routing. They all implement simple FIFO job queues.
 
@@ -78,12 +80,12 @@ None of these support topic-based routing. They all implement simple FIFO job qu
 
 These are disqualified for the local-embeddable requirement:
 
-| Package | External Dep | Notes |
-|---|---|---|
-| `bullmq` | Redis | The standard; ~600k weekly downloads |
-| `bee-queue` | Redis | ~15,550 weekly downloads, v2.0.0 published Jan 2026 |
-| `agenda` | MongoDB | v6 adds PostgreSQL/Redis backends too |
-| `bunqueue` | None (SQLite) | **Bun runtime only** — not compatible with Node.js |
+| Package     | External Dep  | Notes                                               |
+| ----------- | ------------- | --------------------------------------------------- |
+| `bullmq`    | Redis         | The standard; ~600k weekly downloads                |
+| `bee-queue` | Redis         | ~15,550 weekly downloads, v2.0.0 published Jan 2026 |
+| `agenda`    | MongoDB       | v6 adds PostgreSQL/Redis backends too               |
+| `bunqueue`  | None (SQLite) | **Bun runtime only** — not compatible with Node.js  |
 
 ### 7. Actor Model Libraries (Nact, XState)
 
@@ -108,6 +110,7 @@ However, the **Maildir format** (one file per message in `new/`, `cur/`, `tmp/` 
 No. The NATS server (`gnatsd`) is a Go binary. Embedding NATS is a Go-only feature — you import `github.com/nats-io/nats-server/v2/server` and start it in a goroutine. There is no equivalent in Node.js.
 
 The approach of spawning a `nats-server` binary via `child_process.spawn()` works technically but requires:
+
 1. Distributing or downloading a platform-specific binary
 2. Managing process lifecycle (start, stop, crash recovery)
 3. Connecting via TCP (adding latency and socket overhead)
@@ -117,6 +120,7 @@ This is effectively "running a separate server process," just managed by the par
 **nats.js / @nats-io/nats-core**
 
 The official JavaScript NATS client has been restructured into scoped packages:
+
 - `@nats-io/nats-core` — base protocol, pub/sub, request/reply (v3.3.0, last published ~23 days ago as of Feb 2026)
 - `@nats-io/jetstream` — JetStream persistence layer client
 - `@nats-io/transport-node` — Node.js transport layer
@@ -163,6 +167,7 @@ function natsMatch(subject: string, pattern: string): boolean {
 ### Category 3: Pub/Sub Libraries
 
 **EventEmitter2** (npm: `eventemitter2`)
+
 - 7.3M weekly downloads
 - MIT license
 - Wildcard support: `foo.*` (single segment) and `foo.**` (multi-segment)
@@ -173,22 +178,26 @@ function natsMatch(subject: string, pattern: string): boolean {
 - **Best existing option for in-process wildcard routing**
 
 **emittery**
+
 - Modern, async-native event emitter
 - No wildcard support
 - No persistence
 - Excellent for simple typed events, not suitable for topic routing
 
 **mitt** (700 bytes, ~1.5M weekly downloads)
+
 - Supports `*` for catch-all only, no hierarchical topics
 - No persistence
 - Too minimal for subject-based routing
 
 **nanoevents** (107 bytes)
+
 - No wildcards
 - No persistence
 - Minimal, not suitable
 
 **PubSubJS** (`pubsub-js`)
+
 - Topic-based pub/sub
 - Supports hierarchical topics with `/` separator and simple prefix matching
 - No wildcards in the NATS sense
@@ -196,10 +205,12 @@ function natsMatch(subject: string, pattern: string): boolean {
 - ~200k weekly downloads, actively maintained
 
 **Pubsub.js** (`pubsub.js` on npm)
+
 - Claims wildcard and inheritance support
 - Lower adoption, less well-documented
 
 **@morgan-stanley/message-broker**
+
 - RxJS-based, type-safe channels
 - No wildcards
 - No persistence
@@ -210,6 +221,7 @@ function natsMatch(subject: string, pattern: string): boolean {
 No meaningful Maildir-format library exists for Node.js in the general-purpose messaging sense. Email-related packages (nodemailer, inbox) are oriented around SMTP/IMAP, not filesystem message stores.
 
 The **Maildir format** is conceptually simple and could be implemented in ~100 lines:
+
 - `~/.dork/agents/{agent-id}/inbox/new/` — new messages (atomic write = rename from tmp/)
 - `~/.dork/agents/{agent-id}/inbox/cur/` — processed messages
 - `~/.dork/agents/{agent-id}/inbox/tmp/` — staging area for atomic delivery
@@ -219,6 +231,7 @@ This pattern guarantees crash safety (rename is atomic on most filesystems) and 
 ### Category 5: Subject/Topic Matching Libraries
 
 **mqtt-pattern** (`mqtt-pattern`)
+
 - MIT license, 0 dependencies
 - ~2,600–3,900 weekly downloads
 - Last commit: December 17, 2024
@@ -229,23 +242,27 @@ This pattern guarantees crash safety (rename is atomic on most filesystems) and 
 - Active but niche
 
 **mqtt-match** (`mqtt-match`)
+
 - MIT, 0 dependencies
 - Boolean topic matching only (no parameter extraction)
 - 20 dependents
 - Less maintained than mqtt-pattern
 
 **wildcard-match** (`wildcard-match`)
+
 - ~300k weekly downloads, very well maintained
 - Glob-style patterns (`*`, `**`, `?`)
 - Configurable separator for path-style matching
 - Not NATS/MQTT semantics natively, but adaptable
 
 **route-trie** (`route-trie`)
+
 - Trie-based URL router
 - Designed for HTTP routing, not messaging
 - Overkill and wrong abstraction
 
 **pubsub-router** (`pubsub-router`)
+
 - Template-based message routing
 - 4 downloads/week — effectively abandoned
 - Last published 1 year ago
@@ -257,6 +274,7 @@ This pattern guarantees crash safety (rename is atomic on most filesystems) and 
 ### What Does Not Exist
 
 There is no actively maintained npm package that provides all of:
+
 1. NATS-style topic routing with `*` and `>` wildcards
 2. Durable message persistence (SQLite or file-based)
 3. Embeddable in a Node.js process (no separate server)
@@ -316,7 +334,7 @@ This combination must be assembled from primitives.
 - "nact: 1.1k stars, last commit June 2020, Apache-2.0" — [nact GitHub](https://github.com/nactio/nact)
 - "@morgan-stanley/message-broker: RxJS-based, 19 stars, no wildcards" — [message-broker GitHub](https://github.com/morganstanley/message-broker)
 - "wildcard-match: tiny, ESM/CJS/UMD" — [wildcard-match npm](https://www.npmjs.com/package/wildcard-match)
-- "NATS subject wildcard syntax: * and >" — [NATS Wildcard Subscriptions Docs](https://docs.nats.io/using-nats/developer/receiving/wildcards)
+- "NATS subject wildcard syntax: \* and >" — [NATS Wildcard Subscriptions Docs](https://docs.nats.io/using-nats/developer/receiving/wildcards)
 - "node-persistent-queue: ~174 weekly downloads, SQLite-backed" — [node-persistent-queue npm](https://www.npmjs.com/package/node-persistent-queue)
 - "pubsub-router: 4 downloads/week, last published 1 year ago" — [pubsub-router npm](https://www.npmjs.com/package/pubsub-router?activeTab=versions)
 - "bunqueue requires bun:sqlite — Node.js not supported" — [bunqueue DEV article](https://dev.to/egeominotti/i-built-a-job-queue-thats-32x-faster-than-bullmq-no-redis-required-1n5g)

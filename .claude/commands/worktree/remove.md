@@ -13,10 +13,10 @@ Remove a git worktree after checking for uncommitted changes.
 
 Parse `$ARGUMENTS` for:
 
-| Argument          | Effect                                                  |
-| ----------------- | ------------------------------------------------------- |
-| `<branch-name>`   | **Required.** Branch name of the worktree to remove     |
-| `--delete-branch` | Also delete the branch after removing the worktree      |
+| Argument          | Effect                                              |
+| ----------------- | --------------------------------------------------- |
+| `<branch-name>`   | **Required.** Branch name of the worktree to remove |
+| `--delete-branch` | Also delete the branch after removing the worktree  |
 
 **Examples:**
 

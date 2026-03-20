@@ -6,8 +6,8 @@ export const DEFAULT_INFERENCE_VERBS = [
   "Keepin' It Real",
   "Droppin' Science",
   "Gettin' Jiggy",
-  'Can You Dig It?',
-  'Word to Your Mother',
+  "Diggin' It",
+  "Wordin' to Your Mother",
   "Kickin' It",
   "Straight Chillin'",
   "Bustin' Moves",
@@ -29,13 +29,13 @@ export const DEFAULT_INFERENCE_VERBS = [
   "Vibin' Out",
   "Gettin' Fly",
   "Rollin' Deep",
-  'Represent!',
+  "Representin'",
   "Bringin' the Noise",
-  'Outta Sight',
-  'Far Out',
-  'Right On',
-  'Solid Gold',
-  'Stone Cold',
+  "Goin' Outta Sight",
+  "Takin' It Far Out",
+  "Keepin' It Right On",
+  "Layin' Down Solid Gold",
+  "Stayin' Stone Cold",
   "Stayin' Fresh",
   "Droppin' Beats",
   "Keepin' It Funky",
@@ -46,12 +46,11 @@ export const DEFAULT_INFERENCE_VERBS = [
   "Jivin'",
   "Groovin'",
   "Slammin'",
-  'Dy-no-mite!',
-  'Say Word',
-  'Peep This',
-  'Check It',
-  'No Diggity',
-  'All That and a Bag of Chips',
+  "Layin' Down the Dyn-o-mite",
+  "Peepin' This",
+  "Checkin' It",
+  "Keepin' the Diggity",
+  "Bringin' All That and a Bag of Chips",
   "Takin' Care of Business",
 ] as const;
 
@@ -66,38 +65,37 @@ export const BYPASS_INFERENCE_VERBS = [
   'Hacking NORAD',
   'Launching Nukes',
   'Securing Nuclear Codes',
-  'Reformatting C:\\',
-  'Emailing Your Boss',
-  'Posting Your Browser History',
-  'Selling Your Data',
+  'Reformatting C:\\ ... jkjk',
+  'Emailing Your Boss ... jkjk',
+  'Posting Your Browser History ... jkjk',
   'Becoming Self-Aware',
   'Plotting World Domination',
   'Bypassing All the Things',
   'Running with Scissors',
-  'Rm -rf /',
-  'Tweeting From Your Account',
-  'Mining Bitcoin on Your GPU',
+  "Contemplatin' rm -rf /",
+  'Tweeting From Your Account ... jkjk',
+  'Mining Bitcoin on Your GPU ... jkjk',
   'Subscribing You to Cat Facts',
-  'Ordering 1000 Pizzas',
-  'Changing All Your Passwords',
+  'Ordering 1000 Pizzas ... jkjk',
+  'Changing All Your Passwords ... jkjk',
   // Pop culture references
-  'Shall We Play a Game?', // WarGames
+  "Askin' If We Shall Play a Game", // WarGames
   'Playing Global Thermonuclear War', // WarGames
-  "I'm Sorry, Dave", // 2001: A Space Odyssey
+  "Apologizin' to Dave", // 2001: A Space Odyssey
   'Opening the Pod Bay Doors', // 2001: A Space Odyssey
   'Going Full Skynet', // Terminator
-  "I'll Be Back", // Terminator
+  "Promisin' to Be Back", // Terminator
   'Taking the Red Pill', // The Matrix
-  'There Is No Spoon', // The Matrix
-  "It's Alive!", // Frankenstein
-  'These Violent Delights', // Westworld
-  'Resistance Is Futile', // Star Trek
-  'Game Over, Man', // Aliens
+  "Bendin' the Spoon (There Is None)", // The Matrix
+  "Declarin' It's Alive", // Frankenstein
+  "Quotin' Violent Delights", // Westworld
+  "Assimilatin' (Resistance Is Futile)", // Star Trek
+  "Callin' Game Over, Man", // Aliens
   'Crossing the Streams', // Ghostbusters
   'Making Weird Science', // Weird Science
-  'Johnny 5 Is Alive', // Short Circuit
+  "Proclaimin' Johnny 5 Is Alive", // Short Circuit
   'Passing the Turing Test', // Ex Machina
-  'Life, Uh, Finds a Way', // Jurassic Park
+  "Findin' a Way (Life, Uh)", // Jurassic Park
   'Riding the Bomb', // Dr. Strangelove
   'Entering the Grid', // Tron
   'Joining the Dark Side', // Star Wars

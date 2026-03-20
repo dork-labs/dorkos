@@ -14,7 +14,11 @@
     "build": "tsc",
     "test": "vitest run"
   },
-  "keywords": ["dorkos", "relay", "adapter"],
+  "keywords": [
+    "dorkos",
+    "relay",
+    "adapter"
+  ],
   "peerDependencies": {
     "@dorkos/relay": ">=0.0.0"
   },

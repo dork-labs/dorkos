@@ -58,6 +58,7 @@ Research (Linear's "anti-onboarding" philosophy, GitHub's "Default Setup" patter
 The `MeshPanel` component switches between two modes based on `agents.length`:
 
 **Mode A — Zero registered agents:**
+
 ```
 ┌──────────────────────────────────────────┐
 │  (No MeshStatsHeader)                    │
@@ -79,6 +80,7 @@ The `MeshPanel` component switches between two modes based on `agents.length`:
 ```
 
 **Mode B — One or more registered agents:**
+
 ```
 ┌──────────────────────────────────────────┐
 │  3 agents · 2 active · 1 stale          │
@@ -90,6 +92,7 @@ The `MeshPanel` component switches between two modes based on `agents.length`:
 ```
 
 **Transition logic:**
+
 ```tsx
 // In MeshPanel
 const agents = agentsResult?.agents ?? [];
@@ -132,6 +135,7 @@ interface ScanRootInputProps {
 ```
 
 **Behavior:**
+
 - Renders each root as a `Badge variant="secondary"` with an X (remove) button
 - Text input at the end of the chip row: type a path + Enter or comma to add
 - Folder icon button at the end opens `DirectoryPicker` dialog
@@ -140,6 +144,7 @@ interface ScanRootInputProps {
 - Paths are normalized: trim whitespace, resolve `~` to home dir on display
 
 **Layout:**
+
 ```
 ┌──────────────────────────────────────────────┐
 │ [ ~/projects × ] [ /opt/agents × ]  ____  📁 │
@@ -196,8 +201,7 @@ export function useMeshScanRoots() {
 
   // Mutation: save custom roots to config
   const { mutate: saveScanRoots } = useMutation({
-    mutationFn: (roots: string[]) =>
-      transport.updateConfig({ mesh: { scanRoots: roots } }),
+    mutationFn: (roots: string[]) => transport.updateConfig({ mesh: { scanRoots: roots } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config'] }),
   });
 
@@ -216,6 +220,7 @@ A collapsible "Advanced" section below the scan input:
 ```
 
 Expands to show:
+
 - **Scan depth** slider: Range 1-5, default 3. Maps to `maxDepth` parameter in `useDiscoverAgents`
 - Shows current depth as number label beside slider
 
@@ -239,11 +244,11 @@ interface MeshEmptyStateProps {
 
 **Per-tab empty states:**
 
-| Tab | Icon | Headline | Description | CTA |
-|-----|------|----------|-------------|-----|
-| Agents | `Network` | "No agents registered yet" | "Run a discovery scan to find compatible agents, then register them to join the mesh." | "Go to Discovery" (switches tab) |
-| Denied | `ShieldCheck` | "No blocked paths" | "Paths you deny during discovery will appear here, preventing those agents from joining the mesh." | None (healthy state) |
-| Access | `Shield` | "Cross-project access requires multiple namespaces" | "Register agents from different projects to configure which namespaces can communicate." | "Go to Discovery" (switches tab) |
+| Tab    | Icon          | Headline                                            | Description                                                                                        | CTA                              |
+| ------ | ------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Agents | `Network`     | "No agents registered yet"                          | "Run a discovery scan to find compatible agents, then register them to join the mesh."             | "Go to Discovery" (switches tab) |
+| Denied | `ShieldCheck` | "No blocked paths"                                  | "Paths you deny during discovery will appear here, preventing those agents from joining the mesh." | None (healthy state)             |
+| Access | `Shield`      | "Cross-project access requires multiple namespaces" | "Register agents from different projects to configure which namespaces can communicate."           | "Go to Discovery" (switches tab) |
 
 Empty states use the Calm Tech design system: `rounded-xl` card feel, `text-muted-foreground`, icon at `size-8 text-muted-foreground/50`, adequate `p-8` padding.
 
@@ -265,7 +270,7 @@ const [activeTab, setActiveTab] = useState('topology');
     />
   </TabsContent>
   ...
-</Tabs>
+</Tabs>;
 ```
 
 ### 10. Transition Animations
@@ -288,7 +293,7 @@ import { AnimatePresence, motion } from 'motion/react';
       <TabsList>...</TabsList>
     </motion.div>
   )}
-</AnimatePresence>
+</AnimatePresence>;
 ```
 
 Wrap in `<MotionConfig reducedMotion="user">` (already present at app level in `App.tsx`).
@@ -340,6 +345,7 @@ Wrap in `<MotionConfig reducedMotion="user">` (already present at app level in `
 ### Unit Tests
 
 **MeshPanel Mode A/B switching:**
+
 ```typescript
 it('renders Discovery-only view when no agents registered', () => {
   enableMesh();
@@ -365,6 +371,7 @@ it('renders full tabbed interface when agents exist', () => {
 ```
 
 **ScanRootInput chip management:**
+
 ```typescript
 it('renders initial roots as chips', () => {
   render(<ScanRootInput roots={['/home/user']} onRootsChange={vi.fn()} />);
@@ -399,6 +406,7 @@ it('deduplicates paths', async () => {
 ```
 
 **Empty state CTAs:**
+
 ```typescript
 it('switches to Discovery tab when "Go to Discovery" is clicked in Agents empty state', async () => {
   enableMesh();
@@ -415,6 +423,7 @@ it('switches to Discovery tab when "Go to Discovery" is clicked in Agents empty 
 ```
 
 **Config persistence:**
+
 ```typescript
 it('saves custom roots to config when modified', async () => {
   // Verify PATCH /api/config is called with mesh.scanRoots

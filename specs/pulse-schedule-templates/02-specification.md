@@ -51,13 +51,13 @@ The existing infrastructure is fully functional. This spec wires up the UI surfa
 
 ## Technical Dependencies
 
-| Dependency | Version | Notes |
-|---|---|---|
-| React 19 | `^19.0.0` | Already installed |
-| `motion/react` | Already installed | Used for step transitions |
-| TanStack Query v5 | Already installed | `usePulsePresets` hook |
-| Zustand | Already installed | `usePulsePresetDialog` coordination store |
-| `@dorkos/shared` | workspace | `PulsePreset` type |
+| Dependency        | Version           | Notes                                     |
+| ----------------- | ----------------- | ----------------------------------------- |
+| React 19          | `^19.0.0`         | Already installed                         |
+| `motion/react`    | Already installed | Used for step transitions                 |
+| TanStack Query v5 | Already installed | `usePulsePresets` hook                    |
+| Zustand           | Already installed | `usePulsePresetDialog` coordination store |
+| `@dorkos/shared`  | workspace         | `PulsePreset` type                        |
 
 No new dependencies required.
 
@@ -138,6 +138,7 @@ export function usePulsePresets() {
 ```
 
 Add to `entities/pulse/index.ts`:
+
 ```typescript
 export { usePulsePresets } from './model/use-pulse-presets';
 export { usePulsePresetDialog } from './model/use-pulse-preset-dialog';
@@ -171,6 +172,7 @@ interface PresetCardProps {
 **Selectable variant** (used in dialog): renders a clickable card with a visible selection ring when `selected=true`. No toggle. Spotlight effect still applies on hover. Clicking calls `onSelect(preset)`.
 
 Update `PulsePresetsStep.tsx` import:
+
 ```diff
 - import { PresetCard } from './PresetCard';
 + import { PresetCard } from '@/layers/features/pulse/ui/PresetCard';
@@ -233,6 +235,7 @@ useEffect(() => {
 ```
 
 **Step 1 — Preset picker:**
+
 ```
 ┌─────────────────────────────────────────┐
 │  New Schedule                           │
@@ -257,6 +260,7 @@ useEffect(() => {
 - Selecting a preset: `setAppliedPreset(preset); setStep('form')`
 
 **Step 2 — Form:**
+
 ```
 ┌─────────────────────────────────────────┐
 │  ← Back   New Schedule                  │
@@ -350,6 +354,7 @@ When `schedules.length === 0`, replace the current "No schedules configured" tex
 ```
 
 **Implementation:**
+
 - `SchedulesView` imports `usePulsePresets` from `entities/pulse` ✓ (valid FSD layer direction)
 - `SchedulesView` imports `usePulsePresetDialog` from `entities/pulse` ✓
 - The compact card is rendered inline (no separate component needed — it's just 2 cards with a static layout)
@@ -397,6 +402,7 @@ The onboarding `PulsePresetsStep` flow is unchanged. It still shows all presets 
 ### Unit Tests
 
 **`PresetCard.tsx`:**
+
 ```typescript
 // features/pulse/__tests__/PresetCard.test.tsx
 describe('PresetCard', () => {
@@ -409,6 +415,7 @@ describe('PresetCard', () => {
 ```
 
 **`PresetGallery.tsx`:**
+
 ```typescript
 describe('PresetGallery', () => {
   it('renders a card for each preset returned by usePulsePresets', ...)
@@ -419,6 +426,7 @@ describe('PresetGallery', () => {
 ```
 
 **`usePulsePresetDialog`:**
+
 ```typescript
 describe('usePulsePresetDialog', () => {
   it('openWithPreset sets pendingPreset and externalTrigger=true', ...)
@@ -427,6 +435,7 @@ describe('usePulsePresetDialog', () => {
 ```
 
 **`CreateScheduleDialog.tsx`:**
+
 ```typescript
 describe('CreateScheduleDialog', () => {
   it('opens at preset-picker step by default', ...)
@@ -441,6 +450,7 @@ describe('CreateScheduleDialog', () => {
 ```
 
 **`SchedulesView.tsx`:**
+
 ```typescript
 describe('SchedulesView empty state', () => {
   it('shows compact preset cards when schedules list is empty', ...)
@@ -450,6 +460,7 @@ describe('SchedulesView empty state', () => {
 ```
 
 **`PulseEmptyState.tsx`:**
+
 ```typescript
 describe('PulseEmptyState', () => {
   it('calls onCreateWithPreset with preset when a CTA is clicked', ...)
@@ -461,6 +472,7 @@ describe('PulseEmptyState', () => {
 ### Regression Tests
 
 **Onboarding integration:**
+
 ```typescript
 describe('PulsePresetsStep regression', () => {
   it('still renders toggle cards for each preset', ...)
@@ -500,6 +512,7 @@ No external documentation changes required. The `CreateScheduleDialog` UI is sel
 ## Implementation Phases
 
 ### Phase 1 — Infrastructure Promotion
+
 1. Move `usePulsePresets` to `entities/pulse/model/use-pulse-presets.ts`
 2. Create `usePulsePresetDialog` store at `entities/pulse/model/use-pulse-preset-dialog.ts`
 3. Update `entities/pulse/index.ts` barrel exports
@@ -510,6 +523,7 @@ No external documentation changes required. The `CreateScheduleDialog` UI is sel
 8. Verify onboarding regressions: `pnpm vitest run`
 
 ### Phase 2 — CreateScheduleDialog Two-Step
+
 1. Add `step` and `appliedPreset` state to `CreateScheduleDialog`
 2. Implement step 1 (preset picker) UI
 3. Implement step 2 (form with back button) and field pre-population
@@ -518,6 +532,7 @@ No external documentation changes required. The `CreateScheduleDialog` UI is sel
 6. Reset state on close
 
 ### Phase 3 — Empty State Surfaces
+
 1. Retrofit `PulseEmptyState` with functional `PresetGallery` and `onCreateWithPreset` callback
 2. Wire `PulsePanel` to handle the empty state callbacks (open dialog with preset or blank)
 3. Retrofit `SchedulesView` empty state with 2 compact preset cards
@@ -528,7 +543,7 @@ No external documentation changes required. The `CreateScheduleDialog` UI is sel
 
 ## Open Questions
 
-*None — all decisions were resolved during ideation.*
+_None — all decisions were resolved during ideation._
 
 ---
 

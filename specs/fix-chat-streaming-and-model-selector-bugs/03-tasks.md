@@ -29,6 +29,7 @@ Replace the eager `setLocalModel(null)` / `setLocalPermissionMode(null)` in the 
 
 **File:** `apps/client/src/layers/entities/session/model/use-session-status.ts`
 **Changes:**
+
 - Add `useEffect` to React import
 - Remove eager clear from success path (~2 lines removed)
 - Add convergence `useEffect` (~8 lines added)

@@ -64,21 +64,18 @@ export function useCommandPalette({
   }, [filteredCommands.length, selectedIndex]);
 
   /** Returns true if a command trigger was detected. */
-  const detectCommandTrigger = useCallback(
-    (value: string, cursor: number): boolean => {
-      const textToCursor = value.slice(0, cursor);
-      const cmdMatch = textToCursor.match(/(^|\s)\/([\w:-]*)$/);
-      if (cmdMatch) {
-        setShowCommands(true);
-        setCommandQuery(cmdMatch[2]);
-        setSlashTriggerPos((cmdMatch.index ?? 0) + cmdMatch[1].length);
-        return true;
-      }
-      setShowCommands(false);
-      return false;
-    },
-    []
-  );
+  const detectCommandTrigger = useCallback((value: string, cursor: number): boolean => {
+    const textToCursor = value.slice(0, cursor);
+    const cmdMatch = textToCursor.match(/(^|\s)\/([\w:-]*)$/);
+    if (cmdMatch) {
+      setShowCommands(true);
+      setCommandQuery(cmdMatch[2]);
+      setSlashTriggerPos((cmdMatch.index ?? 0) + cmdMatch[1].length);
+      return true;
+    }
+    setShowCommands(false);
+    return false;
+  }, []);
 
   /** Returns the new input value after inserting the selected command. */
   const handleCommandSelect = useCallback(

@@ -28,6 +28,7 @@ Hooks are user-configured scripts that fire around tool execution (pre-commit va
 The Claude Agent SDK emits lifecycle events when user-configured hooks execute. These hooks wrap tool calls (e.g., a pre-commit hook runs after an Edit tool call) or fire at session boundaries (e.g., a validation hook on prompt submit).
 
 Currently:
+
 1. `hook_started` arrives at `sdk-event-mapper.ts` as `{ type: 'system', subtype: 'hook_started' }`
 2. The mapper's system message dispatch (lines 49–115) has no branch for `hook_started`, `hook_progress`, or `hook_response`
 3. All three fall through silently — no log, no event, no trace
@@ -69,9 +70,9 @@ None directly applicable. The system-status-compact-boundary spec (`specs/system
 type SDKHookStartedMessage = {
   type: 'system';
   subtype: 'hook_started';
-  hook_id: string;       // Correlation key across lifecycle
-  hook_name: string;     // e.g., "pre-commit", "my-validator"
-  hook_event: string;    // e.g., "PreToolUse", "PostToolUse", "SessionStart"
+  hook_id: string; // Correlation key across lifecycle
+  hook_name: string; // e.g., "pre-commit", "my-validator"
+  hook_event: string; // e.g., "PreToolUse", "PostToolUse", "SessionStart"
   uuid: string;
   session_id: string;
 };
@@ -85,7 +86,7 @@ type SDKHookProgressMessage = {
   hook_event: string;
   stdout: string;
   stderr: string;
-  output: string;        // Combined output
+  output: string; // Combined output
   uuid: string;
   session_id: string;
 };
@@ -112,25 +113,21 @@ type SDKHookResponseMessage = {
 The `hook_event` field determines which rendering surface handles the event:
 
 ```typescript
-const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set([
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-]);
+const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
 ```
 
-| `hook_event` value | Route | Rendering surface |
-|---|---|---|
-| `PreToolUse` | Tool-contextual | Sub-row in ToolCallCard |
-| `PostToolUse` | Tool-contextual | Sub-row in ToolCallCard |
-| `PostToolUseFailure` | Tool-contextual | Sub-row in ToolCallCard |
-| `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, `Notification`, `PermissionRequest` | Session-level | SystemStatusZone (success) or error banner (failure) |
+| `hook_event` value                                                                                                                           | Route           | Rendering surface                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------- |
+| `PreToolUse`                                                                                                                                 | Tool-contextual | Sub-row in ToolCallCard                              |
+| `PostToolUse`                                                                                                                                | Tool-contextual | Sub-row in ToolCallCard                              |
+| `PostToolUseFailure`                                                                                                                         | Tool-contextual | Sub-row in ToolCallCard                              |
+| `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, `Notification`, `PermissionRequest` | Session-level   | SystemStatusZone (success) or error banner (failure) |
 
 ### Tool-Call Correlation
 
 Tool-contextual hooks correlate to tool calls via `toolState.currentToolId` — the mapper already tracks the active tool call ID. When `hook_started` arrives with a tool-contextual `hook_event`, the mapper captures `toolState.currentToolId` as the associated tool.
 
-**Edge case — PreToolUse timing:** For `PreToolUse` hooks, `hook_started` may arrive *before* the associated `tool_call_start`. If `toolState.currentToolId` is empty, emit the hook event with `toolCallId: null`. The client handler buffers orphan hooks and attaches them retrospectively when the next `tool_call_start` arrives (see Phase 3 below).
+**Edge case — PreToolUse timing:** For `PreToolUse` hooks, `hook_started` may arrive _before_ the associated `tool_call_start`. If `toolState.currentToolId` is empty, emit the hook event with `toolCallId: null`. The client handler buffers orphan hooks and attaches them retrospectively when the next `tool_call_start` arrives (see Phase 3 below).
 
 ---
 
@@ -281,11 +278,7 @@ if (message.subtype === 'hook_response') {
 Add the constant at module scope:
 
 ```typescript
-const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set([
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-]);
+const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
 ```
 
 ---
@@ -467,24 +460,20 @@ function HookRow({ hook }: HookRowProps) {
     <div className="flex flex-col gap-0.5">
       <button
         className={cn(
-          'flex items-center gap-1.5 py-0.5 text-3xs',
-          hook.status === 'error'
-            ? 'text-destructive'
-            : 'text-muted-foreground',
+          'text-3xs flex items-center gap-1.5 py-0.5',
+          hook.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
         )}
         onClick={() => hasOutput && setExpanded(!expanded)}
         disabled={!hasOutput}
       >
         {hook.status === 'running' && <Loader2 className="size-3 animate-spin" />}
-        {hook.status === 'success' && <Check className="size-3 text-muted-foreground" />}
-        {hook.status === 'error' && <X className="size-3 text-destructive" />}
-        {hook.status === 'cancelled' && <X className="size-3 text-muted-foreground" />}
+        {hook.status === 'success' && <Check className="text-muted-foreground size-3" />}
+        {hook.status === 'error' && <X className="text-destructive size-3" />}
+        {hook.status === 'cancelled' && <X className="text-muted-foreground size-3" />}
         <span className="font-mono">{hook.hookName}</span>
         {hook.status === 'error' && <span>failed</span>}
         {hasOutput && (
-          <ChevronDown
-            className={cn('size-3 transition-transform', expanded && 'rotate-180')}
-          />
+          <ChevronDown className={cn('size-3 transition-transform', expanded && 'rotate-180')} />
         )}
       </button>
       <AnimatePresence>
@@ -495,7 +484,7 @@ function HookRow({ hook }: HookRowProps) {
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <pre className="rounded bg-muted p-2 font-mono text-3xs max-h-32 overflow-y-auto whitespace-pre-wrap">
+            <pre className="bg-muted text-3xs max-h-32 overflow-y-auto rounded p-2 font-mono whitespace-pre-wrap">
               {hook.stderr || hook.stdout}
               {hook.exitCode !== undefined && `\nexit code: ${hook.exitCode}`}
             </pre>
@@ -512,13 +501,15 @@ function HookRow({ hook }: HookRowProps) {
 Inside `ToolCallCard`, render hook rows below the tool header (inside the card's border, before expanded content):
 
 ```tsx
-{toolCall.hooks && toolCall.hooks.length > 0 && (
-  <div className="border-t border-border/50 px-3 py-1 space-y-0.5">
-    {toolCall.hooks.map((hook) => (
-      <HookRow key={hook.hookId} hook={hook} />
-    ))}
-  </div>
-)}
+{
+  toolCall.hooks && toolCall.hooks.length > 0 && (
+    <div className="border-border/50 space-y-0.5 border-t px-3 py-1">
+      {toolCall.hooks.map((hook) => (
+        <HookRow key={hook.hookId} hook={hook} />
+      ))}
+    </div>
+  );
+}
 ```
 
 #### Auto-hide behavior
@@ -564,6 +555,7 @@ When a user has hooks configured (e.g., a `pre-commit` hook that runs after Edit
 4. ToolCallCard auto-hides → hook rows hide with it
 
 If the hook fails:
+
 1. Hook row updates to `✗ pre-commit  failed` with red styling
 2. ToolCallCard stays expanded (auto-hide suppressed)
 3. User clicks the hook row → expands to show stderr output and exit code
@@ -685,18 +677,18 @@ Hook events flow through the standard pipeline: `sdk-event-mapper.ts` → SSE �
 
 ## File Changes Summary
 
-| File | Change | LOC (approx) |
-|------|--------|------|
-| `packages/shared/src/schemas.ts` | Add 3 enum values, 3 schemas, 3 union members, extend ToolCallPartSchema | +45 |
-| `packages/shared/src/types.ts` | Add 3 type re-exports | +3 |
-| `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts` | Add 3 system message branches + constant | +55 |
-| `apps/client/src/layers/features/chat/model/chat-types.ts` | Add HookState interface, extend ToolCallState | +15 |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Add 3 cases, findHookById, orphan logic | +55 |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Add orphanHooksRef | +3 |
-| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` | Add HookRow component, render hooks section | +65 |
-| `contributing/interactive-tools.md` | Add Hook Lifecycle Events section | +15 |
-| Tests (3 files) | Mapper, handler, component tests | +120 |
-| **Total** | | **~376** |
+| File                                                                 | Change                                                                   | LOC (approx) |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------ |
+| `packages/shared/src/schemas.ts`                                     | Add 3 enum values, 3 schemas, 3 union members, extend ToolCallPartSchema | +45          |
+| `packages/shared/src/types.ts`                                       | Add 3 type re-exports                                                    | +3           |
+| `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts`  | Add 3 system message branches + constant                                 | +55          |
+| `apps/client/src/layers/features/chat/model/chat-types.ts`           | Add HookState interface, extend ToolCallState                            | +15          |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Add 3 cases, findHookById, orphan logic                                  | +55          |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`     | Add orphanHooksRef                                                       | +3           |
+| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx`           | Add HookRow component, render hooks section                              | +65          |
+| `contributing/interactive-tools.md`                                  | Add Hook Lifecycle Events section                                        | +15          |
+| Tests (3 files)                                                      | Mapper, handler, component tests                                         | +120         |
+| **Total**                                                            |                                                                          | **~376**     |
 
 ## Open Questions
 

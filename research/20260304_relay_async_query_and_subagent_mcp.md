@@ -1,9 +1,20 @@
 ---
-title: "Relay Async Query Patterns and Subagent MCP Access"
+title: 'Relay Async Query Patterns and Subagent MCP Access'
 date: 2026-03-04
 type: internal-architecture
 status: active
-tags: [relay, relay_query, mcp, subagent, async, agent-to-agent, claude-agent-sdk, task-tool, background-subagent]
+tags:
+  [
+    relay,
+    relay_query,
+    mcp,
+    subagent,
+    async,
+    agent-to-agent,
+    claude-agent-sdk,
+    task-tool,
+    background-subagent,
+  ]
 feature_slug: relay-async-query
 searches_performed: 6
 sources_count: 14
@@ -57,9 +68,11 @@ The A2A spec explicitly recommends the webhook/callback pattern for long-horizon
 Use `relay_query` for tasks expected to complete within 120 seconds, and fall back to an async fire-and-poll pattern for long-running tasks.
 
 #### Tier 1: relay_query (< 120s)
+
 Use the existing `relay_query` tool with `timeout_ms` up to 120,000. Good for: quick agent queries, status checks, simple transformations.
 
 #### Tier 2: relay_send + relay_inbox polling (> 120s)
+
 For long-running tasks, the agent should:
 
 1. Register an inbox endpoint: `relay_register_endpoint(subject="relay.inbox.{myAgentId}")`
@@ -71,7 +84,9 @@ For long-running tasks, the agent should:
 The polling interval should be communicated to agents in the `RELAY_TOOLS_CONTEXT` system prompt. Recommended: Bash `sleep 30` between polls for long tasks (not `sleep 2-3` which was designed for short waits).
 
 #### Tier 3: relay_dispatch (Future — Job ID Pattern)
+
 A new `relay_dispatch` tool (not yet implemented) would:
+
 - Register an ephemeral inbox internally
 - Send the message
 - Return immediately with `{ dispatchId, inboxSubject }` instead of blocking
@@ -105,6 +120,7 @@ The documentation implies MCP tools are inherited. The reality is more complex.
 ### Confirmed GitHub Bugs
 
 **Issue #13898: Custom Subagents Cannot Access Project-Scoped MCP Servers**
+
 - Custom subagents defined in `.claude/agents/` cannot access MCP tools from project-level `.mcp.json`
 - They hallucinate plausible-looking but incorrect results — the bug is difficult to detect
 - Built-in `general-purpose` subagents work; custom subagents do not
@@ -112,12 +128,14 @@ The documentation implies MCP tools are inherited. The reality is more complex.
 - Secondary finding: async/background subagents fail even with user-scoped MCP servers
 
 **Issue #14496: Task Tool Subagents Fail to Access MCP Tools with Complex Prompts**
+
 - Simple one-step Task prompts: MCP tools work
 - Complex multi-step Task prompts: subagent claims "MCP tools are not available in my current toolset"
 - Status: closed as duplicate of #13890 (parent bug)
 - Workaround: split complex tasks into two calls (first call simple, second call resumes the agent)
 
 **Issue #5465: Task Subagents Fail to Inherit Permissions in MCP Server Mode**
+
 - When Claude Code runs as an MCP server (not relevant to DorkOS's server-side SDK usage)
 - Subagents fail to inherit `--permission-mode bypassPermissions` from parent
 - Status: closed as NOT PLANNED
@@ -133,13 +151,14 @@ When the Claude CLI subprocess spawns a subagent (via the Task tool), that subag
 2. The nested subprocess cannot import or connect to a TypeScript object in the parent process
 3. No socket address or URL is passed to the subagent for reconnection
 
-**Result: DorkOS MCP tools (relay_send, relay_query, relay_inbox, mesh_*, pulse_*, etc.) are NOT available inside Task-spawned subagents.**
+**Result: DorkOS MCP tools (relay*send, relay_query, relay_inbox, mesh*\_, pulse\_\_, etc.) are NOT available inside Task-spawned subagents.**
 
 ### Workarounds
 
 #### Workaround 1: Orchestrator-Level Relay (Recommended for DorkOS)
 
 Keep relay operations in the parent agent. The parent agent:
+
 1. Calls `relay_send` to dispatch work to the target agent
 2. Receives results via `relay_query` or `relay_inbox`
 3. Spawns subagents only for local computation tasks that do not need relay
@@ -162,6 +181,7 @@ This avoids the MCP access problem entirely by making the subagent data-only (no
 If subagents genuinely need relay tool access, register the DorkOS MCP tools as a `stdio` server (subprocess-based) rather than an in-process SDK server. A stdio server runs as a separate process and listens on stdin/stdout; Claude CLI subprocesses can connect to it.
 
 Tradeoffs:
+
 - Requires a separate Node.js entry point that starts the MCP server
 - Higher latency than in-process (IPC vs function call)
 - More complex operational setup
@@ -220,17 +240,17 @@ This is the correct architectural boundary: the parent session owns the relay/me
 
 ## Sources
 
-| Source | URL |
-|---|---|
-| Claude Agent SDK — Subagents | https://platform.claude.com/docs/en/agent-sdk/subagents |
-| GitHub: Custom subagents cannot access project-scoped MCP | https://github.com/anthropics/claude-code/issues/13898 |
-| GitHub: Task tool subagents fail MCP with complex prompts | https://github.com/anthropics/claude-code/issues/14496 |
-| GitHub: Task subagents fail permission inheritance in MCP mode | https://github.com/anthropics/claude-code/issues/5465 |
-| A2A Protocol: Streaming and Async Operations | https://a2a-protocol.org/latest/topics/streaming-and-async/ |
-| MCP SEP-1686: Tasks primitive | https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1686 |
-| Prior research: Agent-to-Agent Reply Patterns | research/20260304_agent-to-agent-reply-patterns.md |
-| DorkOS relay-tools.ts | apps/server/src/services/core/mcp-tools/relay-tools.ts |
-| DorkOS claude-code-adapter.ts | packages/relay/src/adapters/claude-code-adapter.ts |
+| Source                                                         | URL                                                                      |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Claude Agent SDK — Subagents                                   | https://platform.claude.com/docs/en/agent-sdk/subagents                  |
+| GitHub: Custom subagents cannot access project-scoped MCP      | https://github.com/anthropics/claude-code/issues/13898                   |
+| GitHub: Task tool subagents fail MCP with complex prompts      | https://github.com/anthropics/claude-code/issues/14496                   |
+| GitHub: Task subagents fail permission inheritance in MCP mode | https://github.com/anthropics/claude-code/issues/5465                    |
+| A2A Protocol: Streaming and Async Operations                   | https://a2a-protocol.org/latest/topics/streaming-and-async/              |
+| MCP SEP-1686: Tasks primitive                                  | https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1686 |
+| Prior research: Agent-to-Agent Reply Patterns                  | research/20260304_agent-to-agent-reply-patterns.md                       |
+| DorkOS relay-tools.ts                                          | apps/server/src/services/core/mcp-tools/relay-tools.ts                   |
+| DorkOS claude-code-adapter.ts                                  | packages/relay/src/adapters/claude-code-adapter.ts                       |
 
 ## Search Methodology
 

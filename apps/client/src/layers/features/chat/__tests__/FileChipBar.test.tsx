@@ -36,7 +36,10 @@ describe('FileChipBar', () => {
   it('renders a chip for each pending file', () => {
     const files = [
       createPendingFile({ id: '1', file: new File(['a'], 'file-a.txt', { type: 'text/plain' }) }),
-      createPendingFile({ id: '2', file: new File(['b'], 'file-b.pdf', { type: 'application/pdf' }) }),
+      createPendingFile({
+        id: '2',
+        file: new File(['b'], 'file-b.pdf', { type: 'application/pdf' }),
+      }),
     ];
 
     render(<FileChipBar files={files} onRemove={vi.fn()} />);
@@ -79,7 +82,9 @@ describe('FileChipBar', () => {
   });
 
   it('remove button has aria-label with the filename', () => {
-    const files = [createPendingFile({ file: new File(['x'], 'my-doc.pdf', { type: 'application/pdf' }) })];
+    const files = [
+      createPendingFile({ file: new File(['x'], 'my-doc.pdf', { type: 'application/pdf' }) }),
+    ];
 
     render(<FileChipBar files={files} onRemove={vi.fn()} />);
 
@@ -110,8 +115,14 @@ describe('FileChipBar', () => {
   it('calls onRemove with correct id when multiple chips are present', () => {
     const onRemove = vi.fn();
     const files = [
-      createPendingFile({ id: 'first', file: new File(['a'], 'alpha.txt', { type: 'text/plain' }) }),
-      createPendingFile({ id: 'second', file: new File(['b'], 'beta.txt', { type: 'text/plain' }) }),
+      createPendingFile({
+        id: 'first',
+        file: new File(['a'], 'alpha.txt', { type: 'text/plain' }),
+      }),
+      createPendingFile({
+        id: 'second',
+        file: new File(['b'], 'beta.txt', { type: 'text/plain' }),
+      }),
     ];
 
     render(<FileChipBar files={files} onRemove={onRemove} />);

@@ -18,10 +18,10 @@ The docs content lives in this repo alongside the code it documents. A separate 
 
 The repo uses two documentation directories with distinct audiences:
 
-| Directory | Audience | Format | Purpose |
-|---|---|---|---|
-| `contributing/` | Maintainers & Claude Code agents | Markdown | Deep implementation details, code patterns, FSD layers, internal workflows |
-| `docs/` | External users & integrators | MDX (Fumadocs) | Task-oriented guides, API reference, getting started, contributor onboarding |
+| Directory       | Audience                         | Format         | Purpose                                                                      |
+| --------------- | -------------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| `contributing/` | Maintainers & Claude Code agents | Markdown       | Deep implementation details, code patterns, FSD layers, internal workflows   |
+| `docs/`         | External users & integrators     | MDX (Fumadocs) | Task-oriented guides, API reference, getting started, contributor onboarding |
 
 The `contributing/` directory (formerly `guides/`) contains internal developer documentation optimized for people (and AI agents) actively working on the DorkOS codebase. The `docs/` directory contains user-facing content published to `docs.dorkos.ai`.
 
@@ -62,11 +62,11 @@ DorkOS is preparing for open-source release as an npm package (`dorkos`). The cu
 
 ## Technical Dependencies
 
-| Dependency | Purpose | Notes |
-|---|---|---|
-| Fumadocs | Docs framework | Not installed in this repo — only the content structure is created here. Fumadocs lives in the marketing site repo. |
-| `@asteasolutions/zod-to-openapi` | OpenAPI generation | Already installed; used by `openapi-registry.ts` |
-| MDX | Content format | `.mdx` files in `docs/` — no build tooling needed in this repo |
+| Dependency                       | Purpose            | Notes                                                                                                               |
+| -------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Fumadocs                         | Docs framework     | Not installed in this repo — only the content structure is created here. Fumadocs lives in the marketing site repo. |
+| `@asteasolutions/zod-to-openapi` | OpenAPI generation | Already installed; used by `openapi-registry.ts`                                                                    |
+| MDX                              | Content format     | `.mdx` files in `docs/` — no build tooling needed in this repo                                                      |
 
 No new dependencies are added to this repo. The `docs/` directory contains plain MDX files and JSON configuration that Fumadocs will consume from the marketing site.
 
@@ -116,34 +116,26 @@ docs/
 Each `meta.json` controls sidebar ordering in Fumadocs.
 
 **Root `docs/meta.json`:**
+
 ```json
 {
   "title": "Documentation",
-  "pages": [
-    "getting-started",
-    "guides",
-    "integrations",
-    "api",
-    "self-hosting",
-    "contributing"
-  ]
+  "pages": ["getting-started", "guides", "integrations", "api", "self-hosting", "contributing"]
 }
 ```
 
 **Section-level example (`docs/getting-started/meta.json`):**
+
 ```json
 {
   "title": "Getting Started",
-  "pages": [
-    "installation",
-    "quickstart",
-    "configuration"
-  ],
+  "pages": ["installation", "quickstart", "configuration"],
   "defaultOpen": true
 }
 ```
 
 **API section (`docs/api/meta.json`):**
+
 ```json
 {
   "title": "API Reference",
@@ -167,16 +159,17 @@ Only `title` is required. `description` is recommended for SEO. No custom fields
 
 ### 4. Content Strategy: contributing/ vs docs/
 
-| `contributing/` (internal) | `docs/` (external) |
-|---|---|
-| Written for Claude Code agents and maintainers | Written for end users and integrators |
-| Deep implementation details, code patterns | Task-oriented, outcome-focused |
-| References internal file paths and FSD layers | References public APIs and CLI commands |
-| Stays in repo, not published | Published to docs.dorkos.ai |
+| `contributing/` (internal)                     | `docs/` (external)                      |
+| ---------------------------------------------- | --------------------------------------- |
+| Written for Claude Code agents and maintainers | Written for end users and integrators   |
+| Deep implementation details, code patterns     | Task-oriented, outcome-focused          |
+| References internal file paths and FSD layers  | References public APIs and CLI commands |
+| Stays in repo, not published                   | Published to docs.dorkos.ai             |
 
 The directory name `contributing/` (formerly `guides/`) makes the audience self-documenting: this content is for people contributing to DorkOS development.
 
 Some `contributing/` content will be adapted into `docs/`:
+
 - `contributing/architecture.md` → `docs/contributing/architecture.mdx` (simplified)
 - `contributing/interactive-tools.md` → `docs/guides/tool-approval.mdx` (user-facing)
 - `contributing/keyboard-shortcuts.md` → `docs/guides/keyboard-shortcuts.mdx` (direct adaptation)
@@ -188,6 +181,7 @@ Some `contributing/` content will be adapted into `docs/`:
 Add a script that exports the OpenAPI spec to a static JSON file. This file will be consumed by the marketing site's Fumadocs OpenAPI plugin at build time.
 
 **`scripts/export-openapi.ts`:**
+
 ```typescript
 import { writeFileSync } from 'fs';
 import { generateOpenAPISpec } from '../apps/server/src/services/openapi-registry';
@@ -198,6 +192,7 @@ console.log('OpenAPI spec exported to docs/api/openapi.json');
 ```
 
 **Root `package.json` addition:**
+
 ```json
 {
   "scripts": {
@@ -207,6 +202,7 @@ console.log('OpenAPI spec exported to docs/api/openapi.json');
 ```
 
 The marketing site's build step will:
+
 1. Clone/submodule this repo
 2. Run `npm run docs:export-api` to generate the spec
 3. Use `fumadocs-openapi` to render API docs from the spec
@@ -253,6 +249,7 @@ Use [Keep a Changelog](https://keepachangelog.com/) format. Initialize with an `
 ### 8. CONTRIBUTING.md
 
 Covers:
+
 - Prerequisites (Node.js 20+, npm, Claude API key)
 - Fork + clone + install workflow
 - Monorepo structure overview (apps, packages)
@@ -264,6 +261,7 @@ Covers:
 ### 9. packages/cli/README.md
 
 This is the npm package page. Covers:
+
 - What DorkOS is (brief)
 - Installation (`npm install -g dorkos`)
 - Usage (`dorkos` command, flags, env vars)
@@ -280,6 +278,7 @@ MIT license text with `Copyright (c) 2025 Dork Labs` at the root of the repo.
 ## User Experience
 
 **npm user journey:**
+
 1. Discovers `dorkos` on npm → reads `packages/cli/README.md` (rendered on npmjs.com)
 2. Installs globally → `npm install -g dorkos`
 3. Runs `dorkos` → server starts, opens browser
@@ -287,6 +286,7 @@ MIT license text with `Copyright (c) 2025 Dork Labs` at the root of the repo.
 5. Wants to integrate → reads API reference and SSE protocol docs
 
 **Contributor journey:**
+
 1. Finds repo on GitHub → reads root `README.md`
 2. Wants to contribute → reads `CONTRIBUTING.md`
 3. Sets up dev environment → follows dev setup guide
@@ -329,6 +329,7 @@ The OpenAPI export script runs in < 1 second (in-memory schema generation, singl
 ## Documentation
 
 This spec IS the documentation plan. After implementation:
+
 - Update `CLAUDE.md` to reference the new `docs/` directory
 - Add a `docs/README.md` explaining the content structure for contributors who want to edit docs
 
@@ -337,6 +338,7 @@ This spec IS the documentation plan. After implementation:
 ### Phase 1: OSS Files (Core)
 
 Create the standard open-source files:
+
 - `LICENSE` (MIT)
 - Rewrite `README.md`
 - Create `CHANGELOG.md`
@@ -346,6 +348,7 @@ Create the standard open-source files:
 ### Phase 2: Docs Content Structure
 
 Scaffold the `docs/` directory:
+
 - Create directory structure with `meta.json` files
 - Create `docs/index.mdx` (docs landing page)
 - Create `docs/getting-started/` section (installation, quickstart, configuration)
@@ -361,6 +364,7 @@ Scaffold the `docs/` directory:
 ### Phase 4: Content Migration (Incremental)
 
 Adapt existing `contributing/` content into user-facing `docs/` pages:
+
 - `contributing/keyboard-shortcuts.md` → `docs/guides/keyboard-shortcuts.mdx`
 - `contributing/interactive-tools.md` → `docs/guides/tool-approval.mdx`
 - `contributing/obsidian-plugin-development.md` → `docs/guides/obsidian-plugin.mdx`

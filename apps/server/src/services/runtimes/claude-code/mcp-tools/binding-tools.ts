@@ -6,7 +6,10 @@ import { jsonContent } from './types.js';
 /** Guard that returns an error response when BindingStore is not available. */
 function requireBindingStore(deps: McpToolDeps) {
   if (!deps.bindingStore) {
-    return jsonContent({ error: 'Relay bindings are not enabled', code: 'BINDINGS_DISABLED' }, true);
+    return jsonContent(
+      { error: 'Relay bindings are not enabled', code: 'BINDINGS_DISABLED' },
+      true
+    );
   }
   return null;
 }
@@ -37,7 +40,10 @@ export function createBindingCreateHandler(deps: McpToolDeps) {
       const binding = await deps.bindingStore!.create({
         adapterId: args.adapterId,
         agentId: args.agentId,
-        sessionStrategy: (args.sessionStrategy ?? 'per-chat') as 'per-chat' | 'per-user' | 'stateless',
+        sessionStrategy: (args.sessionStrategy ?? 'per-chat') as
+          | 'per-chat'
+          | 'per-user'
+          | 'stateless',
         label: args.label ?? '',
         ...(args.chatId && { chatId: args.chatId }),
         ...(args.channelType && {
@@ -67,21 +73,22 @@ export function getBindingTools(deps: McpToolDeps) {
   if (!deps.bindingStore) return [];
 
   return [
-    tool(
-      'binding_list',
-      'List all adapter-to-agent bindings.',
-      {},
-      createBindingListHandler(deps)
-    ),
+    tool('binding_list', 'List all adapter-to-agent bindings.', {}, createBindingListHandler(deps)),
     tool(
       'binding_create',
       'Create a new adapter-to-agent binding. Maps an external adapter to a specific agent directory.',
       {
         adapterId: z.string().describe('ID of the adapter to bind'),
         agentId: z.string().describe('Agent ID to route messages to'),
-        sessionStrategy: z.string().optional().describe('Session strategy: per-chat, per-user, or stateless (default per-chat)'),
+        sessionStrategy: z
+          .string()
+          .optional()
+          .describe('Session strategy: per-chat, per-user, or stateless (default per-chat)'),
         chatId: z.string().optional().describe('Optional chat ID for targeted routing'),
-        channelType: z.string().optional().describe('Optional channel type filter: dm, group, channel, or thread'),
+        channelType: z
+          .string()
+          .optional()
+          .describe('Optional channel type filter: dm, group, channel, or thread'),
         label: z.string().optional().describe('Optional human-readable label for this binding'),
       },
       createBindingCreateHandler(deps)

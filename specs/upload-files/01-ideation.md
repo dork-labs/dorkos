@@ -55,6 +55,7 @@ status: ideation
 ### Primary Components/Modules
 
 **Client-side:**
+
 - `apps/client/src/layers/features/chat/ui/ChatInputContainer.tsx` (258 lines) — Container for ChatInput + palettes. Drag-drop zone + upload button live here.
 - `apps/client/src/layers/features/chat/ui/ChatInput.tsx` (259 lines) — Textarea with focus/cursor management. Upload button placed adjacent.
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` (230 lines) — Chat orchestrator. Wires uploaded file state to ChatInputContainer.
@@ -64,6 +65,7 @@ status: ideation
 - `apps/client/src/layers/features/files/model/use-files.ts` — React Query hook for file listing. Pattern reference for upload mutation.
 
 **Server-side:**
+
 - `apps/server/src/routes/files.ts` — File listing endpoint. Pattern for new upload route.
 - `apps/server/src/routes/sessions.ts` — Session endpoints. Pattern for route structure, validation, error handling.
 - `apps/server/src/services/core/file-lister.ts` — File listing service. Upload handler follows same service extraction pattern.
@@ -71,6 +73,7 @@ status: ideation
 - `apps/server/src/lib/route-utils.ts` — `assertBoundary()`, `sendError()` utilities.
 
 **Shared/Cross-cutting:**
+
 - `packages/shared/src/transport.ts` — Transport interface. Add `uploadFiles()`.
 - `packages/shared/src/schemas.ts` — Zod schemas. Add upload request/response schemas.
 - `apps/client/src/layers/shared/lib/transport/index.ts` — HttpTransport implementation.
@@ -144,6 +147,7 @@ Claude Code agent reads files via filesystem tools
 ### Potential Solutions
 
 **1. react-dropzone + multer + path injection (Recommended)**
+
 - Description: `useDropzone` on ChatInputContainer for drag-drop + a paperclip button for file selection. Files uploaded via `POST /api/files/upload` (multer, disk storage to `{cwd}/.dork/.temp/uploads/`). File paths injected as text into the message before submit.
 - Pros:
   - No change to `sendMessage` signature — files are just text references
@@ -158,6 +162,7 @@ Claude Code agent reads files via filesystem tools
 - Maintenance: Low
 
 **2. Native HTML5 DnD + multer + path injection**
+
 - Description: Same server approach but raw `onDragEnter`/`onDragOver`/`onDragLeave`/`onDrop` events instead of react-dropzone.
 - Pros: Zero additional client dependency
 - Cons: ~60 lines of DnD boilerplate, `dragCounter` ref needed for child enter/leave, cross-browser quirks
@@ -165,6 +170,7 @@ Claude Code agent reads files via filesystem tools
 - Maintenance: Medium
 
 **3. react-dropzone + multer + Anthropic Files API**
+
 - Description: Upload files to Anthropic's Files API, reference by `file_id` in multimodal content blocks.
 - Pros: Rich content block support for PDFs/images
 - Cons: Changes `Transport.sendMessage` signature, extra network round-trip, API still in beta, files on Anthropic servers (not local-first)
@@ -172,6 +178,7 @@ Claude Code agent reads files via filesystem tools
 - Maintenance: High
 
 **4. react-dropzone + busboy (streaming)**
+
 - Description: Bypass multer, use busboy directly for streaming writes.
 - Pros: Fine-grained stream control
 - Cons: More server code for no practical benefit (loopback uploads are fast); multer uses busboy internally
@@ -179,6 +186,7 @@ Claude Code agent reads files via filesystem tools
 - Maintenance: Medium
 
 ### Security Considerations
+
 - Sanitize filenames: `path.basename()` + strip unsafe characters + UUID prefix for uniqueness
 - `cwd` parameter must pass through `validateBoundary()` before constructing upload directory path
 - Set multer limits: `fileSize: 10MB`, `files: 10` (configurable via DorkOS config)
@@ -186,18 +194,20 @@ Claude Code agent reads files via filesystem tools
 - Never trust client-provided `Content-Type` — server-side validation as defense-in-depth
 
 ### Performance Considerations
+
 - Loopback uploads have negligible latency — progress bars are a UX nicety, not a requirement
 - Upload multiple files in parallel with `Promise.all()`
 - For V1, skip client-side image compression — can add later if needed
 
 ### Recommendation
+
 **react-dropzone + multer + path injection** — simplest approach, aligned with DorkOS's local-first philosophy. Claude Code agents already have filesystem tools. No changes needed to the core `Transport.sendMessage` interface. Only new surface: one Transport method (`uploadFiles`) and one Express route (`POST /api/files/upload`).
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | File storage location | `{cwd}/.dork/.temp/uploads/` | `.temp` is already in `.gitignore` and matches at any directory depth, so uploads are auto-excluded from git. Lives inside `.dork/` following DorkOS conventions. Signals ephemeral nature. |
-| 2 | Upload button placement | Left of textarea, inline (paperclip icon) | Standard pattern used by ChatGPT, Claude.ai, Slack, iMessage. Discoverable without cluttering the send area. |
-| 3 | File display before sending | File chips above textarea | Filename badges with X to remove. File paths injected into message on submit, invisible to user. Clean UX pattern from Claude.ai and ChatGPT. |
-| 4 | File type restrictions | Configurable via DorkOS config, default all types | `uploads.allowedTypes`, `uploads.maxFileSize`, `uploads.maxFiles` in `~/.dork/config.json` (global), overridable by `{cwd}/.dork/config.json` (local). Defaults: all types, 10MB, 10 files. Follows existing config precedence system. |
+| #   | Decision                    | Choice                                            | Rationale                                                                                                                                                                                                                              |
+| --- | --------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | File storage location       | `{cwd}/.dork/.temp/uploads/`                      | `.temp` is already in `.gitignore` and matches at any directory depth, so uploads are auto-excluded from git. Lives inside `.dork/` following DorkOS conventions. Signals ephemeral nature.                                            |
+| 2   | Upload button placement     | Left of textarea, inline (paperclip icon)         | Standard pattern used by ChatGPT, Claude.ai, Slack, iMessage. Discoverable without cluttering the send area.                                                                                                                           |
+| 3   | File display before sending | File chips above textarea                         | Filename badges with X to remove. File paths injected into message on submit, invisible to user. Clean UX pattern from Claude.ai and ChatGPT.                                                                                          |
+| 4   | File type restrictions      | Configurable via DorkOS config, default all types | `uploads.allowedTypes`, `uploads.maxFileSize`, `uploads.maxFiles` in `~/.dork/config.json` (global), overridable by `{cwd}/.dork/config.json` (local). Defaults: all types, 10MB, 10 files. Follows existing config precedence system. |

@@ -1,6 +1,7 @@
 # Chat Self-Test Findings — 2026-03-06 (Run 2)
 
 ## Test Config
+
 - URL: `http://localhost:4241/?dir=/Users/doriancollier/Keep/temp/empty`
 - Session ID (URL/Agent): `c5be542d-2388-4673-9868-9c18401983d4`
 - Session ID (SDK/JSONL): `8bde9a1e-17ca-408a-91db-06ab4c93257c`
@@ -32,6 +33,7 @@ Commits `ebea3a7` and `1352e31` added backpressure handling, but the fire-and-fo
 **ADR context:** ADR-0026 (Receipt+SSE Protocol) notes "slightly more complex error handling when POST succeeds but no events arrive" as a known consequence.
 
 **Recommendation:** Change `void flush()` to properly serialize queue processing. Either:
+
 - Use a `flushing` guard to prevent concurrent flushes
 - Or await `flush()` in the subscription callback (requires making the callback async)
 
@@ -100,14 +102,14 @@ The 503 (not 404) suggests the endpoint is hitting an error condition rather tha
 
 ## Comparison with Run 1 (Earlier Today)
 
-| Issue | Run 1 | Run 2 | Status |
-|-------|-------|-------|--------|
-| SSE Stream Freeze | 4/5 msgs froze | 2/5 msgs froze (+ 1 retry) | **Still present**, possibly slightly improved |
-| Response Truncation | "2+2" showed only "2" | "2+2" showed full "2 + 2 = 4" | **Possibly improved** |
-| Session ID Mismatch | Agent-ID in URL, SDK-ID in sidebar | Same | **Unchanged** |
-| API /messages Empty | Returns [] | Returns 503 flood | **Different symptom, same root cause** |
-| Session Title | Never updates | Never updates | **Unchanged** |
-| Model Display | Full ID after reload | Full ID after reload | **Unchanged** |
+| Issue               | Run 1                              | Run 2                         | Status                                        |
+| ------------------- | ---------------------------------- | ----------------------------- | --------------------------------------------- |
+| SSE Stream Freeze   | 4/5 msgs froze                     | 2/5 msgs froze (+ 1 retry)    | **Still present**, possibly slightly improved |
+| Response Truncation | "2+2" showed only "2"              | "2+2" showed full "2 + 2 = 4" | **Possibly improved**                         |
+| Session ID Mismatch | Agent-ID in URL, SDK-ID in sidebar | Same                          | **Unchanged**                                 |
+| API /messages Empty | Returns []                         | Returns 503 flood             | **Different symptom, same root cause**        |
+| Session Title       | Never updates                      | Never updates                 | **Unchanged**                                 |
+| Model Display       | Full ID after reload               | Full ID after reload          | **Unchanged**                                 |
 
 ## Verdict
 

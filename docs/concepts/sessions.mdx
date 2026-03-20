@@ -3,8 +3,8 @@ title: Sessions
 description: How DorkOS manages Claude conversation sessions and their lifecycle
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Sessions
 
@@ -38,7 +38,8 @@ Only one client can write to a session at a time. When you send a message, DorkO
 Locks auto-expire after **5 minutes** and are released immediately when the SSE connection closes.
 
 <Callout type="info">
-Multiple clients can view the same session simultaneously — only sending messages requires an exclusive lock.
+  Multiple clients can view the same session simultaneously — only sending messages requires an
+  exclusive lock.
 </Callout>
 
 ## Storage
@@ -86,25 +87,26 @@ Sync events are debounced at **100ms** to handle rapid writes efficiently. The s
 
 ### Sync Events
 
-| Event | When | Data |
-|---|---|---|
-| `sync_connected` | On initial SSE connection | `{ sessionId }` |
-| `sync_update` | When the transcript file changes | `{ sessionId, timestamp }` |
+| Event            | When                             | Data                       |
+| ---------------- | -------------------------------- | -------------------------- |
+| `sync_connected` | On initial SSE connection        | `{ sessionId }`            |
+| `sync_update`    | When the transcript file changes | `{ sessionId, timestamp }` |
 
 <Callout type="info">
-The message history endpoint supports ETag caching. Clients send `If-None-Match` headers and receive 304 responses when nothing has changed, keeping re-fetches efficient.
+  The message history endpoint supports ETag caching. Clients send `If-None-Match` headers and
+  receive 304 responses when nothing has changed, keeping re-fetches efficient.
 </Callout>
 
 ## Session Metadata
 
-| Field | Source |
-|---|---|
-| **ID** | UUID from the JSONL filename |
-| **Title** | First user message in the transcript |
-| **Preview** | Beginning of the last assistant message |
-| **Created** | File creation timestamp |
-| **Updated** | File modification timestamp |
-| **Permission mode** | Extracted from the SDK init message |
+| Field               | Source                                  |
+| ------------------- | --------------------------------------- |
+| **ID**              | UUID from the JSONL filename            |
+| **Title**           | First user message in the transcript    |
+| **Preview**         | Beginning of the last assistant message |
+| **Created**         | File creation timestamp                 |
+| **Updated**         | File modification timestamp             |
+| **Permission mode** | Extracted from the SDK init message     |
 
 ## Working Directories
 

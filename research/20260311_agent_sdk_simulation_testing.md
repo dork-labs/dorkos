@@ -1,5 +1,5 @@
 ---
-title: "Agent SDK Simulation Testing: Zero-Latency Integration Test Infrastructure"
+title: 'Agent SDK Simulation Testing: Zero-Latency Integration Test Infrastructure'
 date: 2026-03-11
 type: implementation
 status: active
@@ -29,6 +29,7 @@ function mockQueryResult(gen: AsyncGenerator) {
 ```
 
 And tests create inline async generators:
+
 ```typescript
 mockReturnValue(mockQueryResult((async function* () {
   yield { type: 'system', subtype: 'init', session_id: 'sdk-session-123', ... };
@@ -52,7 +53,9 @@ const res = await request(app)
   .post(`/api/sessions/${S1}/messages`)
   .send({ content: 'hi' })
   .buffer(true)
-  .parse((res, callback) => { /* accumulate chunks */ });
+  .parse((res, callback) => {
+    /* accumulate chunks */
+  });
 const parsed = parseSSEResponse(res.body);
 ```
 
@@ -70,6 +73,7 @@ For new "full integration" tests (where you want to exercise everything from `Ag
 **4. FakeAgentRuntime as a Reusable Test Double**
 
 The `mockRuntime` object defined identically in both `sessions.test.ts` and `sessions-interactive.test.ts` is the clearest duplication problem. These are hand-rolled partial stubs with `vi.fn()` for every method. A proper `FakeAgentRuntime` class that implements `AgentRuntime` and holds configurable scenario behavior would:
+
 - Satisfy TypeScript structural typing fully
 - Be importable from `@dorkos/test-utils`
 - Allow `sendMessage` to be configured with named scenarios
@@ -83,16 +87,16 @@ Record-and-replay patterns (Polly.js, nock `nockBack`, VCR) intercept at the HTT
 
 Based on SDK documentation and `sdk-event-mapper.ts`, the complete set of SDK message types that produce DorkOS events:
 
-| SDK Message | DorkOS StreamEvent |
-|---|---|
-| `{ type: 'system', subtype: 'init', model }` | `session_status` |
-| `{ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use' } } }` | `tool_call_start` |
-| `{ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta' } } }` | `text_delta` |
-| `{ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'input_json_delta' } } }` | `tool_call_delta` |
-| `{ type: 'stream_event', event: { type: 'content_block_stop' } }` | `tool_call_end` |
-| `{ type: 'result', subtype: 'success' }` | `done` |
-| `{ type: 'result', subtype: 'error_*' }` | `error` then `done` |
-| `{ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'TodoWrite' }] } }` | `task_update` (via `buildTaskEvent`) |
+| SDK Message                                                                                             | DorkOS StreamEvent                   |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `{ type: 'system', subtype: 'init', model }`                                                            | `session_status`                     |
+| `{ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use' } } }` | `tool_call_start`                    |
+| `{ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta' } } }`       | `text_delta`                         |
+| `{ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'input_json_delta' } } }` | `tool_call_delta`                    |
+| `{ type: 'stream_event', event: { type: 'content_block_stop' } }`                                       | `tool_call_end`                      |
+| `{ type: 'result', subtype: 'success' }`                                                                | `done`                               |
+| `{ type: 'result', subtype: 'error_*' }`                                                                | `error` then `done`                  |
+| `{ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'TodoWrite' }] } }`                | `task_update` (via `buildTaskEvent`) |
 
 ## Detailed Analysis
 
@@ -111,7 +115,11 @@ export function sdkSimpleText(text: string, sessionId = 'sdk-sim-1') {
   })();
 }
 
-export function sdkToolCall(toolName: string, toolInput: Record<string, unknown>, sessionId = 'sdk-sim-1') {
+export function sdkToolCall(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  sessionId = 'sdk-sim-1'
+) {
   return (async function* (): AsyncGenerator<SDKMessage> {
     yield sdkInitMessage(sessionId);
     yield sdkContentBlockStart(toolName, 'tc-1', sessionId);
@@ -131,6 +139,7 @@ export function sdkError(message: string, sessionId = 'sdk-sim-1') {
 Each primitive (e.g., `sdkInitMessage`, `sdkTextDelta`) is a pure builder function that produces the minimum required fields. This is the pattern `claude-code-runtime.test.ts` uses inline — extracting to a shared library makes it reusable.
 
 **Pros:**
+
 - Zero latency (synchronous generator, no I/O)
 - Fully deterministic and CI-compatible
 - Type-checked against actual `SDKMessage` union
@@ -139,6 +148,7 @@ Each primitive (e.g., `sdkInitMessage`, `sdkTextDelta`) is a pure builder functi
 - Composable: scenarios can call each other
 
 **Cons:**
+
 - Scenarios are hand-crafted and may diverge from real SDK shapes as the SDK evolves
 - Does not catch "schema drift" unless tests are run against the real SDK periodically
 
@@ -158,9 +168,11 @@ export class FakeAgentRuntime implements AgentRuntime {
   readonly type = 'fake';
   private _sendMessageImpl: (sessionId: string, content: string) => AsyncGenerator<StreamEvent>;
 
-  constructor(opts: {
-    sendMessage?: (sessionId: string, content: string) => AsyncGenerator<StreamEvent>;
-  } = {}) {
+  constructor(
+    opts: {
+      sendMessage?: (sessionId: string, content: string) => AsyncGenerator<StreamEvent>;
+    } = {}
+  ) {
     this._sendMessageImpl = opts.sendMessage ?? defaultEmptyResponse;
   }
 
@@ -184,23 +196,26 @@ export class FakeAgentRuntime implements AgentRuntime {
 ```
 
 Usage in route tests:
+
 ```typescript
 const fakeRuntime = new FakeAgentRuntime({
   sendMessage: async function* () {
     yield { type: 'text_delta', data: { text: 'Hello' } };
     yield { type: 'done', data: { sessionId: S1 } };
-  }
+  },
 });
 vi.mocked(runtimeRegistry.getDefault).mockReturnValue(fakeRuntime);
 ```
 
 **Pros:**
+
 - Eliminates the ~50-line `mockRuntime` object repeated across multiple test files
 - TypeScript enforces full interface satisfaction — no drift from `AgentRuntime` contract
 - Can be configured per-test with `sendMessage` scenarios
 - Clean `vi.fn()` spies are still available for assertion
 
 **Cons:**
+
 - Slightly more overhead than a plain `vi.fn()` object
 - Needs to be kept in sync when `AgentRuntime` interface changes (but TypeScript will catch this at compile time)
 
@@ -230,12 +245,14 @@ export async function* replayFixture(fixturePath: string): AsyncGenerator<SDKMes
 Real JSONL files have a different shape than raw `SDKMessage` objects — each line is a transcript entry (e.g., `{ type: 'assistant', message: { ... } }`) which maps roughly to `SDKAssistantMessage`. The translation layer needs care.
 
 **Pros:**
+
 - Tests against authentic real-world event sequences (captured from actual Claude sessions)
 - Catches schema drift automatically if fixtures are regenerated from new SDK versions
 - High confidence: if replay passes, the real SDK will too
 - Enables regression testing for specific bug-inducing sequences
 
 **Cons:**
+
 - Fixtures require file I/O (slight overhead, but still sub-millisecond with small files)
 - Fixtures need to be committed to the repo or generated at test time from `~/.claude/projects/`
 - JSONL transcript format and raw `SDKMessage` format are not identical — needs a translation layer
@@ -290,8 +307,8 @@ it('streams text_delta and done events for a simple text response', async () => 
     .parse(accumulateChunks);
 
   const events = parseSSEResponse(res.body);
-  expect(events.find(e => e.type === 'text_delta')?.data).toEqual({ text: 'Hello from Claude' });
-  expect(events.find(e => e.type === 'done')).toBeDefined();
+  expect(events.find((e) => e.type === 'text_delta')?.data).toEqual({ text: 'Hello from Claude' });
+  expect(events.find((e) => e.type === 'done')).toBeDefined();
 });
 ```
 
@@ -299,20 +316,21 @@ The key insight is that `ClaudeCodeRuntime` needs several mocks to be in place (
 
 ### Scenario Design: Key Scenarios to Cover
 
-| Scenario | SDK Events | Purpose |
-|---|---|---|
-| `sdkSimpleText` | init → text_delta(s) → result:success | Basic text streaming |
-| `sdkToolCall` | init → content_block_start(tool) → input_json_delta → content_block_stop → result:success | Tool use path |
-| `sdkTodoWrite` | init → content_block_start(TodoWrite) → input_json_delta(todo JSON) → content_block_stop → result:success | Task update UI |
-| `sdkMultiTurn` | init → text_delta → result → [next turn] → ... | Multi-turn conversation |
-| `sdkErrorRuntime` | throws immediately | SDK process failure |
-| `sdkErrorResult` | init → result:error_during_execution | SDK reports error in result |
-| `sdkStaleResume` | throws 'Query closed before response received' | Resume retry path |
-| `sdkLongStream` | init → 100x text_delta → result:success | Backpressure / large responses |
+| Scenario          | SDK Events                                                                                                | Purpose                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `sdkSimpleText`   | init → text_delta(s) → result:success                                                                     | Basic text streaming           |
+| `sdkToolCall`     | init → content_block_start(tool) → input_json_delta → content_block_stop → result:success                 | Tool use path                  |
+| `sdkTodoWrite`    | init → content_block_start(TodoWrite) → input_json_delta(todo JSON) → content_block_stop → result:success | Task update UI                 |
+| `sdkMultiTurn`    | init → text_delta → result → [next turn] → ...                                                            | Multi-turn conversation        |
+| `sdkErrorRuntime` | throws immediately                                                                                        | SDK process failure            |
+| `sdkErrorResult`  | init → result:error_during_execution                                                                      | SDK reports error in result    |
+| `sdkStaleResume`  | throws 'Query closed before response received'                                                            | Resume retry path              |
+| `sdkLongStream`   | init → 100x text_delta → result:success                                                                   | Backpressure / large responses |
 
 ### Fixture Organization
 
 If JSONL fixtures are added later:
+
 ```
 apps/server/src/services/runtimes/claude-code/__tests__/fixtures/
   simple-text-response.jsonl      # Single text response, no tools

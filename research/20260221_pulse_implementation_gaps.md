@@ -1,5 +1,5 @@
 ---
-title: "Pulse Feature Implementation Gaps — Research Report"
+title: 'Pulse Feature Implementation Gaps — Research Report'
 date: 2026-02-21
 type: implementation
 status: active
@@ -45,7 +45,7 @@ export interface SchedulerAgentManager {
     opts?: {
       permissionMode?: PermissionMode;
       cwd?: string;
-      systemPromptAppend?: string;  // NEW
+      systemPromptAppend?: string; // NEW
     }
   ): AsyncGenerator<StreamEvent>;
 }
@@ -165,7 +165,7 @@ import { Pencil } from 'lucide-react';
   </button>
 
   {/* existing toggle switch */}
-</div>
+</div>;
 ```
 
 #### 2. Reusing `CreateScheduleDialog` as an edit dialog
@@ -449,7 +449,7 @@ describe('createListSchedulesHandler', () => {
   });
 
   it('returns error when pulseStore is undefined', async () => {
-    const deps = { ...makeMockDeps() };  // no pulseStore
+    const deps = { ...makeMockDeps() }; // no pulseStore
     const handler = createListSchedulesHandler(deps);
     const result = await handler({});
     expect(result.isError).toBe(true);
@@ -461,9 +461,15 @@ describe('createListSchedulesHandler', () => {
 describe('createCreateScheduleHandler', () => {
   it('creates schedule and marks it pending_approval', async () => {
     const createSchedule = vi.fn().mockReturnValue({ ...mockSchedule, id: 'new-1' });
-    const updateSchedule = vi.fn().mockReturnValue({ ...mockSchedule, id: 'new-1', status: 'pending_approval' });
-    const getSchedule = vi.fn().mockReturnValue({ ...mockSchedule, id: 'new-1', status: 'pending_approval' });
-    const handler = createCreateScheduleHandler(makePulseDeps({ createSchedule, updateSchedule, getSchedule }));
+    const updateSchedule = vi
+      .fn()
+      .mockReturnValue({ ...mockSchedule, id: 'new-1', status: 'pending_approval' });
+    const getSchedule = vi
+      .fn()
+      .mockReturnValue({ ...mockSchedule, id: 'new-1', status: 'pending_approval' });
+    const handler = createCreateScheduleHandler(
+      makePulseDeps({ createSchedule, updateSchedule, getSchedule })
+    );
 
     const result = await handler({ name: 'New job', prompt: 'Do stuff', cron: '0 2 * * *' });
     const parsed = JSON.parse(result.content[0].text);
@@ -497,10 +503,12 @@ describe('createDeleteScheduleHandler', () => {
 #### 3. What the existing tests already cover vs what they do not
 
 The existing `createDorkOsToolServer` tests verify:
+
 - Server name and version are correct
 - 8 tools are registered with the right names
 
 They do NOT verify:
+
 - Handler return value shapes for Pulse tools
 - The `requirePulse()` guard across all handlers
 - `enabled_only` filter logic in `createListSchedulesHandler`

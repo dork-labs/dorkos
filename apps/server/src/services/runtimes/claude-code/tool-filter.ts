@@ -59,7 +59,7 @@ const RELAY_TOOLS = [
   'mcp__dorkos__relay_list_endpoints',
   'mcp__dorkos__relay_register_endpoint',
   'mcp__dorkos__relay_query',
-  'mcp__dorkos__relay_dispatch',           // NEW
+  'mcp__dorkos__relay_dispatch', // NEW
   'mcp__dorkos__relay_unregister_endpoint', // NEW
 ] as const;
 
@@ -89,10 +89,7 @@ const BINDING_TOOLS = [
 ] as const;
 
 /** Follows the relay toggle — disabled when relay=false. */
-const TRACE_TOOLS = [
-  'mcp__dorkos__relay_get_trace',
-  'mcp__dorkos__relay_get_metrics',
-] as const;
+const TRACE_TOOLS = ['mcp__dorkos__relay_get_trace', 'mcp__dorkos__relay_get_metrics'] as const;
 
 // === Public API ===
 
@@ -111,7 +108,7 @@ const TRACE_TOOLS = [
  */
 export function resolveToolConfig(
   agentConfig: EnabledToolGroups | undefined,
-  deps: ToolFilterDeps,
+  deps: ToolFilterDeps
 ): ResolvedToolConfig {
   const agent = agentConfig ?? {};
   return {

@@ -13,7 +13,8 @@ const ASST_MSG = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const INTRO_TEXT = "Before I set up the testing infrastructure, I want to understand your preferences so I can make the right choices. There are several viable approaches and I want to make sure we pick the one that fits your workflow best.\n\n";
+const INTRO_TEXT =
+  'Before I set up the testing infrastructure, I want to understand your preferences so I can make the right choices. There are several viable approaches and I want to make sure we pick the one that fits your workflow best.\n\n';
 
 const QUESTION_TOOL = createToolCall({
   toolCallId: 'sim-qp-tool',
@@ -28,7 +29,10 @@ const QUESTION_TOOL = createToolCall({
       header: 'Framework',
       question: 'Which testing framework should we use for this project?',
       options: [
-        { label: 'Vitest (Recommended)', description: 'Fast, Vite-native, excellent TypeScript support' },
+        {
+          label: 'Vitest (Recommended)',
+          description: 'Fast, Vite-native, excellent TypeScript support',
+        },
         { label: 'Jest', description: 'Battle-tested, widely adopted, rich ecosystem' },
         { label: 'Playwright', description: 'Browser-based E2E testing with great DX' },
       ],
@@ -37,7 +41,8 @@ const QUESTION_TOOL = createToolCall({
   ],
 });
 
-const MIDDLE_TEXT = "\n\nGreat choice. Vitest is the best fit for this project since you're already using Vite. Let me also check what testing utilities are already installed.\n\n";
+const MIDDLE_TEXT =
+  "\n\nGreat choice. Vitest is the best fit for this project since you're already using Vite. Let me also check what testing utilities are already installed.\n\n";
 
 const READ_TOOL = createToolCall({
   toolCallId: 'sim-qp-read',
@@ -82,7 +87,9 @@ export const questionPrompt: SimScenario = {
       toolCallId: 'sim-qp-tool',
       patch: {
         status: 'complete',
-        answers: { 'Which testing framework should we use for this project?': 'Vitest (Recommended)' },
+        answers: {
+          'Which testing framework should we use for this project?': 'Vitest (Recommended)',
+        },
       },
       delayMs: 600,
     },
@@ -94,12 +101,22 @@ export const questionPrompt: SimScenario = {
 
     // Read package.json
     { type: 'append_tool_call', messageId: 'sim-qp-asst', toolCall: READ_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-qp-asst', toolCallId: 'sim-qp-read', patch: { status: 'running' }, delayMs: 1200 },
     {
       type: 'update_tool_call',
       messageId: 'sim-qp-asst',
       toolCallId: 'sim-qp-read',
-      patch: { status: 'complete', result: '{\n  "name": "my-project",\n  "devDependencies": {\n    "vite": "^6.0.0",\n    "typescript": "^5.7.0"\n  }\n}' },
+      patch: { status: 'running' },
+      delayMs: 1200,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-qp-asst',
+      toolCallId: 'sim-qp-read',
+      patch: {
+        status: 'complete',
+        result:
+          '{\n  "name": "my-project",\n  "devDependencies": {\n    "vite": "^6.0.0",\n    "typescript": "^5.7.0"\n  }\n}',
+      },
       delayMs: 400,
     },
 

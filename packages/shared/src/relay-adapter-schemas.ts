@@ -26,10 +26,9 @@ export const PluginSourceSchema = z
     /** Local file path (absolute or relative to config dir) */
     path: z.string().optional(),
   })
-  .refine(
-    (data) => data.package || data.path,
-    { message: 'Plugin source must specify either package or path' },
-  )
+  .refine((data) => data.package || data.path, {
+    message: 'Plugin source must specify either package or path',
+  })
   .openapi('PluginSource');
 
 export type PluginSource = z.infer<typeof PluginSourceSchema>;

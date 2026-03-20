@@ -1,5 +1,5 @@
 ---
-title: "Shadcn Sidebar Redesign — API, State Management, Tailwind v4, and Dialog Lifting"
+title: 'Shadcn Sidebar Redesign — API, State Management, Tailwind v4, and Dialog Lifting'
 date: 2026-03-03
 type: external-best-practices
 status: active
@@ -24,35 +24,40 @@ For dialog lifting, the existing Zustand approach is already correct — the dia
 Shadcn `SidebarProvider` supports two modes:
 
 **Uncontrolled (cookie-persisted, default):**
+
 ```tsx
 <SidebarProvider defaultOpen={true}>
   <Sidebar />
   <SidebarInset>{children}</SidebarInset>
 </SidebarProvider>
 ```
+
 Persists state in a cookie named `sidebar:state` with 7-day max-age. Good for SSR apps (Next.js) but creates a parallel persistence mechanism alongside DorkOS's existing `localStorage` store.
 
 **Controlled (Zustand-bridged, recommended for DorkOS):**
+
 ```tsx
 const { sidebarOpen, setSidebarOpen } = useAppStore();
 
 <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
   <Sidebar />
   <SidebarInset>{children}</SidebarInset>
-</SidebarProvider>
+</SidebarProvider>;
 ```
+
 This keeps Zustand as the single source of truth. The `onOpenChange` callback fires for both desktop toggle and mobile Sheet dismiss events. There is a known bug in older versions where `onOpenChange` fails to trigger on mobile — resolved in current shadcn/ui releases.
 
 **Props reference for `SidebarProvider`:**
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `defaultOpen` | `boolean` | Initial open state (uncontrolled) |
-| `open` | `boolean` | Controlled open state |
-| `onOpenChange` | `(open: boolean) => void` | State change callback |
-| `style` | `React.CSSProperties` | Override `--sidebar-width` / `--sidebar-width-mobile` |
+| Prop           | Type                      | Description                                           |
+| -------------- | ------------------------- | ----------------------------------------------------- |
+| `defaultOpen`  | `boolean`                 | Initial open state (uncontrolled)                     |
+| `open`         | `boolean`                 | Controlled open state                                 |
+| `onOpenChange` | `(open: boolean) => void` | State change callback                                 |
+| `style`        | `React.CSSProperties`     | Override `--sidebar-width` / `--sidebar-width-mobile` |
 
 **Width customization:**
+
 ```tsx
 <SidebarProvider
   style={{
@@ -68,13 +73,13 @@ The `useSidebar` hook is available to any component inside `SidebarProvider`. It
 
 ```tsx
 const {
-  state,           // "expanded" | "collapsed"
-  open,            // boolean — desktop open state
-  setOpen,         // (open: boolean) => void
-  openMobile,      // boolean — mobile Sheet open state (separate from desktop)
-  setOpenMobile,   // (open: boolean) => void
-  isMobile,        // boolean — whether in mobile mode
-  toggleSidebar,   // () => void — toggles the correct state based on isMobile
+  state, // "expanded" | "collapsed"
+  open, // boolean — desktop open state
+  setOpen, // (open: boolean) => void
+  openMobile, // boolean — mobile Sheet open state (separate from desktop)
+  setOpenMobile, // (open: boolean) => void
+  isMobile, // boolean — whether in mobile mode
+  toggleSidebar, // () => void — toggles the correct state based on isMobile
 } = useSidebar();
 ```
 
@@ -93,6 +98,7 @@ The breakpoint is **not configurable via props**. GitHub issue #5747 requesting 
 
 **Customizing breakpoint (if needed):**
 Edit `apps/client/src/layers/shared/ui/sidebar.tsx` after installation:
+
 ```typescript
 const MOBILE_BREAKPOINT = 768; // change here
 ```
@@ -101,18 +107,20 @@ const MOBILE_BREAKPOINT = 768; // change here
 
 ```tsx
 <Sidebar
-  side="left"           // "left" | "right"
-  variant="sidebar"     // "sidebar" | "floating" | "inset"
+  side="left" // "left" | "right"
+  variant="sidebar" // "sidebar" | "floating" | "inset"
   collapsible="offcanvas" // "offcanvas" | "icon" | "none"
 />
 ```
 
 **Collapsible options:**
+
 - `offcanvas`: Slides completely off-screen (matches current DorkOS behavior)
 - `icon`: Collapses to icon-only strip (for future icon-rail mode)
 - `none`: Always visible, non-collapsible
 
 **Variant options:**
+
 - `sidebar`: Standard sidebar that pushes main content
 - `floating`: Sidebar floats over content with border radius
 - `inset`: Sidebar sits within a rounded main content area
@@ -132,6 +140,7 @@ Shadcn/ui is fully compatible with Tailwind v4 as of early 2025. Key details:
 **Critical CSS integration point:**
 
 DorkOS's `index.css` uses the pattern:
+
 ```css
 @theme inline {
   --color-background: hsl(var(--background));
@@ -140,6 +149,7 @@ DorkOS's `index.css` uses the pattern:
 ```
 
 The Shadcn sidebar CSS variables use a **different naming convention**:
+
 - Shadcn uses `--sidebar-background`, `--sidebar-foreground`, etc.
 - The `@theme` block maps `--background` → `--color-background` for Tailwind utilities
 - Sidebar variables are used directly as CSS custom properties by the `sidebar.tsx` component, NOT as Tailwind color utilities — so they do NOT need to be added to `@theme inline`
@@ -151,7 +161,7 @@ The Shadcn sidebar CSS variables use a **different naming convention**:
   /* ... existing vars ... */
 
   /* Sidebar-specific variables */
-  --sidebar-background: 0 0% 96%;        /* slightly off-white, different from --background */
+  --sidebar-background: 0 0% 96%; /* slightly off-white, different from --background */
   --sidebar-foreground: 0 0% 9%;
   --sidebar-primary: 0 0% 9%;
   --sidebar-primary-foreground: 0 0% 98%;
@@ -226,20 +236,20 @@ The session list maps well to `SidebarMenu`:
 ```
 
 `SidebarMenuButton` accepts:
+
 - `isActive`: boolean — applies active styling
 - `asChild`: boolean — renders as child element (for links)
 - `tooltip`: string — tooltip shown when sidebar is collapsed to icon mode
 
 `SidebarMenuBadge` renders inline badges (useful for Pulse active run count):
+
 ```tsx
 <SidebarMenuItem>
   <SidebarMenuButton>
     <icons.pulse />
     <span>Pulse</span>
   </SidebarMenuButton>
-  {activeRunCount > 0 && (
-    <SidebarMenuBadge>{activeRunCount}</SidebarMenuBadge>
-  )}
+  {activeRunCount > 0 && <SidebarMenuBadge>{activeRunCount}</SidebarMenuBadge>}
 </SidebarMenuItem>
 ```
 
@@ -261,6 +271,7 @@ Shadcn Sidebar exposes CSS state via `data-*` attributes for conditional styling
 ### 9. Dialog Lifting Pattern — Zustand Registry
 
 **Current problem:** All dialogs (Settings, Pulse, Relay, Mesh, DirectoryPicker, AgentDialog, OnboardingFlow) are rendered inside `SessionSidebar`. This causes two issues:
+
 1. On mobile, `SessionSidebar` unmounts when the sidebar Sheet closes, unmounting dialogs mid-interaction
 2. It violates the principle that dialogs are global UI, not sidebar-scoped
 
@@ -305,6 +316,7 @@ function DialogHost() {
 ```
 
 **Why this is correct:**
+
 - Dialogs survive sidebar open/close and mobile Sheet unmounts
 - `useAppStore()` is globally accessible — `DialogHost` can read state without prop drilling
 - Zustand already has all the open/close state — no new patterns needed
@@ -312,12 +324,14 @@ function DialogHost() {
 
 **Alternative: nice-modal-react registry pattern**
 For a more scalable approach as more dialogs are added, eBay's `nice-modal-react` library allows:
+
 ```tsx
 NiceModal.show(SettingsDialog);
 // or
 const modal = useModal(SettingsDialog);
 modal.show();
 ```
+
 This decouples dialog invocation from component hierarchy entirely. Overkill for current DorkOS scale but worth considering if dialog count grows significantly.
 
 ### 10. Status Chip Patterns in Sidebar Footer
@@ -401,12 +415,15 @@ The Obsidian plugin uses `embedded={true}` which forces overlay sidebar behavior
 ### FSD Layer Placement
 
 The Shadcn Sidebar component file (`sidebar.tsx`) should go to:
+
 - `apps/client/src/layers/shared/ui/sidebar.tsx` — as a Shadcn primitive
 
 The `SessionSidebar` feature component wrapping it stays at:
+
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`
 
 The `SidebarProvider` and `SidebarInset` wrappers go in:
+
 - `apps/client/src/App.tsx` — at the app layout level
 
 ### Installing the Component
@@ -427,6 +444,7 @@ This adds `sidebar.tsx` to `components/ui/` (you'll need to move it to `layers/s
 Replace the custom motion.dev layout with `SidebarProvider` + `Sidebar` + `SidebarInset` for the standalone path only. Keep embedded mode unchanged.
 
 **Pros:**
+
 - Eliminates 392 lines of custom sidebar + layout code from App.tsx
 - Free mobile Sheet behavior with backdrop, swipe-to-close, and auto-close-on-nav
 - `SidebarTrigger` provides a standard accessible toggle button
@@ -435,6 +453,7 @@ Replace the custom motion.dev layout with `SidebarProvider` + `Sidebar` + `Sideb
 - Accessibility (ARIA attributes, focus management) handled by component
 
 **Cons:**
+
 - Requires adding `--sidebar-*` CSS variables to `index.css`
 - Mobile and desktop state separation requires a small Zustand store update
 - `SidebarProvider` needs to wrap almost the entire App, changing the layout DOM structure
@@ -445,12 +464,14 @@ Replace the custom motion.dev layout with `SidebarProvider` + `Sidebar` + `Sideb
 Keep current App.tsx layout (motion.dev animations, custom overlay) but replace `SessionSidebar`'s internal markup with Shadcn's `SidebarMenu`, `SidebarMenuItem`, etc. components.
 
 **Pros:**
+
 - Minimal layout disruption
 - Motion animations preserved exactly
 - No CSS variable additions needed
 - No Zustand state changes
 
 **Cons:**
+
 - Still maintaining custom overlay/push layout code (complex, 392 lines stays)
 - Doesn't get the Sheet behavior improvement on mobile
 - Menu components are tightly coupled to SidebarProvider context — may not work outside it
@@ -460,11 +481,13 @@ Keep current App.tsx layout (motion.dev animations, custom overlay) but replace 
 Keep desktop push sidebar (motion.dev), replace mobile overlay with Shadcn `Sheet` component directly.
 
 **Pros:**
+
 - Gets native Sheet behavior on mobile (swipe-to-close, backdrop, accessibility)
 - Desktop animation stays custom
 - No need for SidebarProvider at all
 
 **Cons:**
+
 - Still bifurcated implementation — two different patterns for mobile vs desktop
 - Misses out on the unified SidebarProvider state management
 
@@ -473,6 +496,7 @@ Keep desktop push sidebar (motion.dev), replace mobile overlay with Shadcn `Shee
 **Option A (Full Migration)** for the standalone path, keeping embedded mode as-is.
 
 The key implementation steps:
+
 1. Install `sidebar.tsx` → move to `layers/shared/ui/`
 2. Add `--sidebar-*` CSS variables to `index.css` (calibrated to neutral gray palette)
 3. Refactor `App.tsx` standalone path: replace custom motion layout with `SidebarProvider` + `SidebarInset`
@@ -491,29 +515,30 @@ The existing `index.css` `@theme inline` block does NOT need changes for sidebar
 /* Pure neutral gray palette variants for sidebar */
 :root {
   /* Sidebar: slightly different from main background for visual distinction */
-  --sidebar-background: 0 0% 96%;      /* vs --background: 0 0% 98% */
-  --sidebar-foreground: 0 0% 9%;       /* matches --foreground */
-  --sidebar-primary: 0 0% 9%;          /* matches --primary */
+  --sidebar-background: 0 0% 96%; /* vs --background: 0 0% 98% */
+  --sidebar-foreground: 0 0% 9%; /* matches --foreground */
+  --sidebar-primary: 0 0% 9%; /* matches --primary */
   --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 0 0% 92%;          /* matches --secondary */
+  --sidebar-accent: 0 0% 92%; /* matches --secondary */
   --sidebar-accent-foreground: 0 0% 9%;
-  --sidebar-border: 0 0% 83%;          /* matches --border */
-  --sidebar-ring: 217 91% 60%;         /* matches --ring */
+  --sidebar-border: 0 0% 83%; /* matches --border */
+  --sidebar-ring: 217 91% 60%; /* matches --ring */
 }
 
 .dark {
-  --sidebar-background: 0 0% 6%;       /* vs --background: 0 0% 4% — slightly lighter */
+  --sidebar-background: 0 0% 6%; /* vs --background: 0 0% 4% — slightly lighter */
   --sidebar-foreground: 0 0% 93%;
   --sidebar-primary: 0 0% 93%;
   --sidebar-primary-foreground: 0 0% 9%;
-  --sidebar-accent: 0 0% 12%;          /* matches --accent */
+  --sidebar-accent: 0 0% 12%; /* matches --accent */
   --sidebar-accent-foreground: 0 0% 93%;
-  --sidebar-border: 0 0% 25%;          /* matches --border */
-  --sidebar-ring: 213 94% 68%;         /* matches --ring */
+  --sidebar-border: 0 0% 25%; /* matches --border */
+  --sidebar-ring: 213 94% 68%; /* matches --ring */
 }
 ```
 
 If you prefer the sidebar to share the main background color exactly (no visual distinction):
+
 ```css
 :root {
   --sidebar-background: var(--background);

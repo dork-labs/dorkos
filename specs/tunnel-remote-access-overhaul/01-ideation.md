@@ -60,21 +60,21 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|---|---|
-| `apps/server/src/services/core/tunnel-manager.ts` | ngrok SDK lifecycle (start/stop/status) |
-| `apps/server/src/routes/tunnel.ts` | HTTP API for tunnel control |
-| `apps/server/src/routes/health.ts` | Health endpoint with tunnel status |
-| `apps/server/src/routes/config.ts` | Config endpoint with tunnel status |
-| `apps/server/src/app.ts` | CORS configuration |
-| `apps/server/src/index.ts` | Server startup, tunnel init, 0.0.0.0 binding |
-| `apps/client/src/layers/features/settings/ui/TunnelDialog.tsx` | Main tunnel control UI |
-| `apps/client/src/layers/features/status/ui/TunnelItem.tsx` | Status bar tunnel indicator |
-| `apps/client/src/layers/features/status/ui/StatusLine.tsx` | Status bar container |
-| `packages/shared/src/transport.ts` | Transport interface (startTunnel/stopTunnel) |
-| `packages/shared/src/schemas.ts` | Zod schemas for tunnel status |
-| `packages/shared/src/config-schema.ts` | Persistent tunnel config schema |
-| `packages/cli/src/cli.ts` | CLI --tunnel flag and startup banner |
+| File                                                           | Role                                         |
+| -------------------------------------------------------------- | -------------------------------------------- |
+| `apps/server/src/services/core/tunnel-manager.ts`              | ngrok SDK lifecycle (start/stop/status)      |
+| `apps/server/src/routes/tunnel.ts`                             | HTTP API for tunnel control                  |
+| `apps/server/src/routes/health.ts`                             | Health endpoint with tunnel status           |
+| `apps/server/src/routes/config.ts`                             | Config endpoint with tunnel status           |
+| `apps/server/src/app.ts`                                       | CORS configuration                           |
+| `apps/server/src/index.ts`                                     | Server startup, tunnel init, 0.0.0.0 binding |
+| `apps/client/src/layers/features/settings/ui/TunnelDialog.tsx` | Main tunnel control UI                       |
+| `apps/client/src/layers/features/status/ui/TunnelItem.tsx`     | Status bar tunnel indicator                  |
+| `apps/client/src/layers/features/status/ui/StatusLine.tsx`     | Status bar container                         |
+| `packages/shared/src/transport.ts`                             | Transport interface (startTunnel/stopTunnel) |
+| `packages/shared/src/schemas.ts`                               | Zod schemas for tunnel status                |
+| `packages/shared/src/config-schema.ts`                         | Persistent tunnel config schema              |
+| `packages/cli/src/cli.ts`                                      | CLI --tunnel flag and startup banner         |
 
 **Shared Dependencies:**
 
@@ -118,21 +118,25 @@ UI toggle → transport.startTunnel() → POST /api/tunnel/start → tunnelManag
 This is a bug fix + enhancement. Root causes for critical bugs:
 
 **CORS blocks tunnel requests (Critical #1 & #2):**
+
 - Root cause: `buildCorsOrigin()` in `app.ts` returns a static array at app creation time. The tunnel URL is not known until after ngrok connects, and there's no mechanism to add it retroactively.
 - Evidence: Lines 24-44 of `app.ts` — only `localhost` origins are allowed.
 - Fix: Replace static allowlist with a dynamic CORS origin callback that checks `tunnelManager.status.url` at request time.
 
 **handleSaveToken bypasses Transport (Critical #3):**
+
 - Root cause: Direct `fetch('/api/config')` call in TunnelDialog.tsx line 110 instead of `transport.updateConfig()`.
 - Evidence: Line 110 — hardcoded fetch call.
 - Fix: Replace with `transport.updateConfig({ tunnel: { authtoken } })`.
 
 **DEV_CLIENT_PORT is wrong (High #6):**
+
 - Root cause: `DEV_CLIENT_PORT = 3000` in `routes/tunnel.ts` line 12. Vite dev server actually runs on port 4241 (per CLAUDE.md and CORS config).
 - Evidence: CORS config uses `VITE_PORT || '4241'`, but tunnel route uses hardcoded 3000.
 - Fix: Read from `VITE_PORT` env var or use 4241 as default.
 
 **0.0.0.0 binding bypasses auth (High #29):**
+
 - Root cause: `index.ts` line 232 binds to `0.0.0.0` when tunnel is enabled, exposing the server on all network interfaces. ngrok basic auth only protects the tunnel URL, not direct network access.
 - Evidence: Research confirms ngrok SDK can reach `localhost` servers — binding to `0.0.0.0` is unnecessary.
 - Fix: Always bind to `localhost`. Remove the `0.0.0.0` conditional.
@@ -142,6 +146,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 ### Potential Solutions
 
 **1. Dynamic CORS Origin Callback**
+
 - Description: Replace static `buildCorsOrigin()` with a function callback that checks `tunnelManager.status.url` at each request.
 - Pros: Secure (only allows known origins), automatic (no user config needed), works with changing tunnel URLs
 - Cons: Tiny per-request overhead (negligible)
@@ -149,6 +154,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 - Maintenance: Low
 
 **2. BroadcastChannel + SSE for Cross-Tab Sync**
+
 - Description: Use `BroadcastChannel('dorkos-tunnel')` for same-browser tab communication. When Tab A toggles tunnel, it broadcasts a `tunnel_status_changed` message. Other tabs receive it and invalidate their `['config']` query. For cross-device (remote clients via tunnel), add `tunnel_status` SSE event type to the existing sync stream.
 - Pros: Zero-latency same-browser sync, works cross-device via SSE, no polling overhead, clean separation
 - Cons: BroadcastChannel not available in Web Workers (not an issue here), SSE requires active connection
@@ -156,6 +162,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 - Maintenance: Low
 
 **3. ngrok `on_status_change` for Reconnection**
+
 - Description: Pass `on_status_change` callback to `ngrok.forward()`. When tunnel disconnects/reconnects, update TunnelManager status and emit events to connected clients.
 - Pros: Instant disconnect detection, no polling, uses built-in SDK feature
 - Cons: Requires event emission mechanism (SSE integration)
@@ -163,6 +170,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 - Maintenance: Low
 
 **4. Terminal QR Code for CLI**
+
 - Description: Use a terminal QR code library (e.g., `qrcode-terminal` or inline ANSI art) to print a scannable QR code in the terminal when tunnel starts.
 - Pros: Follows Expo pattern, great mobile DX, zero-click sharing
 - Cons: Adds a dependency, may not render in all terminal emulators
@@ -170,6 +178,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 - Maintenance: Low
 
 **5. Custom Domain Field in TunnelDialog**
+
 - Description: Add a "Custom domain" input to the TunnelDialog (collapsible under "Advanced"). Saves to `tunnel.domain` in config. ngrok free tier now offers static dev domains — consistent URL across restarts.
 - Pros: Eliminates changing URLs, ngrok free static domains are free, better DX
 - Cons: Requires ngrok account setup for static domains
@@ -177,12 +186,14 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 - Maintenance: Low
 
 ### Security Considerations
+
 - Always bind to `localhost` — ngrok SDK reaches localhost without 0.0.0.0
 - Dynamic CORS prevents unauthorized cross-origin requests
 - Auth token stored in plaintext JSON (acknowledged — keychain integration out of scope)
 - Basic auth credentials in config (acknowledged — env vars preferred)
 
 ### Performance Considerations
+
 - Dynamic CORS callback: negligible per-request cost
 - BroadcastChannel: zero network overhead, in-memory only
 - `on_status_change`: no polling, event-driven
@@ -191,6 +202,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 ### Recommendation
 
 **Approach:** Implement all five solutions as they address orthogonal concerns:
+
 1. Dynamic CORS (fixes critical bug)
 2. BroadcastChannel + SSE (multi-tab sync)
 3. on_status_change (reconnection)
@@ -201,84 +213,84 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Cross-tab tunnel status sync | BroadcastChannel + SSE | Instant same-browser sync via BroadcastChannel, cross-device sync via SSE tunnel_status events. No polling overhead. |
-| 2 | CORS handling for tunnel | Dynamic origin callback | Replace static allowlist with function callback checking `tunnelManager.status.url` at request time. Secure and automatic. |
-| 3 | Network binding with tunnel | Always bind to localhost | ngrok SDK reaches localhost servers. Removing 0.0.0.0 prevents LAN access bypassing tunnel auth. |
-| 4 | UX scope | Full redesign with onboarding | Fix all bugs + add custom domain field + first-run onboarding + connection quality indicator + terminal QR code + session sharing URL. |
-| 5 | TunnelManager event emission | EventEmitter mixin | TunnelManager extends EventEmitter. Emits `status_change` events. Routes/SSE handlers subscribe. Matches existing SessionBroadcaster pattern. |
-| 6 | SSE tunnel status delivery | New `GET /api/tunnel/stream` endpoint | Dedicated SSE endpoint for tunnel events (tunnel_connected, tunnel_disconnected, tunnel_error). Works independently of session selection. ~30 lines. |
-| 7 | Unified TunnelStatus type | Superset with all fields | Single Zod schema: `{ enabled, connected, url, port, startedAt, authEnabled, tokenConfigured, domain }`. Replaces three inconsistent shapes. Config route enriches core fields at response time. |
-| 8 | First-run onboarding UX | Illustrated hero + 3-step guide | Inline SVG illustration (laptop + phone via dotted lines, dark mode aware), one-line value prop, 3-step numbered guide. Collapses after token saved. Follows Expo/Vercel pattern. |
-| 9 | Custom domain field placement | Always visible below toggle | Show domain input whenever token is configured. Pre-populate from config. Hint about free static domains at dashboard.ngrok.com/domains. Saves on blur/enter. Benefits: same URL every restart, reusable QR codes, persistent bookmarks. |
-| 10 | Connection quality indicator | Latency dot with tooltip | Colored dot next to URL: green (<200ms), yellow (200-500ms), red (>500ms). Health ping through tunnel every 30s when connected. Tooltip shows ms. Stops when dialog closed. VS Code pattern. |
-| 11 | Terminal QR code library | qrcode-terminal | 8M+ weekly downloads, Unicode block characters, ~15KB gzip. Same approach as Expo. Tree-shaken into esbuild CLI bundle. |
-| 12 | Session sharing via tunnel | Copy buttons in TunnelDialog | Two copy buttons when connected: "Copy URL" (root) and "Copy session link" (tunnel URL + ?session=id). Session link only shows when a session is selected. |
-| 13 | BroadcastChannel FSD placement | shared/lib utility + entities/tunnel hook | Raw BroadcastChannel wrapper in shared/lib/broadcast-channel.ts (reusable). Domain hook useTunnelSync() in entities/tunnel/ subscribes to both BroadcastChannel and SSE, invalidates ['config'] query. |
-| 14 | Unexpected disconnect UX | Toast notification + status bar update | Non-blocking toast ("Remote access disconnected — reconnecting...") + TunnelItem status bar turns red. On auto-reconnect: success toast + green. On permanent failure: error toast with "Reconnect" action button. |
+| #   | Decision                       | Choice                                    | Rationale                                                                                                                                                                                                                                |
+| --- | ------------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Cross-tab tunnel status sync   | BroadcastChannel + SSE                    | Instant same-browser sync via BroadcastChannel, cross-device sync via SSE tunnel_status events. No polling overhead.                                                                                                                     |
+| 2   | CORS handling for tunnel       | Dynamic origin callback                   | Replace static allowlist with function callback checking `tunnelManager.status.url` at request time. Secure and automatic.                                                                                                               |
+| 3   | Network binding with tunnel    | Always bind to localhost                  | ngrok SDK reaches localhost servers. Removing 0.0.0.0 prevents LAN access bypassing tunnel auth.                                                                                                                                         |
+| 4   | UX scope                       | Full redesign with onboarding             | Fix all bugs + add custom domain field + first-run onboarding + connection quality indicator + terminal QR code + session sharing URL.                                                                                                   |
+| 5   | TunnelManager event emission   | EventEmitter mixin                        | TunnelManager extends EventEmitter. Emits `status_change` events. Routes/SSE handlers subscribe. Matches existing SessionBroadcaster pattern.                                                                                            |
+| 6   | SSE tunnel status delivery     | New `GET /api/tunnel/stream` endpoint     | Dedicated SSE endpoint for tunnel events (tunnel_connected, tunnel_disconnected, tunnel_error). Works independently of session selection. ~30 lines.                                                                                     |
+| 7   | Unified TunnelStatus type      | Superset with all fields                  | Single Zod schema: `{ enabled, connected, url, port, startedAt, authEnabled, tokenConfigured, domain }`. Replaces three inconsistent shapes. Config route enriches core fields at response time.                                         |
+| 8   | First-run onboarding UX        | Illustrated hero + 3-step guide           | Inline SVG illustration (laptop + phone via dotted lines, dark mode aware), one-line value prop, 3-step numbered guide. Collapses after token saved. Follows Expo/Vercel pattern.                                                        |
+| 9   | Custom domain field placement  | Always visible below toggle               | Show domain input whenever token is configured. Pre-populate from config. Hint about free static domains at dashboard.ngrok.com/domains. Saves on blur/enter. Benefits: same URL every restart, reusable QR codes, persistent bookmarks. |
+| 10  | Connection quality indicator   | Latency dot with tooltip                  | Colored dot next to URL: green (<200ms), yellow (200-500ms), red (>500ms). Health ping through tunnel every 30s when connected. Tooltip shows ms. Stops when dialog closed. VS Code pattern.                                             |
+| 11  | Terminal QR code library       | qrcode-terminal                           | 8M+ weekly downloads, Unicode block characters, ~15KB gzip. Same approach as Expo. Tree-shaken into esbuild CLI bundle.                                                                                                                  |
+| 12  | Session sharing via tunnel     | Copy buttons in TunnelDialog              | Two copy buttons when connected: "Copy URL" (root) and "Copy session link" (tunnel URL + ?session=id). Session link only shows when a session is selected.                                                                               |
+| 13  | BroadcastChannel FSD placement | shared/lib utility + entities/tunnel hook | Raw BroadcastChannel wrapper in shared/lib/broadcast-channel.ts (reusable). Domain hook useTunnelSync() in entities/tunnel/ subscribes to both BroadcastChannel and SSE, invalidates ['config'] query.                                   |
+| 14  | Unexpected disconnect UX       | Toast notification + status bar update    | Non-blocking toast ("Remote access disconnected — reconnecting...") + TunnelItem status bar turns red. On auto-reconnect: success toast + green. On permanent failure: error toast with "Reconnect" action button.                       |
 
 ## 7) Full Issue Inventory
 
 ### Critical (Must Fix)
 
-| # | Issue | File(s) | Fix |
-|---|-------|---------|-----|
-| 1 | CORS blocks tunnel requests | `app.ts` | Dynamic CORS origin callback |
-| 2 | CORS race condition (tunnel URL unknown at startup) | `app.ts` | Same — callback checks at request time |
-| 3 | `handleSaveToken` bypasses Transport | `TunnelDialog.tsx:110` | Use `transport.updateConfig()` |
+| #   | Issue                                               | File(s)                | Fix                                    |
+| --- | --------------------------------------------------- | ---------------------- | -------------------------------------- |
+| 1   | CORS blocks tunnel requests                         | `app.ts`               | Dynamic CORS origin callback           |
+| 2   | CORS race condition (tunnel URL unknown at startup) | `app.ts`               | Same — callback checks at request time |
+| 3   | `handleSaveToken` bypasses Transport                | `TunnelDialog.tsx:110` | Use `transport.updateConfig()`         |
 
 ### High Priority
 
-| # | Issue | File(s) | Fix |
-|---|-------|---------|-----|
-| 4 | No `on_status_change` — silent disconnections | `tunnel-manager.ts` | Add callback, emit status events |
-| 5 | UI state machine stuck states + stale closure | `TunnelDialog.tsx:60-68` | Add `state` to deps, add recovery logic |
-| 6 | `DEV_CLIENT_PORT = 3000` (should be 4241) | `routes/tunnel.ts:12` | Read from `VITE_PORT` env var, default 4241 |
-| 7 | Tunnel URL not printed in CLI | `cli.ts` | Listen for tunnel URL, print with QR |
-| 29 | `0.0.0.0` binding bypasses auth | `index.ts:232` | Always bind to `localhost` |
+| #   | Issue                                         | File(s)                  | Fix                                         |
+| --- | --------------------------------------------- | ------------------------ | ------------------------------------------- |
+| 4   | No `on_status_change` — silent disconnections | `tunnel-manager.ts`      | Add callback, emit status events            |
+| 5   | UI state machine stuck states + stale closure | `TunnelDialog.tsx:60-68` | Add `state` to deps, add recovery logic     |
+| 6   | `DEV_CLIENT_PORT = 3000` (should be 4241)     | `routes/tunnel.ts:12`    | Read from `VITE_PORT` env var, default 4241 |
+| 7   | Tunnel URL not printed in CLI                 | `cli.ts`                 | Listen for tunnel URL, print with QR        |
+| 29  | `0.0.0.0` binding bypasses auth               | `index.ts:232`           | Always bind to `localhost`                  |
 
 ### Medium Priority
 
-| # | Issue | File(s) | Fix |
-|---|-------|---------|-----|
-| 8 | No input validation on tunnel routes | `routes/tunnel.ts` | Add Zod validation, semantic error codes |
-| 9 | Stop clears URL optimistically before await | `TunnelDialog.tsx:91` | Keep URL visible during stopping |
-| 10 | Health response format doesn't match docs | `health.ts`, `tunnel-setup.mdx` | Align docs with actual response |
-| 11 | Three different tunnel status shapes | Multiple | Unify to single TunnelStatus type |
-| 25 | DirectTransport throws but UI doesn't check | `TunnelDialog.tsx`, `direct-transport.ts` | Check embedded mode, hide toggle |
+| #   | Issue                                       | File(s)                                   | Fix                                      |
+| --- | ------------------------------------------- | ----------------------------------------- | ---------------------------------------- |
+| 8   | No input validation on tunnel routes        | `routes/tunnel.ts`                        | Add Zod validation, semantic error codes |
+| 9   | Stop clears URL optimistically before await | `TunnelDialog.tsx:91`                     | Keep URL visible during stopping         |
+| 10  | Health response format doesn't match docs   | `health.ts`, `tunnel-setup.mdx`           | Align docs with actual response          |
+| 11  | Three different tunnel status shapes        | Multiple                                  | Unify to single TunnelStatus type        |
+| 25  | DirectTransport throws but UI doesn't check | `TunnelDialog.tsx`, `direct-transport.ts` | Check embedded mode, hide toggle         |
 
 ### Product/UX
 
-| # | Issue | File(s) | Fix |
-|---|-------|---------|-----|
-| 14 | No first-run onboarding | `TunnelDialog.tsx` | Add explanation/illustration for new users |
-| 15 | No custom domain UX | `TunnelDialog.tsx` | Add custom domain input field |
-| 16 | No session sharing via tunnel | `TunnelDialog.tsx` | Add "Share session" with tunnel URL |
-| 17 | Terminal QR code missing from CLI | `cli.ts` | Add terminal QR code library |
-| 18 | No connection quality indicator | `TunnelDialog.tsx` | Add latency ping indicator |
-| NEW | Multi-tab tunnel status sync | New files | BroadcastChannel + SSE |
+| #   | Issue                             | File(s)            | Fix                                        |
+| --- | --------------------------------- | ------------------ | ------------------------------------------ |
+| 14  | No first-run onboarding           | `TunnelDialog.tsx` | Add explanation/illustration for new users |
+| 15  | No custom domain UX               | `TunnelDialog.tsx` | Add custom domain input field              |
+| 16  | No session sharing via tunnel     | `TunnelDialog.tsx` | Add "Share session" with tunnel URL        |
+| 17  | Terminal QR code missing from CLI | `cli.ts`           | Add terminal QR code library               |
+| 18  | No connection quality indicator   | `TunnelDialog.tsx` | Add latency ping indicator                 |
+| NEW | Multi-tab tunnel status sync      | New files          | BroadcastChannel + SSE                     |
 
 ### Testing
 
-| # | Issue | File(s) | Fix |
-|---|-------|---------|-----|
-| 19 | No CORS test with tunnel | New test | Integration test for CORS + tunnel |
-| 20 | No full lifecycle integration test | New test | Start → CORS → API → Stop flow |
-| 21 | TunnelDialog tests miss connected/error states | `TunnelDialog.test.tsx` | Add QR code, URL copy, error tests |
-| 22 | DEV_CLIENT_PORT test cleanup | `tunnel.test.ts` | Use beforeEach/afterEach for NODE_ENV |
+| #   | Issue                                          | File(s)                 | Fix                                   |
+| --- | ---------------------------------------------- | ----------------------- | ------------------------------------- |
+| 19  | No CORS test with tunnel                       | New test                | Integration test for CORS + tunnel    |
+| 20  | No full lifecycle integration test             | New test                | Start → CORS → API → Stop flow        |
+| 21  | TunnelDialog tests miss connected/error states | `TunnelDialog.test.tsx` | Add QR code, URL copy, error tests    |
+| 22  | DEV_CLIENT_PORT test cleanup                   | `tunnel.test.ts`        | Use beforeEach/afterEach for NODE_ENV |
 
 ### Code Quality
 
-| # | Issue | File(s) | Fix |
-|---|-------|---------|-----|
-| 23 | `forwardOpts` typed as `Record<string, unknown>` | `tunnel-manager.ts` | Use ngrok SDK Config type |
-| 24 | Singleton vs DI | `tunnel-manager.ts` | Consider constructor injection |
+| #   | Issue                                            | File(s)             | Fix                            |
+| --- | ------------------------------------------------ | ------------------- | ------------------------------ |
+| 23  | `forwardOpts` typed as `Record<string, unknown>` | `tunnel-manager.ts` | Use ngrok SDK Config type      |
+| 24  | Singleton vs DI                                  | `tunnel-manager.ts` | Consider constructor injection |
 
 ### Security (Acknowledged, Deferred)
 
-| # | Issue | Status |
-|---|-------|--------|
-| 26 | Auth token in plaintext JSON | Acknowledged — env var preferred, keychain out of scope |
-| 27 | Basic auth creds in config | Acknowledged — same as above |
-| 28 | No rate limiting on tunnel routes | Tracked separately |
+| #   | Issue                             | Status                                                  |
+| --- | --------------------------------- | ------------------------------------------------------- |
+| 26  | Auth token in plaintext JSON      | Acknowledged — env var preferred, keychain out of scope |
+| 27  | Basic auth creds in config        | Acknowledged — same as above                            |
+| 28  | No rate limiting on tunnel routes | Tracked separately                                      |

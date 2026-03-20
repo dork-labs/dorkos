@@ -40,12 +40,32 @@ vi.mock('../ui/PulseEmptyState', () => ({
     onCreateWithPreset,
     onCreateBlank,
   }: {
-    onCreateWithPreset: (preset: { id: string; name: string; description: string; prompt: string; cron: string; timezone: string; category: string }) => void;
+    onCreateWithPreset: (preset: {
+      id: string;
+      name: string;
+      description: string;
+      prompt: string;
+      cron: string;
+      timezone: string;
+      category: string;
+    }) => void;
     onCreateBlank: () => void;
   }) => (
     <div data-testid="pulse-empty-state">
       <button onClick={onCreateBlank}>Create Schedule</button>
-      <button onClick={() => onCreateWithPreset({ id: 'p1', name: 'Preset', description: '', prompt: '', cron: '0 * * * *', timezone: 'UTC', category: 'maintenance' })}>
+      <button
+        onClick={() =>
+          onCreateWithPreset({
+            id: 'p1',
+            name: 'Preset',
+            description: '',
+            prompt: '',
+            cron: '0 * * * *',
+            timezone: 'UTC',
+            category: 'maintenance',
+          })
+        }
+      >
         Use Preset
       </button>
     </div>
@@ -69,8 +89,12 @@ vi.mock('../ui/ScheduleRow', () => ({
     <div data-testid={`schedule-row-${schedule.id}`}>
       <span>{schedule.name}</span>
       <button onClick={onToggleExpand}>Toggle {schedule.name}</button>
-      <button onClick={onEdit} aria-label={`Edit ${schedule.name}`}>Edit</button>
-      {expanded && <div data-testid={`run-history-${schedule.id}`}>Run History for {schedule.id}</div>}
+      <button onClick={onEdit} aria-label={`Edit ${schedule.name}`}>
+        Edit
+      </button>
+      {expanded && (
+        <div data-testid={`run-history-${schedule.id}`}>Run History for {schedule.id}</div>
+      )}
     </div>
   ),
 }));
@@ -148,7 +172,9 @@ describe('PulsePanel', () => {
 
     expect(screen.getByTestId('create-schedule-dialog')).toBeTruthy();
     // Dialog should be in create mode (no editSchedule)
-    expect(screen.getByText('New Schedule', { selector: '[data-testid="create-schedule-dialog"]' })).toBeTruthy();
+    expect(
+      screen.getByText('New Schedule', { selector: '[data-testid="create-schedule-dialog"]' })
+    ).toBeTruthy();
   });
 
   it('onEdit callback from ScheduleRow opens dialog in edit mode', async () => {

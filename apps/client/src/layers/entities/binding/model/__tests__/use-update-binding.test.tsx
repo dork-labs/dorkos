@@ -46,7 +46,11 @@ describe('useUpdateBinding', () => {
   });
 
   it('calls transport.updateBinding with the provided id and updates', async () => {
-    const updatedBinding = { ...mockBinding, label: 'updated', updatedAt: '2026-02-01T00:00:00.000Z' };
+    const updatedBinding = {
+      ...mockBinding,
+      label: 'updated',
+      updatedAt: '2026-02-01T00:00:00.000Z',
+    };
     const transport = createMockTransport({
       updateBinding: vi.fn().mockResolvedValue(updatedBinding),
     });

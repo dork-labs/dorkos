@@ -28,13 +28,13 @@ The curl script wraps npm (the "hybrid" approach used by OpenClaw) to provide `c
 
 Every competitor in DorkOS's space offers 3+ install methods with `curl | bash` as the dominant primary method:
 
-| Tool | Primary Method | Total Methods |
-|------|---------------|---------------|
-| Claude Code | `curl \| bash` (native binary) | 5 |
-| OpenCode | `curl \| bash` (binary) | 6 |
-| OpenClaw | `curl \| bash` (wraps npm) | 3 |
-| Codex | `npm install -g` | 4 |
-| **DorkOS** | **`npm install -g`** | **1** |
+| Tool        | Primary Method                 | Total Methods |
+| ----------- | ------------------------------ | ------------- |
+| Claude Code | `curl \| bash` (native binary) | 5             |
+| OpenCode    | `curl \| bash` (binary)        | 6             |
+| OpenClaw    | `curl \| bash` (wraps npm)     | 3             |
+| Codex       | `npm install -g`               | 4             |
+| **DorkOS**  | **`npm install -g`**           | **1**         |
 
 The perceptual gap is significant: `npm install -g` signals "side project" (one of thousands of npm packages), while `curl -fsSL https://dorkos.ai/install | bash` signals "first-class infrastructure" (own distribution channel). Claude Code's migration from npm to native binary was as much a repositioning as a technical improvement.
 
@@ -62,13 +62,13 @@ The perceptual gap is significant: `npm install -g` signals "side project" (one 
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| Next.js | 16 | API route for install script serving |
-| Fumadocs | Current | Tabs, Steps, Callout MDX components for docs |
-| motion | Current | Marketing site animations |
-| node:util parseArgs | Node 18+ | CLI flag parsing |
-| Homebrew | N/A | External tap repository |
+| Dependency          | Version  | Purpose                                      |
+| ------------------- | -------- | -------------------------------------------- |
+| Next.js             | 16       | API route for install script serving         |
+| Fumadocs            | Current  | Tabs, Steps, Callout MDX components for docs |
+| motion              | Current  | Marketing site animations                    |
+| node:util parseArgs | Node 18+ | CLI flag parsing                             |
+| Homebrew            | N/A      | External tap repository                      |
 
 No new npm dependencies are required. All changes use existing framework capabilities.
 
@@ -79,6 +79,7 @@ No new npm dependencies are required. All changes use existing framework capabil
 ### 1. Install Script (`apps/site/src/app/install/route.ts`)
 
 A Next.js Route Handler that serves a bash script with `Content-Type: text/plain`. This approach is preferred over a static file in `public/` because:
+
 - Route Handlers support edge caching and headers control
 - The script can be versioned alongside the site code
 - URL stays clean: `dorkos.ai/install` (no file extension)
@@ -87,14 +88,11 @@ A Next.js Route Handler that serves a bash script with `Content-Type: text/plain
 
 ```typescript
 // apps/site/src/app/install/route.ts
-import { NextResponse } from 'next/server'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { NextResponse } from 'next/server';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const script = readFileSync(
-  join(process.cwd(), 'scripts', 'install.sh'),
-  'utf-8',
-)
+const script = readFileSync(join(process.cwd(), 'scripts', 'install.sh'), 'utf-8');
 
 export function GET() {
   return new NextResponse(script, {
@@ -102,7 +100,7 @@ export function GET() {
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'public, max-age=300, s-maxage=3600',
     },
-  })
+  });
 }
 ```
 
@@ -221,6 +219,7 @@ fi
 ```
 
 **Key design decisions:**
+
 - `set -euo pipefail` for strict error handling (matches OpenCode pattern)
 - Version pinning: `curl ... | bash -s 1.2.3` passes version as `$1`
 - CI mode: `--no-prompt` flag OR `DORKOS_NO_PROMPT=1` env var OR non-interactive stdin (`[ -t 0 ]`)
@@ -234,6 +233,7 @@ fi
 The current `InstallMoment.tsx` hardcodes `npm install -g dorkos` with a text scramble animation. Redesign to add a 3-tab interface while preserving the visual identity (badges, tagline, film-grain background).
 
 **Changes:**
+
 - Add `useState` for active tab (default: `'curl'`)
 - Replace single command display with tab-switching UI
 - Each tab shows a different install command with copy-to-clipboard
@@ -262,10 +262,11 @@ const INSTALL_METHODS = [
     command: 'brew install dorkos-ai/tap/dorkos',
     description: 'macOS and Linux. Updates via brew upgrade.',
   },
-] as const
+] as const;
 ```
 
 **Tab UI pattern:**
+
 - Three tab buttons in a row, matching the `bg-cream-secondary` terminal aesthetic
 - Active tab: `border-b-2 border-[#E85D04]` (accent orange) with `text-[#44403C]`
 - Inactive tab: `text-[#7A756A]` (muted)
@@ -274,6 +275,7 @@ const INSTALL_METHODS = [
 - Description text below command in `text-xs text-[#7A756A]`
 
 **CTA updates:**
+
 - Desktop primary CTA: change text to `curl -fsSL https://dorkos.ai/install | bash` and link to `#install` (scroll anchor)
 - Mobile primary CTA: keep "Get started" linking to `/docs/getting-started/quickstart`
 
@@ -309,7 +311,7 @@ Add curl as the first tab, brew as a new tab, reorder to: `One-liner (Recommende
 
 **New tab structure:**
 
-```mdx
+````mdx
 <Tabs items={['One-liner (Recommended)', 'npm', 'Homebrew', 'Obsidian Plugin', 'Self-Hosted']}>
 
 <Tab value="One-liner (Recommended)">
@@ -320,6 +322,7 @@ Add curl as the first tab, brew as a new tab, reorder to: `One-liner (Recommende
 ```bash
 curl -fsSL https://dorkos.ai/install | bash
 ```
+````
 
 The install script checks for Node.js 18+, installs DorkOS via npm,
 and optionally runs the setup wizard.
@@ -486,14 +489,14 @@ User visits dorkos.ai
 
 ### Error States
 
-| Scenario | Script Behavior |
-|---|---|
-| Node.js not installed | Error with install instructions (nodejs.org + nvm) |
-| Node.js < 18 | Error with current version and upgrade link |
-| npm not found | Error explaining npm is bundled with Node.js |
-| npm install fails | npm error output shown; script exits with npm's exit code |
-| `dorkos` not in PATH after install | Warning with PATH fix command |
-| Non-interactive stdin (piped, CI) | Skips setup wizard prompt automatically |
+| Scenario                           | Script Behavior                                           |
+| ---------------------------------- | --------------------------------------------------------- |
+| Node.js not installed              | Error with install instructions (nodejs.org + nvm)        |
+| Node.js < 18                       | Error with current version and upgrade link               |
+| npm not found                      | Error explaining npm is bundled with Node.js              |
+| npm install fails                  | npm error output shown; script exits with npm's exit code |
+| `dorkos` not in PATH after install | Warning with PATH fix command                             |
+| Non-interactive stdin (piped, CI)  | Skips setup wizard prompt automatically                   |
 
 ---
 
@@ -543,17 +546,17 @@ test_ci_mode() {
 describe('--post-install-check', () => {
   it('exits 0 when claude CLI is available', async () => {
     // Mock checkClaude to succeed
-    vi.mock('../check-claude', () => ({ checkClaude: vi.fn() }))
+    vi.mock('../check-claude', () => ({ checkClaude: vi.fn() }));
     // Verify process.exit(0) is called
-  })
+  });
 
   it('exits 1 when claude CLI is not available', async () => {
     // Mock checkClaude to throw
     vi.mock('../check-claude', () => ({
       checkClaude: vi.fn().mockRejectedValue(new Error('not found')),
-    }))
-  })
-})
+    }));
+  });
+});
 ```
 
 ### Website Component Tests
@@ -590,21 +593,21 @@ describe('InstallMoment', () => {
 // apps/site/src/app/install/__tests__/route.test.ts
 describe('GET /install', () => {
   it('returns text/plain content type', async () => {
-    const response = await GET()
-    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8')
-  })
+    const response = await GET();
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+  });
 
   it('returns script starting with shebang', async () => {
-    const response = await GET()
-    const text = await response.text()
-    expect(text).toStartWith('#!/usr/bin/env bash')
-  })
+    const response = await GET();
+    const text = await response.text();
+    expect(text).toStartWith('#!/usr/bin/env bash');
+  });
 
   it('sets cache headers', async () => {
-    const response = await GET()
-    expect(response.headers.get('Cache-Control')).toContain('public')
-  })
-})
+    const response = await GET();
+    expect(response.headers.get('Cache-Control')).toContain('public');
+  });
+});
 ```
 
 ### Manual Testing Checklist
@@ -646,12 +649,12 @@ describe('GET /install', () => {
 
 ## Documentation
 
-| Document | Change |
-|---|---|
+| Document                                | Change                                            |
+| --------------------------------------- | ------------------------------------------------- |
 | `docs/getting-started/installation.mdx` | Add "One-liner (Recommended)" and "Homebrew" tabs |
-| `docs/getting-started/quickstart.mdx` | Update prerequisites to show curl as primary |
-| `CLAUDE.md` | No changes needed (CLI flags section is generic) |
-| `contributing/` guides | No changes needed |
+| `docs/getting-started/quickstart.mdx`   | Update prerequisites to show curl as primary      |
+| `CLAUDE.md`                             | No changes needed (CLI flags section is generic)  |
+| `contributing/` guides                  | No changes needed                                 |
 
 ---
 

@@ -1,9 +1,20 @@
 ---
-title: "Slash Command Storage, Format & Discovery — Competitive Analysis"
+title: 'Slash Command Storage, Format & Discovery — Competitive Analysis'
 date: 2026-03-15
 type: external-best-practices
 status: active
-tags: [slash-commands, custom-commands, opencode, cursor, codex, windsurf, aider, continue, competitive-analysis]
+tags:
+  [
+    slash-commands,
+    custom-commands,
+    opencode,
+    cursor,
+    codex,
+    windsurf,
+    aider,
+    continue,
+    competitive-analysis,
+  ]
 searches_performed: 14
 sources_count: 28
 ---
@@ -25,6 +36,7 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 > Covered by existing research: `research/20260315_agent_sdk_slash_command_discovery_api.md`
 
 **Storage locations:**
+
 - Project-level: `.claude/commands/<namespace>/<command>.md`
 - User-level: `~/.claude/commands/<namespace>/<command>.md`
 - Skills (new format): `.claude/skills/<name>/SKILL.md`
@@ -32,15 +44,18 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 **File format:** Markdown with YAML frontmatter.
 
 **Supported frontmatter fields:**
+
 - `description` — shown in command palette
 - `argument-hint` — parameter documentation (e.g., `"<file> <ticket>"`)
 - `allowed-tools` — comma-separated list of tools the command may invoke (e.g., `Bash, Read`)
 
 **Argument/placeholder syntax:**
+
 - `$ARGUMENTS` — full argument string
 - Named placeholders inferred from context
 
 **Discovery mechanism:** Filesystem scan of `.claude/commands/` directories at session init. Also exposed programmatically via the Agent SDK:
+
 - `Query.supportedCommands()` → `SlashCommand[]` (`name`, `description`, `argumentHint`)
 - `SDKSystemMessage.subtype === "init"` → `slash_commands: string[]` (names only)
 - `Query.initializationResult()` → `SDKControlInitializeResponse.commands: SlashCommand[]`
@@ -56,6 +71,7 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 ### 2. OpenCode (sst/opencode)
 
 **Storage locations:**
+
 - Project-level: `.opencode/commands/*.md`
 - Global (XDG): `~/.config/opencode/commands/` (or `~/.local/opencode/` per XDG standard)
 - Also configurable via `OPENCODE_CONFIG_DIR` env var
@@ -71,6 +87,7 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 | `subtask` | boolean | Force subagent invocation (keeps primary context clean) |
 
 **Argument/placeholder syntax:**
+
 - `$ARGUMENTS` — full argument string
 - `$1`, `$2`, `$3` — positional arguments
 - `` `!command` `` — inject bash command output
@@ -79,6 +96,7 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 **Discovery mechanism:** Filesystem scan of all configured `commands/` directories at startup. Commands are fuzzy-matched in the TUI `/` menu. Custom commands can **override built-ins** (`/init`, `/undo`, `/help`, etc.).
 
 **Alternative: JSON config (`opencode.jsonc`):**
+
 ```jsonc
 {
   "command": {
@@ -86,9 +104,9 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
       "template": "Run tests with coverage for $ARGUMENTS",
       "description": "Run tests with coverage",
       "agent": "build",
-      "model": "anthropic/claude-3-5-sonnet-20241022"
-    }
-  }
+      "model": "anthropic/claude-3-5-sonnet-20241022",
+    },
+  },
 }
 ```
 
@@ -97,6 +115,7 @@ Six AI coding tools were analyzed for how they store, format, and discover user-
 **Programmatic API:** None documented. Discovery is filesystem/config only.
 
 **Example file (`.opencode/commands/review.md`):**
+
 ```markdown
 ---
 description: Security review for changed files
@@ -104,6 +123,7 @@ agent: security
 model: anthropic/claude-opus-4-5
 subtask: true
 ---
+
 Review the following files for security vulnerabilities: $ARGUMENTS
 ```
 
@@ -114,6 +134,7 @@ Review the following files for security vulnerabilities: $ARGUMENTS
 > Feature introduced in Cursor v1.6 (September 12, 2025). Skills migration available in Cursor v2.4+.
 
 **Storage locations:**
+
 - Project-level commands: `.cursor/commands/<name>.md`
 - Project-level skills (v2.4+): `.cursor/skills/<skill-name>/SKILL.md`
 - Global skills: `~/.cursor/skills/<skill-name>/SKILL.md`
@@ -133,13 +154,14 @@ Review the following files for security vulnerabilities: $ARGUMENTS
 
 **Migration:** A built-in `/migrate-to-skills` command (v2.4+) converts eligible rules and slash commands into the newer skills format automatically.
 
-**Note:** Cursor's commands are intentionally minimal — no frontmatter schema, no metadata — unlike Claude Code and OpenCode. The philosophy is that the file content *is* the prompt.
+**Note:** Cursor's commands are intentionally minimal — no frontmatter schema, no metadata — unlike Claude Code and OpenCode. The philosophy is that the file content _is_ the prompt.
 
 ---
 
 ### 4. OpenAI Codex CLI
 
 **Storage locations:**
+
 - User-global only: `~/.codex/prompts/*.md`
 - Only top-level files are scanned — subdirectories and non-`.md` files are ignored.
 
@@ -152,6 +174,7 @@ Review the following files for security vulnerabilities: $ARGUMENTS
 | `argument-hint` | string | Documents expected parameters (e.g., `KEY=<value>`) |
 
 **Argument/placeholder syntax:**
+
 - **Positional:** `$1`–`$9` expand from space-separated arguments; `$ARGUMENTS` captures all
 - **Named:** Uppercase identifiers like `$FILE` or `$TICKET_ID`; supplied as `KEY=value` at invocation (quote values with spaces)
 - **Literal `$`:** Use `$$` to emit a single dollar sign
@@ -167,11 +190,13 @@ Review the following files for security vulnerabilities: $ARGUMENTS
 **Deprecation note:** Custom prompts are **deprecated** in favor of "skills" — the skills system allows Codex to invoke them both explicitly and implicitly (autonomously).
 
 **Example file (`~/.codex/prompts/draftpr.md`):**
+
 ```markdown
 ---
 description: Draft a pull request description
 argument-hint: FILES=<paths> PR_TITLE=<title>
 ---
+
 Draft a pull request for the following files: $FILES
 
 Title: $PR_TITLE
@@ -201,6 +226,7 @@ Include a summary, motivation, and testing instructions.
 **File size limit:** 12,000 characters per workflow file.
 
 **Discovery mechanism:** Windsurf automatically scans multiple locations:
+
 - Current workspace and subdirectories
 - Git repository structure (walks up to git root)
 - Multiple open folders (with deduplication using shortest relative path)
@@ -227,6 +253,7 @@ Include a summary, motivation, and testing instructions.
 Aider provides approximately 45 fixed built-in commands (`/add`, `/drop`, `/code`, `/architect`, `/git`, `/commit`, `/run`, `/test`, etc.) but has **no mechanism for user-defined slash commands**.
 
 Two GitHub issues document this gap:
+
 - [Issue #894](https://github.com/Aider-AI/aider/issues/894) (July 2024): Feature request to add custom commands via `aider_commands.yml`
 - [Issue #4235](https://github.com/Aider-AI/aider/issues/4235) (June 2025): Question on custom commands, still open with no implementation
 
@@ -239,6 +266,7 @@ The June 2025 issue explicitly cited Claude Code's custom slash command system a
 ### 7. Continue.dev
 
 **Storage locations:**
+
 - Project-level: `.continue/prompts/*.md`
 - User-level (implied): `~/.continue/prompts/` (follows same pattern)
 
@@ -260,13 +288,16 @@ The June 2025 issue explicitly cited Claude Code's custom slash command system a
 **Programmatic API:** None via filesystem. The old `config.ts` approach allowed programmatic slash commands (async `run` function with full access to the Continue SDK), but this is deprecated. The CLI flag `cn --prompt <name>` is the closest analog.
 
 **Example file (`.continue/prompts/explain-code.md`):**
+
 ```markdown
 ---
 name: explain-code
 description: Explain what the selected code does
 invokable: true
 ---
+
 Please explain the following code in plain English, covering:
+
 1. What it does
 2. How it works
 3. Any potential issues or edge cases
@@ -278,27 +309,27 @@ Please explain the following code in plain English, covering:
 
 ## Structured Comparison Table
 
-| Dimension | Claude Code | OpenCode | Cursor | Codex CLI | Windsurf | Aider | Continue.dev |
-|---|---|---|---|---|---|---|---|
-| **Custom commands supported** | Yes | Yes | Yes | Yes | Yes (Workflows) | **No** | Yes |
-| **Project-level path** | `.claude/commands/` | `.opencode/commands/` | `.cursor/commands/` | N/A | `.windsurf/workflows/` | N/A | `.continue/prompts/` |
-| **User-level path** | `~/.claude/commands/` | `~/.config/opencode/commands/` | `~/.cursor/skills/` | `~/.codex/prompts/` | `~/.codeium/windsurf/global_workflows/` | N/A | `~/.continue/prompts/` |
-| **File format** | Markdown + YAML frontmatter | Markdown + YAML frontmatter | Markdown (no frontmatter schema) | Markdown + YAML frontmatter | Markdown (no frontmatter) | N/A | Markdown + YAML frontmatter |
-| **`description` field** | Yes | Yes | No spec | Yes | No spec | N/A | Yes |
-| **`argument-hint` field** | Yes | No | No | Yes | No | N/A | No |
-| **`allowed-tools` field** | Yes | No | No | No | No | N/A | No |
-| **Agent/model routing** | No | Yes (`agent`, `model`) | No | No | No | N/A | No |
-| **Subtask/subagent flag** | No | Yes (`subtask`) | No | No | No | N/A | No |
-| **`invokable` flag needed** | No (auto) | No (auto) | No (auto) | No (auto) | No (auto) | N/A | **Yes** (required) |
-| **Namespace via subdirs** | Yes | No | No | No | No | N/A | No |
-| **Positional args (`$1`, `$2`)** | Partial | Yes | No spec | Yes | No | N/A | No |
-| **Named args (`$KEY=value`)** | No | No | No | Yes | No | N/A | No |
-| **Bash injection (`` `!cmd` ``)** | No | Yes | No | No | No | N/A | No |
-| **File injection (`@file`)** | Yes | Yes | No spec | No | No | N/A | Yes (`{{selection}}`) |
-| **Discovery** | Filesystem scan | Filesystem scan | Filesystem scan | Filesystem scan | Filesystem scan | N/A | Filesystem scan |
-| **Programmatic list API** | Yes (SDK) | No | No | No | No | N/A | No |
-| **Override built-ins** | No | Yes | No | No | No | N/A | No |
-| **JSON/TOML alternative** | No | Yes (`opencode.jsonc`) | No | No | No | N/A | No (`config.yaml` for hub prompts) |
+| Dimension                         | Claude Code                 | OpenCode                       | Cursor                           | Codex CLI                   | Windsurf                                | Aider  | Continue.dev                       |
+| --------------------------------- | --------------------------- | ------------------------------ | -------------------------------- | --------------------------- | --------------------------------------- | ------ | ---------------------------------- |
+| **Custom commands supported**     | Yes                         | Yes                            | Yes                              | Yes                         | Yes (Workflows)                         | **No** | Yes                                |
+| **Project-level path**            | `.claude/commands/`         | `.opencode/commands/`          | `.cursor/commands/`              | N/A                         | `.windsurf/workflows/`                  | N/A    | `.continue/prompts/`               |
+| **User-level path**               | `~/.claude/commands/`       | `~/.config/opencode/commands/` | `~/.cursor/skills/`              | `~/.codex/prompts/`         | `~/.codeium/windsurf/global_workflows/` | N/A    | `~/.continue/prompts/`             |
+| **File format**                   | Markdown + YAML frontmatter | Markdown + YAML frontmatter    | Markdown (no frontmatter schema) | Markdown + YAML frontmatter | Markdown (no frontmatter)               | N/A    | Markdown + YAML frontmatter        |
+| **`description` field**           | Yes                         | Yes                            | No spec                          | Yes                         | No spec                                 | N/A    | Yes                                |
+| **`argument-hint` field**         | Yes                         | No                             | No                               | Yes                         | No                                      | N/A    | No                                 |
+| **`allowed-tools` field**         | Yes                         | No                             | No                               | No                          | No                                      | N/A    | No                                 |
+| **Agent/model routing**           | No                          | Yes (`agent`, `model`)         | No                               | No                          | No                                      | N/A    | No                                 |
+| **Subtask/subagent flag**         | No                          | Yes (`subtask`)                | No                               | No                          | No                                      | N/A    | No                                 |
+| **`invokable` flag needed**       | No (auto)                   | No (auto)                      | No (auto)                        | No (auto)                   | No (auto)                               | N/A    | **Yes** (required)                 |
+| **Namespace via subdirs**         | Yes                         | No                             | No                               | No                          | No                                      | N/A    | No                                 |
+| **Positional args (`$1`, `$2`)**  | Partial                     | Yes                            | No spec                          | Yes                         | No                                      | N/A    | No                                 |
+| **Named args (`$KEY=value`)**     | No                          | No                             | No                               | Yes                         | No                                      | N/A    | No                                 |
+| **Bash injection (`` `!cmd` ``)** | No                          | Yes                            | No                               | No                          | No                                      | N/A    | No                                 |
+| **File injection (`@file`)**      | Yes                         | Yes                            | No spec                          | No                          | No                                      | N/A    | Yes (`{{selection}}`)              |
+| **Discovery**                     | Filesystem scan             | Filesystem scan                | Filesystem scan                  | Filesystem scan             | Filesystem scan                         | N/A    | Filesystem scan                    |
+| **Programmatic list API**         | Yes (SDK)                   | No                             | No                               | No                          | No                                      | N/A    | No                                 |
+| **Override built-ins**            | No                          | Yes                            | No                               | No                          | No                                      | N/A    | No                                 |
+| **JSON/TOML alternative**         | No                          | Yes (`opencode.jsonc`)         | No                               | No                          | No                                      | N/A    | No (`config.yaml` for hub prompts) |
 
 ---
 
@@ -343,6 +374,7 @@ Claude Code's subdirectory-as-namespace pattern (`.claude/commands/frontend/comp
 ### The Emerging `.{toolname}/commands/` Convention
 
 All tools follow the pattern `.<toolname>/commands/` for project-level commands:
+
 - Claude Code: `.claude/commands/`
 - OpenCode: `.opencode/commands/`
 - Cursor: `.cursor/commands/`
@@ -350,6 +382,7 @@ All tools follow the pattern `.<toolname>/commands/` for project-level commands:
 - Continue.dev: `.continue/prompts/`
 
 The user-level equivalent follows XDG conventions:
+
 - Linux/macOS: `~/.config/<tool>/commands/` or `~/.<tool>/commands/`
 - Codex is the outlier with `~/.codex/prompts/` (flat user home, no XDG)
 
@@ -357,16 +390,16 @@ The user-level equivalent follows XDG conventions:
 
 Comparing fields that appear across multiple tools:
 
-| Field | Claude Code | OpenCode | Codex CLI | Continue.dev | Status |
-|---|---|---|---|---|---|
-| `description` | Yes | Yes | Yes | Yes | Universal |
-| `argument-hint` | Yes | No | Yes | No | Shared by 2 |
-| `allowed-tools` | Yes | No | No | No | Unique to Claude Code |
-| `agent` | No | Yes | No | No | Unique to OpenCode |
-| `model` | No | Yes | No | No | Unique to OpenCode |
-| `subtask` | No | Yes | No | No | Unique to OpenCode |
-| `invokable` | No | No | No | Yes | Unique to Continue.dev |
-| `name` | No | No | No | Yes | Unique to Continue.dev |
+| Field           | Claude Code | OpenCode | Codex CLI | Continue.dev | Status                 |
+| --------------- | ----------- | -------- | --------- | ------------ | ---------------------- |
+| `description`   | Yes         | Yes      | Yes       | Yes          | Universal              |
+| `argument-hint` | Yes         | No       | Yes       | No           | Shared by 2            |
+| `allowed-tools` | Yes         | No       | No        | No           | Unique to Claude Code  |
+| `agent`         | No          | Yes      | No        | No           | Unique to OpenCode     |
+| `model`         | No          | Yes      | No        | No           | Unique to OpenCode     |
+| `subtask`       | No          | Yes      | No        | No           | Unique to OpenCode     |
+| `invokable`     | No          | No       | No        | Yes          | Unique to Continue.dev |
+| `name`          | No          | No       | No        | Yes          | Unique to Continue.dev |
 
 ### Discovery Mechanisms in Detail
 
@@ -383,13 +416,13 @@ Multiple tools are converging on a **two-tier model**:
 - **Commands** (explicit, slash-invoked): User types `/name` explicitly. Pure prompt templates.
 - **Skills** (autonomous, context-invoked): The AI decides when to use them. More structured, with capability declarations.
 
-| Tool | Command Type | Skill Type |
-|---|---|---|
-| Claude Code | `.claude/commands/*.md` | `.claude/skills/<name>/SKILL.md` |
-| OpenCode | `.opencode/commands/*.md` | `.opencode/skills/*.md` |
-| Cursor | `.cursor/commands/*.md` | `.cursor/skills/<name>/SKILL.md` |
-| Codex CLI | `~/.codex/prompts/*.md` (deprecated) | `~/.codex/skills/` |
-| Windsurf | `.windsurf/workflows/*.md` | `.windsurf/skills/` |
+| Tool        | Command Type                         | Skill Type                       |
+| ----------- | ------------------------------------ | -------------------------------- |
+| Claude Code | `.claude/commands/*.md`              | `.claude/skills/<name>/SKILL.md` |
+| OpenCode    | `.opencode/commands/*.md`            | `.opencode/skills/*.md`          |
+| Cursor      | `.cursor/commands/*.md`              | `.cursor/skills/<name>/SKILL.md` |
+| Codex CLI   | `~/.codex/prompts/*.md` (deprecated) | `~/.codex/skills/`               |
+| Windsurf    | `.windsurf/workflows/*.md`           | `.windsurf/skills/`              |
 
 This two-tier pattern is significant: **the industry is moving from "commands the user invokes" toward "capabilities the agent can invoke autonomously."** The `commands/` directories are being superseded by `skills/` directories as the primary extensibility mechanism.
 
@@ -404,7 +437,7 @@ DorkOS's `CommandRegistryService` (in `apps/server/src/services/runtimes/claude-
 3. **Richer metadata than SDK:** DorkOS extracts `allowedTools`, `filePath`, and `namespace` — metadata not returned by the Claude Agent SDK's `supportedCommands()`.
 4. **Gap: no skills support:** The `.claude/skills/` format (the new Claude Code format) is not scanned. This is documented as a known gap.
 5. **Gap: no built-in commands:** DorkOS only scans custom commands; Claude Code built-ins (`/compact`, `/help`, `/clear`) require SDK query to surface.
-6. **Unique advantage:** DorkOS is the only system that both scans custom commands *and* has access to the SDK's programmatic discovery API — combining these would give it the most complete command list of any tool.
+6. **Unique advantage:** DorkOS is the only system that both scans custom commands _and_ has access to the SDK's programmatic discovery API — combining these would give it the most complete command list of any tool.
 
 If DorkOS were to add routing metadata similar to OpenCode's (`agent`, `model`, `subtask`), it could use custom commands to dispatch work to different agents by name — which would be a meaningful differentiator.
 

@@ -41,7 +41,7 @@ Tracking key creative decisions as they're made.
 
 **Date:** 2026-02-27
 **Decision:** Narrative scroll structure (problem → villain → product → install → tribe) with boot-sequence visual treatment (Ive's design language). Story arc drives the sections, but the aesthetic feels like an OS activating.
-**Nuance:** Keep Ive's aesthetic direction — dark screen, subsystem activation, machined typography, monospaced system names, generous whitespace. But the *content flow* follows the emotional narrative arc, not a literal boot sequence.
+**Nuance:** Keep Ive's aesthetic direction — dark screen, subsystem activation, machined typography, monospaced system names, generous whitespace. But the _content flow_ follows the emotional narrative arc, not a literal boot sequence.
 
 ## Decision 7: Primary Tagline — "You slept. They shipped."
 
@@ -56,7 +56,7 @@ Tracking key creative decisions as they're made.
 **Date:** 2026-02-27
 **Decision:** Lead with Wieden's timeline narrative (11:14pm → 2:47am → 7:00am) as the primary presentation. Support with a clean gap→fix reference below or alongside for the architect persona.
 **Rationale:** Autonomous agents are a new concept. Story cements the idea in people's heads better than a table. But the technical persona also needs to quickly map "what does each module do?" — so a compact reference follows the story.
-**Aligns with:** Godin's observation that the product modules should feel like *answers* to problems the reader already felt.
+**Aligns with:** Godin's observation that the product modules should feel like _answers_ to problems the reader already felt.
 
 ## Decision 9: Hero Headline — Jobs Short-Form
 
@@ -77,10 +77,11 @@ Tracking key creative decisions as they're made.
 
 **Date:** 2026-02-27
 **Decision:** Two new lines added to the brand vocabulary:
+
 1. **"Leave the rest to them."** — Replaces Wieden's "Close the laptop" (which was technically inaccurate since local agents die when the laptop closes). Collaborative handoff energy. Use: final site line, stickers, social.
 2. **"Your agents don't need more intelligence. They need an address."** (Jobs) — Nine words. Reframes the product as giving agents a place to exist. Use: pivot alternative, social, README.
-**Rejected:** "Close the laptop." — emotionally perfect but technically dishonest for a local-first product.
-**Noted but not adopted:** "The quiet part is the architecture." (Ive) and "They have an infrastructure problem." (Godin) — strong lines, available for future use.
+   **Rejected:** "Close the laptop." — emotionally perfect but technically dishonest for a local-first product.
+   **Noted but not adopted:** "The quiet part is the architecture." (Ive) and "They have an infrastructure problem." (Godin) — strong lines, available for future use.
 
 ## Decision 12: Keep Existing Design System — Unanimous
 
@@ -92,7 +93,7 @@ Tracking key creative decisions as they're made.
 
 **Date:** 2026-02-27
 **Decision:** Keep the Honesty Section with corner brackets and green eyebrow. Move it from current position (between How It Works and About) to between Module Reference and Install Moment.
-**Rationale:** Ogilvy + Wieden argument: in a page with this much emotional architecture, a moment of radical honesty is a credibility anchor. The developers who will adopt DorkOS will notice the *absence* of a privacy disclosure. Copy tightened. Brackets stay — they're a signature element.
+**Rationale:** Ogilvy + Wieden argument: in a page with this much emotional architecture, a moment of radical honesty is a credibility anchor. The developers who will adopt DorkOS will notice the _absence_ of a privacy disclosure. Copy tightened. Brackets stay — they're a signature element.
 
 ## Decision 14: Hero Layout — Stacked (Headline Over Feed)
 
@@ -111,18 +112,19 @@ Tracking key creative decisions as they're made.
 **Date:** 2026-03-02
 **Decision:** All DorkOS copy shifts to pro-human, empowerment-focused positioning. AI agents are tools for human creativity — like Apple positions the Mac. The human is the creative force; the agents are the coordination layer that lets human vision scale.
 **Core principles:**
+
 - Pro-human — never imply agents are better, smarter, or more capable than people
 - Don't make people feel bad for human needs (sleep, connection, belonging)
 - Champion the creatives and builders — they're the point, not the bottleneck
 - "Intelligence doesn't scale. Coordination does." as core thesis
 - "You've always had more ideas than hours. That ratio just changed." as empowerment frame
-**The Apple test:** Would Apple say this about the Mac? If not, reframe.
-**Superseded framing:**
+  **The Apple test:** Would Apple say this about the Mac? If not, reframe.
+  **Superseded framing:**
 - "YOUR AI NEVER SLEEPS" as primary tagline → "Intelligence Doesn't Scale. Coordination Does."
 - "YOU'RE THE BOTTLENECK" → "Intelligence Doesn't Scale. Coordination Does."
 - "Your AI coding agent can write better code than you at 3am" → removed
 - "You — the human — are the scheduler..." → "The coordination layer is missing"
 - "outship everyone" → "ship what you've always imagined"
 - "they never stop" → "they multiply what you accomplish"
-**Trigger:** IdentityClose.tsx on the marketing site was rewritten to remove anti-human framing. This shift is now cascaded back into all meta brand documents.
-**Affected documents:** `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `rounds/02-homepage/synthesis.md`. Round 1 and Round 2 creative submissions are preserved as historical artifacts with editorial disclaimers.
+  **Trigger:** IdentityClose.tsx on the marketing site was rewritten to remove anti-human framing. This shift is now cascaded back into all meta brand documents.
+  **Affected documents:** `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `rounds/02-homepage/synthesis.md`. Round 1 and Round 2 creative submissions are preserved as historical artifacts with editorial disclaimers.

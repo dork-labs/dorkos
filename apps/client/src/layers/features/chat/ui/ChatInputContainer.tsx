@@ -208,10 +208,13 @@ export function ChatInputContainer({
                 toolName={activeInteraction!.toolName}
                 input={activeInteraction!.input || ''}
                 isActive
-                onDecided={onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined}
+                onDecided={
+                  onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined
+                }
                 timeoutMs={activeInteraction!.timeoutMs}
               />
-            ) : activeInteraction!.interactiveType === 'question' && activeInteraction!.questions ? (
+            ) : activeInteraction!.interactiveType === 'question' &&
+              activeInteraction!.questions ? (
               <QuestionPrompt
                 ref={onToolRef}
                 sessionId={sessionId}
@@ -220,7 +223,9 @@ export function ChatInputContainer({
                 answers={activeInteraction!.answers}
                 isActive
                 focusedOptionIndex={focusedOptionIndex}
-                onDecided={onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined}
+                onDecided={
+                  onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined
+                }
               />
             ) : null}
           </motion.div>
@@ -292,7 +297,8 @@ export function ChatInputContainer({
               placeholder={(() => {
                 const isStreaming = status === 'streaming';
                 if (editingIndex !== null) return '';
-                if (isStreaming && queue.length > 0) return `Compose another \u2014 ${queue.length} queued`;
+                if (isStreaming && queue.length > 0)
+                  return `Compose another \u2014 ${queue.length} queued`;
                 if (isStreaming) return 'Compose next \u2014 will send when ready';
                 return 'Message Claude...';
               })()}

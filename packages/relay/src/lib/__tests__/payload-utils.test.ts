@@ -84,7 +84,9 @@ describe('detectStreamEventType', () => {
   });
 
   it('returns type for session_status event', () => {
-    expect(detectStreamEventType({ type: 'session_status', data: { sessionId: 'abc' } })).toBe('session_status');
+    expect(detectStreamEventType({ type: 'session_status', data: { sessionId: 'abc' } })).toBe(
+      'session_status'
+    );
   });
 
   it('returns type for done event', () => {
@@ -152,7 +154,9 @@ describe('extractTextDelta', () => {
 
 describe('extractErrorMessage', () => {
   it('returns message for valid error event', () => {
-    expect(extractErrorMessage({ type: 'error', data: { message: 'Something broke' } })).toBe('Something broke');
+    expect(extractErrorMessage({ type: 'error', data: { message: 'Something broke' } })).toBe(
+      'Something broke'
+    );
   });
 
   it('returns null for non-error event type', () => {
@@ -201,11 +205,15 @@ describe('extractApprovalData', () => {
   });
 
   it('returns null for missing toolCallId', () => {
-    expect(extractApprovalData({ type: 'approval_required', data: { toolName: 'Write' } })).toBeNull();
+    expect(
+      extractApprovalData({ type: 'approval_required', data: { toolName: 'Write' } })
+    ).toBeNull();
   });
 
   it('returns null for missing toolName', () => {
-    expect(extractApprovalData({ type: 'approval_required', data: { toolCallId: 'x' } })).toBeNull();
+    expect(
+      extractApprovalData({ type: 'approval_required', data: { toolCallId: 'x' } })
+    ).toBeNull();
   });
 
   it('returns null for null payload', () => {
@@ -236,20 +244,18 @@ describe('extractApprovalData', () => {
 describe('formatToolDescription', () => {
   it('describes Write tool with file path', () => {
     expect(formatToolDescription('Write', '{"path":"src/index.ts","content":"x"}')).toBe(
-      'wants to write to `src/index.ts`',
+      'wants to write to `src/index.ts`'
     );
   });
 
   it('describes Edit tool with file_path', () => {
     expect(formatToolDescription('Edit', '{"file_path":"src/app.ts"}')).toBe(
-      'wants to edit `src/app.ts`',
+      'wants to edit `src/app.ts`'
     );
   });
 
   it('describes Bash tool with short command', () => {
-    expect(formatToolDescription('Bash', '{"command":"ls -la"}')).toBe(
-      'wants to run `ls -la`',
-    );
+    expect(formatToolDescription('Bash', '{"command":"ls -la"}')).toBe('wants to run `ls -la`');
   });
 
   it('truncates long Bash commands', () => {
@@ -308,13 +314,15 @@ describe('formatForPlatform', () => {
     });
 
     it('converts inline code', () => {
-      expect(formatForPlatform('use `npm install`', 'telegram')).toBe('use <code>npm install</code>');
+      expect(formatForPlatform('use `npm install`', 'telegram')).toBe(
+        'use <code>npm install</code>'
+      );
     });
 
     it('converts code blocks with language hint', () => {
       const input = '```typescript\nconst x = 1;\n```';
       expect(formatForPlatform(input, 'telegram')).toBe(
-        '<pre><code class="language-typescript">const x = 1;</code></pre>',
+        '<pre><code class="language-typescript">const x = 1;</code></pre>'
       );
     });
 
@@ -325,7 +333,7 @@ describe('formatForPlatform', () => {
 
     it('converts links', () => {
       expect(formatForPlatform('[Google](https://google.com)', 'telegram')).toBe(
-        '<a href="https://google.com">Google</a>',
+        '<a href="https://google.com">Google</a>'
       );
     });
 
@@ -341,7 +349,7 @@ describe('formatForPlatform', () => {
     it('handles mixed formatting', () => {
       const input = '**bold** and *italic* with `code`';
       expect(formatForPlatform(input, 'telegram')).toBe(
-        '<b>bold</b> and <i>italic</i> with <code>code</code>',
+        '<b>bold</b> and <i>italic</i> with <code>code</code>'
       );
     });
 
@@ -389,7 +397,10 @@ function makeEnvelope(payload: unknown): RelayEnvelope {
 
 describe('extractAgentIdFromEnvelope', () => {
   it('returns the agentId when payload.data.agentId is present', () => {
-    const envelope = makeEnvelope({ type: 'approval_required', data: { agentId: 'agent-abc', ccaSessionKey: 'sess-1' } });
+    const envelope = makeEnvelope({
+      type: 'approval_required',
+      data: { agentId: 'agent-abc', ccaSessionKey: 'sess-1' },
+    });
     expect(extractAgentIdFromEnvelope(envelope)).toBe('agent-abc');
   });
 
@@ -416,7 +427,10 @@ describe('extractAgentIdFromEnvelope', () => {
 
 describe('extractSessionIdFromEnvelope', () => {
   it('returns the ccaSessionKey when payload.data.ccaSessionKey is present', () => {
-    const envelope = makeEnvelope({ type: 'approval_required', data: { agentId: 'agent-abc', ccaSessionKey: 'sess-xyz' } });
+    const envelope = makeEnvelope({
+      type: 'approval_required',
+      data: { agentId: 'agent-abc', ccaSessionKey: 'sess-xyz' },
+    });
     expect(extractSessionIdFromEnvelope(envelope)).toBe('sess-xyz');
   });
 

@@ -74,9 +74,7 @@ async function findProjectPaths(dbPath: string): Promise<string[]> {
       const rows = db.prepare('SELECT DISTINCT project_path FROM agents').all() as Array<{
         project_path: string;
       }>;
-      return rows
-        .map((r) => r.project_path)
-        .filter((p) => fs.existsSync(path.join(p, '.dork')));
+      return rows.map((r) => r.project_path).filter((p) => fs.existsSync(path.join(p, '.dork')));
     } finally {
       db.close();
     }
@@ -102,9 +100,7 @@ export async function runCleanup(options: CleanupOptions): Promise<void> {
   // Check if server is running
   const port = readPort(dorkHome);
   if (await isServerRunning(port)) {
-    console.log(
-      `\nDorkOS server is running on port ${port}. Stop it before running cleanup.\n`
-    );
+    console.log(`\nDorkOS server is running on port ${port}. Stop it before running cleanup.\n`);
     process.exitCode = 1;
     return;
   }

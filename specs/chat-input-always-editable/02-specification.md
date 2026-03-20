@@ -50,13 +50,13 @@ The root cause is a single `isDisabled` boolean that conflates "input acceptance
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `react` | ^19.0.0 | Hooks, refs, state |
-| `motion` | ^12.33.0 | AnimatePresence, stagger animations, spring physics |
-| `lucide-react` | latest | Icons: `Clock`, `ListPlus`, `Check`, `Square`, `ArrowUp`, `CornerDownLeft`, `X`, `Paperclip` |
-| `zustand` | ^5.0.0 | App store (selectedCwd) |
-| `@tanstack/react-query` | ^5.62.0 | Session queries |
+| Dependency              | Version  | Purpose                                                                                      |
+| ----------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `react`                 | ^19.0.0  | Hooks, refs, state                                                                           |
+| `motion`                | ^12.33.0 | AnimatePresence, stagger animations, spring physics                                          |
+| `lucide-react`          | latest   | Icons: `Clock`, `ListPlus`, `Check`, `Square`, `ArrowUp`, `CornerDownLeft`, `X`, `Paperclip` |
+| `zustand`               | ^5.0.0   | App store (selectedCwd)                                                                      |
+| `@tanstack/react-query` | ^5.62.0  | Session queries                                                                              |
 
 No new dependencies required.
 
@@ -88,33 +88,40 @@ All queue state lives in `useMessageQueue`. The hook accepts `status`, `sessionB
 #### 1.1 Decouple disabled states in `ChatInput.tsx`
 
 **Current (line 187):**
+
 ```typescript
 const isDisabled = isLoading || sessionBusy;
 ```
 
 **New:**
+
 ```typescript
 const isInputDisabled = sessionBusy; // Only server lock disables textarea
 const isSubmitDisabled = isLoading || sessionBusy; // Blocks submission
 ```
 
 Apply `isInputDisabled` to:
+
 - Textarea `disabled` prop (line 250)
 
 Apply `isSubmitDisabled` to:
+
 - Send button `disabled` logic (line 273)
 
 Remove disabled from:
+
 - Paperclip button (line 220) — always enabled, users can stage files for next message
 
 #### 1.2 Update clear button logic
 
 **Current:**
+
 ```typescript
 const showClear = hasText && !isLoading && !sessionBusy;
 ```
 
 **New:**
+
 ```typescript
 const showClear = hasText && !sessionBusy;
 ```
@@ -124,6 +131,7 @@ Clear should work whenever text exists, regardless of streaming state.
 #### 1.3 Guard Enter key submission
 
 **Current (`handleKeyDown`, line 111-116):**
+
 ```typescript
 if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
   e.preventDefault();
@@ -134,6 +142,7 @@ if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
 ```
 
 Phase 1 change — add explicit no-op when streaming (Enter does nothing):
+
 ```typescript
 if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
   e.preventDefault();
@@ -148,8 +157,9 @@ Phase 2 change — Enter queues during streaming (see Section 2.4).
 #### 1.4 Dynamic placeholder
 
 **Current (line 247):**
+
 ```typescript
-placeholder="Message Claude..."
+placeholder = 'Message Claude...';
 ```
 
 **New — accept placeholder as prop:**
@@ -157,10 +167,9 @@ placeholder="Message Claude..."
 Add `placeholder?: string` to `ChatInputProps`. Default to `"Message Claude..."`. `ChatInputContainer` computes the placeholder based on state and passes it down.
 
 Placeholder logic in `ChatInputContainer`:
+
 ```typescript
-const placeholder = isStreaming
-  ? 'Compose next \u2014 will send when ready'
-  : 'Message Claude...';
+const placeholder = isStreaming ? 'Compose next \u2014 will send when ready' : 'Message Claude...';
 ```
 
 Phase 2 extends this with queue count (see Section 2.6).
@@ -168,6 +177,7 @@ Phase 2 extends this with queue count (see Section 2.6).
 #### 1.5 Update `ChatInputContainer` prop threading
 
 **Current (line 131):**
+
 ```typescript
 isLoading={status === 'streaming' || isUploading}
 ```
@@ -177,6 +187,7 @@ isLoading={status === 'streaming' || isUploading}
 The `isLoading` prop continues to indicate "a submission is in flight" (used by button state logic). Add `isStreaming` as a separate boolean that `ChatInputContainer` uses for placeholder computation.
 
 Alternatively, since `ChatInputContainer` already receives `status`, compute `isStreaming` locally:
+
 ```typescript
 const isStreaming = status === 'streaming';
 ```
@@ -216,27 +227,32 @@ interface UseMessageQueueReturn {
 ```
 
 **State management:**
+
 - `queue` state via `useState<QueueItem[]>([])` (triggers renders for QueuePanel)
 - `editingIndex` state via `useState<number | null>(null)`
 - `onFlush` ref via `useRef` (avoids stale closure in auto-flush effect)
 - Previous status ref via `useRef<ChatStatus>` (detects idle transition)
 
 **Auto-flush effect:**
+
 ```typescript
 useEffect(() => {
   // Only flush on transition from streaming → idle
   if (prevStatusRef.current === 'streaming' && status === 'idle') {
     if (queue.length > 0 && !sessionBusy) {
-      const firstNonEditing = editingIndex === 0
-        ? queue.length > 1 ? 1 : null  // Skip the item being edited
-        : 0;
+      const firstNonEditing =
+        editingIndex === 0
+          ? queue.length > 1
+            ? 1
+            : null // Skip the item being edited
+          : 0;
       if (firstNonEditing !== null) {
         const item = queue[firstNonEditing];
         const annotated = `[Note: This message was composed while the agent was responding to the previous message]\n\n${item.content}`;
-        setQueue(prev => prev.filter((_, i) => i !== firstNonEditing));
+        setQueue((prev) => prev.filter((_, i) => i !== firstNonEditing));
         // Adjust editingIndex if it was after the flushed item
         if (editingIndex !== null && editingIndex > firstNonEditing) {
-          setEditingIndex(prev => prev !== null ? prev - 1 : null);
+          setEditingIndex((prev) => (prev !== null ? prev - 1 : null));
         }
         onFlushRef.current(annotated);
       }
@@ -247,6 +263,7 @@ useEffect(() => {
 ```
 
 **Cleanup effects:**
+
 ```typescript
 // Clear queue on session or cwd change
 useEffect(() => {
@@ -281,6 +298,7 @@ interface QueuePanelProps {
 **Layout:** Renders between FileChipBar and ChatInput in ChatInputContainer. Only visible when `queue.length > 0`.
 
 **Structure:**
+
 ```
 <AnimatePresence>
   {queue.length > 0 && (
@@ -305,6 +323,7 @@ interface QueuePanelProps {
 ```
 
 **QueueCard (inline in QueuePanel or extracted):**
+
 - Single line of truncated preview text (`line-clamp-1 text-sm text-muted-foreground`)
 - Numbered: "1.", "2.", etc.
 - `x` remove button visible on hover (`opacity-0 group-hover:opacity-100`)
@@ -313,6 +332,7 @@ interface QueuePanelProps {
 - Card padding: `px-3 py-1.5` (compact, fits 8pt grid)
 
 **Animation specs (from design system):**
+
 - Container: `staggerChildren: 0.05`
 - Each card: `initial: { opacity: 0, y: -4 }`, `animate: { opacity: 1, y: 0 }`, spring `stiffness: 320, damping: 28`
 - Exit: `{ opacity: 0, scale: 0.95 }`, duration `0.15`
@@ -321,20 +341,22 @@ interface QueuePanelProps {
 #### 2.3 Three-state button in `ChatInput`
 
 **New prop:** Replace `isLoading: boolean` with:
+
 ```typescript
 interface ChatInputProps {
   // ... existing props
-  isStreaming: boolean;     // Agent is streaming
-  isUploading: boolean;     // File upload in progress (separate concern)
-  sessionBusy: boolean;     // Server lock
+  isStreaming: boolean; // Agent is streaming
+  isUploading: boolean; // File upload in progress (separate concern)
+  sessionBusy: boolean; // Server lock
   editingQueueItem: boolean; // Currently editing a queue item
-  queueDepth: number;       // Number of items in queue (for badge)
-  onQueue?: () => void;     // Queue the current input
-  onSaveEdit?: () => void;  // Save the queue item being edited
+  queueDepth: number; // Number of items in queue (for badge)
+  onQueue?: () => void; // Queue the current input
+  onSaveEdit?: () => void; // Save the queue item being edited
 }
 ```
 
 **Button state derivation:**
+
 ```typescript
 type ButtonState = 'send' | 'stop' | 'queue' | 'update' | 'hidden';
 
@@ -349,23 +371,26 @@ const buttonState: ButtonState = (() => {
 
 **Button rendering:**
 
-| State | Icon | Color | onClick | aria-label |
-|---|---|---|---|---|
-| `send` | `SendIcon` (ArrowUp/CornerDownLeft) | `bg-primary text-primary-foreground` | `onSubmit` | "Send message" |
-| `stop` | `Square` | `bg-destructive text-destructive-foreground` | `onStop` | "Stop generating" |
-| `queue` | `Clock` (or `ListPlus`) | `bg-muted text-muted-foreground` | `onQueue` | "Queue message" |
-| `update` | `Check` | `bg-primary text-primary-foreground` | `onSaveEdit` | "Save edit" |
-| `hidden` | — | — | — | — |
+| State    | Icon                                | Color                                        | onClick      | aria-label        |
+| -------- | ----------------------------------- | -------------------------------------------- | ------------ | ----------------- |
+| `send`   | `SendIcon` (ArrowUp/CornerDownLeft) | `bg-primary text-primary-foreground`         | `onSubmit`   | "Send message"    |
+| `stop`   | `Square`                            | `bg-destructive text-destructive-foreground` | `onStop`     | "Stop generating" |
+| `queue`  | `Clock` (or `ListPlus`)             | `bg-muted text-muted-foreground`             | `onQueue`    | "Queue message"   |
+| `update` | `Check`                             | `bg-primary text-primary-foreground`         | `onSaveEdit` | "Save edit"       |
+| `hidden` | —                                   | —                                            | —            | —                 |
 
 **Queue badge:**
 
 When `buttonState === 'queue'` and `queueDepth > 0`, render a small badge:
+
 ```tsx
-{queueDepth > 0 && buttonState === 'queue' && (
-  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background text-[10px] font-medium">
-    {queueDepth}
-  </span>
-)}
+{
+  queueDepth > 0 && buttonState === 'queue' && (
+    <span className="bg-foreground text-background absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium">
+      {queueDepth}
+    </span>
+  );
+}
 ```
 
 The button container needs `relative` positioning for the badge.
@@ -373,6 +398,7 @@ The button container needs `relative` positioning for the badge.
 #### 2.4 Enter key behavior update
 
 **Phase 2 `handleKeyDown`:**
+
 ```typescript
 if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
   e.preventDefault();
@@ -391,11 +417,13 @@ Priority chain: editing save > queue > submit.
 #### 2.5 Arrow key queue navigation
 
 Arrow key handling in `ChatInput.handleKeyDown`, gated by:
+
 1. `queue.length > 0` (queue has items)
 2. `!isPaletteOpen` (palette arrow keys take priority)
 3. Cursor position check (Up: cursor on first line; Down: cursor on last line)
 
 **New props for queue navigation:**
+
 ```typescript
 interface ChatInputProps {
   // ... existing
@@ -406,6 +434,7 @@ interface ChatInputProps {
 ```
 
 **In handleKeyDown, BEFORE the palette-open block:**
+
 ```typescript
 // Queue navigation (takes priority over palette when queue has items and palette is closed)
 if (!isPaletteOpen && queueHasItems) {
@@ -432,6 +461,7 @@ if (!isPaletteOpen && queueHasItems) {
 ```
 
 **Escape when editing:**
+
 ```typescript
 if (e.key === 'Escape' && editingQueueItem) {
   onCancelEdit?.();
@@ -509,12 +539,15 @@ When `editingIndex !== null`, the textarea wrapper in `ChatInput` gets visual di
 ```
 
 **Editing label** — rendered inside ChatInput, above the textarea:
+
 ```tsx
-{editingQueueItem && (
-  <div className="text-muted-foreground px-0.5 text-xs">
-    Editing message {editingIndex + 1}/{queueDepth}
-  </div>
-)}
+{
+  editingQueueItem && (
+    <div className="text-muted-foreground px-0.5 text-xs">
+      Editing message {editingIndex + 1}/{queueDepth}
+    </div>
+  );
+}
 ```
 
 The label sits in the flex column before the textarea row.
@@ -537,12 +570,16 @@ const messageQueue = useMessageQueue({
 **Option A (Recommended): Add `submitContent` method to `useChatSession`**
 
 Add a new method that accepts content directly:
+
 ```typescript
-const submitContent = useCallback(async (content: string) => {
-  if (!content.trim() || status === 'streaming') return;
-  // Same logic as handleSubmit but uses `content` instead of `input`
-  // ...
-}, [status, sessionId, relayEnabled, streamEventHandler, queryClient]);
+const submitContent = useCallback(
+  async (content: string) => {
+    if (!content.trim() || status === 'streaming') return;
+    // Same logic as handleSubmit but uses `content` instead of `input`
+    // ...
+  },
+  [status, sessionId, relayEnabled, streamEventHandler, queryClient]
+);
 ```
 
 This is cleaner than manipulating `input` state and immediately calling `handleSubmit`.
@@ -550,16 +587,20 @@ This is cleaner than manipulating `input` state and immediately calling `handleS
 **Option B: Set input then submit in next tick**
 
 ```typescript
-const handleFlush = useCallback((content: string) => {
-  setInput(content);
-  // handleSubmit reads from input state — need to wait for state update
-  queueMicrotask(() => handleSubmit());
-}, [setInput, handleSubmit]);
+const handleFlush = useCallback(
+  (content: string) => {
+    setInput(content);
+    // handleSubmit reads from input state — need to wait for state update
+    queueMicrotask(() => handleSubmit());
+  },
+  [setInput, handleSubmit]
+);
 ```
 
 This is fragile due to React batching. **Option A is preferred.**
 
 The `onFlush` callback passed to `useMessageQueue` wraps `submitContent`:
+
 ```typescript
 onFlush: (content: string) => submitContent(content),
 ```
@@ -567,6 +608,7 @@ onFlush: (content: string) => submitContent(content),
 #### 2.9 Queue action handlers threaded to `ChatInputContainer`
 
 New props on `ChatInputContainerProps`:
+
 ```typescript
 interface ChatInputContainerProps {
   // ... existing props
@@ -585,6 +627,7 @@ interface ChatInputContainerProps {
 #### 2.10 Barrel export update
 
 Add `useMessageQueue` and `QueuePanel` to `apps/client/src/layers/features/chat/index.ts`:
+
 ```typescript
 export { useMessageQueue } from './model/use-message-queue';
 export type { QueueItem } from './model/use-message-queue';
@@ -594,16 +637,16 @@ export type { QueueItem } from './model/use-message-queue';
 
 ### File Change Summary
 
-| File | Change Type | Description |
-|---|---|---|
-| `features/chat/ui/ChatInput.tsx` | Modify | Decouple disabled states, add queue/update button states, arrow key navigation, editing label, dynamic placeholder |
-| `features/chat/ui/ChatInputContainer.tsx` | Modify | Thread queue props, render QueuePanel, compute placeholder |
-| `features/chat/ui/ChatPanel.tsx` | Modify | Instantiate useMessageQueue, thread queue state down, add submitContent, wire navigation handlers |
-| `features/chat/model/use-chat-session.ts` | Modify | Add `submitContent` method for direct content submission |
-| `features/chat/model/use-message-queue.ts` | Create | Queue hook with auto-flush, editing state, cleanup |
-| `features/chat/ui/QueuePanel.tsx` | Create | Inline card list with stagger animation, selection state |
-| `features/chat/model/chat-types.ts` | Modify | Export `QueueItem` type |
-| `features/chat/index.ts` | Modify | Export `useMessageQueue` and `QueueItem` |
+| File                                       | Change Type | Description                                                                                                        |
+| ------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| `features/chat/ui/ChatInput.tsx`           | Modify      | Decouple disabled states, add queue/update button states, arrow key navigation, editing label, dynamic placeholder |
+| `features/chat/ui/ChatInputContainer.tsx`  | Modify      | Thread queue props, render QueuePanel, compute placeholder                                                         |
+| `features/chat/ui/ChatPanel.tsx`           | Modify      | Instantiate useMessageQueue, thread queue state down, add submitContent, wire navigation handlers                  |
+| `features/chat/model/use-chat-session.ts`  | Modify      | Add `submitContent` method for direct content submission                                                           |
+| `features/chat/model/use-message-queue.ts` | Create      | Queue hook with auto-flush, editing state, cleanup                                                                 |
+| `features/chat/ui/QueuePanel.tsx`          | Create      | Inline card list with stagger animation, selection state                                                           |
+| `features/chat/model/chat-types.ts`        | Modify      | Export `QueueItem` type                                                                                            |
+| `features/chat/index.ts`                   | Modify      | Export `useMessageQueue` and `QueueItem`                                                                           |
 
 ## User Experience
 
@@ -776,7 +819,7 @@ export type { QueueItem } from './model/use-message-queue';
 
 ## Open Questions
 
-*No open questions remain. All design decisions were resolved during ideation.*
+_No open questions remain. All design decisions were resolved during ideation._
 
 ## References
 

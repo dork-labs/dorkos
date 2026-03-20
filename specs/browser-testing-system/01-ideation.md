@@ -142,8 +142,8 @@ Research agent analyzed 17 sources across Playwright docs, Turborepo docs, Playw
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Test location | `apps/e2e/` workspace | Turborepo best practice — separate package.json, own devDeps, targetable via `--filter=@dorkos/e2e`. Research + Turborepo docs converge on this. |
-| 2 | Agent SDK in tests | Full chat tests with real SDK | Tests the core feature immediately. Requires ANTHROPIC_API_KEY. Tag slow tests with `@integration`. |
-| 3 | Implementation scope | All 4 phases | Infrastructure + seed tests + AI commands + self-maintenance + health reporting. |
+| #   | Decision             | Choice                        | Rationale                                                                                                                                        |
+| --- | -------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Test location        | `apps/e2e/` workspace         | Turborepo best practice — separate package.json, own devDeps, targetable via `--filter=@dorkos/e2e`. Research + Turborepo docs converge on this. |
+| 2   | Agent SDK in tests   | Full chat tests with real SDK | Tests the core feature immediately. Requires ANTHROPIC_API_KEY. Tag slow tests with `@integration`.                                              |
+| 3   | Implementation scope | All 4 phases                  | Infrastructure + seed tests + AI commands + self-maintenance + health reporting.                                                                 |

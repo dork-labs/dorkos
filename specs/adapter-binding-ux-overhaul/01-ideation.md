@@ -61,25 +61,25 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| Path | Role |
-|------|------|
-| `apps/client/src/layers/features/relay/ui/RelayPanel.tsx` | Main relay panel, tabs: Activity/Endpoints/Bindings/Adapters |
-| `apps/client/src/layers/features/relay/ui/AdapterCard.tsx` | Configured adapter card with status, toggle, kebab menu |
-| `apps/client/src/layers/features/relay/ui/CatalogCard.tsx` | Available adapter type card in catalog |
-| `apps/client/src/layers/features/relay/ui/AdapterSetupWizard.tsx` | Adapter setup/edit wizard dialog |
-| `apps/client/src/layers/features/relay/ui/BindingList.tsx` | Binding list with edit/delete actions |
-| `apps/client/src/layers/features/mesh/ui/BindingDialog.tsx` | Binding create/edit dialog (session strategy + label) |
-| `apps/client/src/layers/entities/binding/` | Binding entity hooks: useBindings, useCreateBinding, useDeleteBinding, useUpdateBinding |
-| `apps/client/src/layers/entities/relay/` | Relay entity hooks: useAdapterCatalog, useAddAdapter, useRemoveAdapter, etc. |
-| `apps/server/src/services/relay/adapter-manager.ts` | Server-side adapter lifecycle (multiInstance check, CRUD, catalog) |
-| `apps/server/src/services/relay/binding-store.ts` | Server-side binding CRUD + resolve() scoring |
-| `apps/server/src/services/relay/binding-router.ts` | Inbound routing: relay.human.* → binding lookup → relay.agent.* |
-| `apps/server/src/routes/relay.ts` | Express routes for relay (adapters, bindings, messages) |
-| `packages/relay/src/adapters/telegram/telegram-adapter.ts` | Telegram adapter + manifest (multiInstance: false) |
-| `packages/shared/src/relay-adapter-schemas.ts` | All adapter/binding/catalog Zod schemas |
-| `packages/shared/src/transport.ts` | Transport interface including binding methods |
-| `apps/client/src/layers/shared/lib/transport/relay-methods.ts` | HttpTransport binding implementations |
-| `apps/client/src/layers/shared/ui/navigation-layout.tsx` | Sidebar navigation layout for dialogs |
+| Path                                                              | Role                                                                                    |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/relay/ui/RelayPanel.tsx`         | Main relay panel, tabs: Activity/Endpoints/Bindings/Adapters                            |
+| `apps/client/src/layers/features/relay/ui/AdapterCard.tsx`        | Configured adapter card with status, toggle, kebab menu                                 |
+| `apps/client/src/layers/features/relay/ui/CatalogCard.tsx`        | Available adapter type card in catalog                                                  |
+| `apps/client/src/layers/features/relay/ui/AdapterSetupWizard.tsx` | Adapter setup/edit wizard dialog                                                        |
+| `apps/client/src/layers/features/relay/ui/BindingList.tsx`        | Binding list with edit/delete actions                                                   |
+| `apps/client/src/layers/features/mesh/ui/BindingDialog.tsx`       | Binding create/edit dialog (session strategy + label)                                   |
+| `apps/client/src/layers/entities/binding/`                        | Binding entity hooks: useBindings, useCreateBinding, useDeleteBinding, useUpdateBinding |
+| `apps/client/src/layers/entities/relay/`                          | Relay entity hooks: useAdapterCatalog, useAddAdapter, useRemoveAdapter, etc.            |
+| `apps/server/src/services/relay/adapter-manager.ts`               | Server-side adapter lifecycle (multiInstance check, CRUD, catalog)                      |
+| `apps/server/src/services/relay/binding-store.ts`                 | Server-side binding CRUD + resolve() scoring                                            |
+| `apps/server/src/services/relay/binding-router.ts`                | Inbound routing: relay.human._ → binding lookup → relay.agent._                         |
+| `apps/server/src/routes/relay.ts`                                 | Express routes for relay (adapters, bindings, messages)                                 |
+| `packages/relay/src/adapters/telegram/telegram-adapter.ts`        | Telegram adapter + manifest (multiInstance: false)                                      |
+| `packages/shared/src/relay-adapter-schemas.ts`                    | All adapter/binding/catalog Zod schemas                                                 |
+| `packages/shared/src/transport.ts`                                | Transport interface including binding methods                                           |
+| `apps/client/src/layers/shared/lib/transport/relay-methods.ts`    | HttpTransport binding implementations                                                   |
+| `apps/client/src/layers/shared/ui/navigation-layout.tsx`          | Sidebar navigation layout for dialogs                                                   |
 
 **Shared Dependencies:**
 
@@ -138,12 +138,12 @@ Two research reports were produced:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Binding creation from Bindings tab | Full dialog with adapter + agent pickers | Makes bindings a first-class object. User picks adapter (dropdown), agent (dropdown), session strategy, and optional label. Matches how "New Binding" should work. |
-| 2 | ChatId/channelType selection | Both: picker in dialog + route from message log | Two entry points for the same action covers both workflows. Dialog picker populated from observed chats (live data). "Route to Agent" action on conversation rows auto-fills chatId. |
-| 3 | Post-adapter-setup nudge | Wizard binding step + amber badge + binding visibility on adapter cards | After adapter test succeeds, offer an optional "Bind to Agent" step in the wizard. User can skip. Amber badge persists on adapter card showing "No agent bound" until resolved. Adapter cards also show their bound agents. |
-| 4 | Sidebar Connections filtering | Include in this spec | Tightly related to binding improvements. Show only bound adapters/agents for the current agent. Ensures consistency. |
-| 5 | Binding duplication UX | "Add similar binding" with pre-filled dialog | Opens the binding creation dialog pre-filled with all fields from the source binding except chatId (must pick a different target). More transparent than silent cloning. |
-| 6 | Adapter naming/labeling | Label field on adapter config + auto-generate from API | Add `label` as a first-class field on AdapterConfig. Telegram auto-generates via `getMe()` (e.g., "@my_project_bot"). Display both custom label and adapter type name everywhere. User can override. |
-| 7 | Multi-instance scope | Telegram only for now | Flip `multiInstance: true` on Telegram manifest. Claude Code stays single-instance. Webhook already supports multi-instance. |
+| #   | Decision                           | Choice                                                                  | Rationale                                                                                                                                                                                                                   |
+| --- | ---------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Binding creation from Bindings tab | Full dialog with adapter + agent pickers                                | Makes bindings a first-class object. User picks adapter (dropdown), agent (dropdown), session strategy, and optional label. Matches how "New Binding" should work.                                                          |
+| 2   | ChatId/channelType selection       | Both: picker in dialog + route from message log                         | Two entry points for the same action covers both workflows. Dialog picker populated from observed chats (live data). "Route to Agent" action on conversation rows auto-fills chatId.                                        |
+| 3   | Post-adapter-setup nudge           | Wizard binding step + amber badge + binding visibility on adapter cards | After adapter test succeeds, offer an optional "Bind to Agent" step in the wizard. User can skip. Amber badge persists on adapter card showing "No agent bound" until resolved. Adapter cards also show their bound agents. |
+| 4   | Sidebar Connections filtering      | Include in this spec                                                    | Tightly related to binding improvements. Show only bound adapters/agents for the current agent. Ensures consistency.                                                                                                        |
+| 5   | Binding duplication UX             | "Add similar binding" with pre-filled dialog                            | Opens the binding creation dialog pre-filled with all fields from the source binding except chatId (must pick a different target). More transparent than silent cloning.                                                    |
+| 6   | Adapter naming/labeling            | Label field on adapter config + auto-generate from API                  | Add `label` as a first-class field on AdapterConfig. Telegram auto-generates via `getMe()` (e.g., "@my_project_bot"). Display both custom label and adapter type name everywhere. User can override.                        |
+| 7   | Multi-instance scope               | Telegram only for now                                                   | Flip `multiInstance: true` on Telegram manifest. Claude Code stays single-instance. Webhook already supports multi-instance.                                                                                                |

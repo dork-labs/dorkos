@@ -33,6 +33,7 @@ interface TruncatedOutputProps {
 ```
 
 **Behavior:**
+
 - If `content.length <= threshold`: render full content in `<pre>` with `max-h-48 overflow-y-auto text-xs whitespace-pre-wrap`
 - If `content.length > threshold`: render `content.slice(0, threshold)` with a "Show full output (X.XKB)" button
 - Button click expands to full content (one-way — no collapse back)
@@ -55,25 +56,33 @@ This replaces the existing `PROGRESS_TRUNCATE_BYTES` constant.
 4. **Update** the progress output call to use `<TruncatedOutput>`
 
 **Before (lines 97-104):**
+
 ```tsx
-{toolCall.progressOutput && !toolCall.result && (
-  <ProgressOutput content={toolCall.progressOutput} />
-)}
-{toolCall.result && (
-  <pre className="mt-2 overflow-x-auto border-t pt-2 text-xs whitespace-pre-wrap">
-    {toolCall.result}
-  </pre>
-)}
+{
+  toolCall.progressOutput && !toolCall.result && (
+    <ProgressOutput content={toolCall.progressOutput} />
+  );
+}
+{
+  toolCall.result && (
+    <pre className="mt-2 overflow-x-auto border-t pt-2 text-xs whitespace-pre-wrap">
+      {toolCall.result}
+    </pre>
+  );
+}
 ```
 
 **After:**
+
 ```tsx
-{toolCall.progressOutput && !toolCall.result && (
-  <TruncatedOutput content={toolCall.progressOutput} />
-)}
-{toolCall.result && (
-  <TruncatedOutput content={toolCall.result} />
-)}
+{
+  toolCall.progressOutput && !toolCall.result && (
+    <TruncatedOutput content={toolCall.progressOutput} />
+  );
+}
+{
+  toolCall.result && <TruncatedOutput content={toolCall.result} />;
+}
 ```
 
 ### Changes to `tool-arguments-formatter.tsx`
@@ -81,11 +90,13 @@ This replaces the existing `PROGRESS_TRUNCATE_BYTES` constant.
 The raw JSON fallback path (lines 82, 86) renders untruncated `<pre>` when JSON parsing fails or input isn't an object. Apply the same 5KB threshold.
 
 **Before (line 82):**
+
 ```tsx
 return <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{input}</pre>;
 ```
 
 **After:**
+
 ```tsx
 const displayInput = input.length > 5120 ? input.slice(0, 5120) + '\u2026' : input;
 return <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{displayInput}</pre>;
@@ -135,11 +146,11 @@ Same change on line 86. This is simpler than importing `TruncatedOutput` (which 
 
 ## Files Modified
 
-| File | Change |
-|------|--------|
-| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` | Extract `TruncatedOutput`, apply to result |
-| `apps/client/src/layers/shared/lib/tool-arguments-formatter.tsx` | Truncate raw JSON fallback |
-| `apps/client/src/layers/features/chat/ui/__tests__/ToolCallCard.test.tsx` | New test file |
+| File                                                                      | Change                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------ |
+| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx`                | Extract `TruncatedOutput`, apply to result |
+| `apps/client/src/layers/shared/lib/tool-arguments-formatter.tsx`          | Truncate raw JSON fallback                 |
+| `apps/client/src/layers/features/chat/ui/__tests__/ToolCallCard.test.tsx` | New test file                              |
 
 ## Out of Scope
 

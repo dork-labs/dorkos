@@ -1,9 +1,22 @@
 ---
-title: "Keyboard Shortcut Discoverability UX Patterns for Developer Tools"
+title: 'Keyboard Shortcut Discoverability UX Patterns for Developer Tools'
 date: 2026-03-11
 type: external-best-practices
 status: active
-tags: [keyboard-shortcuts, discoverability, ux, buttons, shortcut-registry, help-panel, question-mark-key, cmdk, react-hotkeys-hook, tailwind, input-guard]
+tags:
+  [
+    keyboard-shortcuts,
+    discoverability,
+    ux,
+    buttons,
+    shortcut-registry,
+    help-panel,
+    question-mark-key,
+    cmdk,
+    react-hotkeys-hook,
+    tailwind,
+    input-guard,
+  ]
 searches_performed: 18
 sources_count: 32
 ---
@@ -20,7 +33,7 @@ There are five interlocking mechanisms that world-class developer tools (Linear,
 
 ### 1. Inline Shortcut Hints on Buttons
 
-The pattern of revealing a keyboard shortcut hint *inside* a button on hover — not in a separate tooltip — is used by Linear, Superhuman, Figma's menu items, and VS Code's command items. The core UX principle is that the shortcut hint should appear adjacent to the label at the moment of intent (hovering), reinforcing the mental model: "I can do this with my mouse, OR I can do this with this key."
+The pattern of revealing a keyboard shortcut hint _inside_ a button on hover — not in a separate tooltip — is used by Linear, Superhuman, Figma's menu items, and VS Code's command items. The core UX principle is that the shortcut hint should appear adjacent to the label at the moment of intent (hovering), reinforcing the mental model: "I can do this with my mouse, OR I can do this with this key."
 
 **The three implementation approaches:**
 
@@ -29,10 +42,9 @@ The button has a fixed layout with `justify-between`. The shortcut text `<kbd>` 
 
 ```tsx
 // Tailwind group-hover fade reveal — width stays fixed
-<button className="group flex items-center justify-between gap-4 px-3 py-1.5 rounded-md w-full hover:bg-accent">
+<button className="group hover:bg-accent flex w-full items-center justify-between gap-4 rounded-md px-3 py-1.5">
   <span>New Session</span>
-  <kbd className="opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                  text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">
+  <kbd className="text-muted-foreground bg-muted rounded border px-1.5 py-0.5 text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100">
     C
   </kbd>
 </button>
@@ -42,11 +54,9 @@ The button has a fixed layout with `justify-between`. The shortcut text `<kbd>` 
 The hint starts translated off-screen to the right and slides in on hover. Requires `overflow-hidden` on the button to clip the hint before it appears.
 
 ```tsx
-<button className="group flex items-center justify-between gap-2 px-3 py-1.5 rounded-md overflow-hidden">
+<button className="group flex items-center justify-between gap-2 overflow-hidden rounded-md px-3 py-1.5">
   <span>New Session</span>
-  <kbd className="translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100
-                  transition-all duration-150 ease-out
-                  text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded border">
+  <kbd className="text-muted-foreground bg-muted translate-x-4 rounded border px-1.5 py-0.5 text-xs opacity-0 transition-all duration-150 ease-out group-hover:translate-x-0 group-hover:opacity-100">
     C
   </kbd>
 </button>
@@ -58,6 +68,7 @@ The button starts narrow (label only) and expands to accommodate the shortcut hi
 **Width strategy decision:** Use fixed width (or `w-full`) buttons where the right slot is pre-allocated but invisible. Never let the reveal change the button's outer dimensions. This is how Linear and VS Code's sidebar buttons behave — the shortcut slot is always reserved.
 
 **When to show inline hints vs. tooltip hints:**
+
 - Inline hints (inside the button): Best for sidebar navigation items and action buttons that already have a fixed width layout. Works well because there's horizontal space.
 - Tooltip hints (external): Best for icon-only buttons where there's no room for text. The tooltip contains both the label and the shortcut.
 - Both approaches are not mutually exclusive — Linear uses tooltip hints for the icon-only toolbar and inline hints for the sidebar text items.
@@ -66,8 +77,7 @@ The button starts narrow (label only) and expands to accommodate the shortcut hi
 
 ```tsx
 // Canonical kbd styling (Tailwind)
-<kbd className="inline-flex items-center gap-0.5 rounded border border-border
-                bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+<kbd className="border-border bg-muted text-muted-foreground inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 font-mono text-[10px]">
   ⌘K
 </kbd>
 ```
@@ -80,15 +90,16 @@ The button starts narrow (label only) and expands to accommodate the shortcut hi
 
 **Modal vs. Drawer vs. Panel:**
 
-| Format | Apps | Assessment |
-|---|---|---|
-| Modal (centered, overlaid) | GitHub, Linear, Figma | Best for reference — user is pausing to consult, not continuing work |
-| Drawer (side panel) | Slack, Notion (help sidebar) | Better for persistent reference while working, but takes real estate |
-| Inline overlay | Some Electron apps | Unusual for web |
+| Format                     | Apps                         | Assessment                                                           |
+| -------------------------- | ---------------------------- | -------------------------------------------------------------------- |
+| Modal (centered, overlaid) | GitHub, Linear, Figma        | Best for reference — user is pausing to consult, not continuing work |
+| Drawer (side panel)        | Slack, Notion (help sidebar) | Better for persistent reference while working, but takes real estate |
+| Inline overlay             | Some Electron apps           | Unusual for web                                                      |
 
 **Recommendation: Centered modal.** The user opening `?` is doing a lookup — they've paused their workflow. A modal at 600-700px wide is the right form factor. It should not be a drawer that competes with the main UI.
 
 **What Linear's `?` panel does (confirmed from changelog):**
+
 - Triggered by `?` key from anywhere in the app
 - Also accessible from Help & Feedback > Keyboard shortcuts in sidebar
 - **Searchable** — the panel has its own search field so users can find a shortcut by typing what they want to do
@@ -96,12 +107,14 @@ The button starts narrow (label only) and expands to accommodate the shortcut hi
 - Updated in 2021 to add searchability; prior to that it was a static list
 
 **What GitHub's `?` panel does:**
+
 - Context-sensitive: pressing `?` on the issues list page shows issue-related shortcuts; pressing `?` on a PR shows PR shortcuts; global shortcuts always appear
 - Organized in groups by context/page type
 - Single-key sequences (like `g i`, `g p`) are shown as sequential key presses
 - No search (GitHub's panel is more reference than explorer)
 
 **What Figma does:**
+
 - `Ctrl+Shift+?` opens the shortcuts panel (slightly non-standard — an affordance to Figma's rich shortcut set)
 - The panel is gamified: shortcuts are color-coded by which ones the user has tried. This is the most sophisticated discoverability pattern observed across all major apps.
 - Organized by tool categories (Select, Shape, Text, View, etc.)
@@ -135,16 +148,17 @@ The button starts narrow (label only) and expands to accommodate the shortcut hi
 ```
 
 **Categorization strategy:**
-Group by *user intent / workflow stage*, not by modifier key. The user thinks "I want to do something with sessions" not "I want to use Cmd". Categories: Sessions, Navigation, Agents, Global.
+Group by _user intent / workflow stage_, not by modifier key. The user thinks "I want to do something with sessions" not "I want to use Cmd". Categories: Sessions, Navigation, Agents, Global.
 
 **Searchability:**
 Linear added search to their shortcuts panel in 2021 and it is now considered essential for any app with more than ~12 shortcuts. The search should filter shortcuts by name/description in real-time. The search input should auto-focus when the panel opens.
 
 **Dismiss behavior:**
+
 - `?` again: toggle (same key opens and closes — this is the standard)
 - `Escape`: also dismisses
 - Clicking outside: also dismisses
-Do NOT require the user to find a close button. Both `?` and `Escape` must close it.
+  Do NOT require the user to find a close button. Both `?` and `Escape` must close it.
 
 **Implementation pattern:**
 
@@ -152,11 +166,8 @@ Do NOT require the user to find a close button. Both `?` and `Escape` must close
 // At document level, registered once (e.g., in App.tsx useEffect)
 const handler = (e: KeyboardEvent) => {
   const target = e.target as HTMLElement;
-  const inInput = (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.isContentEditable
-  );
+  const inInput =
+    target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
   // '?' requires Shift+/ — e.key is '?' when Shift+/ is pressed
   if (e.key === '?' && !inInput) {
@@ -177,6 +188,7 @@ Note: `?` is `Shift+/` on US keyboards. `e.key === '?'` correctly captures this 
 The shadcn/ui `CommandShortcut` component (already in the DorkOS codebase) handles the right-aligned shortcut display inside command palette items. It uses `ml-auto` to push the hint to the right side of the flex row.
 
 **How it looks:**
+
 ```
 ⌙ New Session                             C
   Pulse Scheduler                        ⌘P
@@ -185,6 +197,7 @@ The shadcn/ui `CommandShortcut` component (already in the DorkOS codebase) handl
 ```
 
 **Usage:**
+
 ```tsx
 import { CommandItem, CommandShortcut } from '@/layers/shared/ui/command';
 
@@ -192,14 +205,15 @@ import { CommandItem, CommandShortcut } from '@/layers/shared/ui/command';
   <PlusIcon className="mr-2 h-4 w-4" />
   New Session
   <CommandShortcut>C</CommandShortcut>
-</CommandItem>
+</CommandItem>;
 ```
 
 The `CommandShortcut` component in shadcn is simply:
+
 ```tsx
 const CommandShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
   <span
-    className={cn("ml-auto text-xs tracking-widest text-muted-foreground", className)}
+    className={cn('text-muted-foreground ml-auto text-xs tracking-widest', className)}
     {...props}
   />
 );
@@ -207,6 +221,7 @@ const CommandShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanE
 
 **Multi-key shortcuts:**
 For multi-key sequences like `⌘K` or `⌘⇧T`:
+
 ```tsx
 <CommandShortcut>⌘K</CommandShortcut>   // Cmd+K
 <CommandShortcut>⌘⇧T</CommandShortcut>  // Cmd+Shift+T
@@ -228,19 +243,15 @@ A centralized registry is the architectural foundation that makes the `?` panel 
 // In a shared shortcut constants file, e.g., features/shortcuts/model/shortcut-registry.ts
 
 export interface ShortcutDef {
-  id: string;          // unique identifier
-  key: string;         // the key combo e.g. "c", "mod+k", "?"
-  label: string;       // human readable e.g. "New Session"
+  id: string; // unique identifier
+  key: string; // the key combo e.g. "c", "mod+k", "?"
+  label: string; // human readable e.g. "New Session"
   description?: string;
   group: ShortcutGroup; // category for the reference panel
-  scope?: 'global' | 'session' | 'agent';  // where it's active
+  scope?: 'global' | 'session' | 'agent'; // where it's active
 }
 
-export type ShortcutGroup =
-  | 'sessions'
-  | 'navigation'
-  | 'agents'
-  | 'global';
+export type ShortcutGroup = 'sessions' | 'navigation' | 'agents' | 'global';
 
 export const SHORTCUTS = {
   NEW_SESSION: {
@@ -299,6 +310,7 @@ export function getShortcutsGrouped(): Record<ShortcutGroup, ShortcutDef[]> {
 The shortcuts panel renders directly from `getShortcutsGrouped()`. Any new shortcut added to `SHORTCUTS` automatically appears in the panel. No manual documentation update required.
 
 **Registry benefits demonstrated by apps that use this pattern:**
+
 - Linear uses a centralized shortcut system; when they added searchability to the `?` panel, the search ran over the same data that registered the shortcuts.
 - GitHub's `hotkey` library uses `data-hotkey` attributes as a form of declarative registry — every element with `data-hotkey` is automatically queryable by the DOM.
 - `react-keyhub` (a React library for this pattern) provides `<ShortcutSheet>` that auto-renders from the registry — the same data drives both the `useShortcut` hooks and the UI documentation.
@@ -380,6 +392,7 @@ The chat input in DorkOS uses a content-editable area (the `textarea`-like messa
 **Is `?` the right key?**
 
 Yes, unambiguously. Industry evidence:
+
 - **Gmail** — `?` = show keyboard shortcuts (established 2010, widely copied)
 - **GitHub** — `?` = context-sensitive shortcuts panel
 - **Linear** — `?` = keyboard shortcuts panel
@@ -409,8 +422,7 @@ Reserve the right slot always. The shortcut `<kbd>` is in the DOM at all times b
 ```tsx
 <button className="group flex min-w-[160px] items-center justify-between gap-2 px-3 py-1.5">
   <span>New Session</span>
-  <kbd className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0
-                  text-[10px] text-muted-foreground border rounded px-1 py-0.5">
+  <kbd className="text-muted-foreground shrink-0 rounded border px-1 py-0.5 text-[10px] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
     C
   </kbd>
 </button>
@@ -424,8 +436,7 @@ The shortcut hint is positioned absolutely at the right edge of the button. The 
 ```tsx
 <button className="group relative flex items-center px-3 py-1.5 pr-10">
   <span>New Session</span>
-  <kbd className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150
-                  text-[10px] text-muted-foreground border rounded px-1 py-0.5">
+  <kbd className="text-muted-foreground absolute right-2 rounded border px-1 py-0.5 text-[10px] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
     C
   </kbd>
 </button>
@@ -434,6 +445,7 @@ The shortcut hint is positioned absolutely at the right edge of the button. The 
 `pr-10` provides padding on the right to prevent the button label from overlapping where the `kbd` will appear.
 
 **When NOT to show inline hints:**
+
 - Icon-only buttons: use a tooltip instead
 - Mobile: don't show keyboard hints at all (no keyboard)
 - Buttons in dense lists where every button has a hint: hints become visual noise. Limit inline hints to primary navigation items and the most important actions, not every button.
@@ -444,21 +456,21 @@ Inside the command palette, shortcut hints serve a secondary educational purpose
 
 The `ml-auto` styling on `CommandShortcut` ensures it's always right-aligned regardless of the label length. Combined with `tracking-widest` and `text-muted-foreground`, it's visually subordinate but legible.
 
-**Rule:** Only show shortcuts for items that have a *direct* keyboard equivalent that works without the palette. Don't show a shortcut for "Delete Agent" if there's no standalone shortcut for deletion — this creates false expectations.
+**Rule:** Only show shortcuts for items that have a _direct_ keyboard equivalent that works without the palette. Don't show a shortcut for "Delete Agent" if there's no standalone shortcut for deletion — this creates false expectations.
 
 ### Shortcut Registry: What the Registry Enables
 
 A centralized registry is the architecture prerequisite for all other patterns:
 
-| Feature | Registry requirement |
-|---|---|
-| Reference panel auto-generated from registry | `label`, `group` fields |
-| Shortcut search in `?` panel | `label`, `description` fields (search over these) |
-| Command palette hint display | `key` field |
-| Button hover hint display | `key` field |
-| Conflict detection at dev time | All registrations in one place |
-| Scope isolation (shortcut active only in some views) | `scope` field |
-| Easy re-mapping | Change `key` in one place, propagates everywhere |
+| Feature                                              | Registry requirement                              |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| Reference panel auto-generated from registry         | `label`, `group` fields                           |
+| Shortcut search in `?` panel                         | `label`, `description` fields (search over these) |
+| Command palette hint display                         | `key` field                                       |
+| Button hover hint display                            | `key` field                                       |
+| Conflict detection at dev time                       | All registrations in one place                    |
+| Scope isolation (shortcut active only in some views) | `scope` field                                     |
+| Easy re-mapping                                      | Change `key` in one place, propagates everywhere  |
 
 ### What Apps Do NOT Have a Registry (and the consequences)
 
@@ -501,7 +513,7 @@ This is used everywhere: inline button hints, command palette items, and the ref
 ```tsx
 // features/shortcuts/ui/ShortcutKbd.tsx
 interface ShortcutKbdProps {
-  keys: string;   // e.g. "C", "⌘K", "⌘⇧T"
+  keys: string; // e.g. "C", "⌘K", "⌘⇧T"
   className?: string;
 }
 
@@ -509,8 +521,8 @@ export function ShortcutKbd({ keys, className }: ShortcutKbdProps) {
   return (
     <kbd
       className={cn(
-        'inline-flex items-center rounded border border-border bg-muted',
-        'px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground',
+        'border-border bg-muted inline-flex items-center rounded border',
+        'text-muted-foreground px-1.5 py-0.5 font-mono text-[10px]',
         className
       )}
     >

@@ -27,7 +27,7 @@ export function createMeshMethods(baseUrl: string) {
 
     discoverMeshAgents(
       roots: string[],
-      maxDepth?: number,
+      maxDepth?: number
     ): Promise<{ candidates: DiscoveryCandidate[] }> {
       return fetchJSON(baseUrl, '/mesh/discover', {
         method: 'POST',
@@ -53,7 +53,7 @@ export function createMeshMethods(baseUrl: string) {
     registerMeshAgent(
       path: string,
       overrides?: Partial<AgentManifest>,
-      approver?: string,
+      approver?: string
     ): Promise<AgentManifest> {
       return fetchJSON(baseUrl, '/mesh/agents', {
         method: 'POST',
@@ -76,11 +76,7 @@ export function createMeshMethods(baseUrl: string) {
       return fetchJSON(baseUrl, `/mesh/agents/${id}`, { method: 'DELETE' });
     },
 
-    denyMeshAgent(
-      path: string,
-      reason?: string,
-      denier?: string,
-    ): Promise<{ success: boolean }> {
+    denyMeshAgent(path: string, reason?: string, denier?: string): Promise<{ success: boolean }> {
       return fetchJSON(baseUrl, '/mesh/deny', {
         method: 'POST',
         body: JSON.stringify({ path, ...(reason && { reason }), ...(denier && { denier }) }),
@@ -135,9 +131,7 @@ export function createMeshMethods(baseUrl: string) {
     // --- Agent Identity ---
 
     async getAgentByPath(path: string): Promise<AgentManifest | null> {
-      const res = await fetch(
-        `${baseUrl}/agents/current?path=${encodeURIComponent(path)}`,
-      );
+      const res = await fetch(`${baseUrl}/agents/current?path=${encodeURIComponent(path)}`);
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`Failed to get agent: ${res.statusText}`);
       return res.json();
@@ -150,7 +144,7 @@ export function createMeshMethods(baseUrl: string) {
         {
           method: 'POST',
           body: JSON.stringify({ paths }),
-        },
+        }
       );
       return data.agents;
     },
@@ -159,7 +153,7 @@ export function createMeshMethods(baseUrl: string) {
       path: string,
       name?: string,
       description?: string,
-      runtime?: string,
+      runtime?: string
     ): Promise<AgentManifest> {
       return fetchJSON<AgentManifest>(baseUrl, '/agents', {
         method: 'POST',
@@ -173,14 +167,10 @@ export function createMeshMethods(baseUrl: string) {
     },
 
     updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest> {
-      return fetchJSON<AgentManifest>(
-        baseUrl,
-        `/agents/current?path=${encodeURIComponent(path)}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify(updates),
-        },
-      );
+      return fetchJSON<AgentManifest>(baseUrl, `/agents/current?path=${encodeURIComponent(path)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
     },
   };
 }

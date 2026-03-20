@@ -129,11 +129,9 @@ describe('list', () => {
 
   it('filters by capability', () => {
     registry.upsert(
-      makeEntry({ id: '01A', projectPath: '/p/a', capabilities: ['code-review', 'testing'] }),
+      makeEntry({ id: '01A', projectPath: '/p/a', capabilities: ['code-review', 'testing'] })
     );
-    registry.upsert(
-      makeEntry({ id: '01B', projectPath: '/p/b', capabilities: ['deployment'] }),
-    );
+    registry.upsert(makeEntry({ id: '01B', projectPath: '/p/b', capabilities: ['deployment'] }));
 
     const filtered = registry.list({ capability: 'code-review' });
     expect(filtered).toHaveLength(1);
@@ -172,7 +170,9 @@ describe('update', () => {
   });
 
   it('persists namespace and scanRoot changes', () => {
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1', namespace: 'old', scanRoot: '/old' }));
+    registry.upsert(
+      makeEntry({ id: 'a1', projectPath: '/p/a1', namespace: 'old', scanRoot: '/old' })
+    );
     registry.update('a1', { namespace: 'new', scanRoot: '/new' });
     const entry = registry.get('a1');
     expect(entry?.namespace).toBe('new');
@@ -418,9 +418,9 @@ describe('anti-regression: Drizzle migration', () => {
     expect(denials).toHaveLength(1);
 
     // Read the raw denial row to check the auto-generated ULID id
-    const rawRows = db.$client
-      .prepare('SELECT id FROM agent_denials')
-      .all() as Array<{ id: string }>;
+    const rawRows = db.$client.prepare('SELECT id FROM agent_denials').all() as Array<{
+      id: string;
+    }>;
     expect(rawRows[0].id).toMatch(ulidPattern);
   });
 
@@ -442,9 +442,9 @@ describe('anti-regression: Drizzle migration', () => {
     // Verify denial timestamps too
     const denialList = new DenialList(db);
     denialList.deny('/tmp/test-anti-regression-ts', 'claude-code', 'test', 'user');
-    const denialRows = db.$client
-      .prepare('SELECT created_at FROM agent_denials')
-      .all() as Array<{ created_at: string }>;
+    const denialRows = db.$client.prepare('SELECT created_at FROM agent_denials').all() as Array<{
+      created_at: string;
+    }>;
     expect(denialRows[0].created_at).toMatch(isoPattern);
   });
 });
@@ -501,14 +501,16 @@ describe('listUnreachableBefore()', () => {
 
 describe('agent identity fields', () => {
   it('upsert stores persona, personaEnabled, color, icon from manifest', () => {
-    registry.upsert(makeEntry({
-      id: 'identity-agent',
-      projectPath: '/p/identity',
-      persona: 'You are backend-bot.',
-      personaEnabled: true,
-      color: '#6366f1',
-      icon: '🤖',
-    }));
+    registry.upsert(
+      makeEntry({
+        id: 'identity-agent',
+        projectPath: '/p/identity',
+        persona: 'You are backend-bot.',
+        personaEnabled: true,
+        color: '#6366f1',
+        icon: '🤖',
+      })
+    );
 
     const result = registry.get('identity-agent');
     expect(result).toBeDefined();
@@ -525,11 +527,13 @@ describe('agent identity fields', () => {
   });
 
   it('stores personaEnabled: false correctly', () => {
-    registry.upsert(makeEntry({
-      id: 'disabled-agent',
-      projectPath: '/p/disabled',
-      personaEnabled: false,
-    }));
+    registry.upsert(
+      makeEntry({
+        id: 'disabled-agent',
+        projectPath: '/p/disabled',
+        personaEnabled: false,
+      })
+    );
     const result = registry.get('disabled-agent');
     expect(result!.personaEnabled).toBe(false);
   });
@@ -558,13 +562,15 @@ describe('agent identity fields', () => {
   });
 
   it('update clears identity fields when set to undefined/null', () => {
-    registry.upsert(makeEntry({
-      id: 'clear-agent',
-      projectPath: '/p/clear',
-      persona: 'old persona',
-      color: '#000',
-      icon: '🎉',
-    }));
+    registry.upsert(
+      makeEntry({
+        id: 'clear-agent',
+        projectPath: '/p/clear',
+        persona: 'old persona',
+        color: '#000',
+        icon: '🎉',
+      })
+    );
     registry.update('clear-agent', {
       persona: undefined,
       color: undefined,
@@ -577,19 +583,23 @@ describe('agent identity fields', () => {
   });
 
   it('upsert on conflict updates identity fields', () => {
-    registry.upsert(makeEntry({
-      id: 'conflict-agent',
-      projectPath: '/p/conflict',
-      persona: 'V1 persona',
-      color: '#000',
-    }));
-    registry.upsert(makeEntry({
-      id: 'conflict-agent',
-      projectPath: '/p/conflict',
-      persona: 'V2 persona',
-      color: '#fff',
-      icon: '🚀',
-    }));
+    registry.upsert(
+      makeEntry({
+        id: 'conflict-agent',
+        projectPath: '/p/conflict',
+        persona: 'V1 persona',
+        color: '#000',
+      })
+    );
+    registry.upsert(
+      makeEntry({
+        id: 'conflict-agent',
+        projectPath: '/p/conflict',
+        persona: 'V2 persona',
+        color: '#fff',
+        icon: '🚀',
+      })
+    );
     const result = registry.get('conflict-agent');
     expect(result!.persona).toBe('V2 persona');
     expect(result!.color).toBe('#fff');
@@ -597,18 +607,22 @@ describe('agent identity fields', () => {
   });
 
   it('list returns identity fields for all agents', () => {
-    registry.upsert(makeEntry({
-      id: 'agent-a',
-      projectPath: '/p/a',
-      color: '#red',
-      icon: '🔴',
-    }));
-    registry.upsert(makeEntry({
-      id: 'agent-b',
-      projectPath: '/p/b',
-      persona: 'Test persona',
-      personaEnabled: false,
-    }));
+    registry.upsert(
+      makeEntry({
+        id: 'agent-a',
+        projectPath: '/p/a',
+        color: '#red',
+        icon: '🔴',
+      })
+    );
+    registry.upsert(
+      makeEntry({
+        id: 'agent-b',
+        projectPath: '/p/b',
+        persona: 'Test persona',
+        personaEnabled: false,
+      })
+    );
 
     const all = registry.list();
     expect(all).toHaveLength(2);
@@ -621,12 +635,14 @@ describe('agent identity fields', () => {
   });
 
   it('getByPath returns identity fields', () => {
-    registry.upsert(makeEntry({
-      id: 'path-agent',
-      projectPath: '/p/path-lookup',
-      persona: 'Lookup persona',
-      color: '#abc',
-    }));
+    registry.upsert(
+      makeEntry({
+        id: 'path-agent',
+        projectPath: '/p/path-lookup',
+        persona: 'Lookup persona',
+        color: '#abc',
+      })
+    );
     const result = registry.getByPath('/p/path-lookup');
     expect(result!.persona).toBe('Lookup persona');
     expect(result!.color).toBe('#abc');

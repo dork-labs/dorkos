@@ -44,20 +44,22 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role |
-|------|------|
-| `apps/client/src/layers/shared/model/app-store.ts` | Zustand store — add 2 boolean toggles |
-| `apps/client/src/layers/features/settings/ui/AdvancedTab.tsx` | Advanced settings tab — add 2 SettingRow toggles |
+| File                                                             | Role                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `apps/client/src/layers/shared/model/app-store.ts`               | Zustand store — add 2 boolean toggles                               |
+| `apps/client/src/layers/features/settings/ui/AdvancedTab.tsx`    | Advanced settings tab — add 2 SettingRow toggles                    |
 | `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx` | Settings shell — destructure 2 new store props, pass to AdvancedTab |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Core chat hook — guard SSE effect and polling interval |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Core chat hook — guard SSE effect and polling interval              |
 
 **Shared dependencies:**
+
 - `useAppStore` (Zustand) — consumed by SettingsDialog and use-chat-session
 - `Switch` (shadcn/ui) — toggle control in AdvancedTab
 - `SettingRow` — layout wrapper in SettingsDialog (may need to extract or import in AdvancedTab)
 - `QUERY_TIMING` — already imported in use-chat-session, no change needed
 
 **Data flow:**
+
 ```
 Settings toggle → Zustand store + localStorage
     → use-chat-session reads store value
@@ -68,6 +70,7 @@ Settings toggle → Zustand store + localStorage
 **Feature flags/config:** None — these are client-side UI settings persisted in localStorage.
 
 **Potential blast radius:**
+
 - Direct: 4 files (app-store, AdvancedTab, SettingsDialog, use-chat-session)
 - Tests: 2 files (app-store.test.ts, use-chat-session.test.tsx)
 - Indirect: 0 files — ChatStatusSection already guards on `presenceInfo` existence
@@ -108,17 +111,17 @@ Returning `false` disables periodic refetching. The initial query still fires (c
 
 **Side effects of disabling each path:**
 
-| Disabled Path | What Stops | What Still Works |
-|---------------|-----------|-----------------|
-| Cross-client sync | Presence UI, cross-client query invalidation, sync_update events | Live SSE, polling (if enabled), initial history load |
-| Message polling | Periodic 3s/10s refetches of message history | Live SSE, cross-client sync (if enabled), initial history load |
-| Both | All background data paths | Live SSE only — messages arrive exclusively from POST stream |
+| Disabled Path     | What Stops                                                       | What Still Works                                               |
+| ----------------- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
+| Cross-client sync | Presence UI, cross-client query invalidation, sync_update events | Live SSE, polling (if enabled), initial history load           |
+| Message polling   | Periodic 3s/10s refetches of message history                     | Live SSE, cross-client sync (if enabled), initial history load |
+| Both              | All background data paths                                        | Live SSE only — messages arrive exclusively from POST stream   |
 
 **Edge case:** After streaming completes, `historySeededRef` is reset (line 477), which triggers a full history replace on the next poll. With polling disabled, this replace won't happen until the user navigates away and back (triggering a fresh mount). This is acceptable for debugging — the streaming data is already displayed.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Toggle placement | Advanced tab, above Danger Zone | Tab already exists for power-user settings. No new navigation weight. Debug toggles aren't destructive, so they sit above the danger zone. |
-| 2 | Toggle naming | "Cross-client sync" / "Message polling" | User-facing names that describe what the feature does, not the implementation detail. Descriptions can mention SSE/polling for technical users. |
+| #   | Decision         | Choice                                  | Rationale                                                                                                                                       |
+| --- | ---------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Toggle placement | Advanced tab, above Danger Zone         | Tab already exists for power-user settings. No new navigation weight. Debug toggles aren't destructive, so they sit above the danger zone.      |
+| 2   | Toggle naming    | "Cross-client sync" / "Message polling" | User-facing names that describe what the feature does, not the implementation detail. Descriptions can mention SSE/polling for technical users. |

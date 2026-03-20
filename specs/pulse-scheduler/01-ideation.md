@@ -46,6 +46,7 @@ From the brand foundation: "This is what makes DorkOS alive."
 ```
 
 **Why two stores?**
+
 - `schedules.json`: Human-readable, git-friendly, agent can read/write via MCP tools. Contains job definitions only.
 - `pulse.db`: SQLite for run history (potentially thousands of rows), atomic status transitions, indexed queries. Not meant to be human-edited.
 
@@ -89,16 +90,16 @@ From the brand foundation: "This is what makes DorkOS alive."
 
 ```typescript
 interface PulseSchedule {
-  id: string;                    // UUID
-  name: string;                  // Human-readable label
-  prompt: string;                // What Claude should do
-  cron: string;                  // 5-field cron expression
-  timezone: string;              // IANA timezone (default: system)
-  cwd: string;                   // Working directory for the job
-  enabled: boolean;              // Pause/resume toggle
-  maxRuntime: number;            // Timeout in ms (default: 10 minutes)
-  createdAt: string;             // ISO timestamp
-  updatedAt: string;             // ISO timestamp
+  id: string; // UUID
+  name: string; // Human-readable label
+  prompt: string; // What Claude should do
+  cron: string; // 5-field cron expression
+  timezone: string; // IANA timezone (default: system)
+  cwd: string; // Working directory for the job
+  enabled: boolean; // Pause/resume toggle
+  maxRuntime: number; // Timeout in ms (default: 10 minutes)
+  createdAt: string; // ISO timestamp
+  updatedAt: string; // ISO timestamp
 }
 ```
 
@@ -164,13 +165,13 @@ This gives the agent awareness that it's running autonomously and can manage its
 
 Extending the existing `mcp-tool-server.ts`:
 
-| Tool | Description | Input Schema |
-|------|-------------|--------------|
-| `list_schedules` | List all scheduled jobs | `{ enabled_only?: boolean }` |
-| `create_schedule` | Create a new scheduled job | `{ name, prompt, cron, cwd?, timezone?, maxRuntime? }` |
-| `update_schedule` | Update an existing schedule | `{ id, name?, prompt?, cron?, enabled?, timezone?, maxRuntime? }` |
-| `delete_schedule` | Delete a schedule permanently | `{ id }` |
-| `get_run_history` | Get recent runs for a schedule | `{ schedule_id, limit?: number }` |
+| Tool              | Description                    | Input Schema                                                      |
+| ----------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `list_schedules`  | List all scheduled jobs        | `{ enabled_only?: boolean }`                                      |
+| `create_schedule` | Create a new scheduled job     | `{ name, prompt, cron, cwd?, timezone?, maxRuntime? }`            |
+| `update_schedule` | Update an existing schedule    | `{ id, name?, prompt?, cron?, enabled?, timezone?, maxRuntime? }` |
+| `delete_schedule` | Delete a schedule permanently  | `{ id }`                                                          |
+| `get_run_history` | Get recent runs for a schedule | `{ schedule_id, limit?: number }`                                 |
 
 These tools let the agent manage schedules conversationally: "Schedule a daily code review at 9am" → agent calls `create_schedule`.
 
@@ -178,16 +179,16 @@ These tools let the agent manage schedules conversationally: "Schedule a daily c
 
 ### Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/pulse/schedules` | List all schedules |
-| `POST` | `/api/pulse/schedules` | Create a schedule |
-| `PATCH` | `/api/pulse/schedules/:id` | Update a schedule |
-| `DELETE` | `/api/pulse/schedules/:id` | Delete a schedule |
-| `POST` | `/api/pulse/schedules/:id/trigger` | Trigger a manual run |
-| `GET` | `/api/pulse/runs` | List recent runs (all schedules) |
-| `GET` | `/api/pulse/runs/:id` | Get a specific run |
-| `POST` | `/api/pulse/runs/:id/cancel` | Cancel a running job |
+| Method   | Path                               | Description                      |
+| -------- | ---------------------------------- | -------------------------------- |
+| `GET`    | `/api/pulse/schedules`             | List all schedules               |
+| `POST`   | `/api/pulse/schedules`             | Create a schedule                |
+| `PATCH`  | `/api/pulse/schedules/:id`         | Update a schedule                |
+| `DELETE` | `/api/pulse/schedules/:id`         | Delete a schedule                |
+| `POST`   | `/api/pulse/schedules/:id/trigger` | Trigger a manual run             |
+| `GET`    | `/api/pulse/runs`                  | List recent runs (all schedules) |
+| `GET`    | `/api/pulse/runs/:id`              | Get a specific run               |
+| `POST`   | `/api/pulse/runs/:id/cancel`       | Cancel a running job             |
 
 ### SSE Stream
 
@@ -221,17 +222,20 @@ apps/client/src/layers/
 ### UI Concept
 
 **PulsePanel** (accessible from sidebar or settings):
+
 - List of schedules with name, cron expression (human-readable), next run time, enabled toggle
 - Status indicators: green (active), gray (paused), red (last run failed)
 - "Run Now" button for manual triggers
 - Click to expand → shows RunHistoryPanel
 
 **RunHistoryPanel** (per-schedule):
+
 - Recent runs in a timeline/table: status icon, timestamp, duration, output preview
 - Click a run → navigates to the full session transcript in the existing chat view (using `session_id`)
 - This reuses the entire existing chat UI — no need to build a separate log viewer
 
 **CreateScheduleDialog**:
+
 - Name, prompt (multiline), cron expression with human-readable preview, CWD (directory picker), timezone selector
 - "Test" button that does a dry run
 
@@ -297,6 +301,7 @@ apps/client/src/layers/
 ## Implementation Scope Estimate
 
 ### Phase 1: Core Engine (MVP)
+
 - `PulseStore` (SQLite + JSON file management)
 - `SchedulerService` (poll loop, dispatch, lifecycle)
 - MCP tools (5 schedule management tools)
@@ -304,6 +309,7 @@ apps/client/src/layers/
 - Basic Pulse UI (schedule list, create dialog, run history)
 
 ### Phase 2: Polish
+
 - SSE streaming for real-time UI updates
 - "Run Now" manual trigger
 - Cron expression human-readable preview
@@ -311,6 +317,7 @@ apps/client/src/layers/
 - Retention/pruning
 
 ### Phase 3: Advanced
+
 - AbortController-based job cancellation
 - Concurrency controls
 - System prompt injection for self-aware jobs

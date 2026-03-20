@@ -36,11 +36,7 @@ import { handleAgentMessage } from './agent-handler.js';
 import { handlePulseMessage } from './pulse-handler.js';
 import { AgentQueue } from './queue.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
-import type {
-  ClaudeCodeAdapterConfig,
-  ClaudeCodeAdapterDeps,
-  ResolvedConfig,
-} from './types.js';
+import type { ClaudeCodeAdapterConfig, ClaudeCodeAdapterDeps, ResolvedConfig } from './types.js';
 
 // Re-export all public types from the shared types module
 export type {
@@ -147,7 +143,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.approvalUnsub = subscribeApprovalHandler(
       relay,
       this.deps.agentManager,
-      this.deps.logger ?? console,
+      this.deps.logger ?? console
     );
     this.status = {
       state: 'connected',
@@ -189,7 +185,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    context?: AdapterContext,
+    context?: AdapterContext
   ): Promise<DeliveryResult> {
     const startTime = Date.now();
     this.status = {
@@ -225,7 +221,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             pulseStore: this.deps.pulseStore,
             logger: this.deps.logger,
           },
-          this.relay,
+          this.relay
         );
       }
 
@@ -246,8 +242,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             agentSessionStore: this.deps.agentSessionStore,
             logger: this.deps.logger,
           },
-          this.relay,
-        ),
+          this.relay
+        )
       );
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);

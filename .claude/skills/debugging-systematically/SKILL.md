@@ -141,13 +141,13 @@ Debug from the outside in or inside out:
 
 ### Layer-Specific Checks
 
-| Layer          | What to Check                                | Tools                        |
-| -------------- | -------------------------------------------- | ---------------------------- |
-| Component      | Props received, render conditions, state     | Browser DevTools             |
-| TanStack Query | Cache key, staleTime, enabled, queryFn       | React Query Devtools         |
-| Express Route  | Zod validation, boundary check, feature flag | Network tab, server logs     |
-| Service        | Business logic, error handling               | Server logs (NDJSON)         |
-| Data Store     | SQLite tables, JSONL files, JSON state       | `sqlite3`, `/debug:data`     |
+| Layer          | What to Check                                | Tools                    |
+| -------------- | -------------------------------------------- | ------------------------ |
+| Component      | Props received, render conditions, state     | Browser DevTools         |
+| TanStack Query | Cache key, staleTime, enabled, queryFn       | React Query Devtools     |
+| Express Route  | Zod validation, boundary check, feature flag | Network tab, server logs |
+| Service        | Business logic, error handling               | Server logs (NDJSON)     |
+| Data Store     | SQLite tables, JSONL files, JSON state       | `sqlite3`, `/debug:data` |
 
 ### Data Store Verification (Ground Truth)
 

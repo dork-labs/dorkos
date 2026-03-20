@@ -197,15 +197,13 @@ function buildPulseToolsBlock(toolConfig?: ResolvedToolConfig): string {
  * @param meshCore - Optional agent registry port for agent data access
  */
 async function buildPeerAgentsBlock(
-  meshCore: AgentRegistryPort | null | undefined,
+  meshCore: AgentRegistryPort | null | undefined
 ): Promise<string> {
   if (!meshCore) return '';
   try {
     const agents = meshCore.listWithPaths().slice(0, 10);
     if (agents.length === 0) return '';
-    const lines = agents
-      .map((a) => `- ${a.name} (${a.projectPath})`)
-      .join('\n');
+    const lines = agents.map((a) => `- ${a.name} (${a.projectPath})`).join('\n');
     return `<peer_agents>\nRegistered agents on this machine (use mesh_list() for live data):\n${lines}\n\nTo contact a peer: mesh_inspect(agentId) for relay endpoint, then relay_send() to that subject.\n</peer_agents>`;
   } catch {
     return '';
@@ -226,7 +224,7 @@ async function buildPeerAgentsBlock(
 export async function buildSystemPromptAppend(
   cwd: string,
   meshCore?: AgentRegistryPort | null,
-  toolConfig?: ResolvedToolConfig,
+  toolConfig?: ResolvedToolConfig
 ): Promise<string> {
   const results = await Promise.allSettled([
     buildEnvBlock(cwd),

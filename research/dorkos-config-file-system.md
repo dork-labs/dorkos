@@ -1,5 +1,5 @@
 ---
-title: "DorkOS Config File System Research"
+title: 'DorkOS Config File System Research'
 date: 2026-02-16
 type: implementation
 status: archived
@@ -16,6 +16,7 @@ feature_slug: dorkos-config-file-system
 ## Executive Summary
 
 DorkOS should adopt a **hybrid configuration approach** combining:
+
 1. **`conf` library** for robust file management (atomic writes, JSON Schema validation)
 2. **Zod schemas** for runtime validation (already in use across the project)
 3. **Standard precedence**: Defaults → `~/.dork/config.json` → `.env` → CLI flags
@@ -32,28 +33,33 @@ This recommendation balances DorkOS's existing tech stack (Zod, TypeScript, Expr
 ### 1. .env vs config.json Relationship
 
 **Standard Precedence Hierarchy** (highest to lowest):
+
 - **CLI flags** (e.g., `--port 4242`)
 - **Environment variables** (e.g., `DORKOS_PORT=4242`)
 - **Config file** (`~/.dork/config.json`)
 - **Defaults** (hardcoded in application)
 
 This pattern is used by:
+
 - **uv (Python)**: Project config → User config → System config → Env vars (env always wins)
 - **Gemini CLI**: Defaults → System defaults → User settings → Project settings → System settings → Env vars → CLI args
 - **Docker Compose**: CLI args are highest precedence
 
 **Key Insight**: Environment variables should **override** config files, not replace them. This allows:
+
 - Per-session customization without modifying persistent config
 - CI/CD overrides without changing committed files
 - Developer overrides without affecting team config
 
 **Recommendation for DorkOS**:
+
 1. **Keep .env for development** — DorkOS developers use `.env` during `npm run dev`
 2. **Introduce config.json for users** — Published CLI users get `~/.dork/config.json`
 3. **No deprecation needed** — Both coexist with clear precedence (env vars win)
 4. **Document explicitly** — Add config precedence section to docs
 
 **Implementation Example**:
+
 ```typescript
 // Load order
 const config = {
@@ -73,11 +79,13 @@ Three approaches evaluated: **hand-rolled with Zod**, **conf**, and **cosmiconfi
 #### Option A: Hand-Rolled with Zod ⭐ **Simplest, but risky**
 
 **Pros**:
+
 - Already using Zod everywhere (zero new dependencies)
 - Full control over validation logic
 - Direct integration with existing `@dorkos/shared` schemas
 
 **Cons**:
+
 - No atomic writes (corruption risk on crash)
 - No built-in encryption support
 - No migration system for schema changes
@@ -87,6 +95,7 @@ Three approaches evaluated: **hand-rolled with Zod**, **conf**, and **cosmiconfi
 **When to choose**: Only if you need <1KB bundle size and accept risk of data loss
 
 **Code Example**:
+
 ```typescript
 import { z } from 'zod';
 import fs from 'fs/promises';
@@ -110,6 +119,7 @@ async function loadConfig() {
 **conf** by sindresorhus
 
 **Pros**:
+
 - **Atomic writes** — Process crashes don't corrupt config
 - **JSON Schema validation** — Uses AJV under the hood (compatible with Zod via `zod-to-json-schema`)
 - **Built-in migrations** — Version-based schema evolution
@@ -119,6 +129,7 @@ async function loadConfig() {
 - **Battle-tested** — Used by hundreds of popular CLIs
 
 **Cons**:
+
 - **Single-process limitation** — "Does not support multiple processes writing to the same store"
 - Uses JSON Schema (not Zod) — Requires schema conversion
 - Opinionated defaults (may need customization)
@@ -126,6 +137,7 @@ async function loadConfig() {
 **When to choose**: DorkOS's primary use case (single CLI process writing config). Multi-process writes are not a concern.
 
 **Code Example**:
+
 ```typescript
 import Conf from 'conf';
 import { zodToJsonSchema } from 'zod-to-json-schema';
@@ -150,6 +162,7 @@ config.reset('port'); // Back to 4242
 ```
 
 **Migration Example**:
+
 ```typescript
 const config = new Conf({
   projectName: 'dorkos',
@@ -168,11 +181,13 @@ const config = new Conf({
 **cosmiconfig**
 
 **Pros**:
+
 - Multi-format support (JSON, YAML, JS, TS)
 - Discovery pattern (searches multiple locations)
 - Used by ESLint, Prettier, Babel
 
 **Cons**:
+
 - **Not designed for this use case** — Built for discoverable config (`.eslintrc`, `.prettierrc`)
 - **No write API** — Read-only library
 - Heavier footprint (~50KB)
@@ -182,16 +197,17 @@ const config = new Conf({
 
 #### Recommendation Matrix
 
-| Criteria | Hand-Rolled | conf | cosmiconfig |
-|----------|-------------|------|-------------|
-| Atomic writes | ❌ Manual | ✅ Built-in | ❌ Read-only |
-| Validation | ✅ Zod native | ✅ JSON Schema | ⚠️ Manual |
-| Migrations | ❌ Manual | ✅ Built-in | ❌ N/A |
-| Bundle size | ✅ 0KB | ✅ 12KB | ⚠️ 50KB |
-| Write API | ⚠️ Manual | ✅ Built-in | ❌ None |
-| DorkOS fit | ⚠️ Risky | ✅ Perfect | ❌ Wrong tool |
+| Criteria      | Hand-Rolled   | conf           | cosmiconfig   |
+| ------------- | ------------- | -------------- | ------------- |
+| Atomic writes | ❌ Manual     | ✅ Built-in    | ❌ Read-only  |
+| Validation    | ✅ Zod native | ✅ JSON Schema | ⚠️ Manual     |
+| Migrations    | ❌ Manual     | ✅ Built-in    | ❌ N/A        |
+| Bundle size   | ✅ 0KB        | ✅ 12KB        | ⚠️ 50KB       |
+| Write API     | ⚠️ Manual     | ✅ Built-in    | ❌ None       |
+| DorkOS fit    | ⚠️ Risky      | ✅ Perfect     | ❌ Wrong tool |
 
 **Final Recommendation**: **Use `conf`** + **Zod** hybrid approach:
+
 1. `conf` handles file I/O, atomic writes, migrations
 2. Convert Zod schemas to JSON Schema via `zod-to-json-schema`
 3. Runtime validation still uses Zod for type inference consistency
@@ -202,11 +218,11 @@ const config = new Conf({
 
 **Industry Patterns**:
 
-| Strategy | When to Use | Examples |
-|----------|-------------|----------|
-| **Silent degradation** | Non-critical settings (theme, editor) | npm, yarn (use defaults) |
-| **Warn + fallback** | Important but recoverable (port, paths) | Git (warns about invalid user.email) |
-| **Fail fast** | Mission-critical (API keys, auth) | AWS CLI (refuses without credentials) |
+| Strategy               | When to Use                             | Examples                              |
+| ---------------------- | --------------------------------------- | ------------------------------------- |
+| **Silent degradation** | Non-critical settings (theme, editor)   | npm, yarn (use defaults)              |
+| **Warn + fallback**    | Important but recoverable (port, paths) | Git (warns about invalid user.email)  |
+| **Fail fast**          | Mission-critical (API keys, auth)       | AWS CLI (refuses without credentials) |
 
 **Recommended for DorkOS**:
 
@@ -226,6 +242,7 @@ try {
 ```
 
 **Validation Commands**:
+
 ```bash
 dorkos config validate   # Check config without starting server
 dorkos config reset      # Restore defaults
@@ -233,11 +250,13 @@ dorkos config doctor     # Comprehensive health check (config + env + deps)
 ```
 
 **Error Message Best Practices**:
+
 1. **Actionable** — Tell users how to fix: `Run 'dorkos config reset' to restore defaults`
 2. **Specific** — Show exact field: `port: Expected number, received string`
 3. **Trackable** — Include error codes: `[DORKOS_CONFIG_001]`
 
 **Example Output**:
+
 ```
 ⚠️  Config validation failed:
 
@@ -269,6 +288,7 @@ Using default values. To fix:
 ```
 
 **Migration Strategy**:
+
 ```typescript
 const config = new Conf({
   projectName: 'dorkos',
@@ -290,6 +310,7 @@ const config = new Conf({
 ```
 
 **Best Practices**:
+
 1. **Additive changes only** — New fields must have defaults (backward compatible)
 2. **Deprecate gradually** — Keep old fields for 2+ major versions
 3. **Document breaking changes** — CHANGELOG.md for config schema changes
@@ -298,6 +319,7 @@ const config = new Conf({
 #### B. Initial Config File
 
 **Minimal First-Run Config** (`~/.dork/config.json`):
+
 ```json
 {
   "version": 1,
@@ -314,11 +336,13 @@ const config = new Conf({
 ```
 
 **What NOT to include**:
+
 - ❌ Secrets (API keys) — Use env vars or separate secure store
 - ❌ Machine-specific paths — Use `null` + auto-detect
 - ❌ Redundant defaults — If it matches hardcoded default, omit it
 
 **Lazy Creation Pattern**:
+
 ```typescript
 function ensureConfig() {
   if (!config.has('version')) {
@@ -333,11 +357,11 @@ function ensureConfig() {
 
 `conf` automatically handles platform-specific locations:
 
-| Platform | Location |
-|----------|----------|
-| Linux | `~/.config/dorkos/config.json` |
-| macOS | `~/Library/Preferences/dorkos/config.json` |
-| Windows | `%APPDATA%\dorkos\Config\config.json` |
+| Platform | Location                                   |
+| -------- | ------------------------------------------ |
+| Linux    | `~/.config/dorkos/config.json`             |
+| macOS    | `~/Library/Preferences/dorkos/config.json` |
+| Windows  | `%APPDATA%\dorkos\Config\config.json`      |
 
 DorkOS already uses `~/.dork/` — **consider migrating to XDG-compliant paths** for v2.0 to align with standards.
 
@@ -368,11 +392,13 @@ $ dorkos init
 ```
 
 **Why not force wizard?**
+
 - Breaks automation (CI/CD scripts)
 - Annoys experienced users
 - "Just works" philosophy (Jest, Parcel examples)
 
 **Implementation**:
+
 ```typescript
 // Silent creation on first run
 if (!fs.existsSync(configPath)) {
@@ -390,13 +416,14 @@ if (process.argv.includes('init')) {
 
 **Top Options**:
 
-| Library | Stars | Features | Use Case |
-|---------|-------|----------|----------|
-| @inquirer/prompts | 19k | Modular, modern API, TypeScript-first | ✅ **Recommended** |
-| prompts | 8k | Lightweight, promise-based | Simpler alternative |
-| enquirer | 7k | Stylish UI, used by Webpack | Older, maintenance mode |
+| Library           | Stars | Features                              | Use Case                |
+| ----------------- | ----- | ------------------------------------- | ----------------------- |
+| @inquirer/prompts | 19k   | Modular, modern API, TypeScript-first | ✅ **Recommended**      |
+| prompts           | 8k    | Lightweight, promise-based            | Simpler alternative     |
+| enquirer          | 7k    | Stylish UI, used by Webpack           | Older, maintenance mode |
 
 **Inquirer Example**:
+
 ```typescript
 import { input, select, confirm } from '@inquirer/prompts';
 
@@ -426,6 +453,7 @@ async function runInteractiveSetup() {
 ```
 
 **Skip Prompt Pattern**:
+
 ```bash
 dorkos init --yes          # Accept all defaults (CI-friendly)
 dorkos init --quiet        # Silent mode
@@ -447,6 +475,7 @@ dorkos config validate             # Check validity
 ```
 
 **Implementation**:
+
 ```typescript
 // dorkos config get port
 if (args[0] === 'get') {
@@ -479,6 +508,7 @@ if (args[0] === 'edit') {
 ```
 
 **JSON Output for Scripting**:
+
 ```bash
 dorkos config list --json
 # {"port":4242,"theme":"dark","tunnel":{"enabled":false}}
@@ -491,12 +521,14 @@ dorkos config list --json
 #### A. Required Documentation
 
 **1. Configuration Guide** (`guides/configuration.md`):
+
 - All available settings (with types and defaults)
 - Precedence order (defaults → config → env → flags)
 - Config file location per platform
 - Migration guide for schema changes
 
 **2. CLI Help Integration**:
+
 ```bash
 dorkos --help
 # Config:
@@ -508,6 +540,7 @@ dorkos --help
 ```
 
 **3. README Section**:
+
 ````markdown
 ## Configuration
 
@@ -516,6 +549,7 @@ DorkOS reads config from `~/.dork/config.json` (auto-created on first run).
 ### Precedence
 
 Settings are merged in this order:
+
 1. CLI flags (highest)
 2. Environment variables
 3. Config file
@@ -533,6 +567,7 @@ See [Configuration Guide](./guides/configuration.md) for all options.
 ````
 
 **4. In-App Help** (`dorkos config --help`):
+
 ```
 Config Commands:
   dorkos config               Show all settings
@@ -556,6 +591,7 @@ Docs: https://github.com/dork-labs/dorkos/blob/main/guides/configuration.md
 #### B. Schema Documentation Auto-Generation
 
 **Leverage Zod for Docs**:
+
 ```typescript
 import { generateSchema } from '@anatine/zod-openapi';
 
@@ -582,6 +618,7 @@ function generateConfigDocs(schema: ZodObject) {
 ## Implementation Recommendations
 
 ### Phase 1: Foundation (v1.0)
+
 1. ✅ Install `conf` + `zod-to-json-schema`
 2. ✅ Create `packages/shared/src/config-schema.ts` with Zod schema
 3. ✅ Implement config service in `apps/server/src/services/config-manager.ts`
@@ -589,23 +626,27 @@ function generateConfigDocs(schema: ZodObject) {
 5. ✅ Silent first-run (auto-create with defaults)
 
 ### Phase 2: CLI Commands (v1.1)
+
 6. ✅ Add `dorkos config` subcommands (get/set/list/reset)
 7. ✅ Add `dorkos config edit` (opens in $EDITOR)
 8. ✅ Add `dorkos config path` (prints file location)
 9. ✅ Update `--help` output with config info
 
 ### Phase 3: Interactive Setup (v1.2)
+
 10. ✅ Install `@inquirer/prompts`
 11. ✅ Implement `dorkos init` wizard
 12. ✅ Add `--yes` and `--quiet` flags for automation
 
 ### Phase 4: Documentation (v1.3)
+
 13. ✅ Write `guides/configuration.md`
 14. ✅ Add README section
 15. ✅ Generate schema docs from Zod (auto-update)
 16. ✅ Add JSDoc to config schema fields
 
 ### Phase 5: Advanced Features (v2.0)
+
 17. ⏭️ Migrate to XDG-compliant paths (breaking change)
 18. ⏭️ Add encryption for sensitive fields (API tokens)
 19. ⏭️ Implement `dorkos config doctor` health check
@@ -816,6 +857,7 @@ export async function runInteractiveSetup() {
 **Problem**: `conf` validates with JSON Schema (AJV), but DorkOS uses Zod everywhere.
 
 **Solution**: Use `zod-to-json-schema` to convert Zod → JSON Schema for `conf`, but keep runtime validation with Zod for type safety:
+
 ```typescript
 const jsonSchema = zodToJsonSchema(ConfigSchema); // For conf
 const config = new Conf({ schema: jsonSchema });
@@ -831,6 +873,7 @@ const validated = ConfigSchema.parse(config.store);
 **Problem**: `conf` doesn't support multiple processes writing simultaneously. If DorkOS adds a daemon or background service, this could cause issues.
 
 **Solution**:
+
 1. **Short-term**: Document limitation (single-process only)
 2. **Long-term**: Migrate to `better-sqlite3` or `lowdb` with file locking if multi-process support needed
 3. **Current**: Not a concern for CLI-only architecture
@@ -840,6 +883,7 @@ const validated = ConfigSchema.parse(config.store);
 **Problem**: Users may not know where `%APPDATA%\dorkos\Config\config.json` is.
 
 **Solution**: Add `dorkos config path` command and show location in error messages:
+
 ```bash
 $ dorkos config path
 C:\Users\Alice\AppData\Roaming\dorkos\Config\config.json
@@ -850,12 +894,14 @@ C:\Users\Alice\AppData\Roaming\dorkos\Config\config.json
 **Problem**: Adding required fields breaks existing configs.
 
 **Solution**: Follow strict migration policy:
+
 1. **Never add required fields without defaults** — All new fields must have `.default()`
 2. **Deprecate gradually** — Keep old fields for 2 major versions
 3. **Auto-migrate** — Use `conf` migrations to transform old → new
 4. **Version check** — Reject unsupported versions explicitly
 
 **Example**:
+
 ```typescript
 // v1 schema
 const V1Schema = z.object({
@@ -885,11 +931,13 @@ migrations: {
 ## Sources & References
 
 ### Configuration Precedence
+
 - [Docker Compose: Environment variables precedence](https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/)
 - [uv: Configuration files](https://docs.astral.sh/uv/concepts/configuration-files/)
 - [Gemini CLI: Configuration](https://geminicli.com/docs/get-started/configuration/)
 
 ### Libraries
+
 - [sindresorhus/conf: Simple config handling](https://github.com/sindresorhus/conf)
 - [conf - npm](https://www.npmjs.com/package/conf)
 - [cosmiconfig - npm](https://www.npmjs.com/package/cosmiconfig)
@@ -897,27 +945,32 @@ migrations: {
 - [zod-to-json-schema - npm](https://www.npmjs.com/package/zod-to-json-schema)
 
 ### Best Practices
+
 - [Node.js CLI Apps Best Practices](https://github.com/lirantal/nodejs-cli-apps-best-practices)
 - [Command Line Interface Guidelines](https://clig.dev/)
 - [UX patterns for CLI tools](https://lucasfcosta.com/2022/06/01/ux-patterns-cli-tools.html)
 - [BetterCLI.org: CLI Help pages](https://bettercli.org/design/cli-help-page/)
 
 ### Validation & Error Handling
+
 - [AWS Well-Architected: Graceful degradation](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/rel_mitigate_interaction_failure_graceful_degradation.html)
 - [Graceful Degradation in DevSecOps](https://sreschool.com/blog/graceful-degradation-in-devsecops-a-comprehensive-guide/)
 
 ### Interactive Setup
+
 - [@inquirer/prompts - npm](https://www.npmjs.com/package/@inquirer/prompts)
 - [Inquirer.js: Interactive CLI prompts](https://github.com/SBoudrias/Inquirer.js)
 - [How To Create Interactive Prompts with Inquirer.js](https://www.digitalocean.com/community/tutorials/nodejs-interactive-command-line-prompts)
 - [Top 8 CLI UX Patterns Users Will Brag About](https://medium.com/@kaushalsinh73/top-8-cli-ux-patterns-users-will-brag-about-4427adb548b7)
 
 ### Schema Versioning
+
 - [Schema Evolution and Compatibility - Confluent](https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html)
 - [Database Design Patterns for Backward Compatibility](https://www.pingcap.com/article/database-design-patterns-for-ensuring-backward-compatibility/)
 - [Semantic Versioning 2.0.0](https://semver.org/)
 
 ### Config Commands
+
 - [Claude Code CLI: config commands](https://code.claude.com/docs/en/permissions)
 - [pnpm config commands](https://pnpm.io/cli/config)
 - [Azure CLI: configuration options](https://learn.microsoft.com/en-us/cli/azure/azure-cli-configuration)
@@ -939,6 +992,7 @@ DorkOS should implement a **hybrid `conf` + Zod** configuration system with:
 This approach balances **developer experience** (zero-config), **user control** (flexible customization), and **robustness** (atomic writes, validation, migrations) while leveraging DorkOS's existing tech stack.
 
 **Next Steps**:
+
 1. Create GitHub issue: "Add persistent config system (`~/.dork/config.json`)"
 2. Implement Phase 1 (Foundation) in `feat/config-system` branch
 3. Test with beta users before Phase 2 (CLI commands)

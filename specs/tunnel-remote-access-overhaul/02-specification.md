@@ -51,15 +51,16 @@ The tunnel/remote access feature has critical bugs that make it non-functional i
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@ngrok/ngrok` | `^1.7.0` | Tunnel SDK (already installed in server + CLI) |
-| `react-qr-code` | `^2.0.18` | QR code rendering in TunnelDialog (already installed) |
-| `qrcode-terminal` | `^0.12.0` | Terminal QR code rendering (new, CLI package) |
-| `zod` | `^3.x` | Schema validation (already installed) |
-| `sonner` | existing | Toast notifications (already installed) |
+| Dependency        | Version   | Purpose                                               |
+| ----------------- | --------- | ----------------------------------------------------- |
+| `@ngrok/ngrok`    | `^1.7.0`  | Tunnel SDK (already installed in server + CLI)        |
+| `react-qr-code`   | `^2.0.18` | QR code rendering in TunnelDialog (already installed) |
+| `qrcode-terminal` | `^0.12.0` | Terminal QR code rendering (new, CLI package)         |
+| `zod`             | `^3.x`    | Schema validation (already installed)                 |
+| `sonner`          | existing  | Toast notifications (already installed)               |
 
 **Browser APIs:**
+
 - `BroadcastChannel` — supported in all modern browsers (Chrome 54+, Firefox 38+, Safari 15.4+)
 - `EventSource` (SSE) — supported in all modern browsers
 
@@ -153,7 +154,9 @@ import { EventEmitter } from 'node:events';
 import type { TunnelStatus } from '@dorkos/shared/types';
 
 export class TunnelManager extends EventEmitter {
-  private _status: TunnelStatus = { /* defaults */ };
+  private _status: TunnelStatus = {
+    /* defaults */
+  };
 
   private updateStatus(partial: Partial<TunnelStatus>): void {
     this._status = { ...this._status, ...partial };
@@ -175,7 +178,7 @@ export class TunnelManager extends EventEmitter {
       },
       // ...other options
     });
-    this.updateStatus({ enabled: true, connected: true, url: this.listener.url(), /* ... */ });
+    this.updateStatus({ enabled: true, connected: true, url: this.listener.url() /* ... */ });
     return this.listener.url()!;
   }
 
@@ -242,11 +245,13 @@ router.get('/stream', (req, res) => {
 - Add `GET /api/tunnel/status` for on-demand status check returning the unified `TunnelStatus`
 
 ```typescript
-const startSchema = z.object({
-  authtoken: z.string().optional(),
-  domain: z.string().optional(),
-  port: z.number().optional(),
-}).optional();
+const startSchema = z
+  .object({
+    authtoken: z.string().optional(),
+    domain: z.string().optional(),
+    port: z.number().optional(),
+  })
+  .optional();
 
 router.post('/start', async (req, res) => {
   if (tunnelManager.status.connected) {
@@ -382,6 +387,7 @@ Always visible when token is configured, positioned between the toggle and QR co
 Hint text: "Get a free static domain at dashboard.ngrok.com/domains"
 
 Benefits callout (shown as muted text below the input):
+
 - Same URL every restart
 - Reusable QR codes
 - Persistent bookmarks
@@ -389,6 +395,7 @@ Benefits callout (shown as muted text below the input):
 #### 4.4 Connection Quality Indicator
 
 When connected, display a small colored dot next to the URL:
+
 - Green: latency < 200ms
 - Yellow: latency 200-500ms
 - Red: latency > 500ms
@@ -449,6 +456,7 @@ Print the tunnel URL alongside Local and Network URLs in the CLI startup banner.
 **New file:** `apps/server/src/routes/__tests__/tunnel-cors.test.ts`
 
 Test that:
+
 - Requests with the tunnel origin are accepted when tunnel is connected
 - Requests with the tunnel origin are rejected when tunnel is not connected
 - Requests with localhost origin always work
@@ -459,6 +467,7 @@ Test that:
 **File:** `apps/server/src/services/core/__tests__/tunnel-manager.test.ts`
 
 Add tests for:
+
 - `on_status_change` callback invocation
 - EventEmitter `status_change` events fire on start, stop, disconnect, reconnect
 - Status transitions (connected -> disconnected -> reconnected)
@@ -468,6 +477,7 @@ Add tests for:
 **File:** `apps/client/src/layers/features/settings/__tests__/TunnelDialog.test.tsx`
 
 Add tests for:
+
 - Connected state: QR code visible, URL displayed, copy button works
 - Error state: error card visible, retry button present
 - Copy URL button copies to clipboard
@@ -557,24 +567,24 @@ Update `startTunnel()` and `stopTunnel()` to return `{ enabled: false, connected
 
 ### Unit Tests
 
-| Test File | What It Tests |
-|---|---|
-| `tunnel-manager.test.ts` | EventEmitter events, `on_status_change`, status transitions, start/stop lifecycle |
-| `broadcast-channel.test.ts` | `createChannel` wrapper: post, receive, close, cleanup |
-| `use-tunnel-status.test.ts` | TanStack Query hook returns tunnel status from config |
-| `use-tunnel-sync.test.ts` | Invalidates queries on BroadcastChannel message and SSE event |
+| Test File                   | What It Tests                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| `tunnel-manager.test.ts`    | EventEmitter events, `on_status_change`, status transitions, start/stop lifecycle |
+| `broadcast-channel.test.ts` | `createChannel` wrapper: post, receive, close, cleanup                            |
+| `use-tunnel-status.test.ts` | TanStack Query hook returns tunnel status from config                             |
+| `use-tunnel-sync.test.ts`   | Invalidates queries on BroadcastChannel message and SSE event                     |
 
 ### Integration Tests
 
-| Test File | What It Tests |
-|---|---|
-| `tunnel-cors.test.ts` | CORS accepts tunnel origin when connected, rejects when not |
-| `tunnel.test.ts` | Route handlers: 409 for already-running, `/status` endpoint, SSE `/stream`, Zod validation |
+| Test File             | What It Tests                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `tunnel-cors.test.ts` | CORS accepts tunnel origin when connected, rejects when not                                |
+| `tunnel.test.ts`      | Route handlers: 409 for already-running, `/status` endpoint, SSE `/stream`, Zod validation |
 
 ### Component Tests
 
-| Test File | What It Tests |
-|---|---|
+| Test File               | What It Tests                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
 | `TunnelDialog.test.tsx` | Connected state (QR, URL, copy), error state, onboarding, custom domain, session link, embedded mode |
 
 ### Mocking Strategy
@@ -587,100 +597,108 @@ Update `startTunnel()` and `stopTunnel()` to return `{ enabled: false, connected
 
 ## Performance Considerations
 
-| Area | Impact | Mitigation |
-|---|---|---|
-| Dynamic CORS callback | Negligible per-request overhead (~0.01ms) | Origin check is a simple array lookup |
-| BroadcastChannel | Zero network overhead | In-memory postMessage between tabs |
-| SSE `/tunnel/stream` | One persistent connection per client | Lightweight; only sends on status changes |
-| Health ping for quality indicator | One request every 30s per open dialog | Only pings when dialog is open; stops on close |
-| EventEmitter | Negligible | Only fires on tunnel state transitions |
+| Area                              | Impact                                    | Mitigation                                     |
+| --------------------------------- | ----------------------------------------- | ---------------------------------------------- |
+| Dynamic CORS callback             | Negligible per-request overhead (~0.01ms) | Origin check is a simple array lookup          |
+| BroadcastChannel                  | Zero network overhead                     | In-memory postMessage between tabs             |
+| SSE `/tunnel/stream`              | One persistent connection per client      | Lightweight; only sends on status changes      |
+| Health ping for quality indicator | One request every 30s per open dialog     | Only pings when dialog is open; stops on close |
+| EventEmitter                      | Negligible                                | Only fires on tunnel state transitions         |
 
 ## Security Considerations
 
-| Concern | Mitigation |
-|---|---|
-| 0.0.0.0 binding exposes server on LAN | Always bind to `localhost` |
-| CORS blocks legitimate tunnel requests | Dynamic origin callback checks `tunnelManager.status.url` |
-| Auth token in plaintext JSON | Acknowledged; env var preferred, keychain integration deferred |
-| Tunnel URL visible in UI | QR code and URL are inherently shareable; matches intended use case |
-| SSE endpoint accessible without auth | Same auth boundary as other API endpoints |
+| Concern                                | Mitigation                                                          |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| 0.0.0.0 binding exposes server on LAN  | Always bind to `localhost`                                          |
+| CORS blocks legitimate tunnel requests | Dynamic origin callback checks `tunnelManager.status.url`           |
+| Auth token in plaintext JSON           | Acknowledged; env var preferred, keychain integration deferred      |
+| Tunnel URL visible in UI               | QR code and URL are inherently shareable; matches intended use case |
+| SSE endpoint accessible without auth   | Same auth boundary as other API endpoints                           |
 
 ## Documentation
 
-| Document | Updates Needed |
-|---|---|
+| Document                       | Updates Needed                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `docs/guides/tunnel-setup.mdx` | Fix health response format, add custom domain section, add multi-tab info, add QR code section |
-| `contributing/architecture.md` | Add tunnel event system to server architecture section |
-| `CLAUDE.md` | Update server services count, add entities/tunnel to FSD layers table |
+| `contributing/architecture.md` | Add tunnel event system to server architecture section                                         |
+| `CLAUDE.md`                    | Update server services count, add entities/tunnel to FSD layers table                          |
 
 ## Implementation Phases
 
 ### Phase 1: Critical Bug Fixes
+
 Items 1-4. Fix CORS, transport leak, port constant, 0.0.0.0 binding. These are prerequisite for everything else.
 
 ### Phase 2: Architecture
+
 Items 5-9. EventEmitter on TunnelManager, `on_status_change` callback, unified TunnelStatus type, SSE endpoint, route improvements with Zod validation.
 
 ### Phase 3: Multi-Tab Sync
+
 Items 10-11. BroadcastChannel wrapper, entities/tunnel module with `useTunnelStatus` and `useTunnelSync` hooks.
 
 ### Phase 4: TunnelDialog UX Redesign
+
 Items 12-18. State machine fix, onboarding flow, custom domain field, connection quality indicator, session sharing, error states, embedded mode guard.
 
 ### Phase 5: Status Bar
+
 Item 19. TunnelItem improvements with quality dot and `useTunnelStatus` hook.
 
 ### Phase 6: CLI Improvements
+
 Items 20-21. Terminal QR code, tunnel URL in startup banner.
 
 ### Phase 7: Testing
+
 Items 22-26. CORS integration test, TunnelManager tests, TunnelDialog tests, route tests, cross-tab sync tests.
 
 ### Phase 8: Documentation & Cleanup
+
 Items 27-29. Docs update, type safety, DirectTransport fix.
 
 ## Files Modified
 
 ### Existing Files
 
-| File | Changes |
-|---|---|
-| `apps/server/src/services/core/tunnel-manager.ts` | EventEmitter extension, `on_status_change`, unified type, typed forwardOpts |
-| `apps/server/src/routes/tunnel.ts` | SSE `/stream` endpoint, `GET /status`, Zod validation, port fix, 409 response |
-| `apps/server/src/app.ts` | Dynamic CORS origin callback |
-| `apps/server/src/index.ts` | Remove 0.0.0.0 conditional |
-| `apps/server/src/routes/health.ts` | Use unified TunnelStatus |
-| `apps/server/src/routes/config.ts` | Use unified TunnelStatus |
-| `apps/server/src/env.ts` | Add VITE_PORT to Zod schema |
+| File                                                           | Changes                                                                                                                                |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/services/core/tunnel-manager.ts`              | EventEmitter extension, `on_status_change`, unified type, typed forwardOpts                                                            |
+| `apps/server/src/routes/tunnel.ts`                             | SSE `/stream` endpoint, `GET /status`, Zod validation, port fix, 409 response                                                          |
+| `apps/server/src/app.ts`                                       | Dynamic CORS origin callback                                                                                                           |
+| `apps/server/src/index.ts`                                     | Remove 0.0.0.0 conditional                                                                                                             |
+| `apps/server/src/routes/health.ts`                             | Use unified TunnelStatus                                                                                                               |
+| `apps/server/src/routes/config.ts`                             | Use unified TunnelStatus                                                                                                               |
+| `apps/server/src/env.ts`                                       | Add VITE_PORT to Zod schema                                                                                                            |
 | `apps/client/src/layers/features/settings/ui/TunnelDialog.tsx` | Full redesign: fix state machine, add onboarding, custom domain, quality indicator, session sharing, error states, embedded mode guard |
-| `apps/client/src/layers/features/status/ui/TunnelItem.tsx` | Quality dot, `useTunnelStatus` hook |
-| `apps/client/src/layers/shared/lib/http-transport.ts` | Add tunnel SSE subscription method |
-| `apps/client/src/layers/shared/lib/direct-transport.ts` | Return status object instead of throwing |
-| `packages/shared/src/schemas.ts` | Unified TunnelStatusSchema |
-| `packages/shared/src/transport.ts` | Add `subscribeTunnelStatus` method |
-| `packages/cli/src/cli.ts` | QR code, tunnel URL in startup banner |
-| `docs/guides/tunnel-setup.mdx` | Fix health format, add custom domain, multi-tab, QR sections |
+| `apps/client/src/layers/features/status/ui/TunnelItem.tsx`     | Quality dot, `useTunnelStatus` hook                                                                                                    |
+| `apps/client/src/layers/shared/lib/http-transport.ts`          | Add tunnel SSE subscription method                                                                                                     |
+| `apps/client/src/layers/shared/lib/direct-transport.ts`        | Return status object instead of throwing                                                                                               |
+| `packages/shared/src/schemas.ts`                               | Unified TunnelStatusSchema                                                                                                             |
+| `packages/shared/src/transport.ts`                             | Add `subscribeTunnelStatus` method                                                                                                     |
+| `packages/cli/src/cli.ts`                                      | QR code, tunnel URL in startup banner                                                                                                  |
+| `docs/guides/tunnel-setup.mdx`                                 | Fix health format, add custom domain, multi-tab, QR sections                                                                           |
 
 ### New Files
 
-| File | Purpose |
-|---|---|
-| `apps/client/src/layers/shared/lib/broadcast-channel.ts` | Generic BroadcastChannel wrapper |
-| `apps/client/src/layers/entities/tunnel/model/use-tunnel-status.ts` | TanStack Query hook for tunnel status |
-| `apps/client/src/layers/entities/tunnel/model/use-tunnel-sync.ts` | Cross-tab and cross-device sync |
-| `apps/client/src/layers/entities/tunnel/index.ts` | Barrel exports |
-| `apps/client/src/layers/features/settings/ui/TunnelOnboarding.tsx` | SVG illustration + 3-step onboarding guide |
+| File                                                                | Purpose                                    |
+| ------------------------------------------------------------------- | ------------------------------------------ |
+| `apps/client/src/layers/shared/lib/broadcast-channel.ts`            | Generic BroadcastChannel wrapper           |
+| `apps/client/src/layers/entities/tunnel/model/use-tunnel-status.ts` | TanStack Query hook for tunnel status      |
+| `apps/client/src/layers/entities/tunnel/model/use-tunnel-sync.ts`   | Cross-tab and cross-device sync            |
+| `apps/client/src/layers/entities/tunnel/index.ts`                   | Barrel exports                             |
+| `apps/client/src/layers/features/settings/ui/TunnelOnboarding.tsx`  | SVG illustration + 3-step onboarding guide |
 
 ### Test Files
 
-| File | Status |
-|---|---|
-| `apps/server/src/routes/__tests__/tunnel.test.ts` | Updated (fix NODE_ENV cleanup, add 409 + /status + /stream tests) |
-| `apps/server/src/services/core/__tests__/tunnel-manager.test.ts` | Updated (add EventEmitter, on_status_change, reconnection tests) |
+| File                                                                       | Status                                                                        |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/server/src/routes/__tests__/tunnel.test.ts`                          | Updated (fix NODE_ENV cleanup, add 409 + /status + /stream tests)             |
+| `apps/server/src/services/core/__tests__/tunnel-manager.test.ts`           | Updated (add EventEmitter, on_status_change, reconnection tests)              |
 | `apps/client/src/layers/features/settings/__tests__/TunnelDialog.test.tsx` | Updated (add connected, error, onboarding, custom domain, session link tests) |
-| `apps/server/src/routes/__tests__/tunnel-cors.test.ts` | New |
-| `apps/client/src/layers/entities/tunnel/__tests__/use-tunnel-sync.test.ts` | New |
-| `apps/client/src/layers/shared/lib/__tests__/broadcast-channel.test.ts` | New |
+| `apps/server/src/routes/__tests__/tunnel-cors.test.ts`                     | New                                                                           |
+| `apps/client/src/layers/entities/tunnel/__tests__/use-tunnel-sync.test.ts` | New                                                                           |
+| `apps/client/src/layers/shared/lib/__tests__/broadcast-channel.test.ts`    | New                                                                           |
 
 ## Open Questions
 

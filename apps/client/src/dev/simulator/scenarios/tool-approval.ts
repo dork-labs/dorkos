@@ -13,7 +13,8 @@ const ASST_MSG = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const INTRO_TEXT = "I'll need to run a destructive command to clean install the dependencies. This will remove the existing `node_modules` directory and reinstall everything from scratch. Let me ask for your approval before proceeding.\n\n";
+const INTRO_TEXT =
+  "I'll need to run a destructive command to clean install the dependencies. This will remove the existing `node_modules` directory and reinstall everything from scratch. Let me ask for your approval before proceeding.\n\n";
 
 const APPROVAL_TOOL = createToolCall({
   toolCallId: 'sim-ap-tool',
@@ -23,7 +24,8 @@ const APPROVAL_TOOL = createToolCall({
   interactiveType: 'approval',
 });
 
-const BUILD_TEXT = "\n\nDependencies installed successfully. Now let me run the build to make sure everything compiles cleanly.\n\n";
+const BUILD_TEXT =
+  '\n\nDependencies installed successfully. Now let me run the build to make sure everything compiles cleanly.\n\n';
 
 const BUILD_TOOL = createToolCall({
   toolCallId: 'sim-ap-build',
@@ -54,12 +56,22 @@ export const toolApproval: SimScenario = {
 
     // Auto-approve
     { type: 'set_waiting', isWaiting: false },
-    { type: 'update_tool_call', messageId: 'sim-ap-asst', toolCallId: 'sim-ap-tool', patch: { status: 'running' }, delayMs: 3000 },
     {
       type: 'update_tool_call',
       messageId: 'sim-ap-asst',
       toolCallId: 'sim-ap-tool',
-      patch: { status: 'complete', result: 'added 1247 packages in 8.3s\n\n127 packages are looking for funding\n  run `npm fund` for details' },
+      patch: { status: 'running' },
+      delayMs: 3000,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ap-asst',
+      toolCallId: 'sim-ap-tool',
+      patch: {
+        status: 'complete',
+        result:
+          'added 1247 packages in 8.3s\n\n127 packages are looking for funding\n  run `npm fund` for details',
+      },
       delayMs: 600,
     },
 
@@ -70,12 +82,22 @@ export const toolApproval: SimScenario = {
 
     // Build tool
     { type: 'append_tool_call', messageId: 'sim-ap-asst', toolCall: BUILD_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ap-asst', toolCallId: 'sim-ap-build', patch: { status: 'running' }, delayMs: 4000 },
     {
       type: 'update_tool_call',
       messageId: 'sim-ap-asst',
       toolCallId: 'sim-ap-build',
-      patch: { status: 'complete', result: '12 packages built in 14.2s\n\n@dorkos/shared: 0.8s\n@dorkos/db: 1.1s\n@dorkos/cli: 2.3s\n@dorkos/server: 3.4s\n@dorkos/client: 6.6s' },
+      patch: { status: 'running' },
+      delayMs: 4000,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ap-asst',
+      toolCallId: 'sim-ap-build',
+      patch: {
+        status: 'complete',
+        result:
+          '12 packages built in 14.2s\n\n@dorkos/shared: 0.8s\n@dorkos/db: 1.1s\n@dorkos/cli: 2.3s\n@dorkos/server: 3.4s\n@dorkos/client: 6.6s',
+      },
       delayMs: 600,
     },
 

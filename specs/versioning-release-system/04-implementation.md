@@ -31,6 +31,7 @@
 ## Files Modified/Created
 
 **Source files:**
+
 - `VERSION` (new) — plain text `0.1.0`
 - `packages/cli/src/update-check.ts` (new) — `checkForUpdate()`, `isNewer()`
 - `packages/cli/src/cli.ts` (modified) — startup banner + update notification
@@ -48,11 +49,13 @@
 - `.claude/commands/system/release.md` (rewritten) — 6-phase release orchestrator
 
 **Test files:**
+
 - `packages/cli/src/__tests__/update-check.test.ts` (new) — 15 tests, all passing
 - `apps/server/src/services/__tests__/update-checker.test.ts` (new) — 6 tests, all passing
 - `apps/client/src/layers/features/status/__tests__/VersionItem.test.tsx` (new) — 19 tests, all passing
 
 **Git:**
+
 - Annotated tag `v0.1.0` on commit `2d2f064` (not yet pushed)
 
 ## Known Issues

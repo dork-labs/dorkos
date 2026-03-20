@@ -51,7 +51,7 @@
 - `packages/relay/package.json` - Added @dorkos/eslint-config devDep
 - `packages/mesh/eslint.config.js` - Base + test overlay
 - `packages/mesh/package.json` - Added @dorkos/eslint-config devDep
-- `packages/db/eslint.config.js` - Base + test overlay, ignores drizzle/**
+- `packages/db/eslint.config.js` - Base + test overlay, ignores drizzle/\*\*
 - `packages/db/package.json` - Added @dorkos/eslint-config devDep + lint script
 - `packages/test-utils/eslint.config.js` - Base + test overlay
 - `packages/test-utils/package.json` - Added @dorkos/eslint-config devDep + lint script
@@ -77,23 +77,24 @@ _(None)_
 
 ## Verification Results
 
-| Check | Status |
-|---|---|
-| Full lint (0 errors, 12 packages) | PASS |
-| SDK confinement (blocked outside runtimes/) | PASS |
-| SDK confinement (allowed inside runtimes/) | PASS |
-| FSD boundary enforcement | PASS |
-| os.homedir() ban enforcement | PASS |
-| Turbo cache granularity (per-package) | PASS |
-| TypeCheck (0 errors, 13 packages) | PASS |
-| Server tests (1168/1168) | PASS |
-| Client tests (pre-existing failures only) | PASS |
+| Check                                       | Status |
+| ------------------------------------------- | ------ |
+| Full lint (0 errors, 12 packages)           | PASS   |
+| SDK confinement (blocked outside runtimes/) | PASS   |
+| SDK confinement (allowed inside runtimes/)  | PASS   |
+| FSD boundary enforcement                    | PASS   |
+| os.homedir() ban enforcement                | PASS   |
+| Turbo cache granularity (per-package)       | PASS   |
+| TypeCheck (0 errors, 13 packages)           | PASS   |
+| Server tests (1168/1168)                    | PASS   |
+| Client tests (pre-existing failures only)   | PASS   |
 
 ## Implementation Notes
 
 ### Session 1
 
 Executed in 5 batches with parallel agents:
+
 - Batch 1 (2 parallel): Foundation — shared config package + sdk-utils move
 - Batch 2 (4 parallel): Per-package configs for all 11 packages
 - Batch 3 (1 sequential): Root config thinning + turbo.json + dep cleanup

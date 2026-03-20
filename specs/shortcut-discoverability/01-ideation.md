@@ -51,20 +51,21 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|------|------|
-| `layers/shared/ui/kbd.tsx` | `Kbd` presentational component |
-| `layers/shared/model/app-store.ts` | Zustand store — will add `shortcutsPanelOpen` state |
-| `layers/shared/lib/platform.ts` | Platform utilities — will add `isMac` |
-| `layers/features/session-list/ui/AgentSidebar.tsx` | New session button (inline hint target) + `Cmd+Shift+N` handler |
-| `layers/features/top-nav/ui/CommandPaletteTrigger.tsx` | `⌘K` button (inline hint target) |
-| `layers/features/session-list/ui/SidebarTabRow.tsx` | Tab tooltips with shortcut hints |
-| `layers/features/command-palette/ui/CommandPaletteDialog.tsx` | Palette feature items (shortcut hint target) |
-| `layers/features/command-palette/model/use-palette-items.ts` | Feature items with optional `shortcut` field |
-| `layers/features/command-palette/ui/PaletteFooter.tsx` | Context-aware keyboard hints |
-| `App.tsx` | Global shortcut handlers, will mount `ShortcutsPanel` |
+| File                                                          | Role                                                            |
+| ------------------------------------------------------------- | --------------------------------------------------------------- |
+| `layers/shared/ui/kbd.tsx`                                    | `Kbd` presentational component                                  |
+| `layers/shared/model/app-store.ts`                            | Zustand store — will add `shortcutsPanelOpen` state             |
+| `layers/shared/lib/platform.ts`                               | Platform utilities — will add `isMac`                           |
+| `layers/features/session-list/ui/AgentSidebar.tsx`            | New session button (inline hint target) + `Cmd+Shift+N` handler |
+| `layers/features/top-nav/ui/CommandPaletteTrigger.tsx`        | `⌘K` button (inline hint target)                                |
+| `layers/features/session-list/ui/SidebarTabRow.tsx`           | Tab tooltips with shortcut hints                                |
+| `layers/features/command-palette/ui/CommandPaletteDialog.tsx` | Palette feature items (shortcut hint target)                    |
+| `layers/features/command-palette/model/use-palette-items.ts`  | Feature items with optional `shortcut` field                    |
+| `layers/features/command-palette/ui/PaletteFooter.tsx`        | Context-aware keyboard hints                                    |
+| `App.tsx`                                                     | Global shortcut handlers, will mount `ShortcutsPanel`           |
 
 **Shared Dependencies:**
+
 - `@/layers/shared/ui` — Kbd, Dialog, ResponsiveDialog, Tooltip components
 - `@/layers/shared/model` — Zustand app-store, useIsMobile
 - `@/layers/shared/lib` — cn utility, platform utilities
@@ -76,6 +77,7 @@ status: ideation
 **Feature Flags/Config:** None
 
 **Potential Blast Radius:**
+
 - Direct: ~10 files (registry, panel, button hints, isMac extraction, palette items)
 - Indirect: 5 files (existing `isMac` duplication sites get simplified)
 - Tests: Panel component test + registry unit test
@@ -95,6 +97,7 @@ Research documented in full at `research/20260311_keyboard_shortcut_discoverabil
 ### Recommendation
 
 A four-layer approach:
+
 1. **Registry** (`SHORTCUTS` constant) — single source of truth for all shortcuts
 2. **Inline hints** — fade-in `Kbd` on button hover for primary actions
 3. **Command palette hints** — `CommandShortcut` on feature/command items
@@ -102,9 +105,9 @@ A four-layer approach:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Shortcut library | Keep manual `useEffect` + `addEventListener` | DorkOS already has ~8 handlers using this pattern. Adding `react-hotkeys-hook` creates two patterns. The existing approach is zero-dependency and works. A centralized `SHORTCUTS` registry gives the same single-source-of-truth benefits without a library. |
-| 2 | Shortcuts panel searchability | Simple categorized list (no search) | DorkOS has ~15 shortcuts — easily scannable without search. Avoids overengineering. Can add search later when count grows. GitHub uses this approach. |
-| 3 | FSD layer for registry | `shared/lib/shortcuts.ts` | Pure data constant, no React dependency. Importable from any FSD layer (shared → entities → features). The `?` panel feature and command palette feature can both import it without violating cross-feature import rules. |
-| 4 | "New session" button hint UX | Fade-in Kbd right-aligned, keep icon+label | Button stays full-width with `justify-between`. Kbd fades in at `opacity-0 → opacity-100` on `group-hover`. Icon + "New session" stays on the left. No layout shift. Matches Linear's sidebar pattern. |
+| #   | Decision                      | Choice                                       | Rationale                                                                                                                                                                                                                                                     |
+| --- | ----------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Shortcut library              | Keep manual `useEffect` + `addEventListener` | DorkOS already has ~8 handlers using this pattern. Adding `react-hotkeys-hook` creates two patterns. The existing approach is zero-dependency and works. A centralized `SHORTCUTS` registry gives the same single-source-of-truth benefits without a library. |
+| 2   | Shortcuts panel searchability | Simple categorized list (no search)          | DorkOS has ~15 shortcuts — easily scannable without search. Avoids overengineering. Can add search later when count grows. GitHub uses this approach.                                                                                                         |
+| 3   | FSD layer for registry        | `shared/lib/shortcuts.ts`                    | Pure data constant, no React dependency. Importable from any FSD layer (shared → entities → features). The `?` panel feature and command palette feature can both import it without violating cross-feature import rules.                                     |
+| 4   | "New session" button hint UX  | Fade-in Kbd right-aligned, keep icon+label   | Button stays full-width with `justify-between`. Kbd fades in at `opacity-0 → opacity-100` on `group-hover`. Icon + "New session" stays on the left. No layout shift. Matches Linear's sidebar pattern.                                                        |

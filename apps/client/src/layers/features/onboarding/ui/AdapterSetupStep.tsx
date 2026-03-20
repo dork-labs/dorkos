@@ -66,54 +66,45 @@ export function AdapterSetupStep({ onStepComplete }: AdapterSetupStepProps) {
   return (
     <div className="mx-auto w-full max-w-lg space-y-6 px-4">
       <div className="space-y-2 text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Want your agents to reach you?
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Adapters let your agents send messages through Telegram, Slack,
-          webhooks, and more. You can always configure these later.
+        <h2 className="text-2xl font-semibold tracking-tight">Want your agents to reach you?</h2>
+        <p className="text-muted-foreground text-sm">
+          Adapters let your agents send messages through Telegram, Slack, webhooks, and more. You
+          can always configure these later.
         </p>
       </div>
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-28 animate-pulse rounded-lg border bg-muted/30"
-            />
+            <div key={i} className="bg-muted/30 h-28 animate-pulse rounded-lg border" />
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {adapters.map((adapter) => (
-              <div
-                key={adapter.type}
-                className={cn(
-                  'flex min-h-11 flex-col items-start gap-2 rounded-lg border p-4 text-left',
-                  'bg-card'
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {adapter.iconEmoji && (
-                    <span className="text-lg" role="img" aria-hidden>
-                      {adapter.iconEmoji}
-                    </span>
-                  )}
-                  <span className="text-sm font-medium">
-                    {adapter.displayName}
+            <div
+              key={adapter.type}
+              className={cn(
+                'flex min-h-11 flex-col items-start gap-2 rounded-lg border p-4 text-left',
+                'bg-card'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                {adapter.iconEmoji && (
+                  <span className="text-lg" role="img" aria-hidden>
+                    {adapter.iconEmoji}
                   </span>
-                </div>
-                <p className="line-clamp-2 text-xs text-muted-foreground">
-                  {adapter.description}
-                </p>
+                )}
+                <span className="text-sm font-medium">{adapter.displayName}</span>
               </div>
-            ))}
+              <p className="text-muted-foreground line-clamp-2 text-xs">{adapter.description}</p>
+            </div>
+          ))}
         </div>
       )}
 
       {!relayEnabled && (
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-muted-foreground text-center text-xs">
           Relay is not enabled. Enable it in settings to use adapters.
         </p>
       )}

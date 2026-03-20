@@ -1,5 +1,5 @@
 ---
-title: "Drizzle ORM in Turborepo Monorepo — Research Report"
+title: 'Drizzle ORM in Turborepo Monorepo — Research Report'
 date: 2026-02-25
 type: implementation
 status: active
@@ -44,6 +44,7 @@ packages/db/
 **`drizzle.config.ts` lives inside `packages/db/`**, not at the repo root. It references `schema: './src/schema'` and `out: './drizzle'` using relative paths from the package directory. drizzle-kit is run with `cd packages/db && drizzle-kit generate`, or via a turbo task that runs from the package directory. Multiple community projects confirm this placement (marwanhisham.dev guide, pliszko.com guide).
 
 **Migration files live in `packages/db/drizzle/`** — this is the `out` folder from drizzle.config.ts. This directory contains:
+
 - `*.sql` — individual migration SQL files
 - `meta/_journal.json` — drizzle-kit's migration journal (critical — must ship with SQL files)
 - `meta/*.snapshot.json` — schema snapshots used for diffing
@@ -96,6 +97,7 @@ This is the pattern already used by `packages/shared` in DorkOS. The `exports` f
 ```
 
 Consumer import:
+
 ```typescript
 import { db, users } from '@dorkos/db';
 import { runMigrations } from '@dorkos/db/migrator';
@@ -136,6 +138,7 @@ Apps add the workspace dependency in their own `package.json`:
 ```
 
 Then import normally:
+
 ```typescript
 import { db, users, sessions } from '@dorkos/db';
 import { runMigrations } from '@dorkos/db/migrator';
@@ -150,11 +153,13 @@ The `migrationsFolder` path passed to `runMigrations` must be an **absolute path
 ### Question 2: Programmatic Migration API at Startup
 
 **Confirmed import path:**
+
 ```typescript
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 ```
 
 **Confirmed function signature:**
+
 ```typescript
 migrate(db: BetterSQLite3Database, config: { migrationsFolder: string }): void
 ```
@@ -162,6 +167,7 @@ migrate(db: BetterSQLite3Database, config: { migrationsFolder: string }): void
 Note: The better-sqlite3 driver's `migrate()` is **synchronous** (no `await` needed), unlike PostgreSQL drivers which are async. This is because `better-sqlite3` itself is a synchronous API.
 
 **Complete startup example:**
+
 ```typescript
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -182,6 +188,7 @@ export { db };
 **Option name consistency:** The option is `migrationsFolder` (camelCase) for all drivers — both `drizzle-orm/better-sqlite3/migrator` and `drizzle-orm/node-postgres/migrator` use the same option name. There is no `migrations` vs `migrationsFolder` naming discrepancy between drivers. CONFIRMED by documentation and multiple examples.
 
 **Migration folder contents that must be present at runtime:**
+
 - The SQL files (e.g., `0000_init.sql`, `0001_add_users.sql`)
 - `meta/_journal.json` — Drizzle reads this to determine which migrations have been applied
 
@@ -201,14 +208,13 @@ import { cpSync } from 'fs';
 import { resolve } from 'path';
 
 // Copy drizzle migrations folder into dist alongside the server bundle
-cpSync(
-  resolve(__dirname, '../../packages/db/drizzle'),
-  resolve(__dirname, '../dist/drizzle'),
-  { recursive: true }
-);
+cpSync(resolve(__dirname, '../../packages/db/drizzle'), resolve(__dirname, '../dist/drizzle'), {
+  recursive: true,
+});
 ```
 
 Then at runtime in the server bundle:
+
 ```typescript
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -276,7 +282,7 @@ banner: {
     import { dirname as __pathDirname } from 'path';
     const __filename = __fileURLToPath(import.meta.url);
     const __dirname = __pathDirname(__filename);
-  `
+  `;
 }
 ```
 
@@ -315,11 +321,11 @@ If `git diff --exit-code` returns non-zero, new migration files were generated, 
 
 **Where to put this check in the workflow:**
 
-| Location | Tradeoff |
-|---|---|
-| **Pre-commit hook (husky/lint-staged)** | Fastest feedback; runs locally before push. Requires husky setup. Developer can bypass with `--no-verify`. |
-| **CI step (GitHub Actions, etc.)** | Authoritative; cannot be bypassed. Slower feedback. Recommended as the enforcement point. |
-| **Turbo task** | Can run as part of `turbo run build` dependency chain but turbo tasks are usually not the right place for git-state checks. |
+| Location                                | Tradeoff                                                                                                                    |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Pre-commit hook (husky/lint-staged)** | Fastest feedback; runs locally before push. Requires husky setup. Developer can bypass with `--no-verify`.                  |
+| **CI step (GitHub Actions, etc.)**      | Authoritative; cannot be bypassed. Slower feedback. Recommended as the enforcement point.                                   |
+| **Turbo task**                          | Can run as part of `turbo run build` dependency chain but turbo tasks are usually not the right place for git-state checks. |
 
 **Recommended approach:** Pre-commit hook for local feedback + CI step as enforcement:
 
@@ -341,13 +347,8 @@ If `git diff --exit-code` returns non-zero, new migration files were generated, 
 {
   "tasks": {
     "db:generate": {
-      "inputs": [
-        "src/schema/**/*.ts",
-        "drizzle.config.ts"
-      ],
-      "outputs": [
-        "drizzle/**"
-      ],
+      "inputs": ["src/schema/**/*.ts", "drizzle.config.ts"],
+      "outputs": ["drizzle/**"],
       "cache": true
     },
     "db:check": {
@@ -366,16 +367,19 @@ If `git diff --exit-code` returns non-zero, new migration files were generated, 
 ```
 
 **Notes on caching:**
+
 - `db:generate` CAN be cached because its inputs (schema files) and outputs (migration files) are deterministic. If schema files haven't changed since last run, turbo will skip re-running it.
 - `db:check` and `db:migrate` should have `"cache": false` because they interact with live database state or check git state.
 
 **Should `build` depend on `db:generate`?**
 
 This is contextual. You do NOT want `turbo run build` to auto-run `drizzle-kit generate` in CI because:
+
 1. CI should not modify files — it should fail if migrations are missing
 2. `drizzle-kit generate` is interactive by default (it prompts for migration names)
 
 Instead, keep `db:generate` as a manual developer task:
+
 ```bash
 # Developer workflow:
 turbo run db:generate --filter=@dorkos/db
@@ -417,7 +421,7 @@ fi
 - [esbuild Content Types — official docs](https://esbuild.github.io/content-types/) — text loader embeds file as string; copy loader copies file to output; no built-in SQL loader
 - [Using Drizzle as a package in Turborepo — AnswerOverflow](https://www.answeroverflow.com/m/1099272972100972674) — drizzle-orm deduplication requirement
 - [TypeScript packages in Turborepo — turborepo.dev](https://turborepo.dev/docs/guides/tools/typescript) — JIT vs compiled package patterns, exports field shapes
-- [Alternatives to __dirname in Node.js with ES modules — LogRocket](https://blog.logrocket.com/alternatives-dirname-node-js-es-modules/) — `fileURLToPath(import.meta.url)` pattern, `import.meta.dirname` (Node 20.11+)
+- [Alternatives to \_\_dirname in Node.js with ES modules — LogRocket](https://blog.logrocket.com/alternatives-dirname-node-js-es-modules/) — `fileURLToPath(import.meta.url)` pattern, `import.meta.dirname` (Node 20.11+)
 - [Git diff CI workaround for uncommitted migrations — GitHub issue #5059 comments](https://github.com/drizzle-team/drizzle-orm/issues/5059) — `git diff --exit-code` as the community workaround
 
 ---

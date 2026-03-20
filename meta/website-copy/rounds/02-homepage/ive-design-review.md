@@ -84,20 +84,20 @@ Section 8: The Close + Footer
 
 ### The Mapping
 
-| New Copy Section | Existing Component | Action |
-|---|---|---|
-| Section 0: Prelude | *None* | **New component**: `Prelude.tsx` |
-| Section 1: Hero | `ActivityFeedHero` | **Major content rewrite**, keep feed |
-| Section 2: Villain | *None* | **New component**: `VillainSection.tsx` |
-| Section 3: Pivot | *None* | **New component**: `PivotSection.tsx` |
-| Section 4: Timeline | *None* (replaces `UseCasesGrid` in function) | **New component**: `TimelineSection.tsx` |
-| Section 5: Modules | `SystemArchitecture` | **Rewrite**: new layout, same data |
-| Section 6: Install | `HowItWorksSection` | **Replace**: new content and layout |
-| Section 7: Identity | `AboutSection` + `HonestySection` (merged) | **Replace**: new content |
-| Section 8: Close | `ContactSection` | **Replace**: new content |
-| Footer | `MarketingFooter` | **Minor update**: simplified layout |
-| -- | `CredibilityBar` | **Remove** (absorbed into other sections) |
-| -- | `UseCasesGrid` | **Remove** (replaced by Timeline) |
+| New Copy Section    | Existing Component                           | Action                                    |
+| ------------------- | -------------------------------------------- | ----------------------------------------- |
+| Section 0: Prelude  | _None_                                       | **New component**: `Prelude.tsx`          |
+| Section 1: Hero     | `ActivityFeedHero`                           | **Major content rewrite**, keep feed      |
+| Section 2: Villain  | _None_                                       | **New component**: `VillainSection.tsx`   |
+| Section 3: Pivot    | _None_                                       | **New component**: `PivotSection.tsx`     |
+| Section 4: Timeline | _None_ (replaces `UseCasesGrid` in function) | **New component**: `TimelineSection.tsx`  |
+| Section 5: Modules  | `SystemArchitecture`                         | **Rewrite**: new layout, same data        |
+| Section 6: Install  | `HowItWorksSection`                          | **Replace**: new content and layout       |
+| Section 7: Identity | `AboutSection` + `HonestySection` (merged)   | **Replace**: new content                  |
+| Section 8: Close    | `ContactSection`                             | **Replace**: new content                  |
+| Footer              | `MarketingFooter`                            | **Minor update**: simplified layout       |
+| --                  | `CredibilityBar`                             | **Remove** (absorbed into other sections) |
+| --                  | `UseCasesGrid`                               | **Remove** (replaced by Timeline)         |
 
 **Components to preserve unchanged:** `MarketingHeader`, `MarketingNav`, `MarketingFooter` (minor updates).
 
@@ -183,28 +183,30 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Nothing (inserts before header)
 **Content:** "DorkOS is starting." -- monospaced, center-screen, character-by-character
 **Design within existing system:**
+
 - Background: `bg-charcoal` (the darkest color in the current palette -- NOT the near-black from my Round 2 notes)
 - Text: `font-mono text-base tracking-[0.02em]` in `text-cream-white`
 - Animation: Character-by-character at 30ms intervals, then 1.2s hold, then opacity fade to 0 while the hero section's opacity fades to 1
 - After completion: Header and nav fade in via the existing `REVEAL` variant
-**CSS changes:** None. All colors exist. May need a `z-50` overlay class.
+  **CSS changes:** None. All colors exist. May need a `z-50` overlay class.
 
 ### Section 1: Hero
 
 **Component:** Rewritten `ActivityFeedHero.tsx` (or renamed to `HeroSection.tsx`)
 **Replaces:** Current `ActivityFeedHero`
 **Content:**
+
 - Headline: "Your agents are brilliant. They just can't do anything when you leave."
 - Tagline: "You slept. They shipped." (in mono, muted)
 - Position: "The operating system for autonomous AI agents."
-**Design within existing system:**
+  **Design within existing system:**
 - Background: `bg-cream-primary` with the graph paper texture (preserved exactly)
 - Headline: Same style as current -- `font-bold text-charcoal tracking-[-0.04em]` with `clamp(32px, 5.5vw, 64px)`. Two sentences, the second at slightly reduced opacity (`text-charcoal/85`)
 - Tagline: `font-mono text-lg tracking-[0.08em] text-brand-orange/70` -- treated as system output
 - Position line: `text-warm-gray-light text-base`
 - Eyebrow: Remove "Autonomous by default" -- the headline now does this work
 - Activity feed: Moves below the fold. The `ActivityFeedPanel` component stays intact but is positioned after the hero, possibly in a new wrapper component, paired with CTAs
-**CSS changes:** Minimal. Remove the two-column grid. Go full-width centered. Increase vertical padding.
+  **CSS changes:** Minimal. Remove the two-column grid. Go full-width centered. Increase vertical padding.
 
 ### Section 2: Villain
 
@@ -212,6 +214,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Nothing (new section)
 **Content:** Section header ("What your agents do when you leave. Nothing.") + four cards
 **Design within existing system:**
+
 - Background: `bg-cream-primary` (continuity with hero)
 - Section header: `text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em]` (same as current `SystemArchitecture` title style)
 - "Nothing.": Same style, on its own line. Or potentially `font-mono text-brand-orange` for emphasis.
@@ -220,7 +223,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 - Card body: `text-warm-gray text-sm leading-relaxed`
 - Layout: Single column centered, max-width 640px
 - Below cards: "You pay for the most powerful AI coding agent available. It only works when you are sitting in front of it." -- `text-warm-gray text-lg leading-[1.7]` centered
-**CSS changes:** None. All patterns exist.
+  **CSS changes:** None. All patterns exist.
 
 ### Section 3: Pivot
 
@@ -228,12 +231,13 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Nothing (new section)
 **Content:** "We solved this for applications fifty years ago..." + the build-up (cron, IPC, registries, filesystems) + "Your agents need the same thing."
 **Design within existing system:**
+
 - Background: `bg-cream-secondary` (a subtle shift marking the transition from problem to solution)
 - Main text: `text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em] leading-[1.3]` centered
 - Build-up lines (cron, IPC, etc.): `text-warm-gray text-base leading-[1.7]` at reduced opacity -- these are the structural argument
 - "Your agents need the same thing.": `text-warm-gray-light text-base` at further reduced opacity
 - Vertical padding: `py-32` with generous internal spacing (80px above the closing line)
-**CSS changes:** None.
+  **CSS changes:** None.
 
 ### Section 4: Timeline
 
@@ -241,6 +245,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** `UseCasesGrid` (in function, not in name)
 **Content:** "A NIGHT WITH DORKOS" header + six timestamped moments
 **Design within existing system:**
+
 - Background: `bg-cream-tertiary` (the darkest cream, creating visual distinction)
 - Section header: `font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange` (the existing `section-label` pattern)
 - Timestamp column: `font-mono text-2xs tracking-[0.1em] text-warm-gray-light`
@@ -249,7 +254,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 - Connector line: 1px `border-[var(--border-warm)]` vertical
 - Layout: Two-column on desktop (80px timestamp column + narrative), single column on mobile (timestamp above narrative)
 - Each moment: `REVEAL` variant on scroll
-**CSS changes:** Minor -- may need a custom timeline layout utility. No new colors or fonts.
+  **CSS changes:** Minor -- may need a custom timeline layout utility. No new colors or fonts.
 
 ### Section 5: Module Reference
 
@@ -257,6 +262,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Current `SystemArchitecture`
 **Content:** "SUBSYSTEMS" header + six gap/fix rows
 **Design within existing system:**
+
 - Background: `bg-cream-primary` (return to base)
 - Header: `font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange`
 - Table: max-width 720px, centered
@@ -265,7 +271,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 - Row separator: `border-b border-[var(--border-warm)]`
 - Status dot: 6px circle using existing `FeedDot` pattern
 - "Coming soon" indicator: `font-mono text-3xs text-warm-gray-light` inline
-**CSS changes:** None. Remove the SVG diagram code.
+  **CSS changes:** None. Remove the SVG diagram code.
 
 ### Section 6: Install Moment
 
@@ -273,6 +279,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Current `HowItWorksSection`
 **Content:** `$ npm install -g dorkos` + trust line + scale line
 **Design within existing system:**
+
 - Background: `bg-cream-secondary`
 - Command: `font-mono text-2xl md:text-3xl text-charcoal` with `cursor-blink`
 - Dollar sign: `text-warm-gray-light/30`
@@ -280,7 +287,7 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 - "One person. Ten agents. Ship around the clock.": `text-warm-gray-light text-base`
 - Padding: `py-40` -- enormous breathing room
 - Typing animation: Reuse `TerminalBlock` pattern from current `HowItWorksSection`
-**CSS changes:** None.
+  **CSS changes:** None.
 
 ### Section 7: Identity Close
 
@@ -288,12 +295,13 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** `AboutSection`, `HonestySection`
 **Content:** "Built by dorks. For dorks. Run by you." + origin story + boldness invitation
 **Design within existing system:**
+
 - Background: `bg-cream-white` (matches current `HonestySection`)
 - Corner brackets: Preserve the bracket decoration from `HonestySection` -- they frame the identity statement beautifully
 - Tribal line: `text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em]`
 - Origin paragraph: `text-warm-gray text-sm leading-[1.7]` at reduced opacity
 - Boldness invitation: `text-warm-gray text-lg leading-[1.7]`
-**CSS changes:** None. The `BRACKET` variant from `HonestySection` should be preserved.
+  **CSS changes:** None. The `BRACKET` variant from `HonestySection` should be preserved.
 
 ### Section 8: The Close
 
@@ -301,11 +309,12 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Current `ContactSection`
 **Content:** "Your agents are ready. Leave the rest to them." + "Ready."
 **Design within existing system:**
+
 - Background: `bg-cream-secondary`
 - Close line: `text-warm-gray text-lg leading-[1.7]` centered
 - "Ready.": `font-mono text-base text-brand-orange` centered -- the boot sequence callback
 - The `reveal_email` interaction from `ContactSection` could be preserved below "Ready." as a subtle contact mechanism, or moved to the footer
-**CSS changes:** None.
+  **CSS changes:** None.
 
 ### Footer
 
@@ -313,12 +322,13 @@ The typing animation from `TerminalBlock` can be reused here for the install com
 **Replaces:** Current footer (minor updates)
 **Content:** Simplified three-column layout + "You slept. They shipped." anchor
 **Design changes:**
+
 - Add "You slept. They shipped." as a centered line above the existing layout: `font-mono text-2xs tracking-[0.1em] text-cream-tertiary/60`
 - Keep the retro stripes
 - Keep the charcoal background
 - Update version to `v0.4`
 - Remove the large social icons in favor of text links: `GitHub | Docs | Discord`
-**CSS changes:** None.
+  **CSS changes:** None.
 
 ---
 
@@ -352,7 +362,7 @@ These are fundamentally different visual worlds. My Round 2 notes described a ma
 
 The cream palette is the brand. It has been established across the marketing site, the docs (Fumadocs), and presumably the product itself. Switching to a dark foundation would require rebuilding the entire visual identity -- not just the homepage. The cost of that change is disproportionate to the benefit.
 
-More importantly, the cream palette is *distinctive*. In a landscape where every developer tool defaults to dark mode with neon accents, DorkOS's warm cream is a genuine differentiator. It communicates something that dark backgrounds cannot: approachability without compromising seriousness. The tool is playful (the name is "DorkOS") and the visual language should allow that playfulness to breathe. Dark backgrounds suppress it.
+More importantly, the cream palette is _distinctive_. In a landscape where every developer tool defaults to dark mode with neon accents, DorkOS's warm cream is a genuine differentiator. It communicates something that dark backgrounds cannot: approachability without compromising seriousness. The tool is playful (the name is "DorkOS") and the visual language should allow that playfulness to breathe. Dark backgrounds suppress it.
 
 **What my dark vision gets right, though, is contrast.** The new copy has sections that need weight -- the Villain cards, the Install moment, the Identity close. In a cream-dominant palette, weight comes from:
 
@@ -362,15 +372,15 @@ More importantly, the cream palette is *distinctive*. In a landscape where every
 
 ### Specific Concessions from My Round 2 Vision
 
-| My Round 2 Spec | Existing Site Reality | Resolution |
-|---|---|---|
-| `#0A0A0A` background | `#F5F0E6` cream | Keep cream. Use charcoal only for Prelude and footer. |
-| `#D4A843` amber accent | `#E85D04` brand orange | Keep orange. It is more energetic and more distinctive. |
-| JetBrains Mono | IBM Plex Mono | Keep Plex. It is already loaded and has excellent small-size rendering. |
-| Inter / Neue Haas Grotesk | IBM Plex Sans | Keep Plex Sans. Consistent system. |
-| Dot grid | Graph paper grid | Keep graph paper. Same function, warmer execution. |
+| My Round 2 Spec            | Existing Site Reality       | Resolution                                                                                                  |
+| -------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `#0A0A0A` background       | `#F5F0E6` cream             | Keep cream. Use charcoal only for Prelude and footer.                                                       |
+| `#D4A843` amber accent     | `#E85D04` brand orange      | Keep orange. It is more energetic and more distinctive.                                                     |
+| JetBrains Mono             | IBM Plex Mono               | Keep Plex. It is already loaded and has excellent small-size rendering.                                     |
+| Inter / Neue Haas Grotesk  | IBM Plex Sans               | Keep Plex Sans. Consistent system.                                                                          |
+| Dot grid                   | Graph paper grid            | Keep graph paper. Same function, warmer execution.                                                          |
 | No springs (ease-out only) | Spring physics (overdamped) | Keep springs. They feel more alive and match the "system coming online" metaphor better than linear easing. |
-| 400-600ms transitions | Spring-determined durations | Keep springs. The stiffness/damping values produce appropriate timing. |
+| 400-600ms transitions      | Spring-determined durations | Keep springs. The stiffness/damping values produce appropriate timing.                                      |
 
 ### The One Concession I Ask For
 
@@ -382,15 +392,15 @@ After the Prelude fades, the entire rest of the page lives in the cream world. T
 
 ## Summary of Work
 
-| Category | Count | Components |
-|---|---|---|
-| **New components** | 4 | `Prelude`, `VillainSection`, `PivotSection`, `TimelineSection` |
-| **Major rewrites** | 4 | `ActivityFeedHero` (hero), `SystemArchitecture` (subsystems table), `HowItWorksSection` (install), `AboutSection` + `HonestySection` (identity) |
-| **Minor updates** | 2 | `MarketingFooter`, page composition (`page.tsx`) |
-| **Preserved as-is** | 3 | `MarketingHeader`, `MarketingNav`, `ActivityFeedPanel` (inner component) |
-| **Removed** | 3 | `CredibilityBar`, `UseCasesGrid`, `ContactSection` (absorbed) |
-| **New CSS** | 0 | Zero new CSS variables, colors, or fonts needed |
-| **Data files updated** | 2-3 | `modules.ts` (simplified for table), `philosophy.ts` (removed), new `timeline.ts` and `villain-cards.ts` |
+| Category               | Count | Components                                                                                                                                      |
+| ---------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New components**     | 4     | `Prelude`, `VillainSection`, `PivotSection`, `TimelineSection`                                                                                  |
+| **Major rewrites**     | 4     | `ActivityFeedHero` (hero), `SystemArchitecture` (subsystems table), `HowItWorksSection` (install), `AboutSection` + `HonestySection` (identity) |
+| **Minor updates**      | 2     | `MarketingFooter`, page composition (`page.tsx`)                                                                                                |
+| **Preserved as-is**    | 3     | `MarketingHeader`, `MarketingNav`, `ActivityFeedPanel` (inner component)                                                                        |
+| **Removed**            | 3     | `CredibilityBar`, `UseCasesGrid`, `ContactSection` (absorbed)                                                                                   |
+| **New CSS**            | 0     | Zero new CSS variables, colors, or fonts needed                                                                                                 |
+| **Data files updated** | 2-3   | `modules.ts` (simplified for table), `philosophy.ts` (removed), new `timeline.ts` and `villain-cards.ts`                                        |
 
 The design system holds. The copy is the only thing that changes -- and the copy is significantly stronger. The architecture of the page shifts from feature-showcase to narrative-arc, which is the right move for a product that is selling a paradigm (agent OS) rather than a list of capabilities.
 

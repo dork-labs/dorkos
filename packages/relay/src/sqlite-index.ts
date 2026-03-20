@@ -110,11 +110,7 @@ export class SqliteIndex {
    * @returns `true` if a row was updated, `false` if the message was not found.
    */
   updateStatus(id: string, status: MessageStatus): boolean {
-    const result = this.db
-      .update(relayIndex)
-      .set({ status })
-      .where(eq(relayIndex.id, id))
-      .run();
+    const result = this.db.update(relayIndex).set({ status }).where(eq(relayIndex.id, id)).run();
     return result.changes > 0;
   }
 
@@ -127,11 +123,7 @@ export class SqliteIndex {
    * @returns The indexed message, or `null` if not found.
    */
   getMessage(id: string): IndexedMessage | null {
-    const rows = this.db
-      .select()
-      .from(relayIndex)
-      .where(eq(relayIndex.id, id))
-      .all();
+    const rows = this.db.select().from(relayIndex).where(eq(relayIndex.id, id)).all();
     return rows.length > 0 ? mapRow(rows[0]) : null;
   }
 
@@ -179,12 +171,7 @@ export class SqliteIndex {
     const rows = this.db
       .select({ cnt: count() })
       .from(relayIndex)
-      .where(
-        and(
-          sql`${relayIndex.createdAt} > ${windowStartIso}`,
-          eq(relayIndex.sender, sender),
-        ),
-      )
+      .where(and(sql`${relayIndex.createdAt} > ${windowStartIso}`, eq(relayIndex.sender, sender)))
       .all();
     return rows[0]?.cnt ?? 0;
   }
@@ -200,12 +187,7 @@ export class SqliteIndex {
     const rows = this.db
       .select({ cnt: count() })
       .from(relayIndex)
-      .where(
-        and(
-          eq(relayIndex.endpointHash, endpointHash),
-          eq(relayIndex.status, 'pending'),
-        ),
-      )
+      .where(and(eq(relayIndex.endpointHash, endpointHash), eq(relayIndex.status, 'pending')))
       .all();
     return rows[0]?.cnt ?? 0;
   }
@@ -235,9 +217,7 @@ export class SqliteIndex {
       conditions.push(eq(relayIndex.subject, filters.subject));
     }
     if (filters?.status) {
-      conditions.push(
-        eq(relayIndex.status, filters.status as 'pending' | 'delivered' | 'failed'),
-      );
+      conditions.push(eq(relayIndex.status, filters.status as 'pending' | 'delivered' | 'failed'));
     }
     if (filters?.sender) {
       conditions.push(eq(relayIndex.sender, filters.sender));
@@ -250,8 +230,7 @@ export class SqliteIndex {
     }
 
     const limit = filters?.limit ?? 50;
-    const whereClause =
-      conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const rows = this.db
       .select()
@@ -289,12 +268,7 @@ export class SqliteIndex {
     const isoNow = new Date(timestamp).toISOString();
     const result = this.db
       .delete(relayIndex)
-      .where(
-        and(
-          sql`${relayIndex.expiresAt} IS NOT NULL`,
-          lt(relayIndex.expiresAt, isoNow),
-        ),
-      )
+      .where(and(sql`${relayIndex.expiresAt} IS NOT NULL`, lt(relayIndex.expiresAt, isoNow)))
       .run();
     return result.changes;
   }
@@ -313,10 +287,7 @@ export class SqliteIndex {
    *        associate Maildir directories with their subjects.
    * @returns The number of messages re-indexed.
    */
-  async rebuild(
-    maildirStore: MaildirStore,
-    endpointHashes: Map<string, string>,
-  ): Promise<number> {
+  async rebuild(maildirStore: MaildirStore, endpointHashes: Map<string, string>): Promise<number> {
     // Drop all existing data
     this.db.delete(relayIndex).run();
 
@@ -344,9 +315,7 @@ export class SqliteIndex {
             endpointHash: hash,
             status: statusMap[subdir],
             createdAt: envelope.createdAt,
-            expiresAt: envelope.budget.ttl
-              ? new Date(envelope.budget.ttl).toISOString()
-              : null,
+            expiresAt: envelope.budget.ttl ? new Date(envelope.budget.ttl).toISOString() : null,
             sender: envelope.from,
           });
           rebuildCount++;
@@ -369,10 +338,7 @@ export class SqliteIndex {
    */
   getMetrics(): RelayMetrics {
     // Total count
-    const totalRows = this.db
-      .select({ cnt: count() })
-      .from(relayIndex)
-      .all();
+    const totalRows = this.db.select({ cnt: count() }).from(relayIndex).all();
     const totalMessages = totalRows[0]?.cnt ?? 0;
 
     // Count by status
@@ -466,7 +432,7 @@ function mapRow(row: typeof relayIndex.$inferSelect): IndexedMessage {
 async function listMessageIds(
   store: MaildirStore,
   hash: string,
-  subdir: 'new' | 'cur' | 'failed',
+  subdir: 'new' | 'cur' | 'failed'
 ): Promise<string[]> {
   switch (subdir) {
     case 'new':

@@ -78,10 +78,12 @@ interface RelayHealthBarProps {
 ```
 
 **Data sources:** Compose from existing hooks:
+
 - `useAdapterCatalog()` — adapter count and connected count
 - `useDeliveryMetrics()` — totalMessages, failedCount, avgDeliveryLatencyMs
 
 **Displayed stats:**
+
 - Adapter status: `"3/3 connected"` (green dot) or `"2/3 connected"` (amber dot)
 - Message throughput: `"142 today"` — totalMessages from metrics
 - Failure count: `"0 failed"` (green) or `"3 failed"` (red, clickable → scrolls to dead letters)
@@ -98,6 +100,7 @@ interface RelayHealthBarProps {
 A collapsible section at the top of `ActivityFeed` showing failed messages.
 
 **New entity hook:** `apps/client/src/layers/entities/relay/model/use-dead-letters.ts`
+
 ```tsx
 export function useDeadLetters(enabled: boolean) {
   const transport = useTransport();
@@ -111,11 +114,13 @@ export function useDeadLetters(enabled: boolean) {
 ```
 
 **New Transport method:** Add `listRelayDeadLetters(filters?)` to:
+
 - `packages/shared/src/transport.ts` — interface definition
 - `apps/client/src/layers/shared/lib/http-transport.ts` — `GET /api/relay/dead-letters`
 - `apps/client/src/layers/shared/lib/direct-transport.ts` — delegate to RelayCore
 
 **UI behavior:**
+
 - Hidden when dead letter count is 0
 - Collapsible with header: `"Failed Messages (3)"` with red badge count
 - Each entry shows: subject (monospace), from, timestamp, rejection reason
@@ -195,10 +200,12 @@ Enhance from bare subject strings to informative cards:
 **New hook:** `apps/client/src/layers/entities/relay/model/use-relay-connection.ts`
 
 Extract connection state from `useRelayEventStream`:
+
 - States: `connected` | `reconnecting` | `disconnected`
 - Track via `EventSource.onerror` → `reconnecting`, `EventSource.onopen` → `connected`
 
 **Banner behavior:**
+
 - Hidden when connected (default state)
 - Amber banner below health bar when reconnecting: "Connection lost. Reconnecting..."
 - Green flash (200ms) when connection restores, then dismiss
@@ -211,13 +218,16 @@ Extract connection state from `useRelayEventStream`:
 Replace generic empty states with context-aware guided CTAs.
 
 **Activity (no messages):**
+
 > "No messages yet. Messages will appear here once your adapters are connected and agents start communicating."
 > `[Set up an adapter →]` button that switches to Adapters tab
 
 **Endpoints (none registered):**
+
 > "No endpoints registered. Endpoints are created automatically when adapters subscribe to message subjects."
 
 **Activity (filter active, no results):**
+
 > "No messages match your filters." + `[Clear filters]` button
 
 Each empty state uses the standard empty state pattern: centered text with muted-foreground color, icon above text, CTA button below.
@@ -229,11 +239,13 @@ Each empty state uses the standard empty state pattern: centered text with muted
 Triggered by a "Compose" button (PenLine icon) in the Activity tab header.
 
 **Fields:**
+
 - Subject (text input, required)
 - From (text input, required, default: `"relay.human.console"`)
 - Payload (textarea, supports JSON or plain text)
 
 **Behavior:**
+
 - Send button uses existing `useSendRelayMessage()` mutation
 - On success: toast notification + close dialog. Message appears in feed via SSE.
 - On error: inline error message in dialog, button returns to enabled state
@@ -242,17 +254,18 @@ Triggered by a "Compose" button (PenLine icon) in the Activity tab header.
 
 **Unified status color system** (apply across ALL Relay components):
 
-| State | Color | Usage |
-|-------|-------|-------|
-| healthy / delivered / connected | `text-green-500` / `bg-green-500` | Adapter connected, message delivered |
-| pending / starting / new | `text-blue-500` / `bg-blue-500` | Message in transit, adapter starting |
-| degraded / warning / rate-limited | `text-amber-500` / `bg-amber-500` | Partial failure, approaching limits |
-| failed / error / disconnected | `text-red-500` / `bg-red-500` | Delivery failure, adapter error |
-| inactive / stopped | `text-gray-400` / `bg-gray-400` | Disabled adapter, idle endpoint |
+| State                             | Color                             | Usage                                |
+| --------------------------------- | --------------------------------- | ------------------------------------ |
+| healthy / delivered / connected   | `text-green-500` / `bg-green-500` | Adapter connected, message delivered |
+| pending / starting / new          | `text-blue-500` / `bg-blue-500`   | Message in transit, adapter starting |
+| degraded / warning / rate-limited | `text-amber-500` / `bg-amber-500` | Partial failure, approaching limits  |
+| failed / error / disconnected     | `text-red-500` / `bg-red-500`     | Delivery failure, adapter error      |
+| inactive / stopped                | `text-gray-400` / `bg-gray-400`   | Disabled adapter, idle endpoint      |
 
 **Left border accents:** Replace tiny status dots on AdapterCard with 2px colored left border (`border-l-2`). Apply same pattern to failed MessageRow entries.
 
 **Typography hierarchy in ActivityFeed:**
+
 - Subject: `text-sm font-medium` (primary)
 - Content preview: `text-sm text-muted-foreground` (secondary)
 - From / Time / Status: `text-xs text-muted-foreground` (metadata)

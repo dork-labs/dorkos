@@ -180,11 +180,7 @@ Add `DORKOS_CORS_ORIGIN` to `turbo.json` `globalPassThroughEnv`.
 **Fix:** Add a pattern validation function and whitelist of allowed prefixes:
 
 ```typescript
-const ALLOWED_PREFIXES = [
-  'relay.human.console.',
-  'relay.system.',
-  'relay.signal.',
-];
+const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
 
 function validateSubscriptionPattern(pattern: string): boolean {
   // Block the global wildcard
@@ -213,10 +209,12 @@ This fulfills the unimplemented consequence from ADR 0018: "Pattern validation m
 ### C1+C2: EventSource Reconnection Cascade
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` (lines 44-81)
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts` (lines 105-129, 163-172)
 
 **Root cause:** Three compounding issues create a cascade:
+
 1. `handleTaskEventWithCelebrations` depends on `taskState` and `celebrations` objects (new every render)
 2. `onStreamingDone` is an inline `useCallback` inside the options object literal
 3. `options` bag is always a new reference, making `streamEventHandler` useMemo a no-op
@@ -266,9 +264,7 @@ const { handleTaskEvent: celebHandleEvent } = celebrations;
 const handleTaskEventWithCelebrations = useCallback(
   (event: TaskUpdateEvent) => {
     taskHandleEvent(event);
-    const projectedTasks = tasks.map((t) =>
-      t.id === event.task.id ? { ...t, ...event.task } : t
-    );
+    const projectedTasks = tasks.map((t) => (t.id === event.task.id ? { ...t, ...event.task } : t));
     celebHandleEvent(event, projectedTasks);
   },
   [taskHandleEvent, tasks, celebHandleEvent]
@@ -406,7 +402,7 @@ source.addEventListener('relay_message', (e) => {
       (old: { messages: unknown[]; nextCursor?: string } | undefined) => {
         if (!old) return { messages: [envelope] };
         return { ...old, messages: [envelope, ...old.messages] };
-      },
+      }
     );
   } catch {
     console.warn('[Relay] Failed to parse relay_message event:', e.data);
@@ -426,6 +422,7 @@ source.addEventListener('relay_delivery', (e) => {
 ## User Experience
 
 No user-visible changes. All fixes are internal correctness improvements. Users may notice:
+
 - More stable SSE connections when relay is enabled (C1+C2 fix)
 - Improved screen reader experience on link safety modal (C5 fix)
 

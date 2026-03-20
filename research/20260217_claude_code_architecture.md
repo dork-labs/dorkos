@@ -1,5 +1,5 @@
 ---
-title: "Claude Code Architecture — Technical Truth"
+title: 'Claude Code Architecture — Technical Truth'
 date: 2026-02-17
 type: implementation
 status: archived
@@ -30,7 +30,7 @@ controlled locally; AI inference calls Anthropic's API (or a compatible provider
 ### 1. Inference is always remote by default (cloud API)
 
 The primary, default mode of Claude Code sends every prompt to Anthropic's API for
-inference. The Claude model (claude-sonnet-*, claude-opus-*, etc.) runs on Anthropic's
+inference. The Claude model (claude-sonnet-_, claude-opus-_, etc.) runs on Anthropic's
 servers, not on the user's machine. From The Pragmatic Engineer's deep dive:
 
 > "Commands run locally, with the only network calls being to Claude's API for model
@@ -41,6 +41,7 @@ This is the single clearest architectural statement available from primary sourc
 ### 2. What actually runs locally
 
 On the user's machine:
+
 - The CLI process itself (TypeScript, Bun runtime)
 - The agent loop: reading files, executing bash commands, writing files, managing state
 - Tool execution: git operations, file reads/writes, shell commands, test runners
@@ -49,6 +50,7 @@ On the user's machine:
 - JSONL transcript files (session history stored locally at `~/.claude/projects/`)
 
 Anthropic's cloud:
+
 - The Claude model itself (inference)
 - Processing the prompt and generating the response
 - (For web/cloud mode only): An isolated VM runs the entire agent including tool execution
@@ -57,6 +59,7 @@ Anthropic's cloud:
 
 Since Claude Code v0.14.0 (January 2026), it supports alternative providers via the
 Anthropic-compatible Messages API format. You can point Claude Code at:
+
 - Ollama (local open-source models, e.g. on localhost:11434)
 - LM Studio
 - llama.cpp
@@ -78,12 +81,14 @@ operations, bash execution) runs inside Anthropic-managed isolated VMs:
 > virtual machines — Each cloud session runs in an isolated, Anthropic-managed VM."
 
 So there is actually a spectrum:
+
 - **Terminal/CLI mode**: agent runs locally, inference calls Anthropic API
 - **Cloud session mode** (web/desktop): both agent and inference run in Anthropic's cloud
 
 ### 5. Tech stack of the local component
 
 The locally running CLI is built with:
+
 - TypeScript (primary language)
 - React + Ink (terminal UI rendering)
 - Yoga (Meta's constraint-based layout for terminal)
@@ -151,6 +156,7 @@ and REST API on top of that agent."
 **DorkOS-specific truth:**
 DorkOS wraps Claude Code (the local agent) with a web UI and REST/SSE API. It does not
 change where inference happens. When describing DorkOS, be precise:
+
 - DorkOS adds a web interface to Claude Code's local agent
 - DorkOS does not make Claude Code "more local" or "more private"
 - DorkOS sessions are stored locally (JSONL from Agent SDK)
@@ -162,6 +168,7 @@ change where inference happens. When describing DorkOS, be precise:
 ### The Agent Loop (What "Local" Actually Means)
 
 Claude Code implements a classic ReAct-style agent loop:
+
 1. Receive user message
 2. Assemble context (relevant files, terminal history, project structure)
 3. Send assembled context + tools schema to Anthropic's API via HTTPS
@@ -176,6 +183,7 @@ Steps 3-4 are cloud. Steps 1-2, 5-8 are local. This is the fundamental architect
 ### Alternative Provider Support (True Local Inference)
 
 For users who want zero cloud inference, the path is:
+
 1. Run Ollama locally with a capable model (e.g., deepseek-r1, qwen2.5-coder)
 2. Set `ANTHROPIC_BASE_URL=http://localhost:11434` (Ollama's Anthropic-compatible endpoint)
 3. Claude Code agent loop still runs locally, but inference goes to local Ollama

@@ -1,5 +1,5 @@
 ---
-title: "Agent-Centric Command Palette UX — Best Practices and Patterns"
+title: 'Agent-Centric Command Palette UX — Best Practices and Patterns'
 date: 2026-03-03
 type: external-best-practices
 status: active
@@ -52,6 +52,7 @@ useEffect(() => {
 ```
 
 Key rules:
+
 - **Toggle, don't just open**: Same shortcut closes the palette. Users need to back out of it quickly.
 - **Bind at document level**, not a component: Makes it available everywhere.
 - **`e.preventDefault()`**: Prevents browser URL bar behavior in Chromium.
@@ -62,32 +63,38 @@ Key rules:
 **From Superhuman, Linear, Raycast, GitHub, VS Code:**
 
 **Zero-query / default state (most important decision)**:
+
 - Never show an empty input box with nothing else. This is the #1 failure mode.
 - Show: recently used items + pinned quick actions + most important discovery items.
 - Linear shows recent issues/projects. VS Code shows recently opened files. GitHub shows recently visited repos and issues.
 - **Recommendation for DorkOS**: Show "Recent Agents" (frecency-sorted) + "Quick Actions" group (New Session, Discover Agents, Toggle Theme) + current slash commands.
 
 **Grouping strategy**:
+
 - 3–5 groups maximum in the zero-query state.
 - When search is active, collapse empty groups automatically (cmdk does this natively).
 - Use `CommandSeparator` between major sections (e.g., between Agents and App Features).
 - Group headings should be short, uppercase or small-caps: "AGENTS", "FEATURES", "COMMANDS", "RECENT".
 
 **Empty state (no search results)**:
+
 - Never show just "No results found." Frame it positively.
 - Example: "No agents match '{query}'. Discover agents →" with an actionable link.
 - `<CommandEmpty>` renders automatically when all items are filtered out.
 
 **Keyboard shortcut display**:
+
 - Show `⌘K`, `⌘P`, `⌘N` badges next to frequently-used items using `<CommandShortcut>`.
 - This educates users about shortcuts they can use instead of the palette.
 
 **Fuzzy search behavior**:
+
 - The default cmdk filter is good enough for most cases.
 - Add `keywords` to agents (their description, cwd path, persona name) for richer matching.
 - Do NOT show more than ~15 results at once — truncate with "Show more".
 
 **Ordering within groups**:
+
 - Zero-query: frecency order (most recent + most frequent first).
 - During search: cmdk's score-based ranking handles this automatically.
 - For agents: active agent always first (pinned with `forceMount`).
@@ -95,12 +102,14 @@ Key rules:
 ### 4. Scoped Prefix Modes (VS Code / GitHub Pattern)
 
 VS Code Quick Open uses:
+
 - No prefix → file search
 - `>` → command mode
 - `@` → symbol search (within file)
 - `:` → go to line
 
 GitHub Command Palette uses:
+
 - No prefix → navigation/search
 - `>` → command mode
 - `#` → issues/PRs/discussions
@@ -120,23 +129,27 @@ GitHub Command Palette uses:
 **From GitHub, VS Code, JetBrains, Raycast, Linear:**
 
 **What context to show per agent**:
+
 - Primary: agent name (display name from `agent.json`)
 - Secondary: cwd path (abbreviated: `~/projects/my-api`)
 - Tertiary: agent color/icon (DorkOS already has `useAgentVisual`)
 - Status indicator: whether there's an active session (dot or badge)
 
 **Indicating the active agent**:
+
 - Show a checkmark (`✓`) or highlight on the currently active agent.
 - VS Code's workspace switcher puts the current workspace first with a check.
 - Linear puts the current project/team with a filled dot.
 
 **Frecency ordering**:
+
 - Frecency = frequency + recency (most recently used, weighted by frequency).
 - Simple implementation: store `{ agentId, lastUsed: Date, useCount: number }` in localStorage.
 - Sort by `score = useCount * 0.3 + (Date.now() - lastUsed) * -0.0001`.
 - The currently active agent is always pinned first regardless of frecency.
 
 **Fast switching**:
+
 - Show 5–7 most recent agents in the zero-query state.
 - Full list on demand (scroll or "Show all agents").
 - VS Code recent projects: show max 5 recent, then "Open another folder..."
@@ -161,6 +174,7 @@ The VS Code "Agent Sessions" panel introduced in 2025 structures each agent as t
 ```
 
 Key design decisions:
+
 - The sidebar should be **agent-first**, not session-first.
 - The agent header (name, color, icon) should be persistent and visually prominent.
 - Sessions are subordinate to agents — they're the chat history for this agent.
@@ -168,6 +182,7 @@ Key design decisions:
 - The "switch agent" trigger can be a compact badge/button in the sidebar header that opens the command palette scoped to `@`.
 
 **Multi-agent sidebar patterns**:
+
 - SidekickBar (sidebar with 30+ AI assistants): shows agent icons in a vertical strip; click to switch.
 - VS Code's agent sessions panel: collapsible rows per agent with status indicator.
 - For DorkOS: a compact "Agent Switcher" at the top of the sidebar showing the active agent's color + name, with a dropdown indicator that opens the palette.
@@ -213,13 +228,24 @@ features/command-palette/
 
 ```tsx
 // CommandPaletteDialog.tsx
-import { CommandDialog, CommandInput, CommandList, CommandGroup,
-         CommandItem, CommandEmpty, CommandShortcut, CommandSeparator } from '@/layers/shared/ui';
+import {
+  CommandDialog,
+  CommandInput,
+  CommandList,
+  CommandGroup,
+  CommandItem,
+  CommandEmpty,
+  CommandShortcut,
+  CommandSeparator,
+} from '@/layers/shared/ui';
 
 export function CommandPaletteDialog() {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const close = useCallback(() => { setOpen(false); setSearch(''); }, []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setSearch('');
+  }, []);
 
   // Global Cmd+K binding
   useEffect(() => {
@@ -245,7 +271,9 @@ export function CommandPaletteDialog() {
       />
       <CommandList>
         <CommandEmpty>
-          {search ? `No results for "${search}". Try discovering agents →` : 'Start typing to search.'}
+          {search
+            ? `No results for "${search}". Try discovering agents →`
+            : 'Start typing to search.'}
         </CommandEmpty>
 
         {/* Zero-query state: recent agents pinned */}
@@ -265,21 +293,34 @@ export function CommandPaletteDialog() {
         <CommandSeparator />
 
         <CommandGroup heading="Features">
-          <CommandItem onSelect={() => { navigateTo('pulse'); close(); }}>
+          <CommandItem
+            onSelect={() => {
+              navigateTo('pulse');
+              close();
+            }}
+          >
             <CalendarIcon /> Pulse Scheduler <CommandShortcut>⌘P</CommandShortcut>
           </CommandItem>
           {/* relay, mesh, settings... */}
         </CommandGroup>
 
-        <CommandGroup heading="Commands">
-          {/* slash commands from useCommands */}
-        </CommandGroup>
+        <CommandGroup heading="Commands">{/* slash commands from useCommands */}</CommandGroup>
 
         <CommandGroup heading="Quick Actions">
-          <CommandItem onSelect={() => { createNewSession(); close(); }}>
+          <CommandItem
+            onSelect={() => {
+              createNewSession();
+              close();
+            }}
+          >
             <PlusIcon /> New Session
           </CommandItem>
-          <CommandItem onSelect={() => { toggleTheme(); close(); }}>
+          <CommandItem
+            onSelect={() => {
+              toggleTheme();
+              close();
+            }}
+          >
             <SunIcon /> Toggle Theme
           </CommandItem>
         </CommandGroup>
@@ -299,7 +340,7 @@ const STORAGE_KEY = 'dorkos:agent-frecency';
 
 interface FrecencyEntry {
   agentId: string;
-  lastUsed: number;  // timestamp
+  lastUsed: number; // timestamp
   useCount: number;
 }
 
@@ -332,6 +373,7 @@ Each agent result in the palette should show:
 The current sidebar header shows "DorkOS" branding. For an agent-centric feel:
 
 **Option A: Agent Identity Header (Recommended)**
+
 ```
 [●] my-api-agent         [↕ switch]
     ~/projects/my-api
@@ -339,27 +381,32 @@ The current sidebar header shows "DorkOS" branding. For an agent-centric feel:
     + New Session
     [session list]
 ```
+
 - The `[↕ switch]` button opens the command palette scoped to `@` (agent search).
 - Clean, focused — one agent at a time.
 - Pattern: VS Code's workspace indicator in the status bar, JetBrains' project indicator in the toolbar.
 
 **Option B: Agent Strip + Session List**
+
 ```
 [●] [●] [●] [+]          ← Agent icons strip
 ─────────────────────
 Sessions for: my-api-agent
 [session list]
 ```
+
 - Multiple agents visible simultaneously.
 - More complex, harder to scan at a glance.
 - Pattern: SidekickBar, browser tab bars.
 
 **Option C: Keep session-centric, add agent switcher chip**
+
 ```
 [my-api-agent ↕]         ← Chip at top
 ─────────────────────
 [session list, unchanged]
 ```
+
 - Smallest change, lowest risk.
 - Does not feel agent-centric; the agent feels like a filter, not a first-class entity.
 
@@ -371,32 +418,32 @@ Sessions for: my-api-agent
 
 ### Scoped Prefix Modes
 
-| Approach | Pros | Cons |
-|---|---|---|
+| Approach                                   | Pros                                    | Cons                                                 |
+| ------------------------------------------ | --------------------------------------- | ---------------------------------------------------- |
 | Full VS Code prefixes (`>`, `@`, `:`, `#`) | Maximum power, keyboard-only navigation | High complexity, steep learning curve for a web tool |
-| Single `@` prefix for agents | Natural, intuitive, low learning curve | Only one scope switch, but that's all DorkOS needs |
-| No prefixes, just groups | Simplest, fastest to implement | Less powerful, all content types compete in search |
+| Single `@` prefix for agents               | Natural, intuitive, low learning curve  | Only one scope switch, but that's all DorkOS needs   |
+| No prefixes, just groups                   | Simplest, fastest to implement          | Less powerful, all content types compete in search   |
 
 **Recommendation**: Single `@` prefix for agents only. DorkOS doesn't have the content depth of VS Code to justify full prefix mode.
 
 ### Default/Zero-Query State
 
-| Approach | Pros | Cons |
-|---|---|---|
-| Empty (show nothing) | Clean, minimal | Wastes the "opened" state, fails discovery |
-| Full command list | Shows everything | Overwhelming, no personalization |
-| Frecency-first (recent + pinned quick actions) | Personalized, fast for repeat actions | Requires tracking storage |
-| Fixed curated defaults | Easy to implement, consistent | Not personalized |
+| Approach                                       | Pros                                  | Cons                                       |
+| ---------------------------------------------- | ------------------------------------- | ------------------------------------------ |
+| Empty (show nothing)                           | Clean, minimal                        | Wastes the "opened" state, fails discovery |
+| Full command list                              | Shows everything                      | Overwhelming, no personalization           |
+| Frecency-first (recent + pinned quick actions) | Personalized, fast for repeat actions | Requires tracking storage                  |
+| Fixed curated defaults                         | Easy to implement, consistent         | Not personalized                           |
 
 **Recommendation**: Frecency-first. Show last 3–5 agents (frecency-sorted) + 4–5 quick actions. This is the Linear/GitHub/VS Code pattern.
 
 ### Sidebar Structure
 
-| Approach | Pros | Cons |
-|---|---|---|
+| Approach                  | Pros                                            | Cons                              |
+| ------------------------- | ----------------------------------------------- | --------------------------------- |
 | Agent Identity Header (A) | Agent-first, focused, mirrors VS Code/JetBrains | Breaking change to current layout |
-| Agent Strip (B) | Multi-agent visibility | Complex, cluttered |
-| Agent Switcher Chip (C) | Low-risk, incremental | Not truly agent-centric |
+| Agent Strip (B)           | Multi-agent visibility                          | Complex, cluttered                |
+| Agent Switcher Chip (C)   | Low-risk, incremental                           | Not truly agent-centric           |
 
 **Recommendation**: Option A for new feature development. Option C as a short-term interim if sidebar redesign is out of scope for this spec.
 
@@ -413,6 +460,7 @@ Sessions for: my-api-agent
 ### 2. Data Sources
 
 The palette aggregates from four existing entities:
+
 - `useRegisteredAgents` (from `entities/mesh`) → agent items
 - `useCommands` (from `entities/command`) → slash command items
 - App feature list → static items (Pulse, Relay, Mesh, Settings)
@@ -423,6 +471,7 @@ No new API endpoints needed.
 ### 3. CommandDialog vs Custom Positioning
 
 Use `CommandDialog` (from Radix UI Dialog). Do NOT build a custom positioned overlay. Reasons:
+
 - `CommandDialog` handles focus trapping, scroll locking, backdrop, Escape, and portal rendering automatically.
 - The existing inline slash command palette (`CommandPalette.tsx`) uses a custom positioned overlay — that's appropriate for that context (anchored to the input). The global palette is different.
 
@@ -450,6 +499,7 @@ This makes agents findable by their cwd path, persona name, or description — n
 ### 6. onSelect + Close Pattern
 
 Every command item's `onSelect` should:
+
 1. Execute the action.
 2. Call `close()` (which both closes the dialog and resets search to `''`).
 
@@ -458,6 +508,7 @@ Resetting search on close prevents the search state from persisting when the pal
 ### 7. Existing `CommandPalette.tsx` Relationship
 
 The existing `features/commands/CommandPalette.tsx` handles slash commands inline within the chat input. It uses a custom positioned dropdown, not a `CommandDialog`. These are two different UI patterns serving different contexts:
+
 - Inline palette: triggered by `/` in the chat input, anchored below the input, shows slash commands only.
 - Global palette: triggered by `Cmd+K` from anywhere, full-screen dialog, shows everything.
 

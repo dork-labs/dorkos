@@ -17,19 +17,12 @@ export function TopologyLegend({ namespaces }: TopologyLegendProps) {
 
   return (
     <Panel position="bottom-left">
-      <div className="flex flex-col gap-1.5 rounded-md border bg-card/90 px-3 py-2 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+      <div className="bg-card/90 text-muted-foreground flex flex-col gap-1.5 rounded-md border px-3 py-2 text-[11px] shadow-sm backdrop-blur-sm">
         {/* Edge types */}
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-6 items-center">
             <svg width="24" height="4" className="overflow-visible">
-              <line
-                x1="0"
-                y1="2"
-                x2="24"
-                y2="2"
-                stroke="var(--color-primary)"
-                strokeWidth="1.5"
-              />
+              <line x1="0" y1="2" x2="24" y2="2" stroke="var(--color-primary)" strokeWidth="1.5" />
               <circle cx="8" cy="2" r="2.5" fill="var(--color-primary)" opacity="0.9" />
             </svg>
           </span>
@@ -71,7 +64,7 @@ export function TopologyLegend({ namespaces }: TopologyLegendProps) {
         </div>
         <div className="flex items-center gap-2">
           <span className="flex h-2.5 w-6 items-center justify-center">
-            <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+            <span className="bg-muted-foreground/50 h-2 w-2 rounded-full" />
           </span>
           <span>Stale</span>
         </div>

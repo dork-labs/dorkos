@@ -8,7 +8,10 @@ interface ConnectionStatusBannerProps {
 }
 
 /** Displays an inline status banner when the Relay SSE connection is degraded or lost. */
-export function ConnectionStatusBanner({ connectionState, className }: ConnectionStatusBannerProps) {
+export function ConnectionStatusBanner({
+  connectionState,
+  className,
+}: ConnectionStatusBannerProps) {
   if (connectionState === 'connected') return null;
 
   const isDisconnected = connectionState === 'disconnected';
@@ -20,7 +23,7 @@ export function ConnectionStatusBanner({ connectionState, className }: Connectio
         isDisconnected
           ? 'bg-red-500/10 text-red-600 dark:text-red-400'
           : 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-        className,
+        className
       )}
     >
       {isDisconnected ? (

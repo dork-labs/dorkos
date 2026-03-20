@@ -1,5 +1,9 @@
 import { useReducer, useEffect, useRef, useCallback, useState } from 'react';
-import type { ChatMessage, ChatStatus, ToolCallState } from '@/layers/features/chat/model/chat-types';
+import type {
+  ChatMessage,
+  ChatStatus,
+  ToolCallState,
+} from '@/layers/features/chat/model/chat-types';
 import type { MessagePart } from '@dorkos/shared/types';
 import type { SimScenario, SimStep } from './sim-types';
 
@@ -24,7 +28,12 @@ type Action =
   | { type: 'stream_text_chunk'; messageId: string; text: string }
   | { type: 'set_streaming'; isTextStreaming: boolean }
   | { type: 'append_tool_call'; messageId: string; toolCall: ToolCallState }
-  | { type: 'update_tool_call'; messageId: string; toolCallId: string; patch: Partial<ToolCallState> }
+  | {
+      type: 'update_tool_call';
+      messageId: string;
+      toolCallId: string;
+      patch: Partial<ToolCallState>;
+    }
   | { type: 'append_part'; messageId: string; part: MessagePart }
   | { type: 'set_status'; status: ChatStatus }
   | { type: 'set_waiting'; isWaiting: boolean; waitingType?: 'approval' | 'question' };
@@ -40,7 +49,7 @@ const INITIAL_STATE: SimulatorState = {
 function updateMessage(
   messages: ChatMessage[],
   messageId: string,
-  updater: (msg: ChatMessage) => ChatMessage,
+  updater: (msg: ChatMessage) => ChatMessage
 ): ChatMessage[] {
   return messages.map((m) => (m.id === messageId ? updater(m) : m));
 }
@@ -113,7 +122,7 @@ function reducer(state: SimulatorState, action: Action): SimulatorState {
         ...state,
         messages: updateMessage(state.messages, action.messageId, (msg) => {
           const toolCalls = msg.toolCalls?.map((tc) =>
-            tc.toolCallId === action.toolCallId ? { ...tc, ...action.patch } : tc,
+            tc.toolCallId === action.toolCallId ? { ...tc, ...action.patch } : tc
           );
           const parts = msg.parts.map((p) => {
             if (p.type === 'tool_call' && 'toolCallId' in p && p.toolCallId === action.toolCallId) {

@@ -41,7 +41,7 @@ function fmtLatency(ms: number | null): string {
 export function computeHealthState(
   metrics: DeliveryMetrics,
   connected: number,
-  total: number,
+  total: number
 ): { state: HealthState; message: string } {
   const failureRate =
     metrics.totalMessages > 0
@@ -104,9 +104,11 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
   const relayEnabled = useRelayEnabled();
 
   const { data: metrics, isLoading: metricsLoading } = useDeliveryMetrics();
-  const { total, connected, isLoading: catalogLoading } = useAdapterConnectivity(
-    enabled && relayEnabled,
-  );
+  const {
+    total,
+    connected,
+    isLoading: catalogLoading,
+  } = useAdapterConnectivity(enabled && relayEnabled);
 
   if (!relayEnabled || !enabled || metricsLoading || catalogLoading || !metrics) return null;
 
@@ -118,7 +120,7 @@ export function RelayHealthBar({ enabled = true, onFailedClick }: RelayHealthBar
 
   return (
     <TooltipProvider>
-      <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs text-muted-foreground">
+      <div className="text-muted-foreground flex items-center gap-2 border-b px-3 py-1.5 text-xs">
         {/* Semantic status indicator */}
         {state === 'healthy' ? (
           <Tooltip>

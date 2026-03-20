@@ -12,8 +12,11 @@ export function useUpdateAccessRule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (body: { sourceNamespace: string; targetNamespace: string; action: 'allow' | 'deny' }) =>
-      transport.updateMeshAccessRule(body),
+    mutationFn: (body: {
+      sourceNamespace: string;
+      targetNamespace: string;
+      action: 'allow' | 'deny';
+    }) => transport.updateMeshAccessRule(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TOPOLOGY_KEY });
     },

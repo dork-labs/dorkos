@@ -54,7 +54,10 @@ describe('MCP Route Handler', () => {
     expect(res.status).toBe(405);
     expect(res.body).toEqual({
       jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed. This server operates in stateless mode.' },
+      error: {
+        code: -32000,
+        message: 'Method not allowed. This server operates in stateless mode.',
+      },
       id: null,
     });
   });
@@ -66,7 +69,10 @@ describe('MCP Route Handler', () => {
     expect(res.status).toBe(405);
     expect(res.body).toEqual({
       jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed. This server operates in stateless mode.' },
+      error: {
+        code: -32000,
+        message: 'Method not allowed. This server operates in stateless mode.',
+      },
       id: null,
     });
   });
@@ -77,9 +83,7 @@ describe('MCP Route Handler', () => {
     });
     const app = createTestApp(createMockServer);
 
-    await request(app)
-      .post('/mcp')
-      .send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
+    await request(app).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 
     expect(mockTransportConstructor).toHaveBeenCalledWith({
       sessionIdGenerator: undefined,
@@ -92,9 +96,7 @@ describe('MCP Route Handler', () => {
     });
     const app = createTestApp(createMockServer);
 
-    await request(app)
-      .post('/mcp')
-      .send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
+    await request(app).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 
     expect(mockConnect).toHaveBeenCalled();
   });
@@ -111,7 +113,7 @@ describe('MCP Route Handler', () => {
     expect(mockHandleRequest).toHaveBeenCalledWith(
       expect.anything(), // req
       expect.anything(), // res
-      body,              // parsed body
+      body // parsed body
     );
   });
 

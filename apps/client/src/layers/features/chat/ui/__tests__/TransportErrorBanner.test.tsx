@@ -21,11 +21,11 @@ function TransportErrorBanner({ error, onRetry }: TransportErrorBannerProps) {
   if (!error) return null;
 
   return (
-    <div className="mx-4 mb-2 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+    <div className="border-destructive/30 bg-destructive/5 mx-4 mb-2 flex items-start gap-3 rounded-lg border px-3 py-2">
+      <AlertTriangle className="text-destructive mt-0.5 size-4 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-destructive">{error.heading}</p>
-        <p className="text-sm text-muted-foreground">{error.message}</p>
+        <p className="text-destructive text-sm font-medium">{error.heading}</p>
+        <p className="text-muted-foreground text-sm">{error.message}</p>
       </div>
       {error.retryable && (
         <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0">
@@ -119,9 +119,7 @@ describe('TransportErrorBanner', () => {
     render(<TransportErrorBanner error={error} onRetry={vi.fn()} />);
 
     expect(screen.getByText('Session locked')).toBeInTheDocument();
-    expect(
-      screen.getByText('This session is in use by another client.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('This session is in use by another client.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 });

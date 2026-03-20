@@ -1,5 +1,5 @@
 ---
-title: "Browser Testing System — Research Findings"
+title: 'Browser Testing System — Research Findings'
 date: 2026-02-25
 type: implementation
 status: active
@@ -60,6 +60,7 @@ export default defineConfig({
 **Critical**: When `webServer` is an array, `use.baseURL` must always be set explicitly even if only one entry is present.
 
 **`reuseExistingServer: !process.env.CI`** is the canonical pattern:
+
 - Local dev: reuses your already-running `npm run dev` processes, so tests launch instantly
 - CI: always spawns fresh servers to prevent state bleed between runs
 
@@ -83,11 +84,7 @@ Recommended `turbo.json` additions:
     "e2e": {
       "dependsOn": ["^build"],
       "cache": false,
-      "passThroughEnv": [
-        "PLAYWRIGHT_BROWSERS_PATH",
-        "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD",
-        "CI"
-      ]
+      "passThroughEnv": ["PLAYWRIGHT_BROWSERS_PATH", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "CI"]
     },
     "e2e:ui": {
       "cache": false,
@@ -100,6 +97,7 @@ Recommended `turbo.json` additions:
 `passThroughEnv` (not `globalPassThroughEnv`) scopes the Playwright env vars to the e2e task only so they don't cause cache misses in unrelated tasks. Per the MEMORY.md entry on Turbo strict env mode, these vars must be explicitly declared.
 
 **Key vars to pass through for e2e**:
+
 - `PLAYWRIGHT_BROWSERS_PATH` — custom browser install location, irrelevant to cache
 - `CI` — controls `reuseExistingServer` behavior
 - `DORKOS_PORT` — already in `globalPassThroughEnv`, so available automatically
@@ -109,14 +107,17 @@ Recommended `turbo.json` additions:
 The modern recommended approach is **POM via fixtures** (not direct class imports). The two patterns are:
 
 **Pattern A — Direct Class Import (Legacy)**:
+
 ```typescript
 // every test file
 const chatPage = new ChatPage(page);
 await chatPage.goto();
 ```
+
 This works but pollutes test setup with `beforeEach` boilerplate and doesn't compose well.
 
 **Pattern B — Fixture-based POM (Recommended)**:
+
 ```typescript
 // fixtures.ts
 import { test as base } from '@playwright/test';
@@ -140,6 +141,7 @@ test('sends a message', async ({ chatPage }) => {
 ```
 
 Benefits of fixture-based POM:
+
 - Zero `beforeEach` boilerplate in test files
 - Fixtures compose — `chatPage` can depend on `authSession`
 - Teardown is guaranteed even on test failure
@@ -148,6 +150,7 @@ Benefits of fixture-based POM:
 **When POM is overkill**: Single-purpose tests, smoke checks, one-off exploratory tests. For simple interactions that appear once, inline locators are fine. The POM overhead pays off only when the same page interactions repeat across 3+ test files.
 
 **POM best practices**:
+
 - Use `data-testid` attributes or ARIA roles for locators, never CSS classes (`div.checkout-btn-v3` breaks silently)
 - Keep page methods at action/assertion level, not individual click level
 - Use `Locator` objects, not element handles (`page.locator()` over `page.$()`)
@@ -157,10 +160,10 @@ Benefits of fixture-based POM:
 
 **Fixture scopes**:
 
-| Scope | Created | Ideal for |
-|---|---|---|
-| `test` (default) | Per test | Page objects, isolated state |
-| `worker` | Per worker process | Auth sessions, DB connections |
+| Scope            | Created            | Ideal for                     |
+| ---------------- | ------------------ | ----------------------------- |
+| `test` (default) | Per test           | Page objects, isolated state  |
+| `worker`         | Per worker process | Auth sessions, DB connections |
 
 **Worker-scoped auth pattern** (fastest for authenticated tests):
 
@@ -180,7 +183,9 @@ export const test = base.extend<{}, AuthFixtures>({
       const page = await context.newPage();
       await page.goto('/');
       // Perform login...
-      await context.storageState({ path: `./playwright/.auth/worker-${test.info().parallelIndex}.json` });
+      await context.storageState({
+        path: `./playwright/.auth/worker-${test.info().parallelIndex}.json`,
+      });
       await use(context);
       await context.close();
     },
@@ -260,11 +265,9 @@ export default ManifestReporter;
 ```
 
 Register in config:
+
 ```typescript
-reporter: [
-  ['html', { open: 'never' }],
-  ['./reporters/manifest-reporter.ts'],
-]
+reporter: [['html', { open: 'never' }], ['./reporters/manifest-reporter.ts']];
 ```
 
 ### 6. Global Setup / Teardown — Two Approaches
@@ -313,6 +316,7 @@ export default defineConfig({
 Benefits: Runs after `webServer` is confirmed ready, supports traces and screenshots, can use full Playwright fixtures including `page`. Use `test.skip()` in setup to conditionally skip if already seeded.
 
 **For DorkOS**: No database seeding required (no auth layer). The main global setup concern is:
+
 1. Confirming servers are healthy via the `url` poll (handled automatically by `webServer`)
 2. Pre-creating any necessary directories (e.g., `~/.claude/projects/test/` for transcript tests)
 
@@ -321,6 +325,7 @@ Benefits: Runs after `webServer` is confirmed ready, supports traces and screens
 Three approaches compared for DorkOS:
 
 **Option A — Feature-Mirrored Structure (Recommended)**:
+
 ```
 apps/e2e/
 ├── playwright.config.ts
@@ -349,14 +354,17 @@ apps/e2e/
 ```
 
 Pros:
+
 - Mirrors the FSD `features/` layer already established in the client codebase
 - Easy to run a feature in isolation: `npx playwright test tests/chat/`
 - When a feature is deleted, its tests are findable and deleteable as a unit
 
 Cons:
+
 - Some tests span features (e.g., "create session then send message") — these go in a `flows/` directory
 
 **Option B — Page-Based Structure**:
+
 ```
 tests/
 ├── pages/
@@ -368,6 +376,7 @@ Pros: Natural for single-page apps with clear URL structure
 Cons: Chat page tests mix session management, tool approval, and streaming — hard to split/find
 
 **Option C — Flat with Naming**:
+
 ```
 tests/
 ├── chat-send-message.spec.ts
@@ -467,17 +476,20 @@ cd apps/e2e && npx playwright test --ui
 Microsoft's official MCP server connects AI agents to real browser sessions. It is the backbone of the AI orchestration layer.
 
 **Key capabilities**:
+
 - Uses accessibility tree snapshots (not screenshots) — 2-5KB structured data, 10-100x faster than screenshot analysis
 - Tools available: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_take_screenshot`, `browser_wait_for`, `browser_evaluate`, `browser_navigate_back`
 - Runs headed by default (visible browser); use `--headless` for CI
 - State management: `--storage-state` to load pre-authenticated sessions, `--save-trace` for debugging
 
 **Adding to Claude Code** (already in the project's environment):
+
 ```bash
 claude mcp add playwright npx @playwright/mcp@latest
 ```
 
 Or with config:
+
 ```bash
 claude mcp add playwright npx @playwright/mcp@latest -- --headless --viewport-size "1280x720"
 ```
@@ -498,12 +510,14 @@ With MCP: LLM sees the actual rendered accessibility tree. Locators are extracte
 **Self-healing pattern for flaky tests**:
 
 When a locator breaks (e.g., after a component rename):
+
 1. Run `npx playwright test --reporter=json` to identify failing tests
 2. Feed failing test file + error output to Claude Code with Playwright MCP active
 3. Agent navigates to the failing page, captures current accessibility tree
 4. Agent repairs the locator, re-runs the test to verify
 
 **Practical limitations**:
+
 - Each MCP action has a context cost — deep exploration of 10+ pages can consume significant context window
 - AI agents sometimes take unexpected paths; human review before committing AI-generated tests is critical
 - "Vibe coding" entire test suites produces tests that pass but don't cover the right behavior
@@ -636,8 +650,9 @@ export class ChatPage {
 
   async waitForResponse(timeoutMs = 10_000) {
     // Wait for streaming to complete (done event stops spinner)
-    await expect(this.page.locator('[data-testid="inference-indicator"]'))
-      .toBeHidden({ timeout: timeoutMs });
+    await expect(this.page.locator('[data-testid="inference-indicator"]')).toBeHidden({
+      timeout: timeoutMs,
+    });
   }
 }
 ```
@@ -703,33 +718,33 @@ export { expect } from '@playwright/test';
 
 ### Test Organization
 
-| Approach | Discoverability | Feature isolation | Cross-feature flows | FSD alignment |
-|---|---|---|---|---|
-| Feature-mirrored (`tests/chat/`) | High | Excellent | Use `tests/flows/` | Perfect |
-| Page-based (`tests/pages/chat-page.spec.ts`) | Medium | Poor | Natural | Moderate |
-| Flat with naming (`chat-send-message.spec.ts`) | Low | Poor | Natural | None |
+| Approach                                       | Discoverability | Feature isolation | Cross-feature flows | FSD alignment |
+| ---------------------------------------------- | --------------- | ----------------- | ------------------- | ------------- |
+| Feature-mirrored (`tests/chat/`)               | High            | Excellent         | Use `tests/flows/`  | Perfect       |
+| Page-based (`tests/pages/chat-page.spec.ts`)   | Medium          | Poor              | Natural             | Moderate      |
+| Flat with naming (`chat-send-message.spec.ts`) | Low             | Poor              | Natural             | None          |
 
 **Winner**: Feature-mirrored — aligns with FSD, scales to any number of features, isolatable.
 
 ### Fixture Patterns
 
-| Pattern | Reuse | Composition | Setup boilerplate | Recommended for |
-|---|---|---|---|---|
-| `beforeEach` + direct import | Low | None | High | One-off tests only |
-| `test.extend()` with page objects | High | Excellent | None | All multi-file test suites |
-| Worker-scoped auth fixture | High | Excellent | None (once per worker) | Authenticated flows |
+| Pattern                           | Reuse | Composition | Setup boilerplate      | Recommended for            |
+| --------------------------------- | ----- | ----------- | ---------------------- | -------------------------- |
+| `beforeEach` + direct import      | Low   | None        | High                   | One-off tests only         |
+| `test.extend()` with page objects | High  | Excellent   | None                   | All multi-file test suites |
+| Worker-scoped auth fixture        | High  | Excellent   | None (once per worker) | Authenticated flows        |
 
 **Winner**: `test.extend()` is strictly better in every dimension for the DorkOS scale.
 
 ### Reporter Strategy
 
-| Reporter | Use Case | Output |
-|---|---|---|
-| `html` | Visual debugging, CI artifact | `playwright-report/index.html` |
-| `json` | Machine-readable results | `test-results/results.json` |
-| `list` | Terminal feedback during dev | stdout |
-| `github` | GitHub Actions inline annotations | stdout (CI) |
-| Custom manifest | Feature coverage tracking | `test-results/manifest.json` |
+| Reporter        | Use Case                          | Output                         |
+| --------------- | --------------------------------- | ------------------------------ |
+| `html`          | Visual debugging, CI artifact     | `playwright-report/index.html` |
+| `json`          | Machine-readable results          | `test-results/results.json`    |
+| `list`          | Terminal feedback during dev      | stdout                         |
+| `github`        | GitHub Actions inline annotations | stdout (CI)                    |
+| Custom manifest | Feature coverage tracking         | `test-results/manifest.json`   |
 
 **Recommended**: Use all four simultaneously — each serves a different consumer.
 

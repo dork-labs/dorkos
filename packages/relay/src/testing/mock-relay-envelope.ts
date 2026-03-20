@@ -12,9 +12,7 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
  *
  * @param overrides - Partial envelope fields to override the defaults
  */
-export function createMockRelayEnvelope(
-  overrides: Partial<RelayEnvelope> = {},
-): RelayEnvelope {
+export function createMockRelayEnvelope(overrides: Partial<RelayEnvelope> = {}): RelayEnvelope {
   return {
     id: 'test-envelope-001',
     from: 'relay.test.sender',

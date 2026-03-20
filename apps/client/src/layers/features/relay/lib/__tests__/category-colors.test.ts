@@ -4,25 +4,25 @@ import { getCategoryColorClasses, ADAPTER_CATEGORY_COLORS } from '../category-co
 describe('getCategoryColorClasses', () => {
   it('returns correct classes for "messaging" category', () => {
     expect(getCategoryColorClasses('messaging')).toBe(
-      'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+      'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
     );
   });
 
   it('returns correct classes for "automation" category', () => {
     expect(getCategoryColorClasses('automation')).toBe(
-      'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+      'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
     );
   });
 
   it('returns correct classes for "internal" category', () => {
     expect(getCategoryColorClasses('internal')).toBe(
-      'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+      'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
     );
   });
 
   it('returns correct classes for "custom" category', () => {
     expect(getCategoryColorClasses('custom')).toBe(
-      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
     );
   });
 
@@ -35,6 +35,11 @@ describe('getCategoryColorClasses', () => {
   });
 
   it('ADAPTER_CATEGORY_COLORS contains all expected categories', () => {
-    expect(Object.keys(ADAPTER_CATEGORY_COLORS)).toEqual(['messaging', 'automation', 'internal', 'custom']);
+    expect(Object.keys(ADAPTER_CATEGORY_COLORS)).toEqual([
+      'messaging',
+      'automation',
+      'internal',
+      'custom',
+    ]);
   });
 });

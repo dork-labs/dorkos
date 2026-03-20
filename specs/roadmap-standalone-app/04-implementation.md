@@ -52,9 +52,9 @@
 
 **Test files:**
 
-- apps/roadmap/src/server/services/__tests__/roadmap-store.test.ts (11 tests)
-- apps/roadmap/src/server/routes/__tests__/items-routes.test.ts (17 tests)
-- apps/roadmap/src/server/routes/__tests__/files-routes.test.ts (5 tests)
+- apps/roadmap/src/server/services/**tests**/roadmap-store.test.ts (11 tests)
+- apps/roadmap/src/server/routes/**tests**/items-routes.test.ts (17 tests)
+- apps/roadmap/src/server/routes/**tests**/files-routes.test.ts (5 tests)
 
 ## Known Issues
 

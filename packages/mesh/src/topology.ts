@@ -54,7 +54,7 @@ export class TopologyManager {
   constructor(
     private readonly registry: AgentRegistry,
     private readonly relayBridge: RelayBridge,
-    private readonly relayCore?: RelayCore,
+    private readonly relayCore?: RelayCore
   ) {}
 
   /**
@@ -78,13 +78,11 @@ export class TopologyManager {
       namespaceMap.set(entry.namespace, existing);
     }
 
-    const namespaces: NamespaceInfo[] = Array.from(namespaceMap.entries()).map(
-      ([ns, entries]) => ({
-        namespace: ns,
-        agentCount: entries.length,
-        agents: entries.map((e) => this.stripRegistryFields(e)),
-      }),
-    );
+    const namespaces: NamespaceInfo[] = Array.from(namespaceMap.entries()).map(([ns, entries]) => ({
+      namespace: ns,
+      agentCount: entries.length,
+      agents: entries.map((e) => this.stripRegistryFields(e)),
+    }));
 
     const accessRules = this.listCrossNamespaceRules();
     // Filter access rules to only show rules involving accessible namespaces
@@ -94,7 +92,7 @@ export class TopologyManager {
         : accessRules.filter(
             (r) =>
               accessibleNamespaces.has(r.sourceNamespace) ||
-              accessibleNamespaces.has(r.targetNamespace),
+              accessibleNamespaces.has(r.targetNamespace)
           );
 
     return {
@@ -151,7 +149,7 @@ export class TopologyManager {
     if (!this.relayCore) return;
     this.relayCore.removeAccessRule(
       `relay.agent.${sourceNamespace}.*`,
-      `relay.agent.${targetNamespace}.*`,
+      `relay.agent.${targetNamespace}.*`
     );
   }
 

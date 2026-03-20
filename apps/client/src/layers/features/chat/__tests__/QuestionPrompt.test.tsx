@@ -124,10 +124,7 @@ vi.mock('@radix-ui/react-tabs', () => {
       React.createElement('div', rest, children)
     );
   }
-  function List({
-    children,
-    ...props
-  }: Record<string, unknown> & { children?: React.ReactNode }) {
+  function List({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { ref: _ref, ...rest } = props as Record<string, unknown> & { ref?: unknown };
     return React.createElement('div', { role: 'tablist', ...rest }, children);

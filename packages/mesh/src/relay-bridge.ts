@@ -44,7 +44,7 @@ export class RelayBridge {
 
   constructor(
     private readonly relayCore?: RelayCore,
-    signalEmitter?: SignalEmitter,
+    signalEmitter?: SignalEmitter
   ) {
     this.signalEmitter = signalEmitter;
   }
@@ -69,7 +69,7 @@ export class RelayBridge {
     agent: AgentManifest,
     projectPath: string,
     namespace?: string,
-    _scanRoot?: string,
+    _scanRoot?: string
   ): Promise<string | null> {
     if (!this.relayCore) return null;
 
@@ -151,15 +151,9 @@ export class RelayBridge {
     if (!this.relayCore) return;
 
     // Remove the same-namespace allow rule
-    this.relayCore.removeAccessRule(
-      `relay.agent.${namespace}.*`,
-      `relay.agent.${namespace}.*`,
-    );
+    this.relayCore.removeAccessRule(`relay.agent.${namespace}.*`, `relay.agent.${namespace}.*`);
 
     // Remove the cross-namespace deny rule
-    this.relayCore.removeAccessRule(
-      `relay.agent.${namespace}.*`,
-      'relay.agent.>',
-    );
+    this.relayCore.removeAccessRule(`relay.agent.${namespace}.*`, 'relay.agent.>');
   }
 }

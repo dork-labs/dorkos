@@ -23,7 +23,7 @@
 - Task #8: Replace BindingStore writeGeneration with mtime-based self-write detection
 - Task #9: Add DeliveryPipeline timer cleanup and close() method (already implemented)
 - Task #10: Standardize adapter status mutation to immutable spread pattern (already implemented)
-- Task #11: Fix O(n*m) dead-letter lookup in conversations endpoint (already implemented)
+- Task #11: Fix O(n\*m) dead-letter lookup in conversations endpoint (already implemented)
 - Task #12: Consolidate TraceStoreLike interface (already consolidated)
 - Task #13: Add SSE backpressure for slow relay clients (already implemented)
 - Task #14: Fix adapter-delivery timer initialization (already implemented)
@@ -79,6 +79,7 @@ _(None)_
 ### Session 2 - 2026-03-01
 
 Executed all 24 tasks in 6 parallel batches. Many findings (13 of 36) were already remediated in prior rounds (specs 73-76). New work focused on:
+
 - Boundary validation verification (C1)
 - extractChatId empty string guard (C2)
 - SubscriptionRegistry.clear() for clean shutdown (C3)

@@ -58,7 +58,7 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
         },
-        'mcp-tool',
+        'mcp-tool'
       );
       return jsonContent({ agent });
     } catch (e) {
@@ -81,7 +81,7 @@ export function createMeshListHandler(deps: McpToolDeps) {
             capability: args.capability,
             callerNamespace: args.callerNamespace,
           }
-        : undefined,
+        : undefined
     );
     return jsonContent({ agents, count: agents.length });
   };
@@ -138,7 +138,10 @@ export function createMeshInspectHandler(deps: McpToolDeps) {
     if (err) return err;
     const result = deps.meshCore!.inspect(args.agentId);
     if (!result) {
-      return { content: [{ type: 'text' as const, text: `Agent ${args.agentId} not found` }], isError: true };
+      return {
+        content: [{ type: 'text' as const, text: `Agent ${args.agentId} not found` }],
+        isError: true,
+      };
     }
     return jsonContent(result);
   };
@@ -164,7 +167,12 @@ export function getMeshTools(deps: McpToolDeps) {
       'Scan directories for agent candidates. Returns paths with detected runtime, capabilities, and suggested names.',
       {
         roots: z.array(z.string()).describe('Root directories to scan for agents'),
-        maxDepth: z.number().int().min(1).optional().describe('Maximum directory depth (default 3)'),
+        maxDepth: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe('Maximum directory depth (default 3)'),
       },
       createMeshDiscoverHandler(deps)
     ),

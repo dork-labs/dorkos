@@ -214,7 +214,7 @@ describe('AdapterCard', () => {
 
   it('renders CCA card with dashed border', () => {
     const { container } = render(
-      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
     const card = container.firstElementChild;
     expect(card?.className).toContain('border-dashed');
@@ -249,7 +249,7 @@ describe('AdapterCard', () => {
   it('shows green status dot for CCA when connected (always considered bound)', () => {
     mockUseBindings.mockReturnValue({ data: [] });
     const { container } = render(
-      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
     expect(container.querySelector('.bg-green-500')).toBeTruthy();
     expect(container.querySelector('.bg-amber-500')).toBeNull();
@@ -261,10 +261,16 @@ describe('AdapterCard', () => {
 
   it('shows "Serving N agents" for CCA instead of "No agent bound"', () => {
     mockUseRegisteredAgents.mockReturnValue({
-      data: { agents: [{ id: 'a1', name: 'Bot 1' }, { id: 'a2', name: 'Bot 2' }, { id: 'a3', name: 'Bot 3' }] },
+      data: {
+        agents: [
+          { id: 'a1', name: 'Bot 1' },
+          { id: 'a2', name: 'Bot 2' },
+          { id: 'a3', name: 'Bot 3' },
+        ],
+      },
     });
     render(
-      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
     expect(screen.getByText(/Serving 3 agents/)).toBeTruthy();
     expect(screen.queryByText('No agent bound')).toBeNull();
@@ -275,14 +281,14 @@ describe('AdapterCard', () => {
       data: { agents: [{ id: 'a1', name: 'Solo Bot' }] },
     });
     render(
-      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
     expect(screen.getByText(/Serving 1 agent/)).toBeTruthy();
   });
 
   it('does not show System badge for CCA', () => {
     render(
-      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
     expect(screen.queryByText('System')).toBeNull();
   });
@@ -299,7 +305,12 @@ describe('AdapterCard', () => {
       ],
     });
     mockUseRegisteredAgents.mockReturnValue({
-      data: { agents: [{ id: 'agent-1', name: 'Alpha Bot' }, { id: 'agent-2', name: 'Beta Bot' }] },
+      data: {
+        agents: [
+          { id: 'agent-1', name: 'Alpha Bot' },
+          { id: 'agent-2', name: 'Beta Bot' },
+        ],
+      },
     });
     render(<AdapterCard {...defaultProps()} />);
     expect(screen.getByText('Alpha Bot')).toBeTruthy();
@@ -572,9 +583,7 @@ describe('AdapterCard', () => {
 
   it('disables Remove for built-in claude-code adapter', async () => {
     render(
-      <AdapterCard
-        {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })}
-      />,
+      <AdapterCard {...defaultProps({ instance: claudeInstance, manifest: claudeManifest })} />
     );
 
     await openKebabMenu();

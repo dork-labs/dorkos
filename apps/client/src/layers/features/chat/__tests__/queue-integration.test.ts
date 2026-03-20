@@ -24,15 +24,21 @@ describe('Queue workflow integration', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('First followup'); });
-    act(() => { result.current.addToQueue('Second followup'); });
+    act(() => {
+      result.current.addToQueue('First followup');
+    });
+    act(() => {
+      result.current.addToQueue('Second followup');
+    });
     expect(result.current.queue).toHaveLength(2);
 
     rerender({ status: 'idle' as const });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
     expect(onFlush).toHaveBeenCalledWith(
-      expect.stringContaining('[Note: This message was composed while the agent was responding to the previous message]')
+      expect.stringContaining(
+        '[Note: This message was composed while the agent was responding to the previous message]'
+      )
     );
     expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('First followup'));
     expect(result.current.queue).toHaveLength(1);
@@ -52,7 +58,9 @@ describe('Queue workflow integration', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('My message'); });
+    act(() => {
+      result.current.addToQueue('My message');
+    });
     rerender({ status: 'idle' as const });
 
     const flushedContent = onFlush.mock.calls[0][0] as string;
@@ -72,19 +80,29 @@ describe('Queue workflow integration', () => {
       })
     );
 
-    act(() => { result.current.addToQueue('First'); });
-    act(() => { result.current.addToQueue('Second'); });
+    act(() => {
+      result.current.addToQueue('First');
+    });
+    act(() => {
+      result.current.addToQueue('Second');
+    });
 
     let content: string;
-    act(() => { content = result.current.startEditing(1); });
+    act(() => {
+      content = result.current.startEditing(1);
+    });
     expect(content!).toBe('Second');
     expect(result.current.editingIndex).toBe(1);
 
-    act(() => { content = result.current.startEditing(0); });
+    act(() => {
+      content = result.current.startEditing(0);
+    });
     expect(content!).toBe('First');
     expect(result.current.editingIndex).toBe(0);
 
-    act(() => { result.current.cancelEditing(); });
+    act(() => {
+      result.current.cancelEditing();
+    });
     expect(result.current.editingIndex).toBeNull();
   });
 
@@ -99,9 +117,15 @@ describe('Queue workflow integration', () => {
       })
     );
 
-    act(() => { result.current.addToQueue('Original content'); });
-    act(() => { result.current.startEditing(0); });
-    act(() => { result.current.saveEditing('Modified content'); });
+    act(() => {
+      result.current.addToQueue('Original content');
+    });
+    act(() => {
+      result.current.startEditing(0);
+    });
+    act(() => {
+      result.current.saveEditing('Modified content');
+    });
 
     expect(result.current.queue[0].content).toBe('Modified content');
     expect(result.current.editingIndex).toBeNull();
@@ -120,7 +144,9 @@ describe('Queue workflow integration', () => {
       { initialProps: { sessionId: 'session-a' } }
     );
 
-    act(() => { result.current.addToQueue('Queued msg'); });
+    act(() => {
+      result.current.addToQueue('Queued msg');
+    });
     expect(result.current.queue).toHaveLength(1);
 
     rerender({ sessionId: 'session-b' });
@@ -142,9 +168,15 @@ describe('Queue workflow integration', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('Being edited'); });
-    act(() => { result.current.addToQueue('Should flush'); });
-    act(() => { result.current.startEditing(0); });
+    act(() => {
+      result.current.addToQueue('Being edited');
+    });
+    act(() => {
+      result.current.addToQueue('Should flush');
+    });
+    act(() => {
+      result.current.startEditing(0);
+    });
 
     rerender({ status: 'idle' as const });
 
@@ -166,7 +198,9 @@ describe('Queue workflow integration', () => {
       { initialProps: { status: 'streaming' as ChatStatus } }
     );
 
-    act(() => { result.current.addToQueue('Only once'); });
+    act(() => {
+      result.current.addToQueue('Only once');
+    });
     rerender({ status: 'idle' as const });
     rerender({ status: 'idle' as const });
 

@@ -45,15 +45,16 @@ Five independent quality improvements identified during an architecture review o
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@radix-ui/react-collapsible` | (via shadcn) | WCAG-compliant expand/collapse for error messages |
-| `@tanstack/react-query` | ^5 | Data fetching hooks for binding CRUD and adapter events |
-| `drizzle-orm` | ^0.38 | Database schema and queries for adapter event traces |
-| `motion/react` | ^12 | Animations for binding list and event log |
-| `lucide-react` | ^0.473 | Icons for binding list rows and event types |
+| Dependency                    | Version      | Purpose                                                 |
+| ----------------------------- | ------------ | ------------------------------------------------------- |
+| `@radix-ui/react-collapsible` | (via shadcn) | WCAG-compliant expand/collapse for error messages       |
+| `@tanstack/react-query`       | ^5           | Data fetching hooks for binding CRUD and adapter events |
+| `drizzle-orm`                 | ^0.38        | Database schema and queries for adapter event traces    |
+| `motion/react`                | ^12          | Animations for binding list and event log               |
+| `lucide-react`                | ^0.473       | Icons for binding list rows and event types             |
 
 **Prerequisites:**
+
 - Install shadcn Collapsible component: `npx shadcn@latest add collapsible`
 
 ---
@@ -87,6 +88,7 @@ export function getCategoryColorClasses(category: string): string {
 ```
 
 **Changes to existing files:**
+
 - `AdapterCard.tsx`: Remove lines 26-31 (`CATEGORY_COLORS`), import `getCategoryColorClasses` from `../lib/category-colors`, replace `CATEGORY_COLORS[manifest.category] ?? ''` with `getCategoryColorClasses(manifest.category)`
 - `CatalogCard.tsx`: Remove lines 6-11 (`CATEGORY_COLORS`), import `getCategoryColorClasses` from `../lib/category-colors`, replace `CATEGORY_COLORS[manifest.category] ?? ''` with `getCategoryColorClasses(manifest.category)`
 
@@ -103,43 +105,52 @@ export function getCategoryColorClasses(category: string): string {
 **Change in `AdapterCard.tsx`:** Replace the truncated error `<div>` (lines 87-91) with a Collapsible component.
 
 Replace:
+
 ```tsx
-{instance.status.lastError && (
-  <div className="mt-1 max-w-[200px] truncate text-xs text-red-500">
-    {instance.status.lastError}
-  </div>
-)}
+{
+  instance.status.lastError && (
+    <div className="mt-1 max-w-[200px] truncate text-xs text-red-500">
+      {instance.status.lastError}
+    </div>
+  );
+}
 ```
 
 With:
+
 ```tsx
-{instance.status.lastError && (
-  <Collapsible>
-    <div className="mt-1 flex items-center gap-1">
-      <CollapsibleTrigger asChild>
-        <button
-          className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
-          aria-label="Toggle full error message"
-        >
-          <ChevronRight className="size-3 transition-transform data-[state=open]:rotate-90" />
-          <span className="max-w-[200px] truncate">
-            {instance.status.lastError}
-          </span>
-        </button>
-      </CollapsibleTrigger>
-    </div>
-    <CollapsibleContent>
-      <div className="mt-1 rounded-md bg-red-50 p-2 font-mono text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
-        {instance.status.lastError}
+{
+  instance.status.lastError && (
+    <Collapsible>
+      <div className="mt-1 flex items-center gap-1">
+        <CollapsibleTrigger asChild>
+          <button
+            className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+            aria-label="Toggle full error message"
+          >
+            <ChevronRight className="size-3 transition-transform data-[state=open]:rotate-90" />
+            <span className="max-w-[200px] truncate">{instance.status.lastError}</span>
+          </button>
+        </CollapsibleTrigger>
       </div>
-    </CollapsibleContent>
-  </Collapsible>
-)}
+      <CollapsibleContent>
+        <div className="mt-1 rounded-md bg-red-50 p-2 font-mono text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
+          {instance.status.lastError}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 ```
 
 **New imports in AdapterCard.tsx:**
+
 ```typescript
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui/collapsible';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/layers/shared/ui/collapsible';
 import { ChevronRight } from 'lucide-react';
 ```
 
@@ -227,6 +238,7 @@ export function useUpdateBinding() {
 **New file:** `apps/client/src/layers/features/relay/ui/BindingList.tsx`
 
 Structure:
+
 - Header with "Add Binding" button that opens the existing `BindingDialog`
 - Binding rows in a list format:
   - Left: adapter icon/emoji + adapter display name (from catalog data)
@@ -240,6 +252,7 @@ Structure:
 - Empty state: icon + "No bindings configured" + "Create your first binding to route messages from adapters to agents" + CTA button
 
 **Data hooks used:**
+
 - `useBindings()` from `entities/binding/model/use-bindings`
 - `useCreateBinding()` from `entities/binding/model/use-create-binding`
 - `useUpdateBinding()` from `entities/binding/model/use-update-binding` (new)
@@ -272,14 +285,15 @@ All splits use the **facade pattern**: the original file becomes a thin coordina
 
 **Directory:** `packages/relay/src/`
 
-| New File | Extracted Responsibility | Approx Lines |
-|---|---|---|
-| `relay-publish.ts` | `publish()` method, `PublishResult` type, rate limiting + circuit breaker integration | ~200 |
-| `relay-subscriptions.ts` | `subscribe()` method, `SubscriptionRegistry` delegation, signal handler registration | ~150 |
-| `relay-endpoint-management.ts` | `registerEndpoint()`/`unregisterEndpoint()`, Maildir store management, SQLite index updates | ~200 |
-| `relay-core.ts` (facade) | Class skeleton, constructor, `init()`, `close()`, dependency composition, re-exports | ~200 |
+| New File                       | Extracted Responsibility                                                                    | Approx Lines |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------ |
+| `relay-publish.ts`             | `publish()` method, `PublishResult` type, rate limiting + circuit breaker integration       | ~200         |
+| `relay-subscriptions.ts`       | `subscribe()` method, `SubscriptionRegistry` delegation, signal handler registration        | ~150         |
+| `relay-endpoint-management.ts` | `registerEndpoint()`/`unregisterEndpoint()`, Maildir store management, SQLite index updates | ~200         |
+| `relay-core.ts` (facade)       | Class skeleton, constructor, `init()`, `close()`, dependency composition, re-exports        | ~200         |
 
 **Re-export pattern in facade:**
+
 ```typescript
 // Re-export public types/functions from sub-modules
 export { publish, type PublishResult } from './relay-publish.js';
@@ -291,34 +305,34 @@ export { registerEndpoint, unregisterEndpoint } from './relay-endpoint-managemen
 
 **Directory:** `packages/relay/src/adapters/`
 
-| New File | Extracted Responsibility | Approx Lines |
-|---|---|---|
-| `telegram-inbound.ts` | Message parsing helpers, `handleUpdate()` logic, payload normalization | ~200 |
-| `telegram-outbound.ts` | `deliver()` implementation, message chunking (4096-char limit), typing signal handling | ~180 |
-| `telegram-webhook.ts` | Webhook setup, HMAC verification, HTTP server lifecycle | ~150 |
-| `telegram-adapter.ts` (facade) | Class, polling mode, start/stop lifecycle, re-exports | ~180 |
+| New File                       | Extracted Responsibility                                                               | Approx Lines |
+| ------------------------------ | -------------------------------------------------------------------------------------- | ------------ |
+| `telegram-inbound.ts`          | Message parsing helpers, `handleUpdate()` logic, payload normalization                 | ~200         |
+| `telegram-outbound.ts`         | `deliver()` implementation, message chunking (4096-char limit), typing signal handling | ~180         |
+| `telegram-webhook.ts`          | Webhook setup, HMAC verification, HTTP server lifecycle                                | ~150         |
+| `telegram-adapter.ts` (facade) | Class, polling mode, start/stop lifecycle, re-exports                                  | ~180         |
 
 #### 4.3: claude-code-adapter.ts (906 lines → ~4 files)
 
 **Directory:** `packages/relay/src/adapters/`
 
-| New File | Extracted Responsibility | Approx Lines |
-|---|---|---|
-| `claude-code-agent-handler.ts` | `handleAgentMessage()`, session ID resolution, trace span creation, response streaming | ~250 |
-| `claude-code-pulse-handler.ts` | `handlePulseMessage()`, pulse payload parsing, job execution | ~200 |
-| `claude-code-queue.ts` | Queue management per agent, semaphore enforcement, `processWithQueue()` | ~150 |
-| `claude-code-adapter.ts` (facade) | Class, start/stop/deliver API, status tracking, re-exports | ~250 |
+| New File                          | Extracted Responsibility                                                               | Approx Lines |
+| --------------------------------- | -------------------------------------------------------------------------------------- | ------------ |
+| `claude-code-agent-handler.ts`    | `handleAgentMessage()`, session ID resolution, trace span creation, response streaming | ~250         |
+| `claude-code-pulse-handler.ts`    | `handlePulseMessage()`, pulse payload parsing, job execution                           | ~200         |
+| `claude-code-queue.ts`            | Queue management per agent, semaphore enforcement, `processWithQueue()`                | ~150         |
+| `claude-code-adapter.ts` (facade) | Class, start/stop/deliver API, status tracking, re-exports                             | ~250         |
 
 #### 4.4: mesh-core.ts (776 lines → ~4 files)
 
 **Directory:** `packages/mesh/src/`
 
-| New File | Extracted Responsibility | Approx Lines |
-|---|---|---|
-| `mesh-discovery.ts` | `discover()` async generator, `register()` method, `upsertAutoImported()` logic | ~200 |
-| `mesh-agent-management.ts` | list/get/update agent operations, status snapshots, agent inspection | ~200 |
-| `mesh-denial.ts` | deny/undeny/isDenied delegation, denial list querying | ~100 |
-| `mesh-core.ts` (facade) | Class skeleton, constructor, init, close, reconciler startup, re-exports | ~200 |
+| New File                   | Extracted Responsibility                                                        | Approx Lines |
+| -------------------------- | ------------------------------------------------------------------------------- | ------------ |
+| `mesh-discovery.ts`        | `discover()` async generator, `register()` method, `upsertAutoImported()` logic | ~200         |
+| `mesh-agent-management.ts` | list/get/update agent operations, status snapshots, agent inspection            | ~200         |
+| `mesh-denial.ts`           | deny/undeny/isDenied delegation, denial list querying                           | ~100         |
+| `mesh-core.ts` (facade)    | Class skeleton, constructor, init, close, reconciler startup, re-exports        | ~200         |
 
 Note: `mesh-topology.ts` already exists as a separate file — move any remaining topology code there if needed.
 
@@ -326,13 +340,13 @@ Note: `mesh-topology.ts` already exists as a separate file — move any remainin
 
 **Directory:** `packages/shared/src/`
 
-| New File | Extracted Responsibility | Approx Lines |
-|---|---|---|
-| `relay-envelope-schemas.ts` | `RelayBudgetSchema`, `RelayEnvelopeSchema`, `StandardPayloadSchema`, `AttachmentSchema` | ~150 |
-| `relay-access-schemas.ts` | `RelayAccessRuleSchema`, `AccessControlSchema`, all enums | ~100 |
-| `relay-adapter-schemas.ts` | `AdapterManifest`, `AdapterStatus`, `AdapterConfig`, `AdapterBinding`, `CreateBindingRequest` | ~150 |
-| `relay-trace-schemas.ts` | `TraceSpanSchema`, `TraceSpanStatus`, `DeliveryMetrics` | ~100 |
-| `relay-schemas.ts` (facade) | Module doc + `export * from` for all extracted files | ~80 |
+| New File                    | Extracted Responsibility                                                                      | Approx Lines |
+| --------------------------- | --------------------------------------------------------------------------------------------- | ------------ |
+| `relay-envelope-schemas.ts` | `RelayBudgetSchema`, `RelayEnvelopeSchema`, `StandardPayloadSchema`, `AttachmentSchema`       | ~150         |
+| `relay-access-schemas.ts`   | `RelayAccessRuleSchema`, `AccessControlSchema`, all enums                                     | ~100         |
+| `relay-adapter-schemas.ts`  | `AdapterManifest`, `AdapterStatus`, `AdapterConfig`, `AdapterBinding`, `CreateBindingRequest` | ~150         |
+| `relay-trace-schemas.ts`    | `TraceSpanSchema`, `TraceSpanStatus`, `DeliveryMetrics`                                       | ~100         |
+| `relay-schemas.ts` (facade) | Module doc + `export * from` for all extracted files                                          | ~80          |
 
 **Package exports:** The `@dorkos/shared` package already has subpath exports configured in `package.json`. The existing `./relay-schemas` export resolves to `relay-schemas.ts`, which re-exports everything — no changes to `package.json` needed since the facade preserves the public API.
 
@@ -354,14 +368,14 @@ Note: `mesh-topology.ts` already exists as a separate file — move any remainin
 
 **Event types to track:**
 
-| Event Type | When Recorded | Message Format |
-|---|---|---|
-| `adapter.connected` | Adapter start() completes | "Connected to relay" |
-| `adapter.disconnected` | Adapter stop() called or connection lost | "Disconnected from relay" |
-| `adapter.message_received` | Inbound message parsed | "Received message from {subject}" |
-| `adapter.message_sent` | Outbound delivery completes | "Sent message to {subject}" |
-| `adapter.error` | Error caught during operation | Full error message |
-| `adapter.status_change` | State transition | "State changed: {old} → {new}" |
+| Event Type                 | When Recorded                            | Message Format                    |
+| -------------------------- | ---------------------------------------- | --------------------------------- |
+| `adapter.connected`        | Adapter start() completes                | "Connected to relay"              |
+| `adapter.disconnected`     | Adapter stop() called or connection lost | "Disconnected from relay"         |
+| `adapter.message_received` | Inbound message parsed                   | "Received message from {subject}" |
+| `adapter.message_sent`     | Outbound delivery completes              | "Sent message to {subject}"       |
+| `adapter.error`            | Error caught during operation            | Full error message                |
+| `adapter.status_change`    | State transition                         | "State changed: {old} → {new}"    |
 
 **TraceStore changes** (`apps/server/src/services/relay/trace-store.ts`):
 
@@ -414,6 +428,7 @@ getAdapterEvents(adapterId: string, limit = 100): TraceSpanRow[] {
 **Adapter-manager changes** (`apps/server/src/services/relay/adapter-manager.ts`):
 
 Record events at key lifecycle points:
+
 - `startAdapter()` success → `adapter.connected`
 - `startAdapter()` failure → `adapter.error`
 - `stopAdapter()` → `adapter.disconnected`
@@ -452,6 +467,7 @@ export function useAdapterEvents(adapterId: string | null) {
 **New file:** `apps/client/src/layers/features/relay/ui/AdapterEventLog.tsx`
 
 Component structure:
+
 - Header: "Events" title + event type filter dropdown
 - Scrollable event list:
   - Row format: `[HH:mm:ss tabular-nums] [type Badge] [message text break-words]`
@@ -472,18 +488,23 @@ Component structure:
 ## User Experience
 
 ### Improvement 1 (CATEGORY_COLORS)
+
 No visible change. Internal refactoring only.
 
 ### Improvement 2 (Error Display)
+
 Users see a truncated error preview with a chevron. Clicking (or pressing Enter/Space) expands to show the full error in a styled monospace block. Clicking again collapses. Keyboard navigation works via standard Radix accessibility patterns.
 
 ### Improvement 3 (Binding List)
+
 New "Bindings" tab appears between "Endpoints" and "Adapters" in the Relay panel. Shows a clean list of all bindings with adapter→agent routing info, strategy badges, and action menus. Users can create, edit, and delete bindings without navigating to the topology graph.
 
 ### Improvement 4 (File Splits)
+
 No visible change. Internal refactoring only.
 
 ### Improvement 5 (Event Log)
+
 Users can view a chronological event log for any adapter showing connections, messages, errors, and status changes. Events auto-update every 5 seconds with auto-scroll behavior.
 
 ---
@@ -491,23 +512,28 @@ Users can view a chronological event log for any adapter showing connections, me
 ## Testing Strategy
 
 ### Improvement 1: CATEGORY_COLORS
+
 - **Unit test:** `category-colors.test.ts` — verify `getCategoryColorClasses()` returns correct classes for known categories and empty string for unknown
 - **Smoke:** Verify AdapterCard and CatalogCard still render category badges correctly
 
 ### Improvement 2: Error Display
+
 - **Component test:** `AdapterCard.test.tsx` — verify Collapsible renders when `lastError` is set, full error text is visible when expanded, trigger is keyboard accessible
 - **Accessibility:** Verify `aria-expanded` attribute toggles
 
 ### Improvement 3: Binding List
+
 - **Component test:** `BindingList.test.tsx` — verify list renders bindings, empty state shows when no bindings, create/edit/delete actions trigger correct mutations
 - **Hook test:** `use-update-binding.test.ts` — verify mutation calls transport and invalidates query cache
 - **Integration:** Verify BindingDialog pre-fills correctly in edit mode
 
 ### Improvement 4: File Splits
+
 - **Existing tests:** All existing tests in `packages/relay/`, `packages/mesh/`, and `packages/shared/` must continue to pass without modification (the facade pattern preserves the public API)
 - **Import verification:** Build the project and verify no import resolution errors
 
 ### Improvement 5: Event Log
+
 - **Unit test:** `trace-store.test.ts` — verify `insertAdapterEvent()` persists and `getAdapterEvents()` queries correctly, filtered by adapterId
 - **Component test:** `AdapterEventLog.test.tsx` — verify events render with correct format, filter dropdown works, auto-scroll behavior
 - **Hook test:** `use-adapter-events.test.ts` — verify query key structure and polling interval
@@ -542,22 +568,26 @@ Users can view a chronological event log for any adapter showing connections, me
 ## Implementation Phases
 
 ### Phase 1: Low-Risk Extractions (Items 1, 2)
+
 - Extract `CATEGORY_COLORS` to shared lib
 - Install shadcn Collapsible and replace error truncation
 - Minimal blast radius, immediate value
 
 ### Phase 2: Binding List (Item 3)
+
 - Add binding update support (store → route → transport → hook)
 - Build `BindingList` component
 - Add Bindings tab to RelayPanel
 - Depends on existing binding infrastructure
 
 ### Phase 3: Backend File Splits (Item 4)
+
 - Split all 5 files using facade pattern
 - Run full test suite after each split to catch regressions
 - Highest file count change but zero API changes
 
 ### Phase 4: Adapter Event Log (Item 5)
+
 - Extend TraceStore with adapter event methods
 - Add adapter event recording in adapter-manager
 - Add API endpoint
@@ -586,13 +616,13 @@ All questions were resolved during ideation:
 
 ## Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| ADR-0046 | Central BindingRouter for Adapter-Agent Routing | Binding resolution logic that the list view exposes |
-| ADR-0047 | Most-Specific-First Binding Resolution Order | Binding scoring shown in binding list detail |
-| ADR-0028 | Store Message Traces in Existing Relay SQLite Index | Trace storage pattern extended by adapter events |
-| ADR-0021 | Restructure Server Services into Domain Folders | Guides the organization of split files |
-| ADR-0002 | Adopt Feature-Sliced Design | FSD layer rules governing component placement |
+| ADR      | Title                                               | Relevance                                           |
+| -------- | --------------------------------------------------- | --------------------------------------------------- |
+| ADR-0046 | Central BindingRouter for Adapter-Agent Routing     | Binding resolution logic that the list view exposes |
+| ADR-0047 | Most-Specific-First Binding Resolution Order        | Binding scoring shown in binding list detail        |
+| ADR-0028 | Store Message Traces in Existing Relay SQLite Index | Trace storage pattern extended by adapter events    |
+| ADR-0021 | Restructure Server Services into Domain Folders     | Guides the organization of split files              |
+| ADR-0002 | Adopt Feature-Sliced Design                         | FSD layer rules governing component placement       |
 
 ---
 

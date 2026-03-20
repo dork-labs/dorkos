@@ -74,7 +74,9 @@ describe('useCurrentAgent', () => {
     });
     const { Wrapper } = createWrapper(transport);
 
-    const { result } = renderHook(() => useCurrentAgent('/projects/no-agent'), { wrapper: Wrapper });
+    const { result } = renderHook(() => useCurrentAgent('/projects/no-agent'), {
+      wrapper: Wrapper,
+    });
 
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
@@ -178,10 +180,9 @@ describe('useCreateAgent', () => {
     const { Wrapper, queryClient } = createWrapper(transport);
 
     // Prime the cache for the path
-    const { result: agentResult } = renderHook(
-      () => useCurrentAgent('/projects/newapp'),
-      { wrapper: Wrapper }
-    );
+    const { result: agentResult } = renderHook(() => useCurrentAgent('/projects/newapp'), {
+      wrapper: Wrapper,
+    });
     await waitFor(() => {
       expect(agentResult.current.isSuccess).toBe(true);
     });
@@ -262,10 +263,9 @@ describe('useUpdateAgent', () => {
     const { Wrapper } = createWrapper(transport);
 
     // Prime the cache
-    const { result: agentResult } = renderHook(
-      () => useCurrentAgent('/projects/myapp'),
-      { wrapper: Wrapper }
-    );
+    const { result: agentResult } = renderHook(() => useCurrentAgent('/projects/myapp'), {
+      wrapper: Wrapper,
+    });
     await waitFor(() => {
       expect(agentResult.current.data).toEqual(mockAgent);
     });
@@ -300,10 +300,9 @@ describe('useUpdateAgent', () => {
     const { Wrapper } = createWrapper(transport);
 
     // Prime the cache
-    const { result: agentResult } = renderHook(
-      () => useCurrentAgent('/projects/myapp'),
-      { wrapper: Wrapper }
-    );
+    const { result: agentResult } = renderHook(() => useCurrentAgent('/projects/myapp'), {
+      wrapper: Wrapper,
+    });
     await waitFor(() => {
       expect(agentResult.current.data).toEqual(mockAgent);
     });
@@ -370,10 +369,9 @@ describe('useResolvedAgents', () => {
     });
     const { Wrapper } = createWrapper(transport);
 
-    const { result } = renderHook(
-      () => useResolvedAgents(['/projects/app1']),
-      { wrapper: Wrapper }
-    );
+    const { result } = renderHook(() => useResolvedAgents(['/projects/app1']), {
+      wrapper: Wrapper,
+    });
 
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
@@ -394,18 +392,14 @@ describe('useAgentVisual', () => {
       icon: '🤖',
     };
 
-    const { result } = renderHook(() =>
-      useAgentVisual(agentWithOverrides, '/projects/myapp')
-    );
+    const { result } = renderHook(() => useAgentVisual(agentWithOverrides, '/projects/myapp'));
 
     expect(result.current.color).toBe('#6366f1');
     expect(result.current.emoji).toBe('🤖');
   });
 
   it('hashes from agent.id when agent exists but has no overrides', () => {
-    const { result } = renderHook(() =>
-      useAgentVisual(mockAgent, '/projects/myapp')
-    );
+    const { result } = renderHook(() => useAgentVisual(mockAgent, '/projects/myapp'));
 
     // Should be deterministic from agent.id, not cwd
     const { result: resultSameCwd } = renderHook(() =>
@@ -417,9 +411,7 @@ describe('useAgentVisual', () => {
   });
 
   it('hashes from cwd when no agent is registered', () => {
-    const { result } = renderHook(() =>
-      useAgentVisual(null, '/projects/myapp')
-    );
+    const { result } = renderHook(() => useAgentVisual(null, '/projects/myapp'));
 
     const { result: resultDifferentCwd } = renderHook(() =>
       useAgentVisual(null, '/projects/different-app')
@@ -434,9 +426,7 @@ describe('useAgentVisual', () => {
   });
 
   it('hashes from cwd when agent is undefined', () => {
-    const { result } = renderHook(() =>
-      useAgentVisual(undefined, '/projects/myapp')
-    );
+    const { result } = renderHook(() => useAgentVisual(undefined, '/projects/myapp'));
 
     expect(result.current.color).toMatch(/^hsl\(/);
     expect(result.current.emoji).toBeTruthy();
@@ -449,22 +439,17 @@ describe('useAgentVisual', () => {
       // no icon override
     };
 
-    const { result } = renderHook(() =>
-      useAgentVisual(agentWithColorOnly, '/projects/myapp')
-    );
+    const { result } = renderHook(() => useAgentVisual(agentWithColorOnly, '/projects/myapp'));
 
     expect(result.current.color).toBe('#ff0000');
     // emoji should be hashed from agent.id, not cwd
-    const { result: noOverride } = renderHook(() =>
-      useAgentVisual(mockAgent, '/projects/myapp')
-    );
+    const { result: noOverride } = renderHook(() => useAgentVisual(mockAgent, '/projects/myapp'));
     expect(result.current.emoji).toBe(noOverride.current.emoji);
   });
 
   it('produces stable output for same inputs (memoization)', () => {
     const { result, rerender } = renderHook(
-      ({ agent, cwd }: { agent: AgentManifest | null; cwd: string }) =>
-        useAgentVisual(agent, cwd),
+      ({ agent, cwd }: { agent: AgentManifest | null; cwd: string }) => useAgentVisual(agent, cwd),
       { initialProps: { agent: mockAgent, cwd: '/projects/myapp' } }
     );
 

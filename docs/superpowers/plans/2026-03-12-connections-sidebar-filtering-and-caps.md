@@ -18,10 +18,10 @@ title: Connections Sidebar — Agent Filtering and List Caps Implementation Plan
 
 ## File Map
 
-| File | Change |
-|---|---|
-| `apps/client/src/layers/features/session-list/ui/ConnectionsView.tsx` | Add `useAgentAccess` import + filtering logic + cap constants + overflow buttons |
-| `apps/client/src/layers/features/session-list/__tests__/ConnectionsView.test.tsx` | Add mock for `useAgentAccess` + new test cases |
+| File                                                                              | Change                                                                           |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/session-list/ui/ConnectionsView.tsx`             | Add `useAgentAccess` import + filtering logic + cap constants + overflow buttons |
+| `apps/client/src/layers/features/session-list/__tests__/ConnectionsView.test.tsx` | Add mock for `useAgentAccess` + new test cases                                   |
 
 ---
 
@@ -30,6 +30,7 @@ title: Connections Sidebar — Agent Filtering and List Caps Implementation Plan
 ### Task 1: Add `useAgentAccess` mock and failing tests for agent filtering
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/session-list/__tests__/ConnectionsView.test.tsx`
 
 - [ ] **Step 1: Add the `useAgentAccess` mock at the top of the test file**
@@ -40,7 +41,9 @@ After the existing `useRegisteredAgents` mock block (around line 23), add:
 
 ```typescript
 // Mock useAgentAccess
-const mockAgentAccess = vi.fn<() => { data: { agents: AgentManifest[] } | undefined; isLoading: boolean }>(() => ({
+const mockAgentAccess = vi.fn<
+  () => { data: { agents: AgentManifest[] } | undefined; isLoading: boolean }
+>(() => ({
   data: undefined,
   isLoading: false,
 }));
@@ -130,7 +133,7 @@ import { useRegisteredAgents, useAgentAccess } from '@/layers/entities/mesh';
 ```typescript
 const { data: accessData, isLoading: accessLoading } = useAgentAccess(
   agentId ?? '',
-  meshEnabled && !!agentId,
+  meshEnabled && !!agentId
 );
 ```
 
@@ -145,6 +148,7 @@ const visibleAgents = useMemo(() => {
 ```
 
 **d) In the JSX**, replace every reference to `agents` in the Agents section with `visibleAgents`:
+
 - Line 141: `agents.length === 0` → `visibleAgents.length === 0`
 - Line 147: `agents.map(` → `visibleAgents.map(`
 
@@ -171,6 +175,7 @@ git commit -m "feat(connections): filter agents to reachable-only via useAgentAc
 ### Task 2: Add failing tests for agents cap
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/session-list/__tests__/ConnectionsView.test.tsx`
 
 - [ ] **Step 1: Add failing tests for agents cap**
@@ -242,6 +247,7 @@ Expected: The two tests asserting overflow buttons FAIL (no overflow buttons exi
 ### Task 3: Implement agents cap and overflow button
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/session-list/ui/ConnectionsView.tsx`
 
 - [ ] **Step 1: Add cap constants and slicing logic**
@@ -259,6 +265,7 @@ const agentOverflow = visibleAgents.length - AGENT_CAP;
 - [ ] **Step 2: Update the agents list render to use cappedAgents**
 
 In the JSX Agents section, replace:
+
 - `visibleAgents.length === 0` → `visibleAgents.length === 0` (no change to empty check — keep checking full list)
 - `visibleAgents.map(` → `cappedAgents.map(`
 
@@ -267,19 +274,22 @@ In the JSX Agents section, replace:
 The agents section currently ends with a `</SidebarMenu>` followed by the "Open Mesh →" `<div>`. Insert the overflow button between them:
 
 ```tsx
-{agentOverflow > 0 && (
-  <div className="px-3 py-1">
-    <button
-      onClick={() => setMeshOpen(true)}
-      className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-    >
-      + {agentOverflow} more {agentOverflow === 1 ? 'agent' : 'agents'} reachable →
-    </button>
-  </div>
-)}
+{
+  agentOverflow > 0 && (
+    <div className="px-3 py-1">
+      <button
+        onClick={() => setMeshOpen(true)}
+        className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+      >
+        + {agentOverflow} more {agentOverflow === 1 ? 'agent' : 'agents'} reachable →
+      </button>
+    </div>
+  );
+}
 ```
 
 So the structure becomes:
+
 ```tsx
 <SidebarMenu>
   {cappedAgents.map(...)}
@@ -317,6 +327,7 @@ git commit -m "feat(connections): cap agents list at 3 with overflow link to Mes
 ### Task 4: Add failing tests for MCP servers cap
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/session-list/__tests__/ConnectionsView.test.tsx`
 
 - [ ] **Step 1: Add a `makeMcpServer` helper and update the `mockMcpConfig` type**
@@ -324,7 +335,9 @@ git commit -m "feat(connections): cap agents list at 3 with overflow link to Mes
 **a) Update the `mockMcpConfig` mock type** (around line 32 of the test file) to include the optional `status` field:
 
 ```typescript
-const mockMcpConfig = vi.fn<() => { data: { servers: { name: string; type: string; status?: string }[] } | undefined }>(() => ({
+const mockMcpConfig = vi.fn<
+  () => { data: { servers: { name: string; type: string; status?: string }[] } | undefined }
+>(() => ({
   data: { servers: [] },
 }));
 ```
@@ -333,7 +346,10 @@ const mockMcpConfig = vi.fn<() => { data: { servers: { name: string; type: strin
 
 ```typescript
 /** Build a minimal MCP server entry for testing. */
-function makeMcpServer(name: string, status = 'connected'): { name: string; type: string; status?: string } {
+function makeMcpServer(
+  name: string,
+  status = 'connected'
+): { name: string; type: string; status?: string } {
   return { name, type: 'sse', status };
 }
 ```
@@ -416,6 +432,7 @@ Expected: The two tests asserting MCP overflow buttons FAIL. The ≤ cap test pa
 ### Task 5: Implement MCP servers cap and overflow button
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/session-list/ui/ConnectionsView.tsx`
 
 - [ ] **Step 1: Add MCP slicing using the existing MCP_CAP constant**
@@ -436,16 +453,18 @@ In the Tools section JSX, replace `mcpServers.map(` with `cappedMcpServers.map(`
 The Tools section currently has `mcpServers.map(...)` followed by the "Edit capabilities →" `<div>`. Insert the overflow button between them:
 
 ```tsx
-{mcpOverflow > 0 && (
-  <div className="px-3 py-1">
-    <button
-      onClick={() => setAgentDialogOpen(true)}
-      className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-    >
-      + {mcpOverflow} more {mcpOverflow === 1 ? 'server' : 'servers'} →
-    </button>
-  </div>
-)}
+{
+  mcpOverflow > 0 && (
+    <div className="px-3 py-1">
+      <button
+        onClick={() => setAgentDialogOpen(true)}
+        className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+      >
+        + {mcpOverflow} more {mcpOverflow === 1 ? 'server' : 'servers'} →
+      </button>
+    </div>
+  );
+}
 ```
 
 So the structure of the Tools section becomes:

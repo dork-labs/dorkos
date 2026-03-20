@@ -22,7 +22,8 @@ router.get('/', async (req, res) => {
     resolved = await validateBoundary(targetPath);
   } catch (err: unknown) {
     if (err instanceof BoundaryError) {
-      if (err.code === 'NULL_BYTE') return res.status(400).json({ error: err.message, code: err.code });
+      if (err.code === 'NULL_BYTE')
+        return res.status(400).json({ error: err.message, code: err.code });
       return res.status(403).json({ error: err.message, code: err.code });
     }
     const code = (err as NodeJS.ErrnoException).code;
@@ -53,7 +54,8 @@ router.get('/', async (req, res) => {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const parent = path.dirname(resolved);
-  const hasParent = parent !== resolved && (parent === boundary || parent.startsWith(boundary + path.sep));
+  const hasParent =
+    parent !== resolved && (parent === boundary || parent.startsWith(boundary + path.sep));
 
   res.json({
     path: resolved,

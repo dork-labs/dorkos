@@ -89,7 +89,7 @@ const generateUlid = monotonicFactory();
  */
 function findMatchingEndpoints(
   endpointRegistry: EndpointRegistry,
-  subject: string,
+  subject: string
 ): EndpointInfo[] {
   return endpointRegistry.listEndpoints().filter((ep) => matchesPattern(ep.subject, subject));
 }
@@ -114,7 +114,7 @@ export class RelayPublishPipeline {
     deps: PublishDeps,
     opts: PublishResolvedOptions,
     rateLimitConfig: RateLimitConfig,
-    adapterContextBuilder?: (subject: string) => AdapterContext | undefined,
+    adapterContextBuilder?: (subject: string) => AdapterContext | undefined
   ) {
     this.deps = deps;
     this.opts = opts;
@@ -154,7 +154,7 @@ export class RelayPublishPipeline {
   async publish(
     subject: string,
     payload: unknown,
-    options: PublishOptions,
+    options: PublishOptions
   ): Promise<PublishResult> {
     // 1. Validate subject
     const validation = validateSubject(subject);
@@ -169,25 +169,22 @@ export class RelayPublishPipeline {
         `Access denied: ${options.from} -> ${subject}` +
           (accessResult.matchedRule
             ? ` (rule: ${accessResult.matchedRule.from} -> ${accessResult.matchedRule.to})`
-            : ''),
+            : '')
       );
     }
 
     // 3. Rate limit check (per-sender, before fan-out)
     if (this.rateLimitConfig.enabled) {
       const windowStartIso = new Date(
-        Date.now() - this.rateLimitConfig.windowSecs * 1000,
+        Date.now() - this.rateLimitConfig.windowSecs * 1000
       ).toISOString();
-      const countInWindow = this.deps.sqliteIndex.countSenderInWindow(
-        options.from,
-        windowStartIso,
-      );
+      const countInWindow = this.deps.sqliteIndex.countSenderInWindow(options.from, windowStartIso);
       const rateLimitResult = checkRateLimit(options.from, countInWindow, this.rateLimitConfig);
       if (!rateLimitResult.allowed) {
         this.deps.logger?.warn?.(
           `publish rate-limited: sender=${options.from}, ` +
             `count=${rateLimitResult.currentCount}/${rateLimitResult.limit} ` +
-            `in ${this.rateLimitConfig.windowSecs}s window, subject=${subject}`,
+            `in ${this.rateLimitConfig.windowSecs}s window, subject=${subject}`
         );
         return {
           messageId: '',
@@ -223,9 +220,7 @@ export class RelayPublishPipeline {
       endpointHash: '*', // placeholder — not a Maildir endpoint
       status: 'delivered',
       createdAt: envelope.createdAt,
-      expiresAt: envelope.budget.ttl
-        ? new Date(envelope.budget.ttl).toISOString()
-        : null,
+      expiresAt: envelope.budget.ttl ? new Date(envelope.budget.ttl).toISOString() : null,
       sender: options.from,
     });
 
@@ -243,7 +238,7 @@ export class RelayPublishPipeline {
     envelope: RelayEnvelope,
     subject: string,
     options: PublishOptions,
-    messageId: string,
+    messageId: string
   ): Promise<PublishResult> {
     const matchingEndpoints = findMatchingEndpoints(this.deps.endpointRegistry, subject);
 
@@ -265,7 +260,7 @@ export class RelayPublishPipeline {
       adapterResult = await this.deps.adapterDelivery.deliver(
         subject,
         envelope,
-        this.adapterContextBuilder,
+        this.adapterContextBuilder
       );
       if (adapterResult?.success) deliveredTo++;
     }
@@ -306,10 +301,7 @@ export class RelayPublishPipeline {
    * BindingRouter and other subscribers to intercept messages published
    * to subjects with no registered endpoint.
    */
-  private async dispatchToSubscribers(
-    envelope: RelayEnvelope,
-    subject: string,
-  ): Promise<number> {
+  private async dispatchToSubscribers(envelope: RelayEnvelope, subject: string): Promise<number> {
     let count = 0;
     const subscribers = this.deps.subscriptionRegistry.getSubscribers(subject);
     for (const handler of subscribers) {
@@ -327,7 +319,7 @@ export class RelayPublishPipeline {
   private async deadLetter(
     subject: string,
     envelope: RelayEnvelope,
-    adapterResult: DeliveryResult | null,
+    adapterResult: DeliveryResult | null
   ): Promise<void> {
     const subjectHash = hashSubject(subject);
     await this.deps.maildirStore.ensureMaildir(subjectHash);
@@ -345,7 +337,7 @@ export class RelayPublishPipeline {
     deliveredTo: number,
     rejected: PublishResult['rejected'],
     adapterResult: DeliveryResult | null,
-    envelope: RelayEnvelope,
+    envelope: RelayEnvelope
   ): void {
     if (!this.deps.traceStore) return;
     try {

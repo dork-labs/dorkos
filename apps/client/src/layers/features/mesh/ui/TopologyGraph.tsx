@@ -73,7 +73,13 @@ export function TopologyGraph(props: TopologyGraphProps) {
   );
 }
 
-function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, onOpenChat, onOpenAdapterCatalog }: TopologyGraphProps) {
+function TopologyGraphInner({
+  onSelectAgent,
+  onOpenSettings,
+  onGoToDiscovery,
+  onOpenChat,
+  onOpenAdapterCatalog,
+}: TopologyGraphProps) {
   const { data: topology, isLoading, isError, refetch } = useTopology();
 
   const namespaces = topology?.namespaces;
@@ -127,9 +133,8 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
         onSelectAgent: (id, path) => onSelectAgentRef.current?.(id, path),
         onOpenChat: (path) => onOpenChatRef.current?.(path),
         onGhostClick: () => onOpenAdapterCatalogRef.current?.(),
-      },
+      }
     );
-     
   }, [namespaces, accessRules, relayEnabled, adapters, bindings, bindingCountByAdapter]);
 
   const {
@@ -166,8 +171,14 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
   // Stable fingerprint so ELK only re-runs when the graph structure actually
   // changes, not when useTopology refetch creates new object references.
   const topologyFingerprint = useMemo(() => {
-    const nodeIds = rawNodes.map((n) => `${n.id}:${n.type}:${n.parentId ?? ''}`).sort().join('|');
-    const edgeIds = rawEdges.map((e) => `${e.source}->${e.target}:${e.type}`).sort().join('|');
+    const nodeIds = rawNodes
+      .map((n) => `${n.id}:${n.type}:${n.parentId ?? ''}`)
+      .sort()
+      .join('|');
+    const edgeIds = rawEdges
+      .map((e) => `${e.source}->${e.target}:${e.type}`)
+      .sort()
+      .join('|');
     return `${nodeIds}::${edgeIds}`;
   }, [rawNodes, rawEdges]);
 
@@ -211,19 +222,19 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
   if (isLoading || isLayouting) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
         <span>Failed to load topology</span>
         <button
           type="button"
           onClick={() => refetch()}
-          className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
+          className="hover:bg-muted rounded-md border px-3 py-1 text-xs"
         >
           Retry
         </button>
@@ -241,15 +252,14 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
 
   return (
     <div
-      className={`topology-container absolute inset-0${connectingFrom ? ' is-connecting' : ''}`}
+      className={`topology-container absolute inset-0${connectingFrom ? 'is-connecting' : ''}`}
       role="img"
       aria-roledescription="network topology graph"
     >
       {/* Screen-reader summary */}
       <div className="sr-only">
-        Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''},{' '}
-        {adapterCount} adapter{adapterCount !== 1 ? 's' : ''},{' '}
-        {bindingCount} binding{bindingCount !== 1 ? 's' : ''}
+        Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter
+        {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -273,7 +283,12 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
         onlyRenderVisibleElements
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--muted-foreground) / 0.15)" />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={16}
+          size={1}
+          color="hsl(var(--muted-foreground) / 0.15)"
+        />
         <MiniMap
           nodeColor={(node) => {
             if (node.type === 'adapter') return 'hsl(var(--muted-foreground) / 0.4)';
@@ -285,7 +300,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
           maskColor="hsl(var(--background) / 0.8)"
           pannable
           zoomable
-          className="!bottom-2 !right-2"
+          className="!right-2 !bottom-2"
           style={{ height: 80 }}
         />
         <Controls showInteractive={false} />
@@ -295,7 +310,7 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
               type="button"
               onClick={handleResetLayout}
               title="Reset Layout"
-              className="flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              className="bg-card text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md border px-2 py-1 text-xs shadow-sm"
             >
               <RotateCcw className="size-3" />
               Reset Layout
@@ -306,18 +321,20 @@ function TopologyGraphInner({ onSelectAgent, onOpenSettings, onGoToDiscovery, on
       </ReactFlow>
       {/* Contextual hints for adapter/binding onboarding */}
       {relayEnabled && hasAgents && !hasAdapters && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md bg-muted/80 px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
           Add adapters from the Relay panel to connect them to agents
         </div>
       )}
       {hasAdapters && hasAgents && !hasBindings && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md bg-muted/80 px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
           Drag from an adapter to an agent to create a binding
         </div>
       )}
       <BindingDialog
         open={!!pendingConnection}
-        onOpenChange={(open) => { if (!open) setPendingConnection(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingConnection(null);
+        }}
         adapterName={pendingConnection?.sourceAdapterName ?? ''}
         agentName={pendingConnection?.targetAgentName ?? ''}
         onConfirm={handleBindingConfirm}

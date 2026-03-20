@@ -94,6 +94,7 @@ N/A — not a bug fix.
 ### Potential Solutions
 
 **1. Comprehensive Documentation First**
+
 - Description: Write all docs before any release activities
 - Pros: Users have full reference material on day one
 - Cons: Delays release, large writing effort
@@ -101,6 +102,7 @@ N/A — not a bug fix.
 - Maintenance: Low (docs are stable once written)
 
 **2. Ship Fast, Docs Later**
+
 - Description: Minimal changelog + blog, fill docs incrementally
 - Pros: Fastest path to release
 - Cons: Users discover features without guidance, support burden
@@ -108,6 +110,7 @@ N/A — not a bug fix.
 - Maintenance: High (ongoing doc debt)
 
 **3. Tiered Documentation Approach (Selected)**
+
 - Description: Comprehensive docs organized by priority tier, all completed before release
 - Pros: Full coverage, organized work, nothing slips through
 - Cons: More upfront work than minimal approach
@@ -115,10 +118,12 @@ N/A — not a bug fix.
 - Maintenance: Low
 
 ### Security Considerations
+
 - No new secrets or credentials involved
 - Docs should note that Relay adapter configs (Telegram tokens, webhook URLs) are sensitive
 
 ### Performance Considerations
+
 - OpenAPI spec regeneration is needed — `npm run docs:export-api`
 - Fumadocs nav changes require no rebuild (meta.json only)
 
@@ -128,12 +133,12 @@ N/A — not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Version number | Defer to `/system:release` | The release command handles version bumps, git tags, and npm publish in one flow |
-| 2 | Documentation scope | Comprehensive | All guides, concepts, API docs, integration guide, contributing updates, README |
-| 3 | Spec cleanup | Update to 'implemented' | Keeps project tracking accurate for specs 50-59 |
-| 4 | Ideation scope | Full implementation plans | Each item gets detailed file paths, content outlines, and draft structures |
+| #   | Decision            | Choice                     | Rationale                                                                        |
+| --- | ------------------- | -------------------------- | -------------------------------------------------------------------------------- |
+| 1   | Version number      | Defer to `/system:release` | The release command handles version bumps, git tags, and npm publish in one flow |
+| 2   | Documentation scope | Comprehensive              | All guides, concepts, API docs, integration guide, contributing updates, README  |
+| 3   | Spec cleanup        | Update to 'implemented'    | Keeps project tracking accurate for specs 50-59                                  |
+| 4   | Ideation scope      | Full implementation plans  | Each item gets detailed file paths, content outlines, and draft structures       |
 
 ---
 
@@ -146,6 +151,7 @@ N/A — not a bug fix.
 #### 1.1 CHANGELOG Updates
 
 **Files:**
+
 - `CHANGELOG.md` (root)
 - `docs/changelog.mdx`
 
@@ -465,6 +471,7 @@ npm install -g dorkos@0.4.0
 **File:** `apps/web/src/layers/features/marketing/lib/modules.ts`
 
 **Change:** Update status fields:
+
 - `pulse`: `'coming-soon'` -> `'available'` (shipped in 0.3.0)
 - `relay`: `'coming-soon'` -> `'available'`
 - `mesh`: `'coming-soon'` -> `'available'`
@@ -480,6 +487,7 @@ npm install -g dorkos@0.4.0
 **Approach:** The OpenAPI spec is auto-generated from Zod schemas via `npm run docs:export-api`. Verify that all Relay/Mesh endpoints appear in the generated spec.
 
 **Steps:**
+
 1. Run `npm run docs:export-api` to regenerate `docs/api/openapi.json`
 2. Verify Relay endpoints (14+) appear in the spec
 3. Verify Mesh endpoints (8+) appear in the spec
@@ -494,6 +502,7 @@ npm install -g dorkos@0.4.0
 **File:** `docs/index.mdx`
 
 **Changes:**
+
 - Add a "Features" section with Relay and Mesh cards:
 
 ```mdx
@@ -573,6 +582,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 **File:** `docs/integrations/sse-protocol.mdx`
 
 **Changes:** Add the new Relay event types to the SSE protocol documentation:
+
 - `relay_message` — Relay response chunk containing a nested StreamEvent
 - `relay_receipt` — Delivery confirmation for a Relay message
 - `message_delivered` — Message delivery notification
@@ -582,15 +592,18 @@ description: Create custom adapters to bridge external channels into the Relay m
 #### 2.5 Contributing Guide Updates
 
 **Files:**
+
 - `CONTRIBUTING.md` — Add Relay/Mesh to monorepo structure table, mention new packages
 - `contributing/architecture.md` — Expand Relay section, add dedicated Mesh section
 
 **CONTRIBUTING.md changes:**
+
 - Add `packages/relay` and `packages/mesh` to the monorepo structure table
 - Mention `DORKOS_RELAY_ENABLED` and `DORKOS_MESH_ENABLED` env vars
 - Reference new Relay/Mesh docs
 
 **contributing/architecture.md changes:**
+
 - Expand the Relay subsystem section with data flow diagrams
 - Add a new Mesh subsystem section covering:
   - MeshCore architecture
@@ -606,6 +619,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 **File:** `README.md` (root)
 
 **Changes:**
+
 - Add Relay and Mesh to the feature list
 - Mention `DORKOS_RELAY_ENABLED` and `DORKOS_MESH_ENABLED`
 - Update the "What is DorkOS?" description to mention multi-agent coordination
@@ -617,6 +631,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 **File:** `packages/cli/package.json`
 
 **Changes:** Add to keywords array:
+
 - `"relay"`, `"mesh"`, `"agent-mesh"`, `"pub-sub"`, `"agent-discovery"`, `"message-bus"`
 
 ---
@@ -628,6 +643,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 #### 3.1 Relay Observability Guide
 
 **File:** `docs/guides/relay-observability.mdx`
+
 - How to read message traces
 - Understanding delivery metrics
 - Debugging failed deliveries
@@ -636,6 +652,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 #### 3.2 Pulse Scheduler Guide
 
 **File:** `docs/guides/pulse-scheduler.mdx`
+
 - Was missing since 0.3.0, should be created
 - How to create/manage schedules
 - Cron syntax reference
@@ -644,6 +661,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 #### 3.3 Agent Coordination Patterns
 
 **File:** `docs/guides/agent-coordination.mdx`
+
 - Best practices for multi-agent workflows
 - Pattern: supervisor-worker
 - Pattern: peer-to-peer messaging
@@ -652,6 +670,7 @@ description: Create custom adapters to bridge external channels into the Relay m
 #### 3.4 Configuration Guide Update
 
 **File:** `docs/getting-started/configuration.mdx`
+
 - Add Relay and Mesh configuration sections
 - Document all new env vars
 - Document adapter config in ~/.dork/config.json
@@ -664,29 +683,29 @@ description: Create custom adapters to bridge external channels into the Relay m
 
 **Update the following spec statuses to `"implemented"`:**
 
-| Spec # | Slug | Current Status | New Status |
-|--------|------|----------------|------------|
-| 50 | relay-core-library | implemented | (already correct) |
-| 51 | relay-server-client-integration | ideation | implemented |
-| 52 | relay-advanced-reliability | specified | (keep — not fully implemented) |
-| 53 | relay-external-adapters | specified | implemented |
-| 54 | mesh-core-library | specified | implemented |
-| 56 | mesh-server-client-integration | specified | implemented |
-| 57 | relay-runtime-adapters | implemented | (already correct) |
-| 58 | mesh-network-topology | specified | implemented |
-| 59 | mesh-observability-lifecycle | specified | implemented |
+| Spec # | Slug                            | Current Status | New Status                     |
+| ------ | ------------------------------- | -------------- | ------------------------------ |
+| 50     | relay-core-library              | implemented    | (already correct)              |
+| 51     | relay-server-client-integration | ideation       | implemented                    |
+| 52     | relay-advanced-reliability      | specified      | (keep — not fully implemented) |
+| 53     | relay-external-adapters         | specified      | implemented                    |
+| 54     | mesh-core-library               | specified      | implemented                    |
+| 56     | mesh-server-client-integration  | specified      | implemented                    |
+| 57     | relay-runtime-adapters          | implemented    | (already correct)              |
+| 58     | mesh-network-topology           | specified      | implemented                    |
+| 59     | mesh-observability-lifecycle    | specified      | implemented                    |
 
 ---
 
 ## 8) Work Estimate
 
-| Tier | Items | Est. Effort |
-|------|-------|-------------|
-| Tier 1 (Critical) | 7 items: CHANGELOG, 2 guides, 2 concepts, blog post, homepage fix | 8-12 hours |
-| Tier 2 (High) | 7 items: API docs, landing page, integration guide, SSE update, contributing, README, keywords | 6-10 hours |
-| Tier 3 (Medium) | 4 items: observability guide, Pulse guide, coordination patterns, config update | 4-6 hours |
-| Tier 4 (Cleanup) | 1 item: spec manifest updates | 15 minutes |
-| **Total** | **19 items** | **18-28 hours** |
+| Tier              | Items                                                                                          | Est. Effort     |
+| ----------------- | ---------------------------------------------------------------------------------------------- | --------------- |
+| Tier 1 (Critical) | 7 items: CHANGELOG, 2 guides, 2 concepts, blog post, homepage fix                              | 8-12 hours      |
+| Tier 2 (High)     | 7 items: API docs, landing page, integration guide, SSE update, contributing, README, keywords | 6-10 hours      |
+| Tier 3 (Medium)   | 4 items: observability guide, Pulse guide, coordination patterns, config update                | 4-6 hours       |
+| Tier 4 (Cleanup)  | 1 item: spec manifest updates                                                                  | 15 minutes      |
+| **Total**         | **19 items**                                                                                   | **18-28 hours** |
 
 ## 9) Recommended Execution Order
 

@@ -27,6 +27,7 @@ relay subjects, which was incorrect — the correct value is the Mesh ULID, not 
 ## Decision
 
 Formalize a three-ID glossary:
+
 - **agentId** — Mesh ULID; used for routing (`relay.agent.{agentId}`), Mesh lookups
 - **sdkSessionId** — SDK UUID; used for conversation continuity, JSONL file naming
 - **ccaSessionKey** — CCA's internal lookup key; equals agentId initially, then sdkSessionId after first message

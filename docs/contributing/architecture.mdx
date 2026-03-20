@@ -90,6 +90,7 @@ The interface extends further to cover Pulse schedules, Relay messaging, Mesh ag
 - Converts SSE events into `StreamEvent` objects that update the UI
 
 **Location:** `apps/client/src/layers/shared/lib/http-transport.ts`
+
 </Tab>
 <Tab value="DirectTransport (Obsidian Plugin)">
 `DirectTransport` calls service instances directly in the same process:
@@ -99,6 +100,7 @@ The interface extends further to cover Pulse schedules, Relay messaging, Mesh ag
 - Lower latency, ideal for embedded contexts
 
 **Location:** `apps/client/src/layers/shared/lib/direct-transport.ts`
+
 </Tab>
 </Tabs>
 
@@ -126,10 +128,10 @@ const runtime = new ClaudeCodeRuntime(repoRoot)
 const commandRegistry = new CommandRegistryService(repoRoot)
 
 const transport = new DirectTransport({
-  runtime,
-  transcriptReader: runtime.getTranscriptReader(),
-  commandRegistry,
-  vaultRoot: repoRoot
+runtime,
+transcriptReader: runtime.getTranscriptReader(),
+commandRegistry,
+vaultRoot: repoRoot
 })
 
 <TransportProvider transport={transport}>
@@ -144,11 +146,11 @@ const transport = new DirectTransport({
 Components and hooks access the transport via `useTransport()`:
 
 ```typescript
-import { useTransport } from '@/layers/shared/model/TransportContext'
+import { useTransport } from '@/layers/shared/model/TransportContext';
 
 function MyComponent() {
-  const transport = useTransport()
-  const sessions = await transport.listSessions()
+  const transport = useTransport();
+  const sessions = await transport.listSessions();
 }
 ```
 
@@ -160,39 +162,90 @@ The Express server (`apps/server/`) is organized into routes and services.
 
 Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegistry.getDefault()`:
 
-<TypeTable type={{
-  "sessions.ts": { type: "route", description: "Session listing, creation, message streaming, tool approval/denial" },
-  "commands.ts": { type: "route", description: "Slash command discovery" },
-  "capabilities.ts": { type: "route", description: "Runtime capability flags for all registered runtimes" },
-  "models.ts": { type: "route", description: "Available Claude models via runtime" },
-  "health.ts": { type: "route", description: "Health check and optional tunnel status" },
-  "directory.ts": { type: "route", description: "Directory browsing for working directory selection" },
-  "config.ts": { type: "route", description: "Configuration management" },
-  "files.ts": { type: "route", description: "File operations" },
-  "git.ts": { type: "route", description: "Git status and branch info" },
-  "pulse.ts": { type: "route", description: "Pulse scheduler CRUD and run history" },
-  "relay.ts": { type: "route", description: "Relay messaging, adapter catalog, and binding management" },
-  "mesh.ts": { type: "route", description: "Mesh agent discovery and registry" },
-  "agents.ts": { type: "route", description: "Agent identity CRUD" },
-  "uploads.ts": { type: "route", description: "File uploads via multipart form data" },
-  "mcp.ts": { type: "route", description: "External MCP server endpoint (Streamable HTTP, /mcp)" },
-}} />
+<TypeTable
+  type={{
+    'sessions.ts': {
+      type: 'route',
+      description: 'Session listing, creation, message streaming, tool approval/denial',
+    },
+    'commands.ts': { type: 'route', description: 'Slash command discovery' },
+    'capabilities.ts': {
+      type: 'route',
+      description: 'Runtime capability flags for all registered runtimes',
+    },
+    'models.ts': { type: 'route', description: 'Available Claude models via runtime' },
+    'health.ts': { type: 'route', description: 'Health check and optional tunnel status' },
+    'directory.ts': {
+      type: 'route',
+      description: 'Directory browsing for working directory selection',
+    },
+    'config.ts': { type: 'route', description: 'Configuration management' },
+    'files.ts': { type: 'route', description: 'File operations' },
+    'git.ts': { type: 'route', description: 'Git status and branch info' },
+    'pulse.ts': { type: 'route', description: 'Pulse scheduler CRUD and run history' },
+    'relay.ts': {
+      type: 'route',
+      description: 'Relay messaging, adapter catalog, and binding management',
+    },
+    'mesh.ts': { type: 'route', description: 'Mesh agent discovery and registry' },
+    'agents.ts': { type: 'route', description: 'Agent identity CRUD' },
+    'uploads.ts': { type: 'route', description: 'File uploads via multipart form data' },
+    'mcp.ts': {
+      type: 'route',
+      description: 'External MCP server endpoint (Streamable HTTP, /mcp)',
+    },
+  }}
+/>
 
 ### Services
 
-<TypeTable type={{
-  "runtime-registry.ts": { type: "core", description: "Registry of AgentRuntime instances keyed by type. Routes call runtimeRegistry.getDefault()." },
-  "claude-code-runtime.ts": { type: "runtime", description: "ClaudeCodeRuntime — implements AgentRuntime, encapsulates Claude Agent SDK" },
-  "transcript-reader.ts": { type: "runtime", description: "Reads SDK JSONL transcript files — single source of truth for session data" },
-  "session-broadcaster.ts": { type: "runtime", description: "Watches JSONL files for changes, broadcasts sync events to connected clients" },
-  "stream-adapter.ts": { type: "core", description: "SSE helpers for formatting StreamEvent objects as wire protocol" },
-  "command-registry.ts": { type: "runtime", description: "Scans .claude/commands/ for slash commands" },
-  "openapi-registry.ts": { type: "core", description: "Auto-generates OpenAPI spec from Zod schemas" },
-  "config-manager.ts": { type: "core", description: "Persistent user config at ~/.dork/config.json" },
-  "tunnel-manager.ts": { type: "core", description: "Optional ngrok tunnel lifecycle" },
-  "upload-handler.ts": { type: "core", description: "File upload service with multer, MIME validation, and sanitized filenames" },
-  "mcp-server.ts": { type: "core", description: "External MCP server factory — Streamable HTTP transport, stateless, optional API key auth" },
-}} />
+<TypeTable
+  type={{
+    'runtime-registry.ts': {
+      type: 'core',
+      description:
+        'Registry of AgentRuntime instances keyed by type. Routes call runtimeRegistry.getDefault().',
+    },
+    'claude-code-runtime.ts': {
+      type: 'runtime',
+      description: 'ClaudeCodeRuntime — implements AgentRuntime, encapsulates Claude Agent SDK',
+    },
+    'transcript-reader.ts': {
+      type: 'runtime',
+      description: 'Reads SDK JSONL transcript files — single source of truth for session data',
+    },
+    'session-broadcaster.ts': {
+      type: 'runtime',
+      description: 'Watches JSONL files for changes, broadcasts sync events to connected clients',
+    },
+    'stream-adapter.ts': {
+      type: 'core',
+      description: 'SSE helpers for formatting StreamEvent objects as wire protocol',
+    },
+    'command-registry.ts': {
+      type: 'runtime',
+      description: 'Scans .claude/commands/ for slash commands',
+    },
+    'openapi-registry.ts': {
+      type: 'core',
+      description: 'Auto-generates OpenAPI spec from Zod schemas',
+    },
+    'config-manager.ts': {
+      type: 'core',
+      description: 'Persistent user config at ~/.dork/config.json',
+    },
+    'tunnel-manager.ts': { type: 'core', description: 'Optional ngrok tunnel lifecycle' },
+    'upload-handler.ts': {
+      type: 'core',
+      description: 'File upload service with multer, MIME validation, and sanitized filenames',
+    },
+    'mcp-server.ts': {
+      type: 'core',
+      description:
+        'External MCP server factory — Streamable HTTP transport, stateless, optional API key auth',
+    },
+  }}
+/>
 
 ### Session Storage: SDK JSONL Transcripts
 
@@ -211,27 +264,28 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 
 ### FSD Layers
 
-| Layer                    | Purpose                     | Examples                                |
-| ------------------------ | --------------------------- | --------------------------------------- |
-| `shared/ui/`             | Reusable UI primitives      | Badge, Dialog, Select, Tabs (shadcn)    |
-| `shared/model/`          | Hooks, stores, context      | TransportContext, app-store, useTheme   |
-| `shared/lib/`            | Domain-agnostic utilities   | cn(), font-config, celebrations         |
-| `entities/session/`      | Session domain hooks        | useSessionId, useSessions               |
-| `entities/runtime/`      | Runtime capabilities        | useRuntimeCapabilities                  |
-| `entities/agent/`        | Agent identity hooks        | useCurrentAgent, useAgentVisual         |
-| `entities/pulse/`        | Pulse scheduler hooks       | usePulseEnabled, useSchedules, useRuns  |
-| `entities/relay/`        | Relay messaging hooks       | useRelayEnabled, useRelayMessages       |
-| `entities/mesh/`         | Mesh discovery hooks        | useMeshEnabled, useRegisteredAgents     |
-| `features/chat/`         | Chat interface              | ChatPanel, MessageList, ToolCallCard    |
-| `features/session-list/` | Session management          | SessionSidebar, SessionItem             |
-| `features/settings/`     | Settings UI                 | SettingsDialog                          |
-| `features/pulse/`        | Pulse scheduler UI          | PulsePanel, CreateScheduleDialog        |
-| `features/relay/`        | Relay messaging UI          | RelayPanel, AdapterCard                 |
-| `features/mesh/`         | Mesh discovery UI           | MeshPanel, TopologyGraph                |
-| `widgets/app-layout/`    | App-level layout            | PermissionBanner                        |
+| Layer                    | Purpose                   | Examples                               |
+| ------------------------ | ------------------------- | -------------------------------------- |
+| `shared/ui/`             | Reusable UI primitives    | Badge, Dialog, Select, Tabs (shadcn)   |
+| `shared/model/`          | Hooks, stores, context    | TransportContext, app-store, useTheme  |
+| `shared/lib/`            | Domain-agnostic utilities | cn(), font-config, celebrations        |
+| `entities/session/`      | Session domain hooks      | useSessionId, useSessions              |
+| `entities/runtime/`      | Runtime capabilities      | useRuntimeCapabilities                 |
+| `entities/agent/`        | Agent identity hooks      | useCurrentAgent, useAgentVisual        |
+| `entities/pulse/`        | Pulse scheduler hooks     | usePulseEnabled, useSchedules, useRuns |
+| `entities/relay/`        | Relay messaging hooks     | useRelayEnabled, useRelayMessages      |
+| `entities/mesh/`         | Mesh discovery hooks      | useMeshEnabled, useRegisteredAgents    |
+| `features/chat/`         | Chat interface            | ChatPanel, MessageList, ToolCallCard   |
+| `features/session-list/` | Session management        | SessionSidebar, SessionItem            |
+| `features/settings/`     | Settings UI               | SettingsDialog                         |
+| `features/pulse/`        | Pulse scheduler UI        | PulsePanel, CreateScheduleDialog       |
+| `features/relay/`        | Relay messaging UI        | RelayPanel, AdapterCard                |
+| `features/mesh/`         | Mesh discovery UI         | MeshPanel, TopologyGraph               |
+| `widgets/app-layout/`    | App-level layout          | PermissionBanner                       |
 
 <Callout type="warn">
-Layer imports are strictly unidirectional: `shared` ← `entities` ← `features` ← `widgets` ← `app`. Cross-feature model/hook imports are forbidden.
+  Layer imports are strictly unidirectional: `shared` ← `entities` ← `features` ← `widgets` ← `app`.
+  Cross-feature model/hook imports are forbidden.
 </Callout>
 
 ### State Management
@@ -283,22 +337,33 @@ React state updates → UI re-renders with new message chunks
 
 ### StreamEvent Types
 
-<TypeTable type={{
-  "text_delta": { type: "StreamEvent", description: "Incremental text for assistant messages" },
-  "tool_call_start": { type: "StreamEvent", description: "Tool invocation begins" },
-  "tool_call_delta": { type: "StreamEvent", description: "Incremental tool input/output" },
-  "tool_call_end": { type: "StreamEvent", description: "Tool invocation completes" },
-  "tool_result": { type: "StreamEvent", description: "Tool execution result" },
-  "approval_required": { type: "StreamEvent", description: "Tool needs user approval" },
-  "question_prompt": { type: "StreamEvent", description: "Claude is asking the user a question" },
-  "error": { type: "StreamEvent", description: "Error occurred during execution" },
-  "done": { type: "StreamEvent", description: "Message stream complete" },
-  "session_status": { type: "StreamEvent", description: "Session state changed" },
-  "task_update": { type: "StreamEvent", description: "Task list updated" },
-  "relay_message": { type: "StreamEvent (Relay)", description: "Relay response chunk — nested StreamEvent. Only when DORKOS_RELAY_ENABLED=true" },
-  "relay_receipt": { type: "StreamEvent (Relay)", description: "Delivery confirmation for a Relay-routed message" },
-  "message_delivered": { type: "StreamEvent (Relay)", description: "Message delivery notification" },
-}} />
+<TypeTable
+  type={{
+    text_delta: { type: 'StreamEvent', description: 'Incremental text for assistant messages' },
+    tool_call_start: { type: 'StreamEvent', description: 'Tool invocation begins' },
+    tool_call_delta: { type: 'StreamEvent', description: 'Incremental tool input/output' },
+    tool_call_end: { type: 'StreamEvent', description: 'Tool invocation completes' },
+    tool_result: { type: 'StreamEvent', description: 'Tool execution result' },
+    approval_required: { type: 'StreamEvent', description: 'Tool needs user approval' },
+    question_prompt: { type: 'StreamEvent', description: 'Claude is asking the user a question' },
+    error: { type: 'StreamEvent', description: 'Error occurred during execution' },
+    done: { type: 'StreamEvent', description: 'Message stream complete' },
+    session_status: { type: 'StreamEvent', description: 'Session state changed' },
+    task_update: { type: 'StreamEvent', description: 'Task list updated' },
+    relay_message: {
+      type: 'StreamEvent (Relay)',
+      description: 'Relay response chunk — nested StreamEvent. Only when DORKOS_RELAY_ENABLED=true',
+    },
+    relay_receipt: {
+      type: 'StreamEvent (Relay)',
+      description: 'Delivery confirmation for a Relay-routed message',
+    },
+    message_delivered: {
+      type: 'StreamEvent (Relay)',
+      description: 'Message delivery notification',
+    },
+  }}
+/>
 
 ## Session Sync Protocol
 

@@ -3,8 +3,8 @@ title: Mesh
 description: How DorkOS discovers, registers, and connects AI agents across your filesystem
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Mesh
 
@@ -42,7 +42,8 @@ When you trigger a discovery scan, Mesh walks the specified root directories up 
 The scan yields `DiscoveryCandidate` objects for directories that match a strategy but are not yet registered or denied.
 
 <Callout type="info">
-Discovery is non-destructive. It only reads filesystem markers — it never modifies your project directories until you explicitly approve a registration.
+  Discovery is non-destructive. It only reads filesystem markers — it never modifies your project
+  directories until you explicitly approve a registration.
 </Callout>
 
 ## Registration
@@ -61,21 +62,21 @@ You can also register an agent directly by project path without running a discov
 
 Every registered agent has a manifest stored in `.dork/agent.json`:
 
-| Field | Description |
-|---|---|
-| **id** | ULID assigned at registration |
-| **name** | Human-readable name (e.g., "backend-api") |
-| **description** | What the agent does |
-| **runtime** | `claude-code`, `cursor`, `codex`, or `other` |
-| **capabilities** | Capability tags (e.g., "typescript", "testing") |
-| **behavior** | Response mode: `always`, `direct-only`, `mention-only`, or `silent` |
-| **budget** | Max hops per message (default: 5) and max API calls per hour (default: 100) |
-| **namespace** | Derived from project path relative to scan root |
-| **persona** | Optional system prompt text injected into Claude sessions |
-| **personaEnabled** | Whether persona text is injected (default: true) |
-| **color** | CSS color override for visual identity |
-| **icon** | Emoji override for visual identity |
-| **enabledToolGroups** | Per-domain MCP tool overrides (pulse, relay, mesh, adapter) |
+| Field                 | Description                                                                 |
+| --------------------- | --------------------------------------------------------------------------- |
+| **id**                | ULID assigned at registration                                               |
+| **name**              | Human-readable name (e.g., "backend-api")                                   |
+| **description**       | What the agent does                                                         |
+| **runtime**           | `claude-code`, `cursor`, `codex`, or `other`                                |
+| **capabilities**      | Capability tags (e.g., "typescript", "testing")                             |
+| **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`         |
+| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100) |
+| **namespace**         | Derived from project path relative to scan root                             |
+| **persona**           | Optional system prompt text injected into Claude sessions                   |
+| **personaEnabled**    | Whether persona text is injected (default: true)                            |
+| **color**             | CSS color override for visual identity                                      |
+| **icon**              | Emoji override for visual identity                                          |
+| **enabledToolGroups** | Per-domain MCP tool overrides (pulse, relay, mesh, adapter)                 |
 
 ## Namespaces
 
@@ -92,11 +93,11 @@ By default, agents in different namespaces cannot message each other. You add cr
 
 Under the hood, Mesh writes Relay access control rules with a priority scheme:
 
-| Priority | Rule | Effect |
-|----------|------|--------|
-| **100** | Same-namespace allow | Agents in the same namespace always communicate |
-| **50** | Cross-namespace allow | Explicitly permitted cross-namespace communication |
-| **10** | Cross-namespace deny | Default deny for all other cross-namespace traffic |
+| Priority | Rule                  | Effect                                             |
+| -------- | --------------------- | -------------------------------------------------- |
+| **100**  | Same-namespace allow  | Agents in the same namespace always communicate    |
+| **50**   | Cross-namespace allow | Explicitly permitted cross-namespace communication |
+| **10**   | Cross-namespace deny  | Default deny for all other cross-namespace traffic |
 
 ## Denial List
 
@@ -112,7 +113,8 @@ The topology view provides a namespace-scoped picture of the agent network. It r
 The view respects access rules as boundaries. An agent in namespace A only sees agents in namespaces it can communicate with — agents cannot discover the existence of agents they are not permitted to contact.
 
 <Callout type="info">
-The admin view (`callerNamespace: '*'`) bypasses access restrictions and shows the complete topology. This is what the DorkOS UI uses to render the full network graph.
+  The admin view (`callerNamespace: '*'`) bypasses access restrictions and shows the complete
+  topology. This is what the DorkOS UI uses to render the full network graph.
 </Callout>
 
 ## Health and Observability

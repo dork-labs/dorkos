@@ -10,7 +10,7 @@ export function RelayEmptyState({ onAddAdapter }: RelayEmptyStateProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-16">
       {/* Ghost preview — faded message rows showing what the configured state looks like */}
-      <div className="mb-8 w-full max-w-md select-none opacity-30 pointer-events-none">
+      <div className="pointer-events-none mb-8 w-full max-w-md opacity-30 select-none">
         <div className="space-y-2">
           <div className="rounded-lg border p-3">
             <div className="flex items-center gap-3">
@@ -20,9 +20,9 @@ export function RelayEmptyState({ onAddAdapter }: RelayEmptyStateProps) {
               <div className="flex-1 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">relay.agent.frontend</span>
-                  <span className="text-xs text-muted-foreground">2m ago</span>
+                  <span className="text-muted-foreground text-xs">2m ago</span>
                 </div>
-                <p className="text-xs text-muted-foreground">Build completed successfully</p>
+                <p className="text-muted-foreground text-xs">Build completed successfully</p>
               </div>
             </div>
           </div>
@@ -34,9 +34,9 @@ export function RelayEmptyState({ onAddAdapter }: RelayEmptyStateProps) {
               <div className="flex-1 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">relay.system.pulse.audit</span>
-                  <span className="text-xs text-muted-foreground">15m ago</span>
+                  <span className="text-muted-foreground text-xs">15m ago</span>
                 </div>
-                <p className="text-xs text-muted-foreground">Scheduled audit run delivered</p>
+                <p className="text-muted-foreground text-xs">Scheduled audit run delivered</p>
               </div>
             </div>
           </div>
@@ -48,9 +48,9 @@ export function RelayEmptyState({ onAddAdapter }: RelayEmptyStateProps) {
               <div className="flex-1 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">relay.agent.backend</span>
-                  <span className="text-xs text-muted-foreground">1h ago</span>
+                  <span className="text-muted-foreground text-xs">1h ago</span>
                 </div>
-                <p className="text-xs text-muted-foreground">API migration task completed</p>
+                <p className="text-muted-foreground text-xs">API migration task completed</p>
               </div>
             </div>
           </div>
@@ -59,10 +59,10 @@ export function RelayEmptyState({ onAddAdapter }: RelayEmptyStateProps) {
 
       {/* Copy: What, Why, Next */}
       <h3 className="mb-2 text-lg font-medium">Connect your agents to the world</h3>
-      <p className="mb-1 max-w-sm text-center text-sm text-muted-foreground">
+      <p className="text-muted-foreground mb-1 max-w-sm text-center text-sm">
         Relay routes messages between your agents and external platforms.
       </p>
-      <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">
+      <p className="text-muted-foreground mb-6 max-w-sm text-center text-sm">
         Add your first adapter to start sending and receiving messages.
       </p>
 

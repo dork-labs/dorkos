@@ -28,34 +28,34 @@ The client will be available at `http://localhost:6241` and the server at `http:
 
 This is a Turborepo monorepo with five apps and seven shared packages:
 
-| Directory | Package | Description |
-|---|---|---|
-| `apps/client` | `@dorkos/client` | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
-| `apps/server` | `@dorkos/server` | Express API server |
-| `apps/site` | `@dorkos/site` | Marketing site & docs (Next.js 16, Fumadocs) |
-| `apps/obsidian-plugin` | `@dorkos/obsidian-plugin` | Obsidian sidebar plugin |
-| `apps/e2e` | `@dorkos/e2e` | Playwright browser tests |
-| `packages/cli` | `dorkos` | Publishable npm CLI |
-| `packages/shared` | `@dorkos/shared` | Zod schemas, shared types |
-| `packages/db` | `@dorkos/db` | Drizzle ORM schemas (SQLite) |
-| `packages/relay` | `@dorkos/relay` | Inter-agent message bus |
-| `packages/mesh` | `@dorkos/mesh` | Agent discovery & registry |
-| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets |
-| `packages/test-utils` | `@dorkos/test-utils` | Mock factories, test helpers |
+| Directory                    | Package                     | Description                                  |
+| ---------------------------- | --------------------------- | -------------------------------------------- |
+| `apps/client`                | `@dorkos/client`            | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
+| `apps/server`                | `@dorkos/server`            | Express API server                           |
+| `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs) |
+| `apps/obsidian-plugin`       | `@dorkos/obsidian-plugin`   | Obsidian sidebar plugin                      |
+| `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                     |
+| `packages/cli`               | `dorkos`                    | Publishable npm CLI                          |
+| `packages/shared`            | `@dorkos/shared`            | Zod schemas, shared types                    |
+| `packages/db`                | `@dorkos/db`                | Drizzle ORM schemas (SQLite)                 |
+| `packages/relay`             | `@dorkos/relay`             | Inter-agent message bus                      |
+| `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                   |
+| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets                      |
+| `packages/test-utils`        | `@dorkos/test-utils`        | Mock factories, test helpers                 |
 
 ## Development Commands
 
-| Command | Description |
-|---|---|
-| `pnpm dev` | Start server + client dev servers |
-| `pnpm test` | Run all tests (Vitest) |
-| `pnpm test -- --run` | Single test run (no watch mode) |
-| `pnpm build` | Build all packages |
-| `pnpm typecheck` | Type-check all packages |
-| `pnpm lint` | ESLint across all packages |
-| `pnpm lint -- --fix` | Auto-fix ESLint issues |
-| `pnpm format` | Prettier format all files |
-| `pnpm format:check` | Check formatting without writing |
+| Command              | Description                       |
+| -------------------- | --------------------------------- |
+| `pnpm dev`           | Start server + client dev servers |
+| `pnpm test`          | Run all tests (Vitest)            |
+| `pnpm test -- --run` | Single test run (no watch mode)   |
+| `pnpm build`         | Build all packages                |
+| `pnpm typecheck`     | Type-check all packages           |
+| `pnpm lint`          | ESLint across all packages        |
+| `pnpm lint -- --fix` | Auto-fix ESLint issues            |
+| `pnpm format`        | Prettier format all files         |
+| `pnpm format:check`  | Check formatting without writing  |
 
 ### Filtering Commands
 
@@ -86,11 +86,11 @@ Transport is injected via React Context (`TransportContext`). For deeper details
 
 DorkOS includes three optional subsystems that extend agent capabilities beyond interactive chat:
 
-| Subsystem | Package | Env Flag | Description |
-|---|---|---|---|
-| **Pulse** | `apps/server` (services/pulse/) | `DORKOS_PULSE_ENABLED` | Cron-based agent scheduler with SQLite run history, approval workflows, and configurable concurrency |
-| **Relay** | `packages/relay` + `apps/server` (services/relay/) | `DORKOS_RELAY_ENABLED` | Inter-agent message bus with NATS-style subject matching, Maildir persistence, delivery tracing, and external adapters |
-| **Mesh** | `packages/mesh` + `apps/server` (services/mesh/) | `DORKOS_MESH_ENABLED` | Agent discovery and registry with pluggable strategies (Claude Code, Cursor, Codex), network topology, and health monitoring |
+| Subsystem | Package                                            | Env Flag               | Description                                                                                                                  |
+| --------- | -------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Pulse** | `apps/server` (services/pulse/)                    | `DORKOS_PULSE_ENABLED` | Cron-based agent scheduler with SQLite run history, approval workflows, and configurable concurrency                         |
+| **Relay** | `packages/relay` + `apps/server` (services/relay/) | `DORKOS_RELAY_ENABLED` | Inter-agent message bus with NATS-style subject matching, Maildir persistence, delivery tracing, and external adapters       |
+| **Mesh**  | `packages/mesh` + `apps/server` (services/mesh/)   | `DORKOS_MESH_ENABLED`  | Agent discovery and registry with pluggable strategies (Claude Code, Cursor, Codex), network topology, and health monitoring |
 
 All three are feature-flag guarded and disabled by default. When Relay is enabled, both Console (chat) and Pulse message flows route through the Relay bus for unified tracing. Mesh optionally bridges with Relay for lifecycle event broadcasting.
 

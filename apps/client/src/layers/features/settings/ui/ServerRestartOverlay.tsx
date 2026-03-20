@@ -72,9 +72,7 @@ export function ServerRestartOverlay({ open, onDismiss }: ServerRestartOverlayPr
             <p className="text-foreground text-sm font-medium">
               Server did not restart within 30 seconds.
             </p>
-            <p className="text-muted-foreground text-sm">
-              Check your terminal for errors.
-            </p>
+            <p className="text-muted-foreground text-sm">Check your terminal for errors.</p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={startPolling}>
                 Try Again

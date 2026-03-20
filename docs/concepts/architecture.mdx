@@ -3,8 +3,8 @@ title: Architecture
 description: How DorkOS connects your browser to Claude Code using a hexagonal architecture
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Architecture
 
@@ -50,7 +50,8 @@ DorkOS also runs as an Obsidian plugin, embedded directly inside the note-taking
 - Sessions are still stored as JSONL files in the same location, so CLI-started sessions are visible too
 
 <Callout type="info">
-Both modes read from the same session storage on disk. A session started with the Claude Code CLI appears in DorkOS, and vice versa.
+  Both modes read from the same session storage on disk. A session started with the Claude Code CLI
+  appears in DorkOS, and vice versa.
 </Callout>
 
 ## How a Message Flows
@@ -103,7 +104,8 @@ This means:
 - There is no delete operation — sessions exist as long as their transcript files do
 
 <Callout type="warn">
-Transcript files can grow large for long conversations. DorkOS reads them incrementally where possible, but very long sessions may take a moment to load.
+  Transcript files can grow large for long conversations. DorkOS reads them incrementally where
+  possible, but very long sessions may take a moment to load.
 </Callout>
 
 ## Next Steps

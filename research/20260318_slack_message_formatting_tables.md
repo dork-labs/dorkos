@@ -1,5 +1,5 @@
 ---
-title: "Slack Message Formatting — mrkdwn, Block Kit, and Tabular Data Alternatives"
+title: 'Slack Message Formatting — mrkdwn, Block Kit, and Tabular Data Alternatives'
 date: 2026-03-18
 type: external-best-practices
 status: active
@@ -16,6 +16,7 @@ sources_count: 4
 **Source:** Synthesized from three prior DorkOS research reports — no new web searches needed.
 
 Prior research files consulted:
+
 - `research/20260313_slack_bot_adapter_best_practices.md`
 - `research/20260317_slack_tool_approval_block_kit.md`
 - `research/20260227_slack_vs_telegram_relay_adapter.md`
@@ -34,20 +35,20 @@ Slack does not support Markdown tables — not in `mrkdwn` and not in `text` fie
 
 Slack's `mrkdwn` is a non-standard Markdown dialect. It supports:
 
-| Format | Standard Markdown | Slack mrkdwn |
-|---|---|---|
-| Bold | `**text**` | `*text*` |
-| Italic | `_text_` or `*text*` | `_text_` |
-| Strikethrough | `~~text~~` | `~text~` |
-| Inline code | `` `code` `` | `` `code` `` |
-| Code block | ` ```code``` ` | ` ```code``` ` |
-| Hyperlink | `[text](url)` | `<url\|text>` |
-| User mention | N/A | `<@U123456>` |
-| Channel mention | N/A | `<#C123456>` |
-| Ordered list | `1. item` | Not supported in `text` fields |
-| Unordered list | `- item` | Not supported in `text` fields |
-| Tables | `| col | col |` | **Not supported** |
-| Blockquote | `> text` | Not supported in `text` fields |
+| Format          | Standard Markdown    | Slack mrkdwn                   |
+| --------------- | -------------------- | ------------------------------ | --- | --- | ----------------- |
+| Bold            | `**text**`           | `*text*`                       |
+| Italic          | `_text_` or `*text*` | `_text_`                       |
+| Strikethrough   | `~~text~~`           | `~text~`                       |
+| Inline code     | `` `code` ``         | `` `code` ``                   |
+| Code block      | ` ```code``` `       | ` ```code``` `                 |
+| Hyperlink       | `[text](url)`        | `<url\|text>`                  |
+| User mention    | N/A                  | `<@U123456>`                   |
+| Channel mention | N/A                  | `<#C123456>`                   |
+| Ordered list    | `1. item`            | Not supported in `text` fields |
+| Unordered list  | `- item`             | Not supported in `text` fields |
+| Tables          | `                    | col                            | col | `   | **Not supported** |
+| Blockquote      | `> text`             | Not supported in `text` fields |
 
 Lists and blockquotes are supported only in **Block Kit `rich_text` blocks** — not in plain `mrkdwn` text fields.
 
@@ -84,6 +85,7 @@ The closest native equivalent to a table row. Each `section` block can contain u
 This renders as a compact two-column card — good for key-value summaries, not for multi-row data tables.
 
 **Constraints:**
+
 - Max 10 fields per section
 - Always two columns (no control over column count)
 - Field text max: 2,000 characters per field
@@ -92,6 +94,7 @@ This renders as a compact two-column card — good for key-value summaries, not 
 #### `rich_text` Block — Full Formatting Including Lists
 
 `rich_text` blocks support the most formatting:
+
 - Ordered and unordered lists
 - Inline code, code blocks
 - Bold, italic, strikethrough, underline
@@ -119,6 +122,7 @@ This renders as a compact two-column card — good for key-value summaries, not 
 #### `header` Block
 
 Plain text header (no mrkdwn):
+
 ```typescript
 { type: 'header', text: { type: 'plain_text', text: 'Agent Status Report' } }
 ```
@@ -126,6 +130,7 @@ Plain text header (no mrkdwn):
 #### `context` Block
 
 Small subdued text — good for metadata, timestamps, footnotes:
+
 ```typescript
 {
   type: 'context',
@@ -149,13 +154,17 @@ Since Slack has no native table support, choose the best alternative based on co
 Format tabular data as a fixed-width text table inside a code block. This is what `slackify-markdown` does automatically for Markdown tables.
 
 ```
+
 ```
-Name       Status    Last Run
-─────────  ────────  ────────
-Alice      Active    2h ago
-Bob        Idle      1d ago
-CodeAgent  Running   now
+
+Name Status Last Run
+───────── ──────── ────────
+Alice Active 2h ago
+Bob Idle 1d ago
+CodeAgent Running now
+
 ```
+
 ```
 
 **Pros:** Renders consistently across all Slack clients. No Block Kit complexity. Handles any number of rows and columns.
@@ -238,13 +247,13 @@ This is the recommended approach for relay adapters — let `slackify-markdown` 
 
 ## Summary Decision Matrix
 
-| Use case | Best approach |
-|---|---|
-| AI agent response with tables | `slackify-markdown` (auto-converts to code block) |
-| Key-value status card (≤ 10 pairs) | `section.fields` two-column layout |
-| Small data table (< 20 rows) | Code block monospace table |
-| Large dataset or CSV | File upload via `files.uploadV2` |
-| Multi-column report with row emphasis | Multiple section blocks with dividers |
+| Use case                              | Best approach                                     |
+| ------------------------------------- | ------------------------------------------------- |
+| AI agent response with tables         | `slackify-markdown` (auto-converts to code block) |
+| Key-value status card (≤ 10 pairs)    | `section.fields` two-column layout                |
+| Small data table (< 20 rows)          | Code block monospace table                        |
+| Large dataset or CSV                  | File upload via `files.uploadV2`                  |
+| Multi-column report with row emphasis | Multiple section blocks with dividers             |
 
 ---
 

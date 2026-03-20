@@ -67,6 +67,7 @@ status: ideation
 - `@dorkos/shared/relay-schemas` — `RelayEnvelope` type. Progress payload type should be defined here.
 
 **Data Flow (current — all-at-once):**
+
 ```
 Agent A: relay_query(to_subject="relay.agent.{B}", timeout=120s)
   → relay.registerEndpoint(ephemeral inbox)
@@ -79,6 +80,7 @@ Agent A: relay_query(to_subject="relay.agent.{B}", timeout=120s)
 ```
 
 **Data Flow (proposed — async dispatch + streaming):**
+
 ```
 Agent A: relay_dispatch(to_subject="relay.agent.{B}")
   → relay.registerEndpoint("relay.inbox.dispatch.{UUID}")
@@ -119,6 +121,7 @@ Not a bug fix. Enhancement driven by a real constraint:
 - **Result**: Agents doing long research, code generation, or analysis tasks can never use relay_query successfully; they silently time out.
 
 The three gaps compound each other:
+
 1. No way to dispatch without blocking
 2. No progress visibility during the wait
 3. Even if you extend the timeout, blocking 10+ min on a synchronous tool call is an anti-pattern
@@ -153,14 +156,14 @@ The three gaps compound each other:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Async dispatch API design | New `relay_dispatch` tool (separate, explicit) | Clean mental model: relay_send=fire-forget, relay_query=short-sync, relay_dispatch=long-async. Avoids overloading existing tool semantics. |
-| 2 | relay_query timeout cap | Raise from 120s to 600s (10 min) | Covers medium-duration tasks without pushing to the full async pattern. Still disciplined — agents with truly long tasks use relay_dispatch. |
-| 3 | Progress updates from Agent B | Full streaming: CCA publishes intermediate updates per AssistantMessage/tool_result | Agent A can see real-time progress, detect stuck agents, and act on partial results. 20-min black-box is unacceptable for production agent systems. |
-| 4 | Subagent MCP limitation | Document constraint + orchestrator pattern in RELAY_TOOLS_CONTEXT | Can't fix architecturally. Documenting prevents wasted tool calls and silent failures. Pattern: parent does relay/mesh work, injects results into Task() prompt. |
-| 5 | relay_dispatch inbox cleanup | Caller-initiated (no server-side TTL) | Simplest for MVP. Caller reads `done:true` and calls relay_unregister_endpoint. Future enhancement: TTL-based auto-cleanup. |
-| 6 | Progress payload schema | `{ type: 'progress', step: number, text: string, done: false }` / `{ type: 'agent_result', text: string, done: true }` | Distinguishable from final result; `done` flag allows Agent A to know when to stop polling without parsing content. |
+| #   | Decision                      | Choice                                                                                                                 | Rationale                                                                                                                                                        |
+| --- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Async dispatch API design     | New `relay_dispatch` tool (separate, explicit)                                                                         | Clean mental model: relay_send=fire-forget, relay_query=short-sync, relay_dispatch=long-async. Avoids overloading existing tool semantics.                       |
+| 2   | relay_query timeout cap       | Raise from 120s to 600s (10 min)                                                                                       | Covers medium-duration tasks without pushing to the full async pattern. Still disciplined — agents with truly long tasks use relay_dispatch.                     |
+| 3   | Progress updates from Agent B | Full streaming: CCA publishes intermediate updates per AssistantMessage/tool_result                                    | Agent A can see real-time progress, detect stuck agents, and act on partial results. 20-min black-box is unacceptable for production agent systems.              |
+| 4   | Subagent MCP limitation       | Document constraint + orchestrator pattern in RELAY_TOOLS_CONTEXT                                                      | Can't fix architecturally. Documenting prevents wasted tool calls and silent failures. Pattern: parent does relay/mesh work, injects results into Task() prompt. |
+| 5   | relay_dispatch inbox cleanup  | Caller-initiated (no server-side TTL)                                                                                  | Simplest for MVP. Caller reads `done:true` and calls relay_unregister_endpoint. Future enhancement: TTL-based auto-cleanup.                                      |
+| 6   | Progress payload schema       | `{ type: 'progress', step: number, text: string, done: false }` / `{ type: 'agent_result', text: string, done: true }` | Distinguishable from final result; `done` flag allows Agent A to know when to stop polling without parsing content.                                              |
 
 ---
 

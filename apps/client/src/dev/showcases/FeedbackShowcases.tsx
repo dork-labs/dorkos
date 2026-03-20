@@ -25,10 +25,7 @@ export function FeedbackShowcases() {
 
   return (
     <>
-      <PlaygroundSection
-        title="Skeleton"
-        description="Loading placeholder with animated pulse."
-      >
+      <PlaygroundSection title="Skeleton" description="Loading placeholder with animated pulse.">
         <ShowcaseDemo>
           <div className="flex items-center gap-4">
             <Skeleton className="h-12 w-12 rounded-full" />
@@ -40,10 +37,7 @@ export function FeedbackShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Separator"
-        description="Horizontal and vertical dividers."
-      >
+      <PlaygroundSection title="Separator" description="Horizontal and vertical dividers.">
         <ShowcaseLabel>Horizontal</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="space-y-3">
@@ -63,10 +57,7 @@ export function FeedbackShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Tooltip"
-        description="Hover to reveal contextual information."
-      >
+      <PlaygroundSection title="Tooltip" description="Hover to reveal contextual information.">
         <ShowcaseDemo>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -92,8 +83,8 @@ export function FeedbackShowcases() {
               <div className="space-y-1">
                 <h4 className="text-sm font-semibold">Claude Code Runtime</h4>
                 <p className="text-muted-foreground text-xs">
-                  Primary agent runtime backed by the Claude Agent SDK. Supports streaming,
-                  tool approval, and extended thinking.
+                  Primary agent runtime backed by the Claude Agent SDK. Supports streaming, tool
+                  approval, and extended thinking.
                 </p>
                 <div className="text-muted-foreground flex items-center gap-2 pt-1 text-xs">
                   <span>v2.1.0</span>
@@ -111,7 +102,11 @@ export function FeedbackShowcases() {
         description="Expand/collapse toggle for supplementary content."
       >
         <ShowcaseDemo>
-          <Collapsible open={collapsibleOpen} onOpenChange={setCollapsibleOpen} className="space-y-2">
+          <Collapsible
+            open={collapsibleOpen}
+            onOpenChange={setCollapsibleOpen}
+            className="space-y-2"
+          >
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-semibold">Agent Configuration</h4>
               <CollapsibleTrigger asChild>
@@ -121,50 +116,29 @@ export function FeedbackShowcases() {
                 </Button>
               </CollapsibleTrigger>
             </div>
-            <div className="rounded-md border px-3 py-2 text-sm">
-              Runtime: Claude Code
-            </div>
+            <div className="rounded-md border px-3 py-2 text-sm">Runtime: Claude Code</div>
             <CollapsibleContent className="space-y-2">
-              <div className="rounded-md border px-3 py-2 text-sm">
-                Max tokens: 8192
-              </div>
-              <div className="rounded-md border px-3 py-2 text-sm">
-                Temperature: 0.7
-              </div>
+              <div className="rounded-md border px-3 py-2 text-sm">Max tokens: 8192</div>
+              <div className="rounded-md border px-3 py-2 text-sm">Temperature: 0.7</div>
             </CollapsibleContent>
           </Collapsible>
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Toaster"
-        description="Toast notifications via Sonner."
-      >
+      <PlaygroundSection title="Toaster" description="Toast notifications via Sonner.">
         <ShowcaseDemo>
           {/* Toasts render via the global <Toaster /> in App.tsx */}
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => toast.success('Agent deployed successfully')}
-            >
+            <Button variant="outline" onClick={() => toast.success('Agent deployed successfully')}>
               Success
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => toast.error('Failed to connect to runtime')}
-            >
+            <Button variant="outline" onClick={() => toast.error('Failed to connect to runtime')}>
               Error
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => toast.info('Session sync in progress')}
-            >
+            <Button variant="outline" onClick={() => toast.info('Session sync in progress')}>
               Info
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => toast.warning('Rate limit approaching')}
-            >
+            <Button variant="outline" onClick={() => toast.warning('Rate limit approaching')}>
               Warning
             </Button>
           </div>

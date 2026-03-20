@@ -1,5 +1,5 @@
 ---
-title: "Autonomous Improvement Landscape — Research Report"
+title: 'Autonomous Improvement Landscape — Research Report'
 date: 2026-02-18
 type: exploratory
 status: archived
@@ -58,27 +58,31 @@ The landscape of autonomous software improvement is converging around three tren
 **Core Frameworks:**
 
 **PDCA (Plan-Do-Check-Act) / Deming Cycle**
+
 - Origin: W. Edwards Deming, adopted deeply by Toyota manufacturing
 - Structure: Plan (form hypothesis) → Do (run experiment) → Check (measure outcomes) → Act (standardize or pivot)
 - Key property: Each step IS a hypothesis. "What we learn from testing that hypothesis may influence the next step."
 - Timescale: Slower, methodical. Suited for quality control and process improvement.
 
 **Toyota Kata (Mike Rother, 2009)**
+
 - Builds on PDCA with four stages:
   1. Understand the Direction (challenge/vision)
   2. Grasp the Current Condition (baseline measurement)
   3. Establish the Next Target Condition (specific, time-boxed goal)
   4. PDCA toward the Target Condition (experiment rapidly)
-- Key insight: The *process of improving* is a learnable habit (kata = practice pattern). The improvement cycle is the product.
+- Key insight: The _process of improving_ is a learnable habit (kata = practice pattern). The improvement cycle is the product.
 - Applied to software: sprint retrospectives + hypothesis-driven feature work
 
 **OODA Loop (John Boyd, military origin)**
+
 - Observe → Orient → Decide → Act
 - Designed for rapid, real-time decisions under uncertainty. Faster than PDCA.
 - "Orient" is the key differentiating step: mental models, prior experience, cultural norms all filter raw observations.
 - Applied to software: incident response, A/B testing decisions, competitive response
 
 **Build-Measure-Learn (Eric Ries, Lean Startup)**
+
 - The software-native adaptation of PDCA
 - Structure: Ideas → Build (MVP) → Product → Measure → Data → Learn → repeat
 - Key property: Hypothesis-driven. "Each loop is a complete learning cycle and serves as an experiment designed to test specific hypotheses."
@@ -86,12 +90,14 @@ The landscape of autonomous software improvement is converging around three tren
 - Speed is the primary metric: reduce time through each loop cycle
 
 **Hypothesis-Driven Development (HDD)**
+
 - Formalized by companies like Thoughtworks
 - Every feature starts as: "We believe [action] will [outcome] for [persona]. We'll know this is true when [measurable signal]."
 - Explicitly treats product decisions as falsifiable scientific experiments
 - Often combined with feature flags for controlled rollout and measurement
 
 **Relationship between frameworks:**
+
 ```
 Toyota/manufacturing origin: PDCA → Toyota Kata (structured practice)
 Military origin: OODA (speed-optimized)
@@ -114,6 +120,7 @@ All share: hypothesis → experiment → measure → learn → iterate
 - **Profiles** (4th pillar, newly added to OpenTelemetry in 2025) — Continuous profiling: CPU, memory allocation patterns over time.
 
 **Key 2025 observability status:**
+
 - OpenTelemetry is now the de facto standard. "Instrument once, send to multiple backends." Vendor-neutral.
 - 65% of observability practitioners say their practice positively impacts revenue.
 - AI/AIOps is playing an increasing role: AI ingests, parses, correlates, and acts on telemetry.
@@ -125,22 +132,24 @@ All share: hypothesis → experiment → measure → learn → iterate
 - **Properties** — Metadata attached to events (user ID, plan type, feature flag state).
 
 **Platform vocabularies:**
+
 - **Mixpanel**: Event-based. Strong on funnels, flows. JQL for custom queries.
 - **Amplitude**: Event-based but metrics-forward. Emphasis on behavioral cohorts and derived metrics.
 - **PostHog**: Open-source, dev-centric. Autocapture events. Closest to full-stack (combines analytics + session recording + feature flags + A/B testing). Explicit about "product analytics → product iteration" loop.
 
 **"Signals" vs "Events" vs "Metrics" vs "Telemetry" — the taxonomy:**
 
-| Term | Layer | Granularity | Who uses it |
-|------|-------|-------------|-------------|
-| Telemetry | Collection mechanism | N/A (umbrella) | Infra/SRE teams |
-| Signal | Observable data type category | Category | Observability engineers |
-| Event | Atomic data point | Finest | Product analytics teams |
-| Span | Traced operation | Atomic, time-bounded | APM/distributed tracing |
-| Metric | Aggregated number | Coarsest | Everyone (dashboards) |
-| Indicator | Derived health signal | Derived | SRE (SLIs, KPIs) |
+| Term      | Layer                         | Granularity          | Who uses it             |
+| --------- | ----------------------------- | -------------------- | ----------------------- |
+| Telemetry | Collection mechanism          | N/A (umbrella)       | Infra/SRE teams         |
+| Signal    | Observable data type category | Category             | Observability engineers |
+| Event     | Atomic data point             | Finest               | Product analytics teams |
+| Span      | Traced operation              | Atomic, time-bounded | APM/distributed tracing |
+| Metric    | Aggregated number             | Coarsest             | Everyone (dashboards)   |
+| Indicator | Derived health signal         | Derived              | SRE (SLIs, KPIs)        |
 
 **Event-driven architecture terminology:**
+
 - **Event**: Something that happened at a point in time (immutable fact)
 - **Event stream**: Ordered, append-only sequence of events
 - **Consumer/subscriber**: Process that reacts to events
@@ -153,20 +162,20 @@ All share: hypothesis → experiment → measure → learn → iterate
 
 **Tier 1: Enterprise-grade autonomous agents**
 
-| Product | Company | Status | Price | Key Differentiator |
-|---------|---------|--------|-------|-------------------|
-| Devin | Cognition | Active, $10.2B valuation | $20/mo (Devin 2.0) | First mover, Goldman Sachs deployment, 67% PR merge rate |
-| Factory Droids | Factory.ai | Active, $70M+ raised | Enterprise | Full SDLC coverage, org memory, #1 Terminal-Bench |
-| Copilot Workspace | GitHub/Microsoft | Active | Part of Copilot | IDE-integrated, massive distribution |
-| Amazon Transform | Amazon | Active | Enterprise | Legacy migration focus |
+| Product           | Company          | Status                   | Price              | Key Differentiator                                       |
+| ----------------- | ---------------- | ------------------------ | ------------------ | -------------------------------------------------------- |
+| Devin             | Cognition        | Active, $10.2B valuation | $20/mo (Devin 2.0) | First mover, Goldman Sachs deployment, 67% PR merge rate |
+| Factory Droids    | Factory.ai       | Active, $70M+ raised     | Enterprise         | Full SDLC coverage, org memory, #1 Terminal-Bench        |
+| Copilot Workspace | GitHub/Microsoft | Active                   | Part of Copilot    | IDE-integrated, massive distribution                     |
+| Amazon Transform  | Amazon           | Active                   | Enterprise         | Legacy migration focus                                   |
 
 **Tier 2: Open-source / research agents**
 
-| Product | Source | GitHub Stars | Key Differentiator |
-|---------|--------|-------------|-------------------|
-| OpenHands | All Hands AI | 67K+ | Multi-agent, production-ready, SDK |
-| SWE-Agent | Princeton/Stanford | 18K+ | ACI concept, benchmark research |
-| Sweep AI | Sweep | — | JetBrains plugin + GitHub App, ticket-to-PR |
+| Product   | Source             | GitHub Stars | Key Differentiator                          |
+| --------- | ------------------ | ------------ | ------------------------------------------- |
+| OpenHands | All Hands AI       | 67K+         | Multi-agent, production-ready, SDK          |
+| SWE-Agent | Princeton/Stanford | 18K+         | ACI concept, benchmark research             |
+| Sweep AI  | Sweep              | —            | JetBrains plugin + GitHub App, ticket-to-PR |
 
 **Tier 3: IDE-focused (less autonomous, more assistive)**
 
@@ -177,7 +186,7 @@ All share: hypothesis → experiment → measure → learn → iterate
 **"AI Project Manager" products (combined PM + execution):**
 
 - **Height** — DEAD (September 24, 2025). Was most advanced: autonomous bug triage, backlog management, spec updates, standup generation. Market gap now open.
-- **Linear** — Alive and growing. Positioned as PM tool that *accepts* AI agents as task assignees via their MCP. Not an agent itself.
+- **Linear** — Alive and growing. Positioned as PM tool that _accepts_ AI agents as task assignees via their MCP. Not an agent itself.
 - **Shortcut** — Story-centric, some AI features. More conservative integration approach.
 - **Relevance AI** — Provides "Linear Agent Templates" — prebuilt AI agents that interact with Linear.
 
@@ -193,6 +202,7 @@ All share: hypothesis → experiment → measure → learn → iterate
 ### 5. MCP (Model Context Protocol) Ecosystem
 
 **Protocol Status:**
+
 - Launched by Anthropic in November 2024
 - November 2025: New spec with async execution, OAuth authorization, enterprise governance
 - December 2025: Donated to Agentic AI Foundation (AAIF) under Linux Foundation, co-founded by Anthropic, Block, OpenAI
@@ -202,23 +212,27 @@ All share: hypothesis → experiment → measure → learn → iterate
 
 **Project Management MCP Servers — concrete list:**
 
-*Linear:*
+_Linear:_
+
 - `tacticlaunch/mcp-linear` — Canonical Linear MCP
 - `mkusaka/linear-mcp`, `larryhudson/linear-mcp-server-again`, `cline/linear-mcp`, `ibraheem4/linear-mcp`
 - Capabilities: create/update/list issues, manage projects, cycle management, team queries
 
-*Jira / Atlassian:*
+_Jira / Atlassian:_
+
 - `sooperset/mcp-atlassian` — Covers both Confluence and Jira (most comprehensive)
 - `OrenGrinker/jira-mcp-server` — Production-ready, advanced features
 - `Warzuponus/mcp-jira` — JIRA tasks and workflows
 - `George5562/Jira-MCP-Server` — Natural language Jira interaction
 - 62+ Jira MCP servers listed on pulsemcp.com
 
-*GitHub:*
+_GitHub:_
+
 - `taylor-lindores-reeves/mcp-github-projects` — GitHub Projects (Agile Sprints)
 - Official GitHub MCP (maintained by GitHub)
 
-*Other PM tools with MCP servers:*
+_Other PM tools with MCP servers:_
+
 - **Trello**: `Hint-Services/mcp-trello`, `assistantdonnie/trello_mcp`
 - **ClickUp**: `bravoure/clickup-mcp`, `nsxdavid/clickup-mcp-server`
 - **Asana**: `roychri/mcp-server-asana`
@@ -238,6 +252,7 @@ Linear explicitly calls their AI integration the "Linear Mission Control Plane (
 4. **Agentic workflows**: Agents use MCP tools to read from PM systems, execute work, then write back status updates — creating autonomous loops.
 
 **November 2025 spec key additions:**
+
 - OAuth 2.0 authorization (security for enterprise)
 - Async tool execution (long-running operations)
 - Streaming results
@@ -277,6 +292,7 @@ The observability field has the most precise vocabulary for describing feedback 
 ### Scientific Method as Architecture
 
 Toyota Kata maps perfectly onto an autonomous development loop:
+
 1. **Understand the Direction** = roadmap/priority signal from PM system
 2. **Grasp Current Condition** = agent reads codebase, existing tests, recent PRs
 3. **Establish Next Target Condition** = specific task with acceptance criteria
@@ -307,6 +323,7 @@ The OODA loop maps onto incident response agents specifically: Observe (Datadog 
 ## Sources & Evidence
 
 ### Topic 1 — Autonomous Software Systems
+
 - Cognition annual review (PR merge rate 34%→67%, 4x speed): [Devin's 2025 Performance Review](https://cognition.ai/blog/devin-annual-performance-review-2025)
 - Cognition $10.2B valuation, $155M ARR: [VentureBeat on Devin 2.0](https://venturebeat.com/programming-development/devin-2-0-is-here-cognition-slashes-price-of-ai-software-engineer-to-20-per-month-from-500)
 - Devin produces 25% of Cognition code: [Financial Content](https://markets.financialcontent.com/wral/article/tokenring-2025-12-30-the-worlds-first-autonomous-ai-software-engineer-devin-now-produces-25-of-cognitions-code)
@@ -319,22 +336,26 @@ The OODA loop maps onto incident response agents specifically: Observe (Datadog 
 - Sweep AI current status: [Sweep.dev](https://sweep.dev/)
 
 ### Topic 2 — Scientific Method Frameworks
+
 - Toyota Kata overview: [Methods and Tools](https://www.methodsandtools.com/archive/toyotakata.php)
 - PDCA vs OODA comparison: [Learn Lean Sigma](https://www.learnleansigma.com/problem-solving/pdca-and-ooda-for-problem-solving/)
 - Build-Measure-Learn: [Lean Startup](https://theleanstartup.com/principles)
 - BML as hypothesis loop: [Userpilot](https://userpilot.com/blog/build-measure-learn/)
 
 ### Topic 3 — Signal/Telemetry Terminology
+
 - OpenTelemetry official definitions (signals, traces, spans, metrics, logs): [OpenTelemetry Primer](https://opentelemetry.io/docs/concepts/observability-primer/)
 - Splunk on observability vs monitoring vs telemetry: [Splunk Blog](https://www.splunk.com/en_us/blog/learn/observability-vs-monitoring-vs-telemetry.html)
 - State of Observability 2025: [Splunk State of Observability](https://www.splunk.com/en_us/blog/observability/state-of-observability-2025.html)
 
 ### Topic 4 — AI Coding Agent Landscape
+
 - Competitive landscape overview: [Contrary Research on Cognition](https://research.contrary.com/company/cognition)
 - Factory Droids full SDLC: [Developer-Tech](https://www.developer-tech.com/news/factory-droids-ai-agents-tackle-entire-development-lifecycle/)
 - Height autonomous features: [BusinessWire](https://www.businesswire.com/news/home/20241008197812/en/Height.app-Unveils-First-Ever-Autonomous-Project-Collaboration-Tool-for-Product-Builders)
 
 ### Topic 5 — MCP Ecosystem
+
 - MCP 1-year anniversary, 5800+ servers: [MCP Blog](http://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/)
 - MCP donated to Linux Foundation: [Wikipedia MCP](https://en.wikipedia.org/wiki/Model_Context_Protocol)
 - Awesome MCP Servers project management list: [TensorBlock/awesome-mcp-servers](https://github.com/TensorBlock/awesome-mcp-servers/blob/main/docs/project--task-management.md)

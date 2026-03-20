@@ -1,5 +1,5 @@
 ---
-title: "Graph Topology Visualization UI — World-Class Patterns & Best Practices"
+title: 'Graph Topology Visualization UI — World-Class Patterns & Best Practices'
 date: 2026-02-28
 type: external-best-practices
 status: active
@@ -48,12 +48,12 @@ The fundamental insight from yWorks and graph visualization research is: **rende
 
 This is the canonical LOD progression used by professional graph tools:
 
-| Zoom Level | What to Show |
-|---|---|
-| Very far out (< 20%) | Node as colored dot or minimal shape only. No text at all. Size encodes degree or weight. |
-| Far out (20–50%) | Node shape + type icon. Maybe a 1-2 word label if it fits at ≥8px. Edges as thin lines. No edge labels. |
-| Mid zoom (50–100%) | Full node card with title. Possibly subtitle. Edge labels appear if they fit. |
-| Close zoom (100%+) | Full node card with all metadata fields, badges, status indicators. Edge labels fully visible. Connection handles appear on hover. |
+| Zoom Level           | What to Show                                                                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Very far out (< 20%) | Node as colored dot or minimal shape only. No text at all. Size encodes degree or weight.                                          |
+| Far out (20–50%)     | Node shape + type icon. Maybe a 1-2 word label if it fits at ≥8px. Edges as thin lines. No edge labels.                            |
+| Mid zoom (50–100%)   | Full node card with title. Possibly subtitle. Edge labels appear if they fit.                                                      |
+| Close zoom (100%+)   | Full node card with all metadata fields, badges, status indicators. Edge labels fully visible. Connection handles appear on hover. |
 
 #### Node Aggregation at Scale
 
@@ -68,6 +68,7 @@ At very low zoom, individual nodes should collapse into **cluster nodes** — a 
 The `@gravity-ui/graph` library demonstrates a clean pattern: it **automatically switches between Canvas rendering (low zoom) and HTML/React component rendering (high zoom)**. At low zoom, Canvas handles thousands of nodes efficiently. At high zoom, HTML components handle rich interactive node cards. The zoom threshold crossover is typically around 0.4–0.6 transform scale.
 
 For React Flow specifically, this means:
+
 - Use `useViewport()` to get current zoom level
 - Conditionally render simplified vs full node content based on zoom
 - Use `visibility: hidden` (not `display: none`) on elements you want hidden at low zoom, so React Flow can still measure them
@@ -90,6 +91,7 @@ Always rotate labels to follow the edge direction. Horizontal labels across diag
 Exception: short (1-2 character) labels on nearly-horizontal edges can stay horizontal.
 
 **B. Placement Region**
+
 - **"Over" (within the edge stroke):** Best for dense graphs. The edge path curves around the label, creating a white space "bubble" that creates breathing room and makes association unambiguous.
 - **"Above/below":** Creates label overlap problems in dense graphs but looks cleaner in sparse ones.
 - **Source/Target association:** For directed graphs, placing the label near the source makes the "from" semantics clear; near the target makes the "to" semantics clear. Use this when the direction is the primary information.
@@ -100,6 +102,7 @@ Edge labels should be **hidden until zoom level ≥ 70%** as a default. At lower
 #### Truncation Strategy
 
 For edge labels in constrained space:
+
 1. Truncate at a fixed character count (e.g., 15 chars) + ellipsis
 2. Show full label in a tooltip on hover
 3. Never wrap edge labels to multiple lines — it distorts the edge path rendering
@@ -125,6 +128,7 @@ Connection handles (ports) are **hidden or very subtle** by default. Showing all
 When the user hovers a node while dragging a connection, OR hovers a node normally, handles become **fully visible** with a solid circle/dot at the port position. The color should be your brand accent color. Size increase (e.g., 8px → 12px) on hover provides additional affordance.
 
 React Flow's built-in classes for this:
+
 ```css
 .react-flow__handle:hover {
   /* full handle visibility */
@@ -146,6 +150,7 @@ Invalid connection handles should use `background: var(--color-destructive)` + a
 #### Ghost Edge / Temporary Edge Pattern
 
 React Flow's "temporary edges" example shows the gold standard pattern:
+
 - When a user drops a connection in empty space (not on a handle), render a **ghost/temporary node** at the drop point with a dotted edge connecting to the source
 - The ghost node shows a creation affordance (e.g., "+" icon or "What comes next?" prompt)
 - This gracefully handles the common case of "I wanted to create a new node and connect it"
@@ -153,6 +158,7 @@ React Flow's "temporary edges" example shows the gold standard pattern:
 #### Connection Line Style During Drag
 
 The connection line (ghost edge while dragging) should be:
+
 - Dashed or animated (marching ants) to distinguish from real edges
 - Same color as the source handle
 - Uses a curved bezier path matching your default edge style, not a straight line — this previews the actual layout
@@ -190,6 +196,7 @@ For canvases where users have added one node but no connections yet, show **ghos
 #### First-Run Detection
 
 Distinguish between:
+
 - **True first-run** (never used the product): Show full onboarding overlay
 - **First session with a new project** (experienced user, new blank project): Show only the "+ Add Node" CTA with a subtle callout, not the full tutorial
 
@@ -202,12 +209,14 @@ Distinguish between:
 A graph minimap has two functions: **orientation** (where am I in the overall graph?) and **navigation** (how do I get somewhere specific?). Both must be solved.
 
 **Minimum viable minimap:**
+
 - Fixed position, corner-mounted (bottom-right is conventional)
 - Scaled down representation of all nodes (as color-coded dots or simplified shapes)
 - Viewport rectangle overlay showing current view extent
 - Click anywhere in minimap to jump the viewport to that position
 
 **Gold standard minimap:**
+
 - Draggable viewport rectangle (drag the rectangle to pan the main canvas)
 - Minimap itself is pannable/zoomable when the graph is very large
 - Node colors in minimap match main canvas node colors (semantic color coding)
@@ -217,6 +226,7 @@ A graph minimap has two functions: **orientation** (where am I in the overall gr
 #### Minimap Rendering Performance
 
 For large graphs (1000+ nodes), rendering every node in the minimap is expensive. Solutions:
+
 1. Use `canvas.toDataURL()` to snapshot the current canvas and scale it down
 2. Render only nodes as simple colored rectangles (skip all text, icons, complex shapes)
 3. Throttle minimap re-renders to once per 200ms during panning/zooming
@@ -228,6 +238,7 @@ AntV X6's minimap feature replaces nodes with customizable solid color blocks. T
 #### React Flow MiniMap Component
 
 React Flow ships a `<MiniMap>` component with:
+
 - `nodeColor` callback for per-node color
 - `nodeStrokeColor` for node borders
 - `maskColor` for the out-of-viewport overlay tint
@@ -264,6 +275,7 @@ Cambridge Intelligence's "combos" pattern supports multiple nesting levels. The 
 #### Swimlane Pattern
 
 For linear/pipeline topologies (like n8n workflows or CI/CD stages), swimlanes are more appropriate than freeform groups:
+
 - Horizontal bands with labels on the left rail
 - Nodes are constrained to their lane (can't be dragged out)
 - Lane headers can be collapsed to hide all content in that stage
@@ -280,6 +292,7 @@ Graph visualizations present a genuine accessibility problem: the spatial relati
 #### Required Accessibility Patterns
 
 **Keyboard navigation:**
+
 - `Tab` moves focus between nodes (not through every interactive element on the canvas first)
 - `Arrow keys` navigate between connected nodes (following edges)
 - `Enter` or `Space` to expand/select a node and open its detail panel
@@ -288,6 +301,7 @@ Graph visualizations present a genuine accessibility problem: the spatial relati
 - `Delete` to remove selected nodes/edges
 
 **ARIA roles and labels:**
+
 - Canvas container: `role="application"` with `aria-label="[Graph Name] — use arrow keys to navigate"`
 - Individual nodes: `role="button"` or custom `role="treeitem"` for hierarchical graphs
 - Edge connections: Described via `aria-describedby` linking the node to a hidden text description of its connections
@@ -300,12 +314,14 @@ Graph visualizations present a genuine accessibility problem: the spatial relati
 2. **Pragmatic fallback:** Apply `aria-hidden="true"` to the canvas element, and provide a separate accessible view (a sortable table of nodes + connections) that screen reader users can use instead. This is more achievable and still WCAG-compliant if the alternative provides equivalent information.
 
 **Color accessibility:**
+
 - Never use color as the ONLY means of conveying status — always pair with an icon or shape
 - Run all palettes through colorblind simulators (deuteranopia is most common — red/green confusion)
 - Achieve minimum 3:1 contrast ratio for node labels against their background (WCAG AA for UI components)
 - Prefer colorblind-safe palettes: ColorBrewer's qualitative palettes, or IBM's colorblind-safe palette
 
 **Motion safety:**
+
 - Animated edges (marching ants, pulsing highlights) must respect `prefers-reduced-motion`
 - Provide a settings toggle to disable all canvas animations
 - Any flashing/pulsing effects must comply with WCAG 2.3.1 (< 3 flashes per second)
@@ -324,19 +340,20 @@ The rule: **color encodes exactly one semantic dimension at a time.** If you nee
 
 Standard semantic layers used by production tools (n8n, Railway, Datadog topology maps):
 
-| Color | Semantic Use |
-|---|---|
-| Neutral gray | Idle / inactive / disabled node |
-| Blue | Active / running / nominal |
-| Green | Success / healthy / completed |
-| Yellow/amber | Warning / degraded / pending |
-| Red/rose | Error / critical / failing |
-| Purple | Processing / in-flight / loading |
+| Color                  | Semantic Use                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| Neutral gray           | Idle / inactive / disabled node                                                                   |
+| Blue                   | Active / running / nominal                                                                        |
+| Green                  | Success / healthy / completed                                                                     |
+| Yellow/amber           | Warning / degraded / pending                                                                      |
+| Red/rose               | Error / critical / failing                                                                        |
+| Purple                 | Processing / in-flight / loading                                                                  |
 | Distinct hues per type | Service type, owner, category (use sparingly, max 7-8 hues before the palette becomes unreadable) |
 
 #### Node-to-Background Contrast
 
 Research from Cambridge Intelligence and graph visualization literature establishes:
+
 - Node fill color against canvas background: minimum 3:1 contrast ratio
 - Node label text against node fill: minimum 4.5:1 (WCAG AA)
 - Edge lines against canvas background: minimum 3:1
@@ -346,6 +363,7 @@ For dark-theme canvases (common in infrastructure tools), use slightly desaturat
 #### Edge Color Strategy
 
 Edge color should be:
+
 - **Same neutral gray as canvas border** as the default (edges should not compete with nodes for attention)
 - **Animated/highlighted** when the user hovers a connected node
 - **Color-coded by edge type** only when edge type is a primary data dimension (e.g., "depends on" vs "triggers" vs "blocks")

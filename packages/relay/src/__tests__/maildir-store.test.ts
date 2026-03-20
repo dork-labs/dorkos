@@ -305,7 +305,7 @@ describe('fail', () => {
       tmpRoot,
       TEST_ENDPOINT,
       'failed',
-      `${deliverResult.messageId}.reason.json`,
+      `${deliverResult.messageId}.reason.json`
     );
     const data = await fs.readFile(reasonPath, 'utf-8');
     const deadLetter: DeadLetter = JSON.parse(data);
@@ -540,11 +540,7 @@ describe('full lifecycle', () => {
     if (!deliverResult.ok) throw new Error('deliver failed');
 
     await store.claim(TEST_ENDPOINT, deliverResult.messageId);
-    const failResult = await store.fail(
-      TEST_ENDPOINT,
-      deliverResult.messageId,
-      'processing error',
-    );
+    const failResult = await store.fail(TEST_ENDPOINT, deliverResult.messageId, 'processing error');
     if (!failResult.ok) throw new Error('fail failed');
 
     expect(await store.listNew(TEST_ENDPOINT)).toHaveLength(0);
@@ -556,13 +552,9 @@ describe('full lifecycle', () => {
   });
 
   it('handles multiple messages in parallel', async () => {
-    const envelopes = Array.from({ length: 5 }, (_, i) =>
-      makeEnvelope({ id: `PARALLEL-${i}` }),
-    );
+    const envelopes = Array.from({ length: 5 }, (_, i) => makeEnvelope({ id: `PARALLEL-${i}` }));
 
-    const results = await Promise.all(
-      envelopes.map((env) => store.deliver(TEST_ENDPOINT, env)),
-    );
+    const results = await Promise.all(envelopes.map((env) => store.deliver(TEST_ENDPOINT, env)));
 
     const successes = results.filter((r) => r.ok);
     expect(successes).toHaveLength(5);
@@ -584,7 +576,7 @@ describe('concurrent safety', () => {
   it('concurrent delivers all succeed with unique IDs', async () => {
     const envelope = makeEnvelope();
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => store.deliver(TEST_ENDPOINT, envelope)),
+      Array.from({ length: 10 }, () => store.deliver(TEST_ENDPOINT, envelope))
     );
 
     const successes = results.filter((r) => r.ok);
@@ -600,7 +592,7 @@ describe('concurrent safety', () => {
     if (!deliverResult.ok) throw new Error('deliver failed');
 
     const claims = await Promise.all(
-      Array.from({ length: 5 }, () => store.claim(TEST_ENDPOINT, deliverResult.messageId)),
+      Array.from({ length: 5 }, () => store.claim(TEST_ENDPOINT, deliverResult.messageId))
     );
 
     const successes = claims.filter((r) => r.ok);

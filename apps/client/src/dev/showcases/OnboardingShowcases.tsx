@@ -71,11 +71,7 @@ function DiscoveryCelebrationShowcase() {
       <ShowcaseLabel>With 3 discovered candidates</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="space-y-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRemountKey((k) => k + 1)}
-          >
+          <Button variant="outline" size="sm" onClick={() => setRemountKey((k) => k + 1)}>
             Replay animation
           </Button>
           <DiscoveryCelebration

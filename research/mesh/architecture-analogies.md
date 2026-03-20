@@ -1,5 +1,5 @@
 ---
-title: "DorkOS Mesh: Architecture Analogies & Design Borrowings"
+title: 'DorkOS Mesh: Architecture Analogies & Design Borrowings'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -86,6 +86,7 @@ The control/data plane split is the key insight: **configuration is separated fr
 ### Istio Ambient Mode (2024-2025 Evolution)
 
 In November 2024, Istio's ambient mode reached General Availability. Ambient mode eliminates sidecars entirely by using:
+
 - **ztunnel** (zero-trust tunnel): A per-node L4 proxy that handles mTLS for all pods on that node
 - **Waypoint proxies**: Optional per-namespace L7 proxies for HTTP routing rules
 
@@ -94,6 +95,7 @@ This is significant: even the inventors of the sidecar pattern found it too heav
 ### Consul Connect: The Registry Angle
 
 Consul is more registry-first than proxy-first. Its architecture:
+
 1. Each service registers with the local Consul agent (name, address, port, health checks)
 2. Consul replicates registrations via a gossip protocol (Serf) across the cluster
 3. DNS and HTTP APIs allow service discovery: `curl http://consul/v1/health/service/my-service`
@@ -104,6 +106,7 @@ The gossip protocol is worth noting: Consul does not use a central database for 
 ### What Is Overkill for a Single-Machine System
 
 For DorkOS Mesh, the following service mesh concepts are overkill:
+
 - **mTLS between services**: Agents on the same machine have no network adversary
 - **Envoy/Envoy-equivalent sidecar proxy processes**: Process-level separation is expensive; Node.js EventEmitter is cheaper
 - **Certificate management and rotation**: Not needed for local trust
@@ -148,6 +151,7 @@ The most important IPC property for DorkOS Mesh is **broadcast/multicast capabil
 The Mach microkernel (the foundation of macOS and iOS) made a radical design decision: **everything is accessed through a port**. Files, services, processes, and kernel objects are all represented as port rights. To use any resource, you must hold a port right to it.
 
 Key Mach concepts:
+
 - **Port**: A unidirectional message queue. One owner holds receive rights; many can hold send rights.
 - **Port right**: A capability token. Holding a send right to a port IS permission to communicate with that port's owner. Rights can be transferred in messages.
 - **Port set**: A collection of ports that can be waited on simultaneously (like `select()`).
@@ -171,6 +175,7 @@ Mach Port-Based Communication
 ```
 
 The critical insight: **port rights can be transferred through messages**. This means:
+
 1. Agent A sends a message to the registry
 2. The registry creates a new port, sends Agent B the send right to it, and sends Agent A the send right to it
 3. Now Agent A and Agent B have a direct, private channel — without the registry being in the middle of every subsequent message
@@ -214,17 +219,17 @@ Two bus types:
 
 D-Bus concepts that map directly to DorkOS Mesh:
 
-| D-Bus Concept         | DorkOS Mesh Equivalent          |
-| --------------------- | ------------------------------- |
-| Bus name              | Agent ID (e.g., `mesh.agent.backend-dev`) |
-| Well-known name       | Agent role (e.g., `mesh.role.code-reviewer`) |
-| Object path           | Agent capability endpoint       |
-| Interface             | Agent API contract              |
-| Signal                | Agent event (fire-and-forget broadcast) |
-| Method call           | Agent task invocation (request/reply) |
-| System bus            | Cross-project global bus        |
-| Session bus           | Per-project bus                 |
-| Name ownership        | Agent registration claim        |
+| D-Bus Concept   | DorkOS Mesh Equivalent                       |
+| --------------- | -------------------------------------------- |
+| Bus name        | Agent ID (e.g., `mesh.agent.backend-dev`)    |
+| Well-known name | Agent role (e.g., `mesh.role.code-reviewer`) |
+| Object path     | Agent capability endpoint                    |
+| Interface       | Agent API contract                           |
+| Signal          | Agent event (fire-and-forget broadcast)      |
+| Method call     | Agent task invocation (request/reply)        |
+| System bus      | Cross-project global bus                     |
+| Session bus     | Per-project bus                              |
+| Name ownership  | Agent registration claim                     |
 
 D-Bus's **two-bus model** (system vs session) is particularly useful: DorkOS already has projects as the unit of scoping. A per-project bus (session-scoped) is exactly right. Agents within a project communicate on the project bus. Cross-project communication goes through a higher-level system bus.
 
@@ -233,6 +238,7 @@ D-Bus's **two-bus model** (system vs session) is particularly useful: DorkOS alr
 Chrome extensions face a similar problem: multiple isolated contexts (background service worker, content scripts, popup, devtools panel) need to communicate across process boundaries.
 
 Chrome's solution has two patterns:
+
 1. **One-time messages**: `chrome.runtime.sendMessage()` — fire and forget, optional callback
 2. **Long-lived ports**: `chrome.runtime.connect()` — returns a `Port` object, both sides can send messages, disconnect event fires when the other side closes
 
@@ -274,6 +280,7 @@ For DorkOS Mesh, **start with topic-based routing**. Content-based routing adds 
 ### NATS: The Right Model for Agent Communication
 
 NATS is the most relevant pub/sub system for DorkOS Mesh because:
+
 1. It can run as an embedded server (no external infrastructure required)
 2. It has native Node.js client libraries (`nats` npm package)
 3. Its subject hierarchy model is expressive and efficient
@@ -294,6 +301,7 @@ Examples:
 ```
 
 **NATS Wildcards**:
+
 - `*` matches exactly one token: `mesh.project.*.agent.status` matches `mesh.project.backend.agent.status` and `mesh.project.frontend.agent.status`
 - `>` matches one or more tokens from that position: `mesh.project.backend.>` matches everything under the backend project namespace
 
@@ -335,15 +343,15 @@ The key limitation of EventEmitter: it does not survive process restarts, does n
 
 ### Redis Pub/Sub vs NATS: The Trade-off
 
-| Property            | Redis Pub/Sub                | NATS                           |
-| ------------------- | ---------------------------- | ------------------------------ |
-| Persistence         | None (fire and forget)       | None in core, JetStream for it |
-| Delivery guarantee  | At-most-once                 | At-most-once (core)            |
-| Throughput          | ~1M msg/s                    | ~10M msg/s                     |
-| External dependency | Yes (Redis process)          | Can be embedded in process     |
-| Node.js SDK         | ioredis                      | nats.js                        |
-| Request/reply       | Manual (pub to reply channel)| Native                         |
-| Wildcard subscriptions| Pattern matching only       | Token-based wildcards          |
+| Property               | Redis Pub/Sub                 | NATS                           |
+| ---------------------- | ----------------------------- | ------------------------------ |
+| Persistence            | None (fire and forget)        | None in core, JetStream for it |
+| Delivery guarantee     | At-most-once                  | At-most-once (core)            |
+| Throughput             | ~1M msg/s                     | ~10M msg/s                     |
+| External dependency    | Yes (Redis process)           | Can be embedded in process     |
+| Node.js SDK            | ioredis                       | nats.js                        |
+| Request/reply          | Manual (pub to reply channel) | Native                         |
+| Wildcard subscriptions | Pattern matching only         | Token-based wildcards          |
 
 For a local, single-machine system: **NATS embedded beats Redis because it requires zero additional infrastructure**. Redis makes sense if DorkOS already uses Redis for other things (it does not).
 
@@ -372,6 +380,7 @@ Single point of failure           Redundant paths, no SPOF
 Two fundamentally different approaches:
 
 **Managed Flooding (Bluetooth mesh BLE)**:
+
 - Every node rebroadcasts every message it receives
 - TTL (time-to-live) limits how many hops a message takes
 - No routing tables needed; nodes don't need to know network topology
@@ -379,6 +388,7 @@ Two fundamentally different approaches:
 - A node receiving the same message twice ignores the duplicate (by message cache)
 
 **Routing Protocols (Zigbee, Thread)**:
+
 - Dedicated router nodes maintain routing tables
 - Messages travel along known paths to destination
 - Route discovery happens first, then messages follow the established route
@@ -386,16 +396,17 @@ Two fundamentally different approaches:
 
 The distinction maps to two agent coordination strategies:
 
-| Wireless Approach | Agent Mesh Equivalent         | When to Use                         |
-| ----------------- | ----------------------------- | ----------------------------------- |
+| Wireless Approach | Agent Mesh Equivalent         | When to Use                                 |
+| ----------------- | ----------------------------- | ------------------------------------------- |
 | Flooding          | Broadcast capability requests | "Who can do a code review?" — small network |
-| Routing           | Direct invocation by ID       | "Tell agent X to do Y" — known target |
+| Routing           | Direct invocation by ID       | "Tell agent X to do Y" — known target       |
 
 For DorkOS Mesh with O(10) agents per project, flooding-style broadcasts for capability discovery are fine. Routing-style direct invocation is appropriate when you already know the target agent.
 
 ### Network Self-Healing Concepts
 
 Mesh networks automatically reroute when nodes fail. The equivalent in DorkOS Mesh:
+
 - When an agent becomes unresponsive, the mesh re-routes tasks to another agent with the same capabilities
 - When a new agent joins with a capability that was previously absent, the mesh becomes capable of new task types
 - No manual reconfiguration should be needed — the registry handles this automatically
@@ -448,12 +459,14 @@ A2A is the most directly relevant real-world protocol. Launched by Google in Apr
    - **Direct configuration**: Hardcoded agent URL — for tightly coupled systems
 
 **What DorkOS Mesh Should Borrow from A2A**:
+
 - The Agent Card structure: every agent declares its capabilities, not just its address
 - The task state machine: `pending → working → completed/failed` with streaming updates
 - The distinction between client (orchestrator) and remote (worker) agents
 - The curated registry model: DorkOS Mesh is the registry; agents register their cards on startup
 
 **What A2A Solves That DorkOS Does Not Need**:
+
 - HTTP transport between remote machines
 - Cross-vendor authentication (OAuth 2.0, mTLS)
 - Framework neutrality (A2A works with LangChain, CrewAI, Google agents, etc.)
@@ -472,6 +485,7 @@ This is actually the most practical path: DorkOS already has an in-process MCP s
 ### LangGraph: State Machine Orchestration
 
 LangGraph models multi-agent systems as directed graphs where:
+
 - **Nodes** = agents or processing steps
 - **Edges** = conditional transitions based on state
 - **State** = a shared object passed between nodes
@@ -481,12 +495,14 @@ The graph executes by entering at a start node, running it, checking conditional
 This is a **centralized orchestration** model (coordinator-driven). It is deterministic and observable but less flexible than emergent agent coordination.
 
 For DorkOS Mesh, the analogy suggests that the mesh should support both models:
+
 1. **Scripted workflows** (LangGraph-style): an orchestrator agent defines the graph; Mesh executes transitions
 2. **Emergent coordination** (pub/sub-style): agents discover each other and negotiate tasks autonomously
 
 ### CrewAI: Role-Based Crews
 
 CrewAI organizes agents into crews with:
+
 - **Role**: What kind of agent this is ("Senior Code Reviewer")
 - **Goal**: What this agent is trying to accomplish
 - **Backstory**: Context that shapes the agent's persona
@@ -501,6 +517,7 @@ DorkOS Mesh's equivalent: when a Pulse schedule fires, it could instantiate a "c
 OpenAI's Swarm (experimental, 2024) introduced **handoffs**: an agent can yield control to another agent, passing it the current conversation context. This is not message-passing — it is full context transfer.
 
 For DorkOS Mesh: handoffs are a specific case of task delegation where the receiving agent needs the full context of what happened before. This is different from a clean task invocation (which passes only the task inputs). DorkOS Mesh should support both:
+
 - **Clean delegation**: "Review PR #42" — only task inputs passed
 - **Context handoff**: "Continue this conversation" — full session context passed
 
@@ -553,11 +570,13 @@ cgroup                  Agent resource limits              Low (future)
 ### The /proc Filesystem Analogy
 
 Linux's `/proc` filesystem is a synthetic file system that exposes kernel state as readable files:
+
 - `/proc/1234/status` — process state, memory usage, file descriptors
 - `/proc/1234/cmdline` — the command that started the process
 - `/proc/1234/fd/` — open file descriptors
 
 For DorkOS Mesh, the equivalent is a **Mesh Registry API** that exposes the same kind of introspection:
+
 - `GET /api/mesh/agents` — all registered agents (the process table)
 - `GET /api/mesh/agents/:id` — agent state, capabilities, current task
 - `GET /api/mesh/agents/:id/history` — recent messages this agent processed
@@ -569,6 +588,7 @@ This makes the mesh observable in the same way `/proc` makes the kernel observab
 ### Signal Semantics
 
 Unix signals are asynchronous notifications to processes:
+
 - `SIGTERM` — please terminate gracefully
 - `SIGKILL` — terminate immediately (cannot be caught)
 - `SIGINT` — interrupt (Ctrl+C)
@@ -576,14 +596,14 @@ Unix signals are asynchronous notifications to processes:
 
 For DorkOS Mesh, agent events map directly:
 
-| Unix Signal   | Agent Mesh Event              | Semantics                                   |
-| ------------- | ----------------------------- | ------------------------------------------- |
-| SIGTERM       | `mesh.agent.terminate`        | Graceful shutdown request                   |
-| SIGKILL       | `mesh.agent.abort`            | Immediate abort (no cleanup)                |
-| SIGINT        | `mesh.agent.interrupt`        | Stop current task (can resume later)        |
-| SIGUSR1       | `mesh.agent.pause`            | Pause and await further instruction         |
-| SIGHUP        | `mesh.agent.reload`           | Reload configuration / reset context        |
-| SIGCHLD       | `mesh.agent.child-complete`   | A spawned sub-agent has finished            |
+| Unix Signal | Agent Mesh Event            | Semantics                            |
+| ----------- | --------------------------- | ------------------------------------ |
+| SIGTERM     | `mesh.agent.terminate`      | Graceful shutdown request            |
+| SIGKILL     | `mesh.agent.abort`          | Immediate abort (no cleanup)         |
+| SIGINT      | `mesh.agent.interrupt`      | Stop current task (can resume later) |
+| SIGUSR1     | `mesh.agent.pause`          | Pause and await further instruction  |
+| SIGHUP      | `mesh.agent.reload`         | Reload configuration / reset context |
+| SIGCHLD     | `mesh.agent.child-complete` | A spawned sub-agent has finished     |
 
 The analogy breaks slightly: Unix signals are numbered integers with fixed semantics. Agent mesh events are richer (they carry payloads). But the delivery model — asynchronous, to a specific target, with a type that determines handling — maps well.
 
@@ -614,6 +634,7 @@ mesh.global.bridge.backend-to-infra.{messageId}
 ### Linux Capabilities: Fine-Grained Permissions
 
 Traditional Unix had binary root/non-root permissions. Linux capabilities split root's powers into discrete units:
+
 - `CAP_NET_ADMIN` — configure network interfaces
 - `CAP_SYS_PTRACE` — inspect other processes
 - `CAP_DAC_READ_SEARCH` — bypass file read permission checks
@@ -623,12 +644,12 @@ For DorkOS Mesh, agent capabilities should be modeled similarly:
 ```typescript
 // Agent capability declaration (in Agent Card / registration):
 type AgentCapabilities = {
-  can_read_files: boolean;        // Read files in project dir
-  can_write_files: boolean;       // Write files in project dir
-  can_spawn_agents: boolean;      // Start new agent sessions
-  can_access_network: boolean;    // Make outbound network calls
-  can_invoke_agents: string[];    // Which specific agents this agent can invoke
-  can_publish_topics: string[];   // Which mesh topics this agent can publish to
+  can_read_files: boolean; // Read files in project dir
+  can_write_files: boolean; // Write files in project dir
+  can_spawn_agents: boolean; // Start new agent sessions
+  can_access_network: boolean; // Make outbound network calls
+  can_invoke_agents: string[]; // Which specific agents this agent can invoke
+  can_publish_topics: string[]; // Which mesh topics this agent can publish to
   can_subscribe_topics: string[]; // Which mesh topics this agent can subscribe to
 };
 ```
@@ -637,18 +658,18 @@ type AgentCapabilities = {
 
 Not everything from OS theory transfers:
 
-| OS Concept          | Why It Doesn't Apply to Agent Mesh                     |
-| ------------------- | ------------------------------------------------------ |
-| Virtual memory      | Agents share the same process memory already           |
-| Page faults         | No equivalent; agents load context via LLM context window |
-| CPU scheduling      | Claude API is the scheduler; DorkOS cannot control it  |
-| Interrupt handlers  | Agents are not hardware; events are always software    |
-| Device drivers      | Agents don't abstract hardware                         |
-| Boot sequence       | No warm/cold distinction; agents spawn on demand       |
-| File locking (flock)| Already handled by session-lock.ts; mesh doesn't need more |
-| Thread safety       | Node.js is single-threaded; different guarantees apply |
-| Memory protection   | All agents are in-process; no hardware protection possible |
-| System calls        | The MCP tool interface already provides this abstraction |
+| OS Concept           | Why It Doesn't Apply to Agent Mesh                         |
+| -------------------- | ---------------------------------------------------------- |
+| Virtual memory       | Agents share the same process memory already               |
+| Page faults          | No equivalent; agents load context via LLM context window  |
+| CPU scheduling       | Claude API is the scheduler; DorkOS cannot control it      |
+| Interrupt handlers   | Agents are not hardware; events are always software        |
+| Device drivers       | Agents don't abstract hardware                             |
+| Boot sequence        | No warm/cold distinction; agents spawn on demand           |
+| File locking (flock) | Already handled by session-lock.ts; mesh doesn't need more |
+| Thread safety        | Node.js is single-threaded; different guarantees apply     |
+| Memory protection    | All agents are in-process; no hardware protection possible |
+| System calls         | The MCP tool interface already provides this abstraction   |
 
 ---
 
@@ -662,16 +683,16 @@ Every agent that joins the mesh publishes a structured self-description:
 
 ```typescript
 type AgentCard = {
-  id: string;                     // Unique ID (same as session ID)
-  name: string;                   // Human-readable name
-  project: string;                // Project namespace
-  capabilities: string[];         // ["code-review", "test-run", "deploy"]
-  systemPrompt?: string;          // Brief description of this agent's purpose
-  spawnedBy?: string;             // Parent agent ID, if spawned
-  cwd: string;                    // Working directory
+  id: string; // Unique ID (same as session ID)
+  name: string; // Human-readable name
+  project: string; // Project namespace
+  capabilities: string[]; // ["code-review", "test-run", "deploy"]
+  systemPrompt?: string; // Brief description of this agent's purpose
+  spawnedBy?: string; // Parent agent ID, if spawned
+  cwd: string; // Working directory
   status: 'idle' | 'working' | 'waiting' | 'terminating';
-  registeredAt: number;           // Unix timestamp
-  lastHeartbeat: number;          // For health checking
+  registeredAt: number; // Unix timestamp
+  lastHeartbeat: number; // For health checking
 };
 ```
 
@@ -680,6 +701,7 @@ This is the agent's entry in the "process table."
 #### 2. The Registry as /proc (from OS design)
 
 A registry service (analagous to the process table / `/proc`) is the source of truth for what agents exist. It is:
+
 - **Not the message bus**: it does not route messages
 - **Not the orchestrator**: it does not direct work
 - **Just introspection**: readable by any agent, writable only by agents registering themselves
@@ -705,12 +727,14 @@ This gives DorkOS Mesh a rich routing vocabulary without content inspection.
 After discovery via the registry, two agents that need to collaborate should establish a direct channel (a "port" in Mach terms). The registry facilitates the introduction but then exits the critical path.
 
 In DorkOS's Node.js architecture, this maps to:
+
 - An EventEmitter channel with a unique topic: `mesh.channel.{channelId}.*`
 - Or a NATS JetStream stream scoped to the two agents
 
 #### 5. Control Plane / Data Plane Split (from service mesh)
 
 Keep two concerns separate:
+
 - **Mesh Registry (Control Plane)**: What agents exist, what they can do, who spawned them, what their status is. Updated infrequently. Read often.
 - **Mesh Bus (Data Plane)**: Actual message routing. High throughput, should not be blocked by registry operations.
 
@@ -729,6 +753,7 @@ Registered agents must send periodic heartbeats. An agent that fails to heartbea
 #### 9. Signal-Based Agent Control (from Unix signals)
 
 The mesh should support structured "signals" to agents:
+
 - Terminate gracefully
 - Abort immediately
 - Pause and await instruction
@@ -738,16 +763,16 @@ These map to existing DorkOS concepts (the tool approval flow for interruption, 
 
 ### Skip These Concepts
 
-| Concept                          | Why to Skip                                             |
-| -------------------------------- | ------------------------------------------------------- |
-| mTLS / certificate management    | All agents are on the same machine, no network adversary |
-| Sidecar proxy processes          | In-process EventEmitter is cheaper and sufficient       |
-| Gossip protocol replication      | Single server; no distributed registry needed           |
-| Content-based message routing    | Topic-based is sufficient; add complexity later if needed |
-| Cross-machine federation         | Out of scope for v1; design for extensibility           |
-| Raft/consensus for registry      | Single node; in-memory registry is fine                 |
-| Per-agent sidecar lifecycle      | Agents are SDK sessions; no separate proxy needed       |
-| Flooding-based discovery         | Too noisy; registry-based lookup is better at this scale |
+| Concept                       | Why to Skip                                               |
+| ----------------------------- | --------------------------------------------------------- |
+| mTLS / certificate management | All agents are on the same machine, no network adversary  |
+| Sidecar proxy processes       | In-process EventEmitter is cheaper and sufficient         |
+| Gossip protocol replication   | Single server; no distributed registry needed             |
+| Content-based message routing | Topic-based is sufficient; add complexity later if needed |
+| Cross-machine federation      | Out of scope for v1; design for extensibility             |
+| Raft/consensus for registry   | Single node; in-memory registry is fine                   |
+| Per-agent sidecar lifecycle   | Agents are SDK sessions; no separate proxy needed         |
+| Flooding-based discovery      | Too noisy; registry-based lookup is better at this scale  |
 
 ---
 
@@ -853,7 +878,10 @@ class MeshBus extends EventEmitter {
     const replyTo = `mesh._inbox.${crypto.randomUUID()}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('timeout')), timeout);
-      this.once(replyTo, (response) => { clearTimeout(timer); resolve(response); });
+      this.once(replyTo, (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      });
       this.publish(topic, { ...payload, replyTo });
     });
   }
@@ -870,48 +898,64 @@ Extending `mcp-tool-server.ts` with mesh-aware tools:
 ```typescript
 // In mcp-tool-server.ts, add:
 
-tool('mesh_discover', {
-  description: 'Find agents that can handle a given capability in a project',
-  inputSchema: z.object({
-    project: z.string(),
-    capability: z.string(),
-  }),
-}, async ({ project, capability }) => {
-  const agents = meshRegistry.findByCapability(project, capability);
-  return { agents: agents.map(a => ({ id: a.id, name: a.name, status: a.status })) };
-});
+tool(
+  'mesh_discover',
+  {
+    description: 'Find agents that can handle a given capability in a project',
+    inputSchema: z.object({
+      project: z.string(),
+      capability: z.string(),
+    }),
+  },
+  async ({ project, capability }) => {
+    const agents = meshRegistry.findByCapability(project, capability);
+    return { agents: agents.map((a) => ({ id: a.id, name: a.name, status: a.status })) };
+  }
+);
 
-tool('mesh_invoke', {
-  description: 'Send a task to a specific agent and await its response',
-  inputSchema: z.object({
-    agentId: z.string(),
-    task: z.string(),
-    payload: z.record(z.unknown()).optional(),
-    timeout: z.number().default(60000),
-  }),
-}, async ({ agentId, task, payload, timeout }) => {
-  const topic = `mesh.agent.${agentId}.task`;
-  return meshBus.request(topic, { task, payload }, timeout);
-});
+tool(
+  'mesh_invoke',
+  {
+    description: 'Send a task to a specific agent and await its response',
+    inputSchema: z.object({
+      agentId: z.string(),
+      task: z.string(),
+      payload: z.record(z.unknown()).optional(),
+      timeout: z.number().default(60000),
+    }),
+  },
+  async ({ agentId, task, payload, timeout }) => {
+    const topic = `mesh.agent.${agentId}.task`;
+    return meshBus.request(topic, { task, payload }, timeout);
+  }
+);
 
-tool('mesh_broadcast', {
-  description: 'Broadcast an event to all agents in a project',
-  inputSchema: z.object({
-    project: z.string(),
-    event: z.string(),
-    payload: z.record(z.unknown()).optional(),
-  }),
-}, async ({ project, event, payload }) => {
-  meshBus.publish(`mesh.${project}.event.${event}`, payload);
-  return { published: true };
-});
+tool(
+  'mesh_broadcast',
+  {
+    description: 'Broadcast an event to all agents in a project',
+    inputSchema: z.object({
+      project: z.string(),
+      event: z.string(),
+      payload: z.record(z.unknown()).optional(),
+    }),
+  },
+  async ({ project, event, payload }) => {
+    meshBus.publish(`mesh.${project}.event.${event}`, payload);
+    return { published: true };
+  }
+);
 
-tool('mesh_status', {
-  description: 'Get the current status of all agents in a project',
-  inputSchema: z.object({ project: z.string() }),
-}, async ({ project }) => {
-  return { agents: meshRegistry.findByProject(project) };
-});
+tool(
+  'mesh_status',
+  {
+    description: 'Get the current status of all agents in a project',
+    inputSchema: z.object({ project: z.string() }),
+  },
+  async ({ project }) => {
+    return { agents: meshRegistry.findByProject(project) };
+  }
+);
 ```
 
 ### Layer 4: API Routes (the /proc Interface)
@@ -1025,6 +1069,7 @@ Examples:
 ## Sources & Evidence
 
 **Service Mesh:**
+
 - [Istio Architecture](https://istio.io/latest/docs/ops/deployment/architecture/) — canonical source for control/data plane split
 - [Istio Sidecar vs Ambient Mode](https://istio.io/latest/docs/overview/dataplane-modes/) — evolution away from sidecar
 - [Istio Ambient Mode GA (Nov 2024)](https://istio.io/latest/blog/2024/ambient-reaches-ga/) — sidecarless GA, ztunnel details
@@ -1032,6 +1077,7 @@ Examples:
 - [Consul Service Discovery](https://developer.hashicorp.com/consul/docs/use-case/service-mesh) — registry + health check model
 
 **OS IPC:**
+
 - [Apple Mach Overview](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/KernelProgramming/Mach/Mach.html) — ports, tasks, messages
 - [Mach IPC Basic Concepts](https://hurdextras.nongnu.org/ipc_guide/mach_ipc_basic_concepts.html) — port rights, message queues
 - [D-Bus Tutorial](https://dbus.freedesktop.org/doc/dbus-tutorial.html) — bus names, object paths, signals
@@ -1040,16 +1086,19 @@ Examples:
 - [Chrome Extension Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/messaging) — ports for long-lived connections
 
 **Pub/Sub:**
+
 - [NATS Pub/Sub Docs](https://docs.nats.io/nats-concepts/core-nats/pubsub) — core pub/sub model
 - [NATS Subject-Based Messaging](https://docs.nats.io/nats-concepts/subjects) — subject hierarchy, wildcards
 - [Redis Pub/Sub vs NATS (Redis Blog)](https://redis.io/blog/what-to-choose-for-your-synchronous-and-asynchronous-communication-needs-redis-streams-redis-pub-sub-kafka-etc-best-approaches-synchronous-asynchronous-communication/) — trade-off comparison
 - [Pub/Sub Pattern Wikipedia](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern) — topic vs content-based routing
 
 **Mesh Networking:**
+
 - [Bluetooth Mesh Networking Guide](https://novelbits.io/bluetooth-mesh-networking-the-ultimate-guide/) — managed flooding, TTL, provisioning
 - [Zigbee vs BLE Mesh](https://embeddedcomputing.com/technology/iot/edge-computing/how-zigbee-thread-and-bluetooth-mesh-stack-up-in-performance-benchmarking) — routing vs flooding trade-offs
 
 **Agent-to-Agent Products:**
+
 - [Google A2A Announcement](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/) — Agent Cards, task lifecycle
 - [A2A Agent Discovery Spec](https://a2a-protocol.org/latest/topics/agent-discovery/) — well-known URI, registry, direct config
 - [A2A Protocol Specification](https://a2a-protocol.org/latest/specification/) — full spec
@@ -1059,6 +1108,7 @@ Examples:
 - [OpenAI Swarm](https://github.com/openai/swarm) — handoff concept
 
 **OS Design:**
+
 - [Inter-Process Communication Wikipedia](https://en.wikipedia.org/wiki/Inter-process_communication) — full IPC taxonomy
 - [Distributed OS IPC](https://en.wikipedia.org/wiki/Distributed_operating_system) — IPC in distributed contexts
 - [IPC Mechanisms (GeeksForGeeks)](https://www.geeksforgeeks.org/operating-systems/inter-process-communication-ipc/) — pipes, queues, shared memory

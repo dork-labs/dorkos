@@ -335,14 +335,19 @@ function findSubagentPart(taskId: string) {
 SubagentParts should be skipped in the text/toolCalls derivation (they are neither text nor tool calls):
 
 ```typescript
-export function deriveFromParts(parts: MessagePart[]): { content: string; toolCalls: ToolCallState[] } {
+export function deriveFromParts(parts: MessagePart[]): {
+  content: string;
+  toolCalls: ToolCallState[];
+} {
   const textSegments: string[] = [];
   const toolCalls: ToolCallState[] = [];
   for (const part of parts) {
     if (part.type === 'text') {
       textSegments.push(part.text);
     } else if (part.type === 'tool_call') {
-      toolCalls.push({ /* ... existing mapping ... */ });
+      toolCalls.push({
+        /* ... existing mapping ... */
+      });
     }
     // SubagentParts are intentionally skipped — they render via their own component
   }
@@ -393,7 +398,11 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   const statusIcon = {
-    running: <Loader2 className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status: 'running' }))} />,
+    running: (
+      <Loader2
+        className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status: 'running' }))}
+      />
+    ),
     complete: <Check className={cn('size-(--size-icon-xs)', toolStatus({ status: 'complete' }))} />,
     error: <X className={cn('size-(--size-icon-xs)', toolStatus({ status: 'error' }))} />,
   }[part.status];
@@ -403,7 +412,7 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
 
   return (
     <div
-      className="bg-muted/50 hover:border-border mt-px rounded-msg-tool border text-sm shadow-msg-tool transition-all duration-150 first:mt-1 hover:shadow-msg-tool-hover"
+      className="bg-muted/50 hover:border-border rounded-msg-tool shadow-msg-tool hover:shadow-msg-tool-hover mt-px border text-sm transition-all duration-150 first:mt-1"
       data-testid="subagent-block"
       data-task-id={part.taskId}
       data-status={part.status}
@@ -415,7 +424,7 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
         aria-label={`Subagent: ${part.description}`}
       >
         {statusIcon}
-        <span className="text-3xs font-mono truncate">{part.description}</span>
+        <span className="text-3xs truncate font-mono">{part.description}</span>
         {toolSummary && (
           <span className="text-3xs text-muted-foreground ml-1 shrink-0">{toolSummary}</span>
         )}
@@ -438,16 +447,14 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
             className="overflow-hidden"
           >
-            <div className="border-t px-3 pt-1 pb-3 space-y-1">
+            <div className="space-y-1 border-t px-3 pt-1 pb-3">
               {part.lastToolName && part.status === 'running' && (
                 <p className="text-3xs text-muted-foreground">
                   Last tool: <span className="font-mono">{part.lastToolName}</span>
                 </p>
               )}
               {part.summary && (
-                <pre className="text-xs whitespace-pre-wrap overflow-x-auto">
-                  {part.summary}
-                </pre>
+                <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{part.summary}</pre>
               )}
             </div>
           </motion.div>
@@ -512,6 +519,7 @@ No auto-hide behavior — subagent blocks are high-signal and should remain visi
 ### Visual Consistency
 
 SubagentBlock uses identical styling to ToolCallCard:
+
 - Same `bg-muted/50`, `rounded-msg-tool`, `shadow-msg-tool` classes
 - Same `text-3xs font-mono` for the label
 - Same `motion/react` AnimatePresence expand/collapse pattern
@@ -540,7 +548,12 @@ export function sdkTaskStarted(taskId: string, description: string): SDKTaskStar
 }
 
 /** Yield a task_progress system message. */
-export function sdkTaskProgress(taskId: string, toolUses: number, durationMs: number, lastToolName?: string): SDKTaskProgressMessage {
+export function sdkTaskProgress(
+  taskId: string,
+  toolUses: number,
+  durationMs: number,
+  lastToolName?: string
+): SDKTaskProgressMessage {
   return {
     type: 'system',
     subtype: 'task_progress',
@@ -554,7 +567,11 @@ export function sdkTaskProgress(taskId: string, toolUses: number, durationMs: nu
 }
 
 /** Yield a task_notification system message. */
-export function sdkTaskNotification(taskId: string, status: 'completed' | 'failed' | 'stopped', summary: string): SDKTaskNotificationMessage {
+export function sdkTaskNotification(
+  taskId: string,
+  status: 'completed' | 'failed' | 'stopped',
+  summary: string
+): SDKTaskNotificationMessage {
   return {
     type: 'system',
     subtype: 'task_notification',

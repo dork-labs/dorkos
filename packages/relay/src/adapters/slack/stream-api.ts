@@ -39,7 +39,7 @@ function asStreamClient(client: WebClient): SlackStreamApi {
 export async function startStream(
   client: WebClient,
   channel: string,
-  threadTs?: string,
+  threadTs?: string
 ): Promise<string> {
   const result = await asStreamClient(client).chat.startStream({ channel, thread_ts: threadTs });
   return result.stream_id ?? '';
@@ -55,7 +55,7 @@ export async function startStream(
 export async function appendStream(
   client: WebClient,
   streamId: string,
-  text: string,
+  text: string
 ): Promise<void> {
   await asStreamClient(client).chat.appendStream({ stream_id: streamId, text });
 }

@@ -52,18 +52,26 @@ function sendAdapterError(res: express.Response, err: AdapterError): void {
  * @param adapterManager - Adapter lifecycle manager for external channel adapters
  * @param traceStore - Optional trace store for adapter event and chat tracking
  */
-export function createAdapterRouter(adapterManager: AdapterManager, traceStore?: TraceStore): Router {
+export function createAdapterRouter(
+  adapterManager: AdapterManager,
+  traceStore?: TraceStore
+): Router {
   const router = Router();
 
   router.get('/adapters/catalog', (_req, res) => {
-    try { res.json(adapterManager.getCatalog()); } catch (err) {
+    try {
+      res.json(adapterManager.getCatalog());
+    } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to retrieve adapter catalog';
       res.status(500).json({ error: message });
     }
   });
 
   router.post('/adapters/reload', async (_req, res) => {
-    try { await adapterManager.reload(); return res.json({ ok: true }); } catch (err) {
+    try {
+      await adapterManager.reload();
+      return res.json({ ok: true });
+    } catch (err) {
       const message = err instanceof Error ? err.message : 'Reload failed';
       return res.status(500).json({ error: message });
     }
@@ -137,13 +145,19 @@ export function createAdapterRouter(adapterManager: AdapterManager, traceStore?:
   });
 
   router.post('/adapters/:id/enable', async (req, res) => {
-    try { await adapterManager.enable(req.params.id); return res.json({ ok: true }); } catch (err) {
+    try {
+      await adapterManager.enable(req.params.id);
+      return res.json({ ok: true });
+    } catch (err) {
       return res.status(400).json({ error: err instanceof Error ? err.message : 'Enable failed' });
     }
   });
 
   router.post('/adapters/:id/disable', async (req, res) => {
-    try { await adapterManager.disable(req.params.id); return res.json({ ok: true }); } catch (err) {
+    try {
+      await adapterManager.disable(req.params.id);
+      return res.json({ ok: true });
+    } catch (err) {
       return res.status(400).json({ error: err instanceof Error ? err.message : 'Disable failed' });
     }
   });
@@ -259,13 +273,16 @@ export function createAdapterRouter(adapterManager: AdapterManager, traceStore?:
     const registry = adapterManager.getRegistry();
     const adapter = registry.get(req.params.adapterId);
     if (!adapter) return res.status(404).json({ error: 'Adapter not running' });
-    if (!('handleInbound' in adapter) || typeof (adapter as Record<string, unknown>).handleInbound !== 'function') {
+    if (
+      !('handleInbound' in adapter) ||
+      typeof (adapter as Record<string, unknown>).handleInbound !== 'function'
+    ) {
       return res.status(500).json({ error: 'Adapter does not support webhook ingestion' });
     }
     const webhookAdapter = adapter as WebhookAdapter;
     const result = await webhookAdapter.handleInbound(
       req.body as Buffer,
-      req.headers as Record<string, string | string[] | undefined>,
+      req.headers as Record<string, string | string[] | undefined>
     );
     if (result.ok) return res.status(200).json({ ok: true });
     return res.status(401).json({ error: result.error });

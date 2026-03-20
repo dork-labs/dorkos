@@ -1,5 +1,5 @@
 ---
-title: "Drizzle ORM SQLite Migration System — Production Validation Research"
+title: 'Drizzle ORM SQLite Migration System — Production Validation Research'
 date: 2026-02-25
 type: implementation
 status: active
@@ -109,7 +109,7 @@ The `migrate()` function accepts a second config argument that can also override
 ```typescript
 migrate(db, {
   migrationsFolder: './drizzle',
-  migrationsTable: '__drizzle_migrations',  // default
+  migrationsTable: '__drizzle_migrations', // default
 });
 ```
 
@@ -123,9 +123,9 @@ The default table name is `__drizzle_migrations`. It is created automatically on
 // drizzle.config.ts
 export default defineConfig({
   migrations: {
-    table: 'my_migrations_table',  // customize name
+    table: 'my_migrations_table', // customize name
     // schema: 'public',           // PostgreSQL only
-  }
+  },
 });
 ```
 
@@ -155,7 +155,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 
 const dbPath = path.join(process.env.DORK_HOME ?? '~/.dork', 'app.db');
-const migrationsPath = path.join(__dirname, '../drizzle');  // bundled with app
+const migrationsPath = path.join(__dirname, '../drizzle'); // bundled with app
 
 export const sqlite = new Database(dbPath);
 export const db = drizzle(sqlite);
@@ -169,17 +169,20 @@ migrate(db, { migrationsFolder: migrationsPath });
 ### 5. SQLite-Specific Limitations (ALTER TABLE Constraints)
 
 SQLite has severely limited `ALTER TABLE` support compared to PostgreSQL or MySQL. It supports:
+
 - `ADD COLUMN`
 - `RENAME TABLE`
 - `RENAME COLUMN` (SQLite 3.25.0+)
 
 It does **not** support:
+
 - `DROP COLUMN` (in older versions)
 - `MODIFY COLUMN` (change type, constraints)
 - `ADD CONSTRAINT` / `DROP CONSTRAINT`
 - `DROP NOT NULL`
 
 For unsupported operations, Drizzle uses a **table recreation pattern**:
+
 1. Create a new table with the desired schema
 2. `INSERT INTO new_table SELECT ... FROM old_table`
 3. Drop the old table
@@ -210,6 +213,7 @@ WHERE slug IS NULL;
 Custom SQL migrations are integrated into the standard migration sequence — they run in order alongside generated migrations via `drizzle-kit migrate` or the programmatic `migrate()` function.
 
 **JS/TS custom migration scripts are not yet supported.** This is a documented roadmap item. If you need to run TypeScript logic as part of a migration (e.g., calling an external API, or running complex transformations not expressible in SQL), you currently must:
+
 - Do the data transformation in SQL
 - Or run a separate startup script before/after calling `migrate()`
 - Or use the community package `drizzle-migrations` which adds JS migration support
@@ -223,17 +227,20 @@ Custom SQL migrations are integrated into the standard migration sequence — th
 - But: this can cause issues if migration 1 commits something migration 2 depends on (the PostgreSQL enum bug from Issue #3249 illustrates this — less of an issue for SQLite but the batching behavior is the same)
 
 **Per-database behavior:**
+
 - `better-sqlite3`: Synchronous; the transaction behavior follows SQLite's default. All pending migrations are executed together.
 - Expo SQLite driver: Each migration is individually wrapped in a transaction.
 
 **Rollback (intentional, down-migration): Not supported.** This is the largest gap. Discussion #1339 has 60+ upvotes and 223 people watching. The Drizzle team acknowledged this and there is a PR (#4439) in progress as of early 2025, but it was not shipped as of February 2026.
 
 Current workarounds used by the community:
+
 - Maintain separate `.down.sql` files manually
 - Use external tools like `golang-migrate` alongside Drizzle schema generation
 - Take a SQLite database backup before applying migrations (appropriate for CLI/desktop apps)
 
 **Failure recovery in practice for a CLI/desktop app:** Since you control the deployment (unlike a web server with concurrent users), the most pragmatic strategy is:
+
 1. `sqlite3 backup` (using `better-sqlite3`'s `.backup()` API) before running migrations
 2. Run `migrate()`
 3. If it throws, restore from backup
@@ -241,6 +248,7 @@ Current workarounds used by the community:
 ### 8. Committing Migration Files to Git
 
 **Yes — this is the intended workflow.** The entire `drizzle/` directory (SQL files + `meta/` folder including `_journal.json` and all snapshots) should be committed to git. These are the source of truth for:
+
 - Code review of schema changes
 - Reproducible migration sequences across environments
 - The `meta/` snapshots enable Drizzle Kit to correctly compute diffs for future `generate` runs
@@ -248,21 +256,22 @@ Current workarounds used by the community:
 You should never modify generated migration files after they have been applied to any database (dev or prod), as the hash-based tracking will break.
 
 **For bundled apps (CLI/Electron/pkg):** The `drizzle/` folder must be explicitly included in your bundle/package as static assets. The `migrate()` function needs to read these files from disk at runtime. Common approaches:
+
 - Use `path.join(__dirname, '../drizzle')` and configure your bundler to copy the folder
 - In the DorkOS CLI esbuild pipeline, add the migrations folder as a `loader: { '.sql': 'file' }` or copy via build script
 
 ### 9. `drizzle-kit push` vs `drizzle-kit migrate` — Which for Production?
 
-| Aspect | `push` | `migrate` |
-|---|---|---|
-| Generates SQL files | No | Yes (via `generate`) |
-| Version-controlled | No | Yes |
-| Tracks applied state | No | Yes (`__drizzle_migrations`) |
-| Works offline/programmatically | No (needs schema introspection) | Yes |
-| Safe for existing data | Risky | Designed for it |
-| Supports arbitrary version gaps | No | Yes |
-| Appropriate for production | **No** | **Yes** |
-| Appropriate for dev prototyping | Yes | Acceptable but slower |
+| Aspect                          | `push`                          | `migrate`                    |
+| ------------------------------- | ------------------------------- | ---------------------------- |
+| Generates SQL files             | No                              | Yes (via `generate`)         |
+| Version-controlled              | No                              | Yes                          |
+| Tracks applied state            | No                              | Yes (`__drizzle_migrations`) |
+| Works offline/programmatically  | No (needs schema introspection) | Yes                          |
+| Safe for existing data          | Risky                           | Designed for it              |
+| Supports arbitrary version gaps | No                              | Yes                          |
+| Appropriate for production      | **No**                          | **Yes**                      |
+| Appropriate for dev prototyping | Yes                             | Acceptable but slower        |
 
 **`push` is explicitly not recommended for production.** The official docs state it is "best for rapid prototyping" and that "running push directly on a production database is risky." It has no concept of "which changes have been applied" — it computes the current diff every time and applies it directly. If a user has v1.0 and upgrades to v3.0, `push` could produce unpredictable behavior with data loss.
 
@@ -272,15 +281,15 @@ For a CLI/desktop app where users upgrade across versions (v1 → v2 → v5, or 
 
 A curated list of confirmed issues:
 
-| Issue | Severity | Status |
-|---|---|---|
-| No rollback/down-migrations | High | Open (PR #4439 in progress) |
-| Table recreation silent data loss with FK cascades (Issue #4938) | Critical | Partially fixed (beta); breaks on Cloudflare D1 |
-| Unique column add during table rebuild uses column name as string literal (Issue #5360) | Medium | Open as of early 2026 |
-| Multiple migrations run in single transaction — enum-style ordering dependency (Issue #3249) | Medium | Not fixed; design choice |
-| Expo SQLite driver crashes with >1 migration (Issue #2384) | Medium | Status unclear; not relevant for Node.js |
-| JS/TS custom migration scripts not supported | Medium | On roadmap |
-| `_journal.json` missing breaks deployment | Medium | User error; must bundle static assets |
+| Issue                                                                                        | Severity | Status                                          |
+| -------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------- |
+| No rollback/down-migrations                                                                  | High     | Open (PR #4439 in progress)                     |
+| Table recreation silent data loss with FK cascades (Issue #4938)                             | Critical | Partially fixed (beta); breaks on Cloudflare D1 |
+| Unique column add during table rebuild uses column name as string literal (Issue #5360)      | Medium   | Open as of early 2026                           |
+| Multiple migrations run in single transaction — enum-style ordering dependency (Issue #3249) | Medium   | Not fixed; design choice                        |
+| Expo SQLite driver crashes with >1 migration (Issue #2384)                                   | Medium   | Status unclear; not relevant for Node.js        |
+| JS/TS custom migration scripts not supported                                                 | Medium   | On roadmap                                      |
+| `_journal.json` missing breaks deployment                                                    | Medium   | User error; must bundle static assets           |
 
 ---
 

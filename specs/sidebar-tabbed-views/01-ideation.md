@@ -72,6 +72,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary Components/Modules:**
+
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` — Main sidebar; refactor target for tab wrapper
 - `apps/client/src/layers/features/session-list/ui/AgentContextChips.tsx` — Status chips; will be removed (replaced by tab badges)
 - `apps/client/src/layers/shared/ui/tabs.tsx` — Shadcn Tabs primitives (Radix-based)
@@ -79,6 +80,7 @@ status: ideation
 - `apps/client/src/layers/shared/model/app-store.ts` — Zustand store; add sidebarActiveTab
 
 **Shared Dependencies:**
+
 - `@/layers/shared/ui` — Tabs, Sidebar, Badge, Tooltip components
 - `@/layers/shared/model` — app-store (Zustand)
 - `@/layers/entities/pulse` — useSchedules, useActiveRunCount, usePulseEnabled
@@ -88,17 +90,20 @@ status: ideation
 - `lucide-react` — MessageSquare, Clock, Plug2 icons
 
 **Data Flow:**
+
 - Tab state: User click / keyboard shortcut → Zustand `setSidebarActiveTab` → CSS hidden toggle on view containers → localStorage persistence
 - Sessions: useDirectoryState → useSessions → SidebarMenu items (existing, unchanged)
 - Schedules: useSchedules → compact ScheduleItem list → "Open Pulse" button → setPulseOpen dialog
 - Connections: useRelayAdapters + useRegisteredAgents → compact adapter/agent rows → "Open Relay/Mesh" buttons → dialog
 
 **Feature Flags/Config:**
+
 - `usePulseEnabled()` — Schedules tab only visible when Pulse feature is enabled
 - `useRelayEnabled()` — Connections tab adapters section only when Relay is enabled
 - Mesh agents section always visible (agents are core)
 
 **Potential Blast Radius:**
+
 - Direct: 3 files modified (SessionSidebar, app-store, session-list barrel), 2 new files (SchedulesTab, ConnectionsTab)
 - Removed: AgentContextChips (1 file + 1 test file)
 - Tests: 3 test files need updates, 2 new test files
@@ -108,7 +113,7 @@ status: ideation
 
 ## 4) Root Cause Analysis
 
-*Not applicable — this is a new feature, not a bug fix.*
+_Not applicable — this is a new feature, not a bug fix._
 
 ---
 
@@ -117,23 +122,27 @@ status: ideation
 ### Persona-Driven UX Analysis
 
 **Kai (Primary — The Autonomous Builder):**
+
 - Lives in the Sessions view; checks constantly, navigates by feel. Scroll position continuity is critical.
 - Tabs to Schedules to see "2 active runs" confirmed, returns to Sessions in under 3 seconds — without losing scroll position.
 - His core frustration ("You can't observe what 20 agents are doing") is addressed by the Schedules badge showing active run count at a glance.
 - Delight moment: discovering `Cmd+2` in the tooltip, never needing to reach for the mouse again.
 
 **Priya (Secondary — The Knowledge Architect):**
+
 - Flow preservation is her emotional core. A tab switch that destroys scroll position or resets state costs her 15 minutes of mental reconstruction.
 - She reads source code. If she saw conditional rendering (`{activeTab === 'sessions' && <SessionsView />}`) destroying view state, she would lose trust immediately.
 - The CSS `hidden` approach (views always mounted, visibility toggled) must be the implementation — not a shortcut that looks correct but silently resets state.
 
 **Anti-Persona (Jordan — The Prompt Dabbler):**
+
 - Would expect full text labels, setup wizards inside each tab, tooltips explaining what "Pulse" means.
 - We explicitly don't do this. Icon-only tabs (with ARIA labels for accessibility, not hand-holding), no onboarding copy, no wizard flows.
 
 ### Potential Solutions
 
 **1. Icon-Only Horizontal Tabs (Selected)**
+
 - Description: Three icons (MessageSquare, Clock, Plug2) in a compact horizontal row between SidebarHeader and content area. Sliding animated indicator. Badge overlays.
 - Pros: Minimal space, control-panel aesthetic, supports badge counts, matches brand voice
 - Cons: Icons must be immediately recognizable; tooltips needed for accessibility
@@ -141,6 +150,7 @@ status: ideation
 - Maintenance: Low
 
 **2. Vertical Activity Bar (VS Code Style)**
+
 - Description: Narrow icon column on the left edge of the sidebar, content area to the right.
 - Pros: Established developer pattern, infinitely extensible for more views
 - Cons: Creates two-column sidebar, reduces content width to ~250px, overkill for 3 views
@@ -148,6 +158,7 @@ status: ideation
 - Maintenance: Medium
 
 **3. Text Tab Bar**
+
 - Description: Full text labels in a horizontal TabsList.
 - Pros: Maximum clarity, zero learning curve, uses Shadcn Tabs as-is
 - Cons: Consumer-app aesthetic, tight on narrow sidebar widths, would attract anti-persona
@@ -155,6 +166,7 @@ status: ideation
 - Maintenance: Low
 
 **4. Segmented Control**
+
 - Description: Compact pill-style toggle (iOS-style).
 - Pros: Tight, modern feel
 - Cons: Semantically implies variants of the same content, not distinct views; requires abbreviations
@@ -192,10 +204,10 @@ This approach is minimal, fits the control-panel brand voice, and respects both 
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Tab visual style | Icon-only horizontal tabs | Minimal space, control-panel aesthetic. Icons (MessageSquare, Clock, Plug2) with tooltips showing label + keyboard shortcut. Avoids consumer-app text tabs that would attract the anti-persona. |
-| 2 | AgentContextChips fate | Replace with tab badges | Tab badges now carry the same information — numeric active run count on Schedules, semantic status dot on Connections. Eliminates redundancy and tightens the sidebar. |
-| 3 | View content depth | Read-only summaries | Schedules shows compact upcoming/active runs. Connections shows adapter health + agent roster. Full management stays in existing dialog panels, opened via bridge buttons. Lower complexity, ships faster, keeps sidebar lightweight. |
-| 4 | Keyboard shortcuts | Cmd+1/2/3 when sidebar open | Registered when sidebar is open. Shown in tab tooltips for discoverability. Matches VS Code, browser, and terminal patterns. Respects Priya's keyboard-first flow. |
-| 5 | Rename SessionSidebar | AgentSidebar | The sidebar now shows more than sessions — it shows schedules, connections, and other agent context. `AgentSidebar` reflects the agent-centric UX direction (spec #85) and that all content is scoped to the current agent/cwd. Rename the component, file, test file, and all imports. |
+| #   | Decision               | Choice                      | Rationale                                                                                                                                                                                                                                                                               |
+| --- | ---------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Tab visual style       | Icon-only horizontal tabs   | Minimal space, control-panel aesthetic. Icons (MessageSquare, Clock, Plug2) with tooltips showing label + keyboard shortcut. Avoids consumer-app text tabs that would attract the anti-persona.                                                                                         |
+| 2   | AgentContextChips fate | Replace with tab badges     | Tab badges now carry the same information — numeric active run count on Schedules, semantic status dot on Connections. Eliminates redundancy and tightens the sidebar.                                                                                                                  |
+| 3   | View content depth     | Read-only summaries         | Schedules shows compact upcoming/active runs. Connections shows adapter health + agent roster. Full management stays in existing dialog panels, opened via bridge buttons. Lower complexity, ships faster, keeps sidebar lightweight.                                                   |
+| 4   | Keyboard shortcuts     | Cmd+1/2/3 when sidebar open | Registered when sidebar is open. Shown in tab tooltips for discoverability. Matches VS Code, browser, and terminal patterns. Respects Priya's keyboard-first flow.                                                                                                                      |
+| 5   | Rename SessionSidebar  | AgentSidebar                | The sidebar now shows more than sessions — it shows schedules, connections, and other agent context. `AgentSidebar` reflects the agent-centric UX direction (spec #85) and that all content is scoped to the current agent/cwd. Rename the component, file, test file, and all imports. |

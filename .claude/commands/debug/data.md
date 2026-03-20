@@ -36,10 +36,10 @@ DorkOS stores data in the `.dork` directory:
 
 ### DORK_HOME Location
 
-| Environment | Location |
-|---|---|
-| Development | `apps/server/.temp/.dork/` |
-| Production | `~/.dork/` (or `DORK_HOME` env var) |
+| Environment | Location                            |
+| ----------- | ----------------------------------- |
+| Development | `apps/server/.temp/.dork/`          |
+| Production  | `~/.dork/` (or `DORK_HOME` env var) |
 
 ## Arguments
 
@@ -95,15 +95,15 @@ AskUserQuestion:
 
 The consolidated database (`dork.db`) contains these tables:
 
-| Table | Purpose | Key Columns |
-|---|---|---|
-| `pulse_schedules` | Cron schedule definitions | id, name, cron, status, enabled, prompt, cwd |
-| `pulse_runs` | Schedule execution history | id, schedule_id, status, started_at, duration_ms, error |
-| `relay_index` | Relay message index | id, subject, status, payload, created_at |
-| `relay_traces` | Message delivery traces | message_id, status, adapter_id, error |
-| `agents` | Mesh agent registry | id, name, namespace, health_status |
-| `agent_denials` | Denied agent records | agent_id, reason, denied_at |
-| `rate_limit_buckets` | Rate limiting state | key, tokens, last_refill |
+| Table                | Purpose                    | Key Columns                                             |
+| -------------------- | -------------------------- | ------------------------------------------------------- |
+| `pulse_schedules`    | Cron schedule definitions  | id, name, cron, status, enabled, prompt, cwd            |
+| `pulse_runs`         | Schedule execution history | id, schedule_id, status, started_at, duration_ms, error |
+| `relay_index`        | Relay message index        | id, subject, status, payload, created_at                |
+| `relay_traces`       | Message delivery traces    | message_id, status, adapter_id, error                   |
+| `agents`             | Mesh agent registry        | id, name, namespace, health_status                      |
+| `agent_denials`      | Denied agent records       | agent_id, reason, denied_at                             |
+| `rate_limit_buckets` | Rate limiting state        | key, tokens, last_refill                                |
 
 ### 2.2 Common Queries
 
@@ -221,16 +221,19 @@ cat "$DORK_HOME/relay/subscriptions.json" 2>/dev/null | python3 -m json.tool
 ### 4.1 "Message Not Delivered" Debugging
 
 1. Check relay_index for the message:
+
    ```sql
    SELECT * FROM relay_index WHERE id = 'MESSAGE_ID';
    ```
 
 2. Check relay_traces for delivery attempts:
+
    ```sql
    SELECT * FROM relay_traces WHERE message_id = 'MESSAGE_ID';
    ```
 
 3. Check bindings match the message subject:
+
    ```bash
    cat "$DORK_HOME/relay/bindings.json" | python3 -m json.tool
    ```
@@ -247,11 +250,13 @@ cat "$DORK_HOME/relay/subscriptions.json" 2>/dev/null | python3 -m json.tool
 ### 4.2 "Schedule Not Running" Debugging
 
 1. Check schedule exists and is enabled:
+
    ```sql
    SELECT id, name, cron, status, enabled FROM pulse_schedules WHERE name LIKE '%SCHEDULE_NAME%';
    ```
 
 2. Check recent run attempts:
+
    ```sql
    SELECT * FROM pulse_runs WHERE schedule_id = 'SCHEDULE_ID' ORDER BY started_at DESC LIMIT 5;
    ```
@@ -264,11 +269,13 @@ cat "$DORK_HOME/relay/subscriptions.json" 2>/dev/null | python3 -m json.tool
 ### 4.3 "Agent Not Discovered" Debugging
 
 1. Check mesh is enabled in config:
+
    ```bash
    cat "$DORK_HOME/config.json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('mesh', {}))"
    ```
 
 2. Check registered agents:
+
    ```sql
    SELECT * FROM agents;
    ```
@@ -325,16 +332,16 @@ sqlite3 -csv -header "$DB" "SELECT * FROM pulse_runs;" > runs.csv
 
 ### Data File Reference
 
-| File | Format | Purpose |
-|---|---|---|
-| `config.json` | JSON | Server configuration (port, features, tunnel, logging) |
-| `dork.db` | SQLite (WAL) | Pulse schedules/runs, relay index/traces, mesh agents |
-| `relay/adapters.json` | JSON | Adapter type, config (tokens masked), enabled state |
-| `relay/bindings.json` | JSON | Adapter-to-agent routing with session strategy |
-| `relay/sessions.json` | JSON | Active session ID mappings for binding-router |
-| `relay/subscriptions.json` | JSON | Active relay subscriptions |
-| `relay/access-rules.json` | JSON | Subject-level access control |
-| `relay/mailboxes/*.json` | JSON | Per-subject message queues |
+| File                       | Format       | Purpose                                                |
+| -------------------------- | ------------ | ------------------------------------------------------ |
+| `config.json`              | JSON         | Server configuration (port, features, tunnel, logging) |
+| `dork.db`                  | SQLite (WAL) | Pulse schedules/runs, relay index/traces, mesh agents  |
+| `relay/adapters.json`      | JSON         | Adapter type, config (tokens masked), enabled state    |
+| `relay/bindings.json`      | JSON         | Adapter-to-agent routing with session strategy         |
+| `relay/sessions.json`      | JSON         | Active session ID mappings for binding-router          |
+| `relay/subscriptions.json` | JSON         | Active relay subscriptions                             |
+| `relay/access-rules.json`  | JSON         | Subject-level access control                           |
+| `relay/mailboxes/*.json`   | JSON         | Per-subject message queues                             |
 
 ## Security Notes
 

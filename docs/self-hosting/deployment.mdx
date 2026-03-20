@@ -25,6 +25,7 @@ dorkos --port 4242
 ```bash
 npm install -g dorkos
 ```
+
 </Step>
 
 <Step>
@@ -33,13 +34,9 @@ npm install -g dorkos
 <Tabs items={["Environment Variables", "Interactive Setup"]}>
 
 <Tab value="Environment Variables">
-```bash
-export ANTHROPIC_API_KEY=your-key-here
-export DORKOS_PORT=4242
-export DORKOS_DEFAULT_CWD=/path/to/projects
-export DORKOS_BOUNDARY=/path/to/boundary
-export NODE_ENV=production
-```
+  ```bash export ANTHROPIC_API_KEY=your-key-here export DORKOS_PORT=4242 export
+  DORKOS_DEFAULT_CWD=/path/to/projects export DORKOS_BOUNDARY=/path/to/boundary export
+  NODE_ENV=production ```
 </Tab>
 
 <Tab value="Interactive Setup">
@@ -48,6 +45,7 @@ dorkos init
 ```
 
 The setup wizard configures port, working directory, boundary, and optional tunnel settings. Configuration is saved to `~/.dork/config.json`.
+
 </Tab>
 
 </Tabs>
@@ -69,21 +67,40 @@ dorkos
 
 ## Environment Variables
 
-<TypeTable type={{
-  "ANTHROPIC_API_KEY": { type: "string", description: "Claude API key (required)" },
-  "DORKOS_PORT": { type: "number", description: "Server port", default: "'4242'" },
-  "DORKOS_HOST": { type: "string", description: "Bind address. Set to 0.0.0.0 for Docker or any network-accessible deployment", default: "'localhost'" },
-  "DORKOS_DEFAULT_CWD": { type: "string", description: "Default working directory", default: "Repo root" },
-  "DORKOS_BOUNDARY": { type: "string", description: "Directory boundary for file access", default: "Home directory" },
-  "NODE_ENV": { type: "string", description: "Set to 'production' for production mode", default: "'development'" },
-}} />
+<TypeTable
+  type={{
+    ANTHROPIC_API_KEY: { type: 'string', description: 'Claude API key (required)' },
+    DORKOS_PORT: { type: 'number', description: 'Server port', default: "'4242'" },
+    DORKOS_HOST: {
+      type: 'string',
+      description: 'Bind address. Set to 0.0.0.0 for Docker or any network-accessible deployment',
+      default: "'localhost'",
+    },
+    DORKOS_DEFAULT_CWD: {
+      type: 'string',
+      description: 'Default working directory',
+      default: 'Repo root',
+    },
+    DORKOS_BOUNDARY: {
+      type: 'string',
+      description: 'Directory boundary for file access',
+      default: 'Home directory',
+    },
+    NODE_ENV: {
+      type: 'string',
+      description: "Set to 'production' for production mode",
+      default: "'development'",
+    },
+  }}
+/>
 
 ## Directory Boundary
 
 `DORKOS_BOUNDARY` restricts file access to a specific directory tree. All `cwd`, `path`, and `dir` parameters are validated against this boundary — requests outside it return `403`.
 
 <Callout type="warn">
-  The default boundary is the home directory. For production deployments, set a tighter boundary to limit what Claude can access.
+  The default boundary is the home directory. For production deployments, set a tighter boundary to
+  limit what Claude can access.
 </Callout>
 
 ## systemd Service

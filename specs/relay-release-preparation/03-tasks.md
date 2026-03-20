@@ -10,10 +10,12 @@
 ## Phase 1: Foundation
 
 ### Task 1.1 — Update spec manifest statuses, homepage module statuses, and CLI keywords
+
 - **Size:** Small | **Priority:** High
 - **Dependencies:** None
 
 Three quick-win changes:
+
 1. Update `specs/manifest.json` — change 6 specs (51, 53, 54, 56, 58, 59) from `ideation`/`specified` to `implemented`
 2. Update `apps/web/src/layers/features/marketing/lib/modules.ts` — change `pulse`, `relay`, `mesh` status from `'coming-soon'` to `'available'`
 3. Update `packages/cli/package.json` — add 8 keywords: `relay`, `mesh`, `agent-mesh`, `pub-sub`, `agent-discovery`, `message-bus`, `scheduler`, `pulse`
@@ -23,10 +25,12 @@ Three quick-win changes:
 ## Phase 2: Concept Pages
 
 ### Task 2.1 — Write Relay and Mesh concept pages and update concepts meta.json
+
 - **Size:** Large | **Priority:** High
 - **Dependencies:** 1.1
 
 Create two new MDX files and update navigation:
+
 - `docs/concepts/relay.mdx` — 6 sections: Architecture Overview, Subject Hierarchy, Message Envelopes, Adapter Architecture, Message Tracing, Convergence
 - `docs/concepts/mesh.mdx` — 7 sections: Architecture Overview, Agent Manifests, Discovery Flow, Network Topology, Health Monitoring, Lifecycle Events, Access Control
 - Update `docs/concepts/meta.json` — add `relay` and `mesh` to pages array
@@ -36,6 +40,7 @@ Create two new MDX files and update navigation:
 ## Phase 3: User Guides
 
 ### Task 3.1 — Write Relay messaging and observability guides
+
 - **Size:** Large | **Priority:** High
 - **Dependencies:** 2.1 | **Parallel with:** 3.2, 3.3
 
@@ -43,6 +48,7 @@ Create two new MDX files and update navigation:
 - `docs/guides/relay-observability.mdx` — 4 sections: Message Tracing, Delivery Metrics Dashboard, Debugging Failed Deliveries, Using MCP Tools
 
 ### Task 3.2 — Write Agent Discovery and Pulse Scheduler guides
+
 - **Size:** Large | **Priority:** High
 - **Dependencies:** 2.1 | **Parallel with:** 3.1, 3.3
 
@@ -50,6 +56,7 @@ Create two new MDX files and update navigation:
 - `docs/guides/pulse-scheduler.mdx` — 7 sections: What is Pulse, Enabling Pulse, Creating Schedules, Cron Syntax, Run History, Pulse + Relay, Configuration
 
 ### Task 3.3 — Write Building Relay Adapters and Agent Coordination guides
+
 - **Size:** Large | **Priority:** High
 - **Dependencies:** 2.1 | **Parallel with:** 3.1, 3.2
 
@@ -62,6 +69,7 @@ Create two new MDX files and update navigation:
 ## Phase 4: Integration Updates
 
 ### Task 4.1 — Update SSE protocol docs, docs landing page, and configuration guide
+
 - **Size:** Medium | **Priority:** High
 - **Dependencies:** 3.1, 3.2, 3.3
 
@@ -74,6 +82,7 @@ Create two new MDX files and update navigation:
 ## Phase 5: Project Files
 
 ### Task 5.1 — Update README, CONTRIBUTING, and contributing/architecture docs
+
 - **Size:** Medium | **Priority:** Medium
 - **Dependencies:** 1.1 | **Parallel with:** 6.1
 
@@ -86,6 +95,7 @@ Create two new MDX files and update navigation:
 ## Phase 6: Marketing
 
 ### Task 6.1 — Write release blog post draft
+
 - **Size:** Medium | **Priority:** Medium
 - **Dependencies:** 1.1 | **Parallel with:** 5.1
 
@@ -96,6 +106,7 @@ Create two new MDX files and update navigation:
 ## Phase 7: Verification
 
 ### Task 7.1 — Verify API docs export and cross-link integrity
+
 - **Size:** Medium | **Priority:** High
 - **Dependencies:** 4.1, 5.1, 6.1
 

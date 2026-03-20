@@ -41,7 +41,7 @@ status: ideation
 - `plans/mesh-specs/01-mesh-core-library.md`: Detailed spec with verification criteria, ~15-20 files, ~1500-2500 LOC
 - `packages/relay/package.json`: Workspace package pattern — ESM, @dorkos/ scope, exports main entry. Dependencies: better-sqlite3, ulidx, chokidar, @dorkos/shared
 - `packages/relay/tsconfig.json`: Extends @dorkos/typescript-config/node.json, outDir: dist
-- `packages/relay/vitest.config.ts`: Node environment, includes src/**/__tests__/**/*.test.ts
+- `packages/relay/vitest.config.ts`: Node environment, includes src/**/**tests**/**/\*.test.ts
 - `packages/relay/src/relay-core.ts`: Main class composes EndpointRegistry, MaildirStore, SqliteIndex, DeadLetterQueue, AccessControl. Constructor takes RelayOptions (dataDir, maxHops, defaultTtlMs). Key method: `registerEndpoint(subject)` returns EndpointInfo
 - `packages/relay/src/access-control.ts`: Pattern-based ACL with JSON persistence (access-rules.json), hot-reload via chokidar, rules sorted by priority. Method `checkAccess(sender, recipient)` returns { allowed, matchedRule }
 - `packages/relay/src/sqlite-index.ts`: SQLite pattern — better-sqlite3, WAL mode, PRAGMA user_version migrations, prepared statements compiled in constructor
@@ -80,7 +80,7 @@ status: ideation
 - **Potential blast radius:**
   - New files (packages/mesh/): ~18-22 files (source + tests + config)
   - Modified files: `packages/shared/package.json` (add export), `packages/shared/src/mesh-schemas.ts` (new), `vitest.workspace.ts` (add entry), root `package.json` (workspace)
-  - Test files: ~10-12 test files in packages/mesh/src/__tests__/
+  - Test files: ~10-12 test files in packages/mesh/src/**tests**/
 
 ## 4) Root Cause Analysis
 
@@ -131,8 +131,8 @@ N/A — this is new feature work, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Discovery engine approach | Custom async BFS with pluggable strategies | Only approach with explicit symlink cycle detection. Strategies are pluggable detectors (ClaudeCodeStrategy, etc.) that answer "is this an agent?" — not filesystem walkers. Mirrors RelayAdapter plugin pattern. |
-| 2 | Manifest format and location | `.dork/agent.json` with DorkOS-native fields | Litepaper specifies this path. DorkOS-native format (id, name, runtime, capabilities[], behavior, budget, registeredAt, registeredBy) is purpose-built and simple. A2A conversion (toAgentCard()) can be added later for HTTP interop. `.dork/` is DorkOS's namespace, `.well-known/` is HTTP-only. |
-| 3 | SQLite schema design | Simple JSON columns (2 tables: agents + denials) | Agent count is small (5-50). JSON columns for capabilities/manifest are sufficient. Normalized tables with JOINs are overkill. json_each() available if SQL-native filtering is ever needed. |
+| #   | Decision                     | Choice                                           | Rationale                                                                                                                                                                                                                                                                                           |
+| --- | ---------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Discovery engine approach    | Custom async BFS with pluggable strategies       | Only approach with explicit symlink cycle detection. Strategies are pluggable detectors (ClaudeCodeStrategy, etc.) that answer "is this an agent?" — not filesystem walkers. Mirrors RelayAdapter plugin pattern.                                                                                   |
+| 2   | Manifest format and location | `.dork/agent.json` with DorkOS-native fields     | Litepaper specifies this path. DorkOS-native format (id, name, runtime, capabilities[], behavior, budget, registeredAt, registeredBy) is purpose-built and simple. A2A conversion (toAgentCard()) can be added later for HTTP interop. `.dork/` is DorkOS's namespace, `.well-known/` is HTTP-only. |
+| 3   | SQLite schema design         | Simple JSON columns (2 tables: agents + denials) | Agent count is small (5-50). JSON columns for capabilities/manifest are sufficient. Normalized tables with JOINs are overkill. json_each() available if SQL-native filtering is ever needed.                                                                                                        |

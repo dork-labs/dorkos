@@ -58,9 +58,7 @@ describe('ThinkingBlock', () => {
 
   it('has correct aria-expanded attribute', () => {
     // Purpose: ARIA compliance — screen readers need expand/collapse state.
-    const { rerender } = render(
-      <ThinkingBlock text="thinking" isStreaming={true} />
-    );
+    const { rerender } = render(<ThinkingBlock text="thinking" isStreaming={true} />);
 
     // Expanded during streaming
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true');

@@ -1,5 +1,5 @@
 ---
-title: "Keyboard Shortcut Discovery & Display Patterns in Popular Productivity Apps"
+title: 'Keyboard Shortcut Discovery & Display Patterns in Popular Productivity Apps'
 date: 2026-03-11
 type: external-best-practices
 status: active
@@ -38,10 +38,12 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Alternative access:** Help & Feedback section at the bottom of the sidebar > "Keyboard shortcuts"
 
 **Inline display:**
+
 - Tooltips on icon buttons show the keyboard shortcut (e.g., hovering the Create button shows `C`)
 - The command bar (`Cmd+K`) shows shortcut hints alongside each action
 
 **Discovery flow:**
+
 - Shortcuts reference panel is searchable — Linear redesigned it specifically to make discovery easier
 - The panel was explicitly shipped to surface shortcuts that were "frequently used and loved by power users" but invisible to new users
 - No dedicated onboarding step; discovery is passive via tooltips and `?`
@@ -58,10 +60,12 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Panel UX:** Opens as a **drawer on the right side** of the app (not a blocking modal). Content is organized by category (Navigation, Messages, Formatting, etc.) with Mac/Windows columns side by side.
 
 **Inline display:**
+
 - Tooltips on toolbar buttons show the keyboard shortcut
 - The shortcuts drawer is always accessible — Slack's philosophy is "always one keypress away"
 
 **Discovery flow:**
+
 - No dedicated onboarding step for shortcuts
 - Slack surfaces `Cmd+/` contextually in help menus and onboarding tips
 - Shortcuts are mentioned in tooltips throughout the app
@@ -79,11 +83,13 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Panel UX:** A separate page or modal (varies by platform) listing all shortcuts, organized by category. Not accessible by a direct keybinding the way Linear or GitHub's are.
 
 **Inline display:**
+
 - The `/` command menu (slash commands) is the primary in-product discovery mechanism — typing `/` shows all available content blocks with their keyboard equivalents
 - Notion does **not** prominently display keyboard shortcuts in button tooltips the way Linear or Figma do
 - The command palette (`Cmd+P`) shows shortcut hints alongside actions
 
 **Discovery flow:**
+
 - No dedicated shortcut onboarding
 - The `?` icon in the bottom right is the discoverable entry point
 - Notion relies on users consulting the help center documentation
@@ -100,11 +106,13 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Panel UX:** A modal dialog. Categorized by section (Site-wide, Repositories, Source code browsing, etc.). Not searchable.
 
 **Inline display:**
+
 - Shortcuts are **not** prominently shown in button tooltips throughout GitHub
 - The command palette (`Cmd+K`) shows shortcut hints alongside actions
 - GitHub's primary shortcut discovery model is the `?` modal
 
 **Discovery flow:**
+
 - No dedicated onboarding for shortcuts
 - The `?` pattern is so universal on the web that GitHub relies on users knowing it
 - GitHub's accessibility settings let users disable character-key shortcuts (e.g., `c`, `g i`) while keeping modifier shortcuts — this is surfaced in user settings
@@ -122,11 +130,13 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Panel UX:** A full tab in the editor (not a floating modal). Lists every command with its keybinding, is fully searchable and filterable, and allows inline editing to reassign shortcuts. This is the most powerful shortcuts editor of any app in this list.
 
 **Inline display:**
+
 - Command Palette (`Cmd+Shift+P`) shows the keyboard shortcut to the right of every command — this is the primary discovery mechanism
 - Tooltips on toolbar buttons show the keyboard shortcut
 - Menus (View, Edit, etc.) show keyboard shortcuts next to menu items
 
 **Discovery flow:**
+
 - Welcome page walkthrough on first launch introduces key features; keyboard shortcuts are mentioned
 - The Command Palette is explicitly introduced early and is the richest discoverability surface
 - The `Cmd+K Cmd+S` chord for the keybindings editor is itself complex — most users discover it via Help > Keyboard Shortcuts
@@ -142,6 +152,7 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Also accessible via:** The quick actions menu (search)
 
 **Panel UX ("Finger Tips"):**
+
 - Opens as a **panel at the bottom of the canvas** — non-blocking, you can keep working while it's open
 - Organized into categories (Tools, View, Arrange, etc.) accessible via tabs
 - **Tracks and highlights shortcuts you've already used** — used shortcuts appear in a different color
@@ -149,10 +160,12 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 - Has a "Layout" tab to select keyboard layout (QWERTY, AZERTY, etc.)
 
 **Inline display:**
+
 - Tooltips on **every** toolbar button and panel element show the keyboard shortcut
 - Shortcuts appear in menus next to their actions (right-click context menu, top menu bar)
 
 **Discovery flow:**
+
 - Figma is described as prompting new users to open the shortcuts panel on first launch (historically), though this behavior may vary
 - The bottom-right `?` button is the persistent discoverable entry point
 - The gamification of the panel (highlighting used vs. unused) encourages exploration
@@ -169,11 +182,13 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 **Panel UX:** A blocking modal listing all Discord keyboard shortcuts, organized by category. The list is comprehensive.
 
 **Inline display:**
+
 - Discord does **not** show shortcuts in button tooltips consistently
 - The Quick Switcher (`Cmd+K` / `Ctrl+K`) does navigate quickly but is not a shortcuts reference
 - User Settings > Keybinds is where custom keybinds are managed (push-to-talk, etc.)
 
 **Discovery flow:**
+
 - No dedicated shortcut onboarding
 - Discord's philosophy: the panel is "always accessible with the press of a button, so there's no need to memorize the whole thing"
 - Discovery relies on users knowing `Ctrl+/` — which is not prominently surfaced in the UI
@@ -184,15 +199,15 @@ Seven major productivity apps — Linear, Slack, Notion, GitHub, VS Code, Figma,
 
 ## Summary Table
 
-| App | Shortcut Panel Trigger | Panel Style | Inline Tooltips | Command Palette Hints | Onboarding |
-|---|---|---|---|---|---|
-| **Linear** | `?` | Full-screen modal, searchable | Yes (icon buttons) | Yes (`Cmd+K`) | None; passive via tooltips |
-| **Slack** | `Cmd+/` | Right-side drawer | Yes (toolbar) | N/A | None; mentioned in help |
-| **Notion** | Click `?` icon (no key) | Modal/page | Weak | Yes (`Cmd+P`) | None |
-| **GitHub** | `?` | Modal, context-aware, not searchable | No | Yes (`Cmd+K`) | None |
-| **VS Code** | `Cmd+K Cmd+S` | Full editor tab, searchable, editable | Yes (toolbar) | Yes (`Cmd+Shift+P`) | Welcome walkthrough |
-| **Figma** | `Ctrl+Shift+?` | Bottom panel, non-blocking, gamified | Yes (everywhere) | Yes (quick actions) | Prompted on first launch |
-| **Discord** | `Ctrl+/` | Blocking modal | Weak | N/A | None |
+| App         | Shortcut Panel Trigger  | Panel Style                           | Inline Tooltips    | Command Palette Hints | Onboarding                 |
+| ----------- | ----------------------- | ------------------------------------- | ------------------ | --------------------- | -------------------------- |
+| **Linear**  | `?`                     | Full-screen modal, searchable         | Yes (icon buttons) | Yes (`Cmd+K`)         | None; passive via tooltips |
+| **Slack**   | `Cmd+/`                 | Right-side drawer                     | Yes (toolbar)      | N/A                   | None; mentioned in help    |
+| **Notion**  | Click `?` icon (no key) | Modal/page                            | Weak               | Yes (`Cmd+P`)         | None                       |
+| **GitHub**  | `?`                     | Modal, context-aware, not searchable  | No                 | Yes (`Cmd+K`)         | None                       |
+| **VS Code** | `Cmd+K Cmd+S`           | Full editor tab, searchable, editable | Yes (toolbar)      | Yes (`Cmd+Shift+P`)   | Welcome walkthrough        |
+| **Figma**   | `Ctrl+Shift+?`          | Bottom panel, non-blocking, gamified  | Yes (everywhere)   | Yes (quick actions)   | Prompted on first launch   |
+| **Discord** | `Ctrl+/`                | Blocking modal                        | Weak               | N/A                   | None                       |
 
 ---
 

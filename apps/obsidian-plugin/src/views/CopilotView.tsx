@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { createRoot, Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NuqsAdapter } from 'nuqs/adapters/react';
+
 import path from 'path';
 import { setPlatformAdapter } from '@dorkos/client/lib/platform';
 import { TransportProvider } from '@dorkos/client/contexts/TransportContext';
@@ -72,15 +72,13 @@ export class CopilotView extends ItemView {
 
     this.root = createRoot(container);
     this.root.render(
-      <NuqsAdapter>
-        <ObsidianProvider app={this.app}>
-          <QueryClientProvider client={this.queryClient}>
-            <TransportProvider transport={transport}>
-              <ObsidianApp />
-            </TransportProvider>
-          </QueryClientProvider>
-        </ObsidianProvider>
-      </NuqsAdapter>
+      <ObsidianProvider app={this.app}>
+        <QueryClientProvider client={this.queryClient}>
+          <TransportProvider transport={transport}>
+            <ObsidianApp />
+          </TransportProvider>
+        </QueryClientProvider>
+      </ObsidianProvider>
     );
   }
 

@@ -58,14 +58,14 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| Path | Role |
-|---|---|
-| `packages/shared/src/agent-runtime.ts` | `AgentRuntime` interface — `getCommands()` at line 247 |
-| `packages/shared/src/schemas.ts` | `CommandEntrySchema`, `CommandRegistrySchema` (lines 392-413) |
-| `apps/server/src/services/runtimes/claude-code/command-registry.ts` | Filesystem scanner (116 lines) — **primary change target** |
-| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Per-CWD registry management (lines 412-425) — **primary change target** |
-| `apps/server/src/services/runtimes/claude-code/message-sender.ts` | SDK query execution — already calls `supportedModels()`, pattern to follow |
-| `apps/server/src/routes/commands.ts` | HTTP endpoint — delegates to runtime, **no changes needed** |
+| Path                                                                   | Role                                                                       |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `packages/shared/src/agent-runtime.ts`                                 | `AgentRuntime` interface — `getCommands()` at line 247                     |
+| `packages/shared/src/schemas.ts`                                       | `CommandEntrySchema`, `CommandRegistrySchema` (lines 392-413)              |
+| `apps/server/src/services/runtimes/claude-code/command-registry.ts`    | Filesystem scanner (116 lines) — **primary change target**                 |
+| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Per-CWD registry management (lines 412-425) — **primary change target**    |
+| `apps/server/src/services/runtimes/claude-code/message-sender.ts`      | SDK query execution — already calls `supportedModels()`, pattern to follow |
+| `apps/server/src/routes/commands.ts`                                   | HTTP endpoint — delegates to runtime, **no changes needed**                |
 
 **Shared Dependencies:**
 
@@ -127,24 +127,24 @@ N/A — this is a feature/architecture change, not a bug fix.
 
 Three mechanisms exist, all returning the same data:
 
-| Mechanism | Returns | When Available | Metadata |
-|---|---|---|---|
-| `query.supportedCommands()` | `SlashCommand[]` | Before streaming starts | `name`, `description`, `argumentHint` |
-| `query.initializationResult()` | `SDKControlInitializeResponse` | After init completes | `.commands: SlashCommand[]` + models, account info |
-| Init system message | `slash_commands: string[]` | First message in stream | Names only — no metadata |
+| Mechanism                      | Returns                        | When Available          | Metadata                                           |
+| ------------------------------ | ------------------------------ | ----------------------- | -------------------------------------------------- |
+| `query.supportedCommands()`    | `SlashCommand[]`               | Before streaming starts | `name`, `description`, `argumentHint`              |
+| `query.initializationResult()` | `SDKControlInitializeResponse` | After init completes    | `.commands: SlashCommand[]` + models, account info |
+| Init system message            | `slash_commands: string[]`     | First message in stream | Names only — no metadata                           |
 
 The SDK returns **all** command types: built-in (`/compact`, `/help`, `/clear`), custom (`.claude/commands/`), user-level (`~/.claude/commands/`), and skills (`.claude/skills/`). Our filesystem scanner only finds project-level custom commands.
 
 ### Competitive Landscape
 
-| Tool | Discovery | Programmatic API | Format |
-|---|---|---|---|
-| **Claude Code** | `.claude/commands/` + SDK API | Yes (3 methods) | MD + YAML frontmatter |
-| **OpenCode** | `.opencode/commands/` | No | MD + YAML frontmatter |
-| **Cursor** | `.cursor/commands/` | No | MD (no frontmatter spec) |
-| **Codex CLI** | `~/.codex/prompts/` | No | MD + YAML frontmatter |
-| **Windsurf** | `.windsurf/workflows/` | No | MD (no frontmatter) |
-| **Continue.dev** | `.continue/prompts/` | No | MD + YAML frontmatter |
+| Tool             | Discovery                     | Programmatic API | Format                   |
+| ---------------- | ----------------------------- | ---------------- | ------------------------ |
+| **Claude Code**  | `.claude/commands/` + SDK API | Yes (3 methods)  | MD + YAML frontmatter    |
+| **OpenCode**     | `.opencode/commands/`         | No               | MD + YAML frontmatter    |
+| **Cursor**       | `.cursor/commands/`           | No               | MD (no frontmatter spec) |
+| **Codex CLI**    | `~/.codex/prompts/`           | No               | MD + YAML frontmatter    |
+| **Windsurf**     | `.windsurf/workflows/`        | No               | MD (no frontmatter)      |
+| **Continue.dev** | `.continue/prompts/`          | No               | MD + YAML frontmatter    |
 
 Claude Code is the **only** tool with a programmatic discovery API. Every other tool relies exclusively on filesystem scanning. DorkOS is uniquely positioned to use both — the SDK for authoritative command lists and the scanner for supplementary metadata.
 
@@ -211,10 +211,10 @@ Option 1 aligns with existing patterns (`supportedModels()` does exactly this). 
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Relationship to spec #19 | Complement | Spec #19 addressed UI/UX (regex, fuzzy matching, cwd caching) — fully implemented. This spec addresses the command *source* and multi-runtime architecture. Orthogonal concerns. |
-| 2 | Multi-runtime scope | Extensible architecture only | Design the interface so future runtimes CAN provide commands differently, but only implement Claude Code's SDK-based discovery now. YAGNI for OpenCode/Cursor until we add those runtimes. |
-| 3 | Scanner fate | SDK primary, scanner supplements | Use SDK `supportedCommands()` as the authoritative source (includes built-ins, skills, user-level commands). Supplement with filesystem scan for extra metadata (`allowedTools`, `filePath`) the SDK doesn't provide. Best of both worlds. |
-| 4 | Session requirement strategy | Lazy fetch + scanner fallback | Follow the existing `supportedModels()` pattern — fetch from SDK non-blocking on first query. Before any session exists, fall back to filesystem scanner for immediate command availability. |
-| 5 | Schema changes | Make enrichment fields optional | `allowedTools` and `filePath` are already optional in `CommandEntrySchema`. `namespace` should also become optional — SDK commands won't always have a namespace (built-ins like `/compact` are flat). |
+| #   | Decision                     | Choice                           | Rationale                                                                                                                                                                                                                                  |
+| --- | ---------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Relationship to spec #19     | Complement                       | Spec #19 addressed UI/UX (regex, fuzzy matching, cwd caching) — fully implemented. This spec addresses the command _source_ and multi-runtime architecture. Orthogonal concerns.                                                           |
+| 2   | Multi-runtime scope          | Extensible architecture only     | Design the interface so future runtimes CAN provide commands differently, but only implement Claude Code's SDK-based discovery now. YAGNI for OpenCode/Cursor until we add those runtimes.                                                 |
+| 3   | Scanner fate                 | SDK primary, scanner supplements | Use SDK `supportedCommands()` as the authoritative source (includes built-ins, skills, user-level commands). Supplement with filesystem scan for extra metadata (`allowedTools`, `filePath`) the SDK doesn't provide. Best of both worlds. |
+| 4   | Session requirement strategy | Lazy fetch + scanner fallback    | Follow the existing `supportedModels()` pattern — fetch from SDK non-blocking on first query. Before any session exists, fall back to filesystem scanner for immediate command availability.                                               |
+| 5   | Schema changes               | Make enrichment fields optional  | `allowedTools` and `filePath` are already optional in `CommandEntrySchema`. `namespace` should also become optional — SDK commands won't always have a namespace (built-ins like `/compact` are flat).                                     |

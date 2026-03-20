@@ -154,7 +154,7 @@ export interface RelayOptions {
   maxHops?: number;
   defaultTtlMs?: number;
   defaultCallBudget?: number;
-  reliability?: ReliabilityConfig;  // NEW
+  reliability?: ReliabilityConfig; // NEW
 }
 ```
 
@@ -206,7 +206,7 @@ const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
 export function checkRateLimit(
   sender: string,
   countInWindow: number,
-  config: RateLimitConfig = DEFAULT_RATE_LIMIT_CONFIG,
+  config: RateLimitConfig = DEFAULT_RATE_LIMIT_CONFIG
 ): RateLimitResult {
   if (!config.enabled) {
     return { allowed: true };
@@ -416,15 +416,14 @@ const DEFAULT_BP_CONFIG: BackpressureConfig = {
  */
 export function checkBackpressure(
   currentSize: number,
-  config: BackpressureConfig = DEFAULT_BP_CONFIG,
+  config: BackpressureConfig = DEFAULT_BP_CONFIG
 ): BackpressureResult {
   if (!config.enabled) {
     return { allowed: true, currentSize, pressure: 0 };
   }
 
-  const pressure = config.maxMailboxSize > 0
-    ? Math.min(currentSize / config.maxMailboxSize, 1.0)
-    : 0;
+  const pressure =
+    config.maxMailboxSize > 0 ? Math.min(currentSize / config.maxMailboxSize, 1.0) : 0;
 
   if (currentSize >= config.maxMailboxSize) {
     return {
@@ -501,8 +500,12 @@ Extend `SignalTypeSchema` in `packages/shared/src/relay-schemas.ts` with a new s
 ```typescript
 export const SignalTypeSchema = z
   .enum([
-    'typing', 'presence', 'read_receipt', 'delivery_receipt', 'progress',
-    'backpressure',  // NEW
+    'typing',
+    'presence',
+    'read_receipt',
+    'delivery_receipt',
+    'progress',
+    'backpressure', // NEW
   ])
   .openapi('SignalType');
 ```
@@ -512,7 +515,7 @@ Backpressure signals are emitted via the existing `SignalEmitter.emit()` method 
 ```typescript
 signalEmitter.emit(senderSubject, {
   type: 'backpressure',
-  state: 'warning',  // or 'critical' when >= maxMailboxSize
+  state: 'warning', // or 'critical' when >= maxMailboxSize
   endpointSubject: endpoint.subject,
   timestamp: new Date().toISOString(),
   data: { pressure: 0.85, currentSize: 850, maxMailboxSize: 1000 },
@@ -600,7 +603,7 @@ if (this.rateLimitConfig.enabled) {
 
   if (!rateLimitResult.allowed) {
     return {
-      messageId: '',  // No message created
+      messageId: '', // No message created
       deliveredTo: 0,
       rejected: [{ endpointHash: '', reason: 'rate_limited' }],
     };
@@ -633,13 +636,21 @@ if (bpResult.pressure >= this.backpressureConfig.pressureWarningAt) {
 }
 
 if (!bpResult.allowed) {
-  return { delivered: false, rejected: { endpointHash: endpoint.hash, reason: 'backpressure' }, pressure: bpResult.pressure };
+  return {
+    delivered: false,
+    rejected: { endpointHash: endpoint.hash, reason: 'backpressure' },
+    pressure: bpResult.pressure,
+  };
 }
 
 // 2. Circuit breaker check
 const cbResult = this.circuitBreaker.check(endpoint.hash);
 if (!cbResult.allowed) {
-  return { delivered: false, rejected: { endpointHash: endpoint.hash, reason: 'circuit_open' }, pressure: bpResult.pressure };
+  return {
+    delivered: false,
+    rejected: { endpointHash: endpoint.hash, reason: 'circuit_open' },
+    pressure: bpResult.pressure,
+  };
 }
 
 // ... existing budget enforcement and delivery ...
@@ -876,11 +887,11 @@ describe('reliability pipeline integration', () => {
 
 All reliability checks add negligible overhead to the publish pipeline:
 
-| Check | Type | Cost | Frequency |
-|-------|------|------|-----------|
-| Rate limit | SQLite prepared statement | <1ms (index scan on `sender, created_at`) | Once per publish |
-| Circuit breaker | In-memory Map lookup | <0.01ms | Per endpoint |
-| Backpressure | SQLite prepared statement | <1ms (index on `endpoint_hash, status`) | Per endpoint |
+| Check           | Type                      | Cost                                      | Frequency        |
+| --------------- | ------------------------- | ----------------------------------------- | ---------------- |
+| Rate limit      | SQLite prepared statement | <1ms (index scan on `sender, created_at`) | Once per publish |
+| Circuit breaker | In-memory Map lookup      | <0.01ms                                   | Per endpoint     |
+| Backpressure    | SQLite prepared statement | <1ms (index on `endpoint_hash, status`)   | Per endpoint     |
 
 For a local system with dozens of agents and <1000 messages/minute, the total overhead per publish is under 2ms. The existing `(endpoint_hash, created_at DESC)` index supports the backpressure count query. The new `(sender, created_at DESC)` index supports the rate limit query.
 

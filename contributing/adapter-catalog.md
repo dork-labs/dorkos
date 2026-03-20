@@ -6,20 +6,20 @@ The adapter catalog system provides structured metadata for each adapter type, e
 
 An `AdapterManifest` describes an adapter type's identity, configuration shape, and setup guidance. Defined in `packages/shared/src/relay-schemas.ts` as `AdapterManifestSchema`.
 
-| Field               | Type                    | Required | Description                                                                 |
-| ------------------- | ----------------------- | -------- | --------------------------------------------------------------------------- |
-| `type`              | `string`                | Yes      | Adapter type identifier (e.g., `'telegram'`, `'webhook'`, `'claude-code'`)  |
-| `displayName`       | `string`                | Yes      | Human-readable name shown in the UI                                         |
-| `description`       | `string`                | Yes      | Short description of what this adapter does                                 |
-| `iconEmoji`         | `string`                | No       | Emoji icon for visual identification                                        |
-| `category`          | `AdapterCategory`       | Yes      | One of `'messaging'`, `'automation'`, `'internal'`, `'custom'`              |
-| `docsUrl`           | `string` (URL)          | No       | Link to external documentation                                              |
-| `builtin`           | `boolean`               | Yes      | Whether this adapter ships with DorkOS                                      |
-| `configFields`      | `ConfigField[]`         | Yes      | Array of configuration field definitions (see below)                        |
-| `setupSteps`        | `AdapterSetupStep[]`    | No       | Ordered steps for a multi-step setup wizard                                 |
-| `setupInstructions` | `string`                | No       | Markdown-formatted setup instructions (shown above the config form)         |
-| `setupGuide`        | `string`                | No       | Full setup guide markdown, rendered in a slide-out Sheet panel in the UI    |
-| `multiInstance`      | `boolean`               | Yes      | Whether multiple instances of this adapter type can coexist (default false) |
+| Field               | Type                 | Required | Description                                                                 |
+| ------------------- | -------------------- | -------- | --------------------------------------------------------------------------- |
+| `type`              | `string`             | Yes      | Adapter type identifier (e.g., `'telegram'`, `'webhook'`, `'claude-code'`)  |
+| `displayName`       | `string`             | Yes      | Human-readable name shown in the UI                                         |
+| `description`       | `string`             | Yes      | Short description of what this adapter does                                 |
+| `iconEmoji`         | `string`             | No       | Emoji icon for visual identification                                        |
+| `category`          | `AdapterCategory`    | Yes      | One of `'messaging'`, `'automation'`, `'internal'`, `'custom'`              |
+| `docsUrl`           | `string` (URL)       | No       | Link to external documentation                                              |
+| `builtin`           | `boolean`            | Yes      | Whether this adapter ships with DorkOS                                      |
+| `configFields`      | `ConfigField[]`      | Yes      | Array of configuration field definitions (see below)                        |
+| `setupSteps`        | `AdapterSetupStep[]` | No       | Ordered steps for a multi-step setup wizard                                 |
+| `setupInstructions` | `string`             | No       | Markdown-formatted setup instructions (shown above the config form)         |
+| `setupGuide`        | `string`             | No       | Full setup guide markdown, rendered in a slide-out Sheet panel in the UI    |
+| `multiInstance`     | `boolean`            | Yes      | Whether multiple instances of this adapter type can coexist (default false) |
 
 **Notes:**
 
@@ -30,11 +30,11 @@ An `AdapterManifest` describes an adapter type's identity, configuration shape, 
 
 ### AdapterSetupStep
 
-| Field         | Type       | Required | Description                                          |
-| ------------- | ---------- | -------- | ---------------------------------------------------- |
-| `stepId`      | `string`   | Yes      | Unique step identifier                               |
-| `title`       | `string`   | Yes      | Step heading shown in the wizard                     |
-| `description` | `string`   | No       | Explanatory text for this step                       |
+| Field         | Type       | Required | Description                                            |
+| ------------- | ---------- | -------- | ------------------------------------------------------ |
+| `stepId`      | `string`   | Yes      | Unique step identifier                                 |
+| `title`       | `string`   | Yes      | Step heading shown in the wizard                       |
+| `description` | `string`   | No       | Explanatory text for this step                         |
 | `fields`      | `string[]` | Yes      | Array of `configField.key` values to show in this step |
 
 ### Example Manifest
@@ -88,31 +88,31 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
 
 Each `ConfigField` defines a single configuration input. The UI renders the appropriate form control based on `type`. Schema: `ConfigFieldSchema` in `packages/shared/src/relay-schemas.ts`.
 
-| Field         | Type                              | Required | Description                                              |
-| ------------- | --------------------------------- | -------- | -------------------------------------------------------- |
-| `key`         | `string`                          | Yes      | Dot-notation config path (e.g., `'token'`, `'inbound.subject'`) |
-| `label`       | `string`                          | Yes      | Human-readable label                                     |
-| `type`        | `ConfigFieldType`                 | Yes      | Input control type (see table below)                     |
-| `required`    | `boolean`                         | Yes      | Whether the field must have a value                      |
-| `default`     | `string \| number \| boolean`     | No       | Default value if not provided                            |
-| `placeholder` | `string`                          | No       | Placeholder text for text-like inputs                    |
-| `description` | `string`                          | No       | Help text shown below the input                          |
-| `options`     | `ConfigFieldOption[]`             | No       | Options for `select` type fields                         |
-| `section`     | `string`                          | No       | Group label for visually grouping related fields         |
-| `showWhen`    | `{ field: string; equals: ... }`  | No       | Conditional visibility based on another field's value    |
-| `helpMarkdown`| `string`                          | No       | Markdown content shown in a collapsible disclosure below the field |
+| Field          | Type                             | Required | Description                                                        |
+| -------------- | -------------------------------- | -------- | ------------------------------------------------------------------ |
+| `key`          | `string`                         | Yes      | Dot-notation config path (e.g., `'token'`, `'inbound.subject'`)    |
+| `label`        | `string`                         | Yes      | Human-readable label                                               |
+| `type`         | `ConfigFieldType`                | Yes      | Input control type (see table below)                               |
+| `required`     | `boolean`                        | Yes      | Whether the field must have a value                                |
+| `default`      | `string \| number \| boolean`    | No       | Default value if not provided                                      |
+| `placeholder`  | `string`                         | No       | Placeholder text for text-like inputs                              |
+| `description`  | `string`                         | No       | Help text shown below the input                                    |
+| `options`      | `ConfigFieldOption[]`            | No       | Options for `select` type fields                                   |
+| `section`      | `string`                         | No       | Group label for visually grouping related fields                   |
+| `showWhen`     | `{ field: string; equals: ... }` | No       | Conditional visibility based on another field's value              |
+| `helpMarkdown` | `string`                         | No       | Markdown content shown in a collapsible disclosure below the field |
 
 ### Field Types
 
-| Type         | Renders As           | Notes                                                        |
-| ------------ | -------------------- | ------------------------------------------------------------ |
-| `text`       | Text input           | General-purpose string input                                 |
-| `password`   | Password input       | Value is masked in UI; **never returned in API responses**   |
-| `number`     | Number input         | Numeric value with increment/decrement controls              |
-| `boolean`    | Toggle/checkbox      | True/false switch                                            |
-| `select`     | Dropdown             | Requires `options` array with `{ label, value }` pairs       |
-| `textarea`   | Multi-line text area | For longer text or JSON input                                |
-| `url`        | URL input            | Validated as a URL; may show link preview                    |
+| Type       | Renders As           | Notes                                                      |
+| ---------- | -------------------- | ---------------------------------------------------------- |
+| `text`     | Text input           | General-purpose string input                               |
+| `password` | Password input       | Value is masked in UI; **never returned in API responses** |
+| `number`   | Number input         | Numeric value with increment/decrement controls            |
+| `boolean`  | Toggle/checkbox      | True/false switch                                          |
+| `select`   | Dropdown             | Requires `options` array with `{ label, value }` pairs     |
+| `textarea` | Multi-line text area | For longer text or JSON input                              |
+| `url`      | URL input            | Validated as a URL; may show link preview                  |
 
 ### Conditional Visibility (`showWhen`)
 
@@ -162,9 +162,7 @@ External adapter plugins (npm packages or local files) can export a `getManifest
 import type { AdapterManifest, RelayAdapter } from '@dorkos/relay';
 
 /** Factory function — required default export. */
-export default function createAdapter(
-  config: Record<string, unknown>,
-): RelayAdapter {
+export default function createAdapter(config: Record<string, unknown>): RelayAdapter {
   return new MyAdapter(config);
 }
 
@@ -243,7 +241,7 @@ interface CatalogEntry {
 interface CatalogInstance {
   id: string;
   enabled: boolean;
-  status: AdapterStatus;          // Runtime state including id, type, displayName (added by AdapterManager)
+  status: AdapterStatus; // Runtime state including id, type, displayName (added by AdapterManager)
   config?: Record<string, unknown>; // Masked config — password fields replaced with '***'
 }
 ```
@@ -289,27 +287,27 @@ Bindings route inbound adapter messages to specific agent sessions. They are the
 
 Defined as `AdapterBindingSchema` in `packages/shared/src/relay-schemas.ts`.
 
-| Field             | Type              | Required | Description                                                                 |
-| ----------------- | ----------------- | -------- | --------------------------------------------------------------------------- |
-| `id`              | `string` (UUID)   | Yes      | Auto-generated binding identifier                                           |
-| `adapterId`       | `string`          | Yes      | ID of the adapter instance this binding applies to                          |
-| `agentId`         | `string`          | Yes      | ID of the target agent (from `.dork/agent.json`)                            |
-| `projectPath`     | `string`          | Yes      | Filesystem path used as the working directory for new agent sessions        |
-| `chatId`          | `string`          | No       | Narrow to a specific chat/conversation ID (e.g., Telegram chat ID)          |
-| `channelType`     | `string`          | No       | Narrow to a channel type: `'dm'`, `'group'`, or `'channel'`                |
-| `sessionStrategy` | `SessionStrategy` | No       | How agent sessions are reused (default: `'per-chat'`)                       |
-| `label`           | `string`          | No       | Human-readable label shown in the topology graph (default: `''`)            |
-| `createdAt`       | `string`          | Yes      | ISO 8601 timestamp (set by server on creation)                              |
-| `updatedAt`       | `string`          | Yes      | ISO 8601 timestamp (set by server on creation)                              |
+| Field             | Type              | Required | Description                                                          |
+| ----------------- | ----------------- | -------- | -------------------------------------------------------------------- |
+| `id`              | `string` (UUID)   | Yes      | Auto-generated binding identifier                                    |
+| `adapterId`       | `string`          | Yes      | ID of the adapter instance this binding applies to                   |
+| `agentId`         | `string`          | Yes      | ID of the target agent (from `.dork/agent.json`)                     |
+| `projectPath`     | `string`          | Yes      | Filesystem path used as the working directory for new agent sessions |
+| `chatId`          | `string`          | No       | Narrow to a specific chat/conversation ID (e.g., Telegram chat ID)   |
+| `channelType`     | `string`          | No       | Narrow to a channel type: `'dm'`, `'group'`, or `'channel'`          |
+| `sessionStrategy` | `SessionStrategy` | No       | How agent sessions are reused (default: `'per-chat'`)                |
+| `label`           | `string`          | No       | Human-readable label shown in the topology graph (default: `''`)     |
+| `createdAt`       | `string`          | Yes      | ISO 8601 timestamp (set by server on creation)                       |
+| `updatedAt`       | `string`          | Yes      | ISO 8601 timestamp (set by server on creation)                       |
 
 ### Session Strategies
 
 The `sessionStrategy` field controls how `BindingRouter` maps inbound messages to Claude Code sessions:
 
-| Strategy    | Behavior                                                                                                                     |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `per-chat`  | One session per `chatId`. Messages from the same chat always resume the same session. **Default.**                           |
-| `per-user`  | One session per `userId` (from envelope metadata). Multiple chats from the same user share a single session.                 |
+| Strategy    | Behavior                                                                                                                      |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `per-chat`  | One session per `chatId`. Messages from the same chat always resume the same session. **Default.**                            |
+| `per-user`  | One session per `userId` (from envelope metadata). Multiple chats from the same user share a single session.                  |
 | `stateless` | A new session is created for every inbound message. No session state is reused. Useful for stateless command-style workflows. |
 
 Sessions are persisted across server restarts in `~/.dork/relay/sessions.json`. The session map uses LRU eviction when the size exceeds 10,000 entries.
@@ -318,13 +316,13 @@ Sessions are persisted across server restarts in `~/.dork/relay/sessions.json`. 
 
 `BindingStore.resolve()` scores all bindings for an adapter and returns the highest-scoring match:
 
-| Match criteria                                 | Score |
-| ---------------------------------------------- | ----- |
-| `adapterId` + `chatId` + `channelType`         | 7     |
-| `adapterId` + `chatId`                         | 5     |
-| `adapterId` + `channelType`                    | 3     |
-| `adapterId` only (wildcard — matches all chats)| 1     |
-| No match                                       | —     |
+| Match criteria                                  | Score |
+| ----------------------------------------------- | ----- |
+| `adapterId` + `chatId` + `channelType`          | 7     |
+| `adapterId` + `chatId`                          | 5     |
+| `adapterId` + `channelType`                     | 3     |
+| `adapterId` only (wildcard — matches all chats) | 1     |
+| No match                                        | —     |
 
 An explicit `chatId` or `channelType` that does not match the inbound message is an immediate disqualifier (score 0). This means a wildcard binding (adapterId only) will match all messages from an adapter unless a more-specific binding applies.
 
@@ -352,12 +350,12 @@ relay.human.{platformType}.group.{chatId}        # group chat
 
 All binding endpoints are mounted under `/api/relay` and require `DORKOS_RELAY_ENABLED=true`.
 
-| Method   | Path                 | Description                                  |
-| -------- | -------------------- | -------------------------------------------- |
-| `GET`    | `/api/relay/bindings`        | List all bindings                    |
-| `POST`   | `/api/relay/bindings`        | Create a new binding                 |
-| `GET`    | `/api/relay/bindings/:id`    | Get a single binding by ID           |
-| `DELETE` | `/api/relay/bindings/:id`    | Delete a binding (cleans up orphaned sessions) |
+| Method   | Path                      | Description                                    |
+| -------- | ------------------------- | ---------------------------------------------- |
+| `GET`    | `/api/relay/bindings`     | List all bindings                              |
+| `POST`   | `/api/relay/bindings`     | Create a new binding                           |
+| `GET`    | `/api/relay/bindings/:id` | Get a single binding by ID                     |
+| `DELETE` | `/api/relay/bindings/:id` | Delete a binding (cleans up orphaned sessions) |
 
 **Create binding request body** (`CreateBindingRequest`):
 

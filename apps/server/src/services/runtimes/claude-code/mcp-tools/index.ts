@@ -16,13 +16,50 @@ import { getMeshTools } from './mesh-tools.js';
 
 // Re-export types and handlers for external consumers
 export type { McpToolDeps } from './types.js';
-export { handlePing, handleGetServerInfo, createGetSessionCountHandler, createGetCurrentAgentHandler } from './core-tools.js';
-export { createListSchedulesHandler, createCreateScheduleHandler, createUpdateScheduleHandler, createDeleteScheduleHandler, createGetRunHistoryHandler } from './pulse-tools.js';
-export { createRelaySendHandler, createRelayInboxHandler, createRelayListEndpointsHandler, createRelayRegisterEndpointHandler, createRelayQueryHandler, createRelayDispatchHandler, createRelayUnregisterEndpointHandler } from './relay-tools.js';
-export { createRelayListAdaptersHandler, createRelayEnableAdapterHandler, createRelayDisableAdapterHandler, createRelayReloadAdaptersHandler } from './adapter-tools.js';
-export { createBindingListHandler, createBindingCreateHandler, createBindingDeleteHandler } from './binding-tools.js';
+export {
+  handlePing,
+  handleGetServerInfo,
+  createGetSessionCountHandler,
+  createGetCurrentAgentHandler,
+} from './core-tools.js';
+export {
+  createListSchedulesHandler,
+  createCreateScheduleHandler,
+  createUpdateScheduleHandler,
+  createDeleteScheduleHandler,
+  createGetRunHistoryHandler,
+} from './pulse-tools.js';
+export {
+  createRelaySendHandler,
+  createRelayInboxHandler,
+  createRelayListEndpointsHandler,
+  createRelayRegisterEndpointHandler,
+  createRelayQueryHandler,
+  createRelayDispatchHandler,
+  createRelayUnregisterEndpointHandler,
+} from './relay-tools.js';
+export {
+  createRelayListAdaptersHandler,
+  createRelayEnableAdapterHandler,
+  createRelayDisableAdapterHandler,
+  createRelayReloadAdaptersHandler,
+} from './adapter-tools.js';
+export {
+  createBindingListHandler,
+  createBindingCreateHandler,
+  createBindingDeleteHandler,
+} from './binding-tools.js';
 export { createRelayGetTraceHandler, createRelayGetMetricsHandler } from './trace-tools.js';
-export { createMeshDiscoverHandler, createMeshRegisterHandler, createMeshListHandler, createMeshDenyHandler, createMeshUnregisterHandler, createMeshStatusHandler, createMeshInspectHandler, createMeshQueryTopologyHandler } from './mesh-tools.js';
+export {
+  createMeshDiscoverHandler,
+  createMeshRegisterHandler,
+  createMeshListHandler,
+  createMeshDenyHandler,
+  createMeshUnregisterHandler,
+  createMeshStatusHandler,
+  createMeshInspectHandler,
+  createMeshQueryTopologyHandler,
+} from './mesh-tools.js';
 
 /**
  * Create the DorkOS MCP tool server with all registered tools.

@@ -49,10 +49,13 @@ Two-phase system: **capture everything first, curate later.**
 - Runs as part of the existing workflow, not a separate command
 
 **Step 7.7 changes from:**
+
 ```
 2. [ ] Consider extracting ADRs: `/adr:from-spec {slug}`
 ```
+
 **To:**
+
 ```
 2. [x] Auto-extracted N draft ADRs (run `/adr:curate` to promote significant ones)
 ```
@@ -98,21 +101,21 @@ Manual `/adr:create` continues to create `proposed` ADRs (skips draft).
 
 **New files:**
 
-| File | Purpose |
-|------|---------|
-| `decisions/archive/` | Directory for archived draft ADRs |
-| `decisions/.last-curated` | Single-line ISO timestamp |
-| `.claude/commands/adr/curate.md` | Curation command |
-| `.claude/hooks/check-adr-curation.sh` | SessionStart hook script |
+| File                                  | Purpose                           |
+| ------------------------------------- | --------------------------------- |
+| `decisions/archive/`                  | Directory for archived draft ADRs |
+| `decisions/.last-curated`             | Single-line ISO timestamp         |
+| `.claude/commands/adr/curate.md`      | Curation command                  |
+| `.claude/hooks/check-adr-curation.sh` | SessionStart hook script          |
 
 **Modified files:**
 
-| File | Change |
-|------|--------|
-| `.claude/commands/ideate-to-spec.md` | Add Step 7.5 (auto-extract) |
-| `.claude/commands/adr/list.md` | Show drafts in separate section |
+| File                                   | Change                                   |
+| -------------------------------------- | ---------------------------------------- |
+| `.claude/commands/ideate-to-spec.md`   | Add Step 7.5 (auto-extract)              |
+| `.claude/commands/adr/list.md`         | Show drafts in separate section          |
 | `.claude/skills/writing-adrs/SKILL.md` | Document `draft` and `archived` statuses |
-| `.claude/settings.json` | Add SessionStart hook for curation check |
+| `.claude/settings.json`                | Add SessionStart hook for curation check |
 
 **Manifest schema addition:**
 
@@ -134,13 +137,13 @@ Draft ADRs consume real ADR numbers from `nextNumber` — if promoted, the numbe
 
 ## Edge Cases
 
-| Scenario | Behavior |
-|----------|----------|
-| Re-run `/ideate-to-spec` on spec with existing drafts | Checks `extractedFrom` in manifest, skips if already extracted |
-| Promoted ADR overlaps with existing accepted ADR | Curation checks title/topic similarity, archives the draft instead |
+| Scenario                                                      | Behavior                                                                             |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Re-run `/ideate-to-spec` on spec with existing drafts         | Checks `extractedFrom` in manifest, skips if already extracted                       |
+| Promoted ADR overlaps with existing accepted ADR              | Curation checks title/topic similarity, archives the draft instead                   |
 | Spec created via `/spec:create` (bypassing `/ideate-to-spec`) | Manual `/adr:from-spec` still available; auto-extract only runs in `/ideate-to-spec` |
-| Zero decision signals in a spec | Step 7.5 is a no-op, summary says "No decision signals found" |
-| Spec abandoned after draft ADRs created | Drafts fail significance criteria during curation and get archived naturally |
+| Zero decision signals in a spec                               | Step 7.5 is a no-op, summary says "No decision signals found"                        |
+| Spec abandoned after draft ADRs created                       | Drafts fail significance criteria during curation and get archived naturally         |
 
 ## Scope
 
@@ -154,6 +157,7 @@ Draft ADRs consume real ADR numbers from `nextNumber` — if promoted, the numbe
 ### Task 1: Update TEMPLATE.md and manifest schema for `draft` status
 
 **Files:**
+
 - Modify: `decisions/TEMPLATE.md`
 - Create: `decisions/archive/.gitkeep`
 
@@ -184,6 +188,7 @@ git commit -m "feat(adr): add draft/archived statuses and archive directory"
 ### Task 2: Update `writing-adrs` skill to document new lifecycle
 
 **Files:**
+
 - Modify: `.claude/skills/writing-adrs/SKILL.md`
 
 **Step 1: Add draft and archived to the ADR Lifecycle table**
@@ -193,18 +198,19 @@ Edit `.claude/skills/writing-adrs/SKILL.md` — replace the ADR Lifecycle table 
 ```markdown
 ## ADR Lifecycle
 
-| Status | Meaning |
-|--------|---------|
-| `draft` | Auto-extracted from spec, not yet evaluated for significance |
-| `proposed` | Under discussion or promoted from draft, not yet committed |
-| `accepted` | Active decision guiding implementation |
-| `deprecated` | No longer relevant (project evolved past it) |
-| `superseded` | Replaced by a newer ADR (link via `superseded-by`) |
-| `archived` | Curation determined this is trivial; moved to `decisions/archive/` |
+| Status       | Meaning                                                            |
+| ------------ | ------------------------------------------------------------------ |
+| `draft`      | Auto-extracted from spec, not yet evaluated for significance       |
+| `proposed`   | Under discussion or promoted from draft, not yet committed         |
+| `accepted`   | Active decision guiding implementation                             |
+| `deprecated` | No longer relevant (project evolved past it)                       |
+| `superseded` | Replaced by a newer ADR (link via `superseded-by`)                 |
+| `archived`   | Curation determined this is trivial; moved to `decisions/archive/` |
 
 ### Auto-Extraction
 
 Draft ADRs are created automatically by `/ideate-to-spec` (Step 7.5) when a spec is validated. Every decision signal is captured as a draft. The `/adr:curate` command (triggered daily via SessionStart hook) evaluates drafts against the criteria in "When to Write an ADR" above:
+
 - **Promote** (draft → proposed): Meets 2+ criteria
 - **Archive** (draft → archived): Meets 0-1 criteria, moved to `decisions/archive/`
 ```
@@ -221,13 +227,14 @@ git commit -m "docs(adr): document draft/archived lifecycle in writing-adrs skil
 ### Task 3: Add Step 7.5 to `/ideate-to-spec`
 
 **Files:**
+
 - Modify: `.claude/commands/ideate-to-spec.md`
 
 **Step 1: Insert Step 7.5 (Auto-Extract Draft ADRs) after the Step 7 header**
 
-Insert the following new section between Step 7.2 (Summarize Specification Content, ends ~line 620) and Step 7.3 (List Decisions Made, starts ~line 624). The new step runs *before* the summary is displayed, so extracted ADR count can be referenced in the summary.
+Insert the following new section between Step 7.2 (Summarize Specification Content, ends ~line 620) and Step 7.3 (List Decisions Made, starts ~line 624). The new step runs _before_ the summary is displayed, so extracted ADR count can be referenced in the summary.
 
-Actually — more precisely, insert a new top-level step between Step 7 (present summary) and before the sub-steps of Step 7 begin. The extraction needs to happen *before* the summary is built. Insert after the Step 7 header (line 579-580) and before sub-step 7.1 (line 583):
+Actually — more precisely, insert a new top-level step between Step 7 (present summary) and before the sub-steps of Step 7 begin. The extraction needs to happen _before_ the summary is built. Insert after the Step 7 header (line 579-580) and before sub-step 7.1 (line 583):
 
 ```markdown
 ### Step 7.0: Auto-Extract Draft ADRs
@@ -241,6 +248,7 @@ Read `decisions/manifest.json`. Check if any entries have `"extractedFrom": "{sl
 #### 7.0.2: Read Spec Documents
 
 Read both:
+
 1. `specs/{slug}/01-ideation.md`
 2. `specs/{slug}/02-specification.md`
 
@@ -248,15 +256,16 @@ Read both:
 
 Identify decision candidates by scanning for these signals (from the `writing-adrs` skill):
 
-| Signal | Pattern |
-|--------|---------|
-| Technology choices | "We chose X", "Using X instead of Y", library/framework selections |
-| Pattern adoption | Architectural patterns, design systems, data flow approaches |
-| Trade-off resolutions | "We decided to...", "The recommended approach is..." |
-| Rejected alternatives | "We considered X but...", "Option A vs Option B" |
-| Deliberate exclusions | "We will not...", "Out of scope because..." |
+| Signal                | Pattern                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| Technology choices    | "We chose X", "Using X instead of Y", library/framework selections |
+| Pattern adoption      | Architectural patterns, design systems, data flow approaches       |
+| Trade-off resolutions | "We decided to...", "The recommended approach is..."               |
+| Rejected alternatives | "We considered X but...", "Option A vs Option B"                   |
+| Deliberate exclusions | "We will not...", "Out of scope because..."                        |
 
 For each candidate, extract:
+
 - **Title**: Short imperative form (e.g., "Use SSE for Server-to-Client Streaming")
 - **Context**: 2-5 sentences from the spec's problem/research sections
 - **Decision**: 2-5 sentences from the spec's design/recommendation sections
@@ -268,15 +277,17 @@ For each candidate decision:
 
 1. Read `decisions/manifest.json` for current `nextNumber`
 2. Create ADR file at `decisions/NNNN-{kebab-slug}.md` using the standard template:
-
 ```
+
 ---
+
 number: NNNN
 title: [Title]
 status: draft
 created: [today's date]
 spec: {slug}
 superseded-by: null
+
 ---
 
 # NNNN. [Title]
@@ -302,6 +313,7 @@ Draft (auto-extracted from spec: {slug})
 ### Negative
 
 - [From spec trade-off analysis]
+
 ```
 
 3. Update `decisions/manifest.json`: increment `nextNumber`, add entry with `"status": "draft"`, `"extractedFrom": "{slug}"`, and `"specSlug": "{slug}"`
@@ -347,13 +359,14 @@ git commit -m "feat(adr): add auto-extract Step 7.0 to ideate-to-spec"
 ### Task 4: Create `/adr:curate` command
 
 **Files:**
+
 - Create: `.claude/commands/adr/curate.md`
 
 **Step 1: Write the curation command**
 
 Create `.claude/commands/adr/curate.md`:
 
-```markdown
+````markdown
 ---
 description: Evaluate draft ADRs and promote significant ones, archive trivial ones
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash(mkdir:*), Bash(mv:*), Bash(date:*)
@@ -371,6 +384,7 @@ category: documentation
 Read `decisions/manifest.json` and filter for entries with `"status": "draft"`.
 
 If no drafts exist:
+
 1. Update `decisions/.last-curated` with current ISO timestamp
 2. Display: "No draft ADRs to curate."
 3. Exit.
@@ -382,12 +396,12 @@ For each draft ADR:
 1. Read the full ADR file at `decisions/NNNN-{slug}.md`
 2. Evaluate against these significance criteria (from the `writing-adrs` skill):
 
-| # | Criterion | How to Assess |
-|---|-----------|---------------|
-| 1 | **Chooses between alternatives** | Does the ADR describe selecting X over Y? Or just "we used X"? |
-| 2 | **Project-wide impact** | Does this affect how future features are built, beyond the originating spec? |
-| 3 | **Would surprise a new team member** | Is this a non-obvious choice that needs explanation? |
-| 4 | **Adopts a lasting pattern or technology** | New library, architecture pattern, data model with long-term consequences? |
+| #   | Criterion                                  | How to Assess                                                                |
+| --- | ------------------------------------------ | ---------------------------------------------------------------------------- |
+| 1   | **Chooses between alternatives**           | Does the ADR describe selecting X over Y? Or just "we used X"?               |
+| 2   | **Project-wide impact**                    | Does this affect how future features are built, beyond the originating spec? |
+| 3   | **Would surprise a new team member**       | Is this a non-obvious choice that needs explanation?                         |
+| 4   | **Adopts a lasting pattern or technology** | New library, architecture pattern, data model with long-term consequences?   |
 
 3. Score: count how many criteria are met (0-4)
 4. Decision:
@@ -417,6 +431,7 @@ Write current ISO timestamp to `decisions/.last-curated`:
 ```bash
 date -u +"%Y-%m-%dT%H:%M:%SZ" > decisions/.last-curated
 ```
+````
 
 ### Step 6: Display Summary
 
@@ -440,20 +455,22 @@ ADR Curation Complete
 - It can also be run manually at any time: `/adr:curate`
 - Archived ADRs are preserved in `decisions/archive/` but removed from the manifest
 - To recover an archived ADR, manually move it back and re-add to manifest
-```
+
+````
 
 **Step 2: Commit**
 
 ```bash
 git add .claude/commands/adr/curate.md
 git commit -m "feat(adr): add /adr:curate command for draft promotion and archival"
-```
+````
 
 ---
 
 ### Task 5: Create SessionStart hook for daily curation
 
 **Files:**
+
 - Create: `.claude/hooks/check-adr-curation.sh`
 - Modify: `.claude/settings.json`
 
@@ -546,6 +563,7 @@ git commit -m "feat(adr): add SessionStart hook for daily curation check"
 ### Task 6: Update `/adr:list` to show draft ADRs separately
 
 **Files:**
+
 - Modify: `.claude/commands/adr/list.md`
 
 **Step 1: Update the list command**
@@ -559,22 +577,23 @@ Replace the current Step 2 and Step 3 content with:
 
 Format and display all non-draft ADRs as a markdown table:
 
-| # | Title | Status | Date | Spec |
-|---|-------|--------|------|------|
+| #    | Title                           | Status   | Date       | Spec                  |
+| ---- | ------------------------------- | -------- | ---------- | --------------------- |
 | 0001 | [Title](decisions/0001-slug.md) | accepted | 2026-02-06 | claude-code-webui-api |
 
 ### Step 3: Display Draft ADRs (if any)
 
 If any entries have `"status": "draft"`, show a separate section:
-
 ```
+
 ### Draft ADRs (pending curation)
 
-| # | Title | Date | Extracted From |
-|---|-------|------|----------------|
-| 0006 | [Title](decisions/0006-slug.md) | 2026-02-18 | spec-slug |
+| #    | Title                           | Date       | Extracted From |
+| ---- | ------------------------------- | ---------- | -------------- |
+| 0006 | [Title](decisions/0006-slug.md) | 2026-02-18 | spec-slug      |
 
 Run `/adr:curate` to promote or archive these.
+
 ```
 
 If no drafts exist, skip this section entirely.
@@ -582,8 +601,11 @@ If no drafts exist, skip this section entirely.
 ### Step 4: Display Summary
 
 ```
+
 Total: N decisions (A accepted, P proposed, D draft, X deprecated, S superseded)
+
 ```
+
 ```
 
 **Step 2: Commit**
@@ -598,6 +620,7 @@ git commit -m "feat(adr): show draft ADRs in separate section in /adr:list"
 ### Task 7: Add `.last-curated` to `.gitignore`
 
 **Files:**
+
 - Modify: `.gitignore` (or create `decisions/.gitignore`)
 
 **Step 1: Add gitignore entry**

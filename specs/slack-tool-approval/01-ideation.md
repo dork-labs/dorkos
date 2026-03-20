@@ -109,6 +109,7 @@ N/A — this is a new feature, not a bug fix.
 ### Potential Solutions
 
 **1. Block Kit Buttons (Slack) + Inline Keyboards (Telegram)**
+
 - Description: Use platform-native interactive components — Slack Block Kit action buttons with `app.action()` handlers, Telegram inline keyboard buttons with `callback_query:data` handlers
 - Pros:
   - Rich, native UX on both platforms
@@ -124,6 +125,7 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: Low
 
 **2. Text-based approval ("reply approve/deny")**
+
 - Description: Present approval requests as text messages; user replies with "approve" or "deny"
 - Pros:
   - No new Slack/Telegram API surface needed
@@ -137,6 +139,7 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: Medium (parsing edge cases)
 
 **3. Emoji reaction-based approval**
+
 - Description: User reacts with thumbs-up/thumbs-down emoji on the approval message
 - Pros:
   - Low-friction interaction
@@ -150,12 +153,14 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: High (edge cases)
 
 ### Security Considerations
+
 - Socket Mode eliminates replay attack surface (no HTTP endpoint exposed)
 - Encode `allowedUserId` in button value to restrict who can approve (optional, out of scope for V1)
 - Never encode sensitive tool input parameters in button values — keep server-side
 - Slack's signature verification is handled automatically by Bolt SDK in Socket Mode
 
 ### Performance Considerations
+
 - `ack()` must be called within 3 seconds of button click (Slack requirement)
 - Message updates via `chat.update` are rate-limited (1 per second per message)
 - Relay publish for approval response adds minimal latency (~1ms in-process)
@@ -167,14 +172,15 @@ N/A — this is a new feature, not a bug fix.
 **Rationale:** This is the idiomatic approach for both platforms. The UX is dramatically better than text-based alternatives — one click vs. typing. Socket Mode and polling mode both support interactive components natively, so no webhook infrastructure is needed. The implementation complexity is manageable given the existing adapter patterns.
 
 **Caveats:**
+
 - Requires Slack app manifest update for interactivity
 - Button value encoding must be kept small (IDs only, no tool input)
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Approval routing mechanism | Relay message bus (`relay.system.approval.{agentId}`) | Keeps adapters decoupled. Consistent with existing relay architecture. The CCA adapter subscribes to the approval subject and calls `runtime.approveTool()`. No new dependencies between chat adapters and server internals. |
-| 2 | Event intercept point | New branch in `outbound.ts` `deliverMessage()` | The `approval_required` event is already flowing through `deliver()` — just needs a handler that renders Block Kit / inline keyboard instead of dropping it. Follows the existing whitelist model alongside `text_delta`, `error`, and `done`. |
-| 3 | Approval card placement | In-thread (using `thread_ts` / reply-to-message) | Keeps context together — the user sees the conversation, then the approval request inline. Consistent with how text responses are already threaded on both platforms. |
-| 4 | Platform scope | Both Slack + Telegram | Telegram's inline keyboards work with polling mode and have a similar API surface. Implementing both simultaneously delivers full adapter parity and allows shared design patterns. |
+| #   | Decision                   | Choice                                                | Rationale                                                                                                                                                                                                                                      |
+| --- | -------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Approval routing mechanism | Relay message bus (`relay.system.approval.{agentId}`) | Keeps adapters decoupled. Consistent with existing relay architecture. The CCA adapter subscribes to the approval subject and calls `runtime.approveTool()`. No new dependencies between chat adapters and server internals.                   |
+| 2   | Event intercept point      | New branch in `outbound.ts` `deliverMessage()`        | The `approval_required` event is already flowing through `deliver()` — just needs a handler that renders Block Kit / inline keyboard instead of dropping it. Follows the existing whitelist model alongside `text_delta`, `error`, and `done`. |
+| 3   | Approval card placement    | In-thread (using `thread_ts` / reply-to-message)      | Keeps context together — the user sees the conversation, then the approval request inline. Consistent with how text responses are already threaded on both platforms.                                                                          |
+| 4   | Platform scope             | Both Slack + Telegram                                 | Telegram's inline keyboards work with polling mode and have a similar API surface. Implementing both simultaneously delivers full adapter parity and allows shared design patterns.                                                            |

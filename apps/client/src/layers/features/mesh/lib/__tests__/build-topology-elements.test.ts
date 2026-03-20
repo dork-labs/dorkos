@@ -93,7 +93,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       expect(result.rawNodes).toHaveLength(0);
       expect(result.rawEdges).toHaveLength(0);
@@ -112,7 +112,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const agentNodes = result.rawNodes.filter((n) => n.type === 'agent');
       const groupNodes = result.rawNodes.filter((n) => n.type === 'namespace-group');
@@ -131,7 +131,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       for (const node of result.rawNodes.filter((n) => n.type === 'agent')) {
         expect(node.parentId).toBe('group:default');
@@ -148,7 +148,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       expect(result.legendEntries).toHaveLength(1);
       expect(result.legendEntries[0].namespace).toBe('default');
@@ -165,7 +165,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const groupNodes = result.rawNodes.filter((n) => n.type === 'namespace-group');
       expect(groupNodes).toHaveLength(2);
@@ -181,7 +181,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const prodAgent = result.rawNodes.find((n) => n.id === 'agent-1');
       expect(prodAgent?.parentId).toBe('group:production');
@@ -197,7 +197,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const crossEdges = result.rawEdges.filter((e) => e.type === 'cross-namespace');
       expect(crossEdges).toHaveLength(1);
@@ -214,7 +214,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const denyEdges = result.rawEdges.filter((e) => e.type === 'cross-namespace-deny');
       expect(denyEdges).toHaveLength(1);
@@ -225,7 +225,12 @@ describe('buildTopologyElements', () => {
 
   describe('adapter nodes', () => {
     const adapter: AdapterListItem = {
-      config: { id: 'tg-1', type: 'telegram', enabled: true, config: { token: 'test', mode: 'polling' } },
+      config: {
+        id: 'tg-1',
+        type: 'telegram',
+        enabled: true,
+        config: { token: 'test', mode: 'polling' },
+      },
       status: {
         id: 'tg-1',
         type: 'telegram',
@@ -245,7 +250,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
       expect(adapterNodes).toHaveLength(1);
@@ -261,7 +266,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
       expect(adapterNodes).toHaveLength(0);
@@ -276,14 +281,17 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((node?.data as Record<string, unknown>).adapterStatus).toBe('running');
     });
 
     it('maps error state to error', () => {
-      const errAdapter: AdapterListItem = { ...adapter, status: { ...adapter.status, state: 'error' } };
+      const errAdapter: AdapterListItem = {
+        ...adapter,
+        status: { ...adapter.status, state: 'error' },
+      };
       const result = buildTopologyElements(
         singleNamespace,
         noRules,
@@ -292,14 +300,17 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((node?.data as Record<string, unknown>).adapterStatus).toBe('error');
     });
 
     it('maps other states to stopped', () => {
-      const stoppedAdapter: AdapterListItem = { ...adapter, status: { ...adapter.status, state: 'disconnected' } };
+      const stoppedAdapter: AdapterListItem = {
+        ...adapter,
+        status: { ...adapter.status, state: 'disconnected' },
+      };
       const result = buildTopologyElements(
         singleNamespace,
         noRules,
@@ -308,7 +319,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((node?.data as Record<string, unknown>).adapterStatus).toBe('stopped');
@@ -354,7 +365,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
       expect(adapterNodes).toHaveLength(1);
@@ -383,7 +394,7 @@ describe('buildTopologyElements', () => {
         [ccaBinding],
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
       expect(bindingEdges).toHaveLength(0);
@@ -398,7 +409,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
       expect(adapterNodes).toHaveLength(1);
@@ -408,7 +419,12 @@ describe('buildTopologyElements', () => {
 
   describe('binding edges', () => {
     const adapter: AdapterListItem = {
-      config: { id: 'tg-1', type: 'telegram', enabled: true, config: { token: 'test', mode: 'polling' } },
+      config: {
+        id: 'tg-1',
+        type: 'telegram',
+        enabled: true,
+        config: { token: 'test', mode: 'polling' },
+      },
       status: {
         id: 'tg-1',
         type: 'telegram',
@@ -442,7 +458,7 @@ describe('buildTopologyElements', () => {
         [binding],
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
       expect(bindingEdges).toHaveLength(1);
@@ -459,7 +475,7 @@ describe('buildTopologyElements', () => {
         [binding],
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
       expect(bindingEdges).toHaveLength(0);
@@ -475,7 +491,7 @@ describe('buildTopologyElements', () => {
         [orphanBinding],
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
       expect(bindingEdges).toHaveLength(0);
@@ -485,8 +501,21 @@ describe('buildTopologyElements', () => {
   describe('adapter label passthrough', () => {
     it('passes adapter label to node data', () => {
       const labeledAdapter: AdapterListItem = {
-        config: { id: 'tg-1', type: 'telegram', enabled: true, label: '@support_bot', config: { token: 'test', mode: 'polling' } },
-        status: { id: 'tg-1', type: 'telegram', displayName: 'Telegram Bot', state: 'connected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 },
+        config: {
+          id: 'tg-1',
+          type: 'telegram',
+          enabled: true,
+          label: '@support_bot',
+          config: { token: 'test', mode: 'polling' },
+        },
+        status: {
+          id: 'tg-1',
+          type: 'telegram',
+          displayName: 'Telegram Bot',
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        },
       };
       const result = buildTopologyElements(
         singleNamespace,
@@ -496,7 +525,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const adapterNode = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((adapterNode?.data as Record<string, unknown>).label).toBe('@support_bot');
@@ -504,8 +533,20 @@ describe('buildTopologyElements', () => {
 
     it('passes undefined label when adapter has no label', () => {
       const unlabeledAdapter: AdapterListItem = {
-        config: { id: 'tg-1', type: 'telegram', enabled: true, config: { token: 'test', mode: 'polling' } },
-        status: { id: 'tg-1', type: 'telegram', displayName: 'Telegram Bot', state: 'connected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 },
+        config: {
+          id: 'tg-1',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'test', mode: 'polling' },
+        },
+        status: {
+          id: 'tg-1',
+          type: 'telegram',
+          displayName: 'Telegram Bot',
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        },
       };
       const result = buildTopologyElements(
         singleNamespace,
@@ -515,7 +556,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const adapterNode = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((adapterNode?.data as Record<string, unknown>).label).toBeUndefined();
@@ -524,7 +565,12 @@ describe('buildTopologyElements', () => {
 
   describe('binding filter data', () => {
     const adapter: AdapterListItem = {
-      config: { id: 'tg-1', type: 'telegram', enabled: true, config: { token: 'test', mode: 'polling' } },
+      config: {
+        id: 'tg-1',
+        type: 'telegram',
+        enabled: true,
+        config: { token: 'test', mode: 'polling' },
+      },
       status: {
         id: 'tg-1',
         type: 'telegram',
@@ -559,7 +605,7 @@ describe('buildTopologyElements', () => {
         [filteredBinding],
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const edge = result.rawEdges.find((e) => e.id === 'binding:bind-filtered');
       const data = edge?.data as Record<string, unknown>;
@@ -589,7 +635,7 @@ describe('buildTopologyElements', () => {
         [plainBinding],
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const edge = result.rawEdges.find((e) => e.id === 'binding:bind-plain');
       const data = edge?.data as Record<string, unknown>;
@@ -608,7 +654,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
       expect(ghostNodes).toHaveLength(1);
@@ -636,7 +682,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
       expect(ghostNodes).toHaveLength(1);
@@ -644,7 +690,12 @@ describe('buildTopologyElements', () => {
 
     it('does NOT create ghost node when external adapters exist', () => {
       const tgAdapter: AdapterListItem = {
-        config: { id: 'tg-1', type: 'telegram', enabled: true, config: { token: 'test', mode: 'polling' } },
+        config: {
+          id: 'tg-1',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'test', mode: 'polling' },
+        },
         status: {
           id: 'tg-1',
           type: 'telegram',
@@ -662,7 +713,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
       expect(ghostNodes).toHaveLength(0);
@@ -677,7 +728,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        emptyCallbacks(),
+        emptyCallbacks()
       );
       const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
       expect(ghostNodes).toHaveLength(0);
@@ -693,7 +744,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        { ...emptyCallbacks(), onGhostClick },
+        { ...emptyCallbacks(), onGhostClick }
       );
       const ghostNode = result.rawNodes.find((n) => n.id === 'ghost-adapter');
       const data = ghostNode?.data as Record<string, unknown>;
@@ -713,7 +764,7 @@ describe('buildTopologyElements', () => {
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
-        { onOpenSettings, onSelectAgent: vi.fn(), onOpenChat: vi.fn() },
+        { onOpenSettings, onSelectAgent: vi.fn(), onOpenChat: vi.fn() }
       );
       const agentNode = result.rawNodes.find((n) => n.id === 'agent-1');
       const data = agentNode?.data as Record<string, unknown>;

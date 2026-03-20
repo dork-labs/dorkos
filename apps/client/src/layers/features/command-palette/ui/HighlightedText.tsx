@@ -33,7 +33,7 @@ export function HighlightedText({ text, indices, className }: HighlightedTextPro
       parts.push(<span key={`p-${i}`}>{text.slice(lastIdx, start)}</span>);
     }
     parts.push(
-      <mark key={`m-${i}`} className="bg-transparent text-foreground font-semibold">
+      <mark key={`m-${i}`} className="text-foreground bg-transparent font-semibold">
         {text.slice(start, matchEnd)}
       </mark>
     );

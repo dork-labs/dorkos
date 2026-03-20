@@ -166,9 +166,9 @@ Full condition/action rules engine in RelayCore (like n8n's Switch node).
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Architecture | Central BindingRouter service | Build routing once, all adapters get it for free. Proven by OpenClaw. Clean separation — adapters bridge protocols, router handles business logic. |
-| 2 | Visual UX | Unified topology canvas with adapters as nodes | One canvas shows entire system — agents, adapters, connections. Leverages existing React Flow v12 + ELK layout. No separate view to learn. |
-| 3 | Binding model | 1:1 binding with multi-instance support | Simplest mental model. Want 3 Telegram bots for 3 agents? Create 3 adapter instances. `multiInstance: true` already supported in adapter manifests. |
-| 4 | Session strategy | Configurable per binding, default stateful | Each binding specifies `sessionStrategy: 'per-chat' | 'per-user' | 'stateless'`. Default: `per-chat` (auto-create persistent session per chat ID). Most intuitive for conversational agents. |
+| #   | Decision         | Choice                                         | Rationale                                                                                                                                           |
+| --- | ---------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Architecture     | Central BindingRouter service                  | Build routing once, all adapters get it for free. Proven by OpenClaw. Clean separation — adapters bridge protocols, router handles business logic.  |
+| 2   | Visual UX        | Unified topology canvas with adapters as nodes | One canvas shows entire system — agents, adapters, connections. Leverages existing React Flow v12 + ELK layout. No separate view to learn.          |
+| 3   | Binding model    | 1:1 binding with multi-instance support        | Simplest mental model. Want 3 Telegram bots for 3 agents? Create 3 adapter instances. `multiInstance: true` already supported in adapter manifests. |
+| 4   | Session strategy | Configurable per binding, default stateful     | Each binding specifies `sessionStrategy: 'per-chat'                                                                                                 | 'per-user' | 'stateless'`. Default: `per-chat` (auto-create persistent session per chat ID). Most intuitive for conversational agents. |

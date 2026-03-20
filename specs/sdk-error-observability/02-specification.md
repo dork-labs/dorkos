@@ -103,6 +103,7 @@ export async function* executeSdkQuery(
 ```
 
 **Key details:**
+
 - `MAX_RESUME_RETRIES = 1` — one transparent retry for stale sessions, then surface error
 - `retryDepth` defaults to `0`, preserving the existing public API
 - The constant is exported for tests
@@ -135,6 +136,7 @@ const RESUME_FAILURE_PATTERNS = [
 ```
 
 **Rationale:** The remaining 4 patterns cover all legitimate stale-session scenarios:
+
 - `'query closed before response'` — SDK stream interrupted during resume
 - `'session not found'` — JSONL file deleted or moved
 - `'no such file'` / `'enoent'` — filesystem-level missing session file
@@ -243,6 +245,7 @@ logger.info('[sendMessage] stream done', {
 ```
 
 **Error message design:**
+
 - The `message` field contains user-facing copy — this is what Slack/Telegram users see via `extractErrorMessage(envelope.payload)`
 - The `details` field contains the raw SDK error string — server-side only, not forwarded to adapters
 - The `category` field (`'execution_error'`) enables future client-side retry affordance (spec #139)
@@ -310,8 +313,8 @@ it('stops retrying after MAX_RESUME_RETRIES and emits error', async () => {
     wrapSdkQuery(
       (async function* () {
         throw processError;
-      })(),
-    ),
+      })()
+    )
   );
 
   const events = await collectEvents(sessionId, 'Hello');
@@ -336,8 +339,8 @@ it('retries resume failure once then surfaces error on second failure', async ()
     wrapSdkQuery(
       (async function* () {
         throw resumeError;
-      })(),
-    ),
+      })()
+    )
   );
 
   // Mark session as started to trigger resume path
@@ -379,8 +382,8 @@ it('emits error when stream completes with zero content events', async () => {
           uuid: 'u2',
           session_id: 'sdk-123',
         };
-      })(),
-    ),
+      })()
+    )
   );
 
   const events = await collectEvents(sessionId, 'Hello');
@@ -418,8 +421,8 @@ it('does not emit empty stream error for interactive flows', async () => {
         };
         // approval_required would be injected by canUseTool
         // Simulate via eventQueue in a real scenario
-      })(),
-    ),
+      })()
+    )
   );
 
   // This test verifies the wasInteractive flag concept.
@@ -440,8 +443,8 @@ it('does not retry process exit code errors as resume failures', async () => {
     wrapSdkQuery(
       (async function* () {
         throw exitError;
-      })(),
-    ),
+      })()
+    )
   );
 
   const events = await collectEvents(sessionId, 'Hello');
@@ -464,8 +467,8 @@ it('error event includes category and details fields', async () => {
     wrapSdkQuery(
       (async function* () {
         throw testError;
-      })(),
-    ),
+      })()
+    )
   );
 
   const events = await collectEvents(sessionId, 'Hello');
@@ -477,7 +480,7 @@ it('error event includes category and details fields', async () => {
       message: expect.any(String),
       category: 'execution_error',
       details: 'Some SDK failure',
-    }),
+    })
   );
 });
 ```

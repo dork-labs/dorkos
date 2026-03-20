@@ -28,7 +28,7 @@ export function PresetGallery({ onSelect, selectedId, className }: PresetGallery
     return (
       <div className={cn('grid grid-cols-2 gap-3', className)}>
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-28 animate-pulse rounded-lg border bg-muted" />
+          <div key={i} className="bg-muted h-28 animate-pulse rounded-lg border" />
         ))}
       </div>
     );
@@ -36,14 +36,14 @@ export function PresetGallery({ onSelect, selectedId, className }: PresetGallery
 
   if (isError) {
     return (
-      <p className="text-sm text-destructive">
+      <p className="text-destructive text-sm">
         Failed to load presets. You can start from scratch.
       </p>
     );
   }
 
   if (!presets || presets.length === 0) {
-    return <p className="text-sm text-muted-foreground">No presets available.</p>;
+    return <p className="text-muted-foreground text-sm">No presets available.</p>;
   }
 
   return (

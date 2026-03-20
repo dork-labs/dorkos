@@ -1,10 +1,10 @@
 ---
 slug: docker-image-publishing
 number: 130
-title: "Docker Image Publishing to GHCR"
+title: 'Docker Image Publishing to GHCR'
 created: 2026-03-14
 status: draft
-authors: ["Claude Code"]
+authors: ['Claude Code']
 ideation: specs/docker-image-publishing/01-ideation.md
 research: research/20260314_ghcr_docker_publishing_github_actions.md
 ---
@@ -45,15 +45,15 @@ Additionally, the current release command (`.claude/commands/system/release.md`)
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `actions/checkout` | v4 | Checkout repository |
-| `docker/login-action` | v3 | Authenticate to GHCR |
-| `docker/setup-qemu-action` | v3 | ARM64 emulation |
-| `docker/setup-buildx-action` | v3 | Multi-platform builds |
-| `docker/metadata-action` | v5 | Automatic semver tag generation |
-| `docker/build-push-action` | v6 | Build and push image |
-| `actions/attest-build-provenance` | v2 | SLSA supply-chain attestation |
+| Dependency                        | Version | Purpose                         |
+| --------------------------------- | ------- | ------------------------------- |
+| `actions/checkout`                | v4      | Checkout repository             |
+| `docker/login-action`             | v3      | Authenticate to GHCR            |
+| `docker/setup-qemu-action`        | v3      | ARM64 emulation                 |
+| `docker/setup-buildx-action`      | v3      | Multi-platform builds           |
+| `docker/metadata-action`          | v5      | Automatic semver tag generation |
+| `docker/build-push-action`        | v6      | Build and push image            |
+| `actions/attest-build-provenance` | v2      | SLSA supply-chain attestation   |
 
 All actions are pinned to major versions. No external secrets are required beyond the default `GITHUB_TOKEN`.
 
@@ -167,6 +167,7 @@ jobs:
 **GHA caching:** Layer caching via `type=gha,mode=max` uses GitHub Actions' built-in 10 GB cache. This significantly reduces rebuild time for unchanged layers (Node.js base image, npm install).
 
 **Metadata-driven tagging:** The `docker/metadata-action` automatically generates tags from the git tag:
+
 - `v0.12.0` produces: `0.12.0`, `0.12`, `sha-abc1234`, `latest`
 - Pre-release tags (e.g., `v0.13.0-beta.1`) skip the `latest` tag automatically via `latest=auto`
 - No `{{major}}` tag is generated while the project is pre-1.0
@@ -213,6 +214,7 @@ Add a Docker publishing mention to Phase 6 (Report) so the release operator know
 
 ```markdown
 ### Docker Image
+
 - Image will be published automatically to `ghcr.io/dork-labs/dorkos:{version}`
 - Triggered by the tag push above
 - Monitor progress: https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml
@@ -225,15 +227,18 @@ Add a Docker publishing mention to Phase 6 (Report) so the release operator know
 Add the following content:
 
 **Image versioning section:**
+
 - Explain available tags: `latest`, `0.12.0` (exact version), `0.12` (minor track), `sha-*` (commit)
 - Recommend pinning to an exact version for production: `ghcr.io/dork-labs/dorkos:0.12.0`
 - Note that `latest` tracks the most recent non-prerelease version
 
 **Multi-platform support note:**
+
 - The image is built for both `linux/amd64` and `linux/arm64`
 - Works natively on Intel/AMD servers and Apple Silicon via Docker Desktop
 
 **Supply chain verification section:**
+
 ```bash
 gh attestation verify oci://ghcr.io/dork-labs/dorkos:0.12.0 --owner dork-labs
 ```
@@ -254,24 +259,24 @@ No changes needed. The `.dockerignore` uses a deny-all allowlist pattern. The Do
 
 ### Phase 1: Workflow + Dockerfile (core infrastructure)
 
-| # | Task | File |
-|---|------|------|
-| 1 | Create the GitHub Actions workflow | `.github/workflows/publish-docker.yml` |
-| 2 | Add OCI labels to Dockerfile | `Dockerfile.run` |
+| #   | Task                               | File                                   |
+| --- | ---------------------------------- | -------------------------------------- |
+| 1   | Create the GitHub Actions workflow | `.github/workflows/publish-docker.yml` |
+| 2   | Add OCI labels to Dockerfile       | `Dockerfile.run`                       |
 
 ### Phase 2: Release Command Reorder
 
-| # | Task | File |
-|---|------|------|
-| 3 | Swap phases 5.7 and 5.8 | `.claude/commands/system/release.md` |
-| 4 | Add Docker publishing to Phase 6 report | `.claude/commands/system/release.md` |
+| #   | Task                                    | File                                 |
+| --- | --------------------------------------- | ------------------------------------ |
+| 3   | Swap phases 5.7 and 5.8                 | `.claude/commands/system/release.md` |
+| 4   | Add Docker publishing to Phase 6 report | `.claude/commands/system/release.md` |
 
 ### Phase 3: Documentation
 
-| # | Task | File |
-|---|------|------|
-| 5 | Add versioning, multi-platform, and attestation docs | `docs/self-hosting/docker.mdx` |
-| 6 | Add version pinning example | `docs/getting-started/installation.mdx` |
+| #   | Task                                                 | File                                    |
+| --- | ---------------------------------------------------- | --------------------------------------- |
+| 5   | Add versioning, multi-platform, and attestation docs | `docs/self-hosting/docker.mdx`          |
+| 6   | Add version pinning example                          | `docs/getting-started/installation.mdx` |
 
 ## Post-Deploy (One-Time Manual Steps)
 
@@ -298,27 +303,27 @@ These steps are required because GHCR packages default to private and are not au
 
 ## Testing Strategy
 
-| Test | Method | When |
-|------|--------|------|
-| Workflow YAML validity | GitHub Actions lints on push | Every commit |
-| First real build | Tag a release and observe workflow | First release after merge |
-| Manual re-run | Trigger via `workflow_dispatch` on an existing tag | Post-deploy verification |
-| Image correctness | `docker pull` + `docker run --help` | After first successful push |
-| Multi-platform | `docker manifest inspect ghcr.io/dork-labs/dorkos:latest` | After first successful push |
-| Attestation | `gh attestation verify oci://ghcr.io/dork-labs/dorkos:{version} --owner dork-labs` | After first successful push |
-| Release flow | Perform a patch release and verify npm publishes before tag push | First release after merge |
+| Test                   | Method                                                                             | When                        |
+| ---------------------- | ---------------------------------------------------------------------------------- | --------------------------- |
+| Workflow YAML validity | GitHub Actions lints on push                                                       | Every commit                |
+| First real build       | Tag a release and observe workflow                                                 | First release after merge   |
+| Manual re-run          | Trigger via `workflow_dispatch` on an existing tag                                 | Post-deploy verification    |
+| Image correctness      | `docker pull` + `docker run --help`                                                | After first successful push |
+| Multi-platform         | `docker manifest inspect ghcr.io/dork-labs/dorkos:latest`                          | After first successful push |
+| Attestation            | `gh attestation verify oci://ghcr.io/dork-labs/dorkos:{version} --owner dork-labs` | After first successful push |
+| Release flow           | Perform a patch release and verify npm publishes before tag push                   | First release after merge   |
 
 There are no unit tests to write for this feature. Validation is inherently integration-level: the workflow either succeeds and produces a pullable image, or it fails visibly in GitHub Actions.
 
 ## Risks & Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|-----------|
-| npm publish takes >5 min, Docker workflow times out | Low | Workflow fails, no image published | 30 retries x 10s = 5 min polling. Can increase the retry count if needed. Manual re-run via `workflow_dispatch` as fallback. |
-| QEMU arm64 build is extremely slow (~30 min) | Medium | Slow release pipeline | Accept for now. Can drop to amd64-only if build times exceed 45 min. ARM users can build from source. |
-| GHCR package stays private after first push | Certain (first time) | Users cannot pull the image | Documented in Post-Deploy section. One-time manual step. |
-| Release command phase swap breaks existing flow | Low | Release fails | The swap is two adjacent phases exchanging position. Semantics are preserved. Verify with next patch release. |
-| `docker/metadata-action` generates unexpected tags | Low | Wrong tags on image | The tag patterns are well-documented and widely used. Pre-release detection via `latest=auto` is battle-tested. |
+| Risk                                                | Likelihood           | Impact                             | Mitigation                                                                                                                   |
+| --------------------------------------------------- | -------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| npm publish takes >5 min, Docker workflow times out | Low                  | Workflow fails, no image published | 30 retries x 10s = 5 min polling. Can increase the retry count if needed. Manual re-run via `workflow_dispatch` as fallback. |
+| QEMU arm64 build is extremely slow (~30 min)        | Medium               | Slow release pipeline              | Accept for now. Can drop to amd64-only if build times exceed 45 min. ARM users can build from source.                        |
+| GHCR package stays private after first push         | Certain (first time) | Users cannot pull the image        | Documented in Post-Deploy section. One-time manual step.                                                                     |
+| Release command phase swap breaks existing flow     | Low                  | Release fails                      | The swap is two adjacent phases exchanging position. Semantics are preserved. Verify with next patch release.                |
+| `docker/metadata-action` generates unexpected tags  | Low                  | Wrong tags on image                | The tag patterns are well-documented and widely used. Pre-release detection via `latest=auto` is battle-tested.              |
 
 ## Security Considerations
 

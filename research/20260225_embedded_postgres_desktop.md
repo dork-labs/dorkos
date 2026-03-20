@@ -1,5 +1,5 @@
 ---
-title: "Embedded PostgreSQL for Desktop Apps & CLI Tools"
+title: 'Embedded PostgreSQL for Desktop Apps & CLI Tools'
 date: 2026-02-25
 type: exploratory
 status: archived
@@ -138,16 +138,17 @@ friction alternatives for scenarios where single-connection constraints are acce
 
 ### 6. Binary Sizes — What to Expect
 
-| Component | Size |
-|---|---|
-| `@embedded-postgres/darwin-arm64` npm package | **136 MB** |
-| `@embedded-postgres/darwin-x64` npm package | **136 MB** |
-| zonkyio Linux binaries (stripped) | **~10 MB** (stripped, no ICU) |
-| PGlite (WASM, full Postgres) | **~3 MB gzipped** |
-| pgmock (WASM x86 emulator + Postgres) | larger (emulates full Linux VM) |
-| Full EnterpriseDB installer (with tools) | **~300-500 MB** |
+| Component                                     | Size                            |
+| --------------------------------------------- | ------------------------------- |
+| `@embedded-postgres/darwin-arm64` npm package | **136 MB**                      |
+| `@embedded-postgres/darwin-x64` npm package   | **136 MB**                      |
+| zonkyio Linux binaries (stripped)             | **~10 MB** (stripped, no ICU)   |
+| PGlite (WASM, full Postgres)                  | **~3 MB gzipped**               |
+| pgmock (WASM x86 emulator + Postgres)         | larger (emulates full Linux VM) |
+| Full EnterpriseDB installer (with tools)      | **~300-500 MB**                 |
 
 Notes:
+
 - The macOS 136 MB figure includes the full Postgres binary tree (server, client tools,
   shared libraries). The Linux stripped figure of ~10 MB is for minimal binaries with
   ICU disabled.
@@ -163,14 +164,14 @@ Notes:
 
 The `embedded-postgres` npm ecosystem covers all major desktop platforms:
 
-| Platform | Architecture | Status |
-|---|---|---|
-| macOS | arm64 (Apple Silicon) | Supported (PG 15+) |
-| macOS | x64 (Intel) | Supported |
-| Windows | x64 | Supported |
-| Linux | x64 | Supported |
-| Linux | arm64 | Supported |
-| Linux | arm32, ia32, ppc64 | Supported |
+| Platform | Architecture          | Status             |
+| -------- | --------------------- | ------------------ |
+| macOS    | arm64 (Apple Silicon) | Supported (PG 15+) |
+| macOS    | x64 (Intel)           | Supported          |
+| Windows  | x64                   | Supported          |
+| Linux    | x64                   | Supported          |
+| Linux    | arm64                 | Supported          |
+| Linux    | arm32, ia32, ppc64    | Supported          |
 
 The `theseus-rs/postgresql-binaries` project (GitHub Releases, Shell scripts, Feb 2026
 release of PG 18.2.0) provides an alternative source for pre-compiled binaries aligned
@@ -196,6 +197,7 @@ The lifecycle for a bundled Postgres is:
 ```
 
 Key management concerns for a desktop/CLI app:
+
 - **Data directory location**: Must be user-writable. Typical choices:
   - `~/.config/myapp/pgdata/` (XDG standard on Linux)
   - `~/Library/Application Support/myapp/pgdata/` (macOS)
@@ -220,12 +222,14 @@ Key management concerns for a desktop/CLI app:
 a **poor choice for end-user desktop applications**.
 
 Arguments FOR requiring Docker:
+
 - Eliminates all binary bundling complexity
 - Cross-platform compatibility handled by Docker
 - Used by Supabase CLI, many developer tools
 - Standard for local-dev workflows
 
 Arguments AGAINST requiring Docker:
+
 - Docker Desktop is not installed by default on any OS
 - Docker Desktop requires a license for commercial use in organizations > 250 employees
   (as of 2022 licensing change)
@@ -243,6 +247,7 @@ software, etc.) that need a database almost universally use SQLite instead of Po
 ### 10. Real-World Examples
 
 #### Apps That Bundle Postgres Binaries
+
 - **Postgres.app**: The canonical macOS example. Ships full Postgres binary tree inside
   the .app bundle. Manages via `pg_ctl`. Open source.
   https://github.com/PostgresApp/PostgresApp
@@ -256,11 +261,13 @@ software, etc.) that need a database almost universally use SQLite instead of Po
   Commercial, not open source.
 
 #### CLI Tools That Use Docker for Postgres
+
 - **Supabase CLI** (`supabase start`): Pulls Docker images
 - **Neon CLI**: Connects to cloud Postgres, no local bundling
 - **Railway CLI**: Connects to cloud, no local bundling
 
 #### Testing Libraries (Not Production Deployment)
+
 - **`embedded-postgres` (npm)**: Primarily used for CI/integration tests
 - **`@databases/pg-test`**: Uses Docker to run Postgres for tests (last published 4 years ago)
 - **`pg-mem`**: Pure JS in-memory Postgres implementation for unit tests (not real Postgres)
@@ -357,17 +364,17 @@ software, etc.) that need a database almost universally use SQLite instead of Po
 
 ## Decision Matrix
 
-| Option | Real Postgres? | Size | Concurrency | Cross-Platform | Production? | Complexity |
-|---|---|---|---|---|---|---|
-| `embedded-postgres` npm | YES | 136 MB/platform | Full | YES (all major) | Possible | High |
-| PGlite (WASM) | YES (WASM) | ~3 MB gz | Single conn | YES (any WASM) | GA (ElectricSQL) | Low |
-| pgmock | YES (emulated) | Large | Full? | YES | Testing only | Medium |
-| pg-mem | NO (reimpl) | Small | N/A | YES | Testing only | Low |
-| DuckDB | NO (columnar) | Medium | Single-writer | YES | Yes (OLAP) | Low |
-| libSQL/sqld | NO (SQLite) | Small | Single-writer | YES | Yes | Low |
-| FerretDB | MongoDB API | Medium | Full | YES | Yes | High |
-| Docker + Postgres | YES | N/A (Docker req) | Full | YES (Docker) | YES | Medium |
-| SQLite (plain) | NO | ~1 MB | Single-writer | YES | YES | Minimal |
+| Option                  | Real Postgres? | Size             | Concurrency   | Cross-Platform  | Production?      | Complexity |
+| ----------------------- | -------------- | ---------------- | ------------- | --------------- | ---------------- | ---------- |
+| `embedded-postgres` npm | YES            | 136 MB/platform  | Full          | YES (all major) | Possible         | High       |
+| PGlite (WASM)           | YES (WASM)     | ~3 MB gz         | Single conn   | YES (any WASM)  | GA (ElectricSQL) | Low        |
+| pgmock                  | YES (emulated) | Large            | Full?         | YES             | Testing only     | Medium     |
+| pg-mem                  | NO (reimpl)    | Small            | N/A           | YES             | Testing only     | Low        |
+| DuckDB                  | NO (columnar)  | Medium           | Single-writer | YES             | Yes (OLAP)       | Low        |
+| libSQL/sqld             | NO (SQLite)    | Small            | Single-writer | YES             | Yes              | Low        |
+| FerretDB                | MongoDB API    | Medium           | Full          | YES             | Yes              | High       |
+| Docker + Postgres       | YES            | N/A (Docker req) | Full          | YES (Docker)    | YES              | Medium     |
+| SQLite (plain)          | NO             | ~1 MB            | Single-writer | YES             | YES              | Minimal    |
 
 ---
 

@@ -64,7 +64,9 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
                 <li>Your config file and preferences</li>
                 <li>All server logs</li>
               </ul>
-              <p>The server will restart automatically. Your UI preferences will also be cleared.</p>
+              <p>
+                The server will restart automatically. Your UI preferences will also be cleared.
+              </p>
               <p className="font-semibold">This action cannot be undone.</p>
             </div>
           </AlertDialogDescription>

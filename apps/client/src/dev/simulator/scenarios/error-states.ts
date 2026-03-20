@@ -14,7 +14,8 @@ const ASST_MSG = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const INTRO_TEXT = "I'll start by profiling the database queries to identify the bottleneck. Let me check the query logs and trace the execution path through the service layer.\n\n";
+const INTRO_TEXT =
+  "I'll start by profiling the database queries to identify the bottleneck. Let me check the query logs and trace the execution path through the service layer.\n\n";
 
 const READ_TOOL = createToolCall({
   toolCallId: 'sim-err-read',
@@ -23,7 +24,8 @@ const READ_TOOL = createToolCall({
   status: 'pending',
 });
 
-const PARTIAL_TEXT = "\n\nI found the database service. Looking at the query patterns, there are several N+1 queries in the session listing endpoint. The `listSessions` function fetches each session's metadata in a separate query instead of using a join. Let me trace the";
+const PARTIAL_TEXT =
+  "\n\nI found the database service. Looking at the query patterns, there are several N+1 queries in the session listing endpoint. The `listSessions` function fetches each session's metadata in a separate query instead of using a join. Let me trace the";
 
 const ERROR_PART: ErrorPart = {
   type: 'error',
@@ -48,12 +50,22 @@ export const errorStates: SimScenario = {
 
     // Read tool
     { type: 'append_tool_call', messageId: 'sim-err-asst', toolCall: READ_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-err-asst', toolCallId: 'sim-err-read', patch: { status: 'running' }, delayMs: 1600 },
     {
       type: 'update_tool_call',
       messageId: 'sim-err-asst',
       toolCallId: 'sim-err-read',
-      patch: { status: 'complete', result: 'export async function listSessions() {\n  const sessions = await db.query("SELECT id FROM sessions");\n  // N+1 query pattern\n  return Promise.all(sessions.map(s => db.query("SELECT * FROM metadata WHERE session_id = ?", s.id)));\n}' },
+      patch: { status: 'running' },
+      delayMs: 1600,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-err-asst',
+      toolCallId: 'sim-err-read',
+      patch: {
+        status: 'complete',
+        result:
+          'export async function listSessions() {\n  const sessions = await db.query("SELECT id FROM sessions");\n  // N+1 query pattern\n  return Promise.all(sessions.map(s => db.query("SELECT * FROM metadata WHERE session_id = ?", s.id)));\n}',
+      },
       delayMs: 400,
     },
 

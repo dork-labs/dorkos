@@ -93,7 +93,9 @@ describe('type-consolidation', () => {
       errorCount: 0,
     };
     // AdapterStatus in relay is a subset — all its fields exist in shared AdapterStatus
-    expectTypeOf(status).toMatchTypeOf<Pick<SharedAdapterStatus, 'state' | 'messageCount' | 'errorCount'>>();
+    expectTypeOf(status).toMatchTypeOf<
+      Pick<SharedAdapterStatus, 'state' | 'messageCount' | 'errorCount'>
+    >();
     expect(status.state).toBe('connected');
     expect(status.messageCount.inbound).toBe(5);
     expect(status.errorCount).toBe(0);

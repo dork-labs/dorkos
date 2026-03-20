@@ -1,9 +1,24 @@
 ---
-title: "Interactive Card Focus Navigation — Keyboard & Focus Management for QuestionPrompt and ToolApproval"
+title: 'Interactive Card Focus Navigation — Keyboard & Focus Management for QuestionPrompt and ToolApproval'
 date: 2026-03-17
 type: external-best-practices
 status: active
-tags: [focus-management, keyboard-navigation, aria, wai-aria, roving-tabindex, aria-activedescendant, focus-trap, focus-scope, react-19, interactive-card, question-prompt, tool-approval, chat-ui]
+tags:
+  [
+    focus-management,
+    keyboard-navigation,
+    aria,
+    wai-aria,
+    roving-tabindex,
+    aria-activedescendant,
+    focus-trap,
+    focus-scope,
+    react-19,
+    interactive-card,
+    question-prompt,
+    tool-approval,
+    chat-ui,
+  ]
 feature_slug: interactive-card-focus-navigation
 searches_performed: 16
 sources_count: 34
@@ -23,12 +38,13 @@ The DorkOS `QuestionPrompt` and `ToolApproval` components already have a solid k
 
 **WAI-ARIA APG distinguishes two approaches:**
 
-| Approach | Focus location | Key benefit | Key drawback |
-|---|---|---|---|
-| **Roving tabindex** | Actual DOM focus moves to each option element | User agent auto-scrolls into view; standard AT support | Requires `tabIndex` mutation on each option |
-| **aria-activedescendant** | DOM focus stays on container; `aria-activedescendant` attribute points to active child | No tabIndex manipulation | Does NOT auto-scroll; requires container to be in tab order |
+| Approach                  | Focus location                                                                         | Key benefit                                            | Key drawback                                                |
+| ------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------- |
+| **Roving tabindex**       | Actual DOM focus moves to each option element                                          | User agent auto-scrolls into view; standard AT support | Requires `tabIndex` mutation on each option                 |
+| **aria-activedescendant** | DOM focus stays on container; `aria-activedescendant` attribute points to active child | No tabIndex manipulation                               | Does NOT auto-scroll; requires container to be in tab order |
 
 **For `QuestionPrompt`, roving tabindex is the right choice** because:
+
 - Options can overflow a viewport in long question prompts — auto-scroll on focus is essential
 - `aria-activedescendant` requires the container to hold DOM focus and have a focusable container element — this conflicts with the current architecture where `isActive` + a global keyboard listener manages "logical focus"
 - Screen readers (NVDA, JAWS, VoiceOver) have historically had better support for roving tabindex than `aria-activedescendant` in dynamically generated lists
@@ -44,6 +60,7 @@ The DorkOS `QuestionPrompt` and `ToolApproval` components already have a solid k
 The radio group pattern from WAI-ARIA APG specifies:
 
 **Single-select (radio):**
+
 ```html
 <div role="radiogroup" aria-labelledby="question-label-id">
   <div role="radio" aria-checked="false" tabindex="-1">Option A</div>
@@ -53,6 +70,7 @@ The radio group pattern from WAI-ARIA APG specifies:
 ```
 
 **Multi-select (checkbox group):**
+
 ```html
 <div role="group" aria-labelledby="question-label-id">
   <div role="checkbox" aria-checked="true" tabindex="0">Option A</div>
@@ -63,6 +81,7 @@ The radio group pattern from WAI-ARIA APG specifies:
 The DorkOS `QuestionPrompt` currently uses Radix UI `RadioGroup` / `RadioGroupItem` for single-select (correct), and a plain `<div role="group">` with Radix `Checkbox` for multi-select (correct). However, the **visual focus indicator** (the `isFocused` prop on `OptionRow`) is purely cosmetic CSS — it does not move actual DOM focus. This means screen reader users have no way to know which option is "keyboard focused" in the current implementation.
 
 **Keyboard interaction spec from WAI-ARIA APG (radio group):**
+
 - `Tab` / `Shift+Tab`: Enter or exit the group; focus goes to the checked option (or first if none checked)
 - `ArrowDown` / `ArrowRight`: Move to next option, check it (single-select) or just move focus (multi-select)
 - `ArrowUp` / `ArrowLeft`: Move to previous option, wrap around
@@ -136,13 +155,15 @@ useEffect(() => {
 **When to NOT restore focus:** If the user dismissed the card by clicking something else (e.g., typed in the chat input), `document.activeElement` has already moved — restoring focus would be disruptive. Add a guard: only restore if `document.activeElement` is still inside the card or is `document.body` (default when focus leaves without landing anywhere specific).
 
 **React Aria FocusScope API (reference for production-grade implementation):**
+
 ```tsx
 import { FocusScope } from '@react-aria/focus';
 
 <FocusScope autoFocus restoreFocus contain={false}>
   {/* Card content */}
-</FocusScope>
+</FocusScope>;
 ```
+
 - `autoFocus`: Focuses the first focusable element on mount
 - `restoreFocus`: Returns focus to the element that had it before the scope mounted
 - `contain={false}`: Does NOT trap focus (soft scope, not hard trap) — correct for inline chat elements
@@ -155,6 +176,7 @@ import { FocusScope } from '@react-aria/focus';
 
 **Full focus trap (WRONG for this use case):**
 A full focus trap (`focus-trap-react`, Radix `Dialog`, etc.) prevents `Tab`/`Shift+Tab` from leaving the trapped element. This is correct for **modal dialogs** but wrong for inline chat cards because:
+
 - The user may want to Tab to other parts of the UI (sidebar, other messages)
 - Multiple cards can be pending simultaneously — a trap would lock the user in the first one
 - The DorkOS pattern uses a "logically active" card, not a UI-blocking overlay
@@ -173,6 +195,7 @@ A focus scope that `autoFocus`es on mount and `restoreFocus`es on unmount, but d
 **Industry standard:** Keyboard shortcut hints (`<kbd>`) appear **after** the label text, right-aligned. This is the universal convention in Linear, VS Code, GitHub, Slack, and Discord.
 
 **Why after, not before:**
+
 - Screen readers compute "accessible name" left-to-right; putting `<kbd>` before the label would cause SR to announce "1 Option A" instead of "Option A, keyboard shortcut 1"
 - The WAI-ARIA APG examples for keyboard shortcuts in menus always show shortcut hints right-aligned after the label
 - WCAG accessible name computation: `aria-labelledby` / label text comes first; descriptive annotations (`aria-describedby`) come after
@@ -188,7 +211,7 @@ A focus scope that `autoFocus`es on mount and `restoreFocus`es on unmount, but d
 >
   <span>{option.label}</span>
   {isActive && optionIndex < 9 && (
-    <Kbd className="ml-auto text-2xs text-muted-foreground">{optionIndex + 1}</Kbd>
+    <Kbd className="text-2xs text-muted-foreground ml-auto">{optionIndex + 1}</Kbd>
   )}
 </div>
 ```
@@ -204,10 +227,7 @@ The current `useInteractiveShortcuts` suppresses ALL shortcuts (except `Enter`) 
 **The "exit textarea on boundary" pattern:**
 
 ```typescript
-function isTextareaAtBoundary(
-  target: HTMLTextAreaElement,
-  direction: 'up' | 'down'
-): boolean {
+function isTextareaAtBoundary(target: HTMLTextAreaElement, direction: 'up' | 'down'): boolean {
   const { selectionStart, value } = target;
   if (direction === 'up') {
     // At first line if no newline before cursor
@@ -236,7 +256,13 @@ interface QuestionPromptProps {
 }
 
 export function QuestionPrompt({ ref, ...props }: QuestionPromptProps) {
-  useImperativeHandle(ref, () => ({ /* ... */ }), []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      /* ... */
+    }),
+    []
+  );
   // ...
 }
 ```
@@ -265,6 +291,7 @@ ChatPanel
 ```
 
 **What works well:**
+
 - Global keyboard listener with `activeInteraction` guard — correct "soft focus scope" pattern
 - `isActive` prop on `InteractiveCard` shows visual ring
 - `isFocused` on `OptionRow` shows visual highlight on the focused option
@@ -272,13 +299,13 @@ ChatPanel
 
 **What is missing:**
 
-| Gap | Impact | Fix |
-|---|---|---|
-| No DOM focus on card appearance | Screen readers can't know a card appeared; no auto-scroll | `scrollIntoView` + `cardRef.current?.focus()` or roving tabindex |
+| Gap                                    | Impact                                                                                 | Fix                                                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| No DOM focus on card appearance        | Screen readers can't know a card appeared; no auto-scroll                              | `scrollIntoView` + `cardRef.current?.focus()` or roving tabindex                          |
 | `isFocused` is CSS-only, not DOM focus | AT users can't navigate with Tab; SR announces options in order, not the "focused" one | Switch to roving tabindex: `tabIndex={isFocused ? 0 : -1}` + `optionRef.current?.focus()` |
-| No focus restoration on decide | After Enter/Esc, focus stays wherever it was (or goes to `body`) | Save/restore `document.activeElement` in `useInteractiveShortcuts` |
-| `QuestionPrompt` uses `forwardRef` | Inconsistency with React 19 pattern used by `ToolApproval` | Migrate to `ref` as prop |
-| `aria-keyshortcuts` missing on options | AT users don't know about `1`–`9` shortcuts | Add `aria-keyshortcuts="1"` etc. to each option |
+| No focus restoration on decide         | After Enter/Esc, focus stays wherever it was (or goes to `body`)                       | Save/restore `document.activeElement` in `useInteractiveShortcuts`                        |
+| `QuestionPrompt` uses `forwardRef`     | Inconsistency with React 19 pattern used by `ToolApproval`                             | Migrate to `ref` as prop                                                                  |
+| `aria-keyshortcuts` missing on options | AT users don't know about `1`–`9` shortcuts                                            | Add `aria-keyshortcuts="1"` etc. to each option                                           |
 
 ---
 
@@ -289,6 +316,7 @@ ChatPanel
 **How it works:** Each option element gets `tabIndex={isFocused ? 0 : -1}`. When `focusedOptionIndex` changes (via ArrowUp/Down or `1`–`9`), the corresponding option ref's `.focus()` is called.
 
 **Integration with current system:**
+
 - `focusedOptionIndex` is already tracked in `useToolShortcuts`
 - `isFocused` is already passed to each `OptionRow`
 - Only change needed: attach `optionRef` to each option element and call `.focus()` when `isFocused` becomes true
@@ -306,7 +334,7 @@ useEffect(() => {
 return (
   <div
     ref={optionRef}
-    role="radio"  // or "checkbox"
+    role="radio" // or "checkbox"
     aria-checked={isSelected}
     tabIndex={isActive ? (isFocused ? 0 : -1) : undefined}
     // ...
@@ -315,12 +343,14 @@ return (
 ```
 
 **Pros:**
+
 - Screen readers announce correctly as focus moves
 - Browser auto-scrolls to focused option
 - Integrates cleanly with existing `focusedOptionIndex` state
 - WAI-ARIA recommended pattern for this widget type
 
 **Cons:**
+
 - Requires `tabIndex` mutation (minor DOM manipulation on each arrow key)
 - Need to reset all to `-1` except the focused one when `focusedOptionIndex` changes
 
@@ -329,6 +359,7 @@ return (
 **How it would work:** The `RadioGroup` container has DOM focus + `aria-activedescendant="option-id-{focusedIndex}"`. Each option has a unique ID but no tabIndex.
 
 **Problems for DorkOS:**
+
 - The global keyboard listener approach works independently of DOM focus — adding `aria-activedescendant` would require the container to hold actual DOM focus, which conflicts with the "logical focus" architecture
 - AT support for `aria-activedescendant` in dynamic lists is historically buggier than roving tabindex
 - Does not auto-scroll to the active option
@@ -342,10 +373,12 @@ As discussed in Finding #5, a full focus trap is incorrect for inline chat cards
 **What this means:** Keep the current CSS-only `isFocused` highlight, no DOM focus change. The global keyboard listener handles all key events when `isActive`.
 
 **Pros:**
+
 - Simplest implementation
 - Works for mouse/touch users
 
 **Cons:**
+
 - Inaccessible to screen reader users — they have no way to detect the card appeared or navigate its options
 - No auto-scroll to focused option (must scroll manually)
 - Does not meet WCAG 2.1 Level AA (keyboard access must be operable by AT)
@@ -412,6 +445,7 @@ Remove `forwardRef` wrapper, accept `ref` as a direct prop like `ToolApproval` a
 ### ARIA Role Clarification: RadioGroupItem vs. OptionRow
 
 The current `QuestionPrompt` renders:
+
 ```
 <RadioGroup>            → role="radiogroup"
   <OptionRow>           → plain <div> (no ARIA role)
@@ -452,11 +486,9 @@ However, this creates a conflict: Radix's `RadioGroup` arrow key behavior (check
 **After the label, right-aligned.** This is the universal convention (Linear, VS Code, GitHub command palette) and matches screen reader accessible name computation — the SR announces the option label first, then encounters the `<kbd>` as supplementary visual information. Use `aria-keyshortcuts="1"` on the element for AT, and the visible `<kbd>1</kbd>` for sighted users. Do not put `<kbd>` in the accessible name calculation path.
 
 ```tsx
-<label htmlFor={optionId} className="flex items-center justify-between w-full">
+<label htmlFor={optionId} className="flex w-full items-center justify-between">
   <span className="text-sm font-medium">{opt.label}</span>
-  {isActive && oIdx < 9 && (
-    <Kbd className="ml-auto text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
-  )}
+  {isActive && oIdx < 9 && <Kbd className="text-2xs text-muted-foreground ml-auto">{oIdx + 1}</Kbd>}
 </label>
 ```
 
@@ -523,7 +555,9 @@ const radioGroupRef = useRef<HTMLDivElement>(null);
 useEffect(() => {
   if (!isActive) return;
   // Give focus to the checked radio, or the first one if none checked
-  const checked = radioGroupRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]');
+  const checked = radioGroupRef.current?.querySelector<HTMLElement>(
+    '[role="radio"][aria-checked="true"]'
+  );
   const first = radioGroupRef.current?.querySelector<HTMLElement>('[role="radio"]:not([disabled])');
   (checked ?? first)?.focus();
 }, [isActive]);
@@ -577,11 +611,13 @@ export function QuestionPrompt({
 The cleanest architecture, given Radix UI is already managing the radio group and checkbox ARIA attributes, is a **two-layer system**:
 
 **Layer 1 — Radix native keyboard (within the card):**
+
 - Radix `RadioGroup` handles: `ArrowUp`/`ArrowDown`, `Space` (check), wrapping, `aria-checked`, roving tabindex — all per WAI-ARIA spec
 - Radix `Checkbox` handles: `Space` to toggle, `aria-checked`
 - DorkOS provides initial focus when the card becomes active (`scrollIntoView` + `focus()` on first radio/checkbox)
 
 **Layer 2 — Global handler (cross-card navigation):**
+
 - `Enter` → submit/approve
 - `Escape` → deny (approval only)
 - `1`–`9` → toggle option by number (unique DorkOS feature)
@@ -592,6 +628,7 @@ The cleanest architecture, given Radix UI is already managing the radio group an
 This avoids duplicating Radix's keyboard management and keeps the global handler focused on features Radix doesn't cover (`1`–`9` shortcuts, cross-question navigation).
 
 **Key guard to add to `useInteractiveShortcuts`:**
+
 ```typescript
 function isInNativeWidget(target: HTMLElement): boolean {
   return !!(target.closest('[role="radiogroup"]') || target.closest('[role="group"]'));

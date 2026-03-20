@@ -102,7 +102,7 @@ describe('resolveLimit', () => {
     const config = makeConfig({
       maxPerWindow: 100,
       perSenderOverrides: {
-        'relay': 50,
+        relay: 50,
         'relay.sender': 25,
         'relay.sender.a': 10,
       },

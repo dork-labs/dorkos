@@ -65,6 +65,7 @@ status: ideation
   - Signal subscription via `relay.onSignal()` pattern
 
 - **Data flow:**
+
   ```
   Inbound:  Slack event → handleInboundMessage → relay.human.slack.{channelId}
                         → BindingRouter → relay.agent.{sessionId}
@@ -125,48 +126,56 @@ status: ideation
 ### Potential solutions:
 
 **1. Newline fix -- Collapse intermediate paragraph breaks**
+
 - Description: Apply `.replace(/\n{2,}/g, '\n')` to intermediate `chat.update` text only; preserve full formatting on `handleDone`
 - Pros: Surgical (1 line), no library changes, preserves final message formatting
 - Cons: Loses paragraph structure mid-stream (acceptable -- it's a progressive preview)
 - Complexity: Trivial
 
 **2. Newline fix -- Switch to Slack's native `markdown` block type**
+
 - Description: Use `blocks` API with `type: "markdown"` instead of `text` field
 - Pros: Slack handles conversion server-side
 - Cons: Requires `blocks` API migration, `text` field still needed as accessibility fallback
 - Complexity: Medium
 
 **3. CWD fix -- Enrich envelope payload with binding projectPath**
+
 - Description: BindingRouter adds `cwd: binding.projectPath` to envelope payload before republishing
 - Pros: Agent handler already extracts `payloadCwd` from payload (line 74-76). Zero changes to agent handler.
 - Cons: Mutates payload (but this is standard practice for routing enrichment)
 - Complexity: Trivial
 
 **4. Stream key fix -- Fix resolveThreadTs + synthetic fallback**
+
 - Description: Ensure `resolveThreadTs` returns `platformData.ts` as fallback; use synthetic ID when no platform data
 - Pros: Uses existing data, correct per-conversation semantics
 - Cons: None significant
 - Complexity: Low
 
 **5. Stream key fix -- Add streamId to ActiveStream**
+
 - Description: Generate unique ID per stream for race detection in handleDone
 - Pros: Eliminates async race completely, observable in logs
 - Cons: Minor API surface expansion
 - Complexity: Low
 
 **6. Streaming toggle -- Per-adapter config boolean**
+
 - Description: `streaming: z.boolean().default(true)` in `SlackAdapterConfigSchema`. When false, buffer all deltas and send single message on `done` (like Telegram).
 - Pros: Clean, follows established pattern (Telegram's polling/webhook mode toggle). Per-workspace control.
 - Cons: No per-channel granularity (acceptable)
 - Complexity: Low
 
 **7. Slack typing -- Emoji reaction**
+
 - Description: `reactions.add(':hourglass_flowing_sand:')` on stream start, `reactions.remove` on done. Fire-and-forget.
 - Pros: Visible, low noise, 2 API calls per stream. Works within Slack's API limitations.
 - Cons: Requires `reactions:write` scope (users must re-install app). Not a native typing indicator.
 - Complexity: Low
 
 **8. Telegram typing -- Interval refresh**
+
 - Description: `setInterval` at 4 seconds in `handleTypingSignal`, clear on stop/done
 - Pros: Correct per Telegram docs (typing expires after 5s). ~30 lines of code.
 - Cons: Needs cleanup in `_stop()` to prevent interval leaks
@@ -176,8 +185,8 @@ status: ideation
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Slack typing indicator mechanism | Emoji reaction (`:hourglass_flowing_sand:`) | No native bot typing API in modern Slack (confirmed by Slack team in bolt-js #885). Emoji reactions are visible, low-noise, and cost only 2 API calls per stream. Requires adding `reactions:write` scope. |
-| 2 | Streaming toggle scope | Per-adapter config (`streaming: boolean`) | Streaming is a delivery mechanism behavior, not a binding relationship property. Follows the pattern of Telegram's polling/webhook mode toggle. Simple, clean. |
-| 3 | Routing bug diagnosis | CWD not propagated from binding to agent handler | User confirmed: agent responds but works in wrong directory. BindingRouter creates session with `projectPath` but doesn't attach it to subsequent messages. Fix: enrich envelope payload with `cwd: binding.projectPath`. |
+| #   | Decision                         | Choice                                           | Rationale                                                                                                                                                                                                                 |
+| --- | -------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Slack typing indicator mechanism | Emoji reaction (`:hourglass_flowing_sand:`)      | No native bot typing API in modern Slack (confirmed by Slack team in bolt-js #885). Emoji reactions are visible, low-noise, and cost only 2 API calls per stream. Requires adding `reactions:write` scope.                |
+| 2   | Streaming toggle scope           | Per-adapter config (`streaming: boolean`)        | Streaming is a delivery mechanism behavior, not a binding relationship property. Follows the pattern of Telegram's polling/webhook mode toggle. Simple, clean.                                                            |
+| 3   | Routing bug diagnosis            | CWD not propagated from binding to agent handler | User confirmed: agent responds but works in wrong directory. BindingRouter creates session with `projectPath` but doesn't attach it to subsequent messages. Fix: enrich envelope payload with `cwd: binding.projectPath`. |

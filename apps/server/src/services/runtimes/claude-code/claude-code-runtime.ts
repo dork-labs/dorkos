@@ -290,37 +290,46 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const session = this.sessions.get(sessionId)!;
 
-    yield* executeSdkQuery(sessionId, content, session, {
-      cwd: this.cwd,
-      sessionCwd: session.cwd,
-      claudeCliPath: this.claudeCliPath,
-      meshCore: this.meshCore,
-      mcpServerFactory: this.mcpServerFactory,
-      onModelsReceived: !this.cachedModels
-        ? (models) => {
-            this.cachedModels = models;
-            logger.debug('[sendMessage] cached supported models', {
-              count: models.length,
-            });
-          }
-        : undefined,
-      onMcpStatusReceived: (servers) => {
-        // Mirror effectiveCwd resolution in executeSdkQuery so the key matches the queried dir
-        const key = opts?.cwd || session.cwd || this.cwd;
-        this.cachedMcpStatus.set(key, servers);
-        logger.debug('[sendMessage] cached MCP server status', { cwd: key, count: servers.length });
+    yield* executeSdkQuery(
+      sessionId,
+      content,
+      session,
+      {
+        cwd: this.cwd,
+        sessionCwd: session.cwd,
+        claudeCliPath: this.claudeCliPath,
+        meshCore: this.meshCore,
+        mcpServerFactory: this.mcpServerFactory,
+        onModelsReceived: !this.cachedModels
+          ? (models) => {
+              this.cachedModels = models;
+              logger.debug('[sendMessage] cached supported models', {
+                count: models.length,
+              });
+            }
+          : undefined,
+        onMcpStatusReceived: (servers) => {
+          // Mirror effectiveCwd resolution in executeSdkQuery so the key matches the queried dir
+          const key = opts?.cwd || session.cwd || this.cwd;
+          this.cachedMcpStatus.set(key, servers);
+          logger.debug('[sendMessage] cached MCP server status', {
+            cwd: key,
+            count: servers.length,
+          });
+        },
+        onCommandsReceived: !this.cachedSdkCommands
+          ? (commands) => {
+              this.cachedSdkCommands = commands;
+              logger.debug('[sendMessage] cached supported commands', {
+                count: commands.length,
+              });
+            }
+          : undefined,
+        sdkSessionIndex: this.sdkSessionIndex,
+        sessionMapKey: sessionId,
       },
-      onCommandsReceived: !this.cachedSdkCommands
-        ? (commands) => {
-            this.cachedSdkCommands = commands;
-            logger.debug('[sendMessage] cached supported commands', {
-              count: commands.length,
-            });
-          }
-        : undefined,
-      sdkSessionIndex: this.sdkSessionIndex,
-      sessionMapKey: sessionId,
-    }, opts);
+      opts
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -337,11 +346,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** Submit answers to a pending AskUserQuestion interaction. */
-  submitAnswers(
-    sessionId: string,
-    toolCallId: string,
-    answers: Record<string, string>
-  ): boolean {
+  submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
     if (!pending || pending.type !== 'question') return false;
@@ -379,9 +384,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  async getLastMessageIds(
-    sessionId: string,
-  ): Promise<{ user: string; assistant: string } | null> {
+  async getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null> {
     try {
       const session = this.findSession(sessionId);
       const projectDir = session?.cwd ?? this.cwd;

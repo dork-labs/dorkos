@@ -62,6 +62,7 @@ _(N/A — documentation-only release)_
 ### Session 1
 
 All 9 tasks completed in 5 parallel batches:
+
 - Batch 1 (1 task): Foundation config changes
 - Batch 2 (3 tasks parallel): Concept pages, project files, blog post
 - Batch 3 (3 tasks parallel): 6 user guides

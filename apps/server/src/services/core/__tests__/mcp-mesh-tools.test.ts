@@ -43,7 +43,7 @@ describe('Mesh MCP Tools', () => {
       const result = await handler({ roots: ['/test'] });
       expect(result.isError).toBe(true);
       expect(JSON.parse(result.content[0].text)).toEqual(
-        expect.objectContaining({ code: 'MESH_DISABLED' }),
+        expect.objectContaining({ code: 'MESH_DISABLED' })
       );
     });
 
@@ -116,7 +116,7 @@ describe('Mesh MCP Tools', () => {
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/test/bot',
         expect.objectContaining({ name: 'Bot', runtime: 'claude-code' }),
-        'mcp-tool',
+        'mcp-tool'
       );
     });
 
@@ -193,7 +193,16 @@ describe('Mesh MCP Tools', () => {
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
       const mockInspect = {
         agent: { id: 'a1', name: 'Bot', runtime: 'claude-code', capabilities: [] },
-        health: { agentId: 'a1', name: 'Bot', status: 'active', lastSeenAt: null, lastSeenEvent: null, registeredAt: '2026-01-01T00:00:00.000Z', runtime: 'claude-code', capabilities: [] },
+        health: {
+          agentId: 'a1',
+          name: 'Bot',
+          status: 'active',
+          lastSeenAt: null,
+          lastSeenEvent: null,
+          registeredAt: '2026-01-01T00:00:00.000Z',
+          runtime: 'claude-code',
+          capabilities: [],
+        },
         relaySubject: 'relay.agent.default.a1',
       };
       meshCore.inspect.mockReturnValue(mockInspect);
@@ -223,7 +232,10 @@ describe('Mesh MCP Tools', () => {
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
       const mockTopology = {
         namespaces: ['ns-a', 'ns-b'],
-        agents: [{ id: 'a1', namespace: 'ns-a' }, { id: 'a2', namespace: 'ns-b' }],
+        agents: [
+          { id: 'a1', namespace: 'ns-a' },
+          { id: 'a2', namespace: 'ns-b' },
+        ],
         accessRules: [{ from: 'ns-a', to: 'ns-b' }],
       };
       meshCore.getTopology.mockReturnValue(mockTopology);

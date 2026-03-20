@@ -72,6 +72,7 @@ Transport error → `use-chat-session.ts` (catch block) → `error` string state
 **Feature Flags/Config:** None.
 
 **Potential Blast Radius:**
+
 - Direct: 2-3 files (ChatPanel banner enhancement, possibly use-chat-session error categorization)
 - Indirect: None significant — the inline path is fully wired
 - Tests: 1-2 test files may need updates
@@ -85,18 +86,21 @@ N/A — this is a feature, not a bug fix.
 Research from `research/20260316_error_categorization_retry.md` and `research/20260316_sdk_result_error_ux_patterns.md`:
 
 **1. Inline ErrorMessageBlock (Already Implemented)**
+
 - Description: Render errors as a special message part inside the assistant turn with category-specific copy and retry
 - Pros: Co-located with failure, persistent on scroll, matches ChatGPT/Claude.ai/Cursor patterns
 - Cons: N/A (already built)
 - Complexity: Done
 
 **2. Enhanced Banner for Transport Errors**
+
 - Description: Upgrade the raw red banner (ChatPanel line 349-353) with categorized copy, icons, and optional retry
 - Pros: Transport errors are session-level (not message-level), banner is appropriate surface
 - Cons: Two error surfaces to maintain (banner + inline)
 - Complexity: S
 
 **3. Input Draft Restoration**
+
 - Description: Populate chat input with failed message text so users can edit before retry
 - Pros: More honest, user sees what they're retrying
 - Cons: Two retry paths is confusing, adds complexity
@@ -104,6 +108,7 @@ Research from `research/20260316_error_categorization_retry.md` and `research/20
 - Decision: **Rejected** — retry button is the single affordance
 
 **4. Auto-Retry for Transient Errors**
+
 - Description: Automatically retry on rate limit or network blip without user action
 - Pros: Reduces friction
 - Cons: Violates "honest by design" principle, users should consent to re-runs
@@ -113,12 +118,12 @@ Research from `research/20260316_error_categorization_retry.md` and `research/20
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Spec scope | Gap analysis only | SDK-level error categorization + retry is already implemented via P1 #5. This spec documents what's done and specifies remaining transport-error gaps. |
-| 2 | Retry mechanism | Retry button only (no input restoration) | One retry affordance is simpler. The inline retry button already re-sends the last message. Two paths (button + input draft) would be confusing. |
-| 3 | Banner fate | Keep for transport errors, enhance | Transport/network errors (connection refused, 500, timeout) are session-level, not message-level. The banner is the right surface — they don't belong inline in the conversation. Enhance with icons and human-readable copy. |
-| 4 | Auto-retry | No auto-retry for any category | "Honest by design" — users must consent to re-runs. Agent execution costs money and time. |
+| #   | Decision        | Choice                                   | Rationale                                                                                                                                                                                                                     |
+| --- | --------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Spec scope      | Gap analysis only                        | SDK-level error categorization + retry is already implemented via P1 #5. This spec documents what's done and specifies remaining transport-error gaps.                                                                        |
+| 2   | Retry mechanism | Retry button only (no input restoration) | One retry affordance is simpler. The inline retry button already re-sends the last message. Two paths (button + input draft) would be confusing.                                                                              |
+| 3   | Banner fate     | Keep for transport errors, enhance       | Transport/network errors (connection refused, 500, timeout) are session-level, not message-level. The banner is the right surface — they don't belong inline in the conversation. Enhance with icons and human-readable copy. |
+| 4   | Auto-retry      | No auto-retry for any category           | "Honest by design" — users must consent to re-runs. Agent execution costs money and time.                                                                                                                                     |
 
 ---
 
@@ -126,26 +131,26 @@ Research from `research/20260316_error_categorization_retry.md` and `research/20
 
 ### Already Implemented (P1 #5 Work)
 
-| Area | Status | Evidence |
-|------|--------|----------|
-| `ErrorCategorySchema` (4 SDK categories) | Done | `schemas.ts` — `max_turns`, `execution_error`, `budget_exceeded`, `output_format_error` |
-| `ErrorPartSchema` in `MessagePartSchema` union | Done | `schemas.ts` — type/message/category/details |
-| `ErrorEventSchema` extended with category/details | Done | `schemas.ts` |
-| `mapErrorCategory()` in SDK mapper | Done | `sdk-event-mapper.ts` |
-| Result handler branches on success/error | Done | `sdk-event-mapper.ts` |
-| Stream event handler routes categorized errors to inline parts | Done | `stream-event-handler.ts` |
-| `ErrorMessageBlock` component | Done | `ErrorMessageBlock.tsx` — full copy, retry, details |
-| `AssistantMessageContent` renders error parts | Done | `AssistantMessageContent.tsx:137-147` |
-| `MessageContext.onRetry` | Done | `MessageContext.tsx` |
-| `ChatPanel.handleRetry` | Done | `ChatPanel.tsx:196-201` |
-| Server + client + component tests | Done | 3 test files with 10+ tests |
+| Area                                                           | Status | Evidence                                                                                |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------- |
+| `ErrorCategorySchema` (4 SDK categories)                       | Done   | `schemas.ts` — `max_turns`, `execution_error`, `budget_exceeded`, `output_format_error` |
+| `ErrorPartSchema` in `MessagePartSchema` union                 | Done   | `schemas.ts` — type/message/category/details                                            |
+| `ErrorEventSchema` extended with category/details              | Done   | `schemas.ts`                                                                            |
+| `mapErrorCategory()` in SDK mapper                             | Done   | `sdk-event-mapper.ts`                                                                   |
+| Result handler branches on success/error                       | Done   | `sdk-event-mapper.ts`                                                                   |
+| Stream event handler routes categorized errors to inline parts | Done   | `stream-event-handler.ts`                                                               |
+| `ErrorMessageBlock` component                                  | Done   | `ErrorMessageBlock.tsx` — full copy, retry, details                                     |
+| `AssistantMessageContent` renders error parts                  | Done   | `AssistantMessageContent.tsx:137-147`                                                   |
+| `MessageContext.onRetry`                                       | Done   | `MessageContext.tsx`                                                                    |
+| `ChatPanel.handleRetry`                                        | Done   | `ChatPanel.tsx:196-201`                                                                 |
+| Server + client + component tests                              | Done   | 3 test files with 10+ tests                                                             |
 
 ### Remaining Gaps
 
-| # | Gap | Current Behavior | Desired Behavior | Effort |
-|---|-----|-----------------|------------------|--------|
-| 1 | **Transport error banner is raw** | Red banner shows raw error string (`ChatPanel:349-353`) | Enhanced banner with icon, categorized copy (network, timeout, locked) | S |
-| 2 | **Transport errors not categorized** | `use-chat-session.ts` sets `error` as raw string | Categorize transport errors (network, server error, session locked) with human-readable messages | S |
-| 3 | **No retry on transport errors** | Banner has no retry button — user must re-type or wait | Add retry button for transient transport errors (network failures) | S |
-| 4 | **SESSION_LOCKED auto-clear** | 3s auto-clear with no context | Show "Another client is active" with remaining wait time | XS |
-| 5 | **Audit update** | P2 #3 listed as not started | Mark as substantially complete, note remaining gaps | XS |
+| #   | Gap                                  | Current Behavior                                        | Desired Behavior                                                                                 | Effort |
+| --- | ------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------ |
+| 1   | **Transport error banner is raw**    | Red banner shows raw error string (`ChatPanel:349-353`) | Enhanced banner with icon, categorized copy (network, timeout, locked)                           | S      |
+| 2   | **Transport errors not categorized** | `use-chat-session.ts` sets `error` as raw string        | Categorize transport errors (network, server error, session locked) with human-readable messages | S      |
+| 3   | **No retry on transport errors**     | Banner has no retry button — user must re-type or wait  | Add retry button for transient transport errors (network failures)                               | S      |
+| 4   | **SESSION_LOCKED auto-clear**        | 3s auto-clear with no context                           | Show "Another client is active" with remaining wait time                                         | XS     |
+| 5   | **Audit update**                     | P2 #3 listed as not started                             | Mark as substantially complete, note remaining gaps                                              | XS     |

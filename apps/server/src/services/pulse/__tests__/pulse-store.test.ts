@@ -448,9 +448,24 @@ describe('PulseStore', () => {
     });
 
     it('disables multiple schedules for the same agent', () => {
-      store.createSchedule({ name: 'S1', prompt: 'test', cron: '* * * * *', agentId: 'agent-multi' });
-      store.createSchedule({ name: 'S2', prompt: 'test', cron: '* * * * *', agentId: 'agent-multi' });
-      store.createSchedule({ name: 'S3', prompt: 'test', cron: '* * * * *', agentId: 'agent-multi' });
+      store.createSchedule({
+        name: 'S1',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-multi',
+      });
+      store.createSchedule({
+        name: 'S2',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-multi',
+      });
+      store.createSchedule({
+        name: 'S3',
+        prompt: 'test',
+        cron: '* * * * *',
+        agentId: 'agent-multi',
+      });
       const count = store.disableSchedulesByAgentId('agent-multi');
       expect(count).toBe(3);
     });

@@ -1,5 +1,5 @@
 ---
-title: "Post-Feature Release Preparation: Relay + Mesh for DorkOS"
+title: 'Post-Feature Release Preparation: Relay + Mesh for DorkOS'
 date: 2026-02-25
 type: implementation
 status: active
@@ -24,18 +24,23 @@ After building the Relay (inter-agent messaging) and Mesh (agent discovery/regis
 ## Key Findings
 
 ### 1. Version Decision: 0.4.0 (Minor)
+
 Relay and Mesh add new opt-in capabilities behind feature flags (`DORKOS_RELAY_ENABLED`, `DORKOS_MESH_ENABLED`). No existing API contracts are broken. Per SemVer: new backward-compatible functionality = MINOR bump. If either feature involved removing/changing existing endpoints, it would be MAJOR.
 
 ### 2. Documentation Gap: No Relay or Mesh Docs Exist
+
 The `docs/` tree has thorough coverage of sessions, transport, Pulse, and integrations — but no pages for Relay or Mesh at all. Both features have significant surface area (new env vars, REST endpoints, MCP tools, SSE event types, Zod schemas) that must be documented before a public release.
 
 ### 3. package.json Is Largely Sound But Has Gaps
+
 The CLI package.json is well-structured (has `files`, `bin`, `engines`, `type: module`, `license`, `repository`). Key gaps: (a) `keywords` do not reflect new capabilities, (b) no `exports` field for potential future subpath exports from `@dorkos/shared`, (c) `@anthropic-ai/claude-agent-sdk: latest` is a risky dependency pin.
 
 ### 4. No Changesets / Automated Versioning Tooling
+
 The project currently lacks Changesets or any automated changelog tooling. The `changelog.mdx` is manually maintained. This works at current scale but will become painful with more frequent releases.
 
 ### 5. Marketing Site Has No Feature Spotlight Pattern
+
 The `docs/index.mdx` is a navigation hub. There is no blog post, "What's New" callout, or feature spotlight for Relay or Mesh. These features need both documentation and a discovery surface.
 
 ---
@@ -48,11 +53,11 @@ The `docs/index.mdx` is a navigation hub. There is no blog post, "What's New" ca
 
 The industry-standard framework for technical documentation is [Diátaxis](https://diataxis.fr/), which separates content into four distinct types based on user need:
 
-| Type | Purpose | User Mindset |
-|---|---|---|
-| **Tutorial** | Learning-oriented, guided experience | "I want to learn this" |
-| **How-to Guide** | Task-oriented, practical steps | "I want to accomplish X" |
-| **Reference** | Information-oriented, exhaustive facts | "I need to look this up" |
+| Type                    | Purpose                                    | User Mindset               |
+| ----------------------- | ------------------------------------------ | -------------------------- |
+| **Tutorial**            | Learning-oriented, guided experience       | "I want to learn this"     |
+| **How-to Guide**        | Task-oriented, practical steps             | "I want to accomplish X"   |
+| **Reference**           | Information-oriented, exhaustive facts     | "I need to look this up"   |
 | **Explanation/Concept** | Understanding-oriented, background context | "I want to understand why" |
 
 DorkOS's existing docs structure maps well onto this: `concepts/` = Explanation, `guides/` = How-to, `api/` = Reference, `getting-started/` = Tutorial.
@@ -60,28 +65,34 @@ DorkOS's existing docs structure maps well onto this: `concepts/` = Explanation,
 #### Required Docs for Relay
 
 **Concepts (Explanation):**
+
 - `docs/concepts/relay.mdx` — What is Relay, why it exists, the message envelope model, pub/sub topology, delivery guarantees, trace model. Answers: "How does inter-agent messaging work in DorkOS?"
 
 **Guides (How-to):**
+
 - `docs/guides/relay-getting-started.mdx` — Enable Relay (`DORKOS_RELAY_ENABLED=true`), understand the SSE event types (`relay_message`, `relay_receipt`, `message_delivered`), send a message via API, use the Relay panel in the UI.
 - `docs/guides/relay-adapters.mdx` — How ClaudeCodeAdapter works, how Pulse integrates with Relay dispatch, writing custom adapters.
 - `docs/guides/relay-access-control.mdx` — Subject-based ACL, configuring endpoint permissions, dead-letter queue behavior.
 
 **Reference:**
+
 - Relay is partially covered by auto-generated OpenAPI at `/docs/api`. Verify all Relay endpoints appear in `openapi.json` (POST/GET /messages, GET /endpoints, GET /inbox, GET /dead-letters, GET /metrics, GET /stream SSE).
 - Consider a `docs/integrations/relay-mcp-tools.mdx` covering the MCP tool surface: `relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_get_trace`, `relay_get_metrics`.
 
 #### Required Docs for Mesh
 
 **Concepts (Explanation):**
+
 - `docs/concepts/mesh.mdx` — What is Mesh, the discovery vs. registry distinction, agent manifests, health model, lifecycle events, topology graph. Answers: "How does agent discovery work in DorkOS?"
 
 **Guides (How-to):**
+
 - `docs/guides/mesh-getting-started.mdx` — Enable Mesh (`DORKOS_MESH_ENABLED=true`), discover agents via POST /discover, register via POST /agents, use the Mesh panel and topology graph.
 - `docs/guides/mesh-agent-manifests.mdx` — How to write an `AgentManifest`, required vs. optional fields, capability declarations.
 - `docs/guides/mesh-access-control.mdx` — Denying agents, managing the denied list, understanding the access control model.
 
 **Reference:**
+
 - Verify Mesh endpoints appear in OpenAPI: POST /discover, POST/GET/PATCH/DELETE /agents, POST /deny, GET/DELETE /denied, GET /status, GET /agents/:id/health, POST /agents/:id/heartbeat.
 - `docs/integrations/mesh-mcp-tools.mdx` covering: `mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`.
 
@@ -155,8 +166,8 @@ title: Relay
 description: Inter-agent messaging with subject-based pub/sub routing, delivery guarantees, and distributed tracing.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 <Callout type="info">
   Relay requires `DORKOS_RELAY_ENABLED=true` and is disabled by default.
@@ -219,6 +230,7 @@ npx changeset init
 ```
 
 Workflow per PR:
+
 1. `npx changeset` — describe what changed (patch/minor/major)
 2. PR review includes the changeset file
 3. On merge to main: `npx changeset version` bumps versions + updates CHANGELOG
@@ -244,6 +256,7 @@ If a future release removes the legacy (non-Relay) message path or changes exist
 The CLI `packages/cli/package.json` is reviewed against current best practices:
 
 **Strengths:**
+
 - `"type": "module"` — correct for ESM-first package
 - `"bin"` field is present with correct path
 - `"files"` array restricts what gets published (good — only `dist/`, `LICENSE`, `README.md`)
@@ -304,6 +317,7 @@ npx publint
 ```
 
 Key things publint will catch:
+
 - Binary files missing shebangs (the CLI entry needs `#!/usr/bin/env node`)
 - Export conditions in wrong order (`types` must be first, `default` must be last)
 - Referenced files that don't exist after build
@@ -369,11 +383,11 @@ The `docs/index.mdx` is a navigation hub with `<Cards>` for each section. There 
 Add a temporary `<Callout>` at the top of `docs/index.mdx` for new major features:
 
 ```mdx
-import { Callout } from 'fumadocs-ui/components/callout'
+import { Callout } from 'fumadocs-ui/components/callout';
 
 <Callout type="info" title="New in 0.4.0: Relay & Mesh">
-  DorkOS now supports **inter-agent messaging** (Relay) and **agent discovery** (Mesh).
-  [Learn about Relay →](/docs/relay) · [Learn about Mesh →](/docs/mesh)
+  DorkOS now supports **inter-agent messaging** (Relay) and **agent discovery** (Mesh). [Learn about
+  Relay →](/docs/relay) · [Learn about Mesh →](/docs/mesh)
 </Callout>
 ```
 
@@ -388,6 +402,7 @@ apps/web/content/blog/0-4-0-relay-mesh.mdx
 ```
 
 A good release notes post structure:
+
 1. **TL;DR / Summary** — 2-3 sentences, what shipped and why it matters
 2. **Feature spotlight: Relay** — what problem it solves, one code/config snippet
 3. **Feature spotlight: Mesh** — same treatment
@@ -431,6 +446,7 @@ npm run docs:export-api
 ```
 
 Then inspect the output at `docs/api/openapi.json`. Confirm:
+
 - All `/api/relay/*` endpoints appear with request/response schemas
 - All `/api/mesh/*` endpoints appear with request/response schemas
 - SSE stream endpoints (`GET /relay/stream`, `GET /mesh/...`) are documented

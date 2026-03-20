@@ -12,7 +12,7 @@ describe('OptionRow', () => {
     render(
       <OptionRow isSelected={false} control={<input type="radio" data-testid="radio" />}>
         <span>Option A</span>
-      </OptionRow>,
+      </OptionRow>
     );
     expect(screen.getByTestId('radio')).toBeDefined();
     expect(screen.getByText('Option A')).toBeDefined();
@@ -22,7 +22,7 @@ describe('OptionRow', () => {
     const { container } = render(
       <OptionRow isSelected={true} control={<input type="radio" />}>
         <span>Option A</span>
-      </OptionRow>,
+      </OptionRow>
     );
     const row = container.firstElementChild!;
     expect(row.className).toContain('bg-muted');
@@ -32,7 +32,7 @@ describe('OptionRow', () => {
     const { container } = render(
       <OptionRow isSelected={false} isFocused control={<input type="radio" />}>
         <span>Option A</span>
-      </OptionRow>,
+      </OptionRow>
     );
     const row = container.firstElementChild!;
     expect(row.className).toContain('ring-1');
@@ -42,7 +42,7 @@ describe('OptionRow', () => {
     const { container } = render(
       <OptionRow isSelected={true} data-selected={true} control={<input type="radio" />}>
         <span>Option A</span>
-      </OptionRow>,
+      </OptionRow>
     );
     const row = container.firstElementChild!;
     expect(row.getAttribute('data-selected')).toBe('true');

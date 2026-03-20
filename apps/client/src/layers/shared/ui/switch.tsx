@@ -31,8 +31,7 @@ const RESPONSIVE_THUMB =
   'sm:h-5 sm:w-5 sm:data-[state=checked]:translate-x-5 ' +
   'md:h-4 md:w-4 md:data-[state=checked]:translate-x-4';
 
-export interface SwitchProps
-  extends React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
+export interface SwitchProps extends React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
   size?: SwitchSize;
   /**
    * When true and no explicit size is given, automatically scales up on smaller
@@ -42,32 +41,28 @@ export interface SwitchProps
   responsive?: boolean;
 }
 
-const Switch = React.forwardRef<
-  React.ComponentRef<typeof SwitchPrimitive.Root>,
-  SwitchProps
->(({ className, size, responsive = true, ...props }, ref) => {
-  const isResponsive = responsive && size === undefined;
-  const resolvedSize = size ?? 'default';
+const Switch = React.forwardRef<React.ComponentRef<typeof SwitchPrimitive.Root>, SwitchProps>(
+  ({ className, size, responsive = true, ...props }, ref) => {
+    const isResponsive = responsive && size === undefined;
+    const resolvedSize = size ?? 'default';
 
-  return (
-    <SwitchPrimitive.Root
-      className={cn(
-        TRACK_BASE,
-        isResponsive ? RESPONSIVE_TRACK : TRACK_SIZES[resolvedSize],
-        className
-      )}
-      {...props}
-      ref={ref}
-    >
-      <SwitchPrimitive.Thumb
+    return (
+      <SwitchPrimitive.Root
         className={cn(
-          THUMB_BASE,
-          isResponsive ? RESPONSIVE_THUMB : THUMB_SIZES[resolvedSize]
+          TRACK_BASE,
+          isResponsive ? RESPONSIVE_TRACK : TRACK_SIZES[resolvedSize],
+          className
         )}
-      />
-    </SwitchPrimitive.Root>
-  );
-});
+        {...props}
+        ref={ref}
+      >
+        <SwitchPrimitive.Thumb
+          className={cn(THUMB_BASE, isResponsive ? RESPONSIVE_THUMB : THUMB_SIZES[resolvedSize])}
+        />
+      </SwitchPrimitive.Root>
+    );
+  }
+);
 Switch.displayName = SwitchPrimitive.Root.displayName;
 
 export { Switch };

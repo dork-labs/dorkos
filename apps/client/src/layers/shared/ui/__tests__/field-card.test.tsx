@@ -13,7 +13,7 @@ describe('FieldCard', () => {
     render(
       <FieldCard>
         <p>Card content</p>
-      </FieldCard>,
+      </FieldCard>
     );
     expect(screen.getByText('Card content')).toBeInTheDocument();
   });
@@ -22,7 +22,7 @@ describe('FieldCard', () => {
     const { container } = render(
       <FieldCard className="border-destructive/50">
         <p>Danger</p>
-      </FieldCard>,
+      </FieldCard>
     );
     expect(container.firstChild).toHaveClass('border-destructive/50');
   });
@@ -31,7 +31,7 @@ describe('FieldCard', () => {
     const { container } = render(
       <FieldCard>
         <p>Content</p>
-      </FieldCard>,
+      </FieldCard>
     );
     expect(container.firstChild).toHaveAttribute('data-slot', 'field-card');
   });
@@ -43,7 +43,7 @@ describe('FieldCardContent', () => {
       <FieldCardContent>
         <div>Item 1</div>
         <div>Item 2</div>
-      </FieldCardContent>,
+      </FieldCardContent>
     );
     expect(screen.getByText('Item 1')).toBeInTheDocument();
     expect(screen.getByText('Item 2')).toBeInTheDocument();
@@ -54,7 +54,7 @@ describe('FieldCardContent', () => {
     const { container } = render(
       <FieldCardContent>
         <div>Item</div>
-      </FieldCardContent>,
+      </FieldCardContent>
     );
     expect(container.firstChild).toHaveAttribute('data-slot', 'field-card-content');
   });
@@ -65,7 +65,7 @@ describe('CollapsibleFieldCard', () => {
     render(
       <CollapsibleFieldCard open={false} onOpenChange={vi.fn()} trigger="Chat Filter">
         <div>Content</div>
-      </CollapsibleFieldCard>,
+      </CollapsibleFieldCard>
     );
     expect(screen.getByText('Chat Filter')).toBeInTheDocument();
   });
@@ -79,7 +79,7 @@ describe('CollapsibleFieldCard', () => {
         badge={<span data-testid="badge">Modified</span>}
       >
         <div>Content</div>
-      </CollapsibleFieldCard>,
+      </CollapsibleFieldCard>
     );
     expect(screen.getByTestId('badge')).toBeInTheDocument();
   });
@@ -88,7 +88,7 @@ describe('CollapsibleFieldCard', () => {
     render(
       <CollapsibleFieldCard open={false} onOpenChange={vi.fn()} trigger="Section">
         <div>Hidden content</div>
-      </CollapsibleFieldCard>,
+      </CollapsibleFieldCard>
     );
     // Radix collapsible removes content from the DOM when closed
     expect(screen.queryByText('Hidden content')).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('CollapsibleFieldCard', () => {
     render(
       <CollapsibleFieldCard open={true} onOpenChange={vi.fn()} trigger="Section">
         <div>Visible content</div>
-      </CollapsibleFieldCard>,
+      </CollapsibleFieldCard>
     );
     expect(screen.getByText('Visible content')).toBeVisible();
   });
@@ -108,7 +108,7 @@ describe('CollapsibleFieldCard', () => {
     render(
       <CollapsibleFieldCard open={false} onOpenChange={onOpenChange} trigger="Section">
         <div>Content</div>
-      </CollapsibleFieldCard>,
+      </CollapsibleFieldCard>
     );
     fireEvent.click(screen.getByText('Section'));
     expect(onOpenChange).toHaveBeenCalledWith(true);
@@ -123,7 +123,7 @@ describe('CollapsibleFieldCard', () => {
         className="border-destructive"
       >
         <div>Content</div>
-      </CollapsibleFieldCard>,
+      </CollapsibleFieldCard>
     );
     const card = container.querySelector('[data-slot="collapsible-field-card"]');
     expect(card).toHaveClass('border-destructive');

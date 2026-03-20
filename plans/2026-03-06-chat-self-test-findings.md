@@ -1,6 +1,7 @@
 # Chat Self-Test Findings — 2026-03-06 (Run 2)
 
 ## Test Config
+
 - URL: `http://localhost:4241/?dir=/Users/doriancollier/Keep/temp/empty`
 - Session ID (URL/Agent): `9c99edf1-47eb-46c3-aa6f-73e2a409b12d`
 - Session ID (SDK/JSONL): `220131a7-b33e-48a0-bb1a-786a0f0e708f`
@@ -27,6 +28,7 @@ The relay SSE delivery pipeline fix (d62daa1) **significantly improved** the fre
 **Root cause:** Despite the four-layer fix (stable EventSource lifecycle, subscribe-first handshake, pending buffer, terminal `done` in finally), the `done` event still failed to reach the client. The EventSource was stable (no reconnection), and `stream_ready` was received before POST. The failure likely occurs in the relay message writing path — `session-broadcaster.ts:182-224` uses a write queue with drain handling, but there may be an edge case where the `done` event's SSE write succeeds on the server but the EventSource doesn't fire the corresponding listener on the client (possibly a browser EventSource buffering issue or event type mismatch).
 
 **Key files:**
+
 - `apps/server/src/services/session/session-broadcaster.ts:182-224` — relay message SSE writing
 - `packages/relay/src/adapters/claude-code-adapter.ts:480-490` — terminal done in finally
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts:217-252` — relay EventSource
@@ -42,13 +44,15 @@ The relay SSE delivery pipeline fix (d62daa1) **significantly improved** the fre
 **Expected:** All user messages should render as user bubbles.
 
 **Root cause:** `transcript-parser.ts:231-233` — the relay context filter:
+
 ```typescript
 if (text.startsWith('<relay_context>')) {
-  continue;  // Skips the ENTIRE message, including user content after </relay_context>
+  continue; // Skips the ENTIRE message, including user content after </relay_context>
 }
 ```
 
 When Relay is enabled, `ClaudeCodeAdapter.formatPromptWithContext()` (relay/adapters/claude-code-adapter.ts:755-785) wraps user messages as:
+
 ```
 <relay_context>
 Agent-ID: 9c99edf1-...
@@ -63,6 +67,7 @@ The parser skips the whole message because the string starts with `<relay_contex
 **Test gap:** `transcript-reader.test.ts:562-597` only tests pure relay context (no trailing user content).
 
 **Recommendation:** Fix the parser to strip `<relay_context>...</relay_context>` from the string and process the remaining content as the actual user message:
+
 ```typescript
 if (text.startsWith('<relay_context>')) {
   const closingTag = '</relay_context>';
@@ -102,6 +107,7 @@ if (text.startsWith('<relay_context>')) {
 Additionally, `sessions.ts:351` passes the Agent-ID (not SDK-Session-ID) to `registerClient()`, which could create duplicate watchers for the same JSONL file under different keys.
 
 **Key files:**
+
 - `apps/server/src/services/session/session-broadcaster.ts:83-101` — SSE limit enforcement
 - `apps/server/src/config/constants.ts:29-34` — `SSE.MAX_CLIENTS_PER_SESSION: 10`
 - `apps/server/src/routes/sessions.ts:351` — no Agent-ID → SDK-Session-ID translation for SSE
@@ -145,33 +151,33 @@ Additionally, `sessions.ts:351` passes the Agent-ID (not SDK-Session-ID) to `reg
 
 ## Message-by-Message Results
 
-| # | Message | Stream Time | Tokens | Freeze? | Notes |
-|---|---------|------------|--------|---------|-------|
-| 1 | Bubble sort | 13s | ~372 | No | Clean completion |
-| 2 | TypeScript types | 22s text, 44s+ stop button | ~357 | **YES** | `done` event not delivered |
-| 3 | HTML page | 2m+ (stopped manually) | ~318 | No (skill) | Agent triggered frontend-design skill |
-| 4 | TodoWrite tasks | ~8s | — | No | Tool call + text, clean |
-| 5 | 2+2 | 14s | ~3 | No | Clean completion |
+| #   | Message          | Stream Time                | Tokens | Freeze?    | Notes                                 |
+| --- | ---------------- | -------------------------- | ------ | ---------- | ------------------------------------- |
+| 1   | Bubble sort      | 13s                        | ~372   | No         | Clean completion                      |
+| 2   | TypeScript types | 22s text, 44s+ stop button | ~357   | **YES**    | `done` event not delivered            |
+| 3   | HTML page        | 2m+ (stopped manually)     | ~318   | No (skill) | Agent triggered frontend-design skill |
+| 4   | TodoWrite tasks  | ~8s                        | —      | No         | Tool call + text, clean               |
+| 5   | 2+2              | 14s                        | ~3     | No         | Clean completion                      |
 
 ## History Reload Results
 
-| Check | Result |
-|-------|--------|
-| Message count | **FAIL** — 6 DOM elements vs expected 10+ |
-| User messages | **FAIL** — All 5 user messages missing |
-| Code blocks | PASS — Properly rendered |
+| Check           | Result                                             |
+| --------------- | -------------------------------------------------- |
+| Message count   | **FAIL** — 6 DOM elements vs expected 10+          |
+| User messages   | **FAIL** — All 5 user messages missing             |
+| Code blocks     | PASS — Properly rendered                           |
 | Tool call cards | **FAIL** — Skill tool_result leaks as user message |
-| Task list | PASS — Tasks visible with correct status |
-| Model display | MINOR — Shows full model ID |
-| Scroll position | PASS — Near bottom |
+| Task list       | PASS — Tasks visible with correct status           |
+| Model display   | MINOR — Shows full model ID                        |
+| Scroll position | PASS — Near bottom                                 |
 
 ## Comparison with Run 1
 
-| Issue | Run 1 (pre-fix) | Run 2 (post-fix) | Status |
-|-------|-----------------|-------------------|--------|
-| SSE freeze rate | 3/5 messages (60%) | 1/5 messages (20%) | **Improved** |
-| Freeze duration | 60-80+ seconds | 25+ seconds | **Improved** |
-| User messages in history | Not tested | All missing | **New finding** |
-| Tool result leak | Not tested | Confirmed | **New finding** |
-| 503 errors | Not tested | ~30+ during session | **New finding** |
-| Response truncation | Confirmed | Not observed | **Fixed** |
+| Issue                    | Run 1 (pre-fix)    | Run 2 (post-fix)    | Status          |
+| ------------------------ | ------------------ | ------------------- | --------------- |
+| SSE freeze rate          | 3/5 messages (60%) | 1/5 messages (20%)  | **Improved**    |
+| Freeze duration          | 60-80+ seconds     | 25+ seconds         | **Improved**    |
+| User messages in history | Not tested         | All missing         | **New finding** |
+| Tool result leak         | Not tested         | Confirmed           | **New finding** |
+| 503 errors               | Not tested         | ~30+ during session | **New finding** |
+| Response truncation      | Confirmed          | Not observed        | **Fixed**       |

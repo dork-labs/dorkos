@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { wrapSdkQuery, sdkSimpleText, sdkToolCall, sdkTodoWrite, sdkError, sdkTaskStarted, sdkTaskProgress, sdkTaskNotification } from './sdk-scenarios.js';
+import {
+  wrapSdkQuery,
+  sdkSimpleText,
+  sdkToolCall,
+  sdkTodoWrite,
+  sdkError,
+  sdkTaskStarted,
+  sdkTaskProgress,
+  sdkTaskNotification,
+} from './sdk-scenarios.js';
 
 describe('sdk-scenarios.ts', () => {
   describe('wrapSdkQuery', () => {
@@ -30,7 +39,7 @@ describe('sdk-scenarios.ts', () => {
       const delta = messages.find(
         (m) =>
           m.type === 'stream_event' &&
-          (m as { event?: { delta?: { type?: string } } }).event?.delta?.type === 'text_delta',
+          (m as { event?: { delta?: { type?: string } } }).event?.delta?.type === 'text_delta'
       );
       expect(delta).toBeDefined();
       expect(messages.at(-1)?.type).toBe('result');
@@ -43,10 +52,10 @@ describe('sdk-scenarios.ts', () => {
       const delta = messages.find(
         (m) =>
           m.type === 'stream_event' &&
-          (m as { event?: { delta?: { type?: string } } }).event?.delta?.type === 'text_delta',
+          (m as { event?: { delta?: { type?: string } } }).event?.delta?.type === 'text_delta'
       );
       expect(
-        (delta as { event?: { delta?: { text?: string } } } | undefined)?.event?.delta?.text,
+        (delta as { event?: { delta?: { text?: string } } } | undefined)?.event?.delta?.text
       ).toBe('Hello world');
     });
   });
@@ -55,10 +64,13 @@ describe('sdk-scenarios.ts', () => {
     it('yields init → tool_use start/delta/stop → text → result', async () => {
       // Purpose: verify the tool call sequence matches sdk-event-mapper.ts expectations.
       const messages = [];
-      for await (const msg of sdkToolCall('Bash', { command: 'echo hi' }, 'done')) messages.push(msg);
+      for await (const msg of sdkToolCall('Bash', { command: 'echo hi' }, 'done'))
+        messages.push(msg);
       const types = messages.map((m) => {
         if (m.type !== 'stream_event') return m.type;
-        const sm = m as { event?: { type?: string; delta?: { type?: string }; content_block?: { type?: string } } };
+        const sm = m as {
+          event?: { type?: string; delta?: { type?: string }; content_block?: { type?: string } };
+        };
         return `${sm.event?.type}/${sm.event?.delta?.type ?? sm.event?.content_block?.type ?? ''}`;
       });
       expect(types).toContain('content_block_start/tool_use');
@@ -72,11 +84,11 @@ describe('sdk-scenarios.ts', () => {
       const start = messages.find(
         (m) =>
           m.type === 'stream_event' &&
-          (m as { event?: { type?: string } }).event?.type === 'content_block_start',
+          (m as { event?: { type?: string } }).event?.type === 'content_block_start'
       );
       expect(
-        (start as { event?: { content_block?: { name?: string } } } | undefined)?.event?.content_block
-          ?.name,
+        (start as { event?: { content_block?: { name?: string } } } | undefined)?.event
+          ?.content_block?.name
       ).toBe('Read');
     });
   });

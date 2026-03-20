@@ -77,6 +77,7 @@ UI consolidation phase — unified discovery UX across onboarding and mesh panel
 - Task #14: [P4] Remove unused useDiscoverAgents hook, clean up test references
 
 **Files deleted:**
+
 - `apps/client/src/layers/features/onboarding/ui/AgentCard.tsx` — replaced by shared CandidateCard
 - `apps/client/src/layers/features/onboarding/lib/use-spotlight.ts` — only used by AgentCard
 - `apps/client/src/layers/features/onboarding/__tests__/AgentCard.test.tsx` — tests for deleted component

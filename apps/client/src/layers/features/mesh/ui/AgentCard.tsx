@@ -21,12 +21,12 @@ export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="shrink-0 rounded p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="hover:bg-muted focus-visible:ring-ring shrink-0 rounded p-0.5 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
             aria-label={expanded ? 'Collapse details' : 'Expand details'}
           >
-            <Chevron className="size-4 text-muted-foreground" />
+            <Chevron className="text-muted-foreground size-4" />
           </button>
-          <span className="truncate text-sm font-medium text-foreground">{agent.name}</span>
+          <span className="text-foreground truncate text-sm font-medium">{agent.name}</span>
           <Badge variant="secondary" className="text-xs">
             {agent.runtime}
           </Badge>
@@ -34,13 +34,13 @@ export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
         <div className="ml-3 flex shrink-0 items-center gap-1.5">
           <button
             onClick={() => onEdit(agent)}
-            className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Edit
           </button>
           <button
             onClick={() => onUnregister(agent.id)}
-            className="rounded-md bg-red-600/10 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-600/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:text-red-400"
+            className="focus-visible:ring-ring rounded-md bg-red-600/10 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-600/20 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:text-red-400"
           >
             Unregister
           </button>
@@ -58,14 +58,16 @@ export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
       )}
 
       {expanded && (
-        <div className="mt-2 ml-7 space-y-1 text-xs text-muted-foreground">
+        <div className="text-muted-foreground mt-2 ml-7 space-y-1 text-xs">
           {agent.description && <div>{agent.description}</div>}
           <div>
-            Registered {new Date(agent.registeredAt).toLocaleDateString()} by{' '}
-            {agent.registeredBy}
+            Registered {new Date(agent.registeredAt).toLocaleDateString()} by {agent.registeredBy}
           </div>
           <div>
-            Mode: {agent.behavior.responseMode === 'always' ? 'Always respond' : agent.behavior.responseMode}
+            Mode:{' '}
+            {agent.behavior.responseMode === 'always'
+              ? 'Always respond'
+              : agent.behavior.responseMode}
             {agent.behavior.escalationThreshold !== undefined &&
               ` | Escalation threshold: ${agent.behavior.escalationThreshold}`}
           </div>

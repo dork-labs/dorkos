@@ -2,13 +2,7 @@ import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef }
 import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
-import {
-  Kbd,
-  Button,
-  RadioGroup,
-  RadioGroupItem,
-  Checkbox,
-} from '@/layers/shared/ui';
+import { Kbd, Button, RadioGroup, RadioGroupItem, Checkbox } from '@/layers/shared/ui';
 import { OptionRow, CompactResultRow, InteractiveCard } from './primitives';
 import type { QuestionItem } from '@dorkos/shared/types';
 
@@ -286,7 +280,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             <label htmlFor={optionId} className="flex cursor-pointer items-center">
               <span className="text-sm font-medium">Other</span>
               {oIdx < 9 && (
-                <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+                <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">{oIdx + 1}</Kbd>
               )}
             </label>
             <AnimatePresence initial={false}>
@@ -304,7 +298,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     value={otherText[qIdx] || ''}
                     disabled={submitting}
                     onChange={(e) => handleOtherText(qIdx, e.target.value)}
-                    className="bg-background mt-1 w-full resize-y rounded border border-border px-2 py-1 text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                    className="bg-background border-border focus:ring-ring mt-1 w-full resize-y rounded border px-2 py-1 text-sm focus:ring-1 focus:outline-none"
                     // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
                     autoFocus
                   />
@@ -338,7 +332,9 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     isSelected={isSelected}
                     isFocused={isActive && focusedOptionIndex === oIdx}
                     data-selected={isSelected}
-                    control={<RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />}
+                    control={
+                      <RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />
+                    }
                   >
                     <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
                       <span className="text-sm font-medium">{opt.label}</span>
@@ -349,7 +345,9 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                         </span>
                       )}
                       {oIdx < 9 && (
-                        <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+                        <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">
+                          {oIdx + 1}
+                        </Kbd>
                       )}
                     </label>
                   </OptionRow>
@@ -375,9 +373,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                         checked={isSelected}
                         id={optionId}
                         disabled={submitting}
-                        onCheckedChange={(checked) =>
-                          handleMultiSelect(qIdx, opt.label, !!checked)
-                        }
+                        onCheckedChange={(checked) => handleMultiSelect(qIdx, opt.label, !!checked)}
                       />
                     }
                   >
@@ -390,7 +386,9 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                         </span>
                       )}
                       {oIdx < 9 && (
-                        <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+                        <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">
+                          {oIdx + 1}
+                        </Kbd>
                       )}
                     </label>
                   </OptionRow>
@@ -426,7 +424,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       return (
         <CompactResultRow
           data-testid="question-prompt-submitted"
-          icon={<Check className="size-(--size-icon-sm) shrink-0 text-status-success" />}
+          icon={<Check className="text-status-success size-(--size-icon-sm) shrink-0" />}
           label={<span className="truncate">{summaryText}</span>}
         />
       );
@@ -457,7 +455,8 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             {/* Step indicator + Back/Next buttons */}
             <div className="mb-2 flex items-center justify-between">
               <span className="text-muted-foreground text-xs">
-                {questions[Number(activeTab)].header ?? `Question ${Number(activeTab) + 1} of ${questions.length}`}
+                {questions[Number(activeTab)].header ??
+                  `Question ${Number(activeTab) + 1} of ${questions.length}`}
               </span>
               <div className="flex items-center gap-1.5">
                 <Button

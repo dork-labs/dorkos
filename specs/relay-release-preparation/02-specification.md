@@ -65,14 +65,14 @@ The CHANGELOG `[Unreleased]` section has already been backfilled and is up to da
 
 Update statuses for implemented specs:
 
-| Spec # | Slug | Current Status | New Status |
-|--------|------|----------------|------------|
-| 51 | relay-server-client-integration | ideation | implemented |
-| 53 | relay-external-adapters | specified | implemented |
-| 54 | mesh-core-library | specified | implemented |
-| 56 | mesh-server-client-integration | specified | implemented |
-| 58 | mesh-network-topology | specified | implemented |
-| 59 | mesh-observability-lifecycle | specified | implemented |
+| Spec # | Slug                            | Current Status | New Status  |
+| ------ | ------------------------------- | -------------- | ----------- |
+| 51     | relay-server-client-integration | ideation       | implemented |
+| 53     | relay-external-adapters         | specified      | implemented |
+| 54     | mesh-core-library               | specified      | implemented |
+| 56     | mesh-server-client-integration  | specified      | implemented |
+| 58     | mesh-network-topology           | specified      | implemented |
+| 59     | mesh-observability-lifecycle    | specified      | implemented |
 
 Specs 50 and 57 are already `implemented`. Spec 52 (relay-advanced-reliability) stays `specified` — it's not fully implemented.
 
@@ -81,6 +81,7 @@ Specs 50 and 57 are already `implemented`. Spec 52 (relay-advanced-reliability) 
 **File:** `apps/web/src/layers/features/marketing/lib/modules.ts`
 
 Change the `status` field for three modules:
+
 - `pulse`: `'coming-soon'` → `'available'` (shipped in 0.3.0)
 - `relay`: `'coming-soon'` → `'available'`
 - `mesh`: `'coming-soon'` → `'available'`
@@ -92,12 +93,14 @@ Change the `status` field for three modules:
 **File:** `docs/concepts/relay.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Relay
 description: How the subject-based pub/sub message bus works under the hood.
 ```
 
 Sections:
+
 1. **Architecture Overview** — RelayCore as in-process message router, subject-based routing with wildcards, subscriber registry with pattern matching
 2. **Subject Hierarchy** — `relay.agent.{sessionId}`, `relay.human.console.{clientId}`, `relay.system.pulse.{scheduleId}`, `relay.external.{adapter}.{channel}`
 3. **Message Envelopes** — Envelope schema (from relay-schemas.ts), budget fields (maxHops, maxReplies, ttlMs), metadata (traceId, parentId, timestamps)
@@ -112,12 +115,14 @@ Sections:
 **File:** `docs/concepts/mesh.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Mesh
 description: Agent discovery, network topology, and coordination in DorkOS.
 ```
 
 Sections:
+
 1. **Architecture Overview** — MeshCore as agent registry and discovery engine, in-memory registry with SQLite persistence
 2. **Agent Manifests** — Schema (from mesh-schemas.ts), required fields (name, capabilities), optional fields (subjects, healthEndpoint, metadata)
 3. **Discovery Flow** — POST /discover → candidates presented → accept/deny → registry or denial list
@@ -146,12 +151,14 @@ Add `"relay"` and `"mesh"` to the pages array:
 **File:** `docs/guides/relay-messaging.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Relay Messaging
 description: Send messages between agents, humans, and external systems using subject-based pub/sub.
 ```
 
 Sections:
+
 1. **What is Relay?** — Brief intro, link to concepts/relay for deep dive
 2. **Enabling Relay** — Set `DORKOS_RELAY_ENABLED=true`, restart, Relay tab appears
 3. **Sending Messages** — Via RelayPanel UI, REST API (POST /api/relay/messages), MCP tools (relay_send, relay_inbox)
@@ -165,12 +172,14 @@ Sections:
 **File:** `docs/guides/agent-discovery.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Agent Discovery
 description: Discover, register, and coordinate agents across your network with Mesh.
 ```
 
 Sections:
+
 1. **What is Mesh?** — Brief intro, link to concepts/mesh for deep dive
 2. **Enabling Mesh** — Set `DORKOS_MESH_ENABLED=true`, restart, Mesh tab appears
 3. **Discovering Agents** — POST /api/mesh/discover, CandidateCard UI, accept/deny flow
@@ -186,12 +195,14 @@ Sections:
 **File:** `docs/guides/relay-observability.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Relay Observability
 description: Monitor message delivery, trace failures, and understand Relay metrics.
 ```
 
 Sections:
+
 1. **Message Tracing** — How traces work, traceId propagation, span model
 2. **Delivery Metrics Dashboard** — Reading the metrics UI, key indicators
 3. **Debugging Failed Deliveries** — Dead letter queue, common failure modes, resolution steps
@@ -202,12 +213,14 @@ Sections:
 **File:** `docs/guides/pulse-scheduler.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Pulse Scheduler
 description: Autonomous cron-based agent jobs that work while you sleep.
 ```
 
 Sections:
+
 1. **What is Pulse?** — Cron scheduling for AI agents, autonomous execution
 2. **Enabling Pulse** — `DORKOS_PULSE_ENABLED=true` (default), Pulse tab in sidebar
 3. **Creating Schedules** — Via PulsePanel UI, REST API, MCP tools
@@ -221,12 +234,14 @@ Sections:
 **File:** `docs/guides/building-relay-adapters.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Building Relay Adapters
 description: Create custom adapters to bridge external channels into the Relay message bus.
 ```
 
 Sections:
+
 1. **What is an Adapter?** — Bridges external systems into Relay's pub/sub
 2. **Adapter Interface** — RelayAdapter type, required methods (id, name, subjectPatterns, start, stop, deliver)
 3. **Built-in Adapters Reference** — Claude Code, Telegram, Webhook
@@ -242,12 +257,14 @@ Sections:
 **File:** `docs/guides/agent-coordination.mdx`
 
 Frontmatter:
+
 ```yaml
 title: Agent Coordination Patterns
 description: Best practices for multi-agent workflows using Relay and Mesh.
 ```
 
 Sections:
+
 1. **Overview** — Why coordinate agents, when to use patterns
 2. **Supervisor-Worker** — One agent dispatches tasks, collects results
 3. **Peer-to-Peer** — Agents communicate directly via subjects
@@ -289,18 +306,30 @@ Add a new "Relay Events" section after the existing "Control Events" TypeTable:
 
 When `DORKOS_RELAY_ENABLED` is true, the SSE stream includes additional event types:
 
-<TypeTable type={{
-  "relay_message": { type: "{ streamEvent: StreamEvent, messageId: string }", description: "Relay response chunk containing a nested StreamEvent from the message bus" },
-  "relay_receipt": { type: "{ messageId: string, traceId: string }", description: "Delivery confirmation for a Relay-routed message" },
-  "message_delivered": { type: "{ messageId: string, subject: string }", description: "Message delivery notification from the Relay transport" },
-}} />
+<TypeTable
+  type={{
+    relay_message: {
+      type: '{ streamEvent: StreamEvent, messageId: string }',
+      description: 'Relay response chunk containing a nested StreamEvent from the message bus',
+    },
+    relay_receipt: {
+      type: '{ messageId: string, traceId: string }',
+      description: 'Delivery confirmation for a Relay-routed message',
+    },
+    message_delivered: {
+      type: '{ messageId: string, subject: string }',
+      description: 'Message delivery notification from the Relay transport',
+    },
+  }}
+/>
 ```
 
 Also add a note in the Session Sync Protocol section:
 
 ```mdx
 <Callout type="info">
-  When Relay is enabled, the SSE stream also carries `relay_message`, `relay_receipt`, and `message_delivered` events alongside standard sync events.
+  When Relay is enabled, the SSE stream also carries `relay_message`, `relay_receipt`, and
+  `message_delivered` events alongside standard sync events.
 </Callout>
 ```
 
@@ -311,6 +340,7 @@ Also add a note in the Session Sync Protocol section:
 Add Relay and Mesh cards to existing sections:
 
 **In the "Guides" section**, add after the existing cards:
+
 ```mdx
 <Card title="Relay Messaging" href="/docs/guides/relay-messaging">
   Send messages between agents via subject-based pub/sub.
@@ -324,6 +354,7 @@ Add Relay and Mesh cards to existing sections:
 ```
 
 **In the "Concepts" section**, add:
+
 ```mdx
 <Card title="Relay" href="/docs/concepts/relay">
   The subject-based pub/sub message bus architecture.
@@ -334,6 +365,7 @@ Add Relay and Mesh cards to existing sections:
 ```
 
 **In the "Integrations" section**, add:
+
 ```mdx
 <Card title="Building Relay Adapters" href="/docs/guides/building-relay-adapters">
   Create custom adapters for external channels.
@@ -347,11 +379,13 @@ Add Relay and Mesh cards to existing sections:
 Add new sections for Relay and Mesh environment variables:
 
 **Relay Configuration:**
+
 - `DORKOS_RELAY_ENABLED` — Enable/disable Relay message bus (default: false)
 - Adapter configuration in `~/.dork/config.json`
 - Subject prefix conventions
 
 **Mesh Configuration:**
+
 - `DORKOS_MESH_ENABLED` — Enable/disable Mesh agent discovery (default: false)
 - Agent manifest format
 - Health check intervals
@@ -363,22 +397,24 @@ Add new sections for Relay and Mesh environment variables:
 **File:** `CONTRIBUTING.md`
 
 Updates:
+
 1. Change "four apps" to "five apps" in the intro paragraph
 2. Add `apps/roadmap` row to the monorepo structure table:
    ```
    | `apps/roadmap` | `@dorkos/roadmap` | Roadmap manager (Express + React 19 SPA) |
    ```
 3. Add a "Subsystems" section after the monorepo table:
+
    ```markdown
    ### Subsystems
 
    DorkOS includes three optional subsystems that extend the core platform:
 
-   | Subsystem | Enable | Description |
-   |-----------|--------|-------------|
-   | Pulse | `DORKOS_PULSE_ENABLED=true` (default) | Cron-based agent scheduling |
-   | Relay | `DORKOS_RELAY_ENABLED=true` | Inter-agent message bus |
-   | Mesh | `DORKOS_MESH_ENABLED=true` | Agent discovery and registry |
+   | Subsystem | Enable                                | Description                  |
+   | --------- | ------------------------------------- | ---------------------------- |
+   | Pulse     | `DORKOS_PULSE_ENABLED=true` (default) | Cron-based agent scheduling  |
+   | Relay     | `DORKOS_RELAY_ENABLED=true`           | Inter-agent message bus      |
+   | Mesh      | `DORKOS_MESH_ENABLED=true`            | Agent discovery and registry |
 
    Server-side services live in `apps/server/src/services/`. Shared schemas in `packages/shared/src/` (`relay-schemas.ts`, `mesh-schemas.ts`). Client UI in `apps/client/src/layers/features/`.
    ```
@@ -388,6 +424,7 @@ Updates:
 **File:** `contributing/architecture.md`
 
 Add or expand these sections:
+
 1. **Relay Subsystem** — Expand existing brief mention with:
    - RelayCore architecture and data flow
    - Service map: `relay-state.ts`, `trace-store.ts`, `adapter-manager.ts`
@@ -405,7 +442,9 @@ Add or expand these sections:
 **File:** `README.md`
 
 Updates:
+
 1. Change the "What is DorkOS?" paragraph to mention multi-agent coordination:
+
    ```
    DorkOS gives Claude Code a browser-based chat UI with tool approval flows, slash command discovery, cross-client session synchronization, inter-agent messaging via Relay, and agent discovery via Mesh.
    ```
@@ -422,6 +461,7 @@ Updates:
 **File:** `packages/cli/package.json`
 
 Add to the `keywords` array:
+
 ```json
 "relay", "mesh", "agent-mesh", "pub-sub", "agent-discovery", "message-bus", "scheduler", "pulse"
 ```
@@ -433,6 +473,7 @@ Add to the `keywords` array:
 Use placeholder `[VERSION]` and `[DATE]` — filled in during `/system:release`.
 
 Frontmatter:
+
 ```yaml
 title: DorkOS [VERSION]
 description: Relay message bus and Mesh agent discovery bring multi-agent coordination to DorkOS.
@@ -443,6 +484,7 @@ tags: [release, relay, mesh, messaging, agent-discovery, topology]
 ```
 
 Content structure:
+
 1. **Intro** — DorkOS [VERSION] introduces Relay and Mesh, transforming DorkOS into a multi-agent coordination platform
 2. **Relay Message Bus** — Subject-based pub/sub, built-in adapters (Telegram, Webhook, Claude Code), message tracing, delivery metrics
 3. **Mesh Agent Discovery** — Agent registry, network topology visualization, live health data, access control
@@ -453,6 +495,7 @@ Content structure:
 ### 6.12 API Documentation Verification
 
 Run `npm run docs:export-api` to regenerate the OpenAPI spec. Verify:
+
 - All 14+ Relay endpoints appear (messages, endpoints, inbox, dead-letters, metrics, stream, traces)
 - All 8+ Mesh endpoints appear (discover, agents CRUD, deny, denied, status, health, heartbeat)
 - Request/response schemas match Zod definitions
@@ -462,6 +505,7 @@ If endpoints are missing, check that routes register with `openapi-registry.ts`.
 ## 7. User Experience
 
 After implementation:
+
 - New users visiting docs find Relay/Mesh guides in the sidebar navigation
 - The docs landing page surfaces Relay, Mesh, and Pulse as primary features
 - The marketing homepage shows all three subsystems as "available"
@@ -494,16 +538,19 @@ This spec IS the documentation effort. All files created/modified are documentat
 ## 12. Implementation Phases
 
 ### Phase 1: Quick Wins (Spec Cleanup + Homepage)
+
 - Update spec manifest statuses (6 specs)
 - Update homepage module statuses (3 modules)
 - Update CLI package keywords
 
 ### Phase 2: Concept Pages
+
 - Write `docs/concepts/relay.mdx`
 - Write `docs/concepts/mesh.mdx`
 - Update `docs/concepts/meta.json`
 
 ### Phase 3: User Guides
+
 - Write `docs/guides/relay-messaging.mdx`
 - Write `docs/guides/agent-discovery.mdx`
 - Write `docs/guides/pulse-scheduler.mdx`
@@ -513,17 +560,20 @@ This spec IS the documentation effort. All files created/modified are documentat
 - Update `docs/guides/meta.json`
 
 ### Phase 4: Integration & Reference Updates
+
 - Update `docs/integrations/sse-protocol.mdx` with Relay events
 - Update `docs/index.mdx` landing page
 - Update `docs/getting-started/configuration.mdx`
 - Verify API docs: run `npm run docs:export-api`
 
 ### Phase 5: Contributing & README
+
 - Update `CONTRIBUTING.md`
 - Update `contributing/architecture.md`
 - Update `README.md`
 
 ### Phase 6: Blog Post
+
 - Write `blog/dorkos-[VERSION].mdx` draft
 
 ## 13. Open Questions

@@ -43,6 +43,7 @@ The problem: during streaming, the server history doesn't yet contain the optimi
 ### Bug 2: Optimistic State Timing Gap (P1)
 
 In `use-session-status.ts`, the `updateSession` callback:
+
 1. Sets `localModel` optimistically (line 80)
 2. PATCHes the server (line 84)
 3. Updates TanStack Query cache via `setQueryData` (line 85)
@@ -129,6 +130,7 @@ useEffect(() => {
 ```
 
 **Why this works:**
+
 - The `isStreaming` dependency already exists in the effect (line 225), so when streaming transitions to idle, the effect re-runs and seeds normally
 - The existing staleness detector (lines 227-250) handles the edge case where a `done` event is lost — it transitions status to idle, which triggers the seed
 - Matches the existing guard philosophy at line 200 (`statusRef.current !== 'streaming'`)
@@ -164,10 +166,10 @@ const updateSession = useCallback(
 
     try {
       const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
-      queryClient.setQueryData(
-        ['session', sessionId, selectedCwd],
-        (old: Session | undefined) => ({ ...old, ...updated })
-      );
+      queryClient.setQueryData(['session', sessionId, selectedCwd], (old: Session | undefined) => ({
+        ...old,
+        ...updated,
+      }));
       // Clear optimistic overrides — server data is now authoritative
       if (opts.model) setLocalModel(null);
       if (opts.permissionMode) setLocalPermissionMode(null);
@@ -192,10 +194,10 @@ const updateSession = useCallback(
 
     try {
       const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
-      queryClient.setQueryData(
-        ['session', sessionId, selectedCwd],
-        (old: Session | undefined) => ({ ...old, ...updated })
-      );
+      queryClient.setQueryData(['session', sessionId, selectedCwd], (old: Session | undefined) => ({
+        ...old,
+        ...updated,
+      }));
       // Optimistic state cleared by convergence effect below, not here.
       // This eliminates the render gap between setQueryData and useQuery re-render.
       return updated;
@@ -221,6 +223,7 @@ useEffect(() => {
 ```
 
 **Why this works:**
+
 - `setQueryData` updates the cache synchronously, but the `useQuery` subscriber (`session`) re-renders on the next React commit
 - The convergence effect fires after that commit — `session?.model` now holds the new value
 - Only when `session?.model === localModel` does it clear the optimistic override
@@ -230,25 +233,26 @@ useEffect(() => {
   - After convergence: `session?.model` (authoritative)
 
 **Edge case — server normalizes model ID differently:**
+
 - If the server returns a different string (e.g., normalizes version suffix), convergence never fires
 - The error/catch path already clears optimistic state as a safety net
 - In practice, the server returns the exact model ID sent in the PATCH request
 
 ### Files Modified
 
-| File | Change | Lines Affected |
-|------|--------|----------------|
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Add streaming guard to seed effect | ~211-214 (3 lines added) |
+| File                                                                  | Change                                 | Lines Affected              |
+| --------------------------------------------------------------------- | -------------------------------------- | --------------------------- |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`      | Add streaming guard to seed effect     | ~211-214 (3 lines added)    |
 | `apps/client/src/layers/entities/session/model/use-session-status.ts` | Convergence effect, remove eager clear | ~77-105 (rewrite ~15 lines) |
 
 ### Files NOT Modified
 
-| File | Reason |
-|------|--------|
-| `ModelItem.tsx` | RadioGroup value/item matching works correctly — bug was in the value source |
-| `StatusLine.tsx` | Props pass-through works correctly — inherits fix from use-session-status |
-| `use-message-queue.ts` | Queue works correctly per ADR-0104 |
-| `responsive-dropdown-menu.tsx` | Radix wrapper works correctly |
+| File                           | Reason                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| `ModelItem.tsx`                | RadioGroup value/item matching works correctly — bug was in the value source |
+| `StatusLine.tsx`               | Props pass-through works correctly — inherits fix from use-session-status    |
+| `use-message-queue.ts`         | Queue works correctly per ADR-0104                                           |
+| `responsive-dropdown-menu.tsx` | Radix wrapper works correctly                                                |
 
 ---
 
@@ -275,18 +279,16 @@ describe('history seeding during streaming', () => {
   it('does not overwrite optimistic messages when historySeededRef resets mid-stream', async () => {
     // Setup: relay enabled, no initial messages
     const transport = createMockTransport({
-      getMessages: vi.fn()
+      getMessages: vi
+        .fn()
         .mockResolvedValueOnce({ messages: [] }) // initial fetch
-        .mockResolvedValueOnce({ messages: [
-          { id: 'msg-1', role: 'user', content: 'hello' }
-        ] }), // refetch after sessionId change
+        .mockResolvedValueOnce({ messages: [{ id: 'msg-1', role: 'user', content: 'hello' }] }), // refetch after sessionId change
       sendMessageRelay: vi.fn().mockResolvedValue({ messageId: 'relay-1' }),
     });
 
-    const { result } = renderHook(
-      () => useChatSession({ sessionId: null, relayEnabled: true }),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useChatSession({ sessionId: null, relayEnabled: true }), {
+      wrapper: createWrapper(transport),
+    });
 
     // User sends message → sessionId changes → streaming starts
     // Optimistic user message should be in state
@@ -440,13 +442,13 @@ describe('useSessionStatus', () => {
 
 ### Test Coverage Matrix
 
-| Scenario | Test Location | Type |
-|----------|--------------|------|
-| Seed deferred during streaming | use-chat-session-relay.test.ts | Unit (hook) |
-| Seed fires after streaming completes | use-chat-session-relay.test.ts | Unit (hook) |
-| Optimistic model held through PATCH | use-session-status.test.ts (new) | Unit (hook) |
-| Optimistic model reverted on error | use-session-status.test.ts (new) | Unit (hook) |
-| Permission mode convergence | use-session-status.test.ts (new) | Unit (hook) |
+| Scenario                             | Test Location                    | Type        |
+| ------------------------------------ | -------------------------------- | ----------- |
+| Seed deferred during streaming       | use-chat-session-relay.test.ts   | Unit (hook) |
+| Seed fires after streaming completes | use-chat-session-relay.test.ts   | Unit (hook) |
+| Optimistic model held through PATCH  | use-session-status.test.ts (new) | Unit (hook) |
+| Optimistic model reverted on error   | use-session-status.test.ts (new) | Unit (hook) |
+| Permission mode convergence          | use-session-status.test.ts (new) | Unit (hook) |
 
 ---
 

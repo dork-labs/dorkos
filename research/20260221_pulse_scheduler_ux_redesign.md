@@ -1,5 +1,5 @@
 ---
-title: "Pulse Scheduler UI/UX Redesign Research"
+title: 'Pulse Scheduler UI/UX Redesign Research'
 date: 2026-02-21
 type: external-best-practices
 status: active
@@ -41,6 +41,7 @@ All three tiers update the same underlying cron expression state, so switching b
 ### 2. Run History and Activity Feed Patterns
 
 GitHub Actions and CircleCI converge on a **compact list** pattern for run history:
+
 - Status icon leftmost (colored dot or check/X icon)
 - Trigger type (scheduled / manual)
 - Timestamp (relative: "2 hours ago", not absolute)
@@ -48,6 +49,7 @@ GitHub Actions and CircleCI converge on a **compact list** pattern for run histo
 - Click-row to navigate to the session (Pulse already does this via `setActiveSession`)
 
 The current `RunHistoryPanel` grid layout is structurally correct. The main gaps are:
+
 - Unicode character entity icons (`&#9679;`, `&#10003;`, `&#10007;`) instead of Lucide icons
 - No skeleton loading state — it shows "Loading runs..." as plain text
 - No animation on row expansion
@@ -59,6 +61,7 @@ The current `RunHistoryPanel` grid layout is structurally correct. The main gaps
 Smashing Magazine's 2024 "Hidden vs. Disabled" research establishes the decision rule cleanly: **disable if the user might ever be able to enable the feature; hide if it is permanently inaccessible**.
 
 For Pulse, the feature can be enabled via the `--pulse` CLI flag or the config file — so it should **always be visible in the sidebar/nav**, never hidden. When disabled, the pattern is:
+
 - Show the nav item at reduced opacity
 - On click, show a tooltip or inline callout: "Pulse is disabled. Start DorkOS with --pulse to enable it."
 - The Pulse panel itself should render an empty state explaining how to enable — not an error, not a spinner
@@ -68,6 +71,7 @@ The AWS Cloudscape Design System articulates this succinctly: "Use one sentence 
 ### 4. Timezone Selection
 
 The Vitaly Friedman (Smart Interface Design Patterns) research and NN/Group both agree:
+
 - A native `<select>` with 400+ options is hostile UX — confirmed by the current implementation
 - The correct pattern is a **searchable combobox** (shadcn/ui's `<Combobox>` or `<Command>` palette pattern)
 - Search should support: city name, country name, timezone abbreviation (CEST, PST), and UTC offset
@@ -82,17 +86,17 @@ The current implementation uses `Intl.supportedValuesOf('timeZone')` to get time
 
 Based on crontab.guru's most-used examples, GitHub Actions documentation, and production scheduler tools, the canonical preset list for an AI agent scheduler is:
 
-| Label | Cron | Use case |
-|---|---|---|
-| Every 5 minutes | `*/5 * * * *` | Health checks, polling |
-| Every 15 minutes | `*/15 * * * *` | Frequent syncs |
-| Every hour | `0 * * * *` | Periodic tasks |
-| Every 6 hours | `0 */6 * * *` | Semi-frequent digests |
-| Daily at midnight | `0 0 * * *` | Nightly jobs |
-| Daily at 9am | `0 9 * * *` | Business hours kickoff |
-| Weekdays at 9am | `0 9 * * 1-5` | Work-day tasks |
-| Weekly (Monday) | `0 9 * * 1` | Weekly reports |
-| Monthly (1st) | `0 9 1 * *` | Monthly digests |
+| Label             | Cron           | Use case               |
+| ----------------- | -------------- | ---------------------- |
+| Every 5 minutes   | `*/5 * * * *`  | Health checks, polling |
+| Every 15 minutes  | `*/15 * * * *` | Frequent syncs         |
+| Every hour        | `0 * * * *`    | Periodic tasks         |
+| Every 6 hours     | `0 */6 * * *`  | Semi-frequent digests  |
+| Daily at midnight | `0 0 * * *`    | Nightly jobs           |
+| Daily at 9am      | `0 9 * * *`    | Business hours kickoff |
+| Weekdays at 9am   | `0 9 * * 1-5`  | Work-day tasks         |
+| Weekly (Monday)   | `0 9 * * 1`    | Weekly reports         |
+| Monthly (1st)     | `0 9 1 * *`    | Monthly digests        |
 
 The UI should show these as a scrollable row of small pill buttons above the cron input field. Clicking one fills the cron field and updates the preview. The pills should be dismissible (the user can clear the selection by editing the field directly).
 
@@ -112,15 +116,15 @@ Do not use sample/fake data (ghost schedules) — this is a power-user tool and 
 
 The LogRocket UX research and the broader "optimistic UI" literature converge on this decision tree:
 
-| Action | Pattern |
-|---|---|
-| Toggle schedule on/off | Optimistic update, no confirmation, no toast — the toggle itself is the feedback |
-| Delete schedule | Confirmation dialog (destructive, irreversible) |
-| Approve agent schedule | Optimistic update + brief toast "Schedule approved" |
-| Reject agent schedule | Optimistic update, no toast (less important than approve) |
-| Run Now (manual trigger) | Optimistic update + brief toast "Run triggered" |
-| Cancel running job | Optimistic update + status update in run history row |
-| Create/edit schedule | Form submission → close dialog on success (current pattern is correct) |
+| Action                   | Pattern                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| Toggle schedule on/off   | Optimistic update, no confirmation, no toast — the toggle itself is the feedback |
+| Delete schedule          | Confirmation dialog (destructive, irreversible)                                  |
+| Approve agent schedule   | Optimistic update + brief toast "Schedule approved"                              |
+| Reject agent schedule    | Optimistic update, no toast (less important than approve)                        |
+| Run Now (manual trigger) | Optimistic update + brief toast "Run triggered"                                  |
+| Cancel running job       | Optimistic update + status update in run history row                             |
+| Create/edit schedule     | Form submission → close dialog on success (current pattern is correct)           |
 
 The key principle from the literature: "Email archived. Undo?" beats "Are you sure?" for reversible actions. But schedule deletion is genuinely destructive (all associated run history), so a confirmation dialog is warranted there. The current code calls `deleteSchedule.mutate(schedule.id)` directly on Reject without any confirmation — this is acceptable because Reject on a `pending_approval` schedule is lower-stakes than delete, but it would be better to at minimum show a brief confirmation tooltip.
 
@@ -144,15 +148,18 @@ Mark Weiser's Calm Technology principles, as applied to scheduler interfaces, yi
 The current dialog (`CreateScheduleDialog.tsx`) presents all 7 fields as a flat vertical list. The cognitive load is high, especially for the cron expression field which requires external knowledge. The redesign should apply progressive disclosure in three stages:
 
 **Stage 1 — Essential fields** (always visible):
+
 - Name
 - Prompt (textarea, perhaps collapsible after entry)
 - Schedule (preset pills + cron input + live preview)
 
 **Stage 2 — Common fields** (visible by default, but below a visual divider):
+
 - Timezone (combobox replacing current native select)
 - Working Directory
 
 **Stage 3 — Advanced settings** (collapsed by default, `<details>` or shadcn Collapsible):
+
 - Permission Mode
 - Max Runtime
 
@@ -248,6 +255,7 @@ The existing data source (`Intl.supportedValuesOf('timeZone')`) is correct and a
 ## Concrete Recommendations (Ordered by Impact)
 
 ### High Impact, Low Effort
+
 1. Replace `<select>` timezone with shadcn Combobox + auto-detect current timezone
 2. Replace Unicode status entities in RunHistoryPanel with Lucide icons
 3. Add preset pill shortcuts above the cron expression input
@@ -255,6 +263,7 @@ The existing data source (`Intl.supportedValuesOf('timeZone')`) is correct and a
 5. Add deletion via a `DropdownMenu` three-dot button on each schedule row
 
 ### High Impact, Medium Effort
+
 6. Implement progressive disclosure in CreateScheduleDialog (3-stage layout)
 7. Add skeleton loading states to both PulsePanel and RunHistoryPanel
 8. Implement relative timestamps in run history (e.g., "2 hours ago")
@@ -262,6 +271,7 @@ The existing data source (`Intl.supportedValuesOf('timeZone')`) is correct and a
 10. Add "last run status" to the schedule row subtitle
 
 ### Medium Impact, Medium Effort
+
 11. Implement the feature-disabled empty state with server config integration
 12. Add confirmation dialog for schedule deletion
 13. Add optimistic loading indicator on toggle while mutation is in-flight
@@ -269,6 +279,7 @@ The existing data source (`Intl.supportedValuesOf('timeZone')`) is correct and a
 15. Add `ChevronRight` / hover affordance to run history rows to signal they're clickable
 
 ### Lower Priority
+
 16. Group timezone options by continent in the combobox
 17. Show UTC offset badges in timezone options
 18. Collapsible "Advanced" section in CreateScheduleDialog

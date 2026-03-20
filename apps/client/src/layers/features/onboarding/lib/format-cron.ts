@@ -15,12 +15,24 @@ export function formatCron(expression: string): string {
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
 
   // "Every day at HH:MM"
-  if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*' && isNumber(hour) && isNumber(minute)) {
+  if (
+    dayOfMonth === '*' &&
+    month === '*' &&
+    dayOfWeek === '*' &&
+    isNumber(hour) &&
+    isNumber(minute)
+  ) {
     return `Every day at ${formatTime(hour, minute)}`;
   }
 
   // "Every Monday at HH:MM" etc.
-  if (dayOfMonth === '*' && month === '*' && isNumber(dayOfWeek) && isNumber(hour) && isNumber(minute)) {
+  if (
+    dayOfMonth === '*' &&
+    month === '*' &&
+    isNumber(dayOfWeek) &&
+    isNumber(hour) &&
+    isNumber(minute)
+  ) {
     const day = DAYS[Number(dayOfWeek)] ?? `day ${dayOfWeek}`;
     return `Every ${day} at ${formatTime(hour, minute)}`;
   }

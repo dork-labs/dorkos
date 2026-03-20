@@ -24,14 +24,14 @@ A flat agent list that IS the selector. Select an agent by clicking its row. The
 
 ### Interaction States
 
-| State | What the user sees |
-|---|---|
-| No agents, agent mode | Empty state message + directory escape hatch |
-| Agents exist, none selected | Full agent list (expanded) + directory escape hatch |
-| Agent selected | Collapsed single row with pencil icon + directory escape hatch |
-| Directory mode | Directory picker + "Back to agent selection" link |
-| Editing (agent-linked schedule) | Collapsed single row (pre-selected) + directory escape hatch |
-| Editing (directory schedule) | Directory picker (pre-filled) + "Back to agent selection" link |
+| State                           | What the user sees                                             |
+| ------------------------------- | -------------------------------------------------------------- |
+| No agents, agent mode           | Empty state message + directory escape hatch                   |
+| Agents exist, none selected     | Full agent list (expanded) + directory escape hatch            |
+| Agent selected                  | Collapsed single row with pencil icon + directory escape hatch |
+| Directory mode                  | Directory picker + "Back to agent selection" link              |
+| Editing (agent-linked schedule) | Collapsed single row (pre-selected) + directory escape hatch   |
+| Editing (directory schedule)    | Directory picker (pre-filled) + "Back to agent selection" link |
 
 ### Visual Identity (Agent Rows)
 
@@ -42,6 +42,7 @@ Each row: color dot (2px circle) + emoji icon + agent name (font-medium) + proje
 ## Task 1: Create AgentPicker Component with Tests
 
 **Files:**
+
 - Create: `apps/client/src/layers/features/pulse/ui/AgentPicker.tsx`
 - Create: `apps/client/src/layers/features/pulse/__tests__/AgentPicker.test.tsx`
 
@@ -61,16 +62,27 @@ import { AgentPicker } from '../ui/AgentPicker';
 const MOCK_AGENTS = [
   { id: 'agent-1', name: 'api-bot', projectPath: '/projects/api', icon: '🤖', color: '#6366f1' },
   { id: 'agent-2', name: 'test-bot', projectPath: '/projects/test', icon: '🧪', color: '#22c55e' },
-  { id: 'agent-3', name: 'docs-writer', projectPath: '/projects/docs', icon: '📝', color: '#f59e0b' },
+  {
+    id: 'agent-3',
+    name: 'docs-writer',
+    projectPath: '/projects/docs',
+    icon: '📝',
+    color: '#f59e0b',
+  },
 ];
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: false, media: query, onchange: null,
-      addListener: vi.fn(), removeListener: vi.fn(),
-      addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
     })),
   });
 });
@@ -300,18 +312,14 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
                 onClick={() => handleSelect(agent.id)}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                  isSelected
-                    ? 'bg-accent text-accent-foreground'
-                    : 'hover:bg-accent/50'
+                  isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                 )}
               >
                 <span
                   className="inline-block size-2 shrink-0 rounded-full"
                   style={{ backgroundColor: agent.color ?? hashToHslColor(agent.id) }}
                 />
-                <span className="text-xs leading-none">
-                  {agent.icon ?? hashToEmoji(agent.id)}
-                </span>
+                <span className="text-xs leading-none">{agent.icon ?? hashToEmoji(agent.id)}</span>
                 <span className="truncate font-medium">{agent.name}</span>
                 <span className="text-muted-foreground truncate text-xs">
                   {shortenHomePath(agent.projectPath)}
@@ -348,6 +356,7 @@ empty state for zero agents."
 ## Task 2: Integrate AgentPicker into CreateScheduleDialog
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`
 - Modify: `apps/client/src/layers/features/pulse/__tests__/CreateScheduleDialog.test.tsx`
 
@@ -585,6 +594,7 @@ Expected: FAIL — tests reference new UI patterns not yet implemented
 Modify `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`:
 
 **Changes summary:**
+
 1. Replace import of `AgentCombobox` with `AgentPicker`
 2. Remove `Bot` from lucide imports (no longer needed for radio group)
 3. Remove the entire radio group + conditional agent/directory section (lines 163-233 in current file)
@@ -594,66 +604,72 @@ Modify `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`:
 The new agent section at the top of the form body should look like:
 
 ```tsx
-{/* ── Agent ── */}
-{scheduleTarget === 'agent' ? (
-  <div className="space-y-2">
-    <Label>Agent</Label>
-    <AgentPicker
-      agents={agents}
-      value={form.agentId}
-      onValueChange={(id) => updateField('agentId', id)}
-    />
-    <button
-      type="button"
-      onClick={() => {
-        setScheduleTarget('directory');
-        updateField('agentId', undefined);
-      }}
-      className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
-    >
-      Run in a specific directory instead...
-    </button>
-  </div>
-) : (
-  <div className="space-y-2">
-    <button
-      type="button"
-      onClick={() => setScheduleTarget('agent')}
-      className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-    >
-      <ChevronLeft className="size-3" />
-      Back to agent selection
-    </button>
-    <Label htmlFor="schedule-cwd">Working Directory</Label>
-    <div className="flex gap-2">
-      <div
-        className={cn(
-          'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
-          form.cwd ? 'text-foreground' : 'text-muted-foreground'
-        )}
-      >
-        {form.cwd || 'Default (server working directory)'}
-      </div>
-      <Button
+{
+  /* ── Agent ── */
+}
+{
+  scheduleTarget === 'agent' ? (
+    <div className="space-y-2">
+      <Label>Agent</Label>
+      <AgentPicker
+        agents={agents}
+        value={form.agentId}
+        onValueChange={(id) => updateField('agentId', id)}
+      />
+      <button
         type="button"
-        variant="outline"
-        size="icon-sm"
-        onClick={() => setCwdPickerOpen(true)}
-        aria-label="Browse directories"
+        onClick={() => {
+          setScheduleTarget('directory');
+          updateField('agentId', undefined);
+        }}
+        className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
       >
-        <FolderOpen className="size-4" />
-      </Button>
+        Run in a specific directory instead...
+      </button>
     </div>
-  </div>
-)}
+  ) : (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setScheduleTarget('agent')}
+        className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs underline-offset-4 hover:underline"
+      >
+        <ChevronLeft className="size-3" />
+        Back to agent selection
+      </button>
+      <Label htmlFor="schedule-cwd">Working Directory</Label>
+      <div className="flex gap-2">
+        <div
+          className={cn(
+            'flex-1 truncate rounded-md border px-3 py-2 font-mono text-sm',
+            form.cwd ? 'text-foreground' : 'text-muted-foreground'
+          )}
+        >
+          {form.cwd || 'Default (server working directory)'}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          onClick={() => setCwdPickerOpen(true)}
+          aria-label="Browse directories"
+        >
+          <FolderOpen className="size-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 ```
 
 **Import changes:**
+
 - Remove: `Bot` from lucide-react
 - Add: `ChevronLeft` from lucide-react
 - Replace: `import { AgentCombobox } from './AgentCombobox'` → `import { AgentPicker } from './AgentPicker'`
 
 **State initialization change in useEffect:**
+
 - Remove `agents.length > 0 ? 'agent' : 'directory'` logic — always default to `'agent'`
 - Edit schedule with `agentId` → `'agent'`, with `cwd` and no `agentId` → `'directory'`, otherwise → `'agent'`
 
@@ -683,6 +699,7 @@ link below the agent picker."
 ## Task 3: Delete AgentCombobox and Clean Up Exports
 
 **Files:**
+
 - Delete: `apps/client/src/layers/features/pulse/ui/AgentCombobox.tsx`
 - Modify: `apps/client/src/layers/features/pulse/index.ts` (if AgentCombobox was exported)
 
@@ -723,6 +740,7 @@ list in AgentPicker."
 ## Task 4: Update Pre-fill Edit Mode Test for Directory Schedules
 
 **Files:**
+
 - Modify: `apps/client/src/layers/features/pulse/__tests__/CreateScheduleDialog.test.tsx`
 
 ### Step 1: Verify the existing `pre-fills form fields in edit mode` test
@@ -764,6 +782,7 @@ Expected: no errors
 
 Run: `pnpm dev`
 Open the app, navigate to Pulse, click "New Schedule":
+
 - Verify agent list appears at top of form
 - Click an agent → list collapses to single row with pencil icon
 - Click pencil → list re-expands

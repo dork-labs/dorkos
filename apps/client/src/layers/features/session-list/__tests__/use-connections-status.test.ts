@@ -29,9 +29,7 @@ vi.mock('@/layers/entities/relay', () => ({
   useRelayAdapters: () => mockRelayAdapters(),
 }));
 
-const mockRegisteredAgents = vi.fn<
-  () => { data: { agents: AgentManifest[] } | undefined }
->(() => ({
+const mockRegisteredAgents = vi.fn<() => { data: { agents: AgentManifest[] } | undefined }>(() => ({
   data: undefined,
 }));
 vi.mock('@/layers/entities/mesh', () => ({
@@ -44,7 +42,7 @@ vi.mock('@/layers/entities/mesh', () => ({
 
 function makeAdapter(
   id: string,
-  state: 'connected' | 'disconnected' | 'error' | 'starting' | 'stopping',
+  state: 'connected' | 'disconnected' | 'error' | 'starting' | 'stopping'
 ): AdapterListItem {
   return {
     config: {

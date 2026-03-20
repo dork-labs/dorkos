@@ -59,21 +59,21 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role | Lines |
-|------|------|-------|
-| `apps/server/src/services/pulse/scheduler-service.ts` | Cron orchestration, dispatches agent runs | ~267 |
-| `apps/server/src/services/core/agent-manager.ts` | Session creation, SDK integration | ~300 |
-| `apps/server/src/services/core/sdk-event-mapper.ts` | SDK message → StreamEvent transform | ~139 |
-| `apps/server/src/routes/sessions.ts` | Console HTTP endpoints, POST /messages | ~299 |
-| `apps/server/src/routes/relay.ts` | Relay HTTP API | ~242 |
-| `apps/server/src/services/session/session-broadcaster.ts` | Cross-client SSE sync | ~150 |
-| `apps/server/src/services/relay/adapter-manager.ts` | External adapter lifecycle | ~290 |
-| `apps/server/src/services/relay/relay-state.ts` | Feature flag singleton | ~33 |
-| `apps/server/src/services/core/mcp-tool-server.ts` | Agent-facing MCP tools | ~524 |
-| `packages/relay/src/relay-core.ts` | Core message bus | ~400 |
-| `packages/shared/src/relay-schemas.ts` | Zod schemas for Relay types | ~200 |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Client chat session hook | ~80+ |
-| `apps/client/src/layers/features/relay/ui/` | Relay UI components | ~500 |
+| File                                                             | Role                                      | Lines |
+| ---------------------------------------------------------------- | ----------------------------------------- | ----- |
+| `apps/server/src/services/pulse/scheduler-service.ts`            | Cron orchestration, dispatches agent runs | ~267  |
+| `apps/server/src/services/core/agent-manager.ts`                 | Session creation, SDK integration         | ~300  |
+| `apps/server/src/services/core/sdk-event-mapper.ts`              | SDK message → StreamEvent transform       | ~139  |
+| `apps/server/src/routes/sessions.ts`                             | Console HTTP endpoints, POST /messages    | ~299  |
+| `apps/server/src/routes/relay.ts`                                | Relay HTTP API                            | ~242  |
+| `apps/server/src/services/session/session-broadcaster.ts`        | Cross-client SSE sync                     | ~150  |
+| `apps/server/src/services/relay/adapter-manager.ts`              | External adapter lifecycle                | ~290  |
+| `apps/server/src/services/relay/relay-state.ts`                  | Feature flag singleton                    | ~33   |
+| `apps/server/src/services/core/mcp-tool-server.ts`               | Agent-facing MCP tools                    | ~524  |
+| `packages/relay/src/relay-core.ts`                               | Core message bus                          | ~400  |
+| `packages/shared/src/relay-schemas.ts`                           | Zod schemas for Relay types               | ~200  |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Client chat session hook                  | ~80+  |
+| `apps/client/src/layers/features/relay/ui/`                      | Relay UI components                       | ~500  |
 
 **Shared Dependencies:**
 
@@ -166,12 +166,14 @@ Research report: [`research/20260224_relay_convergence.md`](../../research/20260
    - Complexity: Low
 
 **Security Considerations:**
+
 - Console endpoint registration must be scoped to authenticated sessions — use existing `X-Client-Id` UUID
 - Trace data should capture metadata only, not payload content
 - Dead letter queue access gated behind boundary check
 - Budget envelopes must be immutable — no forging higher budgets on re-publish
 
 **Performance Considerations:**
+
 - SQLite WAL mode trace writes add ~0.1-0.5ms per message (negligible)
 - SSE stream merging reduces browser connections (better than separate streams)
 - Console protocol change: POST returns immediately → may feel slightly faster
@@ -181,11 +183,11 @@ Research report: [`research/20260224_relay_convergence.md`](../../research/20260
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Console migration approach | Full Relay endpoint migration | POST returns receipt (202), response chunks arrive on existing SSE stream. Results in one pattern for all communication (Console, Pulse, external adapters). DRY — no duplicate streaming pathways. Consistent with architecture vision. |
-| 2 | Message tracing scope | Full tracing with trace UI | Server-side trace fields in SQLite + client-side trace viewer component. Click any Relay message to see sender → budget check → delivery → runtime adapter → response timeline. Comprehensive observability from day one. |
-| 3 | Pulse migration strategy | Direct cutover via DORKOS_RELAY_ENABLED | When Relay is enabled, Pulse dispatches through it automatically. When disabled, falls back to direct AgentManager call. No separate shadow mode or RELAY_PULSE_DISPATCH flag. No functionality lost — AgentManager still called, just triggered by Relay message. |
-| 4 | Feature flag strategy | Single DORKOS_RELAY_ENABLED flag | Controls everything: Pulse dispatch, Console endpoint, trace collection. No independent per-subsystem flags. Simpler config surface. Relay becomes the default transport. |
-| 5 | AgentRuntimeAdapter interface | Defer to Spec 6 | Direct AgentManager call for now. "Refactor when the second adapter is needed, not prematurely." YAGNI. Relay message receiver calls AgentManager.sendMessage() directly. |
-| 6 | SSE stream strategy | Fan-in typed events on existing endpoint | Merge Relay events into existing `GET /api/sessions/:id/stream`. New event types (`relay_message`, `message_delivered`, `budget_exceeded`) are additive. Existing `sync_update` unchanged. |
+| #   | Decision                      | Choice                                   | Rationale                                                                                                                                                                                                                                                          |
+| --- | ----------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Console migration approach    | Full Relay endpoint migration            | POST returns receipt (202), response chunks arrive on existing SSE stream. Results in one pattern for all communication (Console, Pulse, external adapters). DRY — no duplicate streaming pathways. Consistent with architecture vision.                           |
+| 2   | Message tracing scope         | Full tracing with trace UI               | Server-side trace fields in SQLite + client-side trace viewer component. Click any Relay message to see sender → budget check → delivery → runtime adapter → response timeline. Comprehensive observability from day one.                                          |
+| 3   | Pulse migration strategy      | Direct cutover via DORKOS_RELAY_ENABLED  | When Relay is enabled, Pulse dispatches through it automatically. When disabled, falls back to direct AgentManager call. No separate shadow mode or RELAY_PULSE_DISPATCH flag. No functionality lost — AgentManager still called, just triggered by Relay message. |
+| 4   | Feature flag strategy         | Single DORKOS_RELAY_ENABLED flag         | Controls everything: Pulse dispatch, Console endpoint, trace collection. No independent per-subsystem flags. Simpler config surface. Relay becomes the default transport.                                                                                          |
+| 5   | AgentRuntimeAdapter interface | Defer to Spec 6                          | Direct AgentManager call for now. "Refactor when the second adapter is needed, not prematurely." YAGNI. Relay message receiver calls AgentManager.sendMessage() directly.                                                                                          |
+| 6   | SSE stream strategy           | Fan-in typed events on existing endpoint | Merge Relay events into existing `GET /api/sessions/:id/stream`. New event types (`relay_message`, `message_delivered`, `budget_exceeded`) are additive. Existing `sync_update` unchanged.                                                                         |

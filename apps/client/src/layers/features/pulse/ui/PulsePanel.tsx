@@ -112,10 +112,10 @@ export function PulsePanel() {
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-lg border p-3">
             <div className="flex items-center gap-3">
-              <div className="size-2 animate-pulse rounded-full bg-muted" />
+              <div className="bg-muted size-2 animate-pulse rounded-full" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+                <div className="bg-muted h-4 w-32 animate-pulse rounded" />
+                <div className="bg-muted h-3 w-48 animate-pulse rounded" />
               </div>
             </div>
           </div>
@@ -130,7 +130,7 @@ export function PulsePanel() {
         {pulseAgentFilter ? (
           <div className="flex flex-col items-center gap-3 p-8">
             <AgentFilterChip name={filterAgentName} onClear={() => setPulseAgentFilter(null)} />
-            <p className="text-sm text-muted-foreground">No schedules for this agent.</p>
+            <p className="text-muted-foreground text-sm">No schedules for this agent.</p>
             <button
               onClick={handleCreateBlank}
               className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
@@ -160,7 +160,7 @@ export function PulsePanel() {
       <div className="space-y-2 p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Schedules</h3>
+            <h3 className="text-muted-foreground text-sm font-medium">Schedules</h3>
             {pulseAgentFilter && (
               <AgentFilterChip name={filterAgentName} onClear={() => setPulseAgentFilter(null)} />
             )}
@@ -189,7 +189,11 @@ export function PulsePanel() {
             >
               <ScheduleRow
                 schedule={schedule}
-                agent={resolvedAgents?.[schedule.cwd ?? ''] ?? (schedule.agentId ? meshAgentsById.get(schedule.agentId) : null) ?? null}
+                agent={
+                  resolvedAgents?.[schedule.cwd ?? ''] ??
+                  (schedule.agentId ? meshAgentsById.get(schedule.agentId) : null) ??
+                  null
+                }
                 expanded={expandedId === schedule.id}
                 onToggleExpand={() =>
                   setExpandedId(expandedId === schedule.id ? null : schedule.id)
@@ -217,7 +221,7 @@ export function PulsePanel() {
 /** Compact chip showing the active agent filter with a clear button. */
 function AgentFilterChip({ name, onClear }: { name: string | null; onClear: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
+    <span className="text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
       {name ?? 'Agent'}
       <button
         type="button"

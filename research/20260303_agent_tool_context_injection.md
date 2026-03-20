@@ -1,5 +1,5 @@
 ---
-title: "Agent Tool Context Injection — System Prompt Instruction Patterns for Relay & Mesh Tools"
+title: 'Agent Tool Context Injection — System Prompt Instruction Patterns for Relay & Mesh Tools'
 date: 2026-03-03
 type: implementation
 status: active
@@ -18,9 +18,9 @@ sources_count: 14
 
 ## Research Summary
 
-DorkOS provides 28 MCP tools across relay, mesh, adapter, binding, and trace domains. Agents currently receive no instructions on *how* to use them — no subject hierarchy docs, no workflow examples, no routing conventions. This research identifies the correct injection mechanism (`context-builder.ts` → `systemPrompt.append`), the optimal XML block structure for tool guidance, realistic token budgets, the argument for static over dynamic instruction delivery, and concrete content templates for `<relay_tools>` and `<mesh_tools>` blocks.
+DorkOS provides 28 MCP tools across relay, mesh, adapter, binding, and trace domains. Agents currently receive no instructions on _how_ to use them — no subject hierarchy docs, no workflow examples, no routing conventions. This research identifies the correct injection mechanism (`context-builder.ts` → `systemPrompt.append`), the optimal XML block structure for tool guidance, realistic token budgets, the argument for static over dynamic instruction delivery, and concrete content templates for `<relay_tools>` and `<mesh_tools>` blocks.
 
-The key finding: static XML blocks injected once per session via `systemPrompt.append` are the correct pattern. Tool descriptions in the `tool()` definitions handle *what* a tool does; the system prompt context blocks handle *when* and *how* to use them together — subject naming conventions, workflow sequences, and error recovery paths.
+The key finding: static XML blocks injected once per session via `systemPrompt.append` are the correct pattern. Tool descriptions in the `tool()` definitions handle _what_ a tool does; the system prompt context blocks handle _when_ and _how_ to use them together — subject naming conventions, workflow sequences, and error recovery paths.
 
 ---
 
@@ -33,6 +33,7 @@ The key finding: static XML blocks injected once per session via `systemPrompt.a
 The blocks are **not** runtime-dynamic. They do not need live data from the relay or mesh subsystems. They are static documentation strings, constructed once (possibly at server startup), and passed into `systemPrompt.append` the same way env and git context is.
 
 **Pattern already in use:**
+
 ```typescript
 // context-builder.ts — current structure
 export async function buildSystemPromptAppend(cwd: string): Promise<string> {
@@ -42,6 +43,7 @@ export async function buildSystemPromptAppend(cwd: string): Promise<string> {
 ```
 
 **Extension pattern:**
+
 ```typescript
 // Add two new pure functions (no async needed — static strings)
 export async function buildSystemPromptAppend(cwd: string): Promise<string> {
@@ -76,7 +78,7 @@ function buildRelayToolsBlock(): string {
 - Dynamic discovery (asking the agent to call `relay_list_endpoints` before knowing how) creates a chicken-and-egg problem: the agent needs to know subjects to know where to look
 - Every token in the system prompt is loaded on every request — static strings let the server pre-compute and cache them
 
-**Dynamic discovery** (pulling tool manuals via MCP resource reads, or describing tools that explain themselves) adds complexity with no benefit for stable subsystems. Reserve dynamic injection for data that *actually* changes per session: live agent registry state, current endpoint subscriptions.
+**Dynamic discovery** (pulling tool manuals via MCP resource reads, or describing tools that explain themselves) adds complexity with no benefit for stable subsystems. Reserve dynamic injection for data that _actually_ changes per session: live agent registry state, current endpoint subscriptions.
 
 The Anthropic guidance is consistent: use `systemPrompt.append` for static/semi-static context, use `UserPromptSubmit` hooks only for genuinely per-turn changing data.
 
@@ -87,6 +89,7 @@ The Anthropic guidance is consistent: use `systemPrompt.append` for static/semi-
 Anthropic's prompting documentation and Claude Code's own system prompt both use named XML tags as the organizational unit. Claude is specifically trained to attend to XML-tagged content, treating each tag as a scoped namespace.
 
 **Effective pattern (from official Anthropic guidance):**
+
 ```xml
 <tool_instructions>
   Tool name and purpose.
@@ -98,8 +101,9 @@ Anthropic's prompting documentation and Claude Code's own system prompt both use
 ```
 
 **Claude Code's actual approach** (from reverse-engineering its system prompt structure):
+
 - Prefers tool substitution hierarchies: "Use X instead of Y for Z"
-- Documents *when to escalate*: "Use Task tool for broad search; use Grep directly for directed search"
+- Documents _when to escalate_: "Use Task tool for broad search; use Grep directly for directed search"
 - Uses decision trees, not exhaustive parameter docs
 - Short, verb-first sentences: "Send a message. Read the inbox. List endpoints."
 
@@ -111,19 +115,20 @@ Anthropic's prompting documentation and Claude Code's own system prompt both use
 
 Claude's context window is 200K tokens. The system prompt competes with conversation history and tool results. Practical budget for injected tool context:
 
-| Block | Target Token Count | Reasoning |
-|---|---|---|
-| `<env>` (existing) | ~60 tokens | Small, 9 key-value pairs |
-| `<git_status>` (existing) | ~40-80 tokens | Varies by repo state |
-| `<agent_identity>` (existing) | ~40 tokens | Name, ID, capabilities |
-| `<agent_persona>` (existing) | ~100-400 tokens | User-authored, varies |
-| `<relay_tools>` (new) | ~300-500 tokens | Subject hierarchy + 4 tool summaries + workflow |
-| `<mesh_tools>` (new) | ~300-500 tokens | Registry lifecycle + 8 tool summaries + workflow |
-| **Total added** | ~600-1000 tokens | 0.5% of 200K window |
+| Block                         | Target Token Count | Reasoning                                        |
+| ----------------------------- | ------------------ | ------------------------------------------------ |
+| `<env>` (existing)            | ~60 tokens         | Small, 9 key-value pairs                         |
+| `<git_status>` (existing)     | ~40-80 tokens      | Varies by repo state                             |
+| `<agent_identity>` (existing) | ~40 tokens         | Name, ID, capabilities                           |
+| `<agent_persona>` (existing)  | ~100-400 tokens    | User-authored, varies                            |
+| `<relay_tools>` (new)         | ~300-500 tokens    | Subject hierarchy + 4 tool summaries + workflow  |
+| `<mesh_tools>` (new)          | ~300-500 tokens    | Registry lifecycle + 8 tool summaries + workflow |
+| **Total added**               | ~600-1000 tokens   | 0.5% of 200K window                              |
 
 A 1000-token overhead for tool context instructions is negligible against a 200K context window. The real budget concern is **clarity per token**, not absolute size. A bloated 2000-token block that the agent ignores is worse than a dense 400-token block that changes behavior.
 
 **Guideline:** Each tool mentioned in a context block should consume no more than 25-35 tokens (1-2 lines). The block should prioritize:
+
 1. Subject naming conventions (highest value — agents can't guess these)
 2. Workflow sequencing (what to call first, what comes next)
 3. Error patterns (what error codes to handle)
@@ -146,6 +151,7 @@ relay.system.pulse.{scheduleId}  # Pulse scheduler events
 This is **completely opaque** to agents without documentation. An agent calling `relay_send` has no idea what to put in the `subject` field. A 4-line explanation of this hierarchy is worth more than all other relay documentation combined.
 
 **Analogous industry pattern (NATS):** NATS documentation uses dot-separated hierarchies with `*` (single-token wildcard) and `>` (multi-token wildcard). The recommended documentation style is:
+
 - List the top-level namespaces first
 - Show the hierarchy as `namespace.token.identifier`
 - Give one concrete example per namespace
@@ -174,12 +180,12 @@ Users write their own tool instructions in the project's `CLAUDE.md`. DorkOS doe
 
 There is a clean division between what lives in the `tool()` description and what lives in the system prompt context block:
 
-| Location | Answers | Example |
-|---|---|---|
-| `tool()` description | What does this tool do? What are its parameters? | "Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern." |
-| System prompt `<relay_tools>` | When should I use this? In what order? With what subject values? | "To message another agent, use `relay_send` with subject `relay.agent.{their-sessionId}`." |
+| Location                      | Answers                                                          | Example                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `tool()` description          | What does this tool do? What are its parameters?                 | "Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern." |
+| System prompt `<relay_tools>` | When should I use this? In what order? With what subject values? | "To message another agent, use `relay_send` with subject `relay.agent.{their-sessionId}`."   |
 
-The tool descriptions already exist and are solid (the current `relay-tools.ts` and `mesh-tools.ts` have good descriptions). The system prompt context block adds the *workflow glue* that individual tool descriptions cannot provide: how the tools relate to each other, what naming conventions to follow, and what sequence to use for common tasks.
+The tool descriptions already exist and are solid (the current `relay-tools.ts` and `mesh-tools.ts` have good descriptions). The system prompt context block adds the _workflow glue_ that individual tool descriptions cannot provide: how the tools relate to each other, what naming conventions to follow, and what sequence to use for common tasks.
 
 ---
 
@@ -280,8 +286,8 @@ export interface ContextBuilderDeps {
 
 export async function buildSystemPromptAppend(
   cwd: string,
-  deps: ContextBuilderDeps = {},
-): Promise<string>
+  deps: ContextBuilderDeps = {}
+): Promise<string>;
 ```
 
 Or simpler: import `isRelayEnabled()` and a `isMeshAvailable()` singleton directly (same pattern as `relay-state.ts`).
@@ -321,6 +327,7 @@ For v2, if users want to control context injection at the agent level, the `.dor
 **What:** Add `buildRelayToolsBlock()` and `buildMeshToolsBlock()` as pure functions in `context-builder.ts`. Wire them into `buildSystemPromptAppend()` alongside existing blocks. Gate on `isRelayEnabled()` / mesh availability.
 
 **Pros:**
+
 - Zero new abstractions — extends existing pattern directly
 - Static strings, computed once per session, not per message
 - Co-located with all other context injection logic
@@ -328,6 +335,7 @@ For v2, if users want to control context injection at the agent level, the `.dor
 - Testable as pure functions
 
 **Cons:**
+
 - Content updates require code changes (not user-editable without touching source)
 - Couples context-builder to relay/mesh feature flag modules
 
@@ -340,11 +348,13 @@ For v2, if users want to control context injection at the agent level, the `.dor
 **What:** Write a `.claude/tool-instructions.md` that documents relay/mesh usage. Let the SDK load it via `settingSources: ['project']` as part of the CLAUDE.md hierarchy.
 
 **Pros:**
+
 - User-editable without code changes
 - Follows AGENTS.md/CLAUDE.md conventions that agents already understand
 - Can be committed to `.claude/` and updated independently
 
 **Cons:**
+
 - Loaded unconditionally (no relay/mesh feature flag awareness)
 - Less precise than XML blocks — CLAUDE.md prose may be parsed less reliably than named XML tags
 - Requires users to know to create/update this file when relay behavior changes
@@ -358,10 +368,12 @@ For v2, if users want to control context injection at the agent level, the `.dor
 **What:** Extend the `tool()` description strings to include more workflow guidance. The description for `relay_send` would include subject naming conventions inline.
 
 **Pros:**
+
 - No new injection mechanism
 - Context is right at the tool definition
 
 **Cons:**
+
 - Tool descriptions are per-tool; there is no place to document cross-tool workflows
 - The relay subject naming convention is not a property of any single tool
 - Tool description strings are already good and shouldn't be bloated
@@ -376,26 +388,31 @@ For v2, if users want to control context injection at the agent level, the `.dor
 **Adopt Solution 1** with the following implementation:
 
 ### Step 1: Add feature-flag check to context-builder imports
+
 Import `isRelayEnabled` from `relay-state.ts`. For mesh, add a `isMeshRegistered()` helper (or check whether `meshCore` is non-null via a singleton check).
 
 ### Step 2: Write `buildRelayToolsBlock()` as a module-level constant
+
 A raw string constant `RELAY_TOOLS_BLOCK` initialized at module load is the most efficient — no function call overhead, no allocation per session. Feature-flag guard wraps the return.
 
 ### Step 3: Write `buildMeshToolsBlock()` similarly
+
 Mesh is always-on, so the guard is simpler — always include unless mesh core is not initialized.
 
 ### Step 4: Add both to `buildSystemPromptAppend()` with `Promise.allSettled`
+
 Both are synchronous, so wrapping in a promise is trivially safe but keeps the parallel pattern consistent.
 
 ### Step 5: Test
+
 Unit-test that the blocks appear (or are absent) based on feature flag state. Test that the total `buildSystemPromptAppend()` output contains the expected XML tags. No network/DB needed.
 
 ### File Impact
 
-| File | Change | Notes |
-|---|---|---|
-| `apps/server/src/services/core/context-builder.ts` | Modify | Add `buildRelayToolsBlock()`, `buildMeshToolsBlock()`, wire into main function |
-| `apps/server/src/services/core/__tests__/context-builder.test.ts` | Modify | Add tests for new blocks under relay/mesh enabled/disabled |
+| File                                                              | Change | Notes                                                                          |
+| ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------ |
+| `apps/server/src/services/core/context-builder.ts`                | Modify | Add `buildRelayToolsBlock()`, `buildMeshToolsBlock()`, wire into main function |
+| `apps/server/src/services/core/__tests__/context-builder.test.ts` | Modify | Add tests for new blocks under relay/mesh enabled/disabled                     |
 
 No new files. No new routes. No new services.
 

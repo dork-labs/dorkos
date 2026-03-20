@@ -25,7 +25,7 @@ export class ChatPage {
 
   /** Navigate to the app and ensure a chat session is active. */
   async goto(sessionId?: string, options?: { dir?: string }) {
-    let url = sessionId ? `/?session=${sessionId}` : '/';
+    let url = sessionId ? `/session?session=${sessionId}` : '/session';
     if (options?.dir) {
       const sep = url.includes('?') ? '&' : '?';
       url += `${sep}dir=${encodeURIComponent(options.dir)}`;
@@ -44,9 +44,7 @@ export class ChatPage {
 
   /** Wait for a full streaming response cycle to complete. */
   async waitForResponse(timeoutMs = 60_000) {
-    await this.inferenceStreaming
-      .waitFor({ state: 'visible', timeout: 10_000 })
-      .catch(() => {});
+    await this.inferenceStreaming.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
     await this.inferenceStreaming.waitFor({ state: 'hidden', timeout: timeoutMs });
   }
 
@@ -67,9 +65,7 @@ export class ChatPage {
 
   /** Get the last assistant message element. */
   async lastAssistantMessage() {
-    return this.messageList
-      .locator('[data-testid="message-item"][data-role="assistant"]')
-      .last();
+    return this.messageList.locator('[data-testid="message-item"][data-role="assistant"]').last();
   }
 
   /** Get all tool call cards within the message list. */

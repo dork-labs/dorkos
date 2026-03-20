@@ -3,10 +3,10 @@ title: Pulse Scheduler
 description: Cron-based agent jobs that keep running when you close the terminal
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Pulse Scheduler
 
@@ -33,12 +33,14 @@ dorkos --no-pulse
 # or
 export DORKOS_PULSE_ENABLED=false
 ```
+
 </Step>
 
 <Step>
 ### Verify in the sidebar
 
 The Pulse tab appears in the sidebar when Pulse is enabled. Open it to see your schedules and run history.
+
 </Step>
 </Steps>
 
@@ -94,7 +96,8 @@ pulse_create_schedule({
 ```
 
 <Callout type="warn">
-Agent-created schedules require human approval. This prevents agents from autonomously scheduling expensive or unintended recurring tasks. Approve pending schedules from the PulsePanel UI.
+  Agent-created schedules require human approval. This prevents agents from autonomously scheduling
+  expensive or unintended recurring tasks. Approve pending schedules from the PulsePanel UI.
 </Callout>
 
 ## Cron Syntax
@@ -113,20 +116,23 @@ Pulse uses standard five-field cron expressions. The PulsePanel includes a visua
 
 ### Common Presets
 
-<TypeTable type={{
-  "*/5 * * * *": { type: "preset", description: "Every 5 minutes" },
-  "*/15 * * * *": { type: "preset", description: "Every 15 minutes" },
-  "0 * * * *": { type: "preset", description: "Every hour on the hour" },
-  "0 */6 * * *": { type: "preset", description: "Every 6 hours" },
-  "0 0 * * *": { type: "preset", description: "Daily at midnight" },
-  "0 9 * * *": { type: "preset", description: "Daily at 9:00 AM" },
-  "0 9 * * 1-5": { type: "preset", description: "Weekdays at 9:00 AM" },
-  "0 9 * * 1": { type: "preset", description: "Every Monday at 9:00 AM" },
-  "0 9 1 * *": { type: "preset", description: "First day of every month at 9:00 AM" },
-}} />
+<TypeTable
+  type={{
+    '*/5 * * * *': { type: 'preset', description: 'Every 5 minutes' },
+    '*/15 * * * *': { type: 'preset', description: 'Every 15 minutes' },
+    '0 * * * *': { type: 'preset', description: 'Every hour on the hour' },
+    '0 */6 * * *': { type: 'preset', description: 'Every 6 hours' },
+    '0 0 * * *': { type: 'preset', description: 'Daily at midnight' },
+    '0 9 * * *': { type: 'preset', description: 'Daily at 9:00 AM' },
+    '0 9 * * 1-5': { type: 'preset', description: 'Weekdays at 9:00 AM' },
+    '0 9 * * 1': { type: 'preset', description: 'Every Monday at 9:00 AM' },
+    '0 9 1 * *': { type: 'preset', description: 'First day of every month at 9:00 AM' },
+  }}
+/>
 
 <Callout type="info">
-For help building cron expressions, the visual builder in the UI is the fastest path. You can also reference [crontab.guru](https://crontab.guru) for syntax validation.
+  For help building cron expressions, the visual builder in the UI is the fastest path. You can also
+  reference [crontab.guru](https://crontab.guru) for syntax validation.
 </Callout>
 
 ## Run History
@@ -135,12 +141,14 @@ Every schedule execution creates a run record in SQLite. The RunHistoryPanel in 
 
 ### Run States
 
-<TypeTable type={{
-  "running": { type: "status", description: "The agent session is currently executing" },
-  "completed": { type: "status", description: "The agent completed the task without errors" },
-  "failed": { type: "status", description: "The agent encountered an error during execution" },
-  "cancelled": { type: "status", description: "The run was manually cancelled" },
-}} />
+<TypeTable
+  type={{
+    running: { type: 'status', description: 'The agent session is currently executing' },
+    completed: { type: 'status', description: 'The agent completed the task without errors' },
+    failed: { type: 'status', description: 'The agent encountered an error during execution' },
+    cancelled: { type: 'status', description: 'The run was manually cancelled' },
+  }}
+/>
 
 Click any run in the history to open the full agent conversation. This navigates to the session transcript — every tool call, response, and output the agent produced during the run.
 
@@ -171,25 +179,52 @@ This integration provides:
 - **Reliability** — Scheduled messages flow through the same pipeline as all other Relay messages — circuit breakers, backpressure, dead letter queue.
 
 <Callout type="info">
-When Relay is disabled, Pulse falls back to direct in-process calls. Schedules work the same way — you just lose the tracing and metrics integration.
+  When Relay is disabled, Pulse falls back to direct in-process calls. Schedules work the same way —
+  you just lose the tracing and metrics integration.
 </Callout>
 
 ## Configuration
 
-<TypeTable type={{
-  "DORKOS_PULSE_ENABLED": { type: "boolean", description: "Enable or disable the Pulse scheduler", default: "false" },
-  "Max concurrent runs": { type: "number", description: "Maximum number of agent sessions running simultaneously from scheduled jobs" },
-  "Overrun protection": { type: "boolean", description: "Prevent a schedule from starting a new run while the previous one is still active", default: "true" },
-  "Retention pruning": { type: "boolean", description: "Automatically prune old run records to keep the database manageable", default: "true" },
-}} />
+<TypeTable
+  type={{
+    DORKOS_PULSE_ENABLED: {
+      type: 'boolean',
+      description: 'Enable or disable the Pulse scheduler',
+      default: 'false',
+    },
+    'Max concurrent runs': {
+      type: 'number',
+      description: 'Maximum number of agent sessions running simultaneously from scheduled jobs',
+    },
+    'Overrun protection': {
+      type: 'boolean',
+      description:
+        'Prevent a schedule from starting a new run while the previous one is still active',
+      default: 'true',
+    },
+    'Retention pruning': {
+      type: 'boolean',
+      description: 'Automatically prune old run records to keep the database manageable',
+      default: 'true',
+    },
+  }}
+/>
 
 ### Schedule States
 
-<TypeTable type={{
-  "active": { type: "state", description: "The schedule is running on its cron timing" },
-  "paused": { type: "state", description: "The schedule is temporarily paused and will not trigger" },
-  "pending_approval": { type: "state", description: "The schedule was created by an agent and awaits human approval" },
-}} />
+<TypeTable
+  type={{
+    active: { type: 'state', description: 'The schedule is running on its cron timing' },
+    paused: {
+      type: 'state',
+      description: 'The schedule is temporarily paused and will not trigger',
+    },
+    pending_approval: {
+      type: 'state',
+      description: 'The schedule was created by an agent and awaits human approval',
+    },
+  }}
+/>
 
 Pause and resume schedules from the PulsePanel UI or via PATCH requests:
 

@@ -1,6 +1,6 @@
 ---
-description: "Self-test the DorkOS chat UI in a live browser session — drives real interactions, monitors JSONL transcript, compares API vs UI, researches issues, and produces an evidence-based findings report"
-argument-hint: "[url] [focus:area1,area2]"
+description: 'Self-test the DorkOS chat UI in a live browser session — drives real interactions, monitors JSONL transcript, compares API vs UI, researches issues, and produces an evidence-based findings report'
+argument-hint: '[url] [focus:area1,area2]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Task, TaskOutput, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__computer
 category: testing
 ---
@@ -14,6 +14,7 @@ Self-test the DorkOS chat UI in a live browser session. This command drives real
 Parse `$ARGUMENTS` for two optional inputs:
 
 1. **URL**: Any argument starting with `http` — use as `TEST_URL`. Default:
+
    ```
    TEST_URL="http://localhost:6241/?dir=/Users/doriancollier/Keep/temp/empty"
    ```
@@ -63,13 +64,13 @@ RESULTS_FILE="$RESULTS_DIR/$TIMESTAMP.md"
 # Chat Self-Test — YYYY-MM-DD HH:MM
 
 ## Test Config
+
 - **URL:** [test URL]
 - **Focus areas:** [areas or "Full suite"]
 - **Started:** [timestamp]
 - **Status:** IN PROGRESS
 
 ---
-
 ```
 
 ---
@@ -177,26 +178,26 @@ The file may not exist yet — re-run this check after the first message is sent
 
 **When focus areas are specified**, tailor messages to exercise those areas. Design 3-5 messages that specifically stress the focused functionality. For example:
 
-| Focus | Tailored Messages |
-|-------|-------------------|
-| `streaming` | Long code generation, multi-tool sequences, rapid follow-ups |
-| `history` | Messages that produce varied content types (code, text, tools) |
-| `tasks` | `Use TodoWrite to create 3 tasks`, `Mark the first task done`, `Add a 4th task` |
-| `tools` | `Use Bash to list files in /tmp`, `Read the contents of /etc/hostname` |
-| `code` | `Write a Python class with decorators`, `Write a React component with JSX` |
-| `markdown` | `Explain quicksort with headings, bullet lists, and a table` |
-| `scroll` | Generate very long responses, send many messages in sequence |
-| `commands` | Type `/` in chat input and test palette, try various commands |
+| Focus       | Tailored Messages                                                               |
+| ----------- | ------------------------------------------------------------------------------- |
+| `streaming` | Long code generation, multi-tool sequences, rapid follow-ups                    |
+| `history`   | Messages that produce varied content types (code, text, tools)                  |
+| `tasks`     | `Use TodoWrite to create 3 tasks`, `Mark the first task done`, `Add a 4th task` |
+| `tools`     | `Use Bash to list files in /tmp`, `Read the contents of /etc/hostname`          |
+| `code`      | `Write a Python class with decorators`, `Write a React component with JSX`      |
+| `markdown`  | `Explain quicksort with headings, bullet lists, and a table`                    |
+| `scroll`    | Generate very long responses, send many messages in sequence                    |
+| `commands`  | Type `/` in chat input and test palette, try various commands                   |
 
 **When no focus is specified**, use the default 5-message script:
 
-| # | Message | Tests |
-|---|---------|-------|
-| 1 | `Write a JavaScript bubble sort function with comments` | Code rendering |
-| 2 | `Add TypeScript types to the function` | Multi-turn context |
-| 3 | `Write a minimal HTML page with a <h1>Hello World</h1> heading` | HTML in code blocks |
-| 4 | `Use TodoWrite to create a task list with 3 tasks for our current conversation` | Task UI |
-| 5 | `What is 2+2?` | Simple text response |
+| #   | Message                                                                         | Tests                |
+| --- | ------------------------------------------------------------------------------- | -------------------- |
+| 1   | `Write a JavaScript bubble sort function with comments`                         | Code rendering       |
+| 2   | `Add TypeScript types to the function`                                          | Multi-turn context   |
+| 3   | `Write a minimal HTML page with a <h1>Hello World</h1> heading`                 | HTML in code blocks  |
+| 4   | `Use TodoWrite to create a task list with 3 tasks for our current conversation` | Task UI              |
+| 5   | `What is 2+2?`                                                                  | Simple text response |
 
 ### Per-message observation loop (repeat for each message):
 
@@ -220,20 +221,27 @@ This prevents the test from hanging indefinitely per message. An SSE stream free
 **e. Collect network requests** via `mcp__claude-in-chrome__read_network_requests`. Note status codes for `/api/sessions/:id/messages` POST calls.
 
 **f. Extract visible messages from the DOM:**
+
 ```js
 // Use mcp__claude-in-chrome__javascript_tool
-() => [...document.querySelectorAll('[data-message-role]')]
-  .map(el => ({ role: el.dataset.messageRole, text: el.textContent.slice(0, 120) }))
+() =>
+  [...document.querySelectorAll('[data-message-role]')].map((el) => ({
+    role: el.dataset.messageRole,
+    text: el.textContent.slice(0, 120),
+  }));
 ```
+
 First inspect the actual DOM via `mcp__claude-in-chrome__read_page` to confirm the correct selectors are used.
 
 **g. Compare against the API:**
+
 ```bash
 curl -s "http://localhost:$API_PORT/api/sessions/$SDK_SESSION_ID/messages" \
   | jq '[.messages[] | {role, preview: (.content | if type=="string" then .[0:100] else (.[0].text // "[block]")[0:100] end)}]'
 ```
 
 **h. Compare against JSONL on disk:**
+
 ```bash
 python3 -c "
 import sys, json
@@ -245,6 +253,7 @@ for line in open('$JSONL_FILE'):
 
 **i. For task list messages:**
 After sending, check whether task list UI elements are visible in the DOM. Compare rendered tasks against:
+
 - `task_update` SSE events captured in the network log
 - `TaskCreate`/`TaskUpdate` tool_use blocks in the JSONL
 
@@ -254,6 +263,7 @@ After sending, check whether task list UI elements are visible in the DOM. Compa
 
 ```markdown
 ### Message [N]: `[message text]`
+
 - **Streaming duration:** [Xs or "SSE freeze detected"]
 - **Console warnings:** [count new]
 - **Network status:** [POST status code]
@@ -312,17 +322,18 @@ Navigate to the same URL with the `?session=` param preserved. Wait for messages
 
 **Verify after each reload:**
 
-| Check | Expected |
-|-------|----------|
-| Message count | Same as during live session (DOM count == JSONL count) |
-| Code blocks | Properly rendered (not raw markdown) |
-| Tool call cards | All tool calls visible and collapsible |
-| Task list | Tasks visible with correct status |
-| Tool call order | Same order as during live session |
-| Model/permission display | Correct values in status bar |
-| Scroll position | Scrolled to bottom (latest message) |
+| Check                    | Expected                                               |
+| ------------------------ | ------------------------------------------------------ |
+| Message count            | Same as during live session (DOM count == JSONL count) |
+| Code blocks              | Properly rendered (not raw markdown)                   |
+| Tool call cards          | All tool calls visible and collapsible                 |
+| Task list                | Tasks visible with correct status                      |
+| Tool call order          | Same order as during live session                      |
+| Model/permission display | Correct values in status bar                           |
+| Scroll position          | Scrolled to bottom (latest message)                    |
 
 Compare the history-loaded screenshots against the live-session screenshots from Phase 4. Note any visual differences, especially:
+
 - Expanded/collapsed state of tool call cards
 - Missing or duplicated messages
 - Timestamp correctness
@@ -336,11 +347,11 @@ Compare the history-loaded screenshots against the live-session screenshots from
 
 Classify each observation into one of:
 
-| Class | Meaning |
-|-------|---------|
-| **Bug** | Broken functionality — data mismatch, console error, broken element |
-| **UX Issue** | Works but feels wrong — scroll, animation, layout, affordance |
-| **Improvement** | Could be better — missing feature, unclear affordance |
+| Class           | Meaning                                                             |
+| --------------- | ------------------------------------------------------------------- |
+| **Bug**         | Broken functionality — data mismatch, console error, broken element |
+| **UX Issue**    | Works but feels wrong — scroll, animation, layout, affordance       |
+| **Improvement** | Could be better — missing feature, unclear affordance               |
 
 **For every Bug or significant UX Issue, do the research before writing anything:**
 
@@ -368,6 +379,7 @@ Only after completing this research: form a concrete recommendation with file pa
 ## Issues Found
 
 ### [Issue Title] — [Bug | UX Issue | Improvement]
+
 **Observed:** [what actually happened]
 **Expected:** [what should have happened]
 **Root cause:** [file:line reference after code research]
@@ -378,9 +390,11 @@ Only after completing this research: form a concrete recommendation with file pa
 [Repeat for each issue]
 
 ## Observations (No Issues)
+
 [What worked well — important to preserve in future changes]
 
 ## Passing Verdict (if applicable)
+
 [Note if all checks passed]
 
 ---
@@ -456,7 +470,7 @@ All checks passed. No bugs or significant issues found.
 ## Technical Notes
 
 - **JSONL location:** `~/.claude/projects/{slug}/{sessionId}.jsonl` — use `find` by session ID.
-- **Session ID:** `?session=` URL param, managed by `useSessionId()` hook via nuqs.
+- **Session ID:** `?session=` URL param, managed by `useSessionId()` hook via TanStack Router search params.
 - **Model selector:** `ModelItem` in `StatusLine` — opens a `ResponsiveDropdownMenu`.
 - **Permission mode selector:** `PermissionModeItem` in `StatusLine` — 4 options available.
 - **New session button:** Plus icon in `SessionSidebar`.

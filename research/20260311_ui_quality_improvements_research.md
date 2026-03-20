@@ -1,9 +1,20 @@
 ---
-title: "UI Quality Improvements: 5 React/TypeScript Best Practice Topics"
+title: 'UI Quality Improvements: 5 React/TypeScript Best Practice Topics'
 date: 2026-03-11
 type: external-best-practices
 status: active
-tags: [FSD, shadcn, TypeScript, React, event-log, error-display, module-splitting, binding-list, auto-scroll]
+tags:
+  [
+    FSD,
+    shadcn,
+    TypeScript,
+    React,
+    event-log,
+    error-display,
+    module-splitting,
+    binding-list,
+    auto-scroll,
+  ]
 searches_performed: 18
 sources_count: 42
 ---
@@ -29,11 +40,13 @@ FSD defines a strict set of standard segments: `ui`, `api`, `model`, `lib`, and 
 Place all cross-feature constants — including color maps, badge variant maps, status maps — in `shared/config`.
 
 **Pros:**
+
 - `config` is explicitly for "constants and flags" per FSD spec
 - Simple mental model — all "lookup tables" live in one place
 - Easy to find; aligns with FSD v2.1 which explicitly allows "application-aware things like route constants" in Shared
 
 **Cons:**
+
 - Mixes display concerns with global configuration (env vars, feature flags)
 - `shared/config` becomes a grab-bag; harder to navigate as it grows
 - Color maps are arguably UI concern, not configuration
@@ -43,12 +56,14 @@ Place all cross-feature constants — including color maps, badge variant maps, 
 Put color maps and display-related constants in `shared/lib`, organized by concern: `shared/lib/colors.ts`, `shared/lib/status.ts`, `shared/lib/formatting.ts`.
 
 **Pros:**
+
 - FSD documentation explicitly states: "libraries in `shared/lib` should have one area of focus, for example, dates, **colors**, text manipulation"
 - Color and status maps are code that _does something_ (lookup/transform), which is more "lib" than "config"
 - Scales cleanly — each domain gets a focused file
 - Cleaner import paths: `import { statusColorMap } from '@/shared/lib/status'`
 
 **Cons:**
+
 - Slightly less obvious than a `constants/` folder for junior devs
 - Requires discipline to keep files focused (avoid dumping into `lib/utils.ts`)
 
@@ -57,10 +72,12 @@ Put color maps and display-related constants in `shared/lib`, organized by conce
 Keep color maps in the feature that owns them, only promoting to `shared/lib` if used in 3+ features.
 
 **Pros:**
+
 - Maximum colocation — easier to delete when feature is removed
 - No premature abstraction
 
 **Cons:**
+
 - Color maps used across features become duplicated
 - FSD's purpose is to avoid exactly this kind of inconsistency
 - Violates the DRY principle when the same status-to-color mapping is needed in a sidebar, a card, and a detail view
@@ -103,11 +120,13 @@ In data-dense UIs with compact cards (e.g., an agent status card or binding row)
 Truncate the error with `truncate` / `line-clamp-2`, show full text in a shadcn `Tooltip` on hover.
 
 **Pros:**
+
 - Minimal footprint — no layout change
 - Familiar pattern for sighted users
 - Zero interactivity required — hover reveals content
 
 **Cons:**
+
 - Tooltips are hover-only — keyboard users cannot access the content on mobile or keyboard-only navigation
 - WCAG 1.4.13 (Content on Hover or Focus) requires tooltip content to be dismissable, hoverable (pointer can enter tooltip), and persistent — shadcn's Tooltip meets this but requires careful configuration
 - Long error messages make bad tooltip text — tooltips should be "concise"; truncated error strings are not
@@ -132,7 +151,7 @@ Show a 1–2 line preview of the error. Provide a "Show more" / chevron button t
     </CollapsibleTrigger>
   </div>
   <CollapsibleContent>
-    <pre className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap break-words">
+    <pre className="text-muted-foreground mt-1 text-xs break-words whitespace-pre-wrap">
       {fullError}
     </pre>
   </CollapsibleContent>
@@ -140,6 +159,7 @@ Show a 1–2 line preview of the error. Provide a "Show more" / chevron button t
 ```
 
 **Pros:**
+
 - Fully keyboard accessible — the trigger is a button, focusable with Tab, activatable with Enter/Space
 - ARIA-correct: Radix Collapsible uses `aria-expanded` and `aria-controls` automatically
 - Stays in-place — no viewport change, no focus teleportation
@@ -148,6 +168,7 @@ Show a 1–2 line preview of the error. Provide a "Show more" / chevron button t
 - The 9 Radix Collapsible variants (including "dense/compact") are purpose-built for this
 
 **Cons:**
+
 - Layout shifts slightly when expanded — needs `min-h` or animation to soften
 - Card height becomes variable — may cause layout reflow in grid views
 - Requires motion animation to avoid jarring pop
@@ -159,12 +180,14 @@ Show a 1–2 line preview of the error. Provide a "Show more" / chevron button t
 Replace inline error text entirely with an error icon badge. Clicking it opens a shadcn `Popover` containing the full error, a copy button, and potentially a "Report" link.
 
 **Pros:**
+
 - Zero layout impact — the card always has the same height
 - Popover is fully keyboard accessible (focus is managed, focus trap, escape closes)
 - Can contain interactive elements (Copy, Dismiss, Report)
 - Best for very long errors (>100 characters) that would meaninglessly truncate
 
 **Cons:**
+
 - Two-click pattern — user must discover the icon, then click
 - Hides the error text from immediate visual scanning — user must know to look for the icon
 - Popovers should not be nested in other popovers (relevant if the card row is itself in a popover)
@@ -173,6 +196,7 @@ Replace inline error text entirely with an error icon badge. Clicking it opens a
 ### Recommendation
 
 Use **Approach B (Collapsible)** as the primary pattern for errors in compact cards. It is the only pattern that:
+
 1. Keeps the error text scannable in context (not hidden behind an icon)
 2. Is fully keyboard and screen reader accessible
 3. Avoids viewport-disrupting navigation
@@ -201,15 +225,15 @@ A "binding" is a relationship between two entities: an adapter (e.g., Telegram, 
 
 Use the following decision criteria (from UX Patterns for Developers and design system research):
 
-| Criterion | Table | List Rows | Cards |
-|---|---|---|---|
-| Many columns to compare | Best | Mediocre | Poor |
-| 1-3 properties per item | Good | Best | Good |
-| Inline actions (edit/delete) | Good | Best | Mediocre |
-| Responsive/mobile | Poor | Good | Best |
-| Items are homogeneous | Best | Good | Mediocre |
-| User needs to scan quickly | Best | Good | Poor |
-| Items have images/rich content | Poor | Mediocre | Best |
+| Criterion                      | Table | List Rows | Cards    |
+| ------------------------------ | ----- | --------- | -------- |
+| Many columns to compare        | Best  | Mediocre  | Poor     |
+| 1-3 properties per item        | Good  | Best      | Good     |
+| Inline actions (edit/delete)   | Good  | Best      | Mediocre |
+| Responsive/mobile              | Poor  | Good      | Best     |
+| Items are homogeneous          | Best  | Good      | Mediocre |
+| User needs to scan quickly     | Best  | Good      | Poor     |
+| Items have images/rich content | Poor  | Mediocre  | Best     |
 
 Bindings are homogeneous, have 2-4 properties, and need scan-and-act behavior. This points to **list rows or a minimal table** — not cards.
 
@@ -220,11 +244,13 @@ Bindings are homogeneous, have 2-4 properties, and need scan-and-act behavior. T
 Columns: Adapter, Agent, Session Strategy, Status, Actions.
 
 **Pros:**
+
 - Best for comparison — user can scan adapter column or agent column independently
 - Sort and filter come naturally with TanStack Table
 - Familiar to developer-persona users (Kai) who are accustomed to tabular data
 
 **Cons:**
+
 - Overkill for small datasets (most users have <20 bindings)
 - Inline editing in tables requires cell-level edit modes — more complex to implement
 - Tables scroll horizontally on mobile
@@ -233,11 +259,13 @@ Columns: Adapter, Agent, Session Strategy, Status, Actions.
 #### Approach B: Structured List Rows with Inline Editing (RECOMMENDED)
 
 Each binding is a horizontal row (`flex` or `grid`) with:
+
 - Left: adapter name + icon
 - Center: agent name (possibly a Select for reassigning)
 - Right: session strategy Select + action buttons (edit icon, delete icon)
 
 **Pros:**
+
 - Simple to implement — just a `ul` with `li` rows styled with Tailwind
 - Inline Select for session strategy is natural in a list row (more space than a table cell)
 - Empty state, loading state, and error state are straightforward
@@ -247,6 +275,7 @@ Each binding is a horizontal row (`flex` or `grid`) with:
 - Deletions can use a small confirm popover on the delete icon (avoiding a full modal)
 
 **Cons:**
+
 - Less scannable than a table when there are many bindings (>50)
 - No built-in sort/filter
 
@@ -257,10 +286,12 @@ Each binding is a horizontal row (`flex` or `grid`) with:
 Each binding is a card showing adapter + agent + properties + actions.
 
 **Pros:**
+
 - More real estate for rich adapter metadata (description, last sync time)
 - Each binding feels like a discrete "thing" the user manages
 
 **Cons:**
+
 - Cards are best when each item requires "thinking about" — bindings are operational, not exploratory
 - Takes up significantly more vertical space
 - Actions (edit/delete) in cards typically require a menu, adding clicks
@@ -304,6 +335,7 @@ Use **Approach B: Structured List Rows**. Here is the recommended row structure:
 **Empty State Pattern:**
 
 Per Carbon Design System and Atlassian guidance, empty states should:
+
 1. Use an icon representing the absent entity (e.g., a plug or link icon)
 2. Provide a headline: "No bindings configured"
 3. Provide a helpful secondary line: "Connect an adapter to route messages to an agent"
@@ -350,12 +382,14 @@ services/
 ```
 
 The facade (`index.ts`) re-exports the public surface:
+
 ```typescript
-export { RelayManager } from './relay-manager'
-export type { RelayConfig, RelayEvent } from './schemas/relay-events'
+export { RelayManager } from './relay-manager';
+export type { RelayConfig, RelayEvent } from './schemas/relay-events';
 ```
 
 **Pros:**
+
 - Zero breaking changes — all existing imports from the module path are unchanged
 - Each sub-module is testable in isolation
 - Clear single responsibility per file
@@ -363,6 +397,7 @@ export type { RelayConfig, RelayEvent } from './schemas/relay-events'
 - Avoids "god object" anti-pattern while maintaining consumer simplicity
 
 **Cons:**
+
 - The facade itself can become a god object if not kept thin — must resist adding logic to it
 - Increased file count — navigating the directory requires more hops
 - Import cycles are possible if sub-modules import from each other without discipline
@@ -374,10 +409,12 @@ export type { RelayConfig, RelayEvent } from './schemas/relay-events'
 Keep all logic in a single directory, split into files (`handler.ts`, `publisher.ts`, etc.), and create an `index.ts` barrel that re-exports everything with named exports.
 
 **Pros:**
+
 - Simple to implement — just move code into files, create `index.ts`
 - Familiar pattern in TypeScript projects
 
 **Cons:**
+
 - Large barrel files degrade TypeScript performance — documented reports of 11,000+ module imports when barrels are overused in monorepos
 - Named exports from barrels can accidentally expose internals if not carefully curated
 - **TkDodo's "Please Stop Using Barrel Files"** (2023, widely cited) argues barrel files cause circular dependency bugs and slow down builds
@@ -390,11 +427,13 @@ Keep all logic in a single directory, split into files (`handler.ts`, `publisher
 Break the monolith into 3-4 separate injectable classes (e.g., `MessageInboundService`, `MessageOutboundService`, `ConnectionLifecycleService`) that share a common context object.
 
 **Pros:**
+
 - Most testable — each class can be unit-tested with simple mocks
 - Clean DI container integration
 - Aligns with SOLID principles at the class level
 
 **Cons:**
+
 - Significant refactoring cost — every consumer that accesses the original class needs updating unless you keep a facade
 - Context object / shared state between classes requires careful design to avoid hidden coupling
 - More complex for simple cases that don't warrant full DI
@@ -404,6 +443,7 @@ Break the monolith into 3-4 separate injectable classes (e.g., `MessageInboundSe
 When a schema file grows large, split by domain entity — **not** by schema type (don't create `input-schemas.ts` and `response-schemas.ts`; create `relay-message.schema.ts` and `relay-event.schema.ts`).
 
 Pattern:
+
 ```typescript
 // packages/shared/src/schemas/relay/
 //   index.ts               ← re-exports all relay schemas
@@ -412,9 +452,9 @@ Pattern:
 //   config.schema.ts       ← RelayConfigSchema
 
 // index.ts
-export * from './message.schema'
-export * from './event.schema'
-export * from './config.schema'
+export * from './message.schema';
+export * from './event.schema';
+export * from './config.schema';
 ```
 
 This gives consumers: `import { RelayMessageSchema } from '@dorkos/shared/schemas/relay'`.
@@ -423,12 +463,12 @@ This gives consumers: `import { RelayMessageSchema } from '@dorkos/shared/schema
 
 For adapter classes with mixed concerns (listen + send + connect + health), the proven split is by concern axis, not by direction:
 
-| File | Responsibility |
-|---|---|
+| File                   | Responsibility                                           |
+| ---------------------- | -------------------------------------------------------- |
 | `adapter-lifecycle.ts` | `connect()`, `disconnect()`, `reconnect()`, health check |
-| `adapter-inbound.ts` | Receive messages, parse, validate, dispatch to relay |
-| `adapter-outbound.ts` | Format and send messages to external service |
-| `adapter.ts` (facade) | Implements `AdapterInterface`, delegates to the above |
+| `adapter-inbound.ts`   | Receive messages, parse, validate, dispatch to relay     |
+| `adapter-outbound.ts`  | Format and send messages to external service             |
+| `adapter.ts` (facade)  | Implements `AdapterInterface`, delegates to the above    |
 
 ### Backward Compatibility Rules
 
@@ -455,24 +495,24 @@ Each event row should contain exactly four pieces of information, in this order 
 ```
 
 Example with Tailwind:
+
 ```tsx
-<li className="flex items-start gap-2 py-1 px-2 text-xs hover:bg-muted/40 rounded">
-  <time className="shrink-0 text-muted-foreground tabular-nums w-16">
+<li className="hover:bg-muted/40 flex items-start gap-2 rounded px-2 py-1 text-xs">
+  <time className="text-muted-foreground w-16 shrink-0 tabular-nums">
     {format(event.timestamp, 'HH:mm:ss')}
   </time>
   <Badge
     variant="outline"
-    className={cn("shrink-0 h-4 px-1 text-[10px]", eventTypeColor(event.type))}
+    className={cn('h-4 shrink-0 px-1 text-[10px]', eventTypeColor(event.type))}
   >
     {event.type}
   </Badge>
-  <span className="flex-1 text-foreground/80 leading-tight break-words">
-    {event.message}
-  </span>
+  <span className="text-foreground/80 flex-1 leading-tight break-words">{event.message}</span>
 </li>
 ```
 
 **Key design decisions:**
+
 - `tabular-nums` on timestamp so digits don't shift as seconds change
 - Fixed-width timestamp column (`w-16`) keeps badge and message aligned
 - `break-words` on message to handle long tool names or JSON excerpts
@@ -484,6 +524,7 @@ Example with Tailwind:
 #### Approach A: SSE + Custom `useAutoScroll` Hook (RECOMMENDED)
 
 Build a custom hook that:
+
 1. Tracks whether the user is "at the bottom" of the scroll container
 2. Auto-scrolls to bottom when new events arrive, **only if** already at the bottom
 3. Pauses auto-scroll when the user manually scrolls up
@@ -491,30 +532,31 @@ Build a custom hook that:
 
 ```typescript
 function useAutoScroll(deps: unknown[]) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isUserScrolledUp = useRef(false)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUp = useRef(false);
 
   // Detect manual scroll up
   const handleScroll = useCallback(() => {
-    const el = containerRef.current
-    if (!el) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8
-    isUserScrolledUp.current = !atBottom
-  }, [])
+    const el = containerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+    isUserScrolledUp.current = !atBottom;
+  }, []);
 
   // Auto-scroll when deps change (new events), only if not user-scrolled-up
   useEffect(() => {
-    if (isUserScrolledUp.current) return
-    const el = containerRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
-  }, deps)
+    if (isUserScrolledUp.current) return;
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, deps);
 
-  return { containerRef, handleScroll }
+  return { containerRef, handleScroll };
 }
 ```
 
 Usage:
+
 ```tsx
 const { containerRef, handleScroll } = useAutoScroll([events])
 
@@ -528,16 +570,19 @@ const { containerRef, handleScroll } = useAutoScroll([events])
 ```
 
 **Pros:**
+
 - Zero dependencies beyond React
 - Respects user intent — does not fight the user's scroll position
 - The "8px threshold" handles sub-pixel rounding without false positives
 - Can be extended to show a "Jump to bottom" button when `isUserScrolledUp.current` is true
 
 **Cons:**
+
 - Custom implementation — must be tested for edge cases (initial render, rapid events)
 - Does not handle variable-height rows gracefully without TanStack Virtual
 
 **Alternative library: `use-stick-to-bottom`** (Stackblitz Labs)
+
 - Zero-dependency, ResizeObserver-based, spring animation
 - Provides `useStickToBottomContext` for `isAtBottom` state and `scrollToBottom` callable
 - Best for cases where smooth animation of new content is needed (AI streaming)
@@ -548,10 +593,12 @@ const { containerRef, handleScroll } = useAutoScroll([events])
 For very high-frequency logs (100+ events/second), use TanStack Virtual to render only visible rows.
 
 **Pros:**
+
 - Handles unlimited event counts without DOM bloat
 - Smooth scrolling even with 10,000+ events
 
 **Cons:**
+
 - Significant complexity — measuring dynamic row heights, managing scroll positions with virtual scroll
 - Auto-scroll with virtualization has a known open issue in TanStack Virtual (GitHub issue #537)
 - Overkill for typical agent event logs (tens to hundreds of events per session)
@@ -563,10 +610,12 @@ For very high-frequency logs (100+ events/second), use TanStack Virtual to rende
 Poll `GET /api/events?since=<timestamp>` every 2 seconds with TanStack Query.
 
 **Pros:**
+
 - Simpler than SSE — no long-lived connection management
 - TanStack Query handles caching, deduplication, refetch-on-focus
 
 **Cons:**
+
 - 2-second delay for new events — not "real-time"
 - Creates unnecessary server load even when no events are occurring
 - SSE is the right transport for push-based event streams — it was designed for this
@@ -577,12 +626,14 @@ Implement client-side filtering using a controlled input with `useMemo`:
 
 ```typescript
 const filteredEvents = useMemo(
-  () => events.filter(e =>
-    (!typeFilter || e.type === typeFilter) &&
-    (!searchQuery || e.message.toLowerCase().includes(searchQuery.toLowerCase()))
-  ),
+  () =>
+    events.filter(
+      (e) =>
+        (!typeFilter || e.type === typeFilter) &&
+        (!searchQuery || e.message.toLowerCase().includes(searchQuery.toLowerCase()))
+    ),
   [events, typeFilter, searchQuery]
-)
+);
 ```
 
 UI: A small toolbar above the log with a text input (shadcn `Input`, compact) and a type filter (shadcn `ToggleGroup` or segmented tabs). Keep the toolbar minimal — this is a developer-facing panel, not a consumer app.
@@ -592,20 +643,20 @@ UI: A small toolbar above the log with a text input (shadcn `Input`, compact) an
 ```typescript
 // In the event log widget or hook
 useEffect(() => {
-  const source = new EventSource(`/api/sessions/${sessionId}/events`)
+  const source = new EventSource(`/api/sessions/${sessionId}/events`);
 
   source.addEventListener('event', (e) => {
-    const event = JSON.parse(e.data) as AgentEvent
-    setEvents(prev => [...prev, event])
-  })
+    const event = JSON.parse(e.data) as AgentEvent;
+    setEvents((prev) => [...prev, event]);
+  });
 
   source.addEventListener('error', () => {
     // Reconnect after delay — EventSource handles this natively
-    source.close()
-  })
+    source.close();
+  });
 
-  return () => source.close()
-}, [sessionId])
+  return () => source.close();
+}, [sessionId]);
 ```
 
 Note: The native `EventSource` API does not support custom headers (for auth). If `MCP_API_KEY` auth is needed for the events endpoint, use `fetch` with `ReadableStream` or a library like `eventsource` (npm) that supports headers.
@@ -657,11 +708,13 @@ Note: The native `EventSource` API does not support custom headers (for auth). I
 ## Sources & Evidence
 
 ### Topic 1 — FSD Constants
+
 - [Slices and Segments | FSD Documentation](https://feature-sliced.design/docs/reference/slices-segments) — defines `lib` as "library code that other modules need" and explicitly lists "colors" as an example lib area
 - [Layers | Feature-Sliced Design](https://feature-sliced.design/docs/reference/layers) — clarifies `shared/lib` vs `shared/config` segments
 - [FSD Overview](https://feature-sliced.design/docs/get-started/overview) — v2.1 allows application-aware things in Shared
 
 ### Topic 2 — Error Display
+
 - [Tooltip Accessibility WCAG 1.4.13](https://www.w3.org/WAI/WCAG22/Understanding/content-on-hover-or-focus.html) — defines dismissable, hoverable, persistent requirements
 - [shadcn/ui Discussion #2417 — Tooltip vs HoverCard](https://github.com/shadcn-ui/ui/discussions/2417) — confirms HoverCard is inaccessible to keyboard users
 - [Collapsible — shadcn/ui](https://ui.shadcn.com/docs/components/radix/collapsible) — Radix-based, aria-expanded managed automatically
@@ -669,12 +722,14 @@ Note: The native `EventSource` API does not support custom headers (for auth). I
 - [Tooltip Pattern | UX Patterns for Developers](https://uxpatterns.dev/patterns/content-management/tooltip)
 
 ### Topic 3 — Binding List Views
+
 - [Table vs List vs Cards: When to Use Each Data Display Pattern (2025) | UX Patterns for Developers](https://uxpatterns.dev/pattern-guide/table-vs-list-vs-cards)
 - [Carbon Design System — Empty States Pattern](https://carbondesignsystem.com/patterns/empty-states-pattern/)
 - [Empty State | Atlassian Design](https://atlassian.design/components/empty-state/)
 - [Editing CRUD Inline Example — Material React Table V3](https://www.material-react-table.com/docs/examples/editing-crud-inline-cell)
 
 ### Topic 4 — Module Splitting
+
 - [Leveraging Facade and Adapter Patterns for Backward Compatibility in TypeScript | CodeSignal](https://codesignal.com/learn/courses/backward-compatibility-in-software-development-with-typescript/lessons/leveraging-facade-and-adapter-patterns-for-backward-compatibility-in-typescript)
 - [The Barrel Trap: How I Learned to Stop Re-Exporting and Love Explicit Imports | DEV Community](https://dev.to/elmay/the-barrel-trap-how-i-learned-to-stop-re-exporting-and-love-explicit-imports-3872)
 - [Please Stop Using Barrel Files | TkDodo](https://tkdodo.eu/blog/please-stop-using-barrel-files)
@@ -683,6 +738,7 @@ Note: The native `EventSource` API does not support custom headers (for auth). I
 - [Zod Schema Structure Discussion](https://github.com/colinhacks/zod/discussions/1663)
 
 ### Topic 5 — Event Log UI
+
 - [use-stick-to-bottom | Stackblitz Labs](https://github.com/stackblitz-labs/use-stick-to-bottom) — lightweight hook for sticky scroll with spring animation
 - [react-scroll-to-bottom — npm](https://www.npmjs.com/package/react-scroll-to-bottom) — useSticky hook
 - [How to Detect When a User Scrolls to Bottom of div with React](https://thewebdev.info/2021/09/25/how-to-detect-when-a-user-scrolls-to-bottom-of-div-with-react/)

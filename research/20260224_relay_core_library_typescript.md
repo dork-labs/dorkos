@@ -1,5 +1,5 @@
 ---
-title: "@dorkos/relay — Core Messaging Library (TypeScript)"
+title: '@dorkos/relay — Core Messaging Library (TypeScript)'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -52,15 +52,19 @@ The delivery protocol is:
 #### Unique Filename Format
 
 The canonical Bernstein format is:
+
 ```
 <timestamp>.<pid>_<unique>.<hostname>
 ```
+
 For modern implementations (post-2003), the unique component should include crypto-random bytes:
+
 ```
 <unix_seconds>.<microseconds>.<random_hex>.<hostname>
 ```
 
 For the relay library, using a **ULID** as the entire filename is a clean modern alternative:
+
 - `01ARZ3NDEKTSV4RRFFQ69G5FAV` — encodes timestamp + 80 bits of entropy
 - Lexicographically sorted = `readdir()` returns messages in arrival order
 - No hostname/PID coordination needed
@@ -68,6 +72,7 @@ For the relay library, using a **ULID** as the entire filename is a clean modern
 #### Atomicity Guarantees
 
 `fs.rename()` in Node.js maps directly to POSIX `rename(2)`, which is:
+
 - **Atomic on same filesystem/mount point** — guaranteed by POSIX
 - **Not atomic across filesystems** — throws `EXDEV` (cross-device link) error
 
@@ -92,6 +97,7 @@ try {
 #### Crash Recovery / Stale `tmp/` Cleanup
 
 Files left in `tmp/` after a crash are "orphaned deliveries." The standard recovery heuristic:
+
 - On startup, scan `tmp/` for files older than a configurable TTL (e.g., 36 hours per Bernstein, or 5 minutes for a local-only relay).
 - Any file older than TTL is either moved to `new/` (retry delivery) or deleted (discard).
 
@@ -112,6 +118,7 @@ async function cleanStaleTmp(tmpDir: string, maxAgeMs: number): Promise<void> {
 #### Directory Watching for New Message Arrival
 
 **Chokidar v4** (released September 2024) is the recommended choice:
+
 - Rewritten in TypeScript, reduced from 13 to 1 dependency
 - Uses native OS APIs (inotify/FSEvents/ReadDirectoryChangesW)
 - Full ESM + CJS support
@@ -123,7 +130,7 @@ import { watch } from 'chokidar';
 const watcher = watch(path.join(maildirRoot, 'new'), {
   persistent: true,
   ignoreInitial: false, // Process existing messages on startup
-  depth: 0,            // Only watch files directly in new/
+  depth: 0, // Only watch files directly in new/
 });
 
 watcher.on('add', (filePath) => {
@@ -150,6 +157,7 @@ watcher.on('add', (filePath) => {
 Subjects are dot-delimited token strings. Valid characters per token: alphanumeric + dash + underscore. UTF-8 is technically allowed but not recommended for cross-platform interop.
 
 Validation rules to enforce:
+
 - Subject must be non-empty
 - No whitespace (spaces or tabs) anywhere in the subject
 - No consecutive dots (empty tokens): `foo..bar` is **invalid**
@@ -163,23 +171,25 @@ Validation rules to enforce:
 
 #### Wildcard Semantics
 
-| Pattern | Matches | Does Not Match |
-|---|---|---|
-| `foo.*` | `foo.bar`, `foo.baz` | `foo.bar.baz`, `foo` |
-| `foo.*.bar` | `foo.x.bar` | `foo.x.y.bar` |
-| `foo.>` | `foo.bar`, `foo.bar.baz` | `foo`, `bar.foo` |
-| `*.*.east.>` | `time.us.east.nyc` | `time.east`, `time.us.west.nyc` |
+| Pattern      | Matches                  | Does Not Match                  |
+| ------------ | ------------------------ | ------------------------------- |
+| `foo.*`      | `foo.bar`, `foo.baz`     | `foo.bar.baz`, `foo`            |
+| `foo.*.bar`  | `foo.x.bar`              | `foo.x.y.bar`                   |
+| `foo.>`      | `foo.bar`, `foo.bar.baz` | `foo`, `bar.foo`                |
+| `*.*.east.>` | `time.us.east.nyc`       | `time.east`, `time.us.west.nyc` |
 
 #### Matching Algorithms
 
 **Option A: Trie (Sublist) — NATS production approach**
 
 NATS uses a trie where each level corresponds to one dot-delimited token. At each node, three child sets exist:
+
 - Literal token children: a `Map<string, TrieNode>`
 - A single `pwc` (partial wildcard) child node for `*`
 - A single `fwc` (full wildcard) leaf for `>`
 
 The Match function:
+
 1. Check LRU cache first (NATS uses max 1024 entries with 256-entry sweep on overflow)
 2. Tokenize subject by `.`
 3. Recursively traverse trie: at each level, follow literal match AND `*` node simultaneously; if `>` node exists at current level, collect all its subscriptions immediately
@@ -223,7 +233,7 @@ function matchesPattern(subject: string, pattern: string): boolean {
 ```
 
 Pros: Simplest, zero dependencies, easy to test, no regex compilation step.
-Cons: O(tokens * N) per publish. At 1,000 subscriptions and average 4 tokens, approximately 4,000 comparisons per publish — fast enough for local embedded use.
+Cons: O(tokens \* N) per publish. At 1,000 subscriptions and average 4 tokens, approximately 4,000 comparisons per publish — fast enough for local embedded use.
 
 #### Recommendation for Relay
 
@@ -263,19 +273,20 @@ Format: `tttttttttteeeeeeeeeeeeeeeeee` (t = time bits, e = entropy bits)
 
 #### UUIDv7 Comparison
 
-| Property | ULID | UUIDv7 |
-|---|---|---|
-| Length (string) | 26 chars | 36 chars (with hyphens) |
-| Timestamp precision | 48-bit ms | 48-bit ms |
-| Entropy | 80 bits | ~74 bits (after version/variant nibbles) |
-| Ecosystem compatibility | ULID-specific decoders | Any UUID-aware system |
-| RFC standard | No (informal spec) | Yes (RFC 9562, 2024) |
-| Node.js library | `ulidx` | `uuid` package (`v7`) |
-| Human-readable encoding | Crockford Base32 (compact) | Hex + hyphens |
+| Property                | ULID                       | UUIDv7                                   |
+| ----------------------- | -------------------------- | ---------------------------------------- |
+| Length (string)         | 26 chars                   | 36 chars (with hyphens)                  |
+| Timestamp precision     | 48-bit ms                  | 48-bit ms                                |
+| Entropy                 | 80 bits                    | ~74 bits (after version/variant nibbles) |
+| Ecosystem compatibility | ULID-specific decoders     | Any UUID-aware system                    |
+| RFC standard            | No (informal spec)         | Yes (RFC 9562, 2024)                     |
+| Node.js library         | `ulidx`                    | `uuid` package (`v7`)                    |
+| Human-readable encoding | Crockford Base32 (compact) | Hex + hyphens                            |
 
 #### Node.js Library Recommendation
 
 **`ulidx`** is recommended over the original `ulid` package:
+
 - Original `ulid` package is unmaintained with outstanding compatibility bugs
 - `ulidx` is actively maintained, fully TypeScript, ESM + CJS dual output
 - Supports `monotonicFactory()` for guaranteed monotonic ordering within same millisecond (increments entropy component instead of re-randomizing)
@@ -295,12 +306,13 @@ const id1 = mono();
 const id2 = mono(); // id2 > id1 always, even if called in same ms
 
 // Decode embedded timestamp
-const ts = decodeTime("01ARZ3NDEKTSV4RRFFQ69G5FAV"); // 1469918176385 (Unix ms)
+const ts = decodeTime('01ARZ3NDEKTSV4RRFFQ69G5FAV'); // 1469918176385 (Unix ms)
 ```
 
 #### SQLite Indexing Implications
 
 Time-ordered IDs (ULID, UUIDv7) produce **sequential B-tree inserts**, which:
+
 - Eliminate page splits that random UUIDv4 causes
 - Improve INSERT throughput by 2–5x in published benchmarks
 - Reduce index fragmentation over time
@@ -309,6 +321,7 @@ Time-ordered IDs (ULID, UUIDv7) produce **sequential B-tree inserts**, which:
 #### ULID as Maildir Filename
 
 Using ULID as the filename directly serves double duty:
+
 - Unique filename (80 bits of entropy — collision probability negligible)
 - Chronological ordering via sorted `readdir()` output
 - Embeds arrival time without extra metadata fields
@@ -332,11 +345,11 @@ function openRelayDb(dbPath: string): Database.Database {
   db.pragma('journal_mode = WAL');
 
   // Connection-scoped — must set every open
-  db.pragma('synchronous = NORMAL');   // Safe for WAL; only checkpoints need fsync
-  db.pragma('temp_store = MEMORY');    // Temp tables/indices in RAM
+  db.pragma('synchronous = NORMAL'); // Safe for WAL; only checkpoints need fsync
+  db.pragma('temp_store = MEMORY'); // Temp tables/indices in RAM
   db.pragma('mmap_size = 134217728'); // 128MB memory-mapped I/O
-  db.pragma('cache_size = -20000');   // ~20MB page cache (negative = KB)
-  db.pragma('busy_timeout = 5000');   // 5s wait on locked DB instead of immediate failure
+  db.pragma('cache_size = -20000'); // ~20MB page cache (negative = KB)
+  db.pragma('busy_timeout = 5000'); // 5s wait on locked DB instead of immediate failure
 
   return db;
 }
@@ -483,7 +496,10 @@ class TypedEmitter<TEvents extends Record<string, unknown[]>> {
 
   on<K extends keyof TEvents>(event: K, fn: Listener<TEvents[K]>): this {
     let fns = this._listeners.get(event);
-    if (!fns) { fns = new Set(); this._listeners.set(event, fns); }
+    if (!fns) {
+      fns = new Set();
+      this._listeners.set(event, fns);
+    }
     fns.add(fn);
     return this;
   }
@@ -581,11 +597,13 @@ interface FailedMessage {
 
 // After maxRetries exhausted:
 function moveToDlq(db: Database.Database, msg: FailedMessage): void {
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE messages
     SET status = 'dlq', dlq_at = ?, last_error = ?
     WHERE id = ?
-  `).run(Date.now(), msg.lastError, msg.id);
+  `
+  ).run(Date.now(), msg.lastError, msg.id);
   bus.emit('dlq', msg);
 }
 ```
@@ -650,6 +668,7 @@ An untrusted caller invoking `subscribe()` many times can exhaust memory. Mitiga
 Linux `ext4` directories degrade past approximately 100,000 files when `dir_index` is disabled. On modern ext4 (default), HTree indexing maintains O(log N) directory lookups — acceptable to several million entries.
 
 For extreme throughput: partition by subject prefix, creating one subdirectory per top-level subject token:
+
 ```
 new/
   relay/
@@ -664,11 +683,11 @@ This limits files per directory proportional to subjects × messages per subject
 
 From the phiresky performance tuning benchmarks:
 
-| Configuration | Approximate inserts/sec |
-|---|---|
-| Default rollback journal | 100–500 |
-| WAL + `synchronous = NORMAL` | 10,000–50,000 |
-| WAL + batched transactions | 100,000–500,000 |
+| Configuration                | Approximate inserts/sec |
+| ---------------------------- | ----------------------- |
+| Default rollback journal     | 100–500                 |
+| WAL + `synchronous = NORMAL` | 10,000–50,000           |
+| WAL + batched transactions   | 100,000–500,000         |
 
 For the relay library, batching index writes into transactions of 50–100 messages provides the highest throughput for burst scenarios.
 
@@ -701,6 +720,7 @@ Use **`ulidx`** with `monotonicFactory()` for guaranteed monotonic ordering. Use
 
 **SQLite Configuration**
 Use `better-sqlite3` with the following PRAGMAs on every connection open:
+
 - `journal_mode = WAL`
 - `synchronous = NORMAL`
 - `temp_store = MEMORY`

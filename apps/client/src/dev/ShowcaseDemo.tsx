@@ -4,7 +4,12 @@ import { cn } from '@/layers/shared/lib';
 
 type Viewport = 'full' | 'tablet' | 'mobile';
 
-const VIEWPORTS: { value: Viewport; icon: React.ComponentType<{ className?: string }>; maxWidth: string | undefined; label: string }[] = [
+const VIEWPORTS: {
+  value: Viewport;
+  icon: React.ComponentType<{ className?: string }>;
+  maxWidth: string | undefined;
+  label: string;
+}[] = [
   { value: 'full', icon: Monitor, maxWidth: undefined, label: 'Desktop' },
   { value: 'tablet', icon: Tablet, maxWidth: '768px', label: 'Tablet (768px)' },
   { value: 'mobile', icon: Smartphone, maxWidth: '375px', label: 'Mobile (375px)' },
@@ -23,7 +28,9 @@ export function ShowcaseDemo({ children, className, responsive }: ShowcaseDemoPr
   const activeMaxWidth = VIEWPORTS.find((v) => v.value === viewport)?.maxWidth;
 
   return (
-    <div className={cn('rounded-lg border border-dashed border-border/50 bg-muted/30 p-4', className)}>
+    <div
+      className={cn('border-border/50 bg-muted/30 rounded-lg border border-dashed p-4', className)}
+    >
       {responsive && (
         <div className="mb-3 flex gap-1">
           {VIEWPORTS.map(({ value, icon: Icon, label }) => (
@@ -35,7 +42,7 @@ export function ShowcaseDemo({ children, className, responsive }: ShowcaseDemoPr
                 'rounded-md p-1.5 transition-colors',
                 viewport === value
                   ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:text-foreground',
+                  : 'text-muted-foreground hover:text-foreground'
               )}
               aria-label={label}
               title={label}

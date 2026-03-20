@@ -76,13 +76,13 @@ Make `namespace`, `command`, and `filePath` optional to accommodate SDK-only com
 ```typescript
 export const CommandEntrySchema = z
   .object({
-    namespace: z.string().optional(),     // was required
-    command: z.string().optional(),        // was required
-    fullCommand: z.string(),              // stays required
-    description: z.string(),              // stays required
-    argumentHint: z.string().optional(),  // already optional
-    allowedTools: z.array(z.string()).optional(),  // already optional
-    filePath: z.string().optional(),      // was required
+    namespace: z.string().optional(), // was required
+    command: z.string().optional(), // was required
+    fullCommand: z.string(), // stays required
+    description: z.string(), // stays required
+    argumentHint: z.string().optional(), // already optional
+    allowedTools: z.array(z.string()).optional(), // already optional
+    filePath: z.string().optional(), // was required
   })
   .openapi('CommandEntry');
 ```
@@ -210,24 +210,24 @@ The filesystem scanner's existing 5-minute TTL continues to operate independentl
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `packages/shared/src/schemas.ts` | Make `namespace`, `command`, `filePath` optional in `CommandEntrySchema` |
-| `apps/server/src/services/runtimes/claude-code/message-sender.ts` | Add `onCommandsReceived` callback + `supportedCommands()` call |
-| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | Add `cachedSdkCommands` property, merge logic in `getCommands()`, extract `getOrCreateRegistry()` |
-| `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts` | Populate `slash_commands` in mock init messages |
-| `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` | Add tests for SDK+filesystem merge, fallback behavior |
-| `apps/server/src/routes/__tests__/commands.test.ts` | Update assertions for optional fields |
+| File                                                                                  | Change                                                                                            |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                                                      | Make `namespace`, `command`, `filePath` optional in `CommandEntrySchema`                          |
+| `apps/server/src/services/runtimes/claude-code/message-sender.ts`                     | Add `onCommandsReceived` callback + `supportedCommands()` call                                    |
+| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts`                | Add `cachedSdkCommands` property, merge logic in `getCommands()`, extract `getOrCreateRegistry()` |
+| `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts`            | Populate `slash_commands` in mock init messages                                                   |
+| `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` | Add tests for SDK+filesystem merge, fallback behavior                                             |
+| `apps/server/src/routes/__tests__/commands.test.ts`                                   | Update assertions for optional fields                                                             |
 
 ### Files NOT Changed
 
-| File | Reason |
-|---|---|
-| `apps/server/src/routes/commands.ts` | Already delegates to `runtime.getCommands()` |
-| `packages/shared/src/transport.ts` | Interface unchanged |
-| `packages/shared/src/agent-runtime.ts` | Interface unchanged |
-| All client code | Transparent — `CommandEntry[]` shape is backward compatible |
-| `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts` | Continues returning empty commands |
+| File                                                               | Reason                                                      |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `apps/server/src/routes/commands.ts`                               | Already delegates to `runtime.getCommands()`                |
+| `packages/shared/src/transport.ts`                                 | Interface unchanged                                         |
+| `packages/shared/src/agent-runtime.ts`                             | Interface unchanged                                         |
+| All client code                                                    | Transparent — `CommandEntry[]` shape is backward compatible |
+| `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts` | Continues returning empty commands                          |
 
 ## User Experience
 

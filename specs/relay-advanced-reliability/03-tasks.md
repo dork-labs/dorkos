@@ -109,11 +109,12 @@ export interface RelayOptions {
   maxHops?: number;
   defaultTtlMs?: number;
   defaultCallBudget?: number;
-  reliability?: ReliabilityConfig;  // NEW
+  reliability?: ReliabilityConfig; // NEW
 }
 ```
 
 **Acceptance Criteria:**
+
 - All new types compile without errors
 - Existing code remains unaffected (backward compatible)
 - TSDoc comments on all new interfaces and fields
@@ -173,13 +174,18 @@ export type ReliabilityConfig = z.infer<typeof ReliabilityConfigSchema>;
 ```typescript
 export const SignalTypeSchema = z
   .enum([
-    'typing', 'presence', 'read_receipt', 'delivery_receipt', 'progress',
-    'backpressure',  // NEW
+    'typing',
+    'presence',
+    'read_receipt',
+    'delivery_receipt',
+    'progress',
+    'backpressure', // NEW
   ])
   .openapi('SignalType');
 ```
 
 **Acceptance Criteria:**
+
 - All schemas parse valid configs correctly
 - Schema defaults match spec defaults
 - `backpressure` added to SignalTypeSchema
@@ -249,6 +255,7 @@ countNewByEndpoint(endpointHash: string): number {
 - Migration version 2 creates the new index
 
 **Acceptance Criteria:**
+
 - Migration runs automatically on construction
 - Both prepared statements work with in-memory SQLite
 - All new tests pass
@@ -286,7 +293,7 @@ const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
 export function checkRateLimit(
   sender: string,
   countInWindow: number,
-  config: RateLimitConfig = DEFAULT_RATE_LIMIT_CONFIG,
+  config: RateLimitConfig = DEFAULT_RATE_LIMIT_CONFIG
 ): RateLimitResult {
   if (!config.enabled) {
     return { allowed: true };
@@ -353,6 +360,7 @@ describe('resolveLimit', () => {
 ```
 
 **Acceptance Criteria:**
+
 - Pure function, no side effects
 - Per-sender override resolution with longest prefix match
 - All test cases pass
@@ -542,6 +550,7 @@ describe('CircuitBreakerManager', () => {
 Use `vi.useFakeTimers()` and `vi.setSystemTime()` for cooldown timing tests.
 
 **Acceptance Criteria:**
+
 - Standard three-state machine: CLOSED -> OPEN -> HALF_OPEN -> CLOSED
 - Separate state per endpoint hash (Map-based)
 - Config update support for hot-reload
@@ -574,15 +583,14 @@ const DEFAULT_BP_CONFIG: BackpressureConfig = {
  */
 export function checkBackpressure(
   currentSize: number,
-  config: BackpressureConfig = DEFAULT_BP_CONFIG,
+  config: BackpressureConfig = DEFAULT_BP_CONFIG
 ): BackpressureResult {
   if (!config.enabled) {
     return { allowed: true, currentSize, pressure: 0 };
   }
 
-  const pressure = config.maxMailboxSize > 0
-    ? Math.min(currentSize / config.maxMailboxSize, 1.0)
-    : 0;
+  const pressure =
+    config.maxMailboxSize > 0 ? Math.min(currentSize / config.maxMailboxSize, 1.0) : 0;
 
   if (currentSize >= config.maxMailboxSize) {
     return {
@@ -619,6 +627,7 @@ describe('checkBackpressure', () => {
 ```
 
 **Acceptance Criteria:**
+
 - Pure function, no side effects
 - Pressure metric calculation: `currentSize / maxMailboxSize`, capped at 1.0
 - Division by zero protection when `maxMailboxSize` is 0
@@ -662,6 +671,7 @@ interface EndpointDeliveryResult {
 ```
 
 **Acceptance Criteria:**
+
 - `rejected` and `mailboxPressure` are omitted when empty (backward compatible)
 - Existing `PublishResult` consumers unaffected
 - `deliverToEndpoint` returns `EndpointDeliveryResult` instead of `boolean`
@@ -706,6 +716,7 @@ if (this.rateLimitConfig.enabled) {
 ```
 
 **Acceptance Criteria:**
+
 - Rate limit check runs ONCE per publish, before fan-out
 - Rate-limited publishes return `rejected` array with `reason: 'rate_limited'`
 - No message created when rate-limited (`messageId: ''`)
@@ -758,13 +769,21 @@ if (bpResult.pressure >= this.backpressureConfig.pressureWarningAt) {
 }
 
 if (!bpResult.allowed) {
-  return { delivered: false, rejected: { endpointHash: endpoint.hash, reason: 'backpressure' }, pressure: bpResult.pressure };
+  return {
+    delivered: false,
+    rejected: { endpointHash: endpoint.hash, reason: 'backpressure' },
+    pressure: bpResult.pressure,
+  };
 }
 
 // 2. Circuit breaker check
 const cbResult = this.circuitBreaker.check(endpoint.hash);
 if (!cbResult.allowed) {
-  return { delivered: false, rejected: { endpointHash: endpoint.hash, reason: 'circuit_open' }, pressure: bpResult.pressure };
+  return {
+    delivered: false,
+    rejected: { endpointHash: endpoint.hash, reason: 'circuit_open' },
+    pressure: bpResult.pressure,
+  };
 }
 ```
 
@@ -781,6 +800,7 @@ this.circuitBreaker.recordFailure(endpoint.hash);
 ```
 
 **Acceptance Criteria:**
+
 - Backpressure check runs per-endpoint, before budget enforcement
 - Circuit breaker check runs per-endpoint, after backpressure
 - Success/failure recorded after Maildir delivery attempt
@@ -829,13 +849,14 @@ if (!budgetResult.allowed) {
   await this.deadLetterQueue.reject(
     endpoint.hash,
     envelope,
-    budgetResult.reason ?? 'budget enforcement failed',
+    budgetResult.reason ?? 'budget enforcement failed'
   );
   return { delivered: false, rejected: { endpointHash: endpoint.hash, reason: 'budget_exceeded' } };
 }
 ```
 
 **Acceptance Criteria:**
+
 - `rejected` array only included when non-empty
 - `mailboxPressure` only included when non-empty
 - Budget rejections still go to DLQ (reliability rejections do NOT)
@@ -896,6 +917,7 @@ if (this.configWatcher) {
 ```
 
 **Acceptance Criteria:**
+
 - Config loads from `{dataDir}/config.json` on startup
 - Config hot-reloads on file change (chokidar watcher)
 - Invalid config silently keeps current settings
@@ -932,6 +954,7 @@ export type {
 ```
 
 **Acceptance Criteria:**
+
 - All new public APIs accessible from `@dorkos/relay`
 - Package builds successfully with `turbo build --filter=@dorkos/relay`
 - No circular imports
@@ -988,6 +1011,7 @@ afterEach(async () => {
 Uses real SQLite in-memory database and temp Maildir directories, matching existing integration test patterns.
 
 **Acceptance Criteria:**
+
 - All 12 integration test cases pass
 - Tests use real SQLite and temp Maildir (not mocks)
 - Tests clean up temp directories in afterEach
@@ -1014,6 +1038,7 @@ Task 1.3 (sqlite-index)┘                                  │
 ```
 
 **Parallel opportunities:**
+
 - Tasks 1.1, 1.2, 1.3 can run in parallel (all are foundation)
 - Tasks 2.1, 2.2, 2.3 can run in parallel (each is independent)
 - Tasks 3.1, 3.2, 3.3, 3.5 can run in parallel (different parts of relay-core.ts)

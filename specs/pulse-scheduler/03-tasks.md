@@ -1,4 +1,5 @@
 # Task Breakdown: DorkOS Pulse (Scheduler)
+
 Generated: 2026-02-18
 Source: specs/pulse-scheduler/02-specification.md
 Last Decompose: 2026-02-18
@@ -10,6 +11,7 @@ DorkOS Pulse is the autonomous scheduler that runs Claude Agent SDK prompts on c
 ## Phase 1: Foundation
 
 ### Task 1.1: Install Dependencies and Add Shared Schemas
+
 **Description**: Install npm packages and add all Pulse Zod schemas to packages/shared/src/
 **Size**: Medium
 **Priority**: High
@@ -17,6 +19,7 @@ DorkOS Pulse is the autonomous scheduler that runs Claude Agent SDK prompts on c
 **Can run parallel with**: None (foundation for everything)
 
 **Technical Requirements**:
+
 - Install `better-sqlite3@^11.x`, `@types/better-sqlite3@^7.x`, `croner@^9.x` in `apps/server`
 - Install `cronstrue@^2.x` in `apps/client`
 - Add `scheduler` section to `UserConfigSchema` in `packages/shared/src/config-schema.ts`
@@ -26,17 +29,20 @@ DorkOS Pulse is the autonomous scheduler that runs Claude Agent SDK prompts on c
 **Implementation Steps**:
 
 1. Install server dependencies:
+
 ```bash
 npm install better-sqlite3 croner -w apps/server
 npm install -D @types/better-sqlite3 -w apps/server
 ```
 
 2. Install client dependency:
+
 ```bash
 npm install cronstrue -w apps/client
 ```
 
 3. Add scheduler config to `packages/shared/src/config-schema.ts` inside `UserConfigSchema`:
+
 ```typescript
 scheduler: z
   .object({
@@ -68,9 +74,7 @@ export const PulseRunStatusSchema = z
   .openapi('PulseRunStatus');
 export type PulseRunStatus = z.infer<typeof PulseRunStatusSchema>;
 
-export const PulseRunTriggerSchema = z
-  .enum(['scheduled', 'manual'])
-  .openapi('PulseRunTrigger');
+export const PulseRunTriggerSchema = z.enum(['scheduled', 'manual']).openapi('PulseRunTrigger');
 export type PulseRunTrigger = z.infer<typeof PulseRunTriggerSchema>;
 
 // === Pulse Schedule ===
@@ -154,6 +158,7 @@ export type ListRunsQuery = z.infer<typeof ListRunsQuerySchema>;
 ```
 
 5. Add re-exports to `packages/shared/src/types.ts`:
+
 ```typescript
 export type {
   PulseSchedule,
@@ -168,6 +173,7 @@ export type {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `better-sqlite3`, `croner` installed in server; `cronstrue` in client
 - [ ] `UserConfigSchema` includes `scheduler` section with correct defaults
 - [ ] `USER_CONFIG_DEFAULTS` parses successfully with new scheduler section
@@ -178,6 +184,7 @@ export type {
 ---
 
 ### Task 1.2: Implement PulseStore Service
+
 **Description**: Create the data persistence layer managing SQLite run records and JSON schedule files
 **Size**: Large
 **Priority**: High
@@ -185,6 +192,7 @@ export type {
 **Can run parallel with**: None (foundation for scheduler service)
 
 **Technical Requirements**:
+
 - File: `apps/server/src/services/pulse-store.ts`
 - Manages `~/.dork/schedules.json` (atomic write via temp + rename)
 - Manages `~/.dork/pulse.db` (SQLite with WAL mode)
@@ -200,7 +208,12 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { PulseSchedule, PulseRun, CreateScheduleRequest, UpdateScheduleRequest } from '@dorkos/shared/types';
+import type {
+  PulseSchedule,
+  PulseRun,
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
+} from '@dorkos/shared/types';
 
 const MIGRATIONS: string[] = [
   // v1: Initial schema
@@ -262,7 +275,7 @@ export class PulseStore {
   private prepareStatements(): void {
     this.stmts = {
       insertRun: this.db.prepare(
-        'INSERT INTO runs (id, schedule_id, status, started_at, trigger, created_at) VALUES (?, ?, \'running\', ?, ?, ?)'
+        "INSERT INTO runs (id, schedule_id, status, started_at, trigger, created_at) VALUES (?, ?, 'running', ?, ?, ?)"
       ),
       updateRun: this.db.prepare(
         'UPDATE runs SET status = ?, finished_at = ?, duration_ms = ?, output_summary = ?, error = ?, session_id = ? WHERE id = ?'
@@ -274,7 +287,9 @@ export class PulseStore {
       ),
       getRunningRuns: this.db.prepare("SELECT * FROM runs WHERE status = 'running'"),
       countRuns: this.db.prepare('SELECT COUNT(*) as count FROM runs'),
-      countRunsBySchedule: this.db.prepare('SELECT COUNT(*) as count FROM runs WHERE schedule_id = ?'),
+      countRunsBySchedule: this.db.prepare(
+        'SELECT COUNT(*) as count FROM runs WHERE schedule_id = ?'
+      ),
       pruneRuns: this.db.prepare(
         'DELETE FROM runs WHERE id IN (SELECT id FROM runs WHERE schedule_id = ? ORDER BY created_at DESC LIMIT -1 OFFSET ?)'
       ),
@@ -371,13 +386,18 @@ export class PulseStore {
     const limit = opts?.limit ?? 50;
     const offset = opts?.offset ?? 0;
     const rows = opts?.scheduleId
-      ? (this.stmts.listRunsBySchedule.all(opts.scheduleId, limit, offset) as Record<string, unknown>[])
+      ? (this.stmts.listRunsBySchedule.all(opts.scheduleId, limit, offset) as Record<
+          string,
+          unknown
+        >[])
       : (this.stmts.listRuns.all(limit, offset) as Record<string, unknown>[]);
     return rows.map((r) => this.mapRunRow(r));
   }
 
   getRunningRuns(): PulseRun[] {
-    return (this.stmts.getRunningRuns.all() as Record<string, unknown>[]).map((r) => this.mapRunRow(r));
+    return (this.stmts.getRunningRuns.all() as Record<string, unknown>[]).map((r) =>
+      this.mapRunRow(r)
+    );
   }
 
   countRuns(scheduleId?: string): number {
@@ -428,6 +448,7 @@ export class PulseStore {
    - Missing/corrupt file graceful handling on startup
 
 **Acceptance Criteria**:
+
 - [ ] `PulseStore` class created at `apps/server/src/services/pulse-store.ts`
 - [ ] Schedule CRUD reads/writes `~/.dork/schedules.json` with atomic rename
 - [ ] SQLite database created at `~/.dork/pulse.db` with WAL mode
@@ -438,6 +459,7 @@ export class PulseStore {
 ---
 
 ### Task 1.3: Implement SchedulerService
+
 **Description**: Create the cron orchestration service that manages job lifecycle and dispatches agent runs
 **Size**: Large
 **Priority**: High
@@ -445,6 +467,7 @@ export class PulseStore {
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - File: `apps/server/src/services/scheduler-service.ts`
 - Uses `croner` for cron scheduling with `protect: true` (skip overlapping)
 - Manages `activeRuns` Map of run ID to AbortController
@@ -621,7 +644,7 @@ export class SchedulerService {
         status: isAbort ? 'cancelled' : 'failed',
         finishedAt: new Date().toISOString(),
         durationMs: Date.now() - new Date(run.startedAt!).getTime(),
-        error: isAbort ? 'Run cancelled' : (err instanceof Error ? err.message : String(err)),
+        error: isAbort ? 'Run cancelled' : err instanceof Error ? err.message : String(err),
         outputSummary: outputSummary.slice(0, 500) || null,
       });
     } finally {
@@ -666,6 +689,7 @@ export function buildPulseAppend(schedule: PulseSchedule, run: PulseRun): string
    - `buildPulseAppend` produces correct system prompt
 
 **Acceptance Criteria**:
+
 - [ ] `SchedulerService` created at `apps/server/src/services/scheduler-service.ts`
 - [ ] Croner jobs registered with `protect: true` for overlap protection
 - [ ] Concurrency cap enforced (default 1)
@@ -678,6 +702,7 @@ export function buildPulseAppend(schedule: PulseSchedule, run: PulseRun): string
 ## Phase 2: Interfaces
 
 ### Task 2.1: Add MCP Pulse Tools
+
 **Description**: Add 5 schedule management tools to the existing MCP tool server
 **Size**: Medium
 **Priority**: High
@@ -685,6 +710,7 @@ export function buildPulseAppend(schedule: PulseSchedule, run: PulseRun): string
 **Can run parallel with**: Task 2.2
 
 **Technical Requirements**:
+
 - Extend `McpToolDeps` with optional `pulseStore`
 - Add 5 tools: `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `get_run_history`
 - `create_schedule` always sets `status: 'pending_approval'`
@@ -693,6 +719,7 @@ export function buildPulseAppend(schedule: PulseSchedule, run: PulseRun): string
 **Implementation Steps**:
 
 1. Update `McpToolDeps` in `apps/server/src/services/mcp-tool-server.ts`:
+
 ```typescript
 import type { PulseStore } from './pulse-store.js';
 
@@ -704,14 +731,20 @@ export interface McpToolDeps {
 ```
 
 2. Add tool handler factory:
+
 ```typescript
 function createPulseToolHandlers(deps: McpToolDeps) {
   const requireStore = () => {
     if (!deps.pulseStore) {
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({
-          error: 'Pulse scheduler is not enabled. Enable it in settings or with --pulse flag.'
-        }) }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: 'Pulse scheduler is not enabled. Enable it in settings or with --pulse flag.',
+            }),
+          },
+        ],
         isError: true,
       };
     }
@@ -727,16 +760,23 @@ function createPulseToolHandlers(deps: McpToolDeps) {
   };
 
   const handleCreateSchedule = async (args: {
-    name: string; prompt: string; cron: string;
-    cwd?: string; timezone?: string; maxRuntime?: number;
+    name: string;
+    prompt: string;
+    cron: string;
+    cwd?: string;
+    timezone?: string;
+    maxRuntime?: number;
     permissionMode?: string;
   }) => {
     const err = requireStore();
     if (err) return err;
     const schedule = deps.pulseStore!.createSchedule({
-      name: args.name, prompt: args.prompt, cron: args.cron,
+      name: args.name,
+      prompt: args.prompt,
+      cron: args.cron,
       cwd: args.cwd ?? deps.defaultCwd,
-      timezone: args.timezone, maxRuntime: args.maxRuntime,
+      timezone: args.timezone,
+      maxRuntime: args.maxRuntime,
       permissionMode: args.permissionMode as 'acceptEdits' | 'bypassPermissions' | undefined,
       status: 'pending_approval',
     });
@@ -751,7 +791,10 @@ function createPulseToolHandlers(deps: McpToolDeps) {
       const schedule = deps.pulseStore!.updateSchedule(id, update);
       return { content: [{ type: 'text' as const, text: JSON.stringify(schedule, null, 2) }] };
     } catch (e) {
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ error: (e as Error).message }) }], isError: true };
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ error: (e as Error).message }) }],
+        isError: true,
+      };
     }
   };
 
@@ -759,21 +802,38 @@ function createPulseToolHandlers(deps: McpToolDeps) {
     const err = requireStore();
     if (err) return err;
     deps.pulseStore!.deleteSchedule(args.id);
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, message: `Schedule ${args.id} deleted` }) }] };
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({ ok: true, message: `Schedule ${args.id} deleted` }),
+        },
+      ],
+    };
   };
 
   const handleGetRunHistory = async (args: { schedule_id: string; limit?: number }) => {
     const err = requireStore();
     if (err) return err;
-    const runs = deps.pulseStore!.listRuns({ scheduleId: args.schedule_id, limit: args.limit ?? 10 });
+    const runs = deps.pulseStore!.listRuns({
+      scheduleId: args.schedule_id,
+      limit: args.limit ?? 10,
+    });
     return { content: [{ type: 'text' as const, text: JSON.stringify(runs, null, 2) }] };
   };
 
-  return { handleListSchedules, handleCreateSchedule, handleUpdateSchedule, handleDeleteSchedule, handleGetRunHistory };
+  return {
+    handleListSchedules,
+    handleCreateSchedule,
+    handleUpdateSchedule,
+    handleDeleteSchedule,
+    handleGetRunHistory,
+  };
 }
 ```
 
 3. Register tools in `createDorkOsToolServer` tools array:
+
 ```typescript
 const pulseHandlers = createPulseToolHandlers(deps);
 // Add to tools array:
@@ -814,6 +874,7 @@ tool('get_run_history', 'Get run history for a Pulse schedule', {
    - All tools return error when `pulseStore` is undefined
 
 **Acceptance Criteria**:
+
 - [ ] `McpToolDeps` extended with optional `pulseStore`
 - [ ] 5 MCP tools registered in tool server
 - [ ] `create_schedule` always sets `status: 'pending_approval'`
@@ -823,13 +884,15 @@ tool('get_run_history', 'Get run history for a Pulse schedule', {
 ---
 
 ### Task 2.2: Create REST Routes for Pulse
-**Description**: Create the /api/pulse/* route group with 8 endpoints
+
+**Description**: Create the /api/pulse/\* route group with 8 endpoints
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.2, Task 1.3
 **Can run parallel with**: Task 2.1
 
 **Technical Requirements**:
+
 - File: `apps/server/src/routes/pulse.ts`
 - Follows existing route patterns (Zod validation, delegate to service, consistent errors)
 - `GET /schedules` computes `nextRun` via croner `nextRun()`
@@ -842,7 +905,11 @@ tool('get_run_history', 'Get run history for a Pulse schedule', {
 ```typescript
 import { Router, type Request, type Response } from 'express';
 import { Cron } from 'croner';
-import { CreateScheduleRequestSchema, UpdateScheduleRequestSchema, ListRunsQuerySchema } from '@dorkos/shared/schemas';
+import {
+  CreateScheduleRequestSchema,
+  UpdateScheduleRequestSchema,
+  ListRunsQuerySchema,
+} from '@dorkos/shared/schemas';
 import type { PulseStore } from '../services/pulse-store.js';
 import type { SchedulerService } from '../services/scheduler-service.js';
 import { isWithinBoundary } from '../lib/boundary.js';
@@ -861,7 +928,9 @@ export function createPulseRouter(store: PulseStore, scheduler: SchedulerService
           nextRun = next ? next.toISOString() : null;
           cron.stop();
         }
-      } catch { /* invalid cron */ }
+      } catch {
+        /* invalid cron */
+      }
       return { ...s, nextRun };
     });
     res.json(schedules);
@@ -932,9 +1001,8 @@ export function createPulseRouter(store: PulseStore, scheduler: SchedulerService
       return;
     }
     const { schedule_id, limit, offset } = parsed.data;
-    const runs = store.listRuns(schedule_id
-      ? { scheduleId: schedule_id, limit, offset }
-      : { limit, offset }
+    const runs = store.listRuns(
+      schedule_id ? { scheduleId: schedule_id, limit, offset } : { limit, offset }
     );
     const total = store.countRuns(schedule_id);
     res.json({ runs, total });
@@ -943,7 +1011,10 @@ export function createPulseRouter(store: PulseStore, scheduler: SchedulerService
   // GET /api/pulse/runs/:id
   router.get('/runs/:id', (req: Request, res: Response) => {
     const run = store.getRun(req.params.id);
-    if (!run) { res.status(404).json({ error: 'Run not found' }); return; }
+    if (!run) {
+      res.status(404).json({ error: 'Run not found' });
+      return;
+    }
     res.json(run);
   });
 
@@ -962,6 +1033,7 @@ export function createPulseRouter(store: PulseStore, scheduler: SchedulerService
 ```
 
 2. Mount in `apps/server/src/app.ts` (conditional):
+
 ```typescript
 if (app.locals.pulseStore && app.locals.schedulerService) {
   const { createPulseRouter } = await import('./routes/pulse.js');
@@ -979,6 +1051,7 @@ if (app.locals.pulseStore && app.locals.schedulerService) {
    - `GET /schedules` includes computed `nextRun` field
 
 **Acceptance Criteria**:
+
 - [ ] `routes/pulse.ts` created with 8 endpoints
 - [ ] Mounted conditionally in `app.ts`
 - [ ] Zod validation on all request bodies and query params
@@ -989,6 +1062,7 @@ if (app.locals.pulseStore && app.locals.schedulerService) {
 ---
 
 ### Task 2.3: Wire Server Startup and Graceful Shutdown
+
 **Description**: Integrate PulseStore and SchedulerService into server startup/shutdown lifecycle
 **Size**: Small
 **Priority**: High
@@ -996,6 +1070,7 @@ if (app.locals.pulseStore && app.locals.schedulerService) {
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Conditional initialization based on config/env
 - Pass `pulseStore` to MCP tool server
 - Set `app.locals` for route access
@@ -1013,8 +1088,8 @@ import path from 'path';
 
 // Inside start():
 const schedulerConfig = configManager?.get('scheduler');
-const pulseEnabled = process.env.DORKOS_PULSE_ENABLED === 'true'
-  || schedulerConfig?.enabled === true;
+const pulseEnabled =
+  process.env.DORKOS_PULSE_ENABLED === 'true' || schedulerConfig?.enabled === true;
 
 const dorkHome = process.env.DORK_HOME ?? path.join(os.homedir(), '.dork');
 
@@ -1053,6 +1128,7 @@ async function shutdown() {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] Pulse conditionally initializes based on config/env
 - [ ] `pulseStore` passed to MCP tool server
 - [ ] Scheduler starts after server binds
@@ -1064,6 +1140,7 @@ async function shutdown() {
 ## Phase 3: Client UI
 
 ### Task 3.1: Extend Transport Interface and HttpTransport
+
 **Description**: Add Pulse methods to the Transport interface and implement in HttpTransport
 **Size**: Small
 **Priority**: High
@@ -1071,6 +1148,7 @@ async function shutdown() {
 **Can run parallel with**: Task 3.2
 
 **Technical Requirements**:
+
 - Add 8 methods to `Transport` interface in `packages/shared/src/transport.ts`
 - Implement in `HttpTransport` in client
 - Stub in `DirectTransport` (Obsidian) with "not available" error
@@ -1078,6 +1156,7 @@ async function shutdown() {
 **Implementation Steps**:
 
 1. Add to `packages/shared/src/transport.ts` Transport interface:
+
 ```typescript
 import type {
   PulseSchedule, PulseRun, CreateScheduleRequest, UpdateScheduleRequest,
@@ -1095,6 +1174,7 @@ cancelRun(id: string): Promise<{ ok: boolean }>;
 ```
 
 2. Implement in HttpTransport:
+
 ```typescript
 async listSchedules(): Promise<PulseSchedule[]> {
   const res = await fetch(`${this.baseUrl}/api/pulse/schedules`);
@@ -1149,6 +1229,7 @@ async cancelRun(id: string): Promise<{ ok: boolean }> {
 ```
 
 3. Stub in DirectTransport:
+
 ```typescript
 listSchedules() { return Promise.reject(new Error('Pulse not available in Obsidian')); }
 createSchedule() { return Promise.reject(new Error('Pulse not available in Obsidian')); }
@@ -1163,6 +1244,7 @@ cancelRun() { return Promise.reject(new Error('Pulse not available in Obsidian')
 4. Update `createMockTransport` in `packages/test-utils/` to include Pulse method stubs.
 
 **Acceptance Criteria**:
+
 - [ ] Transport interface has 8 new Pulse methods
 - [ ] HttpTransport implements all methods
 - [ ] DirectTransport stubs reject with "not available in Obsidian"
@@ -1172,6 +1254,7 @@ cancelRun() { return Promise.reject(new Error('Pulse not available in Obsidian')
 ---
 
 ### Task 3.2: Create Entity Hooks (use-schedules, use-runs)
+
 **Description**: Create TanStack Query hooks for schedule and run data fetching
 **Size**: Small
 **Priority**: High
@@ -1179,6 +1262,7 @@ cancelRun() { return Promise.reject(new Error('Pulse not available in Obsidian')
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - FSD entity layer: `apps/client/src/layers/entities/pulse/`
 - TanStack Query hooks with proper cache invalidation
 - Barrel export at `entities/pulse/index.ts`
@@ -1186,6 +1270,7 @@ cancelRun() { return Promise.reject(new Error('Pulse not available in Obsidian')
 **Implementation Steps**:
 
 1. Create `apps/client/src/layers/entities/pulse/model/use-schedules.ts`:
+
 ```typescript
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -1240,6 +1325,7 @@ export function useTriggerSchedule() {
 ```
 
 2. Create `apps/client/src/layers/entities/pulse/model/use-runs.ts`:
+
 ```typescript
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -1273,12 +1359,19 @@ export function useCancelRun() {
 ```
 
 3. Create barrel: `apps/client/src/layers/entities/pulse/index.ts`:
+
 ```typescript
 /**
  * Pulse entity - domain hooks for schedule and run lifecycle.
  * @module entities/pulse
  */
-export { useSchedules, useCreateSchedule, useUpdateSchedule, useDeleteSchedule, useTriggerSchedule } from './model/use-schedules';
+export {
+  useSchedules,
+  useCreateSchedule,
+  useUpdateSchedule,
+  useDeleteSchedule,
+  useTriggerSchedule,
+} from './model/use-schedules';
 export { useRuns, useRun, useCancelRun } from './model/use-runs';
 ```
 
@@ -1287,6 +1380,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
    - Invalidates cache after create/update/delete mutations
 
 **Acceptance Criteria**:
+
 - [ ] Entity hooks created in FSD layer
 - [ ] TanStack Query keys properly structured
 - [ ] Cache invalidation on mutations
@@ -1296,6 +1390,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 ---
 
 ### Task 3.3: Create PulsePanel Component
+
 **Description**: Build the main Pulse UI panel showing schedule list with status indicators and controls
 **Size**: Large
 **Priority**: Medium
@@ -1303,6 +1398,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 **Can run parallel with**: Task 3.4, Task 3.5
 
 **Technical Requirements**:
+
 - FSD feature layer: `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx`
 - Uses `cronstrue` for human-readable cron display
 - Status indicators: green (active), gray (paused), red (last failed), yellow (pending_approval)
@@ -1331,6 +1427,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
    - Pending approval actions work
 
 **Acceptance Criteria**:
+
 - [ ] PulsePanel renders schedule list with status indicators
 - [ ] `cronstrue` converts cron to human-readable text
 - [ ] Enable/disable toggle works
@@ -1342,6 +1439,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 ---
 
 ### Task 3.4: Create CreateScheduleDialog Component
+
 **Description**: Build the schedule creation/editing dialog form
 **Size**: Medium
 **Priority**: Medium
@@ -1349,6 +1447,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 **Can run parallel with**: Task 3.3, Task 3.5
 
 **Technical Requirements**:
+
 - File: `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`
 - Uses shadcn Dialog, Input, Textarea, Select
 - Live cron preview via `cronstrue`
@@ -1377,6 +1476,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
    - Cron preview updates on input
 
 **Acceptance Criteria**:
+
 - [ ] Dialog form with all fields from spec
 - [ ] Live cron expression translation
 - [ ] Permission mode warning displayed
@@ -1386,6 +1486,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 ---
 
 ### Task 3.5: Create RunHistoryPanel Component
+
 **Description**: Build the run history table for a schedule
 **Size**: Medium
 **Priority**: Medium
@@ -1393,6 +1494,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 **Can run parallel with**: Task 3.3, Task 3.4
 
 **Technical Requirements**:
+
 - File: `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 - Table with status icon, trigger type, start time, duration, output preview
 - Click run navigates to chat UI with session ID
@@ -1419,6 +1521,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
    - Empty state shown
 
 **Acceptance Criteria**:
+
 - [ ] Run history table with all columns
 - [ ] Session linkage navigation
 - [ ] Cancel button on running jobs
@@ -1428,6 +1531,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 ---
 
 ### Task 3.6: Create Feature Barrel and Integrate PulsePanel
+
 **Description**: Create barrel export and integrate PulsePanel into the app layout
 **Size**: Small
 **Priority**: Medium
@@ -1435,6 +1539,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Feature barrel at `features/pulse/index.ts`
 - Add Pulse section to sidebar or settings area
 - Conditionally render based on Pulse availability
@@ -1442,6 +1547,7 @@ export { useRuns, useRun, useCancelRun } from './model/use-runs';
 **Implementation Steps**:
 
 1. Create `apps/client/src/layers/features/pulse/index.ts`:
+
 ```typescript
 /**
  * Pulse feature - scheduler UI for managing scheduled agent jobs.
@@ -1458,6 +1564,7 @@ export { RunHistoryPanel } from './ui/RunHistoryPanel';
    - Add navigation to PulsePanel
 
 **Acceptance Criteria**:
+
 - [ ] Barrel export at `features/pulse/index.ts`
 - [ ] PulsePanel accessible from sidebar/settings
 - [ ] Conditional rendering when Pulse is disabled
@@ -1467,6 +1574,7 @@ export { RunHistoryPanel } from './ui/RunHistoryPanel';
 ## Phase 4: Polish
 
 ### Task 4.1: Add CLI --pulse Flag
+
 **Description**: Add --pulse/--no-pulse CLI flags to control scheduler at startup
 **Size**: Small
 **Priority**: Medium
@@ -1474,6 +1582,7 @@ export { RunHistoryPanel } from './ui/RunHistoryPanel';
 **Can run parallel with**: Task 4.2, Task 4.3
 
 **Technical Requirements**:
+
 - Update `packages/cli/src/cli.ts`
 - Set `DORKOS_PULSE_ENABLED` env var
 - Precedence: CLI flag > env var > config > default (false)
@@ -1481,12 +1590,14 @@ export { RunHistoryPanel } from './ui/RunHistoryPanel';
 **Implementation Steps**:
 
 1. Add flag to CLI command definition:
+
 ```typescript
 .option('--pulse', 'Enable Pulse scheduler')
 .option('--no-pulse', 'Disable Pulse scheduler')
 ```
 
 2. Before server import, set env var:
+
 ```typescript
 if (options.pulse !== undefined) {
   process.env.DORKOS_PULSE_ENABLED = options.pulse ? 'true' : 'false';
@@ -1494,6 +1605,7 @@ if (options.pulse !== undefined) {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `--pulse` enables scheduler
 - [ ] `--no-pulse` disables scheduler
 - [ ] Precedence chain works correctly
@@ -1501,6 +1613,7 @@ if (options.pulse !== undefined) {
 ---
 
 ### Task 4.2: Register Pulse Schemas in OpenAPI Registry
+
 **Description**: Register all Pulse schemas for auto-generated API documentation
 **Size**: Small
 **Priority**: Low
@@ -1508,15 +1621,18 @@ if (options.pulse !== undefined) {
 **Can run parallel with**: Task 4.1, Task 4.3
 
 **Technical Requirements**:
+
 - Update `apps/server/src/services/openapi-registry.ts`
 - Register all Pulse request/response schemas
 - Document all 8 endpoints with path/method/tags
 
 **Implementation Steps**:
+
 1. Register schemas following existing patterns in openapi-registry.ts
 2. Add route documentation for all 8 `/api/pulse/*` endpoints with Pulse tag
 
 **Acceptance Criteria**:
+
 - [ ] All Pulse schemas registered in OpenAPI
 - [ ] `/api/docs` shows Pulse endpoints
 - [ ] `npm run docs:export-api` generates updated spec
@@ -1524,6 +1640,7 @@ if (options.pulse !== undefined) {
 ---
 
 ### Task 4.3: Update CLAUDE.md and Documentation
+
 **Description**: Update project documentation to reflect Pulse feature
 **Size**: Small
 **Priority**: Low
@@ -1531,6 +1648,7 @@ if (options.pulse !== undefined) {
 **Can run parallel with**: Task 4.1, Task 4.2
 
 **Technical Requirements**:
+
 - Update service count in CLAUDE.md (now 22 services: PulseStore + SchedulerService)
 - Add PulseStore and SchedulerService to service list descriptions
 - Add `routes/pulse.ts` to route group list
@@ -1551,9 +1669,10 @@ if (options.pulse !== undefined) {
 
 2. Update `contributing/configuration.md` with scheduler config section
 
-3. Update `contributing/api-reference.md` with /api/pulse/* endpoints
+3. Update `contributing/api-reference.md` with /api/pulse/\* endpoints
 
 **Acceptance Criteria**:
+
 - [ ] CLAUDE.md reflects new services, routes, and CLI flags
 - [ ] Configuration docs include scheduler section
 - [ ] API reference includes Pulse endpoints

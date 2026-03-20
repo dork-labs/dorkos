@@ -1,27 +1,27 @@
 ---
-title: "Relay Advanced Reliability"
+title: 'Relay Advanced Reliability'
 spec: 3
 order: 3
 status: done
 blockedBy: [2]
 blocks: [5]
 parallelWith: [4]
-litepaperPhase: "Phase 2 — Advanced Reliability"
+litepaperPhase: 'Phase 2 — Advanced Reliability'
 complexity: medium
 risk: low
 estimatedFiles: 6-10
 newPackages: []
-primaryWorkspaces: ["packages/relay", "apps/server", "apps/client"]
+primaryWorkspaces: ['packages/relay', 'apps/server', 'apps/client']
 touchesServer: true
 touchesClient: true
 verification:
-  - "Rate-limited sender gets rejection after exceeding threshold"
-  - "Circuit breaker trips after repeated delivery failures to an endpoint"
-  - "Circuit breaker auto-resets (half-open → closed) after cooldown period"
-  - "Backpressure signal returned when inbox exceeds size threshold"
-  - "All reliability features are configurable via config file"
-  - "Relay works correctly with all reliability features disabled (defaults)"
-  - "Client panel shows circuit breaker states and rate limit hits"
+  - 'Rate-limited sender gets rejection after exceeding threshold'
+  - 'Circuit breaker trips after repeated delivery failures to an endpoint'
+  - 'Circuit breaker auto-resets (half-open → closed) after cooldown period'
+  - 'Backpressure signal returned when inbox exceeds size threshold'
+  - 'All reliability features are configurable via config file'
+  - 'Relay works correctly with all reliability features disabled (defaults)'
+  - 'Client panel shows circuit breaker states and rate limit hits'
 notes: >
   Can run in PARALLEL with Spec 4 (External Adapters) — they're independent
   additions to the Spec 2 foundation. Both must complete before Spec 5.
@@ -82,6 +82,7 @@ OUT OF SCOPE:
 ## Context for Review
 
 This spec is less architecturally complex than Specs 1-2 — it's adding well-understood reliability patterns to an existing system. The /ideate session should focus on:
+
 - Choosing the right rate limiting algorithm (token bucket vs sliding window vs fixed window)
 - Defining sensible defaults (what rate limits make sense for a local agent system?)
 - How circuit breaker state persists across restarts (SQLite? in-memory only?)

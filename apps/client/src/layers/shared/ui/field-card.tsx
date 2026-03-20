@@ -12,7 +12,7 @@ function FieldCard({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="field-card"
-      className={cn('overflow-hidden rounded-lg border bg-card', className)}
+      className={cn('bg-card overflow-hidden rounded-lg border', className)}
       {...props}
     />
   );
@@ -66,7 +66,7 @@ function CollapsibleFieldCard({
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <div
         data-slot="collapsible-field-card"
-        className={cn('overflow-hidden rounded-lg border bg-card', className)}
+        className={cn('bg-card overflow-hidden rounded-lg border', className)}
       >
         <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium">
           <span className="flex items-center gap-2">
@@ -76,12 +76,12 @@ function CollapsibleFieldCard({
           <ChevronDown
             className={cn(
               'text-muted-foreground size-4 transition-transform',
-              !open && '-rotate-90',
+              !open && '-rotate-90'
             )}
           />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="divide-border border-t divide-y">{children}</div>
+          <div className="divide-border divide-y border-t">{children}</div>
         </CollapsibleContent>
       </div>
     </Collapsible>

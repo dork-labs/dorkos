@@ -81,6 +81,7 @@ Data flow: `MessageList` → `MessageItem` → `MessageContext` → `AssistantMe
 Major refactor of `apps/client/src/layers/features/chat/ui/MessageList.tsx`:
 
 **Remove:**
+
 - ResizeObserver on contentRef
 - Message count fallback scroll effect
 - `scrollToBottom` callback (native `scrollTop` assignment)
@@ -88,11 +89,13 @@ Major refactor of `apps/client/src/layers/features/chat/ui/MessageList.tsx`:
 - `isAtBottomRef`, `isTouchActiveRef`, `isUserScrollingRef`, `clearScrollIntentTimerRef`, `rafIdRef`
 
 **Add:**
+
 - `useStickToBottom({ resize: 'smooth', initial: 'smooth' })` providing `scrollRef`, `contentRef`, `isAtBottom`, `scrollToBottom`
 - `useEffect` syncing `isAtBottom` to `onScrollStateChange` for `useScrollOverlay` compatibility
 - `style={{ overflowAnchor: 'none' }}` on scroll container
 
 **Preserve:**
+
 - Obsidian IntersectionObserver (using library's `scrollToBottom`)
 - `useImperativeHandle` (delegates to library)
 - `historyCount` / `isNew` gate
@@ -135,12 +138,12 @@ Add "Text Streaming Effects" section to `contributing/animations.md` documenting
 
 ## Summary
 
-| Phase | Tasks | Sizes |
-|---|---|---|
-| 1 — Foundation | 2 tasks (1.1, 1.2) | 1 medium, 1 small |
-| 2 — Core Features | 3 tasks (2.1, 2.2, 2.3) | 1 large, 2 medium |
-| 3 — Simulator & Polish | 2 tasks (3.1, 3.2) | 1 medium, 1 small |
-| **Total** | **7 tasks** | |
+| Phase                  | Tasks                   | Sizes             |
+| ---------------------- | ----------------------- | ----------------- |
+| 1 — Foundation         | 2 tasks (1.1, 1.2)      | 1 medium, 1 small |
+| 2 — Core Features      | 3 tasks (2.1, 2.2, 2.3) | 1 large, 2 medium |
+| 3 — Simulator & Polish | 2 tasks (3.1, 3.2)      | 1 medium, 1 small |
+| **Total**              | **7 tasks**             |                   |
 
 ### Parallel Opportunities
 

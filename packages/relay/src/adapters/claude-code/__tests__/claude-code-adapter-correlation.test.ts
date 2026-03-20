@@ -2,11 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeAdapter } from '../index.js';
-import type {
-  AgentRuntimeLike,
-  TraceStoreLike,
-  ClaudeCodeAdapterDeps,
-} from '../index.js';
+import type { AgentRuntimeLike, TraceStoreLike, ClaudeCodeAdapterDeps } from '../index.js';
 import type { RelayPublisher } from '../../../types.js';
 
 // === Mock factories ===
@@ -26,7 +22,7 @@ function createMockAgentManager(events?: StreamEvent[]): AgentRuntimeLike {
         for (const event of streamEvents) {
           yield event;
         }
-      })(),
+      })()
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
   };
@@ -124,9 +120,7 @@ describe('ClaudeCodeAdapter correlation ID', () => {
 
   it('includes correlationId in the terminal done event', async () => {
     // Use events that do NOT include a natural done, so the adapter generates one
-    const events: StreamEvent[] = [
-      { type: 'text_delta', data: { text: 'partial' } },
-    ];
+    const events: StreamEvent[] = [{ type: 'text_delta', data: { text: 'partial' } }];
     agentManager = createMockAgentManager(events);
     deps = { agentManager, traceStore };
     adapter = new ClaudeCodeAdapter('claude-code', { defaultCwd: '/default/cwd' }, deps);
@@ -158,7 +152,7 @@ describe('ClaudeCodeAdapter correlation ID', () => {
     const publishCalls = vi.mocked(relay.publish).mock.calls;
     // Find a text_delta event
     const textDeltaCall = publishCalls.find(
-      ([, payload]) => (payload as Record<string, unknown>).type === 'text_delta',
+      ([, payload]) => (payload as Record<string, unknown>).type === 'text_delta'
     );
     expect(textDeltaCall).toBeDefined();
 

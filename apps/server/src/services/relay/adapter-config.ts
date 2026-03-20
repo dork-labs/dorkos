@@ -38,7 +38,7 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
     } else {
       logger.warn(
         '[AdapterConfig] Malformed config, skipping invalid entries:',
-        parsed.error.flatten(),
+        parsed.error.flatten()
       );
       return [];
     }
@@ -63,15 +63,11 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
  */
 export async function saveAdapterConfig(
   configPath: string,
-  configs: AdapterConfig[],
+  configs: AdapterConfig[]
 ): Promise<void> {
   await mkdir(dirname(configPath), { recursive: true });
   const tmpPath = `${configPath}.tmp`;
-  await writeFile(
-    tmpPath,
-    JSON.stringify({ adapters: configs }, null, 2),
-    'utf-8',
-  );
+  await writeFile(tmpPath, JSON.stringify({ adapters: configs }, null, 2), 'utf-8');
   await rename(tmpPath, configPath);
 }
 
@@ -104,11 +100,7 @@ export async function ensureDefaultAdapterConfig(configPath: string): Promise<vo
       };
       try {
         await mkdir(dirname(configPath), { recursive: true });
-        await writeFile(
-          configPath,
-          JSON.stringify(defaultConfig, null, 2),
-          'utf-8',
-        );
+        await writeFile(configPath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
         logger.info('[AdapterConfig] Generated default adapters.json with claude-code adapter');
       } catch (writeErr) {
         logger.warn('[AdapterConfig] Failed to write default config:', writeErr);
@@ -126,10 +118,7 @@ export async function ensureDefaultAdapterConfig(configPath: string): Promise<vo
  * @param onChange - Callback invoked when the config file changes
  * @returns The FSWatcher instance for cleanup
  */
-export function watchAdapterConfig(
-  configPath: string,
-  onChange: () => void,
-): FSWatcher {
+export function watchAdapterConfig(configPath: string, onChange: () => void): FSWatcher {
   const watcher = chokidar.watch(configPath, {
     persistent: true,
     ignoreInitial: true,
@@ -154,7 +143,7 @@ export function watchAdapterConfig(
  */
 export function maskSensitiveFields(
   config: Record<string, unknown>,
-  manifest?: AdapterManifest,
+  manifest?: AdapterManifest
 ): Record<string, unknown> {
   if (!manifest) return config;
   const masked = structuredClone(config) as Record<string, unknown>;
@@ -190,7 +179,7 @@ export function maskSensitiveFields(
 export function mergeWithPasswordPreservation(
   existing: Record<string, unknown>,
   incoming: Record<string, unknown>,
-  manifest?: AdapterManifest,
+  manifest?: AdapterManifest
 ): Record<string, unknown> {
   const result = { ...existing, ...incoming };
   if (!manifest) return result;

@@ -24,7 +24,7 @@ A structured code review of the relay and mesh subsystems revealed:
 - **Bugs:** `extractChatId` accepts invalid chat ID 0. SubscriptionRegistry leaks on `RelayCore.close()`. DeliveryPipeline dedup timers prevent clean process exit. BindingRouter silently loses session mappings on persist failure.
 - **Type drift:** 8 interfaces in `packages/relay/src/types.ts` are manually duplicated from Zod schemas and have already diverged (AdapterStatus missing fields).
 - **DRY violations:** Payload extraction duplicated across two adapters. Mesh registration logic duplicated across two methods. Destructure pattern repeated 4x. Status mutation patterns inconsistent across adapters.
-- **Performance:** O(n*m) dead-letter lookup in conversations endpoint. No SSE backpressure for slow clients.
+- **Performance:** O(n\*m) dead-letter lookup in conversations endpoint. No SSE backpressure for slow clients.
 - **Code quality:** TopologyGraph.tsx at 753 lines exceeds the 500-line must-split threshold.
 
 ## Goals
@@ -95,7 +95,7 @@ function extractChatId(subject: string): number | null {
 
   if (remainder.startsWith(`${GROUP_SEGMENT}.`)) {
     const idStr = remainder.slice(GROUP_SEGMENT.length + 1);
-    if (!idStr) return null;  // NEW: guard against empty string → Number("") === 0
+    if (!idStr) return null; // NEW: guard against empty string → Number("") === 0
     const id = Number(idStr);
     return Number.isInteger(id) ? id : null;
   }
@@ -201,7 +201,10 @@ export type { TelegramAdapterConfig, WebhookAdapterConfig, AdapterConfig };
 
 // AdapterStatus: relay's internal version is narrower (no id/type/displayName)
 // Keep as a separate interface, rename to avoid collision
-export type AdapterStatusInternal = Pick<AdapterStatus, 'state' | 'messageCount' | 'errorCount' | 'lastError' | 'lastErrorAt' | 'startedAt'>;
+export type AdapterStatusInternal = Pick<
+  AdapterStatus,
+  'state' | 'messageCount' | 'errorCount' | 'lastError' | 'lastErrorAt' | 'startedAt'
+>;
 ```
 
 Update all consumers in the relay package to use the re-exported types.
@@ -314,7 +317,7 @@ this.status = {
 
 ```typescript
 // Build lookup map once
-const deadLetterMap = new Map(deadLetters.map(dl => [dl.messageId, dl]));
+const deadLetterMap = new Map(deadLetters.map((dl) => [dl.messageId, dl]));
 
 // Then use O(1) lookups instead of .find():
 const dl = deadLetterMap.get(messageId);
@@ -348,7 +351,9 @@ const unsubMessages = relayCore.subscribe(pattern, (envelope) => {
   const canContinue = res.write(data);
   if (!canContinue) {
     // Pause delivery until client catches up
-    res.once('drain', () => { /* resume is automatic — next event will write */ });
+    res.once('drain', () => {
+      /* resume is automatic — next event will write */
+    });
   }
 });
 ```
@@ -635,6 +640,7 @@ refetchInterval: 30_000,  // was 15_000
 **File:** `packages/relay/src/__tests__/adapters/telegram-adapter.test.ts`
 
 Add tests:
+
 - Caption-only message (text undefined, caption present)
 - `extractPayloadContent` with string payload, object without content, unserializable payload
 
@@ -667,7 +673,7 @@ New test file for the extracted utility with comprehensive edge cases.
 
 ## Performance Considerations
 
-- Conversations endpoint changes from O(n*m) to O(n+m) with Map-based lookup
+- Conversations endpoint changes from O(n\*m) to O(n+m) with Map-based lookup
 - Topology polling reduced from 15s to 30s (halves server load from mesh status queries)
 - SSE backpressure prevents memory bloat from slow clients
 - MeshCore.getStatus() single-pass reduces DB reads by 50%
@@ -681,12 +687,15 @@ New test file for the extracted utility with comprehensive edge cases.
 ## Implementation Phases
 
 ### Phase 1: Critical fixes (C1-C4)
+
 Boundary validation, extractChatId, subscription cleanup, session persist handling.
 
 ### Phase 2: High-severity fixes (H1-H10)
+
 Config masking, type consolidation, DRY extraction, timer cleanup, status mutation, dead-letter performance, SSE backpressure.
 
 ### Phase 3: Medium-severity fixes (M1-M21)
+
 Mesh DRY, AgentNode dedup, schema improvements, TopologyGraph extraction, test improvements, route fixes.
 
 ## Open Questions

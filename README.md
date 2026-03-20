@@ -77,16 +77,16 @@ Start a session from the browser. Check on it from your phone. Resume it from in
 
 DorkOS is a Turborepo monorepo with a hexagonal architecture. A `Transport` interface decouples the React client from its backend, with adapters for HTTP/SSE (standalone web) and in-process (Obsidian plugin).
 
-| Package | Description |
-|---|---|
-| `apps/client` | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
-| `apps/server` | Express API with Claude Agent SDK integration |
-| `apps/site` | Marketing site and docs (Next.js 16, Fumadocs) |
-| `packages/cli` | Publishable npm CLI (esbuild bundle) |
-| `packages/shared` | Zod schemas, types, transport interface |
-| `packages/db` | Drizzle ORM schemas (SQLite) |
-| `packages/relay` | Inter-agent message bus |
-| `packages/mesh` | Agent discovery and registry |
+| Package           | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `apps/client`     | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)   |
+| `apps/server`     | Express API with Claude Agent SDK integration  |
+| `apps/site`       | Marketing site and docs (Next.js 16, Fumadocs) |
+| `packages/cli`    | Publishable npm CLI (esbuild bundle)           |
+| `packages/shared` | Zod schemas, types, transport interface        |
+| `packages/db`     | Drizzle ORM schemas (SQLite)                   |
+| `packages/relay`  | Inter-agent message bus                        |
+| `packages/mesh`   | Agent discovery and registry                   |
 
 ## Documentation
 

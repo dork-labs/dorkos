@@ -1,5 +1,5 @@
 ---
-title: "MCP Tool Naming Conventions and Best Practices"
+title: 'MCP Tool Naming Conventions and Best Practices'
 date: 2026-03-04
 type: external-best-practices
 status: active
@@ -38,12 +38,14 @@ mcp__<server-name>__<tool-name>
 ```
 
 For example, if DorkOS registers itself as server `"dorkos"`:
+
 - `relay_send` becomes `mcp__dorkos__relay_send`
 - `list_schedules` becomes `mcp__dorkos__list_schedules`
 
 This has a direct implication: **the server-name already provides the top-level namespace.** There is no risk of collision between DorkOS's `relay_send` and another server's `send` — they are structurally separated by the `mcp__dorkos__` prefix.
 
 This is also the pattern used for `allowedTools` filtering:
+
 ```
 allowedTools: ["mcp__dorkos__relay_*", "mcp__dorkos__mesh_*"]
 ```
@@ -51,6 +53,7 @@ allowedTools: ["mcp__dorkos__relay_*", "mcp__dorkos__mesh_*"]
 ### 3. Domain Prefix Inside Tool Name: How Leading Servers Handle It
 
 **Stripe MCP** (25 tools, official): Uses `verb_noun` with NO domain prefix inside the tool name. Examples:
+
 - `create_customer`, `list_customers`, `update_subscription`, `cancel_subscription`
 - Exception for disambiguation only: `get_stripe_account_info`, `search_stripe_resources`, `search_stripe_documentation` — here `stripe` is added because `get_account_info` would be ambiguous when multiple servers expose similar tools.
 
@@ -74,16 +77,17 @@ DorkOS is exactly this case — it exposes tools spanning relay, mesh, pulse, bi
 
 The ZazenCodes analysis is explicit: "inconsistency signals poor quality." The current DorkOS tool set is inconsistent:
 
-| Domain | Tool examples | Pattern used |
-|--------|--------------|--------------|
-| Relay | `relay_send`, `relay_inbox` | `domain_verb` |
-| Relay trace | `relay_get_trace`, `relay_get_metrics` | `domain_verb_noun` |
-| Mesh | `mesh_list`, `mesh_inspect`, `mesh_register` | `domain_verb` |
-| Pulse | `list_schedules`, `create_schedule`, `get_run_history` | `verb_noun` (no domain) |
-| Binding | `binding_list`, `binding_create`, `binding_delete` | `domain_verb` |
-| Core | `ping`, `get_server_info`, `get_session_count`, `agent_get_current` | mixed |
+| Domain      | Tool examples                                                       | Pattern used            |
+| ----------- | ------------------------------------------------------------------- | ----------------------- |
+| Relay       | `relay_send`, `relay_inbox`                                         | `domain_verb`           |
+| Relay trace | `relay_get_trace`, `relay_get_metrics`                              | `domain_verb_noun`      |
+| Mesh        | `mesh_list`, `mesh_inspect`, `mesh_register`                        | `domain_verb`           |
+| Pulse       | `list_schedules`, `create_schedule`, `get_run_history`              | `verb_noun` (no domain) |
+| Binding     | `binding_list`, `binding_create`, `binding_delete`                  | `domain_verb`           |
+| Core        | `ping`, `get_server_info`, `get_session_count`, `agent_get_current` | mixed                   |
 
 Problems identified:
+
 - `list_schedules` is inconsistent with `relay_send` — one has a domain prefix, one doesn't
 - `relay_get_trace` mixes patterns: `domain_verb_noun` where peers use `domain_verb`
 - `binding_list` / `binding_create` reverses the ordering: `domain_verb` while `relay_send` is also `domain_verb`, but Pulse uses `verb_noun`
@@ -107,16 +111,19 @@ From the Microsoft Research study and MCP specification:
 Three structural patterns exist in the wild:
 
 **Pattern A: `verb_noun`** — Stripe, GitHub, official MCP examples
+
 - `create_customer`, `list_issues`, `get_weather`
 - Pro: most natural in English, aligns with CRUD verbs
 - Con: requires reading to know the domain when names are generic
 
 **Pattern B: `domain_verb` / `domain_verb_noun`** — DorkOS relay/mesh/binding tools
+
 - `relay_send`, `mesh_register`, `binding_create`
 - Pro: domain is immediately visible in tool lists and traces
 - Con: non-standard, feels like a prefix rather than a name
 
 **Pattern C: `verb_domain_noun`** — some specialized servers
+
 - `send_relay_message`, `register_mesh_agent`, `list_relay_endpoints`
 - Pro: reads like an English sentence, fully descriptive
 - Con: verbose, often exceeds the 32-char recommendation
@@ -148,6 +155,7 @@ There is no visual coherence. An agent building up a mental model of the DorkOS 
 ### Assessment by Domain
 
 **Relay tools — mostly consistent, one outlier**
+
 - `relay_send` — good: domain_verb
 - `relay_inbox` — good: domain_noun (reads as "relay inbox", clear)
 - `relay_list_endpoints` — good: domain_verb_noun
@@ -158,9 +166,11 @@ There is no visual coherence. An agent building up a mental model of the DorkOS 
 - Flag: `relay_get_trace` vs `relay_send` — the `_get_` is redundant when reads are implied (`relay_trace` would be cleaner)
 
 **Mesh tools — consistent**
+
 - `mesh_list`, `mesh_inspect`, `mesh_register`, `mesh_status`, `mesh_discover`, `mesh_deny`, `mesh_unregister`, `mesh_query_topology` — all `domain_verb` or `domain_verb_noun`, consistent
 
 **Pulse tools — INCONSISTENT, needs domain prefix**
+
 - `list_schedules` should be `pulse_list_schedules`
 - `create_schedule` should be `pulse_create_schedule`
 - `update_schedule` should be `pulse_update_schedule`
@@ -168,10 +178,12 @@ There is no visual coherence. An agent building up a mental model of the DorkOS 
 - `get_run_history` should be `pulse_get_run_history`
 
 **Binding tools — consistent but verb ordering reversed vs Stripe standard**
+
 - `binding_list`, `binding_create`, `binding_delete` — all `domain_verb`, internally consistent
 - Note: Stripe would name these `list_bindings`, `create_binding`, `delete_binding`. DorkOS's domain-first approach is acceptable given the multi-domain server architecture.
 
 **Core tools — minor inconsistency**
+
 - `ping` — acceptable as a universal utility name
 - `get_server_info` — good
 - `get_session_count` — good
@@ -179,16 +191,16 @@ There is no visual coherence. An agent building up a mental model of the DorkOS 
 
 ### Summary Inconsistency Table
 
-| Tool | Issue | Suggested fix |
-|------|-------|---------------|
-| `list_schedules` | Missing `pulse_` domain prefix | `pulse_list_schedules` |
-| `create_schedule` | Missing `pulse_` domain prefix | `pulse_create_schedule` |
-| `update_schedule` | Missing `pulse_` domain prefix | `pulse_update_schedule` |
-| `delete_schedule` | Missing `pulse_` domain prefix | `pulse_delete_schedule` |
-| `get_run_history` | Missing `pulse_` domain prefix | `pulse_get_run_history` |
-| `agent_get_current` | `domain_verb_noun` vs `verb_noun` core pattern | `get_current_agent` or `agent_identity` |
-| `relay_get_trace` | Verbose; `_get_` redundant when action is implied read | `relay_trace` (optional simplification) |
-| `relay_get_metrics` | Same as above | `relay_metrics` (optional simplification) |
+| Tool                | Issue                                                  | Suggested fix                             |
+| ------------------- | ------------------------------------------------------ | ----------------------------------------- |
+| `list_schedules`    | Missing `pulse_` domain prefix                         | `pulse_list_schedules`                    |
+| `create_schedule`   | Missing `pulse_` domain prefix                         | `pulse_create_schedule`                   |
+| `update_schedule`   | Missing `pulse_` domain prefix                         | `pulse_update_schedule`                   |
+| `delete_schedule`   | Missing `pulse_` domain prefix                         | `pulse_delete_schedule`                   |
+| `get_run_history`   | Missing `pulse_` domain prefix                         | `pulse_get_run_history`                   |
+| `agent_get_current` | `domain_verb_noun` vs `verb_noun` core pattern         | `get_current_agent` or `agent_identity`   |
+| `relay_get_trace`   | Verbose; `_get_` redundant when action is implied read | `relay_trace` (optional simplification)   |
+| `relay_get_metrics` | Same as above                                          | `relay_metrics` (optional simplification) |
 
 ---
 
@@ -199,6 +211,7 @@ There is no visual coherence. An agent building up a mental model of the DorkOS 
 Apply `domain_verb` or `domain_verb_noun` consistently to all non-core tools. This matches the existing relay/mesh/binding pattern and makes the full tool surface visually coherent.
 
 **Changes required:**
+
 1. Rename all 5 pulse tools to add the `pulse_` prefix
 2. Rename `agent_get_current` to `get_current_agent` (makes it verb-first like `get_server_info`) OR rename to `agent_identity` to fit domain-noun pattern
 

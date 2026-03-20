@@ -1,5 +1,5 @@
 ---
-title: "Dev-Mode Version Display & Upgrade UX: Research Report"
+title: 'Dev-Mode Version Display & Upgrade UX: Research Report'
 date: 2026-03-10
 type: external-best-practices
 status: active
@@ -28,6 +28,7 @@ The core problem — a developer tool that shows "Upgrade available" because `0.
 ### 1. The Core Bug: `update-notifier` Has No 0.0.0 Exemption
 
 The `update-notifier` package by Sindre Sorhus skips update checks only for these conditions:
+
 - `NO_UPDATE_NOTIFIER` env var is set (any value)
 - `NODE_ENV=test`
 - `--no-update-notifier` flag is passed
@@ -46,6 +47,7 @@ gitDescribeSuffixRE = regexp.MustCompile(`\d+-\d+-g[a-f0-9]{8}$`)
 ```
 
 When the version string matches this pattern (e.g., `1.2.3-14-gabcdef`), it converts the version to a pre-release format, which prevents dev builds from being flagged as outdated. Additionally, `gh` skips update checks when:
+
 - `GH_NO_UPDATE_NOTIFIER` is set
 - `CODESPACES` env var is present
 - stdout/stderr is not a terminal
@@ -80,6 +82,7 @@ This is the most robust approach for a product with multiple distribution channe
 ### 6. Semver Rules: `0.0.0-dev` vs `0.0.0`
 
 Per semver.org:
+
 - `0.0.0` is a valid semver (major 0, minor 0, patch 0)
 - `0.0.0-dev` is a pre-release version, **always lower** in precedence than `0.0.0`
 - `0.0.0-dev.sha.abcdef` is also valid and even lower
@@ -114,6 +117,7 @@ This is clean, explicit, and requires no special `package.json` configuration.
 ### 8. The Web UI Problem is Different from the CLI Problem
 
 For a web client showing a status bar version badge, the problem is that:
+
 1. The server reads its version from `package.json` (which is `0.0.0` in dev)
 2. The server (or client) checks npm registry and sees `1.2.3` published
 3. The UI renders "Upgrade available: 0.0.0 → 1.2.3"
@@ -123,6 +127,7 @@ The fix is at the **server level**: the server should expose its version mode (`
 ### 9. Update Check Privacy: Should Dev Builds Phone Home?
 
 Multiple sources note that update checks in dev mode are unnecessary network traffic and can leak information (e.g., that you're running a dev build of a particular tool, from a particular IP). Best practices from tools like Grafana, GitHub CLI, and Containerlab all skip the network request entirely in dev mode — not just suppress the UI. For DorkOS:
+
 - **Skip the npm registry fetch** in dev mode (not just hide the notification)
 - This is faster, more private, and avoids confusion from stale cache entries
 
@@ -132,30 +137,33 @@ Multiple sources note that update checks in dev mode are unnecessary network tra
 
 ### Approach Comparison Matrix
 
-| Approach | Auto-Detects? | CLI Works | Web UI Works | Testable | Complexity |
-|---|---|---|---|---|---|
-| `0.0.0-dev` sentinel in package.json + explicit check | Yes (if code checks) | Yes | Yes | Yes, via env var | Low |
-| `NODE_ENV=development` env var check | Yes | Yes | Yes | Yes, toggle env var | Low |
-| Git-describe version (`1.2.3-14-gabcdef`) | Yes (regex) | Yes | Partial | Medium | Medium |
-| Build-time injection (inject version at build) | Yes | Yes | Yes | Yes, swap at build | Medium |
-| Config flag (`NO_UPDATE_CHECK=true`) | No (manual) | Yes | Yes | Yes | Low |
-| VS Code "quality" channel | Yes | N/A | Yes | Medium | High |
+| Approach                                              | Auto-Detects?        | CLI Works | Web UI Works | Testable            | Complexity |
+| ----------------------------------------------------- | -------------------- | --------- | ------------ | ------------------- | ---------- |
+| `0.0.0-dev` sentinel in package.json + explicit check | Yes (if code checks) | Yes       | Yes          | Yes, via env var    | Low        |
+| `NODE_ENV=development` env var check                  | Yes                  | Yes       | Yes          | Yes, toggle env var | Low        |
+| Git-describe version (`1.2.3-14-gabcdef`)             | Yes (regex)          | Yes       | Partial      | Medium              | Medium     |
+| Build-time injection (inject version at build)        | Yes                  | Yes       | Yes          | Yes, swap at build  | Medium     |
+| Config flag (`NO_UPDATE_CHECK=true`)                  | No (manual)          | Yes       | Yes          | Yes                 | Low        |
+| VS Code "quality" channel                             | Yes                  | N/A       | Yes          | Medium              | High       |
 
 ### Approach 1: Sentinel Version `0.0.0-dev` (Recommended for DorkOS)
 
 **What it is**: Use `"version": "0.0.0-dev"` in `package.json` for all non-CLI packages (client, server), and use `"version": "0.0.0"` for the CLI's `package.json` during development. Add explicit `isDevBuild()` detection in both the CLI and server.
 
 **Pros**:
+
 - The version string itself is self-documenting — any developer reading `0.0.0-dev` instantly knows this is a dev build
 - Works across CLI and web UI with a single source of truth
 - `0.0.0-dev` is lower than any published version per semver, which is semantically correct
 - Easy to test: set `VERSION_OVERRIDE=1.2.3` to simulate an installed user
 
 **Cons**:
+
 - Still needs explicit code to detect and skip update check (semver comparison won't help alone)
 - Doesn't show the actual git SHA, losing some dev traceability
 
 **How to implement**:
+
 1. In `apps/server/src/routes/version.ts` (or wherever version is exposed), add dev mode detection
 2. In the CLI's startup, guard `updateNotifier` call
 3. In the client, render a "DEV" badge when server reports dev mode
@@ -165,10 +173,12 @@ Multiple sources note that update checks in dev mode are unnecessary network tra
 **What it is**: Detect dev mode via `process.env.NODE_ENV === 'development'` or a custom `DORKOS_DEV_MODE` env var.
 
 **Pros**:
+
 - Uses existing convention already established in the project
 - `NODE_ENV` is already set to `development` during `pnpm dev`
 
 **Cons**:
+
 - `NODE_ENV` is not universally reliable (Vite sets it differently from Express)
 - Doesn't appear in the version string itself — the UI still shows `0.0.0` which is confusing
 - Environment variable discipline is required (see `research/20260225_env_var_discipline.md`)
@@ -178,11 +188,13 @@ Multiple sources note that update checks in dev mode are unnecessary network tra
 **What it is**: At build time (for production builds), inject the version from `package.json` into the binary/bundle. In dev (unbundled/unbuilt), have the code fall back to a dev sentinel.
 
 **Pros**:
+
 - Used by containerlab, GitHub CLI (Go), and many Node.js CLIs
 - Clean separation: built artifacts have real versions, source runs have dev versions
 - DorkOS's CLI already does this via esbuild `define` for `__CLI_VERSION__`
 
 **Cons**:
+
 - Currently only implemented for the CLI, not the server/web client
 - Requires build pipeline changes to extend to all packages
 
@@ -193,6 +205,7 @@ Multiple sources note that update checks in dev mode are unnecessary network tra
 The core tension in dev-mode version handling is: "if we always suppress the upgrade notification in dev, how do we know the feature actually works?"
 
 Best practices from CLI tools:
+
 1. **Environment variable override**: `DORKOS_VERSION_OVERRIDE=1.2.3` or `DORKOS_LATEST_VERSION=2.0.0` env vars that inject specific values for testing
 2. **`--check-updates` flag**: An explicit command that forces a version check regardless of dev mode (for manual QA)
 3. **Test env var already handled**: `update-notifier` already skips checks when `NODE_ENV=test`, so unit tests won't trigger false positives
@@ -203,20 +216,25 @@ Best practices from CLI tools:
 Based on analysis of Raycast, Linear, VS Code, and Figma:
 
 **Status bar / footer**:
+
 - Show version prominently but small: `v1.2.3` in muted text
 - In dev mode: Show `DEV` or `v0.0.0-dev` badge (styled differently — amber/orange to signal "not production")
 - On hover: tooltip showing git SHA, build date if available
 
 **Upgrade available state** (production only):
+
 - Small indicator: a colored dot or `↑` glyph next to the version
 - On click: popover with current → latest, "Release notes" link, one-click update command
 - Once dismissed for a version: never show again for that version
 
 **Dev mode badge UX** (recommended for DorkOS):
+
 ```
 [DEV] v0.0.0-dev  ← amber badge, no upgrade indicator
 ```
+
 vs production:
+
 ```
 v1.2.3 ↑  ← muted version + upgrade dot when available
 ```
@@ -226,6 +244,7 @@ The `DEV` badge communicates "this is intentional, you are a developer running f
 ### Privacy Consideration: Skip the Network Request in Dev Mode
 
 When running from source, the server should **not** make the npm registry request at all, not just suppress the UI. Reasons:
+
 - Network request is unnecessary waste (adds latency to startup)
 - Dev builds may run in air-gapped environments
 - Avoids filling npm's access logs with dev-mode traffic from your own machine
@@ -242,18 +261,21 @@ This means the logic should be: `if (isDevBuild) { return; }` before the `fetch(
 Implement three layers of protection, any of which independently suppresses the update check:
 
 **Layer 1 — Sentinel version** (lowest effort, highest signal):
+
 - Set `"version": "0.0.0-dev"` in `apps/server/package.json` and `apps/client/package.json` (already `0.0.0`, add `-dev` suffix)
 - The CLI's `packages/cli/package.json` keeps real published versions
 
 **Layer 2 — Explicit code guard** (reliable):
+
 ```typescript
 // packages/cli/src/index.ts
 import updateNotifier from 'update-notifier';
 import pkg from '../package.json' assert { type: 'json' };
 
-const isDevBuild = pkg.version === '0.0.0'
-  || pkg.version.startsWith('0.0.0-')
-  || process.env.NODE_ENV === 'development';
+const isDevBuild =
+  pkg.version === '0.0.0' ||
+  pkg.version.startsWith('0.0.0-') ||
+  process.env.NODE_ENV === 'development';
 
 if (!isDevBuild) {
   updateNotifier({ pkg }).notify();
@@ -261,14 +283,14 @@ if (!isDevBuild) {
 ```
 
 **Layer 3 — Server API communicates dev mode** (for web UI):
+
 ```typescript
 // apps/server/src/routes/version.ts (or health endpoint)
 const DEV_VERSION_PATTERN = /^0\.0\.0/;
 
 export function getVersionInfo() {
   const version = pkg.version;
-  const isDevMode = DEV_VERSION_PATTERN.test(version)
-    || process.env.NODE_ENV === 'development';
+  const isDevMode = DEV_VERSION_PATTERN.test(version) || process.env.NODE_ENV === 'development';
 
   return {
     version,
@@ -280,6 +302,7 @@ export function getVersionInfo() {
 ```
 
 **Client renders accordingly**:
+
 - If `isDevMode: true` → show `DEV` badge, no upgrade prompt
 - If `isDevMode: false` and `latestVersion > version` → show upgrade indicator
 - If `isDevMode: false` and on latest → show version cleanly, no noise
@@ -297,6 +320,7 @@ NODE_ENV=production pnpm dev  # Not recommended for real use, but works for test
 ```
 
 Add an explicit test:
+
 ```typescript
 it('shows upgrade notification when newer version exists', async () => {
   // Mock the registry response

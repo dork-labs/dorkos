@@ -1,5 +1,5 @@
 ---
-title: "Adapter Catalog Management: Research Findings"
+title: 'Adapter Catalog Management: Research Findings'
 date: 2026-02-27
 type: internal-architecture
 status: active
@@ -213,13 +213,13 @@ Based on the cross-system analysis, here is a proposed `ConfigField` type for `@
 
 ```typescript
 export type ConfigFieldType =
-  | 'text'       // Standard string input
-  | 'password'   // Masked string input — never echoed to client
-  | 'number'     // Numeric input
-  | 'boolean'    // Toggle/checkbox
-  | 'select'     // Dropdown from options[]
-  | 'textarea'   // Multi-line text
-  | 'url';       // URL input with validation hint
+  | 'text' // Standard string input
+  | 'password' // Masked string input — never echoed to client
+  | 'number' // Numeric input
+  | 'boolean' // Toggle/checkbox
+  | 'select' // Dropdown from options[]
+  | 'textarea' // Multi-line text
+  | 'url'; // URL input with validation hint
 
 export interface ConfigFieldOption {
   label: string;
@@ -358,6 +358,7 @@ function AdapterConfigForm({
 ```
 
 `ConfigFieldInput` renders the appropriate shadcn/ui component based on `field.type`:
+
 - `text` / `url` → `<Input type="text" />`
 - `password` → `<Input type="password" />` with unmask toggle
 - `number` → `<Input type="number" />`
@@ -372,6 +373,7 @@ Validation runs on the server using the adapter's Zod schema (not the descriptor
 The Home Assistant config_flow pattern maps cleanly to a shadcn Dialog-based wizard:
 
 **Step flow:**
+
 1. **Select adapter type** — browse catalog, click adapter card
 2. **Name the instance** — set `id` (slug), review `setupInstructions` if present
 3. **Configure fields** — one step per `setupSteps[n]`, or all fields on one page if no steps defined
@@ -379,6 +381,7 @@ The Home Assistant config_flow pattern maps cleanly to a shadcn Dialog-based wiz
 5. **Confirm** — shows success state; adapter is written to `adapters.json`
 
 **Key UX decisions from research:**
+
 - The "Test Connection" step is critical for credential-based adapters (Telegram, Webhook). IntelliJ and Grafana both make this a prominent action.
 - The wizard should be re-entrant: clicking "Configure" on an existing adapter opens the wizard pre-filled with current config values.
 - Password fields should never be pre-filled from the server (send empty string + a `hasExistingValue: true` hint so the UI shows "leave blank to keep current").

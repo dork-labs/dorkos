@@ -129,12 +129,12 @@ Returns server runtime information (version, port, uptime, working directory, tu
 
 **Notable response fields:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `version` | `string` | Current server version string |
-| `latestVersion` | `string \| null` | Latest version from npm, or `null` if dev mode or lookup failed |
-| `isDevMode` | `boolean` | Whether the server is running a development build (from `pnpm dev` or `tsx watch`). When `true`, `latestVersion` will be `null` and upgrade notifications are suppressed in the UI. |
-| `dismissedUpgradeVersions` | `string[]` | List of version strings the user has dismissed upgrade notifications for. Managed via `PATCH /api/config` with `{ ui: { dismissedUpgradeVersions: [...] } }`. |
+| Field                      | Type             | Description                                                                                                                                                                         |
+| -------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`                  | `string`         | Current server version string                                                                                                                                                       |
+| `latestVersion`            | `string \| null` | Latest version from npm, or `null` if dev mode or lookup failed                                                                                                                     |
+| `isDevMode`                | `boolean`        | Whether the server is running a development build (from `pnpm dev` or `tsx watch`). When `true`, `latestVersion` will be `null` and upgrade notifications are suppressed in the UI. |
+| `dismissedUpgradeVersions` | `string[]`       | List of version strings the user has dismissed upgrade notifications for. Managed via `PATCH /api/config` with `{ ui: { dismissedUpgradeVersions: [...] } }`.                       |
 
 ### PATCH /api/config
 
@@ -170,7 +170,9 @@ The `agentContext` section controls global tool domain toggles. Each toggle dete
     "tunnel": { "enabled": false, "domain": null, "authtoken": null, "auth": null },
     "ui": { "theme": "dark" }
   },
-  "warnings": ["'tunnel.authtoken' contains sensitive data. Consider using environment variables instead."]
+  "warnings": [
+    "'tunnel.authtoken' contains sensitive data. Consider using environment variables instead."
+  ]
 }
 ```
 
@@ -197,17 +199,17 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 
 Feature-flag guarded via `DORKOS_PULSE_ENABLED`. Router is mounted at `/api/pulse`.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/pulse/schedules` | List all schedules |
-| POST | `/api/pulse/schedules` | Create a schedule |
-| PATCH | `/api/pulse/schedules/:id` | Update a schedule |
-| DELETE | `/api/pulse/schedules/:id` | Delete a schedule |
-| POST | `/api/pulse/schedules/:id/trigger` | Trigger a schedule run |
-| GET | `/api/pulse/runs` | Get run history |
-| GET | `/api/pulse/runs/:id` | Get a specific run |
-| POST | `/api/pulse/runs/:id/cancel` | Cancel an active run |
-| GET | `/api/pulse/presets` | List default schedule presets |
+| Method | Path                               | Description                   |
+| ------ | ---------------------------------- | ----------------------------- |
+| GET    | `/api/pulse/schedules`             | List all schedules            |
+| POST   | `/api/pulse/schedules`             | Create a schedule             |
+| PATCH  | `/api/pulse/schedules/:id`         | Update a schedule             |
+| DELETE | `/api/pulse/schedules/:id`         | Delete a schedule             |
+| POST   | `/api/pulse/schedules/:id/trigger` | Trigger a schedule run        |
+| GET    | `/api/pulse/runs`                  | Get run history               |
+| GET    | `/api/pulse/runs/:id`              | Get a specific run            |
+| POST   | `/api/pulse/runs/:id/cancel`       | Cancel an active run          |
+| GET    | `/api/pulse/presets`               | List default schedule presets |
 
 Schedules support an optional `agentId` field for agent-linked scheduling. When `agentId` is set, the schedule's CWD is resolved from the agent's registered project path via MeshCore.
 
@@ -215,20 +217,21 @@ Schedules support an optional `agentId` field for agent-linked scheduling. When 
 
 The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).
 
-| Flag                       | Default | Guards                              |
-| -------------------------- | ------- | ----------------------------------- |
-| `DORKOS_RELAY_ENABLED`     | `false` | `/api/relay/*` routes               |
+| Flag                   | Default | Guards                |
+| ---------------------- | ------- | --------------------- |
+| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes |
 
 This flag also controls the behavior of `POST /api/sessions/:id/messages`:
+
 - `DORKOS_RELAY_ENABLED` enables relay infrastructure for external adapters (Telegram, webhooks). The web client always uses direct SSE streaming regardless of this flag.
 
 Other relevant environment variables:
 
-| Variable              | Default | Description                                                  |
-| --------------------- | ------- | ------------------------------------------------------------ |
-| `DORKOS_PORT`         | `4242` (dev: `6242`)  | Express server port                                          |
-| `DORKOS_CORS_ORIGIN`  | `*`     | CORS `Access-Control-Allow-Origin` value. Set to a specific origin (e.g. `https://app.example.com`) to restrict cross-origin requests. |
-| `DORKOS_PULSE_ENABLED`| `false` | `/api/schedules/*` and `/api/runs/*` routes                  |
+| Variable               | Default              | Description                                                                                                                            |
+| ---------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_PORT`          | `4242` (dev: `6242`) | Express server port                                                                                                                    |
+| `DORKOS_CORS_ORIGIN`   | `*`                  | CORS `Access-Control-Allow-Origin` value. Set to a specific origin (e.g. `https://app.example.com`) to restrict cross-origin requests. |
+| `DORKOS_PULSE_ENABLED` | `false`              | `/api/schedules/*` and `/api/runs/*` routes                                                                                            |
 
 ## Agent Endpoints
 
@@ -596,11 +599,11 @@ All of `type`, `id`, and `config` are required. `enabled` defaults to `true`.
 
 **Error codes** (in `code` field):
 
-| Code                     | HTTP | Description                                    |
-| ------------------------ | ---- | ---------------------------------------------- |
-| `DUPLICATE_ID`           | 409  | An adapter with this ID already exists          |
-| `UNKNOWN_TYPE`           | 400  | The adapter type is not recognized              |
-| `MULTI_INSTANCE_DENIED`  | 400  | Adapter type does not support multiple instances |
+| Code                    | HTTP | Description                                      |
+| ----------------------- | ---- | ------------------------------------------------ |
+| `DUPLICATE_ID`          | 409  | An adapter with this ID already exists           |
+| `UNKNOWN_TYPE`          | 400  | The adapter type is not recognized               |
+| `MULTI_INSTANCE_DENIED` | 400  | Adapter type does not support multiple instances |
 
 ### DELETE /api/relay/adapters/:id
 
@@ -873,9 +876,7 @@ Update access control rules for the topology. Defines which agents may communica
 
 ```json
 {
-  "rules": [
-    { "from": "agent-abc123", "to": "agent-def456" }
-  ]
+  "rules": [{ "from": "agent-abc123", "to": "agent-def456" }]
 }
 ```
 
@@ -1034,9 +1035,9 @@ Upload files to a session's working directory for agent access. Files are stored
 
 **Query parameters:**
 
-| Parameter | Type   | Required | Description                                                       |
-| --------- | ------ | -------- | ----------------------------------------------------------------- |
-| `cwd`     | string | Yes      | Working directory where files will be stored                      |
+| Parameter | Type   | Required | Description                                  |
+| --------- | ------ | -------- | -------------------------------------------- |
+| `cwd`     | string | Yes      | Working directory where files will be stored |
 
 **Form field:** `files` (one or more files)
 
@@ -1075,15 +1076,15 @@ Serve an uploaded file by filename. Used by the client to render image thumbnail
 
 **Path parameters:**
 
-| Parameter  | Type   | Description                                           |
-| ---------- | ------ | ----------------------------------------------------- |
-| `filename` | string | Sanitized filename (as returned by POST upload)       |
+| Parameter  | Type   | Description                                     |
+| ---------- | ------ | ----------------------------------------------- |
+| `filename` | string | Sanitized filename (as returned by POST upload) |
 
 **Query parameters:**
 
-| Parameter | Type   | Required | Description                                    |
-| --------- | ------ | -------- | ---------------------------------------------- |
-| `cwd`     | string | Yes      | Working directory where files were uploaded     |
+| Parameter | Type   | Required | Description                                 |
+| --------- | ------ | -------- | ------------------------------------------- |
+| `cwd`     | string | Yes      | Working directory where files were uploaded |
 
 **Success response (200):** File content with appropriate MIME type.
 
@@ -1123,10 +1124,10 @@ The MCP endpoint is a protocol endpoint, not a REST API. It speaks JSON-RPC and 
 
 ### Endpoint
 
-| Method | Path   | Description                                         |
-| ------ | ------ | --------------------------------------------------- |
-| POST   | `/mcp` | JSON-RPC requests (tool calls, initialize, etc.)    |
-| GET    | `/mcp` | Returns 405 (stateless mode, no SSE)                |
+| Method | Path   | Description                                          |
+| ------ | ------ | ---------------------------------------------------- |
+| POST   | `/mcp` | JSON-RPC requests (tool calls, initialize, etc.)     |
+| GET    | `/mcp` | Returns 405 (stateless mode, no SSE)                 |
 | DELETE | `/mcp` | Returns 405 (stateless mode, no session termination) |
 
 The server operates in **stateless mode** — each POST request creates a fresh transport. There are no persistent sessions or SSE streams on the MCP endpoint.

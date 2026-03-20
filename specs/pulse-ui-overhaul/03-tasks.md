@@ -15,6 +15,7 @@ last_decompose: 2026-02-21
 Install `sonner`, `@radix-ui/react-tooltip`, and `cmdk` in the client app. Create three new shared UI components following the shadcn pattern, export them from the shared/ui barrel, and mount `TooltipProvider` and `Toaster` in `App.tsx`.
 
 **Files:**
+
 - `apps/client/package.json` (add deps)
 - `apps/client/src/layers/shared/ui/tooltip.tsx` (new)
 - `apps/client/src/layers/shared/ui/sonner.tsx` (new)
@@ -27,6 +28,7 @@ Install `sonner`, `@radix-ui/react-tooltip`, and `cmdk` in the client app. Creat
 Add a `pulse` field to the GET /api/config response. Extend `ServerConfigSchema` in shared schemas.
 
 **Files:**
+
 - `packages/shared/src/schemas.ts` (extend ServerConfigSchema)
 - `apps/server/src/routes/config.ts` (add pulse to response)
 
@@ -35,6 +37,7 @@ Add a `pulse` field to the GET /api/config response. Extend `ServerConfigSchema`
 Create the feature detection hook and update `useSchedules()` and `useRuns()` to accept an `enabled` parameter.
 
 **Files:**
+
 - `apps/client/src/layers/entities/pulse/model/use-pulse-config.ts` (new)
 - `apps/client/src/layers/entities/pulse/model/use-schedules.ts` (update)
 - `apps/client/src/layers/entities/pulse/model/use-runs.ts` (update)
@@ -45,6 +48,7 @@ Create the feature detection hook and update `useSchedules()` and `useRuns()` to
 Remove the custom modal rendering and replace with ResponsiveDialog. Add Tooltip for disabled state. Add pulsing green dot for active runs.
 
 **Files:**
+
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` (overhaul)
 
 ### T5: Implement PulsePanel disabled/enabled empty states and skeleton loading
@@ -52,6 +56,7 @@ Remove the custom modal rendering and replace with ResponsiveDialog. Add Tooltip
 Add the disabled empty state, the enabled-but-empty state, and the skeleton loading state to PulsePanel.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx` (update)
 
 ## Phase 2: Schedule List + Row Overhaul
@@ -61,6 +66,7 @@ Add the disabled empty state, the enabled-but-empty state, and the skeleton load
 Extract the schedule row into its own component with proper design system primitives.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/ScheduleRow.tsx` (new)
 - `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx` (update to use ScheduleRow)
 - `apps/client/src/layers/features/pulse/index.ts` (optionally export)
@@ -72,6 +78,7 @@ Extract the schedule row into its own component with proper design system primit
 Replace the custom overlay with ResponsiveDialog. Add CronPresets and TimezoneCombobox components. Implement progressive disclosure with advanced settings section.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx` (rewrite)
 - `apps/client/src/layers/features/pulse/ui/CronPresets.tsx` (new)
 - `apps/client/src/layers/features/pulse/ui/TimezoneCombobox.tsx` (new)
@@ -83,6 +90,7 @@ Replace the custom overlay with ResponsiveDialog. Add CronPresets and TimezoneCo
 Replace Unicode status icons with Lucide, add relative timestamps, responsive mobile layout, output summary, error display, and skeleton loading.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx` (rewrite)
 
 ### T9: Create `useActiveRunCount()` hook and wire toast notifications into mutation hooks
@@ -90,6 +98,7 @@ Replace Unicode status icons with Lucide, add relative timestamps, responsive mo
 Add the active run count hook for the sidebar indicator and wire up Sonner toasts to Run Now, Approve, and error callbacks.
 
 **Files:**
+
 - `apps/client/src/layers/entities/pulse/model/use-runs.ts` (add useActiveRunCount)
 - `apps/client/src/layers/entities/pulse/index.ts` (export)
 - `apps/client/src/layers/features/pulse/ui/ScheduleRow.tsx` (add toast calls)
@@ -100,6 +109,7 @@ Add the active run count hook for the sidebar indicator and wire up Sonner toast
 Create comprehensive tests for PulsePanel, ScheduleRow, CreateScheduleDialog, RunHistoryPanel, usePulseEnabled, updated useSchedules/useRuns, and useActiveRunCount.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/__tests__/PulsePanel.test.tsx` (update)
 - `apps/client/src/layers/features/pulse/__tests__/ScheduleRow.test.tsx` (new)
 - `apps/client/src/layers/features/pulse/__tests__/CreateScheduleDialog.test.tsx` (update)
@@ -113,6 +123,7 @@ Create comprehensive tests for PulsePanel, ScheduleRow, CreateScheduleDialog, Ru
 Document the Tooltip, Toaster, and Command additions in the design system guide and update the Pulse section in CLAUDE.md.
 
 **Files:**
+
 - `CLAUDE.md` (update Pulse section)
 - `contributing/design-system.md` (document new shared UI components)
 

@@ -71,7 +71,12 @@ export function createCanUseTool(
 ): (
   toolName: string,
   input: Record<string, unknown>,
-  context: { signal: AbortSignal; toolUseID: string; decisionReason?: string; suggestions?: unknown[] }
+  context: {
+    signal: AbortSignal;
+    toolUseID: string;
+    decisionReason?: string;
+    suggestions?: unknown[];
+  }
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
     if (toolName === 'AskUserQuestion') {
@@ -82,7 +87,13 @@ export function createCanUseTool(
     // Read-only Claude Code tools are always auto-approved for relay-triggered sessions.
     // These cannot modify the filesystem or execute shell commands.
     const READ_ONLY_TOOLS = new Set([
-      'Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'WebSearch', 'WebFetch',
+      'Read',
+      'Grep',
+      'Glob',
+      'LS',
+      'NotebookRead',
+      'WebSearch',
+      'WebFetch',
     ]);
 
     // DorkOS agent communication tools are always auto-approved regardless of permissionMode.
@@ -108,10 +119,18 @@ export function createCanUseTool(
     }
 
     if (session.permissionMode === 'default') {
-      logFn('[canUseTool] requesting approval', { toolName, permissionMode: 'default', toolUseID: context.toolUseID });
+      logFn('[canUseTool] requesting approval', {
+        toolName,
+        permissionMode: 'default',
+        toolUseID: context.toolUseID,
+      });
       return handleToolApproval(session, context.toolUseID, toolName, input);
     }
-    logFn('[canUseTool] auto-allow', { toolName, permissionMode: session.permissionMode, toolUseID: context.toolUseID });
+    logFn('[canUseTool] auto-allow', {
+      toolName,
+      permissionMode: session.permissionMode,
+      toolUseID: context.toolUseID,
+    });
     return { behavior: 'allow', updatedInput: input };
   };
 }

@@ -55,31 +55,29 @@ export const useDiscoveryStore = create<DiscoveryState & DiscoveryActions>()(
         set(
           { candidates: [], progress: null, isScanning: true, error: null },
           false,
-          'discovery/startScan',
+          'discovery/startScan'
         ),
 
       addCandidate: (candidate) =>
         set(
           (state) => ({ candidates: [...state.candidates, candidate] }),
           false,
-          'discovery/addCandidate',
+          'discovery/addCandidate'
         ),
 
-      setProgress: (progress) =>
-        set({ progress }, false, 'discovery/setProgress'),
+      setProgress: (progress) => set({ progress }, false, 'discovery/setProgress'),
 
       completeScan: (finalProgress) =>
         set(
           { progress: finalProgress, isScanning: false, lastScanAt: new Date().toISOString() },
           false,
-          'discovery/completeScan',
+          'discovery/completeScan'
         ),
 
-      setError: (error) =>
-        set({ error, isScanning: false }, false, 'discovery/setError'),
+      setError: (error) => set({ error, isScanning: false }, false, 'discovery/setError'),
 
       reset: () => set(INITIAL_STATE, false, 'discovery/reset'),
     }),
-    { name: 'DiscoveryStore' },
-  ),
+    { name: 'DiscoveryStore' }
+  )
 );

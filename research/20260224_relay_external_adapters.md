@@ -1,5 +1,5 @@
 ---
-title: "Relay External Adapters — Telegram, Webhook, Plugin Architecture"
+title: 'Relay External Adapters — Telegram, Webhook, Plugin Architecture'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -41,20 +41,20 @@ grammY is the definitive choice for the Telegram adapter: written TypeScript-fir
 
 ### 1. Telegram Bot Library Comparison
 
-| Criterion | grammY | Telegraf | node-telegram-bot-api |
-|---|---|---|---|
-| **TypeScript Support** | Excellent — TS-first, clean types, inline Bot API hints | Poor in v4 — types "too complex to understand" | None (JS only) |
-| **Active Maintenance** | Active, tracks latest Bot API | Lags Bot API by several versions | Effectively abandoned |
-| **Documentation** | Comprehensive guides + auto-generated reference | Auto-generated only, guides sparse | Minimal |
-| **Long Polling** | `bot.start()` — built-in, zero config | `bot.launch()` | `bot.startPolling()` |
-| **Webhook Mode** | First-class; adapters for Express, Koa, and more | Supported | Supported but brittle |
-| **Auto-Reconnect** | `@grammyjs/auto-retry` — handles 429, 500, `HttpError` | Manual | Manual |
-| **Error Handling** | Typed `GrammyError` / `HttpError`; `bot.catch()`; middleware error boundaries | Basic | Manual |
-| **Group Chat** | Full support; privacy mode documented | Full support | Supported |
-| **Bundle Size** | Lightweight; ships ESM web bundle for edge runtimes | Heavier | Small but unmaintained |
-| **Serverless/Edge** | Excellent; designed for Cloudflare Workers | Possible but heavier | No |
-| **Mode Switching** | Trivial — same middleware, only `bot.start()` vs webhook handler changes | Similar | Hard |
-| **Weekly Downloads** | ~1.2M (npm) | ~160K | ~156K |
+| Criterion              | grammY                                                                        | Telegraf                                       | node-telegram-bot-api  |
+| ---------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------- |
+| **TypeScript Support** | Excellent — TS-first, clean types, inline Bot API hints                       | Poor in v4 — types "too complex to understand" | None (JS only)         |
+| **Active Maintenance** | Active, tracks latest Bot API                                                 | Lags Bot API by several versions               | Effectively abandoned  |
+| **Documentation**      | Comprehensive guides + auto-generated reference                               | Auto-generated only, guides sparse             | Minimal                |
+| **Long Polling**       | `bot.start()` — built-in, zero config                                         | `bot.launch()`                                 | `bot.startPolling()`   |
+| **Webhook Mode**       | First-class; adapters for Express, Koa, and more                              | Supported                                      | Supported but brittle  |
+| **Auto-Reconnect**     | `@grammyjs/auto-retry` — handles 429, 500, `HttpError`                        | Manual                                         | Manual                 |
+| **Error Handling**     | Typed `GrammyError` / `HttpError`; `bot.catch()`; middleware error boundaries | Basic                                          | Manual                 |
+| **Group Chat**         | Full support; privacy mode documented                                         | Full support                                   | Supported              |
+| **Bundle Size**        | Lightweight; ships ESM web bundle for edge runtimes                           | Heavier                                        | Small but unmaintained |
+| **Serverless/Edge**    | Excellent; designed for Cloudflare Workers                                    | Possible but heavier                           | No                     |
+| **Mode Switching**     | Trivial — same middleware, only `bot.start()` vs webhook handler changes      | Similar                                        | Hard                   |
+| **Weekly Downloads**   | ~1.2M (npm)                                                                   | ~160K                                          | ~156K                  |
 
 **Verdict:** grammY is unambiguously the correct choice for a TypeScript-first codebase in 2026.
 
@@ -67,6 +67,7 @@ grammY is the definitive choice for the Telegram adapter: written TypeScript-fir
 grammY's `bot.start()` enters a `getUpdates` loop. Telegram holds the connection open until an update arrives, then responds immediately. No public URL required.
 
 Key behaviors:
+
 - Works on `localhost` with no additional infrastructure
 - `@grammyjs/auto-retry` handles network failures, 429 flood limits, and 500 server errors automatically
 - `bot.stop()` performs a final `getUpdates` offset sync before shutdown — no updates lost on graceful restart
@@ -74,6 +75,7 @@ Key behaviors:
 - Resource cost: one persistent outbound HTTPS connection per bot instance
 
 Graceful shutdown pattern:
+
 ```typescript
 process.once('SIGINT', () => bot.stop());
 process.once('SIGTERM', () => bot.stop());
@@ -83,6 +85,7 @@ await bot.start();
 #### Webhooks (opt-in production mode)
 
 Telegram sends HTTPS POST to a registered URL on every update. Requires:
+
 - A public HTTPS URL (only ports 443, 80, 88, 8443 are allowed by Telegram)
 - An SSL cert (Telegram enforces TLS)
 - In development: ngrok or VS Code port forwarding
@@ -105,14 +108,12 @@ The Stripe pattern — industry standard used by GitHub, Stripe, Shopify, Okta:
 import { createHmac, timingSafeEqual } from 'crypto';
 
 function verifyWebhookSignature(
-  rawBody: Buffer,         // MUST be raw bytes — captured before JSON.parse
+  rawBody: Buffer, // MUST be raw bytes — captured before JSON.parse
   signatureHeader: string, // format: "t=<timestamp>,v1=<hex-sig>"
   secret: string,
-  toleranceSecs = 300,
+  toleranceSecs = 300
 ): boolean {
-  const parts = Object.fromEntries(
-    signatureHeader.split(',').map((p) => p.split('=')),
-  );
+  const parts = Object.fromEntries(signatureHeader.split(',').map((p) => p.split('=')));
   const timestamp = parseInt(parts['t'] ?? '0', 10);
   const received = parts['v1'] ?? '';
 
@@ -122,16 +123,11 @@ function verifyWebhookSignature(
 
   // Layer 2: HMAC — sign the timestamp + raw body together
   const payload = `${timestamp}.${rawBody.toString()}`;
-  const expected = createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
+  const expected = createHmac('sha256', secret).update(payload).digest('hex');
 
   // Layer 3: Constant-time comparison — NEVER use === on signatures
   try {
-    return timingSafeEqual(
-      Buffer.from(received, 'hex'),
-      Buffer.from(expected, 'hex'),
-    );
+    return timingSafeEqual(Buffer.from(received, 'hex'), Buffer.from(expected, 'hex'));
   } catch {
     return false; // Buffer length mismatch = invalid signature
   }
@@ -141,11 +137,13 @@ function verifyWebhookSignature(
 **Critical implementation note:** The raw body must be captured before `express.json()` parses it. Use Express's `verify` callback:
 
 ```typescript
-app.use(express.json({
-  verify: (req, _res, buf) => {
-    (req as any).rawBody = buf;
-  },
-}));
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 ```
 
 Or use `express.raw({ type: 'application/json' })` for webhook-specific routes.
@@ -162,12 +160,15 @@ Three-layer defense:
 const processedNonces = new Map<string, number>(); // nonce -> expiresAt
 
 // Cleanup on 5-minute interval to prevent unbounded growth
-setInterval(() => {
-  const now = Date.now();
-  for (const [nonce, exp] of processedNonces) {
-    if (exp < now) processedNonces.delete(nonce);
-  }
-}, 5 * 60 * 1000);
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [nonce, exp] of processedNonces) {
+      if (exp < now) processedNonces.delete(nonce);
+    }
+  },
+  5 * 60 * 1000
+);
 
 function checkAndRecordNonce(nonce: string): boolean {
   if (processedNonces.has(nonce)) return false; // replay detected
@@ -209,7 +210,7 @@ At-least-once delivery with exponential backoff and jitter:
 
 ```typescript
 interface OutboundDelivery {
-  id: string;               // stable across all retry attempts (same event = same id)
+  id: string; // stable across all retry attempts (same event = same id)
   url: string;
   payload: RelayEnvelope;
   attempt: number;
@@ -220,15 +221,15 @@ interface OutboundDelivery {
 
 **Retry schedule with jitter (±20%):**
 
-| Attempt | Base delay | With jitter |
-|---|---|---|
-| 1 | immediate | immediate |
-| 2 | 1 minute | 48s–72s |
-| 3 | 5 minutes | 4m–6m |
-| 4 | 30 minutes | 24m–36m |
-| 5 | 2 hours | 1.6h–2.4h |
-| 6 | 24 hours | 19.2h–28.8h |
-| 7+ | Dead letter queue | — |
+| Attempt | Base delay        | With jitter |
+| ------- | ----------------- | ----------- |
+| 1       | immediate         | immediate   |
+| 2       | 1 minute          | 48s–72s     |
+| 3       | 5 minutes         | 4m–6m       |
+| 4       | 30 minutes        | 24m–36m     |
+| 5       | 2 hours           | 1.6h–2.4h   |
+| 6       | 24 hours          | 19.2h–28.8h |
+| 7+      | Dead letter queue | —           |
 
 Jitter formula: `delay * (0.8 + 0.4 * Math.random())`
 
@@ -245,6 +246,7 @@ Jitter prevents the thundering herd problem where all failed webhooks retry simu
 #### Registry Pattern (correct for this use case)
 
 A registry (`Map<id, RelayAdapter>`) is correct over a Strategy pattern because:
+
 - Multiple adapters coexist simultaneously (Telegram + webhook + future adapters)
 - Adapters are individually addressable by ID for hot-reload targeting
 - Strategy implies a single active implementation — not the case here
@@ -270,7 +272,7 @@ class AdapterRegistry {
     if (!adapter) return;
     this.adapters.delete(adapterId); // remove FIRST — stop accepting new delivers
     try {
-      await adapter.stop();          // then drain + close
+      await adapter.stop(); // then drain + close
     } catch (err) {
       console.error(`[relay-adapter] Error stopping ${adapterId}:`, err);
     }
@@ -281,7 +283,7 @@ class AdapterRegistry {
     const results = await Promise.allSettled(
       [...this.adapters.values()]
         .filter((a) => subject.startsWith(a.subjectPrefix))
-        .map((a) => a.deliver(subject, envelope)),
+        .map((a) => a.deliver(subject, envelope))
     );
 
     for (const [i, result] of results.entries()) {
@@ -295,9 +297,7 @@ class AdapterRegistry {
 
   async stopAll(): Promise<void> {
     // Shutdown all adapters in parallel regardless of individual failures
-    await Promise.allSettled(
-      [...this.adapters.keys()].map((id) => this.unregister(id)),
-    );
+    await Promise.allSettled([...this.adapters.keys()].map((id) => this.unregister(id)));
   }
 }
 ```
@@ -323,7 +323,10 @@ watcher.on('change', async () => {
     try {
       await newAdapter.start(relay);
     } catch (err) {
-      console.error(`[hot-reload] New adapter ${adapterConfig.id} failed to start — keeping old:`, err);
+      console.error(
+        `[hot-reload] New adapter ${adapterConfig.id} failed to start — keeping old:`,
+        err
+      );
       continue; // Abort reload for this adapter; old instance stays active
     }
 
@@ -332,9 +335,9 @@ watcher.on('change', async () => {
 
     // Stop old instance AFTER new is live
     if (oldAdapter) {
-      await oldAdapter.stop().catch((err) =>
-        console.error(`[hot-reload] Error stopping old ${adapterConfig.id}:`, err),
-      );
+      await oldAdapter
+        .stop()
+        .catch((err) => console.error(`[hot-reload] Error stopping old ${adapterConfig.id}:`, err));
     }
 
     emit('adapter.reloaded', { id: adapterConfig.id });
@@ -364,24 +367,26 @@ const TG_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const server = setupServer(
   // Simulate idle long polling (empty updates)
-  http.post(`${TG_BASE}/getUpdates`, () =>
-    HttpResponse.json({ ok: true, result: [] })
-  ),
+  http.post(`${TG_BASE}/getUpdates`, () => HttpResponse.json({ ok: true, result: [] })),
   // Simulate an incoming message
-  http.post(`${TG_BASE}/getUpdates`, () =>
-    HttpResponse.json({
-      ok: true,
-      result: [{
-        update_id: 1,
-        message: { message_id: 1, chat: { id: 123, type: 'private' }, text: 'hello', date: 0 },
-      }],
-    }),
+  http.post(
+    `${TG_BASE}/getUpdates`,
+    () =>
+      HttpResponse.json({
+        ok: true,
+        result: [
+          {
+            update_id: 1,
+            message: { message_id: 1, chat: { id: 123, type: 'private' }, text: 'hello', date: 0 },
+          },
+        ],
+      }),
     { once: true } // return update only once, then idle
   ),
   // Mock sendMessage
   http.post(`${TG_BASE}/sendMessage`, () =>
     HttpResponse.json({ ok: true, result: { message_id: 2 } })
-  ),
+  )
 );
 
 beforeAll(() => server.listen());
@@ -408,9 +413,7 @@ vi.mock('grammy', () => ({
 ```typescript
 function signPayload(body: string, secret: string): string {
   const ts = Math.floor(Date.now() / 1000);
-  const sig = createHmac('sha256', secret)
-    .update(`${ts}.${body}`)
-    .digest('hex');
+  const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('hex');
   return `t=${ts},v1=${sig}`;
 }
 
@@ -428,9 +431,7 @@ it('accepts valid signed webhook', async () => {
 
 it('rejects expired timestamp', async () => {
   const ts = Math.floor(Date.now() / 1000) - 400; // 400s ago > 300s tolerance
-  const sig = createHmac('sha256', TEST_SECRET)
-    .update(`${ts}.${body}`)
-    .digest('hex');
+  const sig = createHmac('sha256', TEST_SECRET).update(`${ts}.${body}`).digest('hex');
 
   await request(app)
     .post('/relay/webhook/inbound')
@@ -441,8 +442,16 @@ it('rejects expired timestamp', async () => {
 
 it('rejects replayed nonce', async () => {
   const signature = signPayload(body, TEST_SECRET);
-  await request(app).post('/relay/webhook/inbound').set('X-Webhook-Signature', signature).send(body).expect(200);
-  await request(app).post('/relay/webhook/inbound').set('X-Webhook-Signature', signature).send(body).expect(409);
+  await request(app)
+    .post('/relay/webhook/inbound')
+    .set('X-Webhook-Signature', signature)
+    .send(body)
+    .expect(200);
+  await request(app)
+    .post('/relay/webhook/inbound')
+    .set('X-Webhook-Signature', signature)
+    .send(body)
+    .expect(409);
 });
 ```
 
@@ -452,26 +461,38 @@ it('rejects replayed nonce', async () => {
 describe('AdapterRegistry', () => {
   it('isolates start failure — other adapters still start', async () => {
     const failing = {
-      id: 'bad', subjectPrefix: 'bad.',
+      id: 'bad',
+      subjectPrefix: 'bad.',
       start: vi.fn().mockRejectedValue(new Error('connection refused')),
-      stop: vi.fn(), deliver: vi.fn(),
+      stop: vi.fn(),
+      deliver: vi.fn(),
     };
     const good = {
-      id: 'good', subjectPrefix: 'good.',
+      id: 'good',
+      subjectPrefix: 'good.',
       start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn(), deliver: vi.fn(),
+      stop: vi.fn(),
+      deliver: vi.fn(),
     };
 
     await registry.register(failing, relay);
     await registry.register(good, relay);
 
-    expect(registry.get('bad')).toBeUndefined();  // not registered
-    expect(registry.get('good')).toBeDefined();   // registered successfully
+    expect(registry.get('bad')).toBeUndefined(); // not registered
+    expect(registry.get('good')).toBeDefined(); // registered successfully
   });
 
   it('broadcast isolates deliver failures', async () => {
-    const crashingDeliver = { ...mockAdapter, id: 'crash', deliver: vi.fn().mockRejectedValue(new Error('boom')) };
-    const workingDeliver = { ...mockAdapter, id: 'work', deliver: vi.fn().mockResolvedValue(undefined) };
+    const crashingDeliver = {
+      ...mockAdapter,
+      id: 'crash',
+      deliver: vi.fn().mockRejectedValue(new Error('boom')),
+    };
+    const workingDeliver = {
+      ...mockAdapter,
+      id: 'work',
+      deliver: vi.fn().mockResolvedValue(undefined),
+    };
 
     await registry.register(crashingDeliver, relay);
     await registry.register(workingDeliver, relay);
@@ -483,8 +504,20 @@ describe('AdapterRegistry', () => {
 
   it('hot-reload starts new before stopping old', async () => {
     const callOrder: string[] = [];
-    const oldAdapter = { ...mockAdapter, id: 'tg', stop: vi.fn().mockImplementation(async () => { callOrder.push('old.stop'); }) };
-    const newAdapter = { ...mockAdapter, id: 'tg', start: vi.fn().mockImplementation(async () => { callOrder.push('new.start'); }) };
+    const oldAdapter = {
+      ...mockAdapter,
+      id: 'tg',
+      stop: vi.fn().mockImplementation(async () => {
+        callOrder.push('old.stop');
+      }),
+    };
+    const newAdapter = {
+      ...mockAdapter,
+      id: 'tg',
+      start: vi.fn().mockImplementation(async () => {
+        callOrder.push('new.start');
+      }),
+    };
 
     await registry.register(oldAdapter, relay);
     await registry.hotReload(newAdapter, relay);
@@ -505,7 +538,7 @@ describe('AdapterRegistry', () => {
 ```tsx
 <Virtuoso
   data={events}
-  followOutput="smooth"           // auto-scroll when user is at bottom; pause if scrolled up
+  followOutput="smooth" // auto-scroll when user is at bottom; pause if scrolled up
   itemContent={(_, event) => <ActivityRow key={event.id} event={event} />}
   style={{ height: '100%' }}
   components={{ Footer: ScrollToLatestButton }} // appears when user has scrolled up
@@ -523,23 +556,23 @@ interface ActivityEvent {
   id: string;
   timestamp: Date;
   level: ActivityEventLevel;
-  adapterId?: string;           // 'telegram' | 'webhook' | 'relay'
+  adapterId?: string; // 'telegram' | 'webhook' | 'relay'
   direction?: 'inbound' | 'outbound';
   subject?: string;
   message: string;
-  detail?: string;              // expandable; stack traces, payload preview
+  detail?: string; // expandable; stack traces, payload preview
 }
 
 // Event type to severity mapping
 const EVENT_SEVERITY: Record<string, ActivityEventLevel> = {
-  message_in:     'info',
-  message_out:    'info',
-  adapter_start:  'success',
-  adapter_stop:   'warning',
-  adapter_error:  'error',
-  relay_error:    'error',
-  config_reload:  'info',
-  dead_letter:    'error',
+  message_in: 'info',
+  message_out: 'info',
+  adapter_start: 'success',
+  adapter_stop: 'warning',
+  adapter_error: 'error',
+  relay_error: 'error',
+  config_reload: 'info',
+  dead_letter: 'error',
 };
 ```
 
@@ -550,8 +583,8 @@ Hybrid relative + absolute display — optimized for live monitoring:
 ```typescript
 function formatEventTimestamp(ts: Date): string {
   const delta = (Date.now() - ts.getTime()) / 1000;
-  if (delta < 10)   return 'just now';
-  if (delta < 60)   return `${Math.floor(delta)}s ago`;
+  if (delta < 10) return 'just now';
+  if (delta < 60) return `${Math.floor(delta)}s ago`;
   if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
   // Older: show wall clock time (no date — feed is a session view)
   return ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -574,23 +607,29 @@ For DorkOS's expected traffic profile, React Virtuoso with a 1000-item cap is su
 ## Recommendation Summary
 
 ### Telegram Library
+
 **grammY** — `npm install grammy @grammyjs/auto-retry`
 
 TypeScript-first, active maintenance tracking latest Bot API, superior error types (`GrammyError` / `HttpError`), `@grammyjs/auto-retry` for transparent reconnect and flood-limit handling, middleware error boundaries, graceful `bot.stop()`.
 
 ### Inbound Update Mode
+
 **Long polling as default, webhook as opt-in config flag.** Long polling works on `localhost` with no infrastructure changes. Add `"mode": "polling" | "webhook"` to the adapter config; webhook mode activates when the DorkOS ngrok tunnel is live.
 
 ### Webhook Security
+
 **HMAC-SHA256 + 5-minute timestamp window + nonce `Map` with 24h TTL + idempotency key tracking.** Always use `crypto.timingSafeEqual`. Verify on the raw request body buffer — capture via Express `verify` callback before `bodyParser.json()` runs. Scope nonce keys by adapter ID.
 
 ### Plugin Registration
+
 **Registry pattern (`Map<id, RelayAdapter>`) with `Promise.allSettled()` for broadcast and shutdown.** Hot-reload sequence: `newAdapter.start()` → `registry.set(newAdapter)` → `oldAdapter.stop()`. Never stop old before new is confirmed started. Each adapter's lifecycle wrapped in `try/catch` to prevent cascade failures.
 
 ### Testing
+
 **MSW 2.x (`msw/node`) + `vi.mock('grammy')`** for Telegram adapter. `signPayload()` helper + `supertest` for webhook receiver. `Promise.allSettled` result inspection for isolation guarantees.
 
 ### Activity Feed
+
 **React Virtuoso** with `followOutput="smooth"`, 1000-item ring buffer, relative timestamps under 1h / wall-clock over 1h, filter by adapter / direction / severity.
 
 ---

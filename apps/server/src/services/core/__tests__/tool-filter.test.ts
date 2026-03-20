@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  resolveToolConfig,
-  buildAllowedTools,
-} from '../../runtimes/claude-code/tool-filter.js';
+import { resolveToolConfig, buildAllowedTools } from '../../runtimes/claude-code/tool-filter.js';
 import type { ToolFilterDeps } from '../../runtimes/claude-code/tool-filter.js';
 
 // Fixture: all features enabled, all global toggles on
@@ -82,11 +79,14 @@ describe('resolveToolConfig', () => {
   });
 
   it('mesh has no feature flag dependency — enabled even when relay/pulse off', () => {
-    const result = resolveToolConfig({ mesh: true }, {
-      relayEnabled: false,
-      pulseEnabled: false,
-      globalConfig: { pulseTools: true, relayTools: true, meshTools: true, adapterTools: true },
-    });
+    const result = resolveToolConfig(
+      { mesh: true },
+      {
+        relayEnabled: false,
+        pulseEnabled: false,
+        globalConfig: { pulseTools: true, relayTools: true, meshTools: true, adapterTools: true },
+      }
+    );
     expect(result.mesh).toBe(true);
   });
 
@@ -99,11 +99,14 @@ describe('resolveToolConfig', () => {
   });
 
   it('agent explicit true can override global false (when feature flag on)', () => {
-    const result = resolveToolConfig({ relay: true }, {
-      relayEnabled: true,
-      pulseEnabled: true,
-      globalConfig: { pulseTools: true, relayTools: false, meshTools: true, adapterTools: true },
-    });
+    const result = resolveToolConfig(
+      { relay: true },
+      {
+        relayEnabled: true,
+        pulseEnabled: true,
+        globalConfig: { pulseTools: true, relayTools: false, meshTools: true, adapterTools: true },
+      }
+    );
     expect(result.relay).toBe(true);
   });
 

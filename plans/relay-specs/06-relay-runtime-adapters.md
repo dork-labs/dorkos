@@ -1,33 +1,33 @@
 ---
-title: "Unified Adapter System & Claude Code Runtime Adapter"
+title: 'Unified Adapter System & Claude Code Runtime Adapter'
 spec: 6
 order: 4
 status: in-progress
 blockedBy: [4]
 blocks: [5]
 parallelWith: [3]
-litepaperPhase: "Phase 4 — Unified Adapter System and Claude Code Adapter"
+litepaperPhase: 'Phase 4 — Unified Adapter System and Claude Code Adapter'
 complexity: high
 risk: high
 estimatedFiles: 12-18
 newPackages: []
-primaryWorkspaces: ["packages/relay", "apps/server", "packages/shared"]
+primaryWorkspaces: ['packages/relay', 'apps/server', 'packages/shared']
 touchesServer: true
 touchesClient: false
 verification:
-  - "Unified RelayAdapter interface is defined and exported from @dorkos/relay"
+  - 'Unified RelayAdapter interface is defined and exported from @dorkos/relay'
   - "Spec 4's Telegram and webhook adapters are refactored to implement the unified interface"
-  - "All Spec 4 adapter tests still pass after refactor"
-  - "Plugin loader loads adapters from npm packages via dynamic import"
-  - "Plugin loader loads adapters from local file paths via dynamic import"
-  - "adapters.json config format works with both built-in and third-party adapters"
-  - "ClaudeCodeAdapter implements RelayAdapter and starts Agent SDK sessions on message delivery"
-  - "Message arriving at relay.agent.{project}.{agentId} triggers a Claude Code session in the correct directory"
-  - "Agent receives Relay message content as its prompt with sender/budget context"
-  - "Agent response is captured and published back to Relay as a reply"
-  - "Failed session creates a dead letter entry with error details"
-  - "Adapter works with Mesh registry — looks up agent directory and runtime if MeshCore available"
-  - "Third-party adapter example: a minimal adapter can be built in a separate file and loaded via config"
+  - 'All Spec 4 adapter tests still pass after refactor'
+  - 'Plugin loader loads adapters from npm packages via dynamic import'
+  - 'Plugin loader loads adapters from local file paths via dynamic import'
+  - 'adapters.json config format works with both built-in and third-party adapters'
+  - 'ClaudeCodeAdapter implements RelayAdapter and starts Agent SDK sessions on message delivery'
+  - 'Message arriving at relay.agent.{project}.{agentId} triggers a Claude Code session in the correct directory'
+  - 'Agent receives Relay message content as its prompt with sender/budget context'
+  - 'Agent response is captured and published back to Relay as a reply'
+  - 'Failed session creates a dead letter entry with error details'
+  - 'Adapter works with Mesh registry — looks up agent directory and runtime if MeshCore available'
+  - 'Third-party adapter example: a minimal adapter can be built in a separate file and loaded via config'
 notes: >
   This spec has two concerns: (1) unify and make the adapter system pluggable,
   and (2) build the Claude Code runtime adapter. The unification must happen
@@ -182,6 +182,7 @@ OUT OF SCOPE:
 ## Context for Review
 
 This spec unifies the adapter system and builds the first runtime adapter. The /ideate exploration agent should focus on:
+
 - Whatever adapter code Spec 4 produced — the current adapter interface, how Telegram/webhook adapters are structured
 - `AgentManager` in `apps/server/src/services/agent-manager.ts` — the session creation code the Claude Code adapter wraps
 - `SchedulerService` — how Pulse creates isolated agent sessions (closest existing pattern)
@@ -191,6 +192,7 @@ This spec unifies the adapter system and builds the first runtime adapter. The /
 - Node.js dynamic `import()` and plugin loading patterns in the codebase
 
 The /ideate research agent should investigate:
+
 - Plugin loading patterns in Node.js (dynamic import, package resolution, validation)
 - Adapter/plugin interfaces in messaging systems (NATS connectors, Kafka Connect, RabbitMQ plugins)
 - Agent SDK session management patterns (streaming, timeout, error recovery)

@@ -11,6 +11,7 @@ Last Decompose: 2026-03-09
 Five targeted animation changes to the DorkOS chat layer that upgrade the feel from "functional prototype" to "premium tool" — all client-side only, all `prefers-reduced-motion` safe via the existing `<MotionConfig reducedMotion="user">` wrapper in `App.tsx`.
 
 **Changes:**
+
 1. `MessageItem.tsx` — spring physics + `scale: 0.97 → 1` for user messages (3-line change)
 2. `SessionItem.tsx` — `whileTap={{ scale: 0.98 }}` press feedback on the clickable surface
 3. `SessionItem.tsx` + `SessionSidebar.tsx` — `layoutId="active-session-bg"` sliding background
@@ -53,6 +54,7 @@ Replace lines 147–150:
 ```
 
 Three changes:
+
 1. `initial` gains `scale: isUser ? 0.97 : 1` — role-gated initial scale; only user messages compress
 2. `animate` gains `scale: 1` — explicit spring target
 3. `transition` changes from `{ duration, ease }` to `{ type: 'spring', stiffness: 320, damping: 28 }`
@@ -62,6 +64,7 @@ The `isUser` variable is already at line 110: `const isUser = message.role === '
 Spring preset character: snappy, no bounce, settles in ~250ms.
 
 **Acceptance Criteria**:
+
 - [ ] New user message `initial` contains `scale: 0.97`
 - [ ] New assistant message `initial` contains `scale: 1` (no compression)
 - [ ] History messages (`isNew=false`) have `initial={false}` — unchanged behavior
@@ -117,6 +120,7 @@ Convert the inner `div[role="button"]` (lines 89–102) to a `motion.div`:
 ```
 
 Changes:
+
 - `div` → `motion.div`
 - Add `whileTap={{ scale: 0.98 }}`
 - Add `transition={{ type: 'spring', stiffness: 400, damping: 30 }}`
@@ -125,6 +129,7 @@ Changes:
 `motion` is already imported at line 2. The outer `Wrapper` (isNew conditional, lines 64–71) is NOT changed.
 
 **Acceptance Criteria**:
+
 - [ ] Clickable surface is a `motion.div` with `whileTap={{ scale: 0.98 }}`
 - [ ] `transition={{ type: 'spring', stiffness: 400, damping: 30 }}` is set
 - [ ] `className` includes `relative z-10`
@@ -143,6 +148,7 @@ Changes:
 **Can run parallel with**: Tasks 1.1, 1.2, 1.4
 
 **Files**:
+
 - `apps/client/src/layers/features/session-list/ui/SessionItem.tsx`
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`
 
@@ -176,13 +182,15 @@ Addition: `relative` to base classes (positioning context for the absolute motio
 Insert immediately after the opening `<Wrapper ...>` tag, before the `<div role="button" ...>`:
 
 ```tsx
-{isActive && (
-  <motion.div
-    layoutId="active-session-bg"
-    className="absolute inset-0 rounded-lg bg-secondary"
-    transition={{ type: 'spring', stiffness: 280, damping: 32 }}
-  />
-)}
+{
+  isActive && (
+    <motion.div
+      layoutId="active-session-bg"
+      className="bg-secondary absolute inset-0 rounded-lg"
+      transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+    />
+  );
+}
 ```
 
 This single DOM element is shared across all SessionItem instances via `layoutId`. When `isActive` moves to a different item, motion.dev animates it from old position to new using FLIP.
@@ -204,6 +212,7 @@ If `SidebarContent` does not forward the `layout` prop, wrap inner content in `<
 **Cross-group behavior**: The `layoutId` element animates across `<SidebarGroup>` boundaries (Today → Yesterday) because all groups share the same positioned `<SidebarContent>` ancestor.
 
 **Acceptance Criteria**:
+
 - [ ] `bg-secondary` removed from Wrapper `isActive` className branch
 - [ ] `hover:bg-secondary/50` removed from inactive className branch
 - [ ] `relative` added to Wrapper base className
@@ -310,6 +319,7 @@ Two render sites must be updated. Both follow the identical pattern.
 ```
 
 **Key implementation notes**:
+
 - Remove `key={activeSessionId}` from `<ChatPanel>` in both sites — it moves to `<motion.div>`
 - `AnimatePresence` and `motion` are already imported at line 5
 - `mode="wait"` means old session fades out (150ms) before new session fades in (150ms) — total 300ms
@@ -318,6 +328,7 @@ Two render sites must be updated. Both follow the identical pattern.
 - Transition uses `duration: 0.15` (not spring) because opacity fades are perceptually linear
 
 **Acceptance Criteria**:
+
 - [ ] Both render sites updated with `AnimatePresence mode="wait"` + `motion.div` wrapper
 - [ ] `key={activeSessionId}` removed from `<ChatPanel>` in both sites
 - [ ] `key={activeSessionId}` present on `<motion.div>` wrapper in both sites
@@ -337,6 +348,7 @@ Two render sites must be updated. Both follow the identical pattern.
 **Can run parallel with**: Task 1.6 (after deps complete)
 
 **Files**:
+
 - `apps/client/src/layers/features/session-list/__tests__/SessionItem.test.tsx`
 - `apps/client/src/layers/features/chat/__tests__/MessageItem.test.tsx`
 
@@ -403,9 +415,7 @@ it('new user message renders (isNew=true, role=user)', () => {
     parts: [{ type: 'text' as const, text: 'Hello' }],
     timestamp: new Date().toISOString(),
   };
-  render(
-    <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} isNew={true} />
-  );
+  render(<MessageItem message={msg} sessionId="s" grouping={onlyGrouping} isNew={true} />);
   expect(screen.getByText('Hello')).toBeDefined();
   expect(screen.getByTestId('message-item')).toBeDefined();
 });
@@ -418,9 +428,7 @@ it('new assistant message renders (isNew=true, role=assistant)', () => {
     parts: [{ type: 'text' as const, text: 'Response' }],
     timestamp: new Date().toISOString(),
   };
-  render(
-    <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} isNew={true} />
-  );
+  render(<MessageItem message={msg} sessionId="s" grouping={onlyGrouping} isNew={true} />);
   expect(screen.getByTestId('message-item')).toBeDefined();
 });
 
@@ -432,14 +440,13 @@ it('history message renders without animation (isNew=false)', () => {
     parts: [{ type: 'text' as const, text: 'Old' }],
     timestamp: new Date().toISOString(),
   };
-  render(
-    <MessageItem message={msg} sessionId="s" grouping={onlyGrouping} isNew={false} />
-  );
+  render(<MessageItem message={msg} sessionId="s" grouping={onlyGrouping} isNew={false} />);
   expect(screen.getByText('Old')).toBeDefined();
 });
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm vitest run apps/client/src/layers/features/session-list/__tests__/SessionItem.test.tsx` passes (0 failures)
 - [ ] `pnpm vitest run apps/client/src/layers/features/chat/__tests__/MessageItem.test.tsx` passes (0 failures)
 - [ ] Stale `bg-secondary` Wrapper assertion updated to check layoutId child
@@ -458,6 +465,7 @@ it('history message renders without animation (isNew=false)', () => {
 **Can run parallel with**: Task 1.5 (after deps complete)
 
 **Files**:
+
 - `contributing/animations.md`
 - `contributing/design-system.md`
 
@@ -472,12 +480,12 @@ Add a "Chat Microinteraction Spring Presets" section after `### Spring vs Ease T
 
 DorkOS uses a small set of named spring presets for chat interactions. Prefer these over ad-hoc values for consistency:
 
-| Use case | Preset | Character |
-|---|---|---|
-| Message entry (new messages) | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce, settles ~250ms |
-| Sidebar active indicator slide | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth, deliberate navigation feel |
+| Use case                             | Preset                                            | Character                                         |
+| ------------------------------------ | ------------------------------------------------- | ------------------------------------------------- |
+| Message entry (new messages)         | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce, settles ~250ms                 |
+| Sidebar active indicator slide       | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth, deliberate navigation feel                |
 | Tap feedback (buttons, session rows) | `{ type: 'spring', stiffness: 400, damping: 30 }` | Quick response, also used in ToolCallCard chevron |
-| Session crossfade | `{ duration: 0.15, ease: 'easeInOut' }` | Linear opacity — intentional, not spring |
+| Session crossfade                    | `{ duration: 0.15, ease: 'easeInOut' }`           | Linear opacity — intentional, not spring          |
 
 Session crossfade uses duration-based easing rather than spring physics because opacity fades are perceptually linear and a spring would add unnecessary overshoot to a simple visibility transition.
 ```
@@ -494,14 +502,15 @@ Update any reference to message entrance animation from `200ms ease-out` to `spr
 
 Add to the animation spec table (or create one if absent):
 
-| Animation | Spec |
-|---|---|
-| Message entrance (new) | `spring stiffness:320 damping:28` — snappy, no bounce |
+| Animation                | Spec                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| Message entrance (new)   | `spring stiffness:320 damping:28` — snappy, no bounce      |
 | Session switch crossfade | `150ms opacity` — AnimatePresence mode="wait", total 300ms |
-| Sidebar active indicator | `spring stiffness:280 damping:32` — smooth slide |
-| Session row tap | `spring stiffness:400 damping:30` — quick press feedback |
+| Sidebar active indicator | `spring stiffness:280 damping:32` — smooth slide           |
+| Session row tap          | `spring stiffness:400 damping:30` — quick press feedback   |
 
 **Acceptance Criteria**:
+
 - [ ] `contributing/animations.md` has the spring preset table with all 4 entries
 - [ ] `contributing/animations.md` has a note about session sidebar layoutId usage
 - [ ] `contributing/design-system.md` reflects spring-based message entrance (not 200ms ease-out)
@@ -532,14 +541,14 @@ Task 1.6 (docs) depends on 1.1 + 1.2 + 1.3 + 1.4 (needs final implementation to 
 
 ## Task Summary
 
-| ID | Title | Size | Priority | Depends On |
-|---|---|---|---|---|
-| 1.1 | Spring physics + user scale in MessageItem | Small | High | — |
-| 1.2 | whileTap feedback on SessionItem | Small | High | — |
-| 1.3 | layoutId sliding background in SessionItem + SessionSidebar | Medium | High | — |
-| 1.4 | AnimatePresence session crossfade in App.tsx | Small | High | — |
-| 1.5 | Update unit tests | Medium | High | 1.1, 1.2, 1.3 |
-| 1.6 | Update contributing docs | Small | Medium | 1.1, 1.2, 1.3, 1.4 |
+| ID  | Title                                                       | Size   | Priority | Depends On         |
+| --- | ----------------------------------------------------------- | ------ | -------- | ------------------ |
+| 1.1 | Spring physics + user scale in MessageItem                  | Small  | High     | —                  |
+| 1.2 | whileTap feedback on SessionItem                            | Small  | High     | —                  |
+| 1.3 | layoutId sliding background in SessionItem + SessionSidebar | Medium | High     | —                  |
+| 1.4 | AnimatePresence session crossfade in App.tsx                | Small  | High     | —                  |
+| 1.5 | Update unit tests                                           | Medium | High     | 1.1, 1.2, 1.3      |
+| 1.6 | Update contributing docs                                    | Small  | Medium   | 1.1, 1.2, 1.3, 1.4 |
 
 **Total tasks**: 6
 **Phase 1**: 6 (no further phases)

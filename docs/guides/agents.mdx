@@ -3,8 +3,8 @@ title: Agent Identity
 description: Give your projects a name, color, and emoji so you think in agents, not file paths
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 # Agent Identity
 
@@ -30,12 +30,14 @@ Unregistered directories work exactly as before with zero changes.
 ### Quick create from the sidebar
 
 Click the **+ Agent** button next to the directory path in the sidebar. This creates a `.dork/agent.json` file with sensible defaults (name derived from the directory, a deterministic color and emoji).
+
 </Step>
 
 <Step>
 ### Customize in the Agent Dialog
 
 The Agent Settings Dialog opens automatically after creation. Edit the name, description, pick a color and emoji, then close the dialog. Changes save automatically.
+
 </Step>
 </Steps>
 
@@ -84,7 +86,8 @@ Per-agent tool group toggles and Mesh metadata:
 - **Response Mode** and **Budget** — behavioral constraints
 
 <Callout type="info">
-Tool group overrides layer on top of server-level feature flags. Disabling a tool group for an agent removes those tools from that agent's sessions only — other agents are unaffected.
+  Tool group overrides layer on top of server-level feature flags. Disabling a tool group for an
+  agent removes those tools from that agent's sessions only — other agents are unaffected.
 </Callout>
 
 ### Connections
@@ -106,19 +109,20 @@ Every agent gets a deterministic color and emoji derived from its ID. You can ov
 3. For unregistered directories: deterministic hash from the path
 
 <Callout type="info">
-Clearing a color or emoji override reverts to the deterministic default — no visual identity is ever lost.
+  Clearing a color or emoji override reverts to the deterministic default — no visual identity is
+  ever lost.
 </Callout>
 
 ## API
 
 Agent identity is available via REST endpoints at `/api/agents/`:
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/agents/current?path=...` | Get agent for a directory |
-| POST | `/api/agents` | Create a new agent |
-| PATCH | `/api/agents/current?path=...` | Update agent fields |
-| POST | `/api/agents/resolve` | Batch resolve agents for multiple paths |
+| Method | Endpoint                       | Purpose                                 |
+| ------ | ------------------------------ | --------------------------------------- |
+| GET    | `/api/agents/current?path=...` | Get agent for a directory               |
+| POST   | `/api/agents`                  | Create a new agent                      |
+| PATCH  | `/api/agents/current?path=...` | Update agent fields                     |
+| POST   | `/api/agents/resolve`          | Batch resolve agents for multiple paths |
 
 These endpoints are always available — no feature flag needed. All paths are boundary-validated.
 

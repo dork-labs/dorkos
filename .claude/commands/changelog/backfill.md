@@ -1,6 +1,6 @@
 ---
 description: Find missing changelog entries from git commits since last tag
-argument-hint: "[tag] [--dry-run]"
+argument-hint: '[tag] [--dry-run]'
 allowed-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
 ---
 
@@ -38,12 +38,14 @@ git log $TAG..HEAD --oneline --no-merges
 Process each commit line:
 
 **Include** (conventional commit types):
+
 - `feat:` / `feat(scope):` -> **Added**
 - `fix:` / `fix(scope):` -> **Fixed**
 - `refactor:` / `refactor(scope):` -> **Changed**
 - `perf:` / `perf(scope):` -> **Changed**
 
 **Skip** (not user-facing):
+
 - `chore:` / `ci:` / `test:` / `docs:` / `build:` / `style:`
 
 ### Step 4: Compare with Existing Entries
@@ -63,16 +65,20 @@ Show proposed entries grouped by category:
 **New entries proposed**: [count]
 
 ### Added
+
 - [user-friendly description] ([sha])
 
 ### Changed
+
 - [user-friendly description] ([sha])
 
 ### Fixed
+
 - [user-friendly description] ([sha])
 ```
 
 Rewrite each entry following the writing-changelogs skill:
+
 - Focus on what users can DO
 - Use imperative verbs
 - Explain benefits, not mechanisms

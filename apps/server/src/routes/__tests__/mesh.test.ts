@@ -78,7 +78,7 @@ describe('Mesh routes', () => {
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
-      },
+      }
     );
   });
 
@@ -87,7 +87,11 @@ describe('Mesh routes', () => {
   describe('POST /api/mesh/discover', () => {
     it('returns discovered candidates', async () => {
       const candidates = [
-        { projectPath: '/home/user/proj-a', suggestedName: 'proj-a', detectedRuntime: 'claude-code' },
+        {
+          projectPath: '/home/user/proj-a',
+          suggestedName: 'proj-a',
+          detectedRuntime: 'claude-code',
+        },
         { projectPath: '/home/user/proj-b', suggestedName: 'proj-b', detectedRuntime: 'cursor' },
       ];
 
@@ -150,7 +154,7 @@ describe('Mesh routes', () => {
 
     it('returns 403 when any root path is outside the boundary', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)
@@ -167,7 +171,7 @@ describe('Mesh routes', () => {
       vi.mocked(validateBoundary)
         .mockResolvedValueOnce('/home/user/good')
         .mockRejectedValueOnce(
-          new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+          new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
         );
 
       const res = await request(app)
@@ -186,10 +190,12 @@ describe('Mesh routes', () => {
     it('registers an agent and returns 201', async () => {
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      const res = await request(app).post('/api/mesh/agents').send({
-        path: '/home/user/project',
-        overrides: { name: 'Test Agent', runtime: 'claude-code' },
-      });
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+        });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('agent-1');
@@ -197,50 +203,58 @@ describe('Mesh routes', () => {
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
         expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
-        undefined,
+        undefined
       );
     });
 
     it('passes approver to registerByPath', async () => {
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      await request(app).post('/api/mesh/agents').send({
-        path: '/home/user/project',
-        overrides: { name: 'Test Agent', runtime: 'claude-code' },
-        approver: 'admin-user',
-      });
+      await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          approver: 'admin-user',
+        });
 
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
         expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
-        'admin-user',
+        'admin-user'
       );
     });
 
     it('returns 400 when path is missing', async () => {
-      const res = await request(app).post('/api/mesh/agents').send({
-        overrides: { name: 'Test', runtime: 'claude-code' },
-      });
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          overrides: { name: 'Test', runtime: 'claude-code' },
+        });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
 
     it('returns 400 when overrides.name is missing', async () => {
-      const res = await request(app).post('/api/mesh/agents').send({
-        path: '/home/user/project',
-        overrides: { runtime: 'claude-code' },
-      });
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { runtime: 'claude-code' },
+        });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('overrides.name and overrides.runtime are required');
     });
 
     it('returns 400 when overrides.runtime is missing', async () => {
-      const res = await request(app).post('/api/mesh/agents').send({
-        path: '/home/user/project',
-        overrides: { name: 'Test Agent' },
-      });
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent' },
+        });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('overrides.name and overrides.runtime are required');
@@ -249,10 +263,12 @@ describe('Mesh routes', () => {
     it('returns 422 when registerByPath throws', async () => {
       meshCore.registerByPath.mockRejectedValue(new Error('Duplicate agent'));
 
-      const res = await request(app).post('/api/mesh/agents').send({
-        path: '/home/user/project',
-        overrides: { name: 'Test Agent', runtime: 'claude-code' },
-      });
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+        });
 
       expect(res.status).toBe(422);
       expect(res.body.error).toBe('Duplicate agent');
@@ -260,13 +276,15 @@ describe('Mesh routes', () => {
 
     it('returns 403 when projectPath is outside the boundary', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).post('/api/mesh/agents').send({
-        path: '/etc/shadow',
-        overrides: { name: 'Evil Agent', runtime: 'claude-code' },
-      });
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/etc/shadow',
+          overrides: { name: 'Evil Agent', runtime: 'claude-code' },
+        });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('Path outside boundary');
@@ -294,7 +312,7 @@ describe('Mesh routes', () => {
       await request(app).get('/api/mesh/agents?runtime=cursor');
 
       expect(meshCore.listWithHealth).toHaveBeenCalledWith(
-        expect.objectContaining({ runtime: 'cursor' }),
+        expect.objectContaining({ runtime: 'cursor' })
       );
     });
 
@@ -304,7 +322,7 @@ describe('Mesh routes', () => {
       await request(app).get('/api/mesh/agents?capability=code');
 
       expect(meshCore.listWithHealth).toHaveBeenCalledWith(
-        expect.objectContaining({ capability: 'code' }),
+        expect.objectContaining({ capability: 'code' })
       );
     });
 
@@ -403,7 +421,11 @@ describe('Mesh routes', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
-      expect(meshCore.deny).toHaveBeenCalledWith('/home/user/bad-project', 'Untrusted source', 'admin');
+      expect(meshCore.deny).toHaveBeenCalledWith(
+        '/home/user/bad-project',
+        'Untrusted source',
+        'admin'
+      );
     });
 
     it('denies with only required path field', async () => {
@@ -435,7 +457,7 @@ describe('Mesh routes', () => {
 
     it('returns 403 for out-of-boundary paths', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app).post('/api/mesh/deny').send({
@@ -453,7 +475,12 @@ describe('Mesh routes', () => {
   describe('GET /api/mesh/denied', () => {
     it('returns denial records', async () => {
       const denials = [
-        { filePath: '/home/user/bad', reason: 'Untrusted', deniedAt: '2026-02-25T00:00:00Z', deniedBy: 'admin' },
+        {
+          filePath: '/home/user/bad',
+          reason: 'Untrusted',
+          deniedAt: '2026-02-25T00:00:00Z',
+          deniedBy: 'admin',
+        },
       ];
       meshCore.listDenied.mockReturnValue(denials);
 
@@ -499,7 +526,7 @@ describe('Mesh routes', () => {
 
     it('returns 403 for out-of-boundary paths', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const encodedPath = encodeURIComponent('/etc/shadow');

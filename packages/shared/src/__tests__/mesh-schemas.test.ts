@@ -147,9 +147,7 @@ describe('UpdateAgentRequestSchema — new fields', () => {
   });
 
   it('rejects persona longer than 4000 chars', () => {
-    expect(() =>
-      UpdateAgentRequestSchema.parse({ persona: 'a'.repeat(4001) })
-    ).toThrow();
+    expect(() => UpdateAgentRequestSchema.parse({ persona: 'a'.repeat(4001) })).toThrow();
   });
 });
 

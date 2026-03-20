@@ -87,7 +87,9 @@ vi.mock('motion/react', () => ({
   motion: {
     div: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
       ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>, ref) => (
-        <div ref={ref} {...props}>{children}</div>
+        <div ref={ref} {...props}>
+          {children}
+        </div>
       )
     ),
   },
@@ -189,28 +191,33 @@ describe('parseCronToSimple', () => {
 
 describe('buildCron', () => {
   it('builds 15m cron', () => {
-    expect(buildCron({ frequency: '15m', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('*/15 * * * *');
+    expect(buildCron({ frequency: '15m', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })).toBe(
+      '*/15 * * * *'
+    );
   });
 
   it('builds hourly cron', () => {
-    expect(buildCron({ frequency: 'hourly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('0 * * * *');
+    expect(buildCron({ frequency: 'hourly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })).toBe(
+      '0 * * * *'
+    );
   });
 
   it('builds daily cron at specific hour', () => {
-    expect(buildCron({ frequency: 'daily', hour: 14, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('0 14 * * *');
+    expect(buildCron({ frequency: 'daily', hour: 14, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })).toBe(
+      '0 14 * * *'
+    );
   });
 
   it('builds weekly cron with specific days', () => {
-    expect(buildCron({ frequency: 'weekly', hour: 9, days: [1, 3, 5], dayOfMonth: 1 }))
-      .toBe('0 9 * * 1,3,5');
+    expect(buildCron({ frequency: 'weekly', hour: 9, days: [1, 3, 5], dayOfMonth: 1 })).toBe(
+      '0 9 * * 1,3,5'
+    );
   });
 
   it('builds monthly cron', () => {
-    expect(buildCron({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 15 }))
-      .toBe('0 9 15 * *');
+    expect(
+      buildCron({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 15 })
+    ).toBe('0 9 15 * *');
   });
 });
 
@@ -238,58 +245,69 @@ describe('formatHour', () => {
 
 describe('getSimplePreview', () => {
   it('previews 15m frequency', () => {
-    expect(getSimplePreview({ frequency: '15m', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('Runs every 15 minutes');
+    expect(
+      getSimplePreview({ frequency: '15m', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })
+    ).toBe('Runs every 15 minutes');
   });
 
   it('previews hourly frequency', () => {
-    expect(getSimplePreview({ frequency: 'hourly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('Runs every hour, on the hour');
+    expect(
+      getSimplePreview({ frequency: 'hourly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })
+    ).toBe('Runs every hour, on the hour');
   });
 
   it('previews daily frequency', () => {
-    expect(getSimplePreview({ frequency: 'daily', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('Runs every day at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'daily', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })
+    ).toBe('Runs every day at 9:00 AM');
   });
 
   it('previews weekly Mon-Fri as weekday', () => {
-    expect(getSimplePreview({ frequency: 'weekly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('Runs every weekday at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'weekly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })
+    ).toBe('Runs every weekday at 9:00 AM');
   });
 
   it('previews weekly Sat-Sun as weekend', () => {
-    expect(getSimplePreview({ frequency: 'weekly', hour: 10, days: [0, 6], dayOfMonth: 1 }))
-      .toBe('Runs every Saturday and Sunday at 10:00 AM');
+    expect(getSimplePreview({ frequency: 'weekly', hour: 10, days: [0, 6], dayOfMonth: 1 })).toBe(
+      'Runs every Saturday and Sunday at 10:00 AM'
+    );
   });
 
   it('previews weekly with specific days', () => {
-    expect(getSimplePreview({ frequency: 'weekly', hour: 9, days: [1, 3, 5], dayOfMonth: 1 }))
-      .toBe('Runs every Monday, Wednesday, and Friday at 9:00 AM');
+    expect(getSimplePreview({ frequency: 'weekly', hour: 9, days: [1, 3, 5], dayOfMonth: 1 })).toBe(
+      'Runs every Monday, Wednesday, and Friday at 9:00 AM'
+    );
   });
 
   it('previews monthly with ordinal suffix st', () => {
-    expect(getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 }))
-      .toBe('Runs on the 1st of every month at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 1 })
+    ).toBe('Runs on the 1st of every month at 9:00 AM');
   });
 
   it('previews monthly with ordinal suffix nd', () => {
-    expect(getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 2 }))
-      .toBe('Runs on the 2nd of every month at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 2 })
+    ).toBe('Runs on the 2nd of every month at 9:00 AM');
   });
 
   it('previews monthly with ordinal suffix rd', () => {
-    expect(getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 3 }))
-      .toBe('Runs on the 3rd of every month at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 3 })
+    ).toBe('Runs on the 3rd of every month at 9:00 AM');
   });
 
   it('previews monthly with ordinal suffix th for teens', () => {
-    expect(getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 11 }))
-      .toBe('Runs on the 11th of every month at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 11 })
+    ).toBe('Runs on the 11th of every month at 9:00 AM');
   });
 
   it('previews monthly 21st with ordinal suffix st', () => {
-    expect(getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 21 }))
-      .toBe('Runs on the 21st of every month at 9:00 AM');
+    expect(
+      getSimplePreview({ frequency: 'monthly', hour: 9, days: [1, 2, 3, 4, 5], dayOfMonth: 21 })
+    ).toBe('Runs on the 21st of every month at 9:00 AM');
   });
 });
 

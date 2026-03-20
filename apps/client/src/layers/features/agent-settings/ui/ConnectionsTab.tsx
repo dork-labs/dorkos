@@ -53,7 +53,9 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
       <section className="space-y-2">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">Mesh Health</h3>
-          <Badge variant="default" className="text-xs">Enabled</Badge>
+          <Badge variant="default" className="text-xs">
+            Enabled
+          </Badge>
         </div>
         {health ? (
           <div className="flex items-center gap-2">

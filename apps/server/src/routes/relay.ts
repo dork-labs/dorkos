@@ -73,7 +73,7 @@ function validateSubscriptionPattern(pattern: string): boolean {
 export function buildConversations(
   messages: RelayMsg[],
   deadLetters: DeadLetterEntry[],
-  labelMap: Map<string, SubjectLabel>,
+  labelMap: Map<string, SubjectLabel>
 ): Conversation[] {
   // O(1) dead-letter lookup by messageId
   const deadLetterMap = new Map(deadLetters.map((dl) => [dl.messageId, dl]));
@@ -83,10 +83,7 @@ export function buildConversations(
   const responseChunksBySubject = new Map<string, RelayMsg[]>();
 
   for (const msg of messages) {
-    if (
-      msg.subject.startsWith('relay.agent.') ||
-      msg.subject.startsWith('relay.system.')
-    ) {
+    if (msg.subject.startsWith('relay.agent.') || msg.subject.startsWith('relay.system.')) {
       requests.push(msg);
     } else if (msg.subject.startsWith('relay.human.console.')) {
       const existing = responseChunksBySubject.get(msg.subject) ?? [];
@@ -150,8 +147,7 @@ export function buildConversations(
       sentAt: req.createdAt,
       completedAt: lastChunk?.createdAt as string | undefined,
       durationMs: lastChunk
-        ? new Date(lastChunk.createdAt as string).getTime() -
-          new Date(req.createdAt).getTime()
+        ? new Date(lastChunk.createdAt as string).getTime() - new Date(req.createdAt).getTime()
         : undefined,
       subject: req.subject,
       sessionId,
@@ -171,7 +167,7 @@ export function buildConversations(
 export function createRelayRouter(
   relayCore: RelayCore,
   adapterManager?: AdapterManager,
-  traceStore?: TraceStore,
+  traceStore?: TraceStore
 ): Router {
   const router = Router();
 
@@ -190,9 +186,10 @@ export function createRelayRouter(
       return res.json(publishResult);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Publish failed';
-      return res
-        .status(422)
-        .json({ error: message, code: (err as Error & { code?: string })?.code ?? 'PUBLISH_FAILED' });
+      return res.status(422).json({
+        error: message,
+        code: (err as Error & { code?: string })?.code ?? 'PUBLISH_FAILED',
+      });
     }
   });
 
@@ -286,9 +283,7 @@ export function createRelayRouter(
   // GET /dead-letters — List dead-letter messages
   router.get('/dead-letters', async (_req, res) => {
     const endpointHash = _req.query.endpointHash as string | undefined;
-    const deadLetters = await relayCore.getDeadLetters(
-      endpointHash ? { endpointHash } : undefined,
-    );
+    const deadLetters = await relayCore.getDeadLetters(endpointHash ? { endpointHash } : undefined);
     return res.json(deadLetters);
   });
 
@@ -339,7 +334,7 @@ export function createRelayRouter(
     }
     const deadLetters = await relayCore.getDeadLetters();
     const toRemove = deadLetters.filter(
-      (dl) => (dl.envelope?.from ?? 'unknown') === source && dl.reason === reason,
+      (dl) => (dl.envelope?.from ?? 'unknown') === source && dl.reason === reason
     );
     for (const dl of toRemove) {
       await relayCore.removeDeadLetter(dl.endpointHash, dl.messageId);
@@ -369,7 +364,9 @@ export function createRelayRouter(
   router.get('/stream', (req, res) => {
     const pattern = (req.query.subject as string) || 'relay.human.console.>';
     if (!validateSubscriptionPattern(pattern)) {
-      return res.status(400).json({ error: 'Invalid subscription pattern', allowedPrefixes: ALLOWED_PREFIXES });
+      return res
+        .status(400)
+        .json({ error: 'Invalid subscription pattern', allowedPrefixes: ALLOWED_PREFIXES });
     }
     initSSEStream(res);
     res.write(`event: relay_connected\n`);
@@ -386,7 +383,9 @@ export function createRelayRouter(
         const canContinue = res.write(`data: ${JSON.stringify(envelope)}\n\n`);
         if (!canContinue) {
           paused = true;
-          res.once('drain', () => { paused = false; });
+          res.once('drain', () => {
+            paused = false;
+          });
         }
       } catch {
         // Write failure — cleaned up on close
@@ -401,7 +400,9 @@ export function createRelayRouter(
         const canContinue = res.write(`data: ${JSON.stringify(signal)}\n\n`);
         if (!canContinue) {
           paused = true;
-          res.once('drain', () => { paused = false; });
+          res.once('drain', () => {
+            paused = false;
+          });
         }
       } catch {
         // Write failure — cleaned up on close
@@ -409,11 +410,22 @@ export function createRelayRouter(
     });
 
     const keepalive = setInterval(() => {
-      if (res.writableEnded) { clearInterval(keepalive); return; }
-      try { res.write(`: keepalive\n\n`); } catch { clearInterval(keepalive); }
+      if (res.writableEnded) {
+        clearInterval(keepalive);
+        return;
+      }
+      try {
+        res.write(`: keepalive\n\n`);
+      } catch {
+        clearInterval(keepalive);
+      }
     }, 15_000);
 
-    req.on('close', () => { clearInterval(keepalive); unsubMessages(); unsubSignals(); });
+    req.on('close', () => {
+      clearInterval(keepalive);
+      unsubMessages();
+      unsubSignals();
+    });
   });
 
   // --- Adapter Management Routes ---

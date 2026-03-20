@@ -31,10 +31,7 @@ export interface MeshRouterDeps {
  * Each enrichment step is individually wrapped in try/catch so a failure
  * in one subsystem never breaks the topology response.
  */
-function enrichTopology(
-  topology: TopologyView,
-  deps: MeshRouterDeps,
-): TopologyView {
+function enrichTopology(topology: TopologyView, deps: MeshRouterDeps): TopologyView {
   // Pre-compute Pulse schedule counts by CWD for O(1) lookups per agent
   const scheduleCounts = new Map<string, number>();
   if (deps.pulseStore) {
@@ -64,7 +61,7 @@ function enrichTopology(
     namespaces: topology.namespaces.map((ns) => ({
       ...ns,
       agents: ns.agents.map((agent) =>
-        enrichAgent(agent, ns.namespace, deps, scheduleCounts, relayEndpoints),
+        enrichAgent(agent, ns.namespace, deps, scheduleCounts, relayEndpoints)
       ),
     })),
   };
@@ -84,7 +81,7 @@ function enrichAgent(
   namespace: string,
   deps: MeshRouterDeps,
   scheduleCounts: Map<string, number>,
-  relayEndpoints: Array<{ subject: string }>,
+  relayEndpoints: Array<{ subject: string }>
 ): AgentManifest & {
   healthStatus: AgentHealthStatus;
   lastSeenAt: string | null;
@@ -128,9 +125,7 @@ function enrichAgent(
   if (relaySubject && relayEndpoints.length > 0) {
     try {
       const nsPrefix = `relay.agent.${namespace}.`;
-      const matchingEndpoints = relayEndpoints.filter((ep) =>
-        ep.subject.startsWith(nsPrefix),
-      );
+      const matchingEndpoints = relayEndpoints.filter((ep) => ep.subject.startsWith(nsPrefix));
       // Extract adapter names from subject segments after the namespace prefix
       relayAdapters = matchingEndpoints
         .map((ep) => ep.subject.slice(nsPrefix.length))
@@ -234,16 +229,16 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
     const name = overrides?.name;
     const runtime = overrides?.runtime;
     if (!name || !runtime) {
-      return res
-        .status(400)
-        .json({ error: 'overrides.name and overrides.runtime are required for manual registration' });
+      return res.status(400).json({
+        error: 'overrides.name and overrides.runtime are required for manual registration',
+      });
     }
 
     try {
       const manifest = await meshCore.registerByPath(
         validatedPath,
         { ...overrides, name, runtime },
-        approver,
+        approver
       );
       return res.status(201).json(manifest);
     } catch (err) {
@@ -349,7 +344,7 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
     // Strip keys that were absent from the request body (defaults filled in by Zod).
     // PATCH semantics: only update fields explicitly provided by the caller.
     const explicitFields = Object.fromEntries(
-      Object.entries(result.data).filter(([k]) => k in req.body),
+      Object.entries(result.data).filter(([k]) => k in req.body)
     ) as typeof result.data;
     // ADR-0043: update() is async — writes to disk first, then DB
     const updated = await meshCore.update(req.params.id, explicitFields);

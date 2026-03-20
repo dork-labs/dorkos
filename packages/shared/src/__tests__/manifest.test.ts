@@ -2,7 +2,13 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { readManifest, writeManifest, removeManifest, MANIFEST_DIR, MANIFEST_FILE } from '../manifest.js';
+import {
+  readManifest,
+  writeManifest,
+  removeManifest,
+  MANIFEST_DIR,
+  MANIFEST_FILE,
+} from '../manifest.js';
 import type { AgentManifest } from '../mesh-schemas.js';
 
 // === Helpers ===
@@ -74,7 +80,7 @@ describe('readManifest', () => {
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
       JSON.stringify({ name: 'incomplete' }),
-      'utf-8',
+      'utf-8'
     );
 
     const result = await readManifest(projectDir);
@@ -89,7 +95,7 @@ describe('readManifest', () => {
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
       JSON.stringify(manifest, null, 2),
-      'utf-8',
+      'utf-8'
     );
 
     const result = await readManifest(projectDir);

@@ -48,6 +48,7 @@ _(None — all tests pass)_
 ### Session 1
 
 All 11 tasks completed across 6 implementation batches. Key decisions:
+
 - TTL sweeper test uses real timers (not fake timers) to avoid chokidar conflicts
 - `inferEndpointType` inlined in relay-tools.ts (stale dist workaround; resolves after `pnpm build`)
 - CCA unified streaming: replaced `isDispatchInbox`/`isQueryInbox` branches with single `isInboxReplyTo` check

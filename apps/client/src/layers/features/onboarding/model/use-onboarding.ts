@@ -49,8 +49,7 @@ export function useOnboarding() {
   const shouldShowOnboarding = !isLoading && !isOnboardingComplete && !isOnboardingDismissed;
 
   const patchOnboarding = useMutation({
-    mutationFn: (patch: Partial<OnboardingState>) =>
-      transport.updateConfig({ onboarding: patch }),
+    mutationFn: (patch: Partial<OnboardingState>) => transport.updateConfig({ onboarding: patch }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CONFIG_KEY] }).then(() => {
         pendingCompleted.current.clear();

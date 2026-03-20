@@ -47,17 +47,20 @@ status: ideation
 **Source:** Codebase exploration agent
 
 **Primary components/modules:**
+
 - `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts` — SDK message → StreamEvent mapper (add new branch)
 - `packages/shared/src/schemas.ts` — Zod schemas for events and message parts (add type + schema + field)
 - `apps/client/src/layers/features/chat/model/stream-event-handler.ts` — Client event handler (add switch case)
 - `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` — Tool call renderer (add progress display)
 
 **Shared dependencies:**
+
 - `apps/server/src/services/runtimes/claude-code/agent-types.ts` — `ToolState` interface (no changes needed — tool_use_id lookup is sufficient)
 - `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` — Part renderer (no changes — existing `ToolCallCard` dispatch covers it)
 - `apps/client/src/layers/features/chat/ui/AutoHideToolCall.tsx` — Auto-hide wrapper (may need adjustment for auto-expand behavior)
 
 **Data flow:**
+
 ```
 SDK emits tool_progress { tool_use_id, content }
   → sdk-event-mapper.ts yields StreamEvent { type: 'tool_progress', toolCallId, content }
@@ -69,6 +72,7 @@ SDK emits tool_progress { tool_use_id, content }
 **Feature flags/config:** None needed — this is core pipeline behavior.
 
 **Potential blast radius:**
+
 - Direct: 4 files (mapper, schemas, handler, ToolCallCard)
 - Indirect: AutoHideToolCall may need auto-expand logic; existing `tool_call_delta` handler unchanged
 - Tests: 2 test files (mapper test, ToolCallCard test if one exists)
@@ -84,6 +88,7 @@ N/A — this is a feature gap, not a bug.
 **Potential solutions:**
 
 **1. New `tool_progress` StreamEvent type (chosen)**
+
 - Description: Add a dedicated `tool_progress` entry to the StreamEventTypeSchema enum with its own Zod schema carrying `toolCallId` and `content`. Add `progressOutput` field to `ToolCallPartSchema` for accumulation.
 - Pros:
   - Semantic clarity — separate event for a separate concern
@@ -97,6 +102,7 @@ N/A — this is a feature gap, not a bug.
 - Maintenance: Low
 
 **2. Extend existing `tool_call_delta` event**
+
 - Description: Add a `progress` field to `ToolCallEventSchema`. Reuse the same event type for both input JSON deltas and progress output.
 - Pros:
   - Fewer schema changes
@@ -112,8 +118,8 @@ N/A — this is a feature gap, not a bug.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Event modeling for tool_progress | New dedicated `tool_progress` StreamEvent type | Semantic clarity, follows subagent event pattern, cleaner client handler with distinct switch case |
-| 2 | Rendering behavior during execution | Auto-expand ToolCallCard with streaming monospace output | Primary UX win — users see tool output as it arrives. Card collapses per normal auto-hide after completion |
-| 3 | Output truncation | Truncate at ~5KB with "Show more" affordance | Prevents browser freeze risk (audit P2 #1) from also affecting progress. Addresses two concerns at once |
+| #   | Decision                            | Choice                                                   | Rationale                                                                                                  |
+| --- | ----------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Event modeling for tool_progress    | New dedicated `tool_progress` StreamEvent type           | Semantic clarity, follows subagent event pattern, cleaner client handler with distinct switch case         |
+| 2   | Rendering behavior during execution | Auto-expand ToolCallCard with streaming monospace output | Primary UX win — users see tool output as it arrives. Card collapses per normal auto-hide after completion |
+| 3   | Output truncation                   | Truncate at ~5KB with "Show more" affordance             | Prevents browser freeze risk (audit P2 #1) from also affecting progress. Addresses two concerns at once    |

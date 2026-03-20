@@ -26,7 +26,7 @@ interface NavigationLayoutContextValue {
   /** True when a NavigationLayoutDialogHeader is mounted. */
   hasDialogHeader: boolean;
   /** @internal Called by NavigationLayoutDialogHeader on mount. */
-  registerDialogHeader: () => (() => void);
+  registerDialogHeader: () => () => void;
 }
 
 const NavigationLayoutContext = React.createContext<NavigationLayoutContextValue | undefined>(
@@ -122,7 +122,19 @@ function NavigationLayout({ children, value, onValueChange, className }: Navigat
       hasDialogHeader,
       registerDialogHeader,
     }),
-    [value, handleValueChange, isMobile, isDrilledIn, goBack, direction, activeLabel, registerItem, unregisterItem, hasDialogHeader, registerDialogHeader]
+    [
+      value,
+      handleValueChange,
+      isMobile,
+      isDrilledIn,
+      goBack,
+      direction,
+      activeLabel,
+      registerItem,
+      unregisterItem,
+      hasDialogHeader,
+      registerDialogHeader,
+    ]
   );
 
   return (
@@ -256,7 +268,12 @@ interface NavigationLayoutItemProps {
 }
 
 /** Individual navigation item. Renders as a tab (desktop) or list item with drill-in (mobile). */
-function NavigationLayoutItem({ children, value: itemValue, icon: Icon, className }: NavigationLayoutItemProps) {
+function NavigationLayoutItem({
+  children,
+  value: itemValue,
+  icon: Icon,
+  className,
+}: NavigationLayoutItemProps) {
   const { value, onValueChange, isMobile, registerItem, unregisterItem } = useNavigationLayout();
   const isActive = value === itemValue;
   const label = typeof children === 'string' ? children : '';
@@ -332,14 +349,18 @@ interface NavigationLayoutContentProps {
 
 /** Content area that renders the active panel. */
 function NavigationLayoutContent({ children, className }: NavigationLayoutContentProps) {
-  const { isMobile, isDrilledIn, goBack, activeLabel, direction, value, hasDialogHeader } = useNavigationLayout();
+  const { isMobile, isDrilledIn, goBack, activeLabel, direction, value, hasDialogHeader } =
+    useNavigationLayout();
 
   if (isMobile) {
     if (!isDrilledIn) return null;
 
     const xOffset = direction === 'forward' ? 16 : -16;
     return (
-      <div data-slot="navigation-layout-content" className={cn('flex flex-1 flex-col overflow-hidden', className)}>
+      <div
+        data-slot="navigation-layout-content"
+        className={cn('flex flex-1 flex-col overflow-hidden', className)}
+      >
         {/* Show built-in back button only when no dialog header handles navigation */}
         {!hasDialogHeader && (
           <motion.button
@@ -375,7 +396,7 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
   return (
     <div
       data-slot="navigation-layout-content"
-      className={cn('relative flex-1 min-w-0 overflow-y-auto', className)}
+      className={cn('relative min-w-0 flex-1 overflow-y-auto', className)}
     >
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.div
@@ -431,7 +452,8 @@ interface NavigationLayoutDialogHeaderProps {
  * - Mobile drilled in: renders a back button with the active section label.
  */
 function NavigationLayoutDialogHeader({ children, className }: NavigationLayoutDialogHeaderProps) {
-  const { isMobile, isDrilledIn, goBack, activeLabel, registerDialogHeader } = useNavigationLayout();
+  const { isMobile, isDrilledIn, goBack, activeLabel, registerDialogHeader } =
+    useNavigationLayout();
 
   // Register so NavigationLayoutContent knows to hide its built-in back button
   React.useLayoutEffect(() => {
@@ -485,17 +507,17 @@ interface NavigationLayoutPanelHeaderProps {
  * Panel header with desktop/mobile awareness.
  * Desktop: renders title + optional actions. Mobile: hides title (shown in back button), renders actions only.
  */
-function NavigationLayoutPanelHeader({ children, actions, className }: NavigationLayoutPanelHeaderProps) {
+function NavigationLayoutPanelHeader({
+  children,
+  actions,
+  className,
+}: NavigationLayoutPanelHeaderProps) {
   const { isMobile } = useNavigationLayout();
 
   // Mobile: title already shown in back button — only render actions if present
   if (isMobile) {
     if (!actions) return null;
-    return (
-      <div className={cn('flex items-center justify-end', className)}>
-        {actions}
-      </div>
-    );
+    return <div className={cn('flex items-center justify-end', className)}>{actions}</div>;
   }
 
   // Desktop: title + optional actions in a flex row
@@ -519,7 +541,11 @@ interface NavigationLayoutPanelProps {
 }
 
 /** Panel content shown when its value matches the active navigation item. */
-function NavigationLayoutPanel({ children, value: panelValue, className }: NavigationLayoutPanelProps) {
+function NavigationLayoutPanel({
+  children,
+  value: panelValue,
+  className,
+}: NavigationLayoutPanelProps) {
   const { value, isMobile } = useNavigationLayout();
   if (value !== panelValue) return null;
 

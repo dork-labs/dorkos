@@ -60,21 +60,22 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role | LOC |
-|------|------|-----|
-| `features/status/ui/StatusLine.tsx` | Container — imperative entries assembly + animation | 184 |
-| `features/status/ui/CwdItem.tsx` | Folder name display | ~30 |
-| `features/status/ui/GitStatusItem.tsx` | Git branch/changes | ~60 |
-| `features/status/ui/PermissionModeItem.tsx` | Permission mode dropdown | ~80 |
-| `features/status/ui/ModelItem.tsx` | Model selector dropdown | ~80 |
-| `features/status/ui/CostItem.tsx` | Cost display | ~25 |
-| `features/status/ui/ContextItem.tsx` | Context % display | ~40 |
-| `features/status/ui/NotificationSoundItem.tsx` | Sound toggle | ~40 |
-| `features/status/ui/TunnelItem.tsx` | Tunnel status + dialog | ~100 |
-| `features/status/ui/VersionItem.tsx` | Version badge + popover | 180 |
-| `features/chat/ui/ChatStatusSection.tsx` | Sole consumer — mobile gestures + wraps StatusLine | 128 |
+| File                                           | Role                                                | LOC  |
+| ---------------------------------------------- | --------------------------------------------------- | ---- |
+| `features/status/ui/StatusLine.tsx`            | Container — imperative entries assembly + animation | 184  |
+| `features/status/ui/CwdItem.tsx`               | Folder name display                                 | ~30  |
+| `features/status/ui/GitStatusItem.tsx`         | Git branch/changes                                  | ~60  |
+| `features/status/ui/PermissionModeItem.tsx`    | Permission mode dropdown                            | ~80  |
+| `features/status/ui/ModelItem.tsx`             | Model selector dropdown                             | ~80  |
+| `features/status/ui/CostItem.tsx`              | Cost display                                        | ~25  |
+| `features/status/ui/ContextItem.tsx`           | Context % display                                   | ~40  |
+| `features/status/ui/NotificationSoundItem.tsx` | Sound toggle                                        | ~40  |
+| `features/status/ui/TunnelItem.tsx`            | Tunnel status + dialog                              | ~100 |
+| `features/status/ui/VersionItem.tsx`           | Version badge + popover                             | 180  |
+| `features/chat/ui/ChatStatusSection.tsx`       | Sole consumer — mobile gestures + wraps StatusLine  | 128  |
 
 **Shared Dependencies:**
+
 - `useAppStore()` — 9 visibility booleans (`showStatusBarCwd`, `showStatusBarPermission`, etc.)
 - `useSessionStatus(sessionId, sessionStatus, isStreaming)` — provides model, permissionMode, costUsd, contextPercent, cwd
 - `useGitStatus(cwd)` — TanStack Query hook for git status
@@ -82,6 +83,7 @@ status: ideation
 - `@/layers/shared/ui` — ResponsiveDropdownMenu, Popover, Separator
 
 **Data Flow:**
+
 ```
 ChatStatusSection
   └─ StatusLine(sessionId, sessionStatus, isStreaming)
@@ -93,6 +95,7 @@ ChatStatusSection
 ```
 
 **Potential Blast Radius:**
+
 - **Direct:** StatusLine.tsx (rewrite), ChatStatusSection.tsx (update to new API)
 - **Unchanged:** All 9 individual item components (presentational, no interface changes)
 - **Barrel:** `features/status/index.ts` (update exports)
@@ -111,6 +114,7 @@ N/A — this is a refactor, not a bug fix.
 ### Potential Solutions
 
 **1. Declarative Composition + Inline Separator (Recommended)**
+
 - Each `StatusLine.Item` accepts a `visible` prop; when `false`, returns `null` so `AnimatePresence` fires exit animation
 - Separator rendered inline in each Item's `motion.div` when it's not the first visible item
 - Root holds lightweight registration context — items register on mount, deregister on unmount — so root knows `hasVisibleChildren` and `firstVisibleKey`
@@ -120,6 +124,7 @@ N/A — this is a refactor, not a bug fix.
 - Complexity: Low | Maintenance: Low
 
 **2. Full Registration Context + Order-Aware Items**
+
 - Items register key + order + visibility with root context
 - Root derives ordered visible list; each Item reads `isFirstVisible` from context
 - Pros: Full control over ordering, could support priority-based plugin insertion
@@ -127,6 +132,7 @@ N/A — this is a refactor, not a bug fix.
 - Complexity: Medium | Maintenance: Medium
 
 **3. React.Children Facade (entries array under the hood)**
+
 - `StatusLine.Item` is a marker component; root walks `React.Children.toArray(children)` to rebuild the imperative `entries[]`
 - Pros: Minimal code change from current implementation
 - Cons: `React.Children.toArray` cannot detect children that return `null` (only JSX-level null); breaks with Fragment wrappers; fights React's composition model; React docs explicitly discourage this pattern
@@ -139,6 +145,7 @@ N/A — this is a refactor, not a bug fix.
 ### AnimatePresence Integration
 
 **Preserve the current two-boundary architecture:**
+
 1. **Outer `AnimatePresence`** — animates the entire status bar container in/out when `hasVisibleChildren` changes
 2. **Inner `AnimatePresence mode="popLayout"`** — animates individual items in/out
 
@@ -152,10 +159,10 @@ When `StatusLine.Item` receives `visible={false}`, it returns `null`. The `Anima
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Separator strategy | Inline in motion.div | Separator exits with its item during AnimatePresence — no orphaned separators. Root tracks `firstVisibleKey` via lightweight registration. Matches research recommendation. |
-| 2 | API shape | Generic `StatusLine.Item` only | Existing item components (CwdItem, etc.) stay unchanged and are passed as children. Simpler API surface, naturally supports plugin items, fewer exports. Named sub-components would create tight coupling without clear benefit. |
+| #   | Decision           | Choice                         | Rationale                                                                                                                                                                                                                        |
+| --- | ------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Separator strategy | Inline in motion.div           | Separator exits with its item during AnimatePresence — no orphaned separators. Root tracks `firstVisibleKey` via lightweight registration. Matches research recommendation.                                                      |
+| 2   | API shape          | Generic `StatusLine.Item` only | Existing item components (CwdItem, etc.) stay unchanged and are passed as children. Simpler API surface, naturally supports plugin items, fewer exports. Named sub-components would create tight coupling without clear benefit. |
 
 ---
 

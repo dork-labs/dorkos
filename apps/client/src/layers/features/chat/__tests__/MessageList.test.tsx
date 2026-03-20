@@ -337,8 +337,6 @@ describe('MessageList', () => {
       />
     );
     // The initial render with isAtBottom=true from the mock should trigger the effect
-    expect(onScrollStateChange).toHaveBeenCalledWith(
-      expect.objectContaining({ isAtBottom: true })
-    );
+    expect(onScrollStateChange).toHaveBeenCalledWith(expect.objectContaining({ isAtBottom: true }));
   });
 });

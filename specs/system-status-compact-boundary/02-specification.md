@@ -65,9 +65,7 @@ export const SystemStatusEventSchema = z
 
 export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
 
-export const CompactBoundaryEventSchema = z
-  .object({})
-  .openapi('CompactBoundaryEvent');
+export const CompactBoundaryEventSchema = z.object({}).openapi('CompactBoundaryEvent');
 
 export type CompactBoundaryEvent = z.infer<typeof CompactBoundaryEventSchema>;
 ```
@@ -273,17 +271,17 @@ The `compact_boundary` handler in `stream-event-handler.ts` injects a `ChatMessa
 
 ## File Changes Summary
 
-| File | Change | Lines |
-|------|--------|-------|
-| `packages/shared/src/schemas.ts` | Add 2 event types to enum, 2 schemas, 2 union members | ~20 |
-| `packages/shared/src/types.ts` | Add 2 type re-exports | ~2 |
-| `apps/server/.../sdk-event-mapper.ts` | Add 2 system message branches | ~20 |
-| `apps/client/.../stream-event-handler.ts` | Add 2 switch cases, 1 dep | ~20 |
-| `apps/client/.../use-chat-session.ts` | Add systemStatus state + auto-clear | ~20 |
-| `apps/client/.../constants.ts` | Add SYSTEM_STATUS_DISMISS_MS | ~2 |
-| `apps/client/.../SystemStatusZone.tsx` | **New** — ephemeral status component | ~30 |
-| `apps/client/.../ChatPanel.tsx` | Wire systemStatus, render zone | ~5 |
-| **Total** | | **~120** |
+| File                                      | Change                                                | Lines    |
+| ----------------------------------------- | ----------------------------------------------------- | -------- |
+| `packages/shared/src/schemas.ts`          | Add 2 event types to enum, 2 schemas, 2 union members | ~20      |
+| `packages/shared/src/types.ts`            | Add 2 type re-exports                                 | ~2       |
+| `apps/server/.../sdk-event-mapper.ts`     | Add 2 system message branches                         | ~20      |
+| `apps/client/.../stream-event-handler.ts` | Add 2 switch cases, 1 dep                             | ~20      |
+| `apps/client/.../use-chat-session.ts`     | Add systemStatus state + auto-clear                   | ~20      |
+| `apps/client/.../constants.ts`            | Add SYSTEM_STATUS_DISMISS_MS                          | ~2       |
+| `apps/client/.../SystemStatusZone.tsx`    | **New** — ephemeral status component                  | ~30      |
+| `apps/client/.../ChatPanel.tsx`           | Wire systemStatus, render zone                        | ~5       |
+| **Total**                                 |                                                       | **~120** |
 
 ## Testing
 

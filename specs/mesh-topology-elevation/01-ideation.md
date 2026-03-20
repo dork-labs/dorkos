@@ -115,6 +115,7 @@ N/A — this is a feature enhancement, not a bug fix.
 **Kiali (Kubernetes):** Animated flow particles traveling along edges to show traffic direction and activity — the defining visual of a "live system map." Different particle speeds for different throughput levels.
 
 **Common patterns across all three:**
+
 1. Every pixel communicates something — no decorative chrome
 2. Information density achieved through layering (tooltip → node → panel), not cramming
 3. Color is semantic and consistent (green/amber/red/gray)
@@ -123,28 +124,30 @@ N/A — this is a feature enhancement, not a bug fix.
 
 ### React Flow v12 Features Available (Not Currently Used)
 
-| Feature | Description | Impact |
-|---------|-------------|--------|
-| `NodeToolbar` | Floating toolbar on selected node, doesn't scale with zoom | Quick actions without UI clutter |
-| `Background` | Dot/line/cross grid behind canvas | Spatial anchoring, visual polish |
-| `MiniMap` | Bird's-eye overview with viewport indicator, `nodeColor` callback | Navigation for 5+ agents |
-| `animateMotion` SVG | Circle traveling along edge path | "Data flowing" on allow edges |
-| CSS variables (`--xy-*`) | Full theming control | Dark mode fix, design system alignment |
-| `fitView` with duration | Animated initial viewport fit | Smooth load experience |
-| `useStore(s => s.transform[2])` | Read zoom level inside nodes | Contextual zoom LOD |
-| `useReactFlow().setCenter()` | Programmatic viewport animation | Fly-to on node selection |
-| `extent: 'parent'` + group nodes | Child nodes constrained to parent | Namespace containers |
-| `onlyRenderVisibleElements` | Skip rendering off-screen nodes | Performance at scale |
+| Feature                          | Description                                                       | Impact                                 |
+| -------------------------------- | ----------------------------------------------------------------- | -------------------------------------- |
+| `NodeToolbar`                    | Floating toolbar on selected node, doesn't scale with zoom        | Quick actions without UI clutter       |
+| `Background`                     | Dot/line/cross grid behind canvas                                 | Spatial anchoring, visual polish       |
+| `MiniMap`                        | Bird's-eye overview with viewport indicator, `nodeColor` callback | Navigation for 5+ agents               |
+| `animateMotion` SVG              | Circle traveling along edge path                                  | "Data flowing" on allow edges          |
+| CSS variables (`--xy-*`)         | Full theming control                                              | Dark mode fix, design system alignment |
+| `fitView` with duration          | Animated initial viewport fit                                     | Smooth load experience                 |
+| `useStore(s => s.transform[2])`  | Read zoom level inside nodes                                      | Contextual zoom LOD                    |
+| `useReactFlow().setCenter()`     | Programmatic viewport animation                                   | Fly-to on node selection               |
+| `extent: 'parent'` + group nodes | Child nodes constrained to parent                                 | Namespace containers                   |
+| `onlyRenderVisibleElements`      | Skip rendering off-screen nodes                                   | Performance at scale                   |
 
 ### Progressive Disclosure Design (4 Tiers)
 
 **Tier 0 — At-a-glance (always visible on node):**
+
 - Agent name (truncated with ellipsis)
 - Health status ring (animated ping for active)
 - Runtime icon (tiny icon, not a badge)
 - Relay/Pulse indicator icons (when present)
 
 **Tier 1 — Hover state (Tooltip):**
+
 - Full agent name (untruncated)
 - Last seen timestamp (`2m ago`)
 - Capability tags (up to 5)
@@ -152,10 +155,12 @@ N/A — this is a feature enhancement, not a bug fix.
 - Relay subject if present
 
 **Tier 2 — Selected state (NodeToolbar):**
+
 - Floating action bar: [Open Settings] [View Health] [Unregister]
 - Quick actions without click-through
 
 **Tier 3 — Click (Side panel + optional dialog):**
+
 - AgentHealthDetail slides in from right (animated)
 - Full capabilities, budget, behavior config, last seen event
 - "Open Settings" button → Agent Settings Dialog (4 tabs from spec #66)
@@ -187,6 +192,7 @@ Add React Flow built-in components (Background, MiniMap), enhance existing node/
 **Solution 1 (Layered Enhancement)** across three tiers of implementation:
 
 **Tier 1 — Immediate Wins (highest ROI, lowest effort):**
+
 - `<Background variant="dots">` with design system color
 - `<MiniMap>` with namespace-colored nodes
 - Deny-rule edge type (red dashed, no animation)
@@ -196,6 +202,7 @@ Add React Flow built-in components (Background, MiniMap), enhance existing node/
 - `fitView` with `duration: 400`
 
 **Tier 2 — Core Elevation (high impact, medium effort):**
+
 - Fly-to selection animation (`useReactFlow().setCenter()`)
 - NodeToolbar on select ([Settings] [Health] [Remove])
 - Contextual zoom LOD (3 detail levels based on `useStore` zoom)
@@ -205,6 +212,7 @@ Add React Flow built-in components (Background, MiniMap), enhance existing node/
 - Edge label show-on-hover/selected only
 
 **Tier 3 — Signature Delight (highest visual impact):**
+
 - Animated SVG flow particles on allow-rule cross-namespace edges
 - ELK.js namespace group containers replacing hub-spoke model
 - Namespace hub active/total count with pulse glow
@@ -231,9 +239,9 @@ Add React Flow built-in components (Background, MiniMap), enhance existing node/
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Node click behavior | Keep side panel + add NodeToolbar with Settings button | Best of both worlds: quick health info on click (graph stays visible), full Agent Dialog via toolbar action. Mirrors Datadog/Grafana pattern. |
-| 2 | Enhancement scope | All 3 tiers (maximum ambition) | Background, MiniMap, deny edges, flow particles, fly-to, NodeToolbar, contextual zoom LOD, health pulse, indicators, ELK.js namespace containers. Go big. |
-| 3 | Relay/Pulse indicators | Show directly on agent nodes | Subtle indicator row with Relay adapter icons and Pulse schedule count. Requires data enrichment (new batch endpoint or client-side join). High information density gain. |
-| 4 | Contextual zoom LOD | Yes, 3 detail levels | Zoomed out (<0.6): compact pill with dot+name. Default: current card. Zoomed in (>1.2): expanded card with description, adapters, last-seen, budget. Makes large graphs navigable while rewarding exploration. |
+| #   | Decision               | Choice                                                 | Rationale                                                                                                                                                                                                      |
+| --- | ---------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Node click behavior    | Keep side panel + add NodeToolbar with Settings button | Best of both worlds: quick health info on click (graph stays visible), full Agent Dialog via toolbar action. Mirrors Datadog/Grafana pattern.                                                                  |
+| 2   | Enhancement scope      | All 3 tiers (maximum ambition)                         | Background, MiniMap, deny edges, flow particles, fly-to, NodeToolbar, contextual zoom LOD, health pulse, indicators, ELK.js namespace containers. Go big.                                                      |
+| 3   | Relay/Pulse indicators | Show directly on agent nodes                           | Subtle indicator row with Relay adapter icons and Pulse schedule count. Requires data enrichment (new batch endpoint or client-side join). High information density gain.                                      |
+| 4   | Contextual zoom LOD    | Yes, 3 detail levels                                   | Zoomed out (<0.6): compact pill with dot+name. Default: current card. Zoomed in (>1.2): expanded card with description, adapters, last-seen, budget. Makes large graphs navigable while rewarding exploration. |

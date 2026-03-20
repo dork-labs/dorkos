@@ -53,6 +53,7 @@ export function isRelayEnabled(): boolean {
 ```
 
 **Acceptance Criteria:**
+
 - File exists at `apps/server/src/services/relay-state.ts`
 - Exports `setRelayEnabled(boolean): void` and `isRelayEnabled(): boolean`
 - Follows exact same pattern as `pulse-state.ts` (TSDoc, const state object, getter/setter)
@@ -106,6 +107,7 @@ Add `"DORKOS_RELAY_ENABLED"` to the `globalPassThroughEnv` array, placed after `
 ```
 
 **Acceptance Criteria:**
+
 - `UserConfigSchema` includes `relay.enabled` (boolean, default false) and `relay.dataDir` (nullable string, default null)
 - `USER_CONFIG_DEFAULTS` (from `UserConfigSchema.parse({ version: 1 })`) includes the relay defaults
 - `turbo.json` `globalPassThroughEnv` includes `"DORKOS_RELAY_ENABLED"`
@@ -125,47 +127,58 @@ Add the following 4 request/query schemas to `packages/shared/src/relay-schemas.
 ```typescript
 // === HTTP API Schemas ===
 
-export const SendMessageRequestSchema = z.object({
-  subject: z.string().min(1),
-  payload: z.unknown(),
-  from: z.string().min(1),
-  replyTo: z.string().optional(),
-  budget: z.object({
-    maxHops: z.number().int().min(1).optional(),
-    ttl: z.number().int().optional(),
-    callBudgetRemaining: z.number().int().min(0).optional(),
-  }).optional(),
-}).openapi('SendMessageRequest');
+export const SendMessageRequestSchema = z
+  .object({
+    subject: z.string().min(1),
+    payload: z.unknown(),
+    from: z.string().min(1),
+    replyTo: z.string().optional(),
+    budget: z
+      .object({
+        maxHops: z.number().int().min(1).optional(),
+        ttl: z.number().int().optional(),
+        callBudgetRemaining: z.number().int().min(0).optional(),
+      })
+      .optional(),
+  })
+  .openapi('SendMessageRequest');
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
 
-export const MessageListQuerySchema = z.object({
-  subject: z.string().optional(),
-  status: z.enum(['new', 'cur', 'failed']).optional(),
-  from: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-}).openapi('MessageListQuery');
+export const MessageListQuerySchema = z
+  .object({
+    subject: z.string().optional(),
+    status: z.enum(['new', 'cur', 'failed']).optional(),
+    from: z.string().optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .openapi('MessageListQuery');
 
 export type MessageListQuery = z.infer<typeof MessageListQuerySchema>;
 
-export const InboxQuerySchema = z.object({
-  status: z.enum(['new', 'cur', 'failed']).optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-}).openapi('InboxQuery');
+export const InboxQuerySchema = z
+  .object({
+    status: z.enum(['new', 'cur', 'failed']).optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .openapi('InboxQuery');
 
 export type InboxQuery = z.infer<typeof InboxQuerySchema>;
 
-export const EndpointRegistrationSchema = z.object({
-  subject: z.string().min(1),
-  description: z.string().optional(),
-}).openapi('EndpointRegistration');
+export const EndpointRegistrationSchema = z
+  .object({
+    subject: z.string().min(1),
+    description: z.string().optional(),
+  })
+  .openapi('EndpointRegistration');
 
 export type EndpointRegistration = z.infer<typeof EndpointRegistrationSchema>;
 ```
 
 **Acceptance Criteria:**
+
 - All 4 schemas added to `packages/shared/src/relay-schemas.ts`
 - Each schema has `.openapi()` metadata for OpenAPI generation
 - Each schema exports a corresponding TypeScript type via `z.infer`
@@ -316,19 +329,20 @@ export function createRelayRouter(relayCore: RelayCore): Router {
 
 **Endpoints to implement (9 non-SSE):**
 
-| Method | Path | Description | Validation Schema |
-|--------|------|-------------|-------------------|
-| `POST` | `/messages` | Send a message | `SendMessageRequestSchema` |
-| `GET` | `/messages` | List messages | `MessageListQuerySchema` |
-| `GET` | `/messages/:id` | Get single message | — |
-| `GET` | `/endpoints` | List endpoints | — |
-| `POST` | `/endpoints` | Register endpoint | `EndpointRegistrationSchema` |
-| `DELETE` | `/endpoints/:subject` | Unregister | — |
-| `GET` | `/endpoints/:subject/inbox` | Read inbox | `InboxQuerySchema` |
-| `GET` | `/dead-letters` | List DLQ | query `limit` |
-| `GET` | `/metrics` | System metrics | — |
+| Method   | Path                        | Description        | Validation Schema            |
+| -------- | --------------------------- | ------------------ | ---------------------------- |
+| `POST`   | `/messages`                 | Send a message     | `SendMessageRequestSchema`   |
+| `GET`    | `/messages`                 | List messages      | `MessageListQuerySchema`     |
+| `GET`    | `/messages/:id`             | Get single message | —                            |
+| `GET`    | `/endpoints`                | List endpoints     | —                            |
+| `POST`   | `/endpoints`                | Register endpoint  | `EndpointRegistrationSchema` |
+| `DELETE` | `/endpoints/:subject`       | Unregister         | —                            |
+| `GET`    | `/endpoints/:subject/inbox` | Read inbox         | `InboxQuerySchema`           |
+| `GET`    | `/dead-letters`             | List DLQ           | query `limit`                |
+| `GET`    | `/metrics`                  | System metrics     | —                            |
 
 **Acceptance Criteria:**
+
 - File exists at `apps/server/src/routes/relay.ts`
 - Exports `createRelayRouter(relayCore: RelayCore): Router`
 - All 9 non-SSE endpoints implemented
@@ -357,6 +371,7 @@ export function createRelayRouter(relayCore: RelayCore): Router {
 Add relay initialization after the Pulse initialization block (around line 51). The pattern mirrors Pulse exactly:
 
 1. Add imports at the top:
+
 ```typescript
 import { RelayCore } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
@@ -364,6 +379,7 @@ import { setRelayEnabled } from './services/relay-state.js';
 ```
 
 2. After the `pulseStore` initialization block (after line 51), add:
+
 ```typescript
 // Initialize Relay if enabled
 const relayConfig = configManager.get('relay') as { enabled: boolean; dataDir?: string | null };
@@ -381,6 +397,7 @@ if (relayEnabled) {
 ```
 
 3. Update the `createDorkOsToolServer` call to include relayCore:
+
 ```typescript
 const mcpToolServer = createDorkOsToolServer({
   transcriptReader,
@@ -391,6 +408,7 @@ const mcpToolServer = createDorkOsToolServer({
 ```
 
 4. After the Pulse route mounting block, add:
+
 ```typescript
 // Mount Relay routes if enabled
 if (relayEnabled && relayCore) {
@@ -401,6 +419,7 @@ if (relayEnabled && relayCore) {
 ```
 
 5. In the `shutdown()` function, add relay cleanup before `process.exit(0)`:
+
 ```typescript
 if (relayCore) {
   await relayCore.close();
@@ -412,11 +431,13 @@ if (relayCore) {
 **Part B: Update `apps/server/src/routes/config.ts`**
 
 1. Add import:
+
 ```typescript
 import { isRelayEnabled } from '../services/relay-state.js';
 ```
 
 2. In the GET handler (around line 88-107), add relay status to the response JSON alongside the existing `pulse` field:
+
 ```typescript
 relay: {
   enabled: isRelayEnabled(),
@@ -424,6 +445,7 @@ relay: {
 ```
 
 **Acceptance Criteria:**
+
 - Server initializes `RelayCore` when `DORKOS_RELAY_ENABLED=true` or `relay.enabled` is true in config
 - `relayCore` is passed to `createDorkOsToolServer` when enabled
 - Relay routes are mounted at `/api/relay` when enabled
@@ -489,7 +511,11 @@ describe('Relay Routes', () => {
 
       const res = await request(app)
         .post('/api/relay/messages')
-        .send({ subject: 'relay.agent.backend', payload: { text: 'hello' }, from: 'relay.agent.frontend' });
+        .send({
+          subject: 'relay.agent.backend',
+          payload: { text: 'hello' },
+          from: 'relay.agent.frontend',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('messageId', 'msg-01');
@@ -514,7 +540,9 @@ describe('Relay Routes', () => {
     });
 
     it('returns 422 when publish throws an error', async () => {
-      mockRelay.publish.mockRejectedValue(Object.assign(new Error('Access denied'), { code: 'ACCESS_DENIED' }));
+      mockRelay.publish.mockRejectedValue(
+        Object.assign(new Error('Access denied'), { code: 'ACCESS_DENIED' })
+      );
 
       const res = await request(app)
         .post('/api/relay/messages')
@@ -592,9 +620,7 @@ describe('Relay Routes', () => {
     });
 
     it('returns 400 for empty subject', async () => {
-      const res = await request(app)
-        .post('/api/relay/endpoints')
-        .send({ subject: '' });
+      const res = await request(app).post('/api/relay/endpoints').send({ subject: '' });
 
       expect(res.status).toBe(400);
     });
@@ -629,7 +655,9 @@ describe('Relay Routes', () => {
     });
 
     it('returns 404 for unknown endpoint', async () => {
-      mockRelay.readInbox.mockRejectedValue(Object.assign(new Error('Not found'), { code: 'ENDPOINT_NOT_FOUND' }));
+      mockRelay.readInbox.mockRejectedValue(
+        Object.assign(new Error('Not found'), { code: 'ENDPOINT_NOT_FOUND' })
+      );
 
       const res = await request(app).get('/api/relay/endpoints/unknown/inbox');
 
@@ -663,6 +691,7 @@ describe('Relay Routes', () => {
 ```
 
 **Test scenarios:**
+
 - POST /messages with valid payload -> 200, returns messageId
 - POST /messages with invalid subject (empty string) -> 400, Zod error details
 - POST /messages with missing from -> 400
@@ -682,6 +711,7 @@ describe('Relay Routes', () => {
 - GET /metrics -> returns metrics object
 
 **Acceptance Criteria:**
+
 - Test file at `apps/server/src/routes/__tests__/relay.test.ts`
 - Uses mock RelayCore with all methods stubbed via `vi.fn()`
 - Covers all 9 non-SSE endpoints with at least success and error cases
@@ -702,6 +732,7 @@ describe('Relay Routes', () => {
 Update `apps/server/src/services/mcp-tool-server.ts`:
 
 1. **Add RelayCore to McpToolDeps interface:**
+
 ```typescript
 import type { RelayCore } from '@dorkos/relay';
 
@@ -709,11 +740,12 @@ export interface McpToolDeps {
   transcriptReader: TranscriptReader;
   defaultCwd: string;
   pulseStore?: PulseStore;
-  relayCore?: RelayCore;  // NEW
+  relayCore?: RelayCore; // NEW
 }
 ```
 
 2. **Add `requireRelay` guard (same pattern as `requirePulse`):**
+
 ```typescript
 /** Guard that returns an error response when Relay is disabled. */
 function requireRelay(deps: McpToolDeps) {
@@ -748,7 +780,10 @@ export function createRelaySendHandler(deps: McpToolDeps) {
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Publish failed';
       const code = (e as any)?.code ?? 'PUBLISH_FAILED';
-      return jsonContent({ error: message, code, hint: 'Check subject, access rules, and budget.' }, true);
+      return jsonContent(
+        { error: message, code, hint: 'Check subject, access rules, and budget.' },
+        true
+      );
     }
   };
 }
@@ -766,7 +801,10 @@ export function createRelayInboxHandler(deps: McpToolDeps) {
       return jsonContent({ messages: result.messages, count: result.messages.length });
     } catch (e) {
       if ((e as any)?.code === 'ENDPOINT_NOT_FOUND') {
-        return jsonContent({ error: `Endpoint '${args.endpoint_subject}' not found`, code: 'ENDPOINT_NOT_FOUND' }, true);
+        return jsonContent(
+          { error: `Endpoint '${args.endpoint_subject}' not found`, code: 'ENDPOINT_NOT_FOUND' },
+          true
+        );
       }
       return jsonContent({ error: e instanceof Error ? e.message : 'Inbox read failed' }, true);
     }
@@ -792,7 +830,13 @@ export function createRelayRegisterEndpointHandler(deps: McpToolDeps) {
       const endpoint = await deps.relayCore!.registerEndpoint(args.subject, args.description);
       return jsonContent({ endpoint });
     } catch (e) {
-      return jsonContent({ error: e instanceof Error ? e.message : 'Registration failed', code: 'REGISTRATION_FAILED' }, true);
+      return jsonContent(
+        {
+          error: e instanceof Error ? e.message : 'Registration failed',
+          code: 'REGISTRATION_FAILED',
+        },
+        true
+      );
     }
   };
 }
@@ -806,15 +850,20 @@ const relayTools = [
     'relay_send',
     'Send a message to a Relay subject. Messages are delivered to all matching endpoint subscriptions.',
     {
-      subject: z.string().describe('NATS-style subject to publish to (e.g., "relay.agent.backend")'),
+      subject: z
+        .string()
+        .describe('NATS-style subject to publish to (e.g., "relay.agent.backend")'),
       payload: z.unknown().describe('Message payload (any JSON-serializable data)'),
       from: z.string().describe('Sender endpoint subject (e.g., "relay.agent.frontend")'),
       replyTo: z.string().optional().describe('Subject to use for reply messages'),
-      budget: z.object({
-        maxHops: z.number().optional().describe('Maximum hop count (default 5)'),
-        ttl: z.number().optional().describe('Time-to-live in milliseconds'),
-        callBudgetRemaining: z.number().optional().describe('Remaining call budget'),
-      }).optional().describe('Optional budget constraints'),
+      budget: z
+        .object({
+          maxHops: z.number().optional().describe('Maximum hop count (default 5)'),
+          ttl: z.number().optional().describe('Time-to-live in milliseconds'),
+          callBudgetRemaining: z.number().optional().describe('Remaining call budget'),
+        })
+        .optional()
+        .describe('Optional budget constraints'),
     },
     createRelaySendHandler(deps)
   ),
@@ -839,7 +888,10 @@ const relayTools = [
     'Register a new Relay endpoint for receiving messages. Idempotent — returns existing if already registered.',
     {
       subject: z.string().describe('NATS-style subject pattern for the endpoint'),
-      description: z.string().optional().describe('Human-readable description of the endpoint purpose'),
+      description: z
+        .string()
+        .optional()
+        .describe('Human-readable description of the endpoint purpose'),
     },
     createRelayRegisterEndpointHandler(deps)
   ),
@@ -857,6 +909,7 @@ return createSdkMcpServer({
 ```
 
 **Error response structure for all relay tools:**
+
 ```json
 { "error": "Description", "code": "ERROR_CODE", "hint": "Optional guidance" }
 ```
@@ -864,6 +917,7 @@ return createSdkMcpServer({
 Error codes: `RELAY_DISABLED`, `ACCESS_DENIED`, `BUDGET_EXCEEDED`, `INVALID_SUBJECT`, `ENDPOINT_NOT_FOUND`, `PUBLISH_FAILED`, `REGISTRATION_FAILED`.
 
 **Acceptance Criteria:**
+
 - `McpToolDeps` interface includes optional `relayCore?: RelayCore`
 - `requireRelay()` guard returns `RELAY_DISABLED` error when relay is undefined
 - 4 tools registered: `relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`
@@ -879,6 +933,7 @@ Error codes: `RELAY_DISABLED`, `ACCESS_DENIED`, `BUDGET_EXCEEDED`, `INVALID_SUBJ
 **Tests: Create `apps/server/src/services/__tests__/mcp-relay-tools.test.ts`**
 
 Test scenarios:
+
 - `relay_send` with `relayCore` undefined -> returns error with `RELAY_DISABLED` code
 - `relay_send` with valid args -> calls `relayCore.publish()`, returns messageId
 - `relay_send` with access denied error -> returns error with `ACCESS_DENIED` code
@@ -899,6 +954,7 @@ Test scenarios:
 Add the SSE stream endpoint to `apps/server/src/routes/relay.ts`. This endpoint allows clients to subscribe to real-time relay message events with optional server-side subject filtering.
 
 **Add import:**
+
 ```typescript
 import { initSSEStream, sendSSEEvent } from '../services/stream-adapter.js';
 ```
@@ -939,6 +995,7 @@ router.get('/stream', (req, res) => {
 ```
 
 **Key behaviors:**
+
 - Uses `initSSEStream()` from `stream-adapter.ts` to set SSE headers
 - Sends `relay_connected` event immediately on connection
 - Accepts optional `?subject=pattern` query param for server-side filtering (default `>` matches all)
@@ -988,7 +1045,11 @@ describe('GET /api/relay/stream', () => {
     // Abort after a short delay
     setTimeout(() => req.abort(), 100);
 
-    try { await req; } catch { /* aborted */ }
+    try {
+      await req;
+    } catch {
+      /* aborted */
+    }
 
     expect(mockRelay.subscribe).toHaveBeenCalledWith('relay.agent.*', expect.any(Function));
   });
@@ -996,6 +1057,7 @@ describe('GET /api/relay/stream', () => {
 ```
 
 **Acceptance Criteria:**
+
 - SSE endpoint exists at `GET /api/relay/stream`
 - Sets correct SSE headers via `initSSEStream()`
 - Sends `relay_connected` event on initial connection
@@ -1019,6 +1081,7 @@ describe('GET /api/relay/stream', () => {
 Create the `apps/client/src/layers/entities/relay/` module with 5 hooks following the Pulse entity pattern.
 
 **File: `apps/client/src/layers/entities/relay/index.ts`**
+
 ```typescript
 /**
  * Relay entity — domain hooks for relay message and endpoint data fetching.
@@ -1033,6 +1096,7 @@ export { useRelayEventStream } from './model/use-relay-event-stream';
 ```
 
 **File: `apps/client/src/layers/entities/relay/model/use-relay-config.ts`**
+
 ```typescript
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -1052,6 +1116,7 @@ export function useRelayEnabled(): boolean {
 ```
 
 **File: `apps/client/src/layers/entities/relay/model/use-relay-messages.ts`**
+
 ```typescript
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -1078,6 +1143,7 @@ export function useRelayMessages(enabled: boolean, filters?: MessageFilters) {
 ```
 
 **File: `apps/client/src/layers/entities/relay/model/use-relay-endpoints.ts`**
+
 ```typescript
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -1096,6 +1162,7 @@ export function useRelayEndpoints(enabled: boolean) {
 ```
 
 **File: `apps/client/src/layers/entities/relay/model/use-relay-metrics.ts`**
+
 ```typescript
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -1114,6 +1181,7 @@ export function useRelayMetrics(enabled: boolean) {
 ```
 
 **File: `apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts`**
+
 ```typescript
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1217,6 +1285,7 @@ describe('useRelayEnabled', () => {
 ```
 
 **Acceptance Criteria:**
+
 - Module exists at `apps/client/src/layers/entities/relay/`
 - Barrel `index.ts` exports all 5 hooks
 - `useRelayEnabled()` queries `['config']` and returns `data?.relay?.enabled ?? false`
@@ -1240,6 +1309,7 @@ describe('useRelayEnabled', () => {
 Create the `apps/client/src/layers/features/relay/` module with 5 components.
 
 **File: `apps/client/src/layers/features/relay/index.ts`**
+
 ```typescript
 /**
  * Relay feature — inter-agent messaging activity feed and endpoint management.
@@ -1257,7 +1327,12 @@ Main panel with two tabs (Activity, Endpoints). Mirrors PulsePanel disabled/load
 import { useState } from 'react';
 import { Route } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/layers/shared/ui';
-import { useRelayEnabled, useRelayMessages, useRelayEndpoints, useRelayEventStream } from '@/layers/entities/relay';
+import {
+  useRelayEnabled,
+  useRelayMessages,
+  useRelayEndpoints,
+  useRelayEventStream,
+} from '@/layers/entities/relay';
 import { ActivityFeed } from './ActivityFeed';
 import { EndpointList } from './EndpointList';
 
@@ -1273,14 +1348,15 @@ export function RelayPanel() {
   if (!relayEnabled) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-        <Route className="size-8 text-muted-foreground/50" />
+        <Route className="text-muted-foreground/50 size-8" />
         <div>
           <p className="font-medium">Relay is not enabled</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Relay enables inter-agent messaging. Start DorkOS with DORKOS_RELAY_ENABLED=true to enable it.
+          <p className="text-muted-foreground mt-1 text-sm">
+            Relay enables inter-agent messaging. Start DorkOS with DORKOS_RELAY_ENABLED=true to
+            enable it.
           </p>
         </div>
-        <code className="mt-2 rounded-md bg-muted px-3 py-1.5 font-mono text-sm">
+        <code className="bg-muted mt-2 rounded-md px-3 py-1.5 font-mono text-sm">
           DORKOS_RELAY_ENABLED=true dorkos
         </code>
       </div>
@@ -1295,10 +1371,10 @@ export function RelayPanel() {
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-lg border p-3">
             <div className="flex items-center gap-3">
-              <div className="size-2 animate-pulse rounded-full bg-muted" />
+              <div className="bg-muted size-2 animate-pulse rounded-full" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-48 animate-pulse rounded bg-muted" />
+                <div className="bg-muted h-4 w-32 animate-pulse rounded" />
+                <div className="bg-muted h-3 w-48 animate-pulse rounded" />
               </div>
             </div>
           </div>
@@ -1311,8 +1387,12 @@ export function RelayPanel() {
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
       <div className="border-b px-4">
         <TabsList className="h-9">
-          <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
-          <TabsTrigger value="endpoints" className="text-xs">Endpoints</TabsTrigger>
+          <TabsTrigger value="activity" className="text-xs">
+            Activity
+          </TabsTrigger>
+          <TabsTrigger value="endpoints" className="text-xs">
+            Endpoints
+          </TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value="activity" className="mt-0">
@@ -1345,8 +1425,8 @@ export function ActivityFeed({ messages }: ActivityFeedProps) {
   if (messages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-        <p className="text-sm text-muted-foreground">No messages yet</p>
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-muted-foreground text-sm">No messages yet</p>
+        <p className="text-muted-foreground/70 text-xs">
           Messages will appear here when agents communicate via Relay.
         </p>
       </div>
@@ -1400,32 +1480,33 @@ export function MessageRow({ message, expanded, onToggleExpand }: MessageRowProp
   return (
     <button
       onClick={onToggleExpand}
-      className="w-full px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
+      className="hover:bg-muted/50 w-full px-4 py-2.5 text-left transition-colors"
     >
       <div className="flex items-start gap-2">
         <StatusIcon className={cn('mt-0.5 size-3.5 shrink-0', config.className)} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-sm font-medium">{message.subject}</span>
-            <Badge variant="outline" className="shrink-0 text-2xs">
+            <Badge variant="outline" className="text-2xs shrink-0">
               {status}
             </Badge>
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="text-muted-foreground mt-0.5 flex items-center gap-2 text-xs">
             <span>from: {message.from}</span>
             <span>{timeAgo}</span>
           </div>
         </div>
       </div>
       {expanded && (
-        <div className="mt-2 rounded-md bg-muted/30 p-2 text-xs">
-          <pre className="overflow-x-auto whitespace-pre-wrap text-muted-foreground">
+        <div className="bg-muted/30 mt-2 rounded-md p-2 text-xs">
+          <pre className="text-muted-foreground overflow-x-auto whitespace-pre-wrap">
             {JSON.stringify(message.payload, null, 2)}
           </pre>
           {message.budget && (
-            <div className="mt-1.5 border-t pt-1.5 text-muted-foreground/70">
+            <div className="text-muted-foreground/70 mt-1.5 border-t pt-1.5">
               Budget: hop {message.budget.hopCount}/{message.budget.maxHops}
-              {message.budget.callBudgetRemaining != null && ` | calls: ${message.budget.callBudgetRemaining}`}
+              {message.budget.callBudgetRemaining != null &&
+                ` | calls: ${message.budget.callBudgetRemaining}`}
             </div>
           )}
         </div>
@@ -1461,8 +1542,8 @@ export function EndpointList({ endpoints }: EndpointListProps) {
   if (endpoints.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-        <p className="text-sm text-muted-foreground">No endpoints registered</p>
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-muted-foreground text-sm">No endpoints registered</p>
+        <p className="text-muted-foreground/70 text-xs">
           Endpoints are registered by agents when they join the relay network.
         </p>
       </div>
@@ -1473,15 +1554,15 @@ export function EndpointList({ endpoints }: EndpointListProps) {
     <div className="divide-y">
       {endpoints.map((ep) => (
         <div key={ep.subject} className="flex items-center gap-3 px-4 py-2.5">
-          <Route className="size-3.5 shrink-0 text-muted-foreground/50" />
+          <Route className="text-muted-foreground/50 size-3.5 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{ep.subject}</p>
             {ep.description && (
-              <p className="truncate text-xs text-muted-foreground">{ep.description}</p>
+              <p className="text-muted-foreground truncate text-xs">{ep.description}</p>
             )}
           </div>
           {ep.messageCount != null && (
-            <span className="text-xs text-muted-foreground">{ep.messageCount} msgs</span>
+            <span className="text-muted-foreground text-xs">{ep.messageCount} msgs</span>
           )}
         </div>
       ))}
@@ -1513,7 +1594,7 @@ export function InboxView({ endpointSubject, enabled }: InboxViewProps) {
     return (
       <div className="space-y-2 p-4">
         {[1, 2].map((i) => (
-          <div key={i} className="h-12 animate-pulse rounded bg-muted" />
+          <div key={i} className="bg-muted h-12 animate-pulse rounded" />
         ))}
       </div>
     );
@@ -1523,7 +1604,7 @@ export function InboxView({ endpointSubject, enabled }: InboxViewProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="p-8 text-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground p-8 text-center text-sm">
         No messages in inbox for {endpointSubject}
       </div>
     );
@@ -1546,14 +1627,15 @@ export function InboxView({ endpointSubject, enabled }: InboxViewProps) {
 
 **Status indicators used in MessageRow:**
 
-| Status | Icon | Color class |
-|--------|------|------------|
-| `new` | `Clock` | `text-muted-foreground` |
-| `cur` | `Check` | `text-muted-foreground` |
-| `failed` | `AlertTriangle` | `text-destructive` |
-| `dead_letter` | `MailX` | `text-amber-500` |
+| Status        | Icon            | Color class             |
+| ------------- | --------------- | ----------------------- |
+| `new`         | `Clock`         | `text-muted-foreground` |
+| `cur`         | `Check`         | `text-muted-foreground` |
+| `failed`      | `AlertTriangle` | `text-destructive`      |
+| `dead_letter` | `MailX`         | `text-amber-500`        |
 
 **Acceptance Criteria:**
+
 - Module exists at `apps/client/src/layers/features/relay/`
 - Barrel `index.ts` exports `RelayPanel`
 - `RelayPanel` shows disabled state when `useRelayEnabled()` is false
@@ -1580,18 +1662,21 @@ Modify `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` to w
 **Changes required:**
 
 1. **Add imports:**
+
 ```typescript
 import { RelayPanel } from '@/layers/features/relay';
 import { useRelayEnabled } from '@/layers/entities/relay';
 ```
 
 2. **Add state and hook in `SessionSidebar` component body:**
+
 ```typescript
 const relayEnabled = useRelayEnabled();
 const [relayOpen, setRelayOpen] = useState(false);
 ```
 
 3. **Replace the existing Route button HoverCard** (lines 233-245 of current file) with a click-to-open button:
+
 ```tsx
 <button
   onClick={() => setRelayOpen(true)}
@@ -1608,13 +1693,12 @@ const [relayOpen, setRelayOpen] = useState(false);
 ```
 
 4. **Add the RelayPanel dialog** (after the existing Pulse dialog at lines 300-314):
+
 ```tsx
 <ResponsiveDialog open={relayOpen} onOpenChange={setRelayOpen}>
   <ResponsiveDialogContent className="max-w-2xl gap-0 p-0">
     <ResponsiveDialogHeader className="border-b px-4 py-3">
-      <ResponsiveDialogTitle className="text-sm font-medium">
-        Relay
-      </ResponsiveDialogTitle>
+      <ResponsiveDialogTitle className="text-sm font-medium">Relay</ResponsiveDialogTitle>
       <ResponsiveDialogDescription className="sr-only">
         Inter-agent messaging activity and endpoints
       </ResponsiveDialogDescription>
@@ -1627,6 +1711,7 @@ const [relayOpen, setRelayOpen] = useState(false);
 ```
 
 **Key behavior changes:**
+
 - Route icon button now clickable (was just a HoverCard display)
 - Click opens a ResponsiveDialog containing RelayPanel
 - Button styling changes based on `relayEnabled` state (brighter when enabled, dimmed when disabled)
@@ -1636,6 +1721,7 @@ const [relayOpen, setRelayOpen] = useState(false);
 **Component tests: Update `apps/client/src/layers/features/session-list/__tests__/SessionSidebar.test.tsx`** (if it exists) or create a focused test:
 
 Test scenarios:
+
 - Route button is rendered with correct aria-label "Relay messaging"
 - Route button has dimmed styling when relay is disabled
 - Route button has normal styling when relay is enabled
@@ -1643,6 +1729,7 @@ Test scenarios:
 - RelayPanel dialog has correct title "Relay"
 
 **Acceptance Criteria:**
+
 - Route icon button is clickable and opens RelayPanel dialog
 - Button appearance reflects relay enabled/disabled state
 - Dialog uses ResponsiveDialog with same structure as Pulse dialog
@@ -1671,6 +1758,7 @@ Update `CLAUDE.md` with relay-related additions. Each change is additive — no 
 1. **Route groups list** (in the Server section, around the "Nine route groups" description):
    - Change "Nine route groups" to "Ten route groups"
    - Add after `routes/pulse.ts` entry:
+
    ```
    - **`routes/relay.ts`** - Relay message bus CRUD (POST/GET messages, GET/POST/DELETE endpoints, GET inbox, GET dead-letters, GET metrics, GET SSE stream). Factory function `createRelayRouter(relayCore)`.
    ```
@@ -1678,6 +1766,7 @@ Update `CLAUDE.md` with relay-related additions. Each change is additive — no 
 2. **Services list** (in the "Twenty-two services" section):
    - Increment the count to "Twenty-three services (+ 1 lib utility)"
    - Add entry after `scheduler-service.ts`:
+
    ```
    - **`services/relay-state.ts`** - Lightweight relay feature state registry. Holds runtime enabled/disabled state so config route can report it without circular dependency on index.ts. Mirrors `pulse-state.ts` pattern.
    ```
@@ -1692,6 +1781,7 @@ Update `CLAUDE.md` with relay-related additions. Each change is additive — no 
 5. **Environment variables** — Add `DORKOS_RELAY_ENABLED` mention somewhere appropriate, noting it's in `globalPassThroughEnv` in turbo.json.
 
 **Acceptance Criteria:**
+
 - Route groups count updated to ten
 - `routes/relay.ts` documented in route groups list
 - `services/relay-state.ts` documented in services list
@@ -1713,6 +1803,7 @@ Update `CLAUDE.md` with relay-related additions. Each change is additive — no 
 Add relay endpoint registrations to `apps/server/src/services/openapi-registry.ts` under a `Relay` tag.
 
 **Add imports:**
+
 ```typescript
 import {
   SendMessageRequestSchema as RelaySendMessageRequestSchema,
@@ -1737,9 +1828,28 @@ registry.registerPath({
   summary: 'Send a relay message',
   request: { body: { content: { 'application/json': { schema: RelaySendMessageRequestSchema } } } },
   responses: {
-    200: { description: 'Message sent', content: { 'application/json': { schema: z.object({ messageId: z.string(), deliveredTo: z.array(z.string()), warnings: z.array(z.string()).optional() }) } } },
-    400: { description: 'Validation failed', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    422: { description: 'Publish failed', content: { 'application/json': { schema: z.object({ error: z.string(), code: z.string() }) } } },
+    200: {
+      description: 'Message sent',
+      content: {
+        'application/json': {
+          schema: z.object({
+            messageId: z.string(),
+            deliveredTo: z.array(z.string()),
+            warnings: z.array(z.string()).optional(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation failed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    422: {
+      description: 'Publish failed',
+      content: {
+        'application/json': { schema: z.object({ error: z.string(), code: z.string() }) },
+      },
+    },
   },
 });
 
@@ -1750,7 +1860,17 @@ registry.registerPath({
   summary: 'List relay messages',
   request: { query: MessageListQuerySchema },
   responses: {
-    200: { description: 'Message list', content: { 'application/json': { schema: z.object({ messages: z.array(RelayEnvelopeSchema), nextCursor: z.string().nullable() }) } } },
+    200: {
+      description: 'Message list',
+      content: {
+        'application/json': {
+          schema: z.object({
+            messages: z.array(RelayEnvelopeSchema),
+            nextCursor: z.string().nullable(),
+          }),
+        },
+      },
+    },
   },
 });
 
@@ -1761,8 +1881,14 @@ registry.registerPath({
   summary: 'Get a single relay message',
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: { description: 'Message found', content: { 'application/json': { schema: RelayEnvelopeSchema } } },
-    404: { description: 'Not found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    200: {
+      description: 'Message found',
+      content: { 'application/json': { schema: RelayEnvelopeSchema } },
+    },
+    404: {
+      description: 'Not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
@@ -1772,7 +1898,20 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'List registered endpoints',
   responses: {
-    200: { description: 'Endpoint list', content: { 'application/json': { schema: z.array(z.object({ subject: z.string(), description: z.string().optional(), messageCount: z.number().optional() })) } } },
+    200: {
+      description: 'Endpoint list',
+      content: {
+        'application/json': {
+          schema: z.array(
+            z.object({
+              subject: z.string(),
+              description: z.string().optional(),
+              messageCount: z.number().optional(),
+            })
+          ),
+        },
+      },
+    },
   },
 });
 
@@ -1783,8 +1922,22 @@ registry.registerPath({
   summary: 'Register a new endpoint',
   request: { body: { content: { 'application/json': { schema: EndpointRegistrationSchema } } } },
   responses: {
-    201: { description: 'Endpoint registered', content: { 'application/json': { schema: z.object({ subject: z.string(), description: z.string().optional(), messageCount: z.number() }) } } },
-    400: { description: 'Validation failed', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    201: {
+      description: 'Endpoint registered',
+      content: {
+        'application/json': {
+          schema: z.object({
+            subject: z.string(),
+            description: z.string().optional(),
+            messageCount: z.number(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation failed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
@@ -1795,8 +1948,14 @@ registry.registerPath({
   summary: 'Unregister an endpoint',
   request: { params: z.object({ subject: z.string() }) },
   responses: {
-    200: { description: 'Endpoint removed', content: { 'application/json': { schema: z.object({ success: z.literal(true) }) } } },
-    404: { description: 'Not found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    200: {
+      description: 'Endpoint removed',
+      content: { 'application/json': { schema: z.object({ success: z.literal(true) }) } },
+    },
+    404: {
+      description: 'Not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
@@ -1810,8 +1969,21 @@ registry.registerPath({
     query: InboxQuerySchema,
   },
   responses: {
-    200: { description: 'Inbox messages', content: { 'application/json': { schema: z.object({ messages: z.array(RelayEnvelopeSchema), nextCursor: z.string().nullable() }) } } },
-    404: { description: 'Endpoint not found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    200: {
+      description: 'Inbox messages',
+      content: {
+        'application/json': {
+          schema: z.object({
+            messages: z.array(RelayEnvelopeSchema),
+            nextCursor: z.string().nullable(),
+          }),
+        },
+      },
+    },
+    404: {
+      description: 'Endpoint not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
@@ -1821,7 +1993,10 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'List dead letter queue',
   responses: {
-    200: { description: 'Dead letter entries', content: { 'application/json': { schema: z.array(z.unknown()) } } },
+    200: {
+      description: 'Dead letter entries',
+      content: { 'application/json': { schema: z.array(z.unknown()) } },
+    },
   },
 });
 
@@ -1831,7 +2006,18 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'Get relay system metrics',
   responses: {
-    200: { description: 'Relay metrics', content: { 'application/json': { schema: z.object({ totalMessages: z.number(), totalEndpoints: z.number(), deadLetters: z.number() }) } } },
+    200: {
+      description: 'Relay metrics',
+      content: {
+        'application/json': {
+          schema: z.object({
+            totalMessages: z.number(),
+            totalEndpoints: z.number(),
+            deadLetters: z.number(),
+          }),
+        },
+      },
+    },
   },
 });
 
@@ -1840,7 +2026,11 @@ registry.registerPath({
   path: '/api/relay/stream',
   tags: ['Relay'],
   summary: 'SSE event stream for real-time relay messages',
-  request: { query: z.object({ subject: z.string().optional().describe('NATS-style subject pattern filter') }) },
+  request: {
+    query: z.object({
+      subject: z.string().optional().describe('NATS-style subject pattern filter'),
+    }),
+  },
   responses: {
     200: { description: 'SSE event stream' },
   },
@@ -1848,6 +2038,7 @@ registry.registerPath({
 ```
 
 **Acceptance Criteria:**
+
 - All 10 relay endpoints registered in OpenAPI registry
 - All registrations use `tags: ['Relay']`
 - `SendMessageRequestSchema` imported with alias to avoid naming collision
@@ -1876,13 +2067,14 @@ All relay endpoints require `DORKOS_RELAY_ENABLED=true` (or `relay.enabled: true
 
 ### Messages
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/relay/messages` | Send a message to a subject |
-| `GET` | `/api/relay/messages` | List messages with optional filters |
-| `GET` | `/api/relay/messages/:id` | Get a single message by ID |
+| Method | Path                      | Description                         |
+| ------ | ------------------------- | ----------------------------------- |
+| `POST` | `/api/relay/messages`     | Send a message to a subject         |
+| `GET`  | `/api/relay/messages`     | List messages with optional filters |
+| `GET`  | `/api/relay/messages/:id` | Get a single message by ID          |
 
 **POST /api/relay/messages** — Request body validated by `SendMessageRequestSchema`:
+
 - `subject` (string, required) — NATS-style subject
 - `payload` (any, required) — JSON-serializable message payload
 - `from` (string, required) — Sender endpoint subject
@@ -1890,6 +2082,7 @@ All relay endpoints require `DORKOS_RELAY_ENABLED=true` (or `relay.enabled: true
 - `budget` (object, optional) — `{ maxHops?, ttl?, callBudgetRemaining? }`
 
 **GET /api/relay/messages** — Query params validated by `MessageListQuerySchema`:
+
 - `subject` (string) — Filter by subject pattern
 - `status` (enum: new, cur, failed) — Filter by status
 - `from` (string) — Filter by sender
@@ -1898,29 +2091,31 @@ All relay endpoints require `DORKOS_RELAY_ENABLED=true` (or `relay.enabled: true
 
 ### Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/relay/endpoints` | List registered endpoints |
-| `POST` | `/api/relay/endpoints` | Register a new endpoint |
-| `DELETE` | `/api/relay/endpoints/:subject` | Unregister an endpoint |
-| `GET` | `/api/relay/endpoints/:subject/inbox` | Read endpoint inbox |
+| Method   | Path                                  | Description               |
+| -------- | ------------------------------------- | ------------------------- |
+| `GET`    | `/api/relay/endpoints`                | List registered endpoints |
+| `POST`   | `/api/relay/endpoints`                | Register a new endpoint   |
+| `DELETE` | `/api/relay/endpoints/:subject`       | Unregister an endpoint    |
+| `GET`    | `/api/relay/endpoints/:subject/inbox` | Read endpoint inbox       |
 
 ### Other
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/relay/dead-letters` | List dead letter queue |
-| `GET` | `/api/relay/metrics` | System metrics |
-| `GET` | `/api/relay/stream` | SSE event stream (supports `?subject=` filter) |
+| Method | Path                      | Description                                    |
+| ------ | ------------------------- | ---------------------------------------------- |
+| `GET`  | `/api/relay/dead-letters` | List dead letter queue                         |
+| `GET`  | `/api/relay/metrics`      | System metrics                                 |
+| `GET`  | `/api/relay/stream`       | SSE event stream (supports `?subject=` filter) |
 
 ### SSE Stream
 
 `GET /api/relay/stream` establishes a Server-Sent Events connection for real-time relay message monitoring.
 
 Query params:
+
 - `subject` (string, optional) — NATS-style pattern filter (default `>` matches all)
 
 Events:
+
 - `relay_connected` — Sent on initial connection. Data: `{ timestamp }`
 - `relay_message` — Sent for each new message. Data: full `RelayEnvelope` object. Includes SSE event ID from envelope ULID.
 
@@ -1928,6 +2123,7 @@ Keepalive: SSE comment (`: keepalive`) sent every 15 seconds.
 ```
 
 **Acceptance Criteria:**
+
 - Relay section added to `contributing/api-reference.md`
 - All 10 endpoints documented with method, path, description
 - Request schemas referenced by name (SendMessageRequestSchema, etc.)
@@ -1968,19 +2164,23 @@ Phase 5 (Docs):                                                           │
 ## Parallel Execution Opportunities
 
 **Phase 1 parallelism:**
+
 - Tasks 1.1, 1.2, 1.3 can all run in parallel (no dependencies)
 - Task 1.4 depends on 1.1 and 1.3
 - Task 1.5 depends on 1.1, 1.2, and 1.4
 - Task 1.6 depends on 1.4
 
 **Phase 2 parallelism:**
+
 - Tasks 2.1 and 2.2 can run in parallel (both depend on Phase 1 tasks but not each other)
 
 **Phase 3-5:**
+
 - Task 3.1 depends on Phase 1 + 2 completions
 - Tasks 4.1, 4.2 are sequential
 - Tasks 5.1, 5.2, 5.3 can all run in parallel
 
 **Optimal execution with 2 workers:**
+
 1. Worker A: Task 1.1 → Task 1.4 → Task 2.2 → Task 4.1 → Task 5.1
 2. Worker B: Task 1.2 + 1.3 → Task 1.5 → Task 2.1 → Task 1.6 → Task 3.1 → Task 4.2 → Task 5.2 + 5.3

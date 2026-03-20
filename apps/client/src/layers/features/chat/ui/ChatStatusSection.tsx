@@ -205,10 +205,7 @@ export function ChatStatusSection({
           />
         )}
       </StatusLine.Item>
-      <StatusLine.Item
-        itemKey="clients"
-        visible={!!presenceInfo && presenceInfo.clientCount > 1}
-      >
+      <StatusLine.Item itemKey="clients" visible={!!presenceInfo && presenceInfo.clientCount > 1}>
         {presenceInfo && (
           <ClientsItem
             clientCount={presenceInfo.clientCount}

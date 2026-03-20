@@ -62,6 +62,7 @@ status: ideation
 - `apps/client/src/layers/features/session-list/ui/SchedulesView.tsx` — Needs inline preset cards in empty state
 
 **Shared Dependencies:**
+
 - `@dorkos/shared` — `PulsePreset` type, `PulsePresetSchema`, `Transport.getPulsePresets()`
 - `apps/client/src/layers/entities/pulse/` — TanStack Query hooks; `usePulsePresets` should move here
 - `apps/client/src/layers/shared/lib/transport/pulse-methods.ts` — HTTP binding for `getPulsePresets`
@@ -70,9 +71,11 @@ status: ideation
 `~/.dork/pulse/presets.json` → `loadPresets()` → `GET /api/pulse/presets` → `HttpTransport.getPulsePresets()` → `usePulsePresets()` → UI components
 
 **Feature Flags/Config:**
+
 - Pulse must be enabled (`isPulseEnabled()`) for preset routes to be mounted and UI to appear
 
 **Potential Blast Radius:**
+
 - Direct: 5 files (CreateScheduleDialog, PulseEmptyState, SchedulesView, usePulsePresets location, PresetCard location)
 - Indirect: OnboardingFlow (imports PresetCard/usePulsePresets from new location after move)
 - Tests: CreateScheduleDialog tests, SchedulesView tests
@@ -81,7 +84,7 @@ status: ideation
 
 ## 4) Root Cause Analysis
 
-*N/A — this is a feature addition, not a bug fix.*
+_N/A — this is a feature addition, not a bug fix._
 
 ---
 
@@ -98,11 +101,13 @@ Presets exist and work in onboarding but are completely invisible after that. A 
 The GitHub Actions "new workflow" flow is the right model: present templates first, let users pick one or start blank. Power users who know what they want click "Start from scratch" immediately — this costs them nothing. New users get a nudge toward useful defaults.
 
 **Two-step flow:**
+
 - Step 1: Preset gallery grid (name, description, cron summary) + "Start from scratch" button
 - Step 2: Full form, pre-populated from selected preset (all fields editable)
 - Back button on step 2 returns to gallery
 
 This is preferable to an inline gallery section because:
+
 - Avoids layout tension (template section competing with form fields)
 - Templates become a purposeful choice, not decoration
 - Step 2 makes it clear the user is editing, not just accepting
@@ -136,17 +141,20 @@ The main Pulse panel empty state should also show the full preset gallery, consi
 ### Potential Solutions Comparison
 
 **Option A: Promote + retrofit (recommended)**
+
 - Move `usePulsePresets` to entities, move `PresetCard` to pulse feature
 - Add two-step flow to CreateScheduleDialog
 - Pros: Clean architecture, minimal duplication, FSD-compliant
 - Cons: Slightly more moving parts
 
 **Option B: Duplicate**
+
 - Copy PresetCard and usePulsePresets for each new use site
 - Pros: Zero risk of breaking onboarding
 - Cons: Violates DRY, multiple components to maintain
 
 **Option C: Only add to dialog, skip sidebar/empty states**
+
 - Minimal scope — just fix CreateScheduleDialog
 - Pros: Smallest diff
 - Cons: Doesn't solve discovery in the sidebar (where users spend most time)
@@ -157,12 +165,12 @@ The main Pulse panel empty state should also show the full preset gallery, consi
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Terminology: "presets" vs "templates" | **Keep "presets" everywhere** | "presets" is already the consistent term in code, file system, and API. No rename needed — avoids a mechanical 14-file churn with no user-facing benefit. |
-| 2 | CreateScheduleDialog UX | **Two-step: preset picker → form** | Step 1 shows a gallery grid + "Start from scratch"; selecting pre-populates the form in step 2. Matches GitHub Actions workflow picker. Power users skip to scratch; new users get nudged. |
-| 3 | User-defined presets | **Out of scope — built-ins only** | Keep scope tight. "Save as preset" is a meaningful follow-on feature. The 4 built-ins cover the primary use cases for this iteration. |
-| 4 | Sidebar SchedulesView empty state | **Show 2–3 preset cards inline with "+ Use preset" CTA** | Turns the empty sidebar into a quick-start surface. "Use preset" opens CreateScheduleDialog pre-populated at step 2 (skipping the picker). |
+| #   | Decision                              | Choice                                                   | Rationale                                                                                                                                                                                  |
+| --- | ------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Terminology: "presets" vs "templates" | **Keep "presets" everywhere**                            | "presets" is already the consistent term in code, file system, and API. No rename needed — avoids a mechanical 14-file churn with no user-facing benefit.                                  |
+| 2   | CreateScheduleDialog UX               | **Two-step: preset picker → form**                       | Step 1 shows a gallery grid + "Start from scratch"; selecting pre-populates the form in step 2. Matches GitHub Actions workflow picker. Power users skip to scratch; new users get nudged. |
+| 3   | User-defined presets                  | **Out of scope — built-ins only**                        | Keep scope tight. "Save as preset" is a meaningful follow-on feature. The 4 built-ins cover the primary use cases for this iteration.                                                      |
+| 4   | Sidebar SchedulesView empty state     | **Show 2–3 preset cards inline with "+ Use preset" CTA** | Turns the empty sidebar into a quick-start surface. "Use preset" opens CreateScheduleDialog pre-populated at step 2 (skipping the picker).                                                 |
 
 ---
 
@@ -191,6 +199,7 @@ apps/client/src/layers/features/onboarding/ui/
 ### Data Shape (no changes needed)
 
 `PulsePreset` is already sufficient:
+
 ```typescript
 { id, name, description, prompt, cron, timezone?, category? }
 ```

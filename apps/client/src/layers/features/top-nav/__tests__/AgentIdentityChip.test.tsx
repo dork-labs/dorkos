@@ -67,35 +67,31 @@ describe('AgentIdentityChip', () => {
   });
 
   it('renders agent name when agent is configured', () => {
-    render(
-      <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.getByText('backend-bot')).toBeInTheDocument();
   });
 
   it('renders "No agent" when agent is null', () => {
-    render(
-      <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.getByText('No agent')).toBeInTheDocument();
   });
 
   it('opens command palette with @ prefix on click', () => {
-    render(
-      <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     fireEvent.click(screen.getByLabelText('backend-bot \u2014 switch agent'));
     expect(mockOpenGlobalPaletteWithSearch).toHaveBeenCalledWith('@');
   });
 
   it('opens command palette with @ prefix on click when no agent', () => {
-    render(
-      <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     fireEvent.click(screen.getByLabelText('Switch agent'));
     expect(mockOpenGlobalPaletteWithSearch).toHaveBeenCalledWith('@');
   });
@@ -103,7 +99,7 @@ describe('AgentIdentityChip', () => {
   it('renders color dot with agent color', () => {
     const { container } = render(
       <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
     // The color dot is a motion.span with inline backgroundColor style
     // Find the small dot element (size-2 rounded-full)
@@ -115,49 +111,44 @@ describe('AgentIdentityChip', () => {
   it('renders dashed border dot when no agent', () => {
     const { container } = render(
       <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
     const dashedDot = container.querySelector('.border-dashed');
     expect(dashedDot).toBeInTheDocument();
   });
 
   it('has correct aria-label when agent is configured', () => {
-    render(
-      <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.getByLabelText('backend-bot \u2014 switch agent')).toBeInTheDocument();
   });
 
   it('has correct aria-label when no agent', () => {
-    render(
-      <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.getByLabelText('Switch agent')).toBeInTheDocument();
   });
 
   it('renders agent emoji when agent is configured', () => {
-    render(
-      <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.getByText('🤖')).toBeInTheDocument();
   });
 
   it('does not render emoji when agent is null', () => {
-    render(
-      <AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={null} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     expect(screen.queryByText('🤖')).not.toBeInTheDocument();
   });
 
   it('renders chevron icon', () => {
-    render(
-      <AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />,
-      { wrapper: Wrapper },
-    );
+    render(<AgentIdentityChip agent={mockAgent} visual={mockVisual} isStreaming={false} />, {
+      wrapper: Wrapper,
+    });
     // ChevronDown is aria-hidden, verify the button contains more than just text
     const button = screen.getByLabelText('backend-bot \u2014 switch agent');
     expect(button).toBeInTheDocument();

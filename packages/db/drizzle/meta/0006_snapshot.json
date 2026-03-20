@@ -92,12 +92,8 @@
           "name": "pulse_runs_schedule_id_pulse_schedules_id_fk",
           "tableFrom": "pulse_runs",
           "tableTo": "pulse_schedules",
-          "columnsFrom": [
-            "schedule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["schedule_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -369,9 +365,7 @@
       "indexes": {
         "relay_traces_message_id_unique": {
           "name": "relay_traces_message_id_unique",
-          "columns": [
-            "message_id"
-          ],
+          "columns": ["message_id"],
           "isUnique": true
         }
       },
@@ -422,9 +416,7 @@
       "indexes": {
         "agent_denials_path_unique": {
           "name": "agent_denials_path_unique",
-          "columns": [
-            "path"
-          ],
+          "columns": ["path"],
           "isUnique": true
         }
       },
@@ -601,9 +593,7 @@
       "indexes": {
         "agents_project_path_unique": {
           "name": "agents_project_path_unique",
-          "columns": [
-            "project_path"
-          ],
+          "columns": ["project_path"],
           "isUnique": true
         }
       },
@@ -641,10 +631,7 @@
       "indexes": {
         "idx_rate_limit_agent_minute": {
           "name": "idx_rate_limit_agent_minute",
-          "columns": [
-            "agent_id",
-            "bucket_minute"
-          ],
+          "columns": ["agent_id", "bucket_minute"],
           "isUnique": true
         }
       },

@@ -24,7 +24,8 @@ export const messageItem = tv({
       },
       assistant: {
         root: 'w-full px-[var(--msg-padding-x)] py-[var(--msg-padding-y)] rounded-msg hover:bg-muted',
-        content: 'max-w-[var(--msg-content-max-width)] flex-1 font-[var(--msg-assistant-font-weight)]',
+        content:
+          'max-w-[var(--msg-content-max-width)] flex-1 font-[var(--msg-assistant-font-weight)]',
       },
     },
     position: {
@@ -43,10 +44,26 @@ export const messageItem = tv({
   },
   compoundVariants: [
     // --- Assistant vertical padding (preserves existing token behavior) ---
-    { role: 'assistant', position: 'first', class: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-mid)]' } },
-    { role: 'assistant', position: 'middle', class: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-mid)]' } },
-    { role: 'assistant', position: 'last', class: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-end)]' } },
-    { role: 'assistant', position: 'only', class: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-end)]' } },
+    {
+      role: 'assistant',
+      position: 'first',
+      class: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-mid)]' },
+    },
+    {
+      role: 'assistant',
+      position: 'middle',
+      class: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-mid)]' },
+    },
+    {
+      role: 'assistant',
+      position: 'last',
+      class: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-end)]' },
+    },
+    {
+      role: 'assistant',
+      position: 'only',
+      class: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-end)]' },
+    },
     // --- User vertical spacing (margin-based for bubble gaps) ---
     { role: 'user', position: 'first', class: { root: 'mt-3 mb-px' } },
     { role: 'user', position: 'middle', class: { root: 'my-px' } },
@@ -78,4 +95,3 @@ export const toolStatus = tv({
     },
   },
 });
-

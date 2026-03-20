@@ -47,13 +47,13 @@ Additionally, users need the ability to disable streaming (for workspaces where 
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `slackify-markdown` | ^5.0.0 | Markdown-to-mrkdwn conversion (source of Bug 1) |
-| `@slack/bolt` | ^4.x | Socket Mode, WebClient for Slack API |
-| `@slack/web-api` | (via bolt) | `chat.postMessage`, `chat.update`, `reactions.add/remove` |
-| `grammy` | ^1.x | Telegram Bot API (`sendChatAction`) |
-| `zod` | ^3.x | Schema validation for adapter configs |
+| Dependency          | Version    | Purpose                                                   |
+| ------------------- | ---------- | --------------------------------------------------------- |
+| `slackify-markdown` | ^5.0.0     | Markdown-to-mrkdwn conversion (source of Bug 1)           |
+| `@slack/bolt`       | ^4.x       | Socket Mode, WebClient for Slack API                      |
+| `@slack/web-api`    | (via bolt) | `chat.postMessage`, `chat.update`, `reactions.add/remove` |
+| `grammy`            | ^1.x       | Telegram Bot API (`sendChatAction`)                       |
+| `zod`               | ^3.x       | Schema validation for adapter configs                     |
 
 ## Detailed Design
 
@@ -84,9 +84,10 @@ The `handleDone` finalizer continues to use `formatForPlatform()` without collap
 ```typescript
 // In handleInbound, before the relay.publish call (line ~131):
 // Enrich payload with binding's project path for CWD resolution
-const enrichedPayload = typeof envelope.payload === 'object' && envelope.payload !== null
-  ? { ...envelope.payload as Record<string, unknown>, cwd: binding.projectPath }
-  : { content: envelope.payload, cwd: binding.projectPath };
+const enrichedPayload =
+  typeof envelope.payload === 'object' && envelope.payload !== null
+    ? { ...(envelope.payload as Record<string, unknown>), cwd: binding.projectPath }
+    : { content: envelope.payload, cwd: binding.projectPath };
 
 await this.deps.relayCore.publish(`relay.agent.${sessionId}`, enrichedPayload, {
   from: envelope.from,
@@ -95,7 +96,7 @@ await this.deps.relayCore.publish(`relay.agent.${sessionId}`, enrichedPayload, {
 });
 ```
 
-**Relationship to spec 108 (fix-relay-cwd-passthrough):** That spec fixes the *downstream* extraction of `payloadCwd` in `agent-handler.ts`. This fix addresses the *upstream* injection of `cwd` by `BindingRouter`. They are complementary -- spec 108 ensures the handler reads `cwd` from the payload; this fix ensures the router puts it there.
+**Relationship to spec 108 (fix-relay-cwd-passthrough):** That spec fixes the _downstream_ extraction of `payloadCwd` in `agent-handler.ts`. This fix addresses the _upstream_ injection of `cwd` by `BindingRouter`. They are complementary -- spec 108 ensures the handler reads `cwd` from the payload; this fix ensures the router puts it there.
 
 ### Bug 3: Fix Stream Key Collision
 
@@ -139,7 +140,7 @@ Use `effectiveThreadTs` in all subsequent calls to `handleTextDelta`, `handleDon
 
 ```typescript
 export interface ActiveStream {
-  streamId: string;  // Unique per stream, for race detection
+  streamId: string; // Unique per stream, for race detection
   channelId: string;
   threadTs: string;
   messageTs: string;
@@ -233,7 +234,7 @@ if (!opts.streaming) {
       streamId: crypto.randomUUID(),
       channelId,
       threadTs: effectiveThreadTs ?? '',
-      messageTs: '',  // No message posted yet
+      messageTs: '', // No message posted yet
       accumulatedText: textChunk,
       lastUpdateAt: 0,
       startedAt: Date.now(),
@@ -314,11 +315,13 @@ In `handleTextDelta`, when starting a new stream (the `!existing` branch) and `t
 
 ```typescript
 if (opts.typingIndicator === 'reaction' && threadTs) {
-  void client.reactions.add({
-    channel: channelId,
-    name: 'hourglass_flowing_sand',
-    timestamp: threadTs,
-  }).catch(() => {});  // fire-and-forget
+  void client.reactions
+    .add({
+      channel: channelId,
+      name: 'hourglass_flowing_sand',
+      timestamp: threadTs,
+    })
+    .catch(() => {}); // fire-and-forget
 }
 ```
 
@@ -326,11 +329,13 @@ In `handleDone`, remove the reaction:
 
 ```typescript
 if (opts.typingIndicator === 'reaction' && existing.threadTs) {
-  void client.reactions.remove({
-    channel: channelId,
-    name: 'hourglass_flowing_sand',
-    timestamp: existing.threadTs,
-  }).catch(() => {});  // fire-and-forget
+  void client.reactions
+    .remove({
+      channel: channelId,
+      name: 'hourglass_flowing_sand',
+      timestamp: existing.threadTs,
+    })
+    .catch(() => {}); // fire-and-forget
 }
 ```
 
@@ -372,7 +377,7 @@ const TYPING_REFRESH_MS = 4_000;
 export async function handleTypingSignal(
   bot: Bot | null,
   subject: string,
-  state: string,
+  state: string
 ): Promise<void> {
   if (!bot) return;
   const chatId = extractChatId(subject);
@@ -382,10 +387,16 @@ export async function handleTypingSignal(
     // Clear any existing interval (idempotent)
     clearTypingInterval(chatId);
     // Send immediately
-    try { await bot.api.sendChatAction(chatId, 'typing'); } catch { /* best-effort */ }
+    try {
+      await bot.api.sendChatAction(chatId, 'typing');
+    } catch {
+      /* best-effort */
+    }
     // Refresh every 4 seconds
     const intervalId = setInterval(async () => {
-      try { await bot.api.sendChatAction(chatId, 'typing'); } catch {
+      try {
+        await bot.api.sendChatAction(chatId, 'typing');
+      } catch {
         clearTypingInterval(chatId);
       }
     }, TYPING_REFRESH_MS);
@@ -425,14 +436,14 @@ protected async _stop(): Promise<void> {
 
 ## User Experience
 
-| Scenario | Before | After |
-|---|---|---|
-| Streaming in Slack | Text appears on new lines, garbled | Smooth continuous text flow |
-| Agent CWD | Agent works in server directory | Agent works in binding's project directory |
-| Concurrent responses | Second response edits first message | Each response gets its own message |
-| Streaming toggle | Always streams | Configurable: stream (default) or single message |
-| Slack typing | No feedback until first text | :hourglass_flowing_sand: reaction on user's message |
-| Telegram typing | Indicator disappears after 5s | Indicator persists until agent finishes |
+| Scenario             | Before                              | After                                               |
+| -------------------- | ----------------------------------- | --------------------------------------------------- |
+| Streaming in Slack   | Text appears on new lines, garbled  | Smooth continuous text flow                         |
+| Agent CWD            | Agent works in server directory     | Agent works in binding's project directory          |
+| Concurrent responses | Second response edits first message | Each response gets its own message                  |
+| Streaming toggle     | Always streams                      | Configurable: stream (default) or single message    |
+| Slack typing         | No feedback until first text        | :hourglass_flowing_sand: reaction on user's message |
+| Telegram typing      | Indicator disappears after 5s       | Indicator persists until agent finishes             |
 
 ## Testing Strategy
 

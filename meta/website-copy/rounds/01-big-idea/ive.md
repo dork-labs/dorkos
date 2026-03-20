@@ -10,7 +10,7 @@ Not a marketing site. Not a landing page. A moment of activation — the quiet h
 
 ## Why It Works
 
-There is a particular feeling — and I think every developer knows it — when you boot something real for the first time. Not a demo. Not a preview. The actual thing. There is no fanfare. There is a cursor. There is a ready state. There is the unspoken promise: *I will do what you ask.*
+There is a particular feeling — and I think every developer knows it — when you boot something real for the first time. Not a demo. Not a preview. The actual thing. There is no fanfare. There is a cursor. There is a ready state. There is the unspoken promise: _I will do what you ask._
 
 DorkOS is not asking to be adopted. It is asking to be turned on. The distinction matters enormously. Most developer tools market themselves as possibilities — "imagine if you could..." DorkOS should present itself as a fact. It exists. It is ready. The only question is whether you will start it.
 
@@ -26,7 +26,7 @@ The page opens dark. Not decoratively dark — dark the way a screen is dark bef
 
 **2. The Subsystem Scroll**
 
-As you move down the page, each capability section — Pulse, Relay, Mesh, Wing — does not slide in from the margins like a sales deck. Each one *activates*. Think of it as a status panel where each row transitions from dormant to live. There should be a moment, barely perceptible, where each section feels like it has just been switched on. The color shifts. A status indicator appears. The typography moves from muted to full contrast. The user is not reading a feature list. They are watching an operating system reveal its architecture, one subsystem at a time.
+As you move down the page, each capability section — Pulse, Relay, Mesh, Wing — does not slide in from the margins like a sales deck. Each one _activates_. Think of it as a status panel where each row transitions from dormant to live. There should be a moment, barely perceptible, where each section feels like it has just been switched on. The color shifts. A status indicator appears. The typography moves from muted to full contrast. The user is not reading a feature list. They are watching an operating system reveal its architecture, one subsystem at a time.
 
 **3. The Texture of Information**
 
@@ -34,7 +34,7 @@ The type treatment should feel machined. Not playful. Not warm. Precise. Monospa
 
 **4. The Install Moment**
 
-The install command — `npm install -g dorkos` — should not be buried in a button. It should be presented the way a terminal presents a prompt: with absolute clarity and zero decoration. It is the most important element on the page, and it should feel like it. A single monospaced line, high contrast, with enough negative space around it to give it the gravity of an action, not a suggestion. When you see it, you should feel what you feel when a cursor blinks: *this is where you begin.*
+The install command — `npm install -g dorkos` — should not be buried in a button. It should be presented the way a terminal presents a prompt: with absolute clarity and zero decoration. It is the most important element on the page, and it should feel like it. A single monospaced line, high contrast, with enough negative space around it to give it the gravity of an action, not a suggestion. When you see it, you should feel what you feel when a cursor blinks: _this is where you begin._
 
 **5. The Origin as Substrate**
 
@@ -62,7 +62,7 @@ By the end of the page, the final line before the install command:
 
 **"Built by dorks. For dorks. Run by you."** — I understand the affection in this, and the name carries that spirit already. But as a headline, it asks the user to self-identify before they understand what they are identifying with. It is premature intimacy. The community will adopt this language on their own — it should not be handed to them on the landing page. Save it for the README, the Discord, the places where belonging is already established.
 
-**"We solved this for applications fifty years ago. We called it an operating system."** — This is the strongest of the three because it contains a genuine insight. But it is argumentative. It is making a case. The concept I am proposing does not make cases. It demonstrates. If the website *feels* like an operating system booting, you do not need to tell anyone that this is an operating system. They will already know.
+**"We solved this for applications fifty years ago. We called it an operating system."** — This is the strongest of the three because it contains a genuine insight. But it is argumentative. It is making a case. The concept I am proposing does not make cases. It demonstrates. If the website _feels_ like an operating system booting, you do not need to tell anyone that this is an operating system. They will already know.
 
 ---
 

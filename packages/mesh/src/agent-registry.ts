@@ -94,27 +94,10 @@ export class AgentRegistry {
       this.remove(existingAtPath.id);
     }
 
-    this.db.insert(agents).values({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description ?? '',
-      projectPath: agent.projectPath,
-      runtime: agent.runtime,
-      capabilities: JSON.stringify(agent.capabilities),
-      namespace: agent.namespace ?? 'default',
-      scanRoot: agent.scanRoot ?? '',
-      behaviorJson: JSON.stringify(agent.behavior),
-      budgetJson: JSON.stringify(agent.budget),
-      approver: agent.registeredBy,
-      persona: agent.persona ?? null,
-      personaEnabled: agent.personaEnabled ?? true,
-      color: agent.color ?? null,
-      icon: agent.icon ?? null,
-      registeredAt: agent.registeredAt,
-      updatedAt: now,
-    }).onConflictDoUpdate({
-      target: agents.id,
-      set: {
+    this.db
+      .insert(agents)
+      .values({
+        id: agent.id,
         name: agent.name,
         description: agent.description ?? '',
         projectPath: agent.projectPath,
@@ -124,14 +107,35 @@ export class AgentRegistry {
         scanRoot: agent.scanRoot ?? '',
         behaviorJson: JSON.stringify(agent.behavior),
         budgetJson: JSON.stringify(agent.budget),
+        approver: agent.registeredBy,
         persona: agent.persona ?? null,
         personaEnabled: agent.personaEnabled ?? true,
         color: agent.color ?? null,
         icon: agent.icon ?? null,
+        registeredAt: agent.registeredAt,
         updatedAt: now,
-        status: 'active', // Re-registration clears unreachable
-      },
-    }).run();
+      })
+      .onConflictDoUpdate({
+        target: agents.id,
+        set: {
+          name: agent.name,
+          description: agent.description ?? '',
+          projectPath: agent.projectPath,
+          runtime: agent.runtime,
+          capabilities: JSON.stringify(agent.capabilities),
+          namespace: agent.namespace ?? 'default',
+          scanRoot: agent.scanRoot ?? '',
+          behaviorJson: JSON.stringify(agent.behavior),
+          budgetJson: JSON.stringify(agent.budget),
+          persona: agent.persona ?? null,
+          personaEnabled: agent.personaEnabled ?? true,
+          color: agent.color ?? null,
+          icon: agent.icon ?? null,
+          updatedAt: now,
+          status: 'active', // Re-registration clears unreachable
+        },
+      })
+      .run();
   }
 
   /**
@@ -200,21 +204,25 @@ export class AgentRegistry {
 
     const merged = { ...existing, ...partial, id };
     const now = new Date().toISOString();
-    const result = this.db.update(agents).set({
-      name: merged.name,
-      description: merged.description,
-      runtime: merged.runtime,
-      capabilities: JSON.stringify(merged.capabilities),
-      namespace: merged.namespace,
-      scanRoot: merged.scanRoot,
-      behaviorJson: JSON.stringify(merged.behavior),
-      budgetJson: JSON.stringify(merged.budget),
-      persona: merged.persona ?? null,
-      personaEnabled: merged.personaEnabled ?? true,
-      color: merged.color ?? null,
-      icon: merged.icon ?? null,
-      updatedAt: now,
-    }).where(eq(agents.id, id)).run();
+    const result = this.db
+      .update(agents)
+      .set({
+        name: merged.name,
+        description: merged.description,
+        runtime: merged.runtime,
+        capabilities: JSON.stringify(merged.capabilities),
+        namespace: merged.namespace,
+        scanRoot: merged.scanRoot,
+        behaviorJson: JSON.stringify(merged.behavior),
+        budgetJson: JSON.stringify(merged.budget),
+        persona: merged.persona ?? null,
+        personaEnabled: merged.personaEnabled ?? true,
+        color: merged.color ?? null,
+        icon: merged.icon ?? null,
+        updatedAt: now,
+      })
+      .where(eq(agents.id, id))
+      .run();
     return result.changes > 0;
   }
 
@@ -238,10 +246,14 @@ export class AgentRegistry {
    * @returns true if agent was found and updated
    */
   updateHealth(id: string, lastSeenAt: string, lastSeenEvent: string): boolean {
-    const result = this.db.update(agents).set({
-      lastSeenAt,
-      lastSeenEvent,
-    }).where(eq(agents.id, id)).run();
+    const result = this.db
+      .update(agents)
+      .set({
+        lastSeenAt,
+        lastSeenEvent,
+      })
+      .where(eq(agents.id, id))
+      .run();
     return result.changes > 0;
   }
 
@@ -328,7 +340,9 @@ export class AgentRegistry {
    * @returns Array of agent entries in the given namespace
    */
   listByNamespace(namespace: string): AgentRegistryEntry[] {
-    const rows = this.db.select().from(agents)
+    const rows = this.db
+      .select()
+      .from(agents)
       .where(eq(agents.namespace, namespace))
       .orderBy(desc(agents.registeredAt))
       .all();
@@ -343,10 +357,14 @@ export class AgentRegistry {
    */
   markUnreachable(id: string): boolean {
     const now = new Date().toISOString();
-    const result = this.db.update(agents).set({
-      status: 'unreachable',
-      updatedAt: now,
-    }).where(eq(agents.id, id)).run();
+    const result = this.db
+      .update(agents)
+      .set({
+        status: 'unreachable',
+        updatedAt: now,
+      })
+      .where(eq(agents.id, id))
+      .run();
     return result.changes > 0;
   }
 
@@ -356,9 +374,7 @@ export class AgentRegistry {
    * @returns Array of unreachable agent entries
    */
   listUnreachable(): AgentRegistryEntry[] {
-    const rows = this.db.select().from(agents)
-      .where(eq(agents.status, 'unreachable'))
-      .all();
+    const rows = this.db.select().from(agents).where(eq(agents.status, 'unreachable')).all();
     return rows.map((row) => this.rowToEntry(row));
   }
 
@@ -369,11 +385,10 @@ export class AgentRegistry {
    * @returns Array of unreachable agent entries past the cutoff
    */
   listUnreachableBefore(cutoffIso: string): AgentRegistryEntry[] {
-    const rows = this.db.select().from(agents)
-      .where(and(
-        eq(agents.status, 'unreachable'),
-        lt(agents.updatedAt, cutoffIso),
-      ))
+    const rows = this.db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.status, 'unreachable'), lt(agents.updatedAt, cutoffIso)))
       .all();
     return rows.map((row) => this.rowToEntry(row));
   }

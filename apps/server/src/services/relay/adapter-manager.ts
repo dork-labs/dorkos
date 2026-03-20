@@ -12,23 +12,14 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { FSWatcher } from 'chokidar';
-import type {
-  AdapterRegistry,
-  RelayAdapter,
-  AdapterConfig,
-  AdapterContext,
-} from '@dorkos/relay';
+import type { AdapterRegistry, RelayAdapter, AdapterConfig, AdapterContext } from '@dorkos/relay';
 import {
   TELEGRAM_MANIFEST,
   WEBHOOK_MANIFEST,
   SLACK_MANIFEST,
   CLAUDE_CODE_MANIFEST,
 } from '@dorkos/relay';
-import type {
-  ClaudeCodeAgentRuntimeLike,
-  TraceStoreLike,
-  PulseStoreLike,
-} from '@dorkos/relay';
+import type { ClaudeCodeAgentRuntimeLike, TraceStoreLike, PulseStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
@@ -81,11 +72,7 @@ export class AdapterManager {
   private manifests = new Map<string, AdapterManifest>();
   private bindingSubsystem?: BindingSubsystem;
 
-  constructor(
-    registry: AdapterRegistry,
-    configPath: string,
-    deps: AdapterManagerDeps,
-  ) {
+  constructor(registry: AdapterRegistry, configPath: string, deps: AdapterManagerDeps) {
     this.registry = registry;
     this.configPath = configPath;
     this.deps = deps;
@@ -109,7 +96,9 @@ export class AdapterManager {
   /** Initialize the binding subsystem. Non-fatal on failure — logs and continues. */
   private async initBindingSubsystem(): Promise<void> {
     if (!this.deps.relayCore || !this.deps.meshCore) {
-      logger.info('[AdapterManager] relayCore or meshCore not provided, skipping binding subsystem');
+      logger.info(
+        '[AdapterManager] relayCore or meshCore not provided, skipping binding subsystem'
+      );
       return;
     }
 
@@ -139,7 +128,7 @@ export class AdapterManager {
           this.deps.eventRecorder?.insertAdapterEvent(
             id,
             'adapter.disconnected',
-            'Disconnected from relay',
+            'Disconnected from relay'
           );
         } catch (err) {
           logger.warn(`[AdapterManager] Failed to unregister adapter '${id}':`, err);
@@ -180,7 +169,11 @@ export class AdapterManager {
     config.enabled = false;
     await saveAdapterConfig(this.configPath, this.configs);
     await this.registry.unregister(id);
-    this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.disconnected', 'Disconnected from relay');
+    this.deps.eventRecorder?.insertAdapterEvent(
+      id,
+      'adapter.disconnected',
+      'Disconnected from relay'
+    );
   }
 
   /**
@@ -198,7 +191,10 @@ export class AdapterManager {
   }
 
   /** Build a masked config + status snapshot for an adapter. */
-  private buildAdapterView(config: AdapterConfig): { config: AdapterConfig; status: AdapterStatus } {
+  private buildAdapterView(config: AdapterConfig): {
+    config: AdapterConfig;
+    status: AdapterStatus;
+  } {
     const adapter = this.registry.get(config.id);
     const manifest = this.manifests.get(config.type);
     const status = {
@@ -209,10 +205,7 @@ export class AdapterManager {
     };
     const maskedConfig = {
       ...config,
-      config: maskSensitiveFields(
-        config.config as Record<string, unknown>,
-        manifest,
-      ),
+      config: maskSensitiveFields(config.config as Record<string, unknown>, manifest),
     };
     return { config: maskedConfig, status };
   }
@@ -259,7 +252,7 @@ export class AdapterManager {
   /** Test connectivity for an adapter type and config without registering it. */
   async testConnection(
     type: string,
-    config: Record<string, unknown>,
+    config: Record<string, unknown>
   ): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
     const manifest = this.manifests.get(type);
     if (!manifest) {
@@ -288,7 +281,7 @@ export class AdapterManager {
     id: string,
     config: Record<string, unknown>,
     enabled = true,
-    label?: string,
+    label?: string
   ): Promise<void> {
     if (this.configs.some((c) => c.id === id)) {
       throw new AdapterError(`Adapter with ID '${id}' already exists`, 'DUPLICATE_ID');
@@ -304,7 +297,7 @@ export class AdapterManager {
       if (existing) {
         throw new AdapterError(
           `Adapter type '${type}' does not support multiple instances. Existing: '${existing.id}'`,
-          'MULTI_INSTANCE_DENIED',
+          'MULTI_INSTANCE_DENIED'
         );
       }
     }
@@ -360,7 +353,7 @@ export class AdapterManager {
     if (config.type === 'claude-code' && config.builtin) {
       throw new AdapterError(
         'Cannot remove the built-in claude-code adapter',
-        'REMOVE_BUILTIN_DENIED',
+        'REMOVE_BUILTIN_DENIED'
       );
     }
 
@@ -376,7 +369,9 @@ export class AdapterManager {
     // Auto-delete bindings that belonged to the removed adapter
     const bindingStore = this.bindingSubsystem?.getBindingStore();
     if (bindingStore) {
-      const orphanBindings = bindingStore.getAll().filter((b: { adapterId: string; id: string }) => b.adapterId === id);
+      const orphanBindings = bindingStore
+        .getAll()
+        .filter((b: { adapterId: string; id: string }) => b.adapterId === id);
       for (const binding of orphanBindings) {
         await bindingStore.delete(binding.id);
       }
@@ -384,7 +379,7 @@ export class AdapterManager {
         logger.info(
           '[AdapterManager] Cleaned %d orphan binding(s) for removed adapter %s',
           orphanBindings.length,
-          id,
+          id
         );
       }
     }
@@ -401,7 +396,7 @@ export class AdapterManager {
     const mergedConfig = mergeWithPasswordPreservation(
       existing.config as Record<string, unknown>,
       newConfig,
-      manifest,
+      manifest
     );
 
     existing.config = mergedConfig;
@@ -450,7 +445,7 @@ export class AdapterManager {
           this.deps.eventRecorder?.insertAdapterEvent(
             config.id,
             'adapter.connected',
-            'Connected to relay',
+            'Connected to relay'
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -467,7 +462,7 @@ export class AdapterManager {
       config,
       { ...this.deps, agentSessionStore: this.bindingSubsystem?.getAgentSessionStore() },
       this.configPath,
-      (type, manifest) => this.registerPluginManifest(type, manifest),
+      (type, manifest) => this.registerPluginManifest(type, manifest)
     );
   }
 
@@ -525,10 +520,7 @@ export class AdapterManager {
       if (manifest.setupGuide) continue; // Already has inline guide (plugin adapters)
       try {
         const docsPath = this.resolveAdapterDocsPath(type);
-        const setupGuide = await readFile(
-          join(docsPath, 'setup.md'),
-          'utf-8',
-        );
+        const setupGuide = await readFile(join(docsPath, 'setup.md'), 'utf-8');
         this.manifests.set(type, { ...manifest, setupGuide });
       } catch {
         // No docs/setup.md — that's fine, setupGuide stays undefined

@@ -45,6 +45,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/server/src/index.ts` — Server startup/shutdown orchestration (317 lines)
 - `apps/server/src/lib/dork-home.ts` — DORK_HOME resolution (21 lines)
 - `apps/server/src/services/core/config-manager.ts` — Config I/O with error recovery (152 lines)
@@ -53,6 +54,7 @@ status: ideation
 - `packages/shared/src/transport.ts` — Transport interface for client-server communication
 
 **Shared dependencies:**
+
 - `@dorkos/db` — Drizzle ORM, `createDb()`, `runMigrations()`
 - `@dorkos/relay` — RelayCore, AdapterRegistry, SignalEmitter
 - `@dorkos/mesh` — MeshCore
@@ -65,22 +67,23 @@ Client button click → Transport.resetAllData() → POST /api/admin/reset → S
 
 **What lives in `.dork` (DORK_HOME):**
 
-| Path | Owner Service | Re-creation |
-|------|--------------|-------------|
-| `config.json` | ConfigManager | Auto-created with defaults on construction |
-| `dork.db` (+shm, +wal) | Drizzle/better-sqlite3 | Auto-created + migrated on `createDb()` + `runMigrations()` |
-| `logs/` | Logger | Auto-created by `initLogger()` |
-| `relay/adapters.json` | AdapterManager | Auto-created by `ensureDefaultAdapterConfig()` |
-| `relay/bindings.json` | BindingStore | Auto-created on first save |
-| `relay/sessions.json` | BindingRouter | Auto-created on first save |
-| `relay/access-rules.json` | RelayCore | Auto-created on init |
-| `relay/subscriptions.json` | RelayCore | Auto-created on init |
-| `relay/mailboxes/` | RelayCore | Auto-created per subject |
-| `pulse/presets.json` | PulsePresets | Auto-created with factory defaults |
+| Path                       | Owner Service          | Re-creation                                                 |
+| -------------------------- | ---------------------- | ----------------------------------------------------------- |
+| `config.json`              | ConfigManager          | Auto-created with defaults on construction                  |
+| `dork.db` (+shm, +wal)     | Drizzle/better-sqlite3 | Auto-created + migrated on `createDb()` + `runMigrations()` |
+| `logs/`                    | Logger                 | Auto-created by `initLogger()`                              |
+| `relay/adapters.json`      | AdapterManager         | Auto-created by `ensureDefaultAdapterConfig()`              |
+| `relay/bindings.json`      | BindingStore           | Auto-created on first save                                  |
+| `relay/sessions.json`      | BindingRouter          | Auto-created on first save                                  |
+| `relay/access-rules.json`  | RelayCore              | Auto-created on init                                        |
+| `relay/subscriptions.json` | RelayCore              | Auto-created on init                                        |
+| `relay/mailboxes/`         | RelayCore              | Auto-created per subject                                    |
+| `pulse/presets.json`       | PulsePresets           | Auto-created with factory defaults                          |
 
 **Feature flags/config:** Pulse, Relay, and Mesh are feature-flag gated. After reset, all start disabled (defaults) unless env vars re-enable them.
 
 **Potential blast radius:**
+
 - Direct: ~8-10 files to create/modify (new route, transport methods, UI components)
 - Indirect: All services recover from missing data on startup — no code changes needed
 - Tests: New test files for route, UI components, and transport methods
@@ -115,6 +118,7 @@ Full research report: `research/20260301_settings_reset_restart.md`
 - **Client reconnection**: Show "Restarting..." overlay, poll `/api/health` every 1.5s, `window.location.reload()` on success, timeout after 30s.
 
 **Security considerations:**
+
 - Localhost-only CORS is sufficient — no additional auth needed
 - Rate limit both endpoints: 3 requests per 5 minutes via `express-rate-limit`
 - Reset body requires `{ confirm: 'reset' }` — server validates before acting
@@ -122,12 +126,12 @@ Full research report: `research/20260301_settings_reset_restart.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Where should danger zone buttons live? | Separate "Advanced" tab in Settings | User preference. Keeps dangerous actions isolated from normal server info. Also allows clearing localStorage (client-side state) which doesn't belong in the Server tab. |
-| 2 | Should reset clear Claude SDK transcripts? | No, only `.dork` directory | SDK transcripts aren't "ours" to delete. Less destructive. User can manually delete `~/.claude/` if desired. |
-| 3 | Should reset also clear browser localStorage? | Yes | User explicitly requested this. localStorage holds Zustand-persisted UI state (theme, font, preferences). Clearing it completes the "factory reset" experience. |
-| 4 | How should restart work in CLI mode? | Spawn-and-exit pattern | Automatic restart without user intervention. Spawns new process inheriting all env vars, then exits. Dev mode uses `process.exit(0)` only (nodemon handles restart). |
-| 5 | Reset confirmation pattern | Type-to-confirm ("reset") | Industry standard for irreversible data deletion. Forces deliberate action vs. clicking through generic "Are you sure?" dialogs. |
-| 6 | Reset implies restart? | Yes | After deleting `.dork`, all in-memory service state (DB connections, config cache, watchers) is stale. Server must restart to re-initialize cleanly. |
-| 7 | API route namespace | `POST /api/admin/reset` and `POST /api/admin/restart` | Groups dangerous admin operations under clear namespace. Factory pattern `createAdminRouter(deps)` matches existing codebase conventions. |
+| #   | Decision                                      | Choice                                                | Rationale                                                                                                                                                                |
+| --- | --------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Where should danger zone buttons live?        | Separate "Advanced" tab in Settings                   | User preference. Keeps dangerous actions isolated from normal server info. Also allows clearing localStorage (client-side state) which doesn't belong in the Server tab. |
+| 2   | Should reset clear Claude SDK transcripts?    | No, only `.dork` directory                            | SDK transcripts aren't "ours" to delete. Less destructive. User can manually delete `~/.claude/` if desired.                                                             |
+| 3   | Should reset also clear browser localStorage? | Yes                                                   | User explicitly requested this. localStorage holds Zustand-persisted UI state (theme, font, preferences). Clearing it completes the "factory reset" experience.          |
+| 4   | How should restart work in CLI mode?          | Spawn-and-exit pattern                                | Automatic restart without user intervention. Spawns new process inheriting all env vars, then exits. Dev mode uses `process.exit(0)` only (nodemon handles restart).     |
+| 5   | Reset confirmation pattern                    | Type-to-confirm ("reset")                             | Industry standard for irreversible data deletion. Forces deliberate action vs. clicking through generic "Are you sure?" dialogs.                                         |
+| 6   | Reset implies restart?                        | Yes                                                   | After deleting `.dork`, all in-memory service state (DB connections, config cache, watchers) is stale. Server must restart to re-initialize cleanly.                     |
+| 7   | API route namespace                           | `POST /api/admin/reset` and `POST /api/admin/restart` | Groups dangerous admin operations under clear namespace. Factory pattern `createAdminRouter(deps)` matches existing codebase conventions.                                |

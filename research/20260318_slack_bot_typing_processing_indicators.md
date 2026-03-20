@@ -1,9 +1,19 @@
 ---
-title: "Slack Bot Typing & Processing Indicators — Comprehensive API Reference"
+title: 'Slack Bot Typing & Processing Indicators — Comprehensive API Reference'
 date: 2026-03-18
 type: external-best-practices
 status: active
-tags: [slack, bot, typing-indicator, reactions, processing-indicator, assistant-threads, rate-limits, bolt]
+tags:
+  [
+    slack,
+    bot,
+    typing-indicator,
+    reactions,
+    processing-indicator,
+    assistant-threads,
+    rate-limits,
+    bolt,
+  ]
 feature_slug: relay-external-adapters
 searches_performed: 6
 sources_count: 14
@@ -39,6 +49,7 @@ There is no `sendTypingAction` equivalent in the Slack Web API or Events API for
 Slack has a first-party status API designed specifically for AI agents: **`assistant.threads.setStatus`**.
 
 **What it does:**
+
 - Renders as `<Bot Name> <status>` below the message composer in Slack's UI
 - Example: `"DorkOS is thinking..."` displayed live to the user
 - Supports up to 10 rotating status messages (`loading_messages` parameter)
@@ -63,23 +74,25 @@ The established community pattern for indicating bot processing in a standard Sl
 
 **Rate limits (confirmed from docs.slack.dev as of 2026-03-18):**
 
-| Method | Tier | Limit |
-|---|---|---|
-| `reactions.add` | **Tier 3** | 50+ requests per minute |
+| Method             | Tier       | Limit                   |
+| ------------------ | ---------- | ----------------------- |
+| `reactions.add`    | **Tier 3** | 50+ requests per minute |
 | `reactions.remove` | **Tier 2** | 20+ requests per minute |
 
 **Required scope:** `reactions:write` (both add and remove use the same scope)
 
 **Required parameters for `reactions.add`:**
+
 ```typescript
 await client.reactions.add({
-  channel: event.channel,       // C1234567890 or D1234567890
+  channel: event.channel, // C1234567890 or D1234567890
   name: 'hourglass_flowing_sand', // emoji shortcode, no colons
-  timestamp: event.ts,          // ts of the message to react to
+  timestamp: event.ts, // ts of the message to react to
 });
 ```
 
 **Required parameters for `reactions.remove`:**
+
 ```typescript
 await client.reactions.remove({
   channel: event.channel,
@@ -107,6 +120,7 @@ For full details see `20260313_slack_bot_adapter_best_practices.md` Section 6. K
 Given DorkOS operates in standard DM/channel threads (not the AI assistant panel), the recommended strategy is:
 
 ### Option A: Streaming API (Best UX)
+
 Use `client.chatStream()` — the typing animation is native. No extra scopes or API calls needed.
 
 ```typescript
@@ -122,6 +136,7 @@ await stream.stop();
 ```
 
 ### Option B: Reaction Indicator (Best Fallback)
+
 Use `reactions.add` immediately on receipt, remove after response is posted. Graceful failure is acceptable.
 
 ```typescript
@@ -129,7 +144,7 @@ async function withProcessingIndicator<T>(
   client: WebClient,
   channel: string,
   messageTs: string,
-  work: () => Promise<T>,
+  work: () => Promise<T>
 ): Promise<T> {
   const emoji = 'hourglass_flowing_sand';
 
@@ -154,9 +169,11 @@ async function withProcessingIndicator<T>(
 ```
 
 ### Option C: Immediate Acknowledgment Message (Simplest)
+
 Post `_Processing..._` immediately in thread, then update or send a follow-up. Already documented in prior research.
 
 ### Recommended Combination for DorkOS
+
 - **Primary:** Use `chatStream()` for the response — the typing animation is implicit
 - **Secondary (pre-stream acknowledgment):** Add `hourglass_flowing_sand` reaction immediately on message receipt, before the stream starts. Remove it when `stream.stop()` completes.
 - This gives users two feedback signals: an instant reaction (sub-second) + the live streaming text
@@ -175,13 +192,13 @@ reactions:write    Add/remove emoji reactions to messages (for processing indica
 
 ## API Reference Summary
 
-| Method | Purpose | Rate Limit | Scope |
-|---|---|---|---|
-| `reactions.add` | Add emoji to user message while processing | Tier 3 (50+/min) | `reactions:write` |
-| `reactions.remove` | Remove emoji when done | Tier 2 (20+/min) | `reactions:write` |
-| `assistant.threads.setStatus` | Typing indicator in AI assistant panel only | 600/min | `chat:write` (was `assistant:write`) |
-| `chat.startStream` | Native streaming with implicit typing animation | Not published | `chat:write` |
-| `user_typing` (RTM) | **Deprecated — do not use** | N/A | N/A |
+| Method                        | Purpose                                         | Rate Limit       | Scope                                |
+| ----------------------------- | ----------------------------------------------- | ---------------- | ------------------------------------ |
+| `reactions.add`               | Add emoji to user message while processing      | Tier 3 (50+/min) | `reactions:write`                    |
+| `reactions.remove`            | Remove emoji when done                          | Tier 2 (20+/min) | `reactions:write`                    |
+| `assistant.threads.setStatus` | Typing indicator in AI assistant panel only     | 600/min          | `chat:write` (was `assistant:write`) |
+| `chat.startStream`            | Native streaming with implicit typing animation | Not published    | `chat:write`                         |
+| `user_typing` (RTM)           | **Deprecated — do not use**                     | N/A              | N/A                                  |
 
 ---
 

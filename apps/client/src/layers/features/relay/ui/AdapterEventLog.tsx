@@ -79,14 +79,13 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
   }
 
   const events = data?.events ?? [];
-  const filteredEvents =
-    filter === 'all' ? events : events.filter((e) => e.subject === filter);
+  const filteredEvents = filter === 'all' ? events : events.filter((e) => e.subject === filter);
 
   if (events.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-        <Activity className="size-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No events recorded</p>
+        <Activity className="text-muted-foreground size-6" />
+        <p className="text-muted-foreground text-sm">No events recorded</p>
       </div>
     );
   }
@@ -95,7 +94,7 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
     <div className="flex h-full flex-col">
       {/* Header with filter */}
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           Events
         </h4>
         <Select value={filter} onValueChange={setFilter}>
@@ -114,11 +113,7 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
       </div>
 
       {/* Event list */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-2"
-      >
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-2">
         {filteredEvents.map((event) => {
           const meta: AdapterEventMetadata | null = event.metadata
             ? (JSON.parse(event.metadata) as AdapterEventMetadata)
@@ -131,21 +126,16 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
           });
           return (
             <div key={event.id} className="flex items-start gap-2 py-1">
-              <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+              <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
                 {time}
               </span>
               <Badge
                 variant="secondary"
-                className={cn(
-                  'shrink-0 text-[10px]',
-                  EVENT_TYPE_COLORS[event.subject] ?? '',
-                )}
+                className={cn('shrink-0 text-[10px]', EVENT_TYPE_COLORS[event.subject] ?? '')}
               >
                 {EVENT_TYPE_LABELS[event.subject] ?? event.subject}
               </Badge>
-              <span className="break-words text-xs">
-                {meta?.message ?? event.subject}
-              </span>
+              <span className="text-xs break-words">{meta?.message ?? event.subject}</span>
             </div>
           );
         })}
@@ -154,12 +144,7 @@ export function AdapterEventLog({ adapterId }: AdapterEventLogProps) {
       {/* Jump to bottom button (shown when user has scrolled up) */}
       {!isAtBottom && (
         <div className="flex justify-center border-t py-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={jumpToBottom}
-            className="h-6 text-xs"
-          >
+          <Button variant="ghost" size="sm" onClick={jumpToBottom} className="h-6 text-xs">
             <ArrowDown className="mr-1 size-3" />
             Jump to bottom
           </Button>

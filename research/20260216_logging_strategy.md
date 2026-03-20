@@ -1,5 +1,5 @@
 ---
-title: "Logging Strategy Research — DorkOS"
+title: 'Logging Strategy Research — DorkOS'
 date: 2026-02-16
 type: internal-architecture
 status: active
@@ -39,14 +39,14 @@ Consola (unjs/consola, ~5M weekly downloads, actively maintained by the UnJS eco
 
 ### 4. Current Logging Gaps (Audit of Existing Code)
 
-| Gap | Files Affected |
-|-----|----------------|
-| No HTTP request logging middleware | `apps/server/src/app.ts` |
+| Gap                                                | Files Affected                                           |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| No HTTP request logging middleware                 | `apps/server/src/app.ts`                                 |
 | Bracketed tag strings instead of structured fields | `agent-manager.ts`, `index.ts`, `session-broadcaster.ts` |
-| No log level control | All 7 files |
-| No file persistence | All server files |
-| Console.log in services (not infrastructure) | `agent-manager.ts` (9 calls) |
-| Startup banners mixed with operational logs | `index.ts` |
+| No log level control                               | All 7 files                                              |
+| No file persistence                                | All server files                                         |
+| Console.log in services (not infrastructure)       | `agent-manager.ts` (9 calls)                             |
+| Startup banners mixed with operational logs        | `index.ts`                                               |
 
 ---
 
@@ -54,20 +54,20 @@ Consola (unjs/consola, ~5M weekly downloads, actively maintained by the UnJS eco
 
 ### Library Comparison
 
-| Criteria | pino | winston | consola | tslog | debug | console wrapper |
-|---|---|---|---|---|---|---|
-| **Weekly downloads** | ~20M | ~12M | ~5M | ~105K | ~245M | — |
-| **Install size (approx)** | ~25KB | ~200KB | ~15KB core | ~40KB | ~5KB | 0 |
-| **TypeScript support** | First-class (bundled types) | Community types bundled since v3 | First-class | First-class (TypeScript-native) | Community `@types/debug` | You write it |
-| **esbuild bundling** | Complex (worker thread extra files + plugin) | Clean | Clean | Clean | Clean | Clean |
-| **Structured JSON output** | Yes (primary mode) | Yes (JSON format) | Via custom reporter | Yes (configurable) | No (string labels only) | You build it |
-| **Pretty dev console** | Via pino-pretty (extra dep) | Via winston formats | Built-in fancy reporter | Built-in | Namespaced colorized output | You build it |
-| **File transport** | Via pino-file / pino-roll | Built-in + winston-daily-rotate-file | Via custom reporter only | Via custom transport only | No | You build it |
-| **Log rotation** | pino-roll (separate package) | winston-daily-rotate-file (separate package) | No built-in | No built-in | No | No |
-| **Log levels** | trace/debug/info/warn/error/fatal | error/warn/info/http/verbose/debug/silly | fatal/error/warn/log/info/success/debug/trace/verbose | silly/trace/debug/info/warn/error/fatal | Namespace-based on/off | You define |
-| **Request logging** | pino-http middleware | express-winston | No built-in | No built-in | No | No |
-| **Maintenance (2025-2026)** | Active (v10.3.1, weekly releases) | Active (v3.18.3) | Active (UnJS ecosystem) | Active | Active (but minimal scope) | N/A |
-| **Child logger / context** | Yes (built-in child()) | Yes (child()) | Via createConsola() with tag | Yes | Partial (ns extend) | You build it |
+| Criteria                    | pino                                         | winston                                      | consola                                               | tslog                                   | debug                       | console wrapper |
+| --------------------------- | -------------------------------------------- | -------------------------------------------- | ----------------------------------------------------- | --------------------------------------- | --------------------------- | --------------- |
+| **Weekly downloads**        | ~20M                                         | ~12M                                         | ~5M                                                   | ~105K                                   | ~245M                       | —               |
+| **Install size (approx)**   | ~25KB                                        | ~200KB                                       | ~15KB core                                            | ~40KB                                   | ~5KB                        | 0               |
+| **TypeScript support**      | First-class (bundled types)                  | Community types bundled since v3             | First-class                                           | First-class (TypeScript-native)         | Community `@types/debug`    | You write it    |
+| **esbuild bundling**        | Complex (worker thread extra files + plugin) | Clean                                        | Clean                                                 | Clean                                   | Clean                       | Clean           |
+| **Structured JSON output**  | Yes (primary mode)                           | Yes (JSON format)                            | Via custom reporter                                   | Yes (configurable)                      | No (string labels only)     | You build it    |
+| **Pretty dev console**      | Via pino-pretty (extra dep)                  | Via winston formats                          | Built-in fancy reporter                               | Built-in                                | Namespaced colorized output | You build it    |
+| **File transport**          | Via pino-file / pino-roll                    | Built-in + winston-daily-rotate-file         | Via custom reporter only                              | Via custom transport only               | No                          | You build it    |
+| **Log rotation**            | pino-roll (separate package)                 | winston-daily-rotate-file (separate package) | No built-in                                           | No built-in                             | No                          | No              |
+| **Log levels**              | trace/debug/info/warn/error/fatal            | error/warn/info/http/verbose/debug/silly     | fatal/error/warn/log/info/success/debug/trace/verbose | silly/trace/debug/info/warn/error/fatal | Namespace-based on/off      | You define      |
+| **Request logging**         | pino-http middleware                         | express-winston                              | No built-in                                           | No built-in                             | No                          | No              |
+| **Maintenance (2025-2026)** | Active (v10.3.1, weekly releases)            | Active (v3.18.3)                             | Active (UnJS ecosystem)                               | Active                                  | Active (but minimal scope)  | N/A             |
+| **Child logger / context**  | Yes (built-in child())                       | Yes (child())                                | Via createConsola() with tag                          | Yes                                     | Partial (ns extend)         | You build it    |
 
 ### Performance Note
 
@@ -76,11 +76,13 @@ Pino is 5-10x faster than Winston in benchmarks. This is meaningless for DorkOS 
 ### The esbuild Bundling Problem With Pino
 
 Pino's internal worker thread architecture means esbuild cannot produce a single-file bundle. The DorkOS CLI currently bundles to:
+
 - `dist/bin/cli.js` (entry with shebang)
 - `dist/server/index.js` (bundled server)
 - `dist/client/` (React SPA)
 
 Adding pino would require adding to `dist/`:
+
 - `pino-worker.js`
 - `pino-file.js`
 - `thread-stream-worker.js`
@@ -105,14 +107,14 @@ const fileReporter = {
       tag: logObj.tag,
     });
     appendFileSync('/path/to/dorkos.log', line + '\n');
-  }
+  },
 };
 
 export const logger = createConsola({
   reporters: [
     defaultReporter, // pretty console
-    fileReporter,    // JSON to disk
-  ]
+    fileReporter, // JSON to disk
+  ],
 });
 ```
 
@@ -135,9 +137,10 @@ export const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console({
-      format: process.env.NODE_ENV === 'development'
-        ? winston.format.combine(winston.format.colorize(), winston.format.simple())
-        : winston.format.json()
+      format:
+        process.env.NODE_ENV === 'development'
+          ? winston.format.combine(winston.format.colorize(), winston.format.simple())
+          : winston.format.json(),
     }),
     new DailyRotateFile({
       filename: '~/.dork/logs/dorkos-%DATE%.log',
@@ -170,6 +173,7 @@ For a developer tool that already uses `~/.dork/` for config storage, the natura
 ```
 
 **Why `~/.dork/logs/` over alternatives:**
+
 - `~/.local/state/dorkos/` — XDG Base Directory spec standard for state/logs on Linux. Valid choice but over-engineered for a tool targeting macOS-first developers.
 - `/var/log/` — System logs, requires elevated permissions on macOS, not appropriate.
 - `./logs/` (relative to CWD) — Would scatter logs across projects. Wrong.
@@ -179,13 +183,13 @@ The CLI already creates `~/.dork/` via `fs.mkdirSync(DORK_HOME, { recursive: tru
 
 ### Log Rotation Policy for a Local Dev Tool
 
-| Policy | Recommendation | Rationale |
-|--------|---------------|-----------|
-| **Rotation frequency** | Daily | Simple, predictable, low overhead |
-| **Max file size** | 10MB per file | Prevents runaway single sessions from filling disk |
-| **Retention** | 7 days | Enough for debugging recent issues without hoarding |
-| **Compression** | No | Adds complexity for marginal benefit on local disk |
-| **Single vs split by level** | Single file | Simplest to `tail`, grep, and reason about |
+| Policy                       | Recommendation | Rationale                                           |
+| ---------------------------- | -------------- | --------------------------------------------------- |
+| **Rotation frequency**       | Daily          | Simple, predictable, low overhead                   |
+| **Max file size**            | 10MB per file  | Prevents runaway single sessions from filling disk  |
+| **Retention**                | 7 days         | Enough for debugging recent issues without hoarding |
+| **Compression**              | No             | Adds complexity for marginal benefit on local disk  |
+| **Single vs split by level** | Single file    | Simplest to `tail`, grep, and reason about          |
 
 For a local developer tool on macOS, even without rotation the logs will rarely exceed a few MB per day (DorkOS handles one user, not thousands of requests). Rotation is a convenience, not a necessity.
 
@@ -208,11 +212,11 @@ Default production level: `INFO`. Default dev level: `DEBUG`.
 
 ### Morgan vs pino-http vs Custom Middleware
 
-| Option | Fit for DorkOS |
-|--------|---------------|
-| **morgan** | Reasonable for simple access logs. Outputs combined/common Apache format (not JSON). Not maintained by an active team as of 2025. Cannot log custom fields. |
-| **pino-http** | Best JSON request logging, integrates pino's child logger for request context. Requires pino as base — brings the bundling problem. |
-| **Custom middleware** | ~15 lines, logs exactly what's needed, no extra dependency, integrates with whatever logger is chosen. |
+| Option                | Fit for DorkOS                                                                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **morgan**            | Reasonable for simple access logs. Outputs combined/common Apache format (not JSON). Not maintained by an active team as of 2025. Cannot log custom fields. |
+| **pino-http**         | Best JSON request logging, integrates pino's child logger for request context. Requires pino as base — brings the bundling problem.                         |
+| **Custom middleware** | ~15 lines, logs exactly what's needed, no extra dependency, integrates with whatever logger is chosen.                                                      |
 
 **Recommendation**: Custom middleware using the chosen logger. For DorkOS's needs (local dev tool), a simple middleware logging `[method] [path] [status] [duration]ms` is entirely sufficient.
 
@@ -221,12 +225,15 @@ Default production level: `INFO`. Default dev level: `DEBUG`.
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
-    logger.info({
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      ms: Date.now() - start,
-    }, 'request');
+    logger.info(
+      {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        ms: Date.now() - start,
+      },
+      'request'
+    );
   });
   next();
 });
@@ -234,13 +241,13 @@ app.use((req, res, next) => {
 
 ### What Fields Matter
 
-| Field | Reason |
-|-------|--------|
-| `method` | GET/POST/DELETE |
-| `path` | Route (not full URL — avoids logging query params with potential sensitive data) |
-| `status` | HTTP status code |
-| `ms` | Response time in milliseconds |
-| `sessionId` | When available from params (req.params.id) |
+| Field       | Reason                                                                           |
+| ----------- | -------------------------------------------------------------------------------- |
+| `method`    | GET/POST/DELETE                                                                  |
+| `path`      | Route (not full URL — avoids logging query params with potential sensitive data) |
+| `status`    | HTTP status code                                                                 |
+| `ms`        | Response time in milliseconds                                                    |
+| `sessionId` | When available from params (req.params.id)                                       |
 
 **Omit**: `body`, `headers`, `query` — these may contain sensitive data (API keys, auth tokens) and are rarely needed for local debugging.
 
@@ -305,16 +312,19 @@ createRoot(document.getElementById('root')!).render(
 ### Structured Logging vs. Current Pattern
 
 Current DorkOS pattern (opaque, grep-unfriendly):
+
 ```
 console.log('[sendMessage] session=abc-123 permissionMode=default hasStarted=true resume=N/A')
 ```
 
 Structured replacement:
+
 ```typescript
 logger.debug({ sessionId, permissionMode, hasStarted }, 'sendMessage');
 ```
 
 The structured form is:
+
 - Greppable by field value: `grep '"sessionId":"abc-123"'`
 - Filterable by level programmatically
 - Compatible with log aggregators if DorkOS ever runs in a shared environment
@@ -328,6 +338,7 @@ For a local single-user tool, correlation IDs provide minimal value. They become
 ### Sensitive Data
 
 DorkOS specific risks:
+
 - `req.body` may contain user messages sent to Claude (privacy-sensitive)
 - Config endpoints may expose ngrok auth tokens
 - Session transcripts contain full conversation history
@@ -342,19 +353,21 @@ DorkOS specific risks:
 
 CLI tools should maintain two distinct output channels:
 
-| Channel | Purpose | Target |
-|---------|---------|--------|
-| **User-facing output** (stdout) | Startup banners, status messages, update notices | Always printed |
-| **Operational logs** (file) | Service events, request logs, errors | `~/.dork/logs/dorkos.log` |
+| Channel                         | Purpose                                          | Target                    |
+| ------------------------------- | ------------------------------------------------ | ------------------------- |
+| **User-facing output** (stdout) | Startup banners, status messages, update notices | Always printed            |
+| **Operational logs** (file)     | Service events, request logs, errors             | `~/.dork/logs/dorkos.log` |
 
 Current `cli.ts` mixes these: `console.log` handles both the startup banner (`DorkOS v1.x.x / Local: http://localhost:4242`) and operational errors. This is acceptable for a CLI tool — the separation only matters if you want `dorkos 2>/dev/null` to silence operational noise without suppressing the startup URL.
 
 **How similar tools handle this:**
+
 - **npm**: Writes operational logs to `~/.npm/_logs/` (rotating), prints user-facing to stderr. Two explicit channels.
 - **Vite/Turbo**: Pretty console output only, no file logging. Relies on terminal scrollback.
 - **pnpm/yarn**: Pretty console only, level-controlled via `--loglevel`.
 
 **Recommendation for DorkOS**: Adopt the two-channel approach:
+
 1. Keep `console.log` for user-facing startup banner (already works well)
 2. Route operational server logs through the chosen logger to `~/.dork/logs/`
 3. Add `--log-level` CLI flag (or honor `LOG_LEVEL` env var) for verbosity control
@@ -366,6 +379,7 @@ Current `cli.ts` mixes these: `console.log` handles both the startup banner (`Do
 ### Primary Recommendation: Consola + Custom File Reporter
 
 **Rationale**: DorkOS is a developer tool with a bundled CLI. Consola:
+
 - Bundles cleanly with esbuild (no worker thread complexity)
 - Has beautiful built-in pretty output for dev (fancy reporter)
 - Automatically switches to plain output in CI/tests
@@ -374,6 +388,7 @@ Current `cli.ts` mixes these: `console.log` handles both the startup banner (`Do
 - File logging requires ~20 lines of custom reporter code — acceptable
 
 **What to add alongside consola**:
+
 - Custom file reporter writing NDJSON to `~/.dork/logs/dorkos.log`
 - Simple log rotation: check file size at startup, rename if >10MB, keep last 7
 - Custom Express middleware for request logging (5 lines, no extra dep)
@@ -382,6 +397,7 @@ Current `cli.ts` mixes these: `console.log` handles both the startup banner (`Do
 ### Alternative: Winston
 
 Use winston if:
+
 - You want batteries-included log rotation without writing custom code
 - The team prefers established patterns over newer UnJS ecosystem tools
 - You need multiple output destinations with different formats per destination
@@ -398,21 +414,25 @@ Winston's larger bundle size (~200KB vs ~15KB for consola) is acceptable since b
 ### Implementation Roadmap
 
 **Phase 1 — Minimal (1-2 hours)**
+
 - Create `apps/server/src/lib/logger.ts` with consola or winston instance
 - Export a named `logger` singleton
 - Replace all `console.log/warn/error` in server files with `logger.info/warn/error`
 - Add structured fields to key log calls (sessionId, method, etc.)
 
 **Phase 2 — File Logging (2-3 hours)**
+
 - Add custom file reporter (consola) or winston DailyRotateFile transport
 - Create `~/.dork/logs/` directory at CLI startup
 - Add `LOG_LEVEL` env var support
 
 **Phase 3 — HTTP Request Logging (1 hour)**
+
 - Add custom Express middleware in `app.ts`
 - Log method, path, status, duration at `DEBUG` level
 
 **Phase 4 — CLI Integration (1 hour)**
+
 - Keep startup banner as `console.log` (intentional user output)
 - Route server operational logs to file only in production CLI mode
 - Add `--log-level` flag to `cli.ts`
@@ -424,7 +444,7 @@ Winston's larger bundle size (~200KB vs ~15KB for consola) is acceptable since b
 - "Pino is up to 5x faster than Winston" — [Pino vs Winston comparison, Better Stack](https://betterstack.com/community/comparisons/pino-vs-winston/)
 - "Winston has a significantly larger footprint at ~200KB+ with dependencies, while Pino is notably more compact at ~25KB" — [Better Stack Pino vs Winston](https://betterstack.com/community/comparisons/pino-vs-winston/)
 - "Pino offers first-class TypeScript support, whereas Winston relies on community-maintained types" — [Better Stack Pino vs Winston](https://betterstack.com/community/comparisons/pino-vs-winston/)
-- "it is not possible to bundle Pino *without* generating additional files" — [Pino bundling docs](https://github.com/pinojs/pino/blob/main/docs/bundling.md)
+- "it is not possible to bundle Pino _without_ generating additional files" — [Pino bundling docs](https://github.com/pinojs/pino/blob/main/docs/bundling.md)
 - "esbuild-plugin-pino is the esbuild plugin to generate extra pino files for bundling... pino-worker.js, pino-file.js, thread-stream-worker.js" — [esbuild-plugin-pino](https://github.com/wd-David/esbuild-plugin-pino)
 - "Consola offers consola/basic, consola/core and consola/browser subpath exports saving up to 80% of bundle size" — [unjs/consola README](https://github.com/unjs/consola/blob/main/README.md)
 - "Consola population is classified as a key ecosystem project... 4,877,055 weekly downloads" — [Snyk Consola Package Health](https://app.snyk.io/advisor/npm-package/consola)
@@ -461,4 +481,4 @@ Winston's larger bundle size (~200KB vs ~15KB for consola) is acceptable since b
 
 ---
 
-*Research completed by research-expert agent. For implementation guidance, see `contributing/architecture.md` for server patterns.*
+_Research completed by research-expert agent. For implementation guidance, see `contributing/architecture.md` for server patterns._

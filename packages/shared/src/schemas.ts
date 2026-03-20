@@ -255,9 +255,7 @@ export type RateLimitEvent = z.infer<typeof RateLimitEventSchema>;
 export const DoneEventSchema = z
   .object({
     sessionId: z.string(),
-    messageIds: z
-      .object({ user: z.string(), assistant: z.string() })
-      .optional(),
+    messageIds: z.object({ user: z.string(), assistant: z.string() }).optional(),
   })
   .openapi('DoneEvent');
 
@@ -744,12 +742,9 @@ export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 export const ServerConfigSchema = z
   .object({
     version: z.string().openapi({ description: 'Current server version' }),
-    latestVersion: z
-      .string()
-      .nullable()
-      .openapi({
-        description: 'Latest available version from npm, or null if dev mode or unknown',
-      }),
+    latestVersion: z.string().nullable().openapi({
+      description: 'Latest available version from npm, or null if dev mode or unknown',
+    }),
     isDevMode: z
       .boolean()
       .openapi({ description: 'Whether the server is running a development build' }),

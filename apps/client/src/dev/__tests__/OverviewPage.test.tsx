@@ -5,7 +5,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { OverviewPage } from '../pages/OverviewPage';
-import { TOKENS_SECTIONS, FORMS_SECTIONS, COMPONENTS_SECTIONS, CHAT_SECTIONS, FEATURES_SECTIONS } from '../playground-registry';
+import {
+  TOKENS_SECTIONS,
+  FORMS_SECTIONS,
+  COMPONENTS_SECTIONS,
+  CHAT_SECTIONS,
+  FEATURES_SECTIONS,
+} from '../playground-registry';
 import type { Page } from '../playground-registry';
 
 describe('OverviewPage', () => {

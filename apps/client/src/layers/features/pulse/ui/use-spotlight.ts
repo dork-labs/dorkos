@@ -31,9 +31,10 @@ export function useSpotlight(): SpotlightResult {
   const reducedMotion = useReducedMotion();
 
   // Disable on touch-only devices
-  const isTouchOnly = typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(hover: none)').matches;
+  const isTouchOnly =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(hover: none)').matches;
 
   const disabled = reducedMotion || isTouchOnly;
 

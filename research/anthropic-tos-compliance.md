@@ -1,5 +1,5 @@
 ---
-title: "Anthropic ToS Compliance Research"
+title: 'Anthropic ToS Compliance Research'
 date: 2026-02-15
 type: strategic
 status: active

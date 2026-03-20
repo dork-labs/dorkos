@@ -96,9 +96,7 @@ function createStatefulBindingStore() {
   };
 }
 
-function createMockAdapterManager(
-  overrides?: Partial<AdapterManager>,
-): AdapterManager {
+function createMockAdapterManager(overrides?: Partial<AdapterManager>): AdapterManager {
   return {
     listAdapters: vi.fn().mockReturnValue([]),
     getAdapter: vi.fn().mockReturnValue(undefined),
@@ -117,10 +115,7 @@ function createMockAdapterManager(
   } as unknown as AdapterManager;
 }
 
-function createTestApp(
-  adapterManager?: AdapterManager,
-  traceStore?: unknown,
-): express.Application {
+function createTestApp(adapterManager?: AdapterManager, traceStore?: unknown): express.Application {
   const app = express();
   app.use(express.json());
   app.use(
@@ -128,13 +123,13 @@ function createTestApp(
     createRelayRouter(
       createMockRelayCore() as unknown as RelayCore,
       adapterManager as AdapterManager | undefined,
-      traceStore as never,
-    ),
+      traceStore as never
+    )
   );
   app.use(
     (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       res.status(500).json({ error: err.message });
-    },
+    }
   );
   return app;
 }
@@ -173,9 +168,7 @@ describe('Binding CRUD roundtrip', () => {
     expect(createRes.body.binding.sessionStrategy).toBe('per-chat');
 
     // 2. Read
-    const readRes = await request(app)
-      .get(`/api/relay/bindings/${bindingId}`)
-      .expect(200);
+    const readRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
     expect(readRes.body.binding.label).toBe('Test binding');
     expect(readRes.body.binding.adapterId).toBe('telegram-1');
 
@@ -193,22 +186,16 @@ describe('Binding CRUD roundtrip', () => {
     expect(updateRes.body.binding.chatId).toBe('12345');
 
     // 4. Verify update persisted
-    const verifyRes = await request(app)
-      .get(`/api/relay/bindings/${bindingId}`)
-      .expect(200);
+    const verifyRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
     expect(verifyRes.body.binding.sessionStrategy).toBe('stateless');
     expect(verifyRes.body.binding.label).toBe('Updated binding');
     expect(verifyRes.body.binding.chatId).toBe('12345');
 
     // 5. Delete
-    await request(app)
-      .delete(`/api/relay/bindings/${bindingId}`)
-      .expect(200);
+    await request(app).delete(`/api/relay/bindings/${bindingId}`).expect(200);
 
     // 6. Verify gone
-    await request(app)
-      .get(`/api/relay/bindings/${bindingId}`)
-      .expect(404);
+    await request(app).get(`/api/relay/bindings/${bindingId}`).expect(404);
   });
 
   it('clears optional fields with null values', async () => {
@@ -259,14 +246,10 @@ describe('Binding CRUD roundtrip', () => {
       .expect(201);
 
     // List all
-    const listRes = await request(app)
-      .get('/api/relay/bindings')
-      .expect(200);
+    const listRes = await request(app).get('/api/relay/bindings').expect(200);
 
     expect(listRes.body.bindings).toHaveLength(2);
-    const adapterIds = listRes.body.bindings.map(
-      (b: { adapterId: string }) => b.adapterId,
-    );
+    const adapterIds = listRes.body.bindings.map((b: { adapterId: string }) => b.adapterId);
     expect(adapterIds).toContain('telegram-1');
     expect(adapterIds).toContain('telegram-2');
   });
@@ -289,9 +272,7 @@ describe('Binding CRUD roundtrip', () => {
       .expect(400);
 
     // Verify original value is unchanged
-    const readRes = await request(app)
-      .get(`/api/relay/bindings/${bindingId}`)
-      .expect(200);
+    const readRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
     expect(readRes.body.binding.sessionStrategy).toBe('per-chat');
   });
 
@@ -307,9 +288,7 @@ describe('Binding CRUD roundtrip', () => {
     const bindingId = createRes.body.binding.id;
 
     // Delete it
-    await request(app)
-      .delete(`/api/relay/bindings/${bindingId}`)
-      .expect(200);
+    await request(app).delete(`/api/relay/bindings/${bindingId}`).expect(200);
 
     // Try to update the deleted binding
     await request(app)
@@ -342,14 +321,22 @@ describe('Multi-instance adapter flow', () => {
               id: 'telegram-1',
               enabled: true,
               label: '@bot_one',
-              status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
+              status: {
+                state: 'connected',
+                messageCount: { inbound: 10, outbound: 5 },
+                errorCount: 0,
+              },
               config: { token: '***', mode: 'polling' },
             },
             {
               id: 'telegram-2',
               enabled: true,
               label: '@bot_two',
-              status: { state: 'connected', messageCount: { inbound: 3, outbound: 1 }, errorCount: 0 },
+              status: {
+                state: 'connected',
+                messageCount: { inbound: 3, outbound: 1 },
+                errorCount: 0,
+              },
               config: { token: '***', mode: 'polling' },
             },
           ],
@@ -360,9 +347,7 @@ describe('Multi-instance adapter flow', () => {
     const app = createTestApp(adapterManager);
 
     // Verify catalog returns both instances under the Telegram entry
-    const catalogRes = await request(app)
-      .get('/api/relay/adapters/catalog')
-      .expect(200);
+    const catalogRes = await request(app).get('/api/relay/adapters/catalog').expect(200);
 
     expect(catalogRes.body).toHaveLength(1);
     expect(catalogRes.body[0].manifest.type).toBe('telegram');
@@ -395,14 +380,14 @@ describe('Multi-instance adapter flow', () => {
       'telegram-1',
       { token: 'token1' },
       undefined,
-      undefined,
+      undefined
     );
     expect(vi.mocked(adapterManager.addAdapter)).toHaveBeenCalledWith(
       'telegram',
       'telegram-2',
       { token: 'token2' },
       undefined,
-      undefined,
+      undefined
     );
   });
 
@@ -414,8 +399,8 @@ describe('Multi-instance adapter flow', () => {
       .mockRejectedValueOnce(
         new AdapterError(
           "Adapter type 'claude-code' does not support multiple instances",
-          'MULTI_INSTANCE_DENIED',
-        ),
+          'MULTI_INSTANCE_DENIED'
+        )
       );
 
     const app = createTestApp(adapterManager);
@@ -465,17 +450,15 @@ describe('Multi-instance adapter flow', () => {
       .expect(201);
 
     // Verify both exist and are distinct
-    const listRes = await request(app)
-      .get('/api/relay/bindings')
-      .expect(200);
+    const listRes = await request(app).get('/api/relay/bindings').expect(200);
 
     expect(listRes.body.bindings).toHaveLength(2);
 
     const b1 = listRes.body.bindings.find(
-      (b: { id: string }) => b.id === binding1Res.body.binding.id,
+      (b: { id: string }) => b.id === binding1Res.body.binding.id
     );
     const b2 = listRes.body.bindings.find(
-      (b: { id: string }) => b.id === binding2Res.body.binding.id,
+      (b: { id: string }) => b.id === binding2Res.body.binding.id
     );
 
     expect(b1.adapterId).toBe('telegram-1');
@@ -490,9 +473,7 @@ describe('Multi-instance adapter flow', () => {
 // ---------------------------------------------------------------------------
 
 describe('Observed chats pipeline', () => {
-  function createMockTraceStore(
-    chats: Record<string, unknown[]> = {},
-  ) {
+  function createMockTraceStore(chats: Record<string, unknown[]> = {}) {
     return {
       getObservedChats: vi.fn((adapterId: string, limit: number) => {
         const adapterChats = chats[adapterId] ?? [];
@@ -528,22 +509,16 @@ describe('Observed chats pipeline', () => {
     const adapterManager = createMockAdapterManager();
     const app = createTestApp(adapterManager, traceStore);
 
-    const res = await request(app)
-      .get('/api/relay/adapters/telegram-1/chats')
-      .expect(200);
+    const res = await request(app).get('/api/relay/adapters/telegram-1/chats').expect(200);
 
     expect(res.body.chats).toHaveLength(2);
 
-    const chat111 = res.body.chats.find(
-      (c: { chatId: string }) => c.chatId === '111',
-    );
+    const chat111 = res.body.chats.find((c: { chatId: string }) => c.chatId === '111');
     expect(chat111.messageCount).toBe(2);
     expect(chat111.displayName).toBe('Alice');
     expect(chat111.channelType).toBe('dm');
 
-    const chat222 = res.body.chats.find(
-      (c: { chatId: string }) => c.chatId === '222',
-    );
+    const chat222 = res.body.chats.find((c: { chatId: string }) => c.chatId === '222');
     expect(chat222.messageCount).toBe(1);
     expect(chat222.displayName).toBe('Dev Team');
   });
@@ -553,9 +528,7 @@ describe('Observed chats pipeline', () => {
     const adapterManager = createMockAdapterManager();
     const app = createTestApp(adapterManager, traceStore);
 
-    const res = await request(app)
-      .get('/api/relay/adapters/nonexistent/chats')
-      .expect(200);
+    const res = await request(app).get('/api/relay/adapters/nonexistent/chats').expect(200);
 
     expect(res.body.chats).toEqual([]);
   });
@@ -565,9 +538,7 @@ describe('Observed chats pipeline', () => {
     // No trace store passed
     const app = createTestApp(adapterManager);
 
-    const res = await request(app)
-      .get('/api/relay/adapters/telegram-1/chats')
-      .expect(404);
+    const res = await request(app).get('/api/relay/adapters/telegram-1/chats').expect(404);
 
     expect(res.body.error).toBe('Tracing not available');
   });
@@ -577,9 +548,7 @@ describe('Observed chats pipeline', () => {
     const adapterManager = createMockAdapterManager();
     const app = createTestApp(adapterManager, traceStore);
 
-    await request(app)
-      .get('/api/relay/adapters/telegram-1/chats?limit=25')
-      .expect(200);
+    await request(app).get('/api/relay/adapters/telegram-1/chats?limit=25').expect(200);
 
     expect(traceStore.getObservedChats).toHaveBeenCalledWith('telegram-1', 25);
   });
@@ -590,15 +559,11 @@ describe('Observed chats pipeline', () => {
     const app = createTestApp(adapterManager, traceStore);
 
     // Exceeds max
-    await request(app)
-      .get('/api/relay/adapters/telegram-1/chats?limit=9999')
-      .expect(200);
+    await request(app).get('/api/relay/adapters/telegram-1/chats?limit=9999').expect(200);
     expect(traceStore.getObservedChats).toHaveBeenCalledWith('telegram-1', 500);
 
     // Below min
-    await request(app)
-      .get('/api/relay/adapters/telegram-1/chats?limit=0')
-      .expect(200);
+    await request(app).get('/api/relay/adapters/telegram-1/chats?limit=0').expect(200);
     expect(traceStore.getObservedChats).toHaveBeenCalledWith('telegram-1', 1);
   });
 
@@ -607,9 +572,7 @@ describe('Observed chats pipeline', () => {
     const adapterManager = createMockAdapterManager();
     const app = createTestApp(adapterManager, traceStore);
 
-    await request(app)
-      .get('/api/relay/adapters/telegram-1/chats')
-      .expect(200);
+    await request(app).get('/api/relay/adapters/telegram-1/chats').expect(200);
 
     expect(traceStore.getObservedChats).toHaveBeenCalledWith('telegram-1', 100);
   });
@@ -619,9 +582,7 @@ describe('Observed chats pipeline', () => {
     const adapterManager = createMockAdapterManager();
     const app = createTestApp(adapterManager, traceStore);
 
-    await request(app)
-      .get('/api/relay/adapters/telegram-1/chats?limit=abc')
-      .expect(200);
+    await request(app).get('/api/relay/adapters/telegram-1/chats?limit=abc').expect(200);
 
     // NaN falls back to default of 100
     expect(traceStore.getObservedChats).toHaveBeenCalledWith('telegram-1', 100);
@@ -657,9 +618,7 @@ describe('Binding creation with chat filter from observed data', () => {
     const app = createTestApp(adapterManager, traceStore);
 
     // 1. Query observed chats to discover chatId
-    const chatsRes = await request(app)
-      .get('/api/relay/adapters/telegram-1/chats')
-      .expect(200);
+    const chatsRes = await request(app).get('/api/relay/adapters/telegram-1/chats').expect(200);
 
     expect(chatsRes.body.chats).toHaveLength(1);
     const observedChatId = chatsRes.body.chats[0].chatId;

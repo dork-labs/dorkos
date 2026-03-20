@@ -89,17 +89,17 @@ Export: `createMeshRouter(meshCore: MeshCore): Router`
 
 All routes use Zod `safeParse()` for request validation, returning 400 with `{ error: 'Validation failed', details: result.error.flatten() }` on failure. Error responses follow the same patterns as `routes/relay.ts`.
 
-| Method | Path | Description | Request | Response |
-|--------|------|-------------|---------|----------|
-| POST | `/discover` | Trigger discovery scan | `{ roots: string[], maxDepth?: number }` | `{ candidates: DiscoveryCandidate[] }` |
-| POST | `/agents` | Register an agent | `{ path: string, overrides?: Partial<AgentManifest>, approver?: string }` | AgentManifest (201) |
-| GET | `/agents` | List registered agents | Query: `runtime?`, `capability?` | `{ agents: AgentManifest[] }` |
-| GET | `/agents/:id` | Get agent detail | — | AgentManifest |
-| PATCH | `/agents/:id` | Update agent fields | `{ name?, description?, capabilities? }` | AgentManifest |
-| DELETE | `/agents/:id` | Unregister an agent | — | `{ success: true }` |
-| POST | `/deny` | Deny a candidate | `{ path: string, reason?: string, denier?: string }` | `{ success: true }` |
-| GET | `/denied` | List denied paths | — | `{ denied: DenialRecord[] }` |
-| DELETE | `/denied/:encodedPath` | Clear a denial | — | `{ success: true }` |
+| Method | Path                   | Description            | Request                                                                   | Response                               |
+| ------ | ---------------------- | ---------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
+| POST   | `/discover`            | Trigger discovery scan | `{ roots: string[], maxDepth?: number }`                                  | `{ candidates: DiscoveryCandidate[] }` |
+| POST   | `/agents`              | Register an agent      | `{ path: string, overrides?: Partial<AgentManifest>, approver?: string }` | AgentManifest (201)                    |
+| GET    | `/agents`              | List registered agents | Query: `runtime?`, `capability?`                                          | `{ agents: AgentManifest[] }`          |
+| GET    | `/agents/:id`          | Get agent detail       | —                                                                         | AgentManifest                          |
+| PATCH  | `/agents/:id`          | Update agent fields    | `{ name?, description?, capabilities? }`                                  | AgentManifest                          |
+| DELETE | `/agents/:id`          | Unregister an agent    | —                                                                         | `{ success: true }`                    |
+| POST   | `/deny`                | Deny a candidate       | `{ path: string, reason?: string, denier?: string }`                      | `{ success: true }`                    |
+| GET    | `/denied`              | List denied paths      | —                                                                         | `{ denied: DenialRecord[] }`           |
+| DELETE | `/denied/:encodedPath` | Clear a denial         | —                                                                         | `{ success: true }`                    |
 
 **Discovery route implementation note:** The `MeshCore.discover()` method returns an `AsyncGenerator`. The route handler collects all candidates into an array before returning the JSON response. This is appropriate because local filesystem scans complete in under 2 seconds for typical directory structures.
 
@@ -175,13 +175,13 @@ function requireMesh(deps: McpToolDeps) {
 
 **Tools to register:**
 
-| Tool Name | Description | Arguments |
-|-----------|-------------|-----------|
-| `mesh_discover` | Scan directories for agent candidates | `{ roots: string[], maxDepth?: number }` |
-| `mesh_register` | Register an agent from a path | `{ path: string, name?: string, description?: string, runtime?: string, capabilities?: string[] }` |
-| `mesh_list` | List registered agents | `{ runtime?: string, capability?: string }` |
-| `mesh_deny` | Deny a candidate path | `{ path: string, reason?: string }` |
-| `mesh_unregister` | Unregister an agent by ID | `{ agentId: string }` |
+| Tool Name         | Description                           | Arguments                                                                                          |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `mesh_discover`   | Scan directories for agent candidates | `{ roots: string[], maxDepth?: number }`                                                           |
+| `mesh_register`   | Register an agent from a path         | `{ path: string, name?: string, description?: string, runtime?: string, capabilities?: string[] }` |
+| `mesh_list`       | List registered agents                | `{ runtime?: string, capability?: string }`                                                        |
+| `mesh_deny`       | Deny a candidate path                 | `{ path: string, reason?: string }`                                                                |
+| `mesh_unregister` | Unregister an agent by ID             | `{ agentId: string }`                                                                              |
 
 Tool handlers follow the same factory pattern as Relay tools (e.g., `createMeshDiscoverHandler(deps)`). The `mesh_discover` handler collects the `AsyncGenerator` into an array server-side.
 
@@ -193,37 +193,47 @@ Add HTTP request/response schemas alongside existing schemas:
 
 ```typescript
 // Discovery request
-export const DiscoverRequestSchema = z.object({
-  roots: z.array(z.string().min(1)).min(1),
-  maxDepth: z.number().int().min(1).optional(),
-}).openapi('DiscoverRequest');
+export const DiscoverRequestSchema = z
+  .object({
+    roots: z.array(z.string().min(1)).min(1),
+    maxDepth: z.number().int().min(1).optional(),
+  })
+  .openapi('DiscoverRequest');
 
 // Registration request
-export const RegisterAgentRequestSchema = z.object({
-  path: z.string().min(1),
-  overrides: AgentManifestSchema.partial().optional(),
-  approver: z.string().optional(),
-}).openapi('RegisterAgentRequest');
+export const RegisterAgentRequestSchema = z
+  .object({
+    path: z.string().min(1),
+    overrides: AgentManifestSchema.partial().optional(),
+    approver: z.string().optional(),
+  })
+  .openapi('RegisterAgentRequest');
 
 // Deny request
-export const DenyRequestSchema = z.object({
-  path: z.string().min(1),
-  reason: z.string().optional(),
-  denier: z.string().optional(),
-}).openapi('DenyRequest');
+export const DenyRequestSchema = z
+  .object({
+    path: z.string().min(1),
+    reason: z.string().optional(),
+    denier: z.string().optional(),
+  })
+  .openapi('DenyRequest');
 
 // Update agent request (pick specific fields)
-export const UpdateAgentRequestSchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional(),
-  capabilities: z.array(z.string()).optional(),
-}).openapi('UpdateAgentRequest');
+export const UpdateAgentRequestSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    capabilities: z.array(z.string()).optional(),
+  })
+  .openapi('UpdateAgentRequest');
 
 // Agent list query params
-export const AgentListQuerySchema = z.object({
-  runtime: AgentRuntimeSchema.optional(),
-  capability: z.string().optional(),
-}).openapi('AgentListQuery');
+export const AgentListQuerySchema = z
+  .object({
+    runtime: AgentRuntimeSchema.optional(),
+    capability: z.string().optional(),
+  })
+  .openapi('AgentListQuery');
 ```
 
 ### 6.6 Transport Interface
@@ -350,7 +360,11 @@ export function useRegisterAgent() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ path, overrides, approver }: {
+    mutationFn: ({
+      path,
+      overrides,
+      approver,
+    }: {
       path: string;
       overrides?: Partial<AgentManifest>;
       approver?: string;
@@ -494,6 +508,7 @@ Add `mesh: { enabled: boolean }` to `ServerConfigSchema` alongside existing `pul
 **File:** `apps/server/src/routes/__tests__/mesh.test.ts`
 
 Test each route handler with mock MeshCore:
+
 - POST /discover: Valid request returns candidates, invalid request returns 400
 - POST /agents: Valid registration returns 201, invalid returns 400
 - GET /agents: Returns list, filters by runtime/capability query params
@@ -507,6 +522,7 @@ Test each route handler with mock MeshCore:
 ### MCP Tool Tests
 
 Test mesh tools in `mcp-tool-server.test.ts`:
+
 - `mesh_discover` returns candidates when Mesh is enabled
 - `mesh_register` creates an agent
 - `mesh_list` returns agents with optional filters
@@ -519,6 +535,7 @@ Test mesh tools in `mcp-tool-server.test.ts`:
 **Directory:** `apps/client/src/layers/entities/mesh/__tests__/`
 
 Test each hook with mock transport:
+
 - `useMeshEnabled` returns false when config has no mesh, true when enabled
 - `useRegisteredAgents` calls transport.listMeshAgents when enabled
 - `useDiscoverAgents` mutation calls transport.discoverMeshAgents

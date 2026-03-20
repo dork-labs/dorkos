@@ -19,11 +19,11 @@ Relay adapters (Slack, Telegram) leak raw JSON to users when unrecognized SDK ev
 
 ### Three Phases
 
-| Phase | Scope | Risk | Urgency |
-|-------|-------|------|---------|
-| 1 | Whitelist fix — delete `SILENT_EVENT_TYPES`, silent drop fallthrough | Low | Critical (user-facing bug) |
-| 2 | Native streaming APIs — Slack `chat.startStream`/`appendStream`/`stopStream`, Telegram `sendMessageDraft` | Medium | Enhancement |
-| 3 | Telegram buffer TTL reaping + comprehensive test coverage | Low | Defensive |
+| Phase | Scope                                                                                                     | Risk   | Urgency                    |
+| ----- | --------------------------------------------------------------------------------------------------------- | ------ | -------------------------- |
+| 1     | Whitelist fix — delete `SILENT_EVENT_TYPES`, silent drop fallthrough                                      | Low    | Critical (user-facing bug) |
+| 2     | Native streaming APIs — Slack `chat.startStream`/`appendStream`/`stopStream`, Telegram `sendMessageDraft` | Medium | Enhancement                |
+| 3     | Telegram buffer TTL reaping + comprehensive test coverage                                                 | Low    | Defensive                  |
 
 ---
 
@@ -80,15 +80,15 @@ Same pattern. Remove `SILENT_EVENT_TYPES` import. Replace lines 144-147:
 
 ```typescript
 // BEFORE:
-    // All other StreamEvent types: silently skip
-    if (SILENT_EVENT_TYPES.has(eventType)) {
-      return { success: true, durationMs: Date.now() - startTime };
-    }
+// All other StreamEvent types: silently skip
+if (SILENT_EVENT_TYPES.has(eventType)) {
+  return { success: true, durationMs: Date.now() - startTime };
+}
 
 // AFTER:
-    // All other StreamEvent types: silently drop (whitelist model).
-    // Only text_delta, error, and done warrant delivery actions.
-    return { success: true, durationMs: Date.now() - startTime };
+// All other StreamEvent types: silently drop (whitelist model).
+// Only text_delta, error, and done warrant delivery actions.
+return { success: true, durationMs: Date.now() - startTime };
 ```
 
 ### Test Changes (Phase 1)
@@ -127,7 +127,13 @@ describe('event whitelist — unknown events silently dropped', () => {
       type: eventType,
       data: { text: 'internal data' },
     });
-    const result = await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+    const result = await deliver(
+      'relay.human.slack.D123',
+      envelope,
+      client,
+      streamState,
+      callbacks
+    );
     expect(result.success).toBe(true);
     expect(mockPostMessage).not.toHaveBeenCalled();
     expect(mockChatUpdate).not.toHaveBeenCalled();
@@ -174,6 +180,7 @@ Add a `nativeStreaming` config field to the Slack adapter (alongside existing `s
 ```
 
 The existing `streaming` field controls whether text is streamed at all (vs buffer-and-flush). The new `nativeStreaming` field controls which streaming method to use when `streaming` is true:
+
 - `streaming: true, nativeStreaming: true` → Slack native streaming API (new default)
 - `streaming: true, nativeStreaming: false` → `chat.update` edit-in-place (legacy)
 - `streaming: false` → buffer-and-flush on done (existing)
@@ -183,12 +190,14 @@ The existing `streaming` field controls whether text is streamed at all (vs buff
 In `slack/outbound.ts`, modify `handleTextDelta`:
 
 **When `nativeStreaming` is true:**
+
 - First `text_delta`: Call `client.chat.startStream({ channel, thread_ts })` → returns a `stream_id`. Store in `ActiveStream`.
 - Subsequent `text_delta`: Call `client.chat.appendStream({ stream_id, text: textChunk })`. No throttling needed — the API is designed for high-frequency appends.
 - `done`: Call `client.chat.stopStream({ stream_id })`.
 - `error`: Call `client.chat.appendStream({ stream_id, text: errorSuffix })` then `client.chat.stopStream({ stream_id })`.
 
 **When `nativeStreaming` is false:**
+
 - Existing `chat.postMessage` + `chat.update` behavior (unchanged).
 
 #### ActiveStream Changes
@@ -237,11 +246,13 @@ Add a `streaming` config field to the Telegram adapter:
 In `telegram/outbound.ts`, modify the `text_delta` handler:
 
 **When `streaming` is true AND chat is a DM (chatId > 0):**
+
 - Each `text_delta`: Call `bot.api.sendMessageDraft(chatId, accumulatedText)` (throttled to ~200ms intervals to stay within rate limits).
 - `done`: Call `bot.api.sendMessage(chatId, finalText)` to finalize the draft into a permanent message.
 - `error`: Call `bot.api.sendMessage(chatId, finalText + errorSuffix)`.
 
 **When `streaming` is false OR chat is a group (chatId < 0):**
+
 - Existing buffer-and-flush behavior (unchanged).
 
 #### DM vs Group Detection
@@ -337,6 +348,7 @@ describe('native streaming — chat.startStream/appendStream/stopStream')
 ## Acceptance Criteria
 
 ### Phase 1 (Critical)
+
 - [ ] `SILENT_EVENT_TYPES` is deleted from `payload-utils.ts`
 - [ ] Both adapters silently drop all unrecognized StreamEvent types
 - [ ] No raw JSON appears in Slack or Telegram for any of the 29 current event types
@@ -346,6 +358,7 @@ describe('native streaming — chat.startStream/appendStream/stopStream')
 - [ ] All existing tests pass with updated assertions
 
 ### Phase 2 (Enhancement)
+
 - [ ] Slack adapter uses `chat.startStream`/`appendStream`/`stopStream` when `nativeStreaming: true`
 - [ ] Slack adapter falls back to `chat.update` when native streaming fails
 - [ ] Telegram adapter uses `sendMessageDraft` for DMs when `streaming: true`
@@ -354,6 +367,7 @@ describe('native streaming — chat.startStream/appendStream/stopStream')
 - [ ] Config fields appear in adapter setup UI
 
 ### Phase 3 (Defensive)
+
 - [ ] Telegram `responseBuffers` entries are reaped after 5 minutes
 - [ ] Telegram outbound has comprehensive delivery test coverage
 - [ ] Slack outbound has native streaming test coverage
@@ -371,24 +385,24 @@ describe('native streaming — chat.startStream/appendStream/stopStream')
 
 ## Files Modified
 
-| File | Phase | Change |
-|------|-------|--------|
-| `packages/relay/src/lib/payload-utils.ts` | 1 | Delete `SILENT_EVENT_TYPES` export |
-| `packages/relay/src/adapters/slack/outbound.ts` | 1, 2 | Remove SILENT_EVENT_TYPES import, add whitelist return; add native streaming |
-| `packages/relay/src/adapters/telegram/outbound.ts` | 1, 2, 3 | Remove SILENT_EVENT_TYPES import, add whitelist return; add sendMessageDraft; add buffer TTL |
-| `packages/relay/src/adapters/slack/slack-adapter.ts` | 2 | Add `nativeStreaming` config field, thread to deliver options |
-| `packages/relay/src/adapters/telegram/telegram-adapter.ts` | 2 | Add `streaming` config field, thread to deliver options |
-| `packages/relay/src/adapters/slack/__tests__/outbound.test.ts` | 1, 2 | Replace silent event tests with whitelist tests; add native streaming tests |
-| `packages/relay/src/adapters/telegram/__tests__/outbound.test.ts` | 1, 2, 3 | Add comprehensive delivery tests, whitelist tests, buffer TTL tests |
-| `packages/relay/src/lib/__tests__/payload-utils.test.ts` | 1 | Remove SILENT_EVENT_TYPES tests (if present) |
+| File                                                              | Phase   | Change                                                                                       |
+| ----------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `packages/relay/src/lib/payload-utils.ts`                         | 1       | Delete `SILENT_EVENT_TYPES` export                                                           |
+| `packages/relay/src/adapters/slack/outbound.ts`                   | 1, 2    | Remove SILENT_EVENT_TYPES import, add whitelist return; add native streaming                 |
+| `packages/relay/src/adapters/telegram/outbound.ts`                | 1, 2, 3 | Remove SILENT_EVENT_TYPES import, add whitelist return; add sendMessageDraft; add buffer TTL |
+| `packages/relay/src/adapters/slack/slack-adapter.ts`              | 2       | Add `nativeStreaming` config field, thread to deliver options                                |
+| `packages/relay/src/adapters/telegram/telegram-adapter.ts`        | 2       | Add `streaming` config field, thread to deliver options                                      |
+| `packages/relay/src/adapters/slack/__tests__/outbound.test.ts`    | 1, 2    | Replace silent event tests with whitelist tests; add native streaming tests                  |
+| `packages/relay/src/adapters/telegram/__tests__/outbound.test.ts` | 1, 2, 3 | Add comprehensive delivery tests, whitelist tests, buffer TTL tests                          |
+| `packages/relay/src/lib/__tests__/payload-utils.test.ts`          | 1       | Remove SILENT_EVENT_TYPES tests (if present)                                                 |
 
 ---
 
 ## Risk Assessment
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| `chat.startStream` requires unknown OAuth scope | Medium | Low | Fallback to `chat.update` on failure |
-| grammY doesn't support `sendMessageDraft` yet | Low | Low | Check at startup, fall back to buffer-and-flush |
-| Removing `SILENT_EVENT_TYPES` breaks other consumers | Low | Low | Grep confirms only Slack/Telegram outbound import it |
-| Native streaming changes message appearance in Slack | Low | Medium | Controlled by `nativeStreaming` config toggle |
+| Risk                                                 | Likelihood | Impact | Mitigation                                           |
+| ---------------------------------------------------- | ---------- | ------ | ---------------------------------------------------- |
+| `chat.startStream` requires unknown OAuth scope      | Medium     | Low    | Fallback to `chat.update` on failure                 |
+| grammY doesn't support `sendMessageDraft` yet        | Low        | Low    | Check at startup, fall back to buffer-and-flush      |
+| Removing `SILENT_EVENT_TYPES` breaks other consumers | Low        | Low    | Grep confirms only Slack/Telegram outbound import it |
+| Native streaming changes message appearance in Slack | Low        | Medium | Controlled by `nativeStreaming` config toggle        |

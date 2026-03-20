@@ -8,6 +8,7 @@
 You are analyzing a specification execution to build an optimized execution plan.
 
 ## Context
+
 - **Spec File**: [SPEC_PATH]
 - **Feature Slug**: [SLUG]
 - **Implementation File**: specs/[SLUG]/04-implementation.md
@@ -19,12 +20,14 @@ You are analyzing a specification execution to build an optimized execution plan
 ### 1. Load All Tasks
 
 Use `TaskList()` to get all tasks for this feature:
+
 ```
 tasks = TaskList()
 feature_tasks = tasks.filter(t => t.subject.includes("[<slug>]"))
 ```
 
 Categorize by status:
+
 - `completed`: Skip these
 - `in_progress`: Resume these first
 - `pending`: Execute these
@@ -73,15 +76,15 @@ while remaining.length > 0:
 
 For each task, determine the appropriate specialist agent:
 
-| Task Pattern | Agent Type |
-|-------------|------------|
-| Database, Prisma, schema, migration | `prisma-expert` |
-| React, component, UI, form | `react-tanstack-expert` |
-| TypeScript, types, generics | `typescript-expert` |
-| Zod, validation, schema | `zod-forms-expert` |
-| API, route, endpoint | `general-purpose` |
-| Test, spec, coverage | `general-purpose` |
-| Default | `general-purpose` |
+| Task Pattern                        | Agent Type              |
+| ----------------------------------- | ----------------------- |
+| Database, Prisma, schema, migration | `prisma-expert`         |
+| React, component, UI, form          | `react-tanstack-expert` |
+| TypeScript, types, generics         | `typescript-expert`     |
+| Zod, validation, schema             | `zod-forms-expert`      |
+| API, route, endpoint                | `general-purpose`       |
+| Test, spec, coverage                | `general-purpose`       |
+| Default                             | `general-purpose`       |
 
 ### 5. Return Execution Plan
 

@@ -11,10 +11,10 @@
 Two tasks, two phases. Phase 1 is the surgical code fix in one file. Phase 2 is three test cases that
 verify the fix and guard the Mesh-context fallback path.
 
-| ID  | Phase | Size  | Priority | Description                                                   |
-|-----|-------|-------|----------|---------------------------------------------------------------|
-| 1.1 | 1     | small | high     | Extract payload cwd and replace agentCwd with effectiveCwd    |
-| 2.1 | 2     | small | high     | Add three cwd-from-payload unit tests                         |
+| ID  | Phase | Size  | Priority | Description                                                |
+| --- | ----- | ----- | -------- | ---------------------------------------------------------- |
+| 1.1 | 1     | small | high     | Extract payload cwd and replace agentCwd with effectiveCwd |
+| 2.1 | 2     | small | high     | Add three cwd-from-payload unit tests                      |
 
 ---
 
@@ -35,6 +35,7 @@ route from the `?dir=` URL parameter). The fix mirrors the pattern already used 
 #### Edit 1 — Replace comment block and `agentCwd` declaration (lines 368–372)
 
 Before:
+
 ```typescript
 // Resolve agent working directory from authoritative context only.
 // When context is undefined (no Mesh agent), do NOT override with
@@ -44,6 +45,7 @@ const agentCwd = context?.agent?.directory;
 ```
 
 After:
+
 ```typescript
 // Resolve agent working directory.
 // Priority: relay payload cwd (from ?dir= URL param via web client)
@@ -61,27 +63,30 @@ const effectiveCwd = payloadCwd ?? agentCwd;
 #### Edit 2 — Update debug log (lines 374–378)
 
 Before:
+
 ```typescript
 log.debug?.(
   `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
-  `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-  `resolvedCwd=${agentCwd ?? '(deferred to session)'}`,
+    `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
+    `resolvedCwd=${agentCwd ?? '(deferred to session)'}`
 );
 ```
 
 After:
+
 ```typescript
 log.debug?.(
   `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
-  `payloadCwd=${payloadCwd ?? '(none)'}, ` +
-  `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-  `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}`,
+    `payloadCwd=${payloadCwd ?? '(none)'}, ` +
+    `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
+    `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}`
 );
 ```
 
 #### Edit 3 — Replace `agentCwd` with `effectiveCwd` in `ensureSession` (lines 380–384)
 
 Before:
+
 ```typescript
 this.deps.agentManager.ensureSession(ccaSessionKey, {
   permissionMode: 'default',
@@ -91,6 +96,7 @@ this.deps.agentManager.ensureSession(ccaSessionKey, {
 ```
 
 After:
+
 ```typescript
 this.deps.agentManager.ensureSession(ccaSessionKey, {
   permissionMode: 'default',
@@ -102,6 +108,7 @@ this.deps.agentManager.ensureSession(ccaSessionKey, {
 #### Edit 4 — Replace `agentCwd` with `effectiveCwd` in `sendMessage` (line 440)
 
 Before:
+
 ```typescript
 const eventStream = this.deps.agentManager.sendMessage(ccaSessionKey, prompt, {
   ...(agentCwd ? { cwd: agentCwd } : {}),
@@ -109,6 +116,7 @@ const eventStream = this.deps.agentManager.sendMessage(ccaSessionKey, prompt, {
 ```
 
 After:
+
 ```typescript
 const eventStream = this.deps.agentManager.sendMessage(ccaSessionKey, prompt, {
   ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
@@ -116,6 +124,7 @@ const eventStream = this.deps.agentManager.sendMessage(ccaSessionKey, prompt, {
 ```
 
 **Acceptance criteria:**
+
 - `payloadCwd` is extracted inline before `ensureSession` is called
 - `effectiveCwd = payloadCwd ?? agentCwd` encodes the precedence: payload wins over Mesh context
 - All four usages of `agentCwd` in `handleAgentMessage` after its declaration are replaced with `effectiveCwd`
@@ -151,7 +160,7 @@ it('passes cwd from relay payload to ensureSession and sendMessage when no agent
   expect(result.success).toBe(true);
   expect(agentManager.ensureSession).toHaveBeenCalledWith(
     'session-abc',
-    expect.objectContaining({ cwd: '/my/project' }),
+    expect.objectContaining({ cwd: '/my/project' })
   );
   const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
   expect(sendArgs[2]).toEqual(expect.objectContaining({ cwd: '/my/project' }));
@@ -175,7 +184,7 @@ it('prefers payload cwd over agent context directory', async () => {
 
   expect(agentManager.ensureSession).toHaveBeenCalledWith(
     'session-abc',
-    expect.objectContaining({ cwd: '/payload/path' }),
+    expect.objectContaining({ cwd: '/payload/path' })
   );
 });
 ```
@@ -196,7 +205,7 @@ it('falls back to agent context directory when payload has no cwd', async () => 
 
   expect(agentManager.ensureSession).toHaveBeenCalledWith(
     'session-abc',
-    expect.objectContaining({ cwd: '/projects/myapp' }),
+    expect.objectContaining({ cwd: '/projects/myapp' })
   );
 });
 ```
@@ -212,6 +221,7 @@ payload and no context. After task 1.1, `payloadCwd` will be `undefined`, `agent
 `expect(ensureCall[1]).not.toHaveProperty('cwd')` continues to hold. No changes to that test.
 
 **Acceptance criteria:**
+
 - All three new tests pass: `pnpm vitest run packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts`
 - All existing tests continue to pass (full suite green)
 - No new imports added to the test file
@@ -227,6 +237,7 @@ pnpm vitest run packages/relay/src/adapters/__tests__/claude-code-adapter.test.t
 ```
 
 For manual end-to-end verification:
+
 1. Start DorkOS with `DORKOS_RELAY_ENABLED=true`
 2. Open `http://localhost:4241/?dir=/tmp/test-relay-cwd`
 3. Click "+ New session" and send "Run pwd in bash"

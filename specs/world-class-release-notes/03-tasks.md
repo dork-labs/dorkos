@@ -17,12 +17,12 @@ Update `apps/web/source.config.ts` to add the `blogPosts` collection using `defi
 **File**: `apps/web/source.config.ts`
 
 ```typescript
-import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config'
-import { z } from 'zod'
+import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config';
+import { z } from 'zod';
 
 export const docs = defineDocs({
   dir: '../../docs',
-})
+});
 
 export const blogPosts = defineCollections({
   type: 'doc',
@@ -37,12 +37,13 @@ export const blogPosts = defineCollections({
       tags: z.array(z.string()).optional(),
       image: z.string().optional(),
     }),
-})
+});
 
-export default defineConfig()
+export default defineConfig();
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `blogPosts` collection exported from `source.config.ts`
 - [ ] Zod schema validates all frontmatter fields (title required, rest optional)
 - [ ] `docs` export unchanged
@@ -57,10 +58,10 @@ Update `apps/web/src/lib/source.ts` to add a `blog` loader alongside the existin
 **File**: `apps/web/src/lib/source.ts`
 
 ```typescript
-import { docs, blogPosts } from '@/.source'
-import { loader } from 'fumadocs-core/source'
-import { openapiPlugin } from 'fumadocs-openapi/server'
-import { toFumadocsSource } from 'fumadocs-mdx/runtime/server'
+import { docs, blogPosts } from '@/.source';
+import { loader } from 'fumadocs-core/source';
+import { openapiPlugin } from 'fumadocs-openapi/server';
+import { toFumadocsSource } from 'fumadocs-mdx/runtime/server';
 
 /**
  * Fumadocs source loader for documentation pages.
@@ -69,7 +70,7 @@ export const source = loader({
   baseUrl: '/docs',
   source: docs.toFumadocsSource(),
   plugins: [openapiPlugin()],
-})
+});
 
 /**
  * Fumadocs source loader for blog posts.
@@ -77,10 +78,11 @@ export const source = loader({
 export const blog = loader({
   baseUrl: '/blog',
   source: toFumadocsSource(blogPosts, []),
-})
+});
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `blog` loader exported from `lib/source.ts`
 - [ ] Uses `toFumadocsSource` from `fumadocs-mdx/runtime/server`
 - [ ] `source` loader unchanged
@@ -96,6 +98,7 @@ Create the `blog/` directory at the monorepo root (sibling to `docs/`) and write
 **File**: `blog/dorkos-0-2-0.mdx`
 
 The post should:
+
 - Use the frontmatter schema: title, description, date (2026-02-17), author ("DorkOS Team"), category ("release"), tags
 - Contain narrative content based on `CHANGELOG.md` v0.2.0 section AND the GitHub Release v0.2.0 content
 - Include highlights for: marketing site, FSD migration, tunnel integration, config system, ESLint/Prettier, ADR system
@@ -103,11 +106,13 @@ The post should:
 - Include the bug fix "CLI build failure for config-manager import resolution" that was missing from CHANGELOG.md but present in the GitHub Release
 
 The CHANGELOG.md v0.2.0 section contains:
+
 - Added: marketing website, logging, directory boundary, versioning, gtr, config, tunnel, ESLint, ADR, TSDoc
 - Changed: FSD migration, guides rename, constants extraction, file splitting, port change, .env centralization
 - Fixed: shell eval, OpenAPI JSON, API docs, React Compiler warnings, barrel imports
 
 **Acceptance Criteria:**
+
 - [ ] `blog/dorkos-0-2-0.mdx` exists with valid frontmatter
 - [ ] Frontmatter date is `2026-02-17`
 - [ ] Category is `release`
@@ -123,6 +128,7 @@ Create `apps/web/src/app/(marketing)/blog/page.tsx` that lists all blog posts so
 **File**: `apps/web/src/app/(marketing)/blog/page.tsx`
 
 The page should:
+
 - Import `blog` from `@/lib/source`
 - Call `blog.getPages()` to get all posts
 - Sort by date descending
@@ -188,6 +194,7 @@ export default function BlogIndex() {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Blog index page renders at `/blog`
 - [ ] Posts sorted by date descending
 - [ ] Each post shows title, date, category badge, description
@@ -203,6 +210,7 @@ Create `apps/web/src/app/(marketing)/blog/[slug]/page.tsx` that renders individu
 **File**: `apps/web/src/app/(marketing)/blog/[slug]/page.tsx`
 
 The page should:
+
 - Import `blog` from `@/lib/source`
 - Use `blog.getPage([slug])` to fetch the post
 - Return `notFound()` for invalid slugs
@@ -289,6 +297,7 @@ export default async function BlogPost({ params }: BlogPostProps) {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Individual blog post renders at `/blog/dorkos-0-2-0`
 - [ ] MDX content renders with fumadocs components
 - [ ] InlineTOC shows for posts with headings
@@ -303,10 +312,12 @@ export default async function BlogPost({ params }: BlogPostProps) {
 Blog pages need `fumadocs-ui/style.css` for `InlineTOC` and MDX components to render correctly. The `(docs)/layout.tsx` already imports it but the `(marketing)` route group does not.
 
 Options:
+
 1. Import `fumadocs-ui/style.css` in the blog post page or a blog-specific layout
 2. Wrap blog content in `RootProvider` from `fumadocs-ui/provider/next` for theme support
 
 Create a blog layout at `apps/web/src/app/(marketing)/blog/layout.tsx` that:
+
 - Imports `fumadocs-ui/style.css`
 - Wraps children in `RootProvider` from `fumadocs-ui/provider/next`
 
@@ -321,6 +332,7 @@ export default function BlogLayout({ children }: { children: ReactNode }) {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Fumadocs MDX components render correctly on blog pages
 - [ ] InlineTOC renders with proper styling
 - [ ] Blog pages have theme support via RootProvider
@@ -335,6 +347,7 @@ Update `apps/web/src/app/(marketing)/page.tsx` to add "blog" to the `navLinks` a
 **File**: `apps/web/src/app/(marketing)/page.tsx`
 
 Change the `navLinks` array from:
+
 ```typescript
 const navLinks = [
   { label: 'system', href: '#system' },
@@ -342,10 +355,11 @@ const navLinks = [
   { label: 'about', href: '#about' },
   { label: 'contact', href: '#contact' },
   { label: 'docs', href: '/docs' },
-]
+];
 ```
 
 To:
+
 ```typescript
 const navLinks = [
   { label: 'system', href: '#system' },
@@ -354,10 +368,11 @@ const navLinks = [
   { label: 'contact', href: '#contact' },
   { label: 'blog', href: '/blog' },
   { label: 'docs', href: '/docs' },
-]
+];
 ```
 
 **Acceptance Criteria:**
+
 - [ ] "blog" link appears in marketing navigation
 - [ ] Link navigates to `/blog`
 - [ ] Positioned before "docs" link
@@ -371,6 +386,7 @@ Run `npm run build -w apps/web` and `npx tsc --noEmit` in `apps/web` to verify e
 If build errors occur due to Fumadocs API differences (e.g., `toFumadocsSource` import path, `page.data.load()` vs other API), fix them by consulting the installed Fumadocs version.
 
 **Acceptance Criteria:**
+
 - [ ] `npm run build -w apps/web` succeeds
 - [ ] TypeScript compiles with no errors
 - [ ] Blog index page is generated in build output
@@ -387,17 +403,17 @@ Create `apps/web/src/app/blog/feed.xml/route.ts` (outside the `(marketing)` rout
 **File**: `apps/web/src/app/blog/feed.xml/route.ts`
 
 ```typescript
-import { blog } from '@/lib/source'
-import { siteConfig } from '@/config/site'
+import { blog } from '@/lib/source';
+import { siteConfig } from '@/config/site';
 
-export const dynamic = 'force-static'
+export const dynamic = 'force-static';
 
 export function GET() {
   const posts = blog.getPages().sort((a, b) => {
-    const dateA = new Date(a.data.date ?? 0)
-    const dateB = new Date(b.data.date ?? 0)
-    return dateB.getTime() - dateA.getTime()
-  })
+    const dateA = new Date(a.data.date ?? 0);
+    const dateB = new Date(b.data.date ?? 0);
+    return dateB.getTime() - dateA.getTime();
+  });
 
   const items = posts
     .map(
@@ -409,7 +425,7 @@ export function GET() {
       ${post.data.description ? `<description>${escapeXml(post.data.description)}</description>` : ''}
     </item>`
     )
-    .join('\n')
+    .join('\n');
 
   const rss = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
@@ -421,13 +437,13 @@ export function GET() {
     <atom:link href="${siteConfig.url}/blog/feed.xml" rel="self" type="application/rss+xml"/>
 ${items}
   </channel>
-</rss>`
+</rss>`;
 
   return new Response(rss, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
     },
-  })
+  });
 }
 
 function escapeXml(str: string): string {
@@ -436,11 +452,12 @@ function escapeXml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
+    .replace(/'/g, '&apos;');
 }
 ```
 
 **Acceptance Criteria:**
+
 - [ ] RSS feed accessible at `/blog/feed.xml`
 - [ ] Valid RSS 2.0 XML
 - [ ] Posts sorted by date descending
@@ -477,6 +494,7 @@ Replace with:
 Also update the instructions text around the template to explicitly say: "The All Changes section MUST be copied verbatim from the CHANGELOG.md version section. Only the theme paragraph and Highlights are generated fresh."
 
 **Acceptance Criteria:**
+
 - [ ] Release notes template specifies copying from CHANGELOG.md
 - [ ] Instructions explicitly say "do not regenerate"
 - [ ] Theme and Highlights sections still generated fresh
@@ -492,7 +510,7 @@ Update `.claude/commands/system/release.md` to add a new Phase 5.5b after Phase 
 
 Insert a new section between Phase 5.5 and Phase 5.6:
 
-```markdown
+````markdown
 ### 5.5b: Scaffold Blog Post
 
 Create `blog/dorkos-X-Y-Z.mdx` (with dots replaced by hyphens in the slug) with initial content:
@@ -501,15 +519,17 @@ Create `blog/dorkos-X-Y-Z.mdx` (with dots replaced by hyphens in the slug) with 
    ```yaml
    ---
    title: DorkOS X.Y.Z
-   description: {Theme from CHANGELOG.md blockquote, or 1-sentence summary}
-   date: {today's date YYYY-MM-DD}
+   description: { Theme from CHANGELOG.md blockquote, or 1-sentence summary }
+   date: { today's date YYYY-MM-DD }
    author: DorkOS Team
    category: release
-   tags: [release, {2-3 relevant tags from changelog content}]
+   tags: [release, { 2-3 relevant tags from changelog content }]
    ---
    ```
+````
 
 2. Include the highlights and all changes as initial content:
+
    ```markdown
    ## What's New
 
@@ -527,14 +547,16 @@ Create `blog/dorkos-X-Y-Z.mdx` (with dots replaced by hyphens in the slug) with 
 3. Report to user: "Blog post scaffolded at `blog/dorkos-X-Y-Z.mdx`. You can edit it before the release commit."
 
 The blog post file will be included in the release commit (Phase 5.6).
-```
+
+````
 
 Also update Phase 5.6 to include the blog post in the git add:
 ```bash
 git add VERSION CHANGELOG.md docs/changelog.mdx blog/ packages/cli/package.json package.json package-lock.json
-```
+````
 
 **Acceptance Criteria:**
+
 - [ ] Phase 5.5b documented in release command
 - [ ] Blog post frontmatter includes all required fields
 - [ ] Blog post content includes highlights and all changes
@@ -557,15 +579,18 @@ Add a new section documenting:
 Add a single-line blockquote below version headings to provide a theme/summary for the release:
 
 \`\`\`markdown
+
 ## [0.3.0] - 2026-02-20
 
 > DorkOS 0.3.0 adds a scheduler and dynamic MCP tools.
 
 ### Added
+
 - ...
-\`\`\`
+  \`\`\`
 
 This theme line feeds:
+
 - Blog post descriptions
 - GitHub Release "What's New" opening paragraph
 - Quick reference for users scanning the changelog
@@ -574,6 +599,7 @@ The blockquote is optional and backward-compatible. Older versions without it wo
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Theme blockquote convention documented in changelog skill
 - [ ] Example shows correct format
 - [ ] Explains where the theme is used (blog, GitHub Release)
@@ -589,7 +615,7 @@ Create `.claude/commands/changelog/backfill.md` that finds missing changelog ent
 
 **File**: `.claude/commands/changelog/backfill.md`
 
-```markdown
+````markdown
 ---
 description: Find missing changelog entries from git commits since last tag
 argument-hint: [tag] [--dry-run]
@@ -616,6 +642,7 @@ Find commits since the last tag (or a specified tag) that are not represented in
 TAG="${1:-$(git describe --tags --abbrev=0 2>/dev/null)}"
 echo "Comparing from: $TAG"
 ```
+````
 
 If no tags exist, report and stop.
 
@@ -630,12 +657,14 @@ git log $TAG..HEAD --oneline --no-merges
 Process each commit line:
 
 **Include** (conventional commit types):
+
 - `feat:` / `feat(scope):` -> **Added**
 - `fix:` / `fix(scope):` -> **Fixed**
 - `refactor:` / `refactor(scope):` -> **Changed**
 - `perf:` / `perf(scope):` -> **Changed**
 
 **Skip** (not user-facing):
+
 - `chore:` / `ci:` / `test:` / `docs:` / `build:` / `style:`
 
 ### Step 4: Compare with Existing Entries
@@ -655,16 +684,20 @@ Show proposed entries grouped by category:
 **New entries proposed**: [count]
 
 ### Added
+
 - [user-friendly description] ([sha])
 
 ### Changed
+
 - [user-friendly description] ([sha])
 
 ### Fixed
+
 - [user-friendly description] ([sha])
 ```
 
 Rewrite each entry following the writing-changelogs skill:
+
 - Focus on what users can DO
 - Use imperative verbs
 - Explain benefits, not mechanisms
@@ -688,6 +721,7 @@ options:
 If "Yes, add all": Use Edit tool to add entries to appropriate sections in [Unreleased].
 If "Review individually": Present each entry with accept/reject options.
 If "Skip" or `--dry-run`: Report and exit.
+
 ```
 
 **Acceptance Criteria:**
@@ -699,3 +733,4 @@ If "Skip" or `--dry-run`: Report and exit.
 - [ ] Supports `--dry-run` flag
 - [ ] Supports specifying a tag via arguments
 - [ ] User can approve all, review individually, or skip
+```

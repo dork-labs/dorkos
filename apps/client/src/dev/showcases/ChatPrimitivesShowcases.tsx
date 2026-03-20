@@ -47,10 +47,7 @@ export function ChatPrimitivesShowcases() {
 
         <ShowcaseLabel>Denied</ShowcaseLabel>
         <ShowcaseDemo>
-          <CompactResultRow
-            icon={<X className="size-3.5 text-destructive" />}
-            label="Denied"
-          />
+          <CompactResultRow icon={<X className="text-destructive size-3.5" />} label="Denied" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With trailing badge</ShowcaseLabel>
@@ -82,7 +79,7 @@ function CollapsibleCardShowcase() {
           onToggle={() => setExpanded((v) => !v)}
           header={<span className="text-sm font-medium">Read file — src/index.ts</span>}
         >
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Card body content is visible when expanded.
           </p>
         </CollapsibleCard>
@@ -96,7 +93,7 @@ function CollapsibleCardShowcase() {
           header={<span className="text-sm font-medium">Thinking...</span>}
           variant="thinking"
         >
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Extended thinking content rendered with thinking styling.
           </p>
         </CollapsibleCard>
@@ -110,7 +107,7 @@ function CollapsibleCardShowcase() {
           header={<span className="text-sm font-medium">Disabled card</span>}
           disabled
         >
-          <p className="text-sm text-muted-foreground">Cannot expand.</p>
+          <p className="text-muted-foreground text-sm">Cannot expand.</p>
         </CollapsibleCard>
       </ShowcaseDemo>
 
@@ -122,10 +119,10 @@ function CollapsibleCardShowcase() {
           header={<span className="text-sm font-medium">No chevron</span>}
           hideChevron
           extraContent={
-            <p className="text-xs text-muted-foreground">Extra content slot below the body.</p>
+            <p className="text-muted-foreground text-xs">Extra content slot below the body.</p>
           }
         >
-          <p className="text-sm text-muted-foreground">Body content.</p>
+          <p className="text-muted-foreground text-sm">Body content.</p>
         </CollapsibleCard>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -142,7 +139,7 @@ function InteractiveCardShowcase() {
       <ShowcaseDemo>
         <InteractiveCard isActive>
           <div className="flex items-center gap-2 p-3">
-            <ShieldCheck className="size-4 text-primary" />
+            <ShieldCheck className="text-primary size-4" />
             <span className="text-sm">Waiting for approval — active focus ring</span>
           </div>
         </InteractiveCard>
@@ -152,8 +149,8 @@ function InteractiveCardShowcase() {
       <ShowcaseDemo>
         <InteractiveCard>
           <div className="flex items-center gap-2 p-3">
-            <MessageCircleQuestion className="size-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Inactive — dimmed appearance</span>
+            <MessageCircleQuestion className="text-muted-foreground size-4" />
+            <span className="text-muted-foreground text-sm">Inactive — dimmed appearance</span>
           </div>
         </InteractiveCard>
       </ShowcaseDemo>
@@ -189,13 +186,11 @@ function OptionRowShowcase() {
               control={
                 <div
                   className={`size-4 rounded-full border-2 ${
-                    selected === i
-                      ? 'border-primary bg-primary'
-                      : 'border-muted-foreground/40'
+                    selected === i ? 'border-primary bg-primary' : 'border-muted-foreground/40'
                   }`}
                 >
                   {selected === i && (
-                    <div className="m-auto mt-0.5 size-2 rounded-full bg-primary-foreground" />
+                    <div className="bg-primary-foreground m-auto mt-0.5 size-2 rounded-full" />
                   )}
                 </div>
               }

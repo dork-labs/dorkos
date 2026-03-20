@@ -53,13 +53,13 @@ Without observability, the mesh is a black box. Debugging agent communication is
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose | Install Location |
-|---|---|---|---|
-| `@xyflow/react` | ^12 | Network graph visualization | `apps/client` |
-| `dagre` | ^0.8 | Deterministic graph layout (LTR) | `apps/client` |
-| `@types/dagre` | ^0.7 | TypeScript types for dagre | `apps/client` (devDep) |
-| `better-sqlite3` | (existing) | Health column storage | `packages/mesh` |
-| `@dorkos/relay` | (existing) | SignalEmitter for lifecycle events | `packages/mesh` |
+| Dependency       | Version    | Purpose                            | Install Location       |
+| ---------------- | ---------- | ---------------------------------- | ---------------------- |
+| `@xyflow/react`  | ^12        | Network graph visualization        | `apps/client`          |
+| `dagre`          | ^0.8       | Deterministic graph layout (LTR)   | `apps/client`          |
+| `@types/dagre`   | ^0.7       | TypeScript types for dagre         | `apps/client` (devDep) |
+| `better-sqlite3` | (existing) | Health column storage              | `packages/mesh`        |
+| `@dorkos/relay`  | (existing) | SignalEmitter for lifecycle events | `packages/mesh`        |
 
 React Flow v12 (`@xyflow/react`) has confirmed React 19 + Tailwind CSS 4 compatibility. Custom nodes are plain React components — shadcn Badge and status indicators embed directly. First-party dagre layout adapter with copy-paste examples.
 
@@ -134,12 +134,12 @@ getAggregateStats: db.prepare(`
 
 **New AgentRegistry methods:**
 
-| Method | Signature | Purpose |
-|---|---|---|
-| `updateHealth()` | `updateHealth(id: string, lastSeenAt: string, lastSeenEvent: string): boolean` | Update last-seen timestamp |
-| `getWithHealth()` | `getWithHealth(id: string): AgentHealthEntry \| undefined` | Single agent + computed status |
-| `listWithHealth()` | `listWithHealth(filters?: AgentListFilters): AgentHealthEntry[]` | All agents + computed status |
-| `getAggregateStats()` | `getAggregateStats(): AggregateStats` | Counts by health status |
+| Method                | Signature                                                                      | Purpose                        |
+| --------------------- | ------------------------------------------------------------------------------ | ------------------------------ |
+| `updateHealth()`      | `updateHealth(id: string, lastSeenAt: string, lastSeenEvent: string): boolean` | Update last-seen timestamp     |
+| `getWithHealth()`     | `getWithHealth(id: string): AgentHealthEntry \| undefined`                     | Single agent + computed status |
+| `listWithHealth()`    | `listWithHealth(filters?: AgentListFilters): AgentHealthEntry[]`               | All agents + computed status   |
+| `getAggregateStats()` | `getAggregateStats(): AggregateStats`                                          | Counts by health status        |
 
 **New types:**
 
@@ -162,12 +162,12 @@ interface AggregateStats {
 
 Add to `packages/mesh/src/mesh-core.ts`:
 
-| Method | Signature | Purpose |
-|---|---|---|
-| `updateLastSeen()` | `updateLastSeen(agentId: string, event: string): void` | Update health timestamp |
+| Method             | Signature                                                   | Purpose                            |
+| ------------------ | ----------------------------------------------------------- | ---------------------------------- |
+| `updateLastSeen()` | `updateLastSeen(agentId: string, event: string): void`      | Update health timestamp            |
 | `getAgentHealth()` | `getAgentHealth(agentId: string): AgentHealth \| undefined` | Get agent + health + relay subject |
-| `getStatus()` | `getStatus(): MeshStatus` | Aggregate stats + metadata |
-| `inspect()` | `inspect(agentId: string): MeshInspect \| undefined` | Full agent detail for diagnostics |
+| `getStatus()`      | `getStatus(): MeshStatus`                                   | Aggregate stats + metadata         |
+| `inspect()`        | `inspect(agentId: string): MeshInspect \| undefined`        | Full agent detail for diagnostics  |
 
 `getStatus()` returns:
 
@@ -177,8 +177,8 @@ Add to `packages/mesh/src/mesh-core.ts`:
   activeCount: number;
   inactiveCount: number;
   staleCount: number;
-  byRuntime: Record<string, number>;   // Computed from listWithHealth()
-  byProject: Record<string, number>;   // Computed from projectPath basenames
+  byRuntime: Record<string, number>; // Computed from listWithHealth()
+  byProject: Record<string, number>; // Computed from projectPath basenames
 }
 ```
 
@@ -188,7 +188,7 @@ Add to `packages/mesh/src/mesh-core.ts`:
 {
   agent: AgentManifest;
   health: AgentHealth;
-  relaySubject: string | null;  // From RelayBridge subject cache
+  relaySubject: string | null; // From RelayBridge subject cache
 }
 ```
 
@@ -200,7 +200,7 @@ Extend `packages/mesh/src/relay-bridge.ts` to accept a `SignalEmitter` and emit 
 export class RelayBridge {
   constructor(
     private readonly relayCore?: RelayCore,
-    private readonly signalEmitter?: SignalEmitter,  // NEW
+    private readonly signalEmitter?: SignalEmitter // NEW
   ) {}
 
   async registerAgent(agent: AgentManifest, projectPath: string): Promise<string | null> {
@@ -249,11 +249,11 @@ updateLastSeen(agentId: string, event: string): void {
 
 **Signal subjects:**
 
-| Subject | Payload | When |
-|---|---|---|
-| `mesh.agent.lifecycle.registered` | `{ agentId, agentName, event: 'registered', timestamp }` | Agent registered |
-| `mesh.agent.lifecycle.unregistered` | `{ agentId, agentName, event: 'unregistered', timestamp }` | Agent unregistered |
-| `mesh.agent.lifecycle.health_changed` | `{ agentId, agentName, event: 'health_changed', previousStatus, currentStatus, timestamp }` | Status transition |
+| Subject                               | Payload                                                                                     | When               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------ |
+| `mesh.agent.lifecycle.registered`     | `{ agentId, agentName, event: 'registered', timestamp }`                                    | Agent registered   |
+| `mesh.agent.lifecycle.unregistered`   | `{ agentId, agentName, event: 'unregistered', timestamp }`                                  | Agent unregistered |
+| `mesh.agent.lifecycle.health_changed` | `{ agentId, agentName, event: 'health_changed', previousStatus, currentStatus, timestamp }` | Status transition  |
 
 ### 4. MeshCore Constructor Changes
 
@@ -262,7 +262,7 @@ Pass `SignalEmitter` from RelayCore through to RelayBridge:
 ```typescript
 // In MeshCore constructor
 const signalEmitter = options.relayCore
-  ? (options.relayCore as any).signalEmitter  // Access from RelayCore
+  ? (options.relayCore as any).signalEmitter // Access from RelayCore
   : undefined;
 
 this.relayBridge = new RelayBridge(options.relayCore, signalEmitter);
@@ -274,7 +274,7 @@ If RelayCore doesn't expose `signalEmitter` directly, pass it as an explicit opt
 interface MeshOptions {
   dataDir?: string;
   relayCore?: RelayCore;
-  signalEmitter?: SignalEmitter;  // NEW
+  signalEmitter?: SignalEmitter; // NEW
   strategies?: DiscoveryStrategy[];
 }
 ```
@@ -285,7 +285,7 @@ Then in `apps/server/src/index.ts`:
 meshCore = new MeshCore({
   dataDir: path.join(dorkHome, 'mesh'),
   relayCore,
-  signalEmitter: relayCore?.signalEmitter,  // Pass through
+  signalEmitter: relayCore?.signalEmitter, // Pass through
 });
 ```
 
@@ -299,52 +299,62 @@ export const AgentHealthStatusSchema = z.enum(['active', 'inactive', 'stale']);
 export type AgentHealthStatus = z.infer<typeof AgentHealthStatusSchema>;
 
 // Agent health detail
-export const AgentHealthSchema = z.object({
-  agentId: z.string(),
-  name: z.string(),
-  status: AgentHealthStatusSchema,
-  lastSeenAt: z.string().nullable(),
-  lastSeenEvent: z.string().nullable(),
-  registeredAt: z.string(),
-  runtime: AgentRuntimeSchema,
-  capabilities: z.array(z.string()),
-}).openapi('AgentHealth');
+export const AgentHealthSchema = z
+  .object({
+    agentId: z.string(),
+    name: z.string(),
+    status: AgentHealthStatusSchema,
+    lastSeenAt: z.string().nullable(),
+    lastSeenEvent: z.string().nullable(),
+    registeredAt: z.string(),
+    runtime: AgentRuntimeSchema,
+    capabilities: z.array(z.string()),
+  })
+  .openapi('AgentHealth');
 export type AgentHealth = z.infer<typeof AgentHealthSchema>;
 
 // Aggregate mesh status
-export const MeshStatusSchema = z.object({
-  totalAgents: z.number(),
-  activeCount: z.number(),
-  inactiveCount: z.number(),
-  staleCount: z.number(),
-  byRuntime: z.record(z.string(), z.number()),
-  byProject: z.record(z.string(), z.number()),
-}).openapi('MeshStatus');
+export const MeshStatusSchema = z
+  .object({
+    totalAgents: z.number(),
+    activeCount: z.number(),
+    inactiveCount: z.number(),
+    staleCount: z.number(),
+    byRuntime: z.record(z.string(), z.number()),
+    byProject: z.record(z.string(), z.number()),
+  })
+  .openapi('MeshStatus');
 export type MeshStatus = z.infer<typeof MeshStatusSchema>;
 
 // Detailed agent inspection
-export const MeshInspectSchema = z.object({
-  agent: AgentManifestSchema,
-  health: AgentHealthSchema,
-  relaySubject: z.string().nullable(),
-}).openapi('MeshInspect');
+export const MeshInspectSchema = z
+  .object({
+    agent: AgentManifestSchema,
+    health: AgentHealthSchema,
+    relaySubject: z.string().nullable(),
+  })
+  .openapi('MeshInspect');
 export type MeshInspect = z.infer<typeof MeshInspectSchema>;
 
 // Lifecycle event
-export const MeshLifecycleEventSchema = z.object({
-  agentId: z.string(),
-  agentName: z.string(),
-  event: z.enum(['registered', 'unregistered', 'health_changed']),
-  previousStatus: AgentHealthStatusSchema.optional(),
-  currentStatus: AgentHealthStatusSchema.optional(),
-  timestamp: z.string(),
-}).openapi('MeshLifecycleEvent');
+export const MeshLifecycleEventSchema = z
+  .object({
+    agentId: z.string(),
+    agentName: z.string(),
+    event: z.enum(['registered', 'unregistered', 'health_changed']),
+    previousStatus: AgentHealthStatusSchema.optional(),
+    currentStatus: AgentHealthStatusSchema.optional(),
+    timestamp: z.string(),
+  })
+  .openapi('MeshLifecycleEvent');
 export type MeshLifecycleEvent = z.infer<typeof MeshLifecycleEventSchema>;
 
 // Heartbeat request
-export const HeartbeatRequestSchema = z.object({
-  event: z.string().optional().default('heartbeat'),
-}).openapi('HeartbeatRequest');
+export const HeartbeatRequestSchema = z
+  .object({
+    event: z.string().optional().default('heartbeat'),
+  })
+  .openapi('HeartbeatRequest');
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequestSchema>;
 ```
 
@@ -474,7 +484,7 @@ export function useMeshStatus(enabled = true) {
     queryFn: () => transport.getMeshStatus(),
     enabled,
     staleTime: 30_000,
-    refetchInterval: 30_000,  // Poll every 30s
+    refetchInterval: 30_000, // Poll every 30s
   });
 }
 ```
@@ -587,7 +597,7 @@ function layoutWithDagre(agents: AgentHealthEntry[]) {
     };
   });
 
-  return { nodes, edges: [] };  // No edges for v1 (flat topology)
+  return { nodes, edges: [] }; // No edges for v1 (flat topology)
 }
 ```
 
@@ -805,6 +815,7 @@ Discovery, Agents, and Denied tabs remain exactly as-is. The Agents tab cards co
 ### MCP Tools
 
 Agents can inspect the mesh via:
+
 - `mesh_status` — "How many agents are active?" → returns aggregate counts
 - `mesh_inspect 01JKABC00001` — "Tell me about this agent" → returns full detail
 
@@ -943,11 +954,11 @@ None — all questions resolved during ideation.
 
 ## Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| #23 | Custom Async BFS for Agent Discovery | Discovery engine architecture (unchanged by this spec) |
-| #24 | DorkOS-Native Agent Manifest at .dork/agent.json | Manifest format that health tracking extends |
-| #25 | Simple JSON Columns for Agent Registry | SQLite schema pattern we're extending with health columns |
+| ADR | Title                                            | Relevance                                                 |
+| --- | ------------------------------------------------ | --------------------------------------------------------- |
+| #23 | Custom Async BFS for Agent Discovery             | Discovery engine architecture (unchanged by this spec)    |
+| #24 | DorkOS-Native Agent Manifest at .dork/agent.json | Manifest format that health tracking extends              |
+| #25 | Simple JSON Columns for Agent Registry           | SQLite schema pattern we're extending with health columns |
 
 ## References
 

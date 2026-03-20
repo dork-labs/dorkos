@@ -1,5 +1,5 @@
 ---
-title: "Autonomous Improvement Engine — Naming Research"
+title: 'Autonomous Improvement Engine — Naming Research'
 date: 2026-02-18
 type: exploratory
 status: archived
@@ -30,6 +30,7 @@ The most successful developer tool names share four structural properties:
 **Short and phonetically crisp.** The dominant pattern is 1–2 syllables with hard consonants (k, t, v, r) or strong vowels at the start. Examples: Vite (1 syl), Turbo (2 syl), Vercel (2 syl), Linear (3 syl), Docker (2 syl), Cursor (2 syl). Three syllables is the outer limit. Supabase breaks the rule by compounding two short words. "Kubernetes" is the famous exception — its length is tolerated because it was a category creator with no competing standard.
 
 **Metaphor anchored in a single physical concept.** Each name maps to exactly one concrete image:
+
 - Docker → dock worker loading containers
 - Terraform → reshaping planetary terrain (infrastructure)
 - Kubernetes → Greek helmsman steering a ship
@@ -49,12 +50,14 @@ The most successful developer tool names share four structural properties:
 The product concept — collect signals, hypothesize, plan, dispatch agents, monitor — maps to several metaphorical domains. Each is evaluated for strength:
 
 #### Biological (Evolution/Metabolism)
+
 - Strongest concept: metabolism — continuous processing of inputs into outputs and back
 - Words: flux, pulse, cycle, adapt, evolve, gene, strain
 - Risk: "evolution" family feels slow; "bio" names feel more like observability (Datadog, etc.)
 - Best word in this space: **Pulse** (already in this codebase), **Strain**, **Cycle**
 
 #### Scientific (Hypothesis/Catalysis)
+
 - Strongest concept: catalyst — a substance that accelerates a reaction without being consumed
 - A catalyst initiates change, speeds the loop, but remains constant infrastructure
 - Words: catalyst, reactor, kinetic, volt, delta, sigma
@@ -62,6 +65,7 @@ The product concept — collect signals, hypothesize, plan, dispatch agents, mon
 - Best word: **Kine** (kinetics), **Delta**, **Volt**, **Sigma**
 
 #### Mechanical (Flywheel/Forge)
+
 - Strongest concept: flywheel — Jim Collins made this a canonical metaphor for compounding improvement loops; a flywheel stores rotational energy, each turn adding to the next
 - The flywheel maps precisely: initial effort is hard, but the system accumulates momentum and eventually self-sustains — exactly what this tool does
 - Words: flywheel, wheel, gear, forge, anvil, ratchet, piston, cam, crank, torque
@@ -69,12 +73,14 @@ The product concept — collect signals, hypothesize, plan, dispatch agents, mon
 - Best words: **Torq**, **Ratchet**, **Crank**, **Flywheel**, **Cam**
 
 #### Natural (Tide/Current)
+
 - Strongest concept: current — continuous directional flow that builds over time
 - Words: current, tide, drift, eddy, surge, flow, stream
 - Risk: "stream" and "flow" are overused in data engineering (Kafka Streams, Apache Flink, etc.)
 - Best words: **Eddy**, **Surge**, **Tide**, **Swell**
 
 #### Cybernetic/Navigation (Feedback/Loop/Signal)
+
 - Strongest concept: cybernetics literally means "the science of self-regulating systems" — exactly this product; coined by Norbert Wiener from the Greek kubernḗtēs (helmsman) — same root as Kubernetes
 - Navigation metaphor: a helmsman receives feedback from the environment, adjusts course, observes, adjusts again
 - Words: helm, steer, arc, bearing, fix, trim, rudder, pilot, course
@@ -86,7 +92,7 @@ The product concept — collect signals, hypothesize, plan, dispatch agents, mon
 
 ### Why the Flywheel is the Ideal Conceptual Anchor
 
-Jim Collins introduced the "flywheel effect" in *Good to Great* (2001) to describe how great companies build compounding momentum through consistent directional effort. Amazon has used the term explicitly in investor communications. The metaphor is:
+Jim Collins introduced the "flywheel effect" in _Good to Great_ (2001) to describe how great companies build compounding momentum through consistent directional effort. Amazon has used the term explicitly in investor communications. The metaphor is:
 
 1. Extremely well-known in engineering and business contexts
 2. Precisely accurate to this product's mechanism (each cycle adds energy to the next)
@@ -114,53 +120,53 @@ Organized by thematic direction. Syllable count and posture notes included.
 
 ### Mechanical/Flywheel
 
-| Name | Syl | Notes |
-|------|-----|-------|
-| **Torq** | 1 | Torque without the 'ue' — immediately technical, implies rotational force and momentum. CLI: `torq run`. |
-| **Cam** | 1 | A cam converts rotational motion to linear motion — precisely the feedback-to-action transform this tool does. Extremely short. CLI: `cam push`. |
-| **Ratchet** | 2 | A ratchet allows motion in only one direction — forward progress locks in, no regression. Mechanically precise. CLI: `ratchet apply`. |
-| **Flywheel** | 2 | The canonical metaphor. Evocative, precise, not yet dominant in dev tools. CLI: `flywheel run`. Slightly long. |
-| **Crank** | 1 | To "crank" is to initiate and sustain mechanical motion. Informal energy to it. CLI: `crank`. |
-| **Gyre** | 1 | A spiral or circular motion. Literary (Yeats), scientific (ocean gyres). Unusual. CLI: `gyre`. |
+| Name         | Syl | Notes                                                                                                                                            |
+| ------------ | --- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Torq**     | 1   | Torque without the 'ue' — immediately technical, implies rotational force and momentum. CLI: `torq run`.                                         |
+| **Cam**      | 1   | A cam converts rotational motion to linear motion — precisely the feedback-to-action transform this tool does. Extremely short. CLI: `cam push`. |
+| **Ratchet**  | 2   | A ratchet allows motion in only one direction — forward progress locks in, no regression. Mechanically precise. CLI: `ratchet apply`.            |
+| **Flywheel** | 2   | The canonical metaphor. Evocative, precise, not yet dominant in dev tools. CLI: `flywheel run`. Slightly long.                                   |
+| **Crank**    | 1   | To "crank" is to initiate and sustain mechanical motion. Informal energy to it. CLI: `crank`.                                                    |
+| **Gyre**     | 1   | A spiral or circular motion. Literary (Yeats), scientific (ocean gyres). Unusual. CLI: `gyre`.                                                   |
 
 ### Scientific/Catalytic
 
-| Name | Syl | Notes |
-|------|-----|-------|
-| **Volt** | 1 | Unit of electrical potential. Implies stored energy waiting to drive current. Clean, technical. CLI: `volt`. Already used by Volta (JS toolchain manager). |
-| **Kine** | 1 | From kinetics — the study of motion caused by forces. Rare, distinctive. CLI: `kine run`. |
-| **Delta** | 2 | The symbol of change (Δ). Universally understood in engineering and science. CLI: `delta apply`. Risk: used by Delta Lake, Delta Air. |
-| **Sigma** | 2 | Six Sigma = continuous improvement framework. Strong resonance in engineering culture. CLI: `sigma`. |
-| **Lumen** | 2 | Unit of light output — implies illumination of dark signals. CLI: `lumen`. |
-| **Quorum** | 3 | The minimum needed to proceed — implies consensus of signals before action. 3 syllables, borderline. |
+| Name       | Syl | Notes                                                                                                                                                      |
+| ---------- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Volt**   | 1   | Unit of electrical potential. Implies stored energy waiting to drive current. Clean, technical. CLI: `volt`. Already used by Volta (JS toolchain manager). |
+| **Kine**   | 1   | From kinetics — the study of motion caused by forces. Rare, distinctive. CLI: `kine run`.                                                                  |
+| **Delta**  | 2   | The symbol of change (Δ). Universally understood in engineering and science. CLI: `delta apply`. Risk: used by Delta Lake, Delta Air.                      |
+| **Sigma**  | 2   | Six Sigma = continuous improvement framework. Strong resonance in engineering culture. CLI: `sigma`.                                                       |
+| **Lumen**  | 2   | Unit of light output — implies illumination of dark signals. CLI: `lumen`.                                                                                 |
+| **Quorum** | 3   | The minimum needed to proceed — implies consensus of signals before action. 3 syllables, borderline.                                                       |
 
 ### Biological/Adaptive
 
-| Name | Syl | Notes |
-|------|-----|-------|
-| **Strain** | 1 | A genetic strain adapts through selection pressure — continuous improvement via accumulated signal. Unusual for dev tools. CLI: `strain`. |
-| **Spur** | 1 | To spur growth or action. A spur on a wheel also drives motion. Dual metaphor. CLI: `spur`. |
-| **Graft** | 1 | Biological grafting = taking what works and transplanting it. Implies improvement. CLI: `graft`. |
+| Name       | Syl | Notes                                                                                                                                     |
+| ---------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Strain** | 1   | A genetic strain adapts through selection pressure — continuous improvement via accumulated signal. Unusual for dev tools. CLI: `strain`. |
+| **Spur**   | 1   | To spur growth or action. A spur on a wheel also drives motion. Dual metaphor. CLI: `spur`.                                               |
+| **Graft**  | 1   | Biological grafting = taking what works and transplanting it. Implies improvement. CLI: `graft`.                                          |
 
 ### Natural/Current
 
-| Name | Syl | Notes |
-|------|-----|-------|
-| **Eddy** | 2 | A circular current within a larger flow — a feedback loop within a system. Vivid. Sounds slightly casual. CLI: `eddy`. |
-| **Surge** | 1 | Sudden directed energy increase. Implies activation and momentum. CLI: `surge`. |
-| **Swell** | 1 | A wave that builds without breaking — compounding energy. CLI: `swell`. Too casual. |
-| **Rift** | 1 | A gap or break that produces geological change. Implies structural improvement. CLI: `rift`. |
+| Name      | Syl | Notes                                                                                                                  |
+| --------- | --- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Eddy**  | 2   | A circular current within a larger flow — a feedback loop within a system. Vivid. Sounds slightly casual. CLI: `eddy`. |
+| **Surge** | 1   | Sudden directed energy increase. Implies activation and momentum. CLI: `surge`.                                        |
+| **Swell** | 1   | A wave that builds without breaking — compounding energy. CLI: `swell`. Too casual.                                    |
+| **Rift**  | 1   | A gap or break that produces geological change. Implies structural improvement. CLI: `rift`.                           |
 
 ### Cybernetic/Navigation
 
-| Name | Syl | Notes |
-|------|-----|-------|
-| **Arc** | 1 | The path traced through space — trajectory of improvement. Also: electric arc = energy discharge. Azure Arc exists but is not a CLI tool. CLI: `arc`. |
-| **Keel** | 1 | The structural spine of a ship that keeps it tracking straight — stabilizing directional intelligence. CLI: `keel`. |
-| **Trim** | 1 | Nautical: to trim sails is to continuously adjust to the wind — the exact feedback/adjust loop. CLI: `trim`. Too generic as English word. |
-| **Fix** | 1 | Nautical: a "fix" is a confirmed position determination via multiple signals — exactly what this tool does. Short, punchy. CLI: `fix`. Too generic. |
-| **Bearing** | 2 | A compass bearing — direction determined from current position. Also: bearings in mechanical systems reduce friction. CLI: `bearing`. |
-| **Veer** | 1 | To change course in response to conditions — adaptive steering. CLI: `veer`. |
+| Name        | Syl | Notes                                                                                                                                                 |
+| ----------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Arc**     | 1   | The path traced through space — trajectory of improvement. Also: electric arc = energy discharge. Azure Arc exists but is not a CLI tool. CLI: `arc`. |
+| **Keel**    | 1   | The structural spine of a ship that keeps it tracking straight — stabilizing directional intelligence. CLI: `keel`.                                   |
+| **Trim**    | 1   | Nautical: to trim sails is to continuously adjust to the wind — the exact feedback/adjust loop. CLI: `trim`. Too generic as English word.             |
+| **Fix**     | 1   | Nautical: a "fix" is a confirmed position determination via multiple signals — exactly what this tool does. Short, punchy. CLI: `fix`. Too generic.   |
+| **Bearing** | 2   | A compass bearing — direction determined from current position. Also: bearings in mechanical systems reduce friction. CLI: `bearing`.                 |
+| **Veer**    | 1   | To change course in response to conditions — adaptive steering. CLI: `veer`.                                                                          |
 
 ---
 

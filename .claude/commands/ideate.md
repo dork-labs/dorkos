@@ -279,10 +279,10 @@ status: ideation
 
 {From interactive clarification phase — resolved, not open}
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | {What was decided} | {User's choice} | {Why — from exploration/research or user reasoning} |
-| 2 | {What was decided} | {User's choice} | {Why} |
+| #   | Decision           | Choice          | Rationale                                           |
+| --- | ------------------ | --------------- | --------------------------------------------------- |
+| 1   | {What was decided} | {User's choice} | {Why — from exploration/research or user reasoning} |
+| 2   | {What was decided} | {User's choice} | {Why}                                               |
 
 {If no clarification was needed, state: "No ambiguities identified — task brief and findings were sufficiently clear."}
 ```
@@ -290,6 +290,7 @@ status: ideation
 ### Step 4.3: Update Spec Manifest
 
 After writing the ideation document, update `specs/manifest.json`:
+
 1. Add a new entry to the `specs` array with `number`, `slug`, `title`, `created` (today), and `status: "ideation"`
 2. Increment `nextNumber`
 

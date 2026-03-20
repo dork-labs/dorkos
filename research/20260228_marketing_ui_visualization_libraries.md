@@ -1,5 +1,5 @@
 ---
-title: "Marketing Page UI Visualization Libraries Research"
+title: 'Marketing Page UI Visualization Libraries Research'
 date: 2026-02-28
 type: external-best-practices
 status: active
@@ -77,11 +77,11 @@ export function TopologyDemo() {
 
 **Package landscape (2026):**
 
-| Package | Maintainer | Format | Min+Gzip | Status |
-|---|---|---|---|---|
-| `lottie-react` | Community | JSON | ~15 kB | Active, v2.4.1 |
-| `@lottiefiles/dotlottie-react` | LottieFiles | .lottie + JSON | ~51 kB | Official, recommended |
-| `react-lottie` | Airbnb-derived | JSON | ~20 kB | Largely abandoned, avoid |
+| Package                        | Maintainer     | Format         | Min+Gzip | Status                   |
+| ------------------------------ | -------------- | -------------- | -------- | ------------------------ |
+| `lottie-react`                 | Community      | JSON           | ~15 kB   | Active, v2.4.1           |
+| `@lottiefiles/dotlottie-react` | LottieFiles    | .lottie + JSON | ~51 kB   | Official, recommended    |
+| `react-lottie`                 | Airbnb-derived | JSON           | ~20 kB   | Largely abandoned, avoid |
 
 **SSR compatibility**: All Lottie renderers need browser Canvas or DOM APIs. **None work in RSC/SSR without `{ ssr: false }`**. The standard pattern:
 
@@ -89,10 +89,10 @@ export function TopologyDemo() {
 // app/components/HeroAnimation.tsx (server component wrapper)
 import dynamic from 'next/dynamic';
 
-const LottiePlayer = dynamic(
-  () => import('./LottiePlayerClient'),
-  { ssr: false, loading: () => <div className="h-48 animate-pulse bg-muted rounded" /> }
-);
+const LottiePlayer = dynamic(() => import('./LottiePlayerClient'), {
+  ssr: false,
+  loading: () => <div className="bg-muted h-48 animate-pulse rounded" />,
+});
 
 export function HeroAnimation() {
   return <LottiePlayer />;
@@ -105,17 +105,12 @@ export function HeroAnimation() {
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
 export default function LottiePlayerClient() {
-  return (
-    <DotLottieReact
-      src="/animations/agent-pulse.lottie"
-      loop
-      autoplay
-    />
-  );
+  return <DotLottieReact src="/animations/agent-pulse.lottie" loop autoplay />;
 }
 ```
 
 **Creating Lottie animations without After Effects:**
+
 - **Lottielab** (lottielab.com) — Browser-based, Figma import, exports `.lottie`. Best option for developers.
 - **LottieFiles Creator** (lottiefiles.com/lottie-creator) — AI-powered, free tier (5 exports), state machines.
 - **Glaxnimate** — Open-source desktop app, SVG-based workflow.
@@ -131,6 +126,7 @@ export default function LottiePlayerClient() {
 ### 3. React Three Fiber (R3F)
 
 **Version compatibility (critical):**
+
 - `@react-three/fiber@8` pairs with React 18
 - `@react-three/fiber@9` (RC) pairs with React 19 — required for Next.js 16
 
@@ -149,6 +145,7 @@ const nextConfig = {
 ```
 
 **Bundle sizes (combined, min+gzip):**
+
 - `three`: ~155-170 kB
 - `@react-three/fiber`: ~236 kB (includes Three.js renderer integration)
 - `@react-three/drei`: varies widely by what you import, but adds 50-200+ kB
@@ -184,10 +181,7 @@ function ParticleField({ count = 2000 }: { count?: number }) {
   return (
     <points ref={ref}>
       <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          args={[positions, 3]}
-        />
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial size={0.02} color="#6366f1" transparent opacity={0.6} />
     </points>
@@ -205,6 +199,7 @@ export function ParticleCanvas() {
 ```
 
 **Performance considerations:**
+
 - Always cap `dpr` (device pixel ratio) at 1.5 — `dpr={[1, 1.5]}` lets Three.js pick based on device but caps it
 - Use `frameloop="demand"` if the scene only needs to render on state changes
 - Dispose of geometries and materials explicitly (R3F does not auto-dispose)
@@ -309,7 +304,15 @@ export function NetworkNode() {
           100% { opacity: 0; transform: scale(1.5); }
         }
       `}</style>
-      <circle className="pulse-ring" cx="50" cy="50" r="20" fill="none" stroke="#6366f1" strokeWidth="2" />
+      <circle
+        className="pulse-ring"
+        cx="50"
+        cy="50"
+        r="20"
+        fill="none"
+        stroke="#6366f1"
+        strokeWidth="2"
+      />
       <circle cx="50" cy="50" r="12" fill="#6366f1" />
     </svg>
   );
@@ -318,16 +321,17 @@ export function NetworkNode() {
 
 #### CSS vs. SMIL vs. Motion — Decision Matrix
 
-| Scenario | Best Tool |
-|---|---|
-| Simple path drawing, no scroll trigger | Pure CSS `stroke-dashoffset` animation |
-| Scroll-triggered path drawing | `motion/react` `pathLength` + `useInView` |
-| Complex morphing between shapes | GSAP MorphSVG (adds ~30 kB, avoid unless critical) |
-| SMIL (`<animate>` tags) | **Avoid** — deprecated, inconsistent browser support |
-| Entrance animations on SVG elements | `motion/react` (already installed, zero added cost) |
-| Looping decorative animations | Pure CSS `@keyframes` (no JS, RSC-safe) |
+| Scenario                               | Best Tool                                            |
+| -------------------------------------- | ---------------------------------------------------- |
+| Simple path drawing, no scroll trigger | Pure CSS `stroke-dashoffset` animation               |
+| Scroll-triggered path drawing          | `motion/react` `pathLength` + `useInView`            |
+| Complex morphing between shapes        | GSAP MorphSVG (adds ~30 kB, avoid unless critical)   |
+| SMIL (`<animate>` tags)                | **Avoid** — deprecated, inconsistent browser support |
+| Entrance animations on SVG elements    | `motion/react` (already installed, zero added cost)  |
+| Looping decorative animations          | Pure CSS `@keyframes` (no JS, RSC-safe)              |
 
 **Performance benchmark from research:**
+
 - CSS transform: 60 FPS, 5% CPU
 - CSS color change: 58 FPS, 15% CPU
 - JS-driven morphing: 59 FPS desktop, 28 FPS mobile at 85% CPU
@@ -403,15 +407,17 @@ The simplest approach — a pure CSS terminal window with Tailwind:
 // Server Component
 export function TerminalMockup({ lines }: { lines: string[] }) {
   return (
-    <div className="rounded-lg bg-zinc-900 font-mono text-sm overflow-hidden">
-      <div className="flex items-center gap-1.5 px-4 py-3 bg-zinc-800">
-        <span className="w-3 h-3 rounded-full bg-red-500" />
-        <span className="w-3 h-3 rounded-full bg-yellow-500" />
-        <span className="w-3 h-3 rounded-full bg-green-500" />
+    <div className="overflow-hidden rounded-lg bg-zinc-900 font-mono text-sm">
+      <div className="flex items-center gap-1.5 bg-zinc-800 px-4 py-3">
+        <span className="h-3 w-3 rounded-full bg-red-500" />
+        <span className="h-3 w-3 rounded-full bg-yellow-500" />
+        <span className="h-3 w-3 rounded-full bg-green-500" />
       </div>
-      <div className="p-4 space-y-1">
+      <div className="space-y-1 p-4">
         {lines.map((line, i) => (
-          <div key={i} className="text-zinc-300">{line}</div>
+          <div key={i} className="text-zinc-300">
+            {line}
+          </div>
         ))}
       </div>
     </div>
@@ -429,16 +435,16 @@ Add CSS `@keyframes` typewriter effect for the last line if desired.
 
 ### Bundle Cost Comparison
 
-| Library | Min+Gzip | `'use client'` | SSR Support | Recommendation |
-|---|---|---|---|---|
-| Pure CSS SVG animations | 0 kB | No | Full RSC | Primary tool — use everywhere |
-| `motion/react` (already installed) | 0 kB added | Yes | Partial (layout in RSC) | Use for scroll-triggered SVG |
-| Magic UI Terminal (copy-paste) | ~0 kB added | Yes (uses motion) | No | Use for terminal demos |
-| Shiki (code blocks) | 0 kB client | No | Full RSC | Use for all code snippets |
-| `lottie-react` | ~15 kB | Yes (ssr:false) | No | Use for icons/decorative |
-| `@lottiefiles/dotlottie-react` | ~51 kB | Yes (ssr:false) | No | Use for complex hero animations |
-| `@xyflow/react` | ~150 kB | Yes | Partial (v12) | One topology section only |
-| `@react-three/fiber` + `three` | ~400 kB+ | Yes (ssr:false) | No | One hero section only |
+| Library                            | Min+Gzip    | `'use client'`    | SSR Support             | Recommendation                  |
+| ---------------------------------- | ----------- | ----------------- | ----------------------- | ------------------------------- |
+| Pure CSS SVG animations            | 0 kB        | No                | Full RSC                | Primary tool — use everywhere   |
+| `motion/react` (already installed) | 0 kB added  | Yes               | Partial (layout in RSC) | Use for scroll-triggered SVG    |
+| Magic UI Terminal (copy-paste)     | ~0 kB added | Yes (uses motion) | No                      | Use for terminal demos          |
+| Shiki (code blocks)                | 0 kB client | No                | Full RSC                | Use for all code snippets       |
+| `lottie-react`                     | ~15 kB      | Yes (ssr:false)   | No                      | Use for icons/decorative        |
+| `@lottiefiles/dotlottie-react`     | ~51 kB      | Yes (ssr:false)   | No                      | Use for complex hero animations |
+| `@xyflow/react`                    | ~150 kB     | Yes               | Partial (v12)           | One topology section only       |
+| `@react-three/fiber` + `three`     | ~400 kB+    | Yes (ssr:false)   | No                      | One hero section only           |
 
 ### Strategy for DorkOS Marketing Site
 
@@ -459,15 +465,18 @@ Given the existing `motion/react` dependency, the zero-cost path is:
 In Next.js App Router, the default is Server Components. Libraries fall into three categories:
 
 **RSC-safe (no `'use client'` needed):**
+
 - Pure CSS animations in SVG/HTML
 - Shiki (async server-side code highlighting)
 - Static SVG markup
 
 **Requires `'use client'` but SSR-renders HTML:**
+
 - `motion/react` — renders initial state on server, hydrates animations on client
 - `@xyflow/react` v12 — can SSR with explicit node dimensions and handle positions
 
 **Must use `dynamic({ ssr: false })` (no server render):**
+
 - `lottie-react`, `@lottiefiles/dotlottie-react` — needs Canvas API
 - `@react-three/fiber` — needs WebGL
 - Any component using `window`, `document`, `ResizeObserver` directly at module level
@@ -497,13 +506,15 @@ const connections = [
 
 export function AgentTopology() {
   return (
-    <svg viewBox="0 0 400 350" className="w-full max-w-lg mx-auto">
+    <svg viewBox="0 0 400 350" className="mx-auto w-full max-w-lg">
       {/* Connection lines */}
       {connections.map((conn, i) => (
         <motion.line
           key={i}
-          x1={conn.from.x} y1={conn.from.y}
-          x2={conn.to.x} y2={conn.to.y}
+          x1={conn.from.x}
+          y1={conn.from.y}
+          x2={conn.to.x}
+          y2={conn.to.y}
           stroke="currentColor"
           strokeWidth="1"
           className="text-border"
@@ -521,8 +532,20 @@ export function AgentTopology() {
           transition={{ delay: 0.8 + i * 0.15, type: 'spring' }}
           style={{ transformOrigin: `${agent.x}px ${agent.y}px` }}
         >
-          <circle cx={agent.x} cy={agent.y} r="24" className="fill-card stroke-border" strokeWidth="1.5" />
-          <text x={agent.x} y={agent.y + 4} textAnchor="middle" className="fill-foreground" fontSize="10">
+          <circle
+            cx={agent.x}
+            cy={agent.y}
+            r="24"
+            className="fill-card stroke-border"
+            strokeWidth="1.5"
+          />
+          <text
+            x={agent.x}
+            y={agent.y + 4}
+            textAnchor="middle"
+            className="fill-foreground"
+            fontSize="10"
+          >
             {agent.label}
           </text>
         </motion.g>
@@ -537,9 +560,17 @@ export function AgentTopology() {
 ```css
 /* In your Tailwind CSS or component styles — pure CSS, no JS */
 @keyframes message-pulse {
-  0% { offset-distance: 0%; opacity: 1; }
-  90% { opacity: 1; }
-  100% { offset-distance: 100%; opacity: 0; }
+  0% {
+    offset-distance: 0%;
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
 }
 
 .message-dot {
@@ -559,15 +590,10 @@ export function AgentTopology() {
 // app/components/TopologySection.tsx (Server Component)
 import dynamic from 'next/dynamic';
 
-const FlowDiagram = dynamic(
-  () => import('./FlowDiagramClient'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-[400px] rounded-lg bg-muted animate-pulse" />
-    ),
-  }
-);
+const FlowDiagram = dynamic(() => import('./FlowDiagramClient'), {
+  ssr: false,
+  loading: () => <div className="bg-muted h-[400px] animate-pulse rounded-lg" />,
+});
 
 export function TopologySection() {
   return (

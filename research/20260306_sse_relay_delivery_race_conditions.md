@@ -1,5 +1,5 @@
 ---
-title: "SSE Relay Message Delivery Race Conditions — Solutions and Best Practices"
+title: 'SSE Relay Message Delivery Race Conditions — Solutions and Best Practices'
 date: 2026-03-06
 type: implementation
 status: active
@@ -120,7 +120,7 @@ res.write(`id: ${eventId}\ndata: ${JSON.stringify(event)}\n\n`);
 const lastId = req.headers['last-event-id'];
 if (lastId) {
   const buffered = replayBuffers.get(sessionId) ?? [];
-  const missed = buffered.filter(e => e.id > lastId); // ID comparison
+  const missed = buffered.filter((e) => e.id > lastId); // ID comparison
   for (const { id, event } of missed) {
     res.write(`id: ${id}\ndata: ${JSON.stringify(event)}\n\n`);
   }
@@ -137,15 +137,16 @@ In-process pub/sub libraries (EventEmitter, custom `Map<subject, Set<handler>>`)
 
 #### Production System Approaches
 
-| System | No-Subscriber Behavior |
-|--------|----------------------|
-| NATS Core | Returns `503 No Responders` error to publisher |
-| NATS JetStream | Retains message if any consumer expressed "interest" |
-| RabbitMQ | Routes to Alternate Exchange, then DLQ |
-| Mercure | Dual buffer: history + live; history replayed on subscribe |
-| Google Cloud Pub/Sub | Message retained until ACK deadline per subscriber |
+| System               | No-Subscriber Behavior                                     |
+| -------------------- | ---------------------------------------------------------- |
+| NATS Core            | Returns `503 No Responders` error to publisher             |
+| NATS JetStream       | Retains message if any consumer expressed "interest"       |
+| RabbitMQ             | Routes to Alternate Exchange, then DLQ                     |
+| Mercure              | Dual buffer: history + live; history replayed on subscribe |
+| Google Cloud Pub/Sub | Message retained until ACK deadline per subscriber         |
 
 **For an in-process bus**, the minimal viable fix is:
+
 1. Return an explicit signal when no subscriber is ready (non-silent drop)
 2. Buffer the message briefly for the expected-soon subscriber
 
@@ -154,6 +155,7 @@ The pending buffer in Solution B above covers this case. The key insight from NA
 #### Implementation for DorkOS Relay
 
 The relay already returns `{ deliveredTo: 0 }` in the publish result. The ClaudeCodeAdapter that calls `relay.publish()` should check this and either:
+
 - Retry after a short delay (100-200ms) once the subscriber registers
 - Hold the message in a local queue until `relay.subscribe()` is called for the target subject
 
@@ -162,9 +164,13 @@ The relay already returns `{ deliveredTo: 0 }` in the publish result. The Claude
 const result = await relay.publish(subject, payload);
 if (result.deliveredTo === 0) {
   // Schedule retry when subscriber becomes available
-  relay.onSubscribe(subject, async () => {
-    await relay.publish(subject, payload);
-  }, { once: true, timeout: 5000 });
+  relay.onSubscribe(
+    subject,
+    async () => {
+      await relay.publish(subject, payload);
+    },
+    { once: true, timeout: 5000 }
+  );
 }
 ```
 
@@ -173,6 +179,7 @@ if (result.deliveredTo === 0) {
 #### The Problem
 
 Two ID systems in play:
+
 - **Agent-ID**: The DorkOS logical agent identifier (`agent-{uuid}`)
 - **SDK Session-ID**: The Claude Agent SDK session UUID from JSONL filenames
 
@@ -247,7 +254,9 @@ async function iterateAndPublish(generator: AsyncGenerator<SDKEvent>, subject: s
       } catch (publishErr) {
         logger.error('Relay: publish failed during stream', { subject, error: publishErr });
         // Publish an error event so the client knows
-        await relay.publish(subject, { type: 'error', error: 'relay_publish_failed' }).catch(() => {});
+        await relay
+          .publish(subject, { type: 'error', error: 'relay_publish_failed' })
+          .catch(() => {});
         break;
       }
     }
@@ -339,13 +348,13 @@ Estimated effort: 1 hour. Prevents OOM on slow clients.
 
 ## Comparison of Approaches
 
-| Approach | Eliminates Race? | Works on Reconnect? | Complexity | Recommended? |
-|----------|-----------------|---------------------|-----------|--------------|
-| Subscribe-first (stream_ready) | Yes (primary path) | No | Low | Yes — primary fix |
-| Pending buffer in relay | Yes (all paths) | No | Medium | Yes — safety net |
-| Replay buffer + Last-Event-ID | Partial (reconnect) | Yes | Medium | Yes — reconnect fix |
-| External broker (Redis, NATS) | Yes | Yes | High | No — overkill for in-process |
-| WebSocket instead of SSE | Partial | Partial | High | No — unnecessary rewrite |
+| Approach                       | Eliminates Race?    | Works on Reconnect? | Complexity | Recommended?                 |
+| ------------------------------ | ------------------- | ------------------- | ---------- | ---------------------------- |
+| Subscribe-first (stream_ready) | Yes (primary path)  | No                  | Low        | Yes — primary fix            |
+| Pending buffer in relay        | Yes (all paths)     | No                  | Medium     | Yes — safety net             |
+| Replay buffer + Last-Event-ID  | Partial (reconnect) | Yes                 | Medium     | Yes — reconnect fix          |
+| External broker (Redis, NATS)  | Yes                 | Yes                 | High       | No — overkill for in-process |
+| WebSocket instead of SSE       | Partial             | Partial             | High       | No — unnecessary rewrite     |
 
 ## Sources & Evidence
 

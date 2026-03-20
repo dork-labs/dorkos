@@ -9,6 +9,7 @@
 ## Phase 1: Store + Wiring
 
 ### 1.1 Add globalPaletteInitialSearch state and actions to app-store
+
 **Size:** Small | **Priority:** High | **Dependencies:** None
 
 Add `globalPaletteInitialSearch: string | null`, `openGlobalPaletteWithSearch(text)`, and `clearGlobalPaletteInitialSearch()` to the AppState interface and store implementation in `app-store.ts`. The `openGlobalPaletteWithSearch` action atomically sets both `globalPaletteOpen: true` and the initial search text. This is transient state (not persisted).
@@ -18,6 +19,7 @@ Add `globalPaletteInitialSearch: string | null`, `openGlobalPaletteWithSearch(te
 ---
 
 ### 1.2 Rewire AgentIdentityChip click to open palette with @ prefix
+
 **Size:** Small | **Priority:** High | **Dependencies:** 1.1 | **Parallel with:** 1.3
 
 Replace the click handler from `setAgentDialogOpen(true)` to `openGlobalPaletteWithSearch('@')`. Update tooltip from "Agent settings" to "Switch agent". Update aria-labels from "agent settings" / "Configure agent" to "switch agent" / "Switch agent".
@@ -27,6 +29,7 @@ Replace the click handler from `setAgentDialogOpen(true)` to `openGlobalPaletteW
 ---
 
 ### 1.3 Consume globalPaletteInitialSearch in CommandPaletteDialog
+
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.1 | **Parallel with:** 1.2
 
 Update `handleOpenChange` to read `globalPaletteInitialSearch` via `useAppStore.getState()` when the dialog opens, set it as the search input value, then clear it (one-shot). Update `closePalette` to also call `clearGlobalPaletteInitialSearch()`. Use `.getState()` for the one-time read to avoid reactive dependency.
@@ -38,11 +41,13 @@ Update `handleOpenChange` to read `globalPaletteInitialSearch` via `useAppStore.
 ## Phase 2: Sidebar Cleanup
 
 ### 2.1 Remove AgentHeader from SessionSidebar and delete AgentHeader component
+
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.1 | **Parallel with:** 2.2
 
 Remove the `AgentHeader` import and render block from `SessionSidebar.tsx`. Clean up unused store selectors (`setPickerOpen`, `setAgentDialogOpen`) from the destructured `useAppStore()`. Delete `AgentHeader.tsx` and `AgentHeader.test.tsx` entirely. The barrel `index.ts` needs no changes (AgentHeader was never exported).
 
 **Files:**
+
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`
 - `apps/client/src/layers/features/session-list/ui/AgentHeader.tsx` (delete)
 - `apps/client/src/layers/features/session-list/__tests__/AgentHeader.test.tsx` (delete)
@@ -50,6 +55,7 @@ Remove the `AgentHeader` import and render block from `SessionSidebar.tsx`. Clea
 ---
 
 ### 2.2 Add Edit Agent (Pencil) icon to SidebarFooterBar
+
 **Size:** Small | **Priority:** High | **Dependencies:** 1.1 | **Parallel with:** 2.1
 
 Import `Pencil` from lucide-react, add `setAgentDialogOpen` to the store destructuring, and add a Pencil icon button before the Settings button. Button has `aria-label="Agent settings"` and calls `setAgentDialogOpen(true)` on click. Uses the same styling as existing footer buttons.
@@ -61,6 +67,7 @@ Import `Pencil` from lucide-react, add `setAgentDialogOpen` to the store destruc
 ## Phase 3: AgentDialog CWD
 
 ### 3.1 Add CWD display to AgentDialog
+
 **Size:** Small | **Priority:** Medium | **Dependencies:** None
 
 Add a `FolderOpen` icon + `PathBreadcrumb` line below the dialog description in both the agent-exists state (below "Agent configuration") and the no-agent state (below "No agent registered"). Uses `path={projectPath}`, `maxSegments={3}`, `size="sm"`. Styled with `text-muted-foreground text-xs`.
@@ -72,6 +79,7 @@ Add a `FolderOpen` icon + `PathBreadcrumb` line below the dialog description in 
 ## Phase 4: Test Updates
 
 ### 4.1 Update AgentIdentityChip tests for palette-based agent switching
+
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.2 | **Parallel with:** 4.2, 4.3, 4.4, 4.5
 
 Update mock from `mockSetAgentDialogOpen` to `mockOpenGlobalPaletteWithSearch`. Update click test assertions to verify `openGlobalPaletteWithSearch('@')`. Update all aria-label assertions from "agent settings" / "Configure agent" to "switch agent" / "Switch agent".
@@ -81,6 +89,7 @@ Update mock from `mockSetAgentDialogOpen` to `mockOpenGlobalPaletteWithSearch`. 
 ---
 
 ### 4.2 Add CommandPaletteDialog tests for initial search consumption
+
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.3 | **Parallel with:** 4.1, 4.3, 4.4, 4.5
 
 Add `clearGlobalPaletteInitialSearch` mock and `getState` support to the store mock. Add tests for: palette opens with pre-populated search when `globalPaletteInitialSearch` is set; clears value after consuming; opens with empty search when null; clears on palette close.
@@ -90,6 +99,7 @@ Add `clearGlobalPaletteInitialSearch` mock and `getState` support to the store m
 ---
 
 ### 4.3 Add SidebarFooterBar tests for Edit Agent button
+
 **Size:** Small | **Priority:** High | **Dependencies:** 2.2 | **Parallel with:** 4.1, 4.2, 4.4, 4.5
 
 Add `mockSetAgentDialogOpen` to the store mock. Add tests: renders Pencil button with `aria-label="Agent settings"`; clicking calls `setAgentDialogOpen(true)`.
@@ -99,6 +109,7 @@ Add `mockSetAgentDialogOpen` to the store mock. Add tests: renders Pencil button
 ---
 
 ### 4.4 Update SessionSidebar tests to remove AgentHeader assertions
+
 **Size:** Small | **Priority:** High | **Dependencies:** 2.1 | **Parallel with:** 4.1, 4.2, 4.3, 4.5
 
 Remove the "renders AgentHeader when selectedCwd is set" test case. The mock store can retain unused properties harmlessly.
@@ -108,6 +119,7 @@ Remove the "renders AgentHeader when selectedCwd is set" test case. The mock sto
 ---
 
 ### 4.5 Add AgentDialog tests for CWD display
+
 **Size:** Small | **Priority:** Medium | **Dependencies:** 3.1 | **Parallel with:** 4.1, 4.2, 4.3, 4.4
 
 Add tests: CWD path segment visible when agent exists (scoped to dialog via `findDialog()`); CWD path segment visible when no agent registered. Uses existing test patterns with `createWrapper()` and `createMockTransport()`.

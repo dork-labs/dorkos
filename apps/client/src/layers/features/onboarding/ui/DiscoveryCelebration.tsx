@@ -36,8 +36,7 @@ export function DiscoveryCelebration({ candidates, onComplete }: DiscoveryCelebr
   const confettiCleanupRef = useRef<(() => void) | null>(null);
 
   const prefersReducedMotion =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   useEffect(() => {
     // Reduced motion: skip animation, call onComplete after brief delay
@@ -138,15 +137,10 @@ export function DiscoveryCelebration({ candidates, onComplete }: DiscoveryCelebr
 /** Compact read-only card for a discovered agent during celebration. */
 function CandidateCard({ candidate }: { candidate: DiscoveryCandidate }) {
   return (
-    <div
-      className={cn(
-        'rounded-xl border border-border bg-card p-4 text-left',
-        'shadow-soft'
-      )}
-    >
+    <div className={cn('border-border bg-card rounded-xl border p-4 text-left', 'shadow-soft')}>
       <div className="space-y-1.5">
         <span className="text-sm font-semibold">{candidate.hints.suggestedName}</span>
-        <p className="truncate text-xs text-muted-foreground">{candidate.path}</p>
+        <p className="text-muted-foreground truncate text-xs">{candidate.path}</p>
         <div className="flex flex-wrap gap-1">
           <Badge variant="secondary" className="text-xs">
             {formatMarker(candidate.strategy)}

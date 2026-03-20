@@ -18,7 +18,11 @@ import {
 } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useCreateBinding } from '@/layers/entities/binding';
-import type { AdapterManifest, CatalogInstance, SessionStrategy } from '@dorkos/shared/relay-schemas';
+import type {
+  AdapterManifest,
+  CatalogInstance,
+  SessionStrategy,
+} from '@dorkos/shared/relay-schemas';
 import { StepIndicator } from './wizard/StepIndicator';
 import { ConfigureStep } from './wizard/ConfigureStep';
 import { TestStep } from './wizard/TestStep';
@@ -74,15 +78,18 @@ function getNestedValue(obj: Record<string, unknown>, key: string): unknown {
 /** Initializes form values from defaults or existing config. */
 function initializeValues(
   manifest: AdapterManifest,
-  existingConfig?: Record<string, unknown>,
+  existingConfig?: Record<string, unknown>
 ): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const field of manifest.configFields) {
     const existing = existingConfig ? getNestedValue(existingConfig, field.key) : undefined;
     if (existing !== undefined && field.type !== 'password') {
       values[field.key] = existing;
-    } else if (field.type === 'password' && existingConfig &&
-               getNestedValue(existingConfig, field.key) !== undefined) {
+    } else if (
+      field.type === 'password' &&
+      existingConfig &&
+      getNestedValue(existingConfig, field.key) !== undefined
+    ) {
       // Use sentinel so edit mode shows "Saved" placeholder instead of blank.
       values[field.key] = '***';
     } else if (field.default !== undefined) {
@@ -118,14 +125,14 @@ export function AdapterSetupWizard({
   const isEditMode = Boolean(existingInstance);
   const [step, setStep] = useState<WizardStep>('configure');
   const [guideOpen, setGuideOpen] = useState(false);
-  const [adapterId, _setAdapterId] = useState(() =>
-    existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds),
+  const [adapterId, _setAdapterId] = useState(
+    () => existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds)
   );
-  const [label, setLabel] = useState(() =>
-    (existingInstance?.config?.label as string | undefined) ?? '',
+  const [label, setLabel] = useState(
+    () => (existingInstance?.config?.label as string | undefined) ?? ''
   );
   const [values, setValues] = useState<Record<string, unknown>>(() =>
-    initializeValues(manifest, existingInstance?.config),
+    initializeValues(manifest, existingInstance?.config)
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [setupStepIndex, setSetupStepIndex] = useState(0);
@@ -184,7 +191,7 @@ export function AdapterSetupWizard({
       setErrors(newErrors);
       return Object.keys(newErrors).length === 0;
     },
-    [values, manifest],
+    [values, manifest]
   );
 
   const handleContinue = useCallback(() => {
@@ -214,12 +221,22 @@ export function AdapterSetupWizard({
               if (!label) setLabel(`@${result.botUsername}`);
             }
           },
-        },
+        }
       );
     } else if (step === 'test') {
       setStep('confirm');
     }
-  }, [step, hasSetupSteps, manifest, visibleFields, setupStepIndex, validate, values, testConnection, label]);
+  }, [
+    step,
+    hasSetupSteps,
+    manifest,
+    visibleFields,
+    setupStepIndex,
+    validate,
+    values,
+    testConnection,
+    label,
+  ]);
 
   const handleBack = useCallback(() => {
     if (step === 'test') {
@@ -244,7 +261,7 @@ export function AdapterSetupWizard({
         { id: existingInstance.id, config: configWithLabel },
         {
           onSuccess: () => onOpenChange(false),
-        },
+        }
       );
     } else {
       addAdapter.mutate(
@@ -266,10 +283,20 @@ export function AdapterSetupWizard({
               setSetupStepIndex(0);
             }
           },
-        },
+        }
       );
     }
-  }, [values, isEditMode, existingInstance, updateConfig, addAdapter, manifest, adapterId, label, onOpenChange]);
+  }, [
+    values,
+    isEditMode,
+    existingInstance,
+    updateConfig,
+    addAdapter,
+    manifest,
+    adapterId,
+    label,
+    onOpenChange,
+  ]);
 
   const handleBind = useCallback(() => {
     if (!bindAgentId) return;
@@ -282,7 +309,7 @@ export function AdapterSetupWizard({
       },
       {
         onSuccess: () => onOpenChange(false),
-      },
+      }
     );
   }, [bindAgentId, createdAdapterId, bindStrategy, createBinding, onOpenChange]);
 
@@ -307,14 +334,13 @@ export function AdapterSetupWizard({
       }
       onOpenChange(nextOpen);
     },
-    [onOpenChange, testConnection],
+    [onOpenChange, testConnection]
   );
 
   const isSaving = addAdapter.isPending || updateConfig.isPending;
   const isBinding = createBinding.isPending;
-  const currentSetupStep = hasSetupSteps && manifest.setupSteps
-    ? manifest.setupSteps[setupStepIndex]
-    : undefined;
+  const currentSetupStep =
+    hasSetupSteps && manifest.setupSteps ? manifest.setupSteps[setupStepIndex] : undefined;
 
   // SetupGuideSheet renders as a Dialog sibling to avoid overlay z-index conflicts.
   const maybeSetupGuide = manifest.setupGuide ? (
@@ -329,13 +355,14 @@ export function AdapterSetupWizard({
   return (
     <Fragment>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogContent className="flex max-h-[85vh] max-w-lg flex-col">
           <DialogHeader>
             <DialogTitle>
               {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}
             </DialogTitle>
             <DialogDescription>
-              {step === 'configure' && (currentSetupStep?.description ?? 'Configure the adapter settings.')}
+              {step === 'configure' &&
+                (currentSetupStep?.description ?? 'Configure the adapter settings.')}
               {step === 'test' && 'Testing connection to the adapter.'}
               {step === 'confirm' && 'Review your configuration before saving.'}
               {step === 'bind' && 'Optionally bind this adapter to an agent.'}

@@ -6,7 +6,10 @@ import { jsonContent } from './types.js';
 /** Guard that returns an error response when adapters are not available. */
 function requireAdapterManager(deps: McpToolDeps) {
   if (!deps.adapterManager) {
-    return jsonContent({ error: 'Relay adapters are not enabled', code: 'ADAPTERS_DISABLED' }, true);
+    return jsonContent(
+      { error: 'Relay adapters are not enabled', code: 'ADAPTERS_DISABLED' },
+      true
+    );
   }
   return null;
 }

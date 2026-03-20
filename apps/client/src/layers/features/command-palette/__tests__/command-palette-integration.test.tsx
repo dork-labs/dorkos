@@ -136,10 +136,7 @@ vi.mock('../model/use-palette-items', () => ({
 // Mock usePaletteSearch: passthrough all items so existing rendering assertions hold.
 // Prefix filtering (@ / >) is preserved so mode-switching tests work correctly.
 vi.mock('../model/use-palette-search', () => ({
-  usePaletteSearch: (
-    items: Array<{ id: string; type: string; name: string }>,
-    search: string,
-  ) => {
+  usePaletteSearch: (items: Array<{ id: string; type: string; name: string }>, search: string) => {
     const prefix = search.startsWith('@') ? '@' : search.startsWith('>') ? '>' : null;
     const term = prefix ? search.slice(1) : search;
     const filtered =
@@ -177,9 +174,15 @@ vi.mock('../model/use-preview-data', () => ({
 // Mock motion/react to render plain elements (avoids animation-related test issues)
 vi.mock('motion/react', () => ({
   motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
+    div: ({
+      children,
+      ...props
+    }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
       React.createElement('div', props, children),
-    span: ({ children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { children?: React.ReactNode }) =>
+    span: ({
+      children,
+      ...props
+    }: React.HTMLAttributes<HTMLSpanElement> & { children?: React.ReactNode }) =>
       React.createElement('span', props, children),
   },
   AnimatePresence: ({ children }: { children?: React.ReactNode }) => children,
@@ -225,7 +228,7 @@ describe('Command Palette Integration', () => {
     expect(stored).toBeTruthy();
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-1', totalCount: 1 })]),
+      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-1', totalCount: 1 })])
     );
   });
 
@@ -247,7 +250,7 @@ describe('Command Palette Integration', () => {
     const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-3', totalCount: 1 })]),
+      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-3', totalCount: 1 })])
     );
   });
 
@@ -324,7 +327,7 @@ describe('Command Palette Integration', () => {
     const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-2' })]),
+      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-2' })])
     );
   });
 
@@ -450,7 +453,9 @@ describe('Command Palette Integration', () => {
     mockGlobalPaletteOpen = false;
     render(<CommandPaletteDialog />);
 
-    expect(screen.queryByPlaceholderText('Search agents, features, commands...')).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText('Search agents, features, commands...')
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('Recent Agents')).not.toBeInTheDocument();
     expect(screen.queryByText('Features')).not.toBeInTheDocument();
   });

@@ -2,9 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 
 vi.mock('@/layers/shared/model', () => ({
-  useAppStore: vi.fn(
-    (selector: (s: { selectedCwd: string | null }) => unknown) =>
-      selector({ selectedCwd: '/test/project' }),
+  useAppStore: vi.fn((selector: (s: { selectedCwd: string | null }) => unknown) =>
+    selector({ selectedCwd: '/test/project' })
   ),
 }));
 
@@ -38,10 +37,7 @@ describe('FileAttachmentList', () => {
 
     const img = screen.getByRole('img', { name: 'photo.png' });
     expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute(
-      'src',
-      expect.stringContaining('/api/uploads/'),
-    );
+    expect(img).toHaveAttribute('src', expect.stringContaining('/api/uploads/'));
     expect(img).toHaveAttribute('alt', 'photo.png');
   });
 
@@ -76,9 +72,7 @@ describe('FileAttachmentList', () => {
 
     render(<FileAttachmentList files={files} />);
 
-    expect(
-      screen.getByRole('img', { name: 'screenshot.jpg' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'screenshot.jpg' })).toBeInTheDocument();
     expect(screen.getByText('notes.md')).toBeInTheDocument();
   });
 
@@ -93,9 +87,7 @@ describe('FileAttachmentList', () => {
 
     render(<FileAttachmentList files={files} />);
 
-    const nameEl = screen.getByText(
-      'a-very-long-filename-that-should-be-truncated.ts',
-    );
+    const nameEl = screen.getByText('a-very-long-filename-that-should-be-truncated.ts');
     expect(nameEl).toHaveClass('truncate');
   });
 });

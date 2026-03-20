@@ -24,7 +24,9 @@ const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
     buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
   }),
   toolFilterFactory: () => ({
-    resolveToolConfig: vi.fn().mockReturnValue({ pulse: true, relay: true, mesh: true, adapter: true }),
+    resolveToolConfig: vi
+      .fn()
+      .mockReturnValue({ pulse: true, relay: true, mesh: true, adapter: true }),
     buildAllowedTools: vi.fn().mockReturnValue(undefined),
   }),
 }));
@@ -235,7 +237,9 @@ describe('ClaudeCodeRuntime interactive tools', () => {
               }),
           }),
         };
-        mockedQuery.mockReturnValue(withQueryMethods(mockAsyncIterable) as unknown as ReturnType<typeof query>);
+        mockedQuery.mockReturnValue(
+          withQueryMethods(mockAsyncIterable) as unknown as ReturnType<typeof query>
+        );
         resolve();
       });
 
@@ -285,7 +289,9 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       const mockAsyncIterable = {
         [Symbol.asyncIterator]: () => mockIterator,
       };
-      mockedQuery.mockReturnValue(withQueryMethods(mockAsyncIterable) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods(mockAsyncIterable) as unknown as ReturnType<typeof query>
+      );
 
       expect(manager.hasSession('new-sess')).toBe(false);
 
@@ -336,9 +342,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'say hi')) {
@@ -399,9 +407,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'read file')) {
@@ -449,9 +459,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'read')) {
@@ -477,9 +489,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'hi')) {
@@ -497,9 +511,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       const mockIterator = {
         next: vi.fn().mockRejectedValueOnce(new Error('SDK connection failed')),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'hi')) {
@@ -508,7 +524,9 @@ describe('ClaudeCodeRuntime interactive tools', () => {
 
       const errorEvents = events.filter((e) => e.type === 'error');
       expect(errorEvents).toHaveLength(1);
-      expect((errorEvents[0].data as { message: string }).message).toBe('The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.');
+      expect((errorEvents[0].data as { message: string }).message).toBe(
+        'The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment.'
+      );
 
       // Should still emit done
       const doneEvents = events.filter((e) => e.type === 'done');
@@ -532,9 +550,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       const events: StreamEvent[] = [];
       for await (const event of manager.sendMessage('sess-1', 'hi')) {
@@ -558,9 +578,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       // Consume the generator
       for await (const _event of manager.sendMessage('sess-1', 'hi')) {
@@ -595,9 +617,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
           })
           .mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator1,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator1,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       for await (const _event of manager.sendMessage('sess-1', 'first')) {
         // drain
@@ -607,9 +631,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       const mockIterator2 = {
         next: vi.fn().mockResolvedValueOnce({ done: true }),
       };
-      mockedQuery.mockReturnValue(withQueryMethods({
-        [Symbol.asyncIterator]: () => mockIterator2,
-      }) as unknown as ReturnType<typeof query>);
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator2,
+        }) as unknown as ReturnType<typeof query>
+      );
 
       for await (const _event of manager.sendMessage('sess-1', 'second')) {
         // drain

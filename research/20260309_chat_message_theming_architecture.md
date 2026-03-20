@@ -1,5 +1,5 @@
 ---
-title: "Chat Message Theming & Component Architecture"
+title: 'Chat Message Theming & Component Architecture'
 date: 2026-03-09
 type: implementation
 status: active
@@ -31,6 +31,7 @@ This report covers how world-class chat UIs handle message theming and component
 ### Current State of `MessageItem.tsx`
 
 The existing component (272 lines) handles:
+
 - User messages (plain text, slash command, context compaction)
 - Assistant messages with parts (text/StreamingText, tool calls, tool approvals, question prompts)
 - Message grouping (position: first/middle/last/only)
@@ -40,6 +41,7 @@ The existing component (272 lines) handles:
 - Animation via motion
 
 Pain points:
+
 - Role styling is expressed as inline ternaries: `isUser ? 'bg-user-msg hover:bg-user-msg/90' : 'hover:bg-muted/20'`
 - Position-based spacing is inline: `isGroupStart ? 'pt-4' : 'pt-0.5'`
 - No semantic tokens for message-specific properties beyond `--user-msg`
@@ -49,6 +51,7 @@ Pain points:
 ### How World-Class Chat UIs Are Structured
 
 **Nuxt UI ChatMessage** (most instructive reference):
+
 - Top-level props: `role` ("user" | "assistant" | "system"), `variant` (solid/outline/soft/subtle/naked), `side` (left/right), `compact` (boolean)
 - Slots: `leading`, `content`, `actions`
 - Role drives side (assistant → left, user → right) and default variant (assistant → naked, user → soft) as compound variants
@@ -56,11 +59,13 @@ Pain points:
 - Theme customization happens in `app.config.ts` via token overrides, not in the component file
 
 **Stream Chat React MessageSimple**:
+
 - Decomposed into exported building blocks: `MessageText`, `MessageTimestamp`, `MessageStatus`, `MessageActions`, `MessageOptions`, `MessageRepliesCountButton`
 - A `MessageContext` provider wraps each message and makes all message data available to any sub-component without prop drilling
 - Developers can compose a completely custom message UI by assembling the building blocks
 
 **shadcn/ai Message**:
+
 - Handles: text parts, tool-call parts, reasoning parts natively via the Vercel AI SDK `parts` array pattern
 - Each part type maps to a dedicated sub-component (not a single large conditional block)
 - The `Tool` component has its own variant system for pending/running/complete/error states
@@ -70,12 +75,14 @@ Pain points:
 ### CVA vs Tailwind Variants for Message Styling
 
 **CVA** (`class-variance-authority`):
+
 - Best for: single-element components with multiple variant axes (buttons, badges, inputs)
 - Supports boolean variants, compound variants, default variants
 - Does NOT support slots (multiple elements in one variant call)
 - Already used in the project (shadcn primitives)
 
 **Tailwind Variants** (`tailwind-variants`):
+
 - Built specifically because CVA couldn't handle multi-part components
 - Slot system: define named slots (`base`, `leading`, `content`, `actions`) in one `tv()` call
 - Variant changes automatically flow to all slots simultaneously
@@ -137,6 +144,7 @@ const messageItem = tv({
 **7 token categories for a complete chat message style system:**
 
 **1. Color tokens** (currently partial):
+
 ```css
 /* Existing */
 --user-msg: 0 0% 91%;
@@ -149,6 +157,7 @@ const messageItem = tv({
 ```
 
 **2. Typography tokens** (per role):
+
 ```css
 /* User messages: slightly heavier, conversational */
 --msg-user-font-weight: 400;
@@ -162,18 +171,20 @@ const messageItem = tv({
 ```
 
 **3. Spacing tokens** (density-aware):
+
 ```css
---msg-padding-x: 1rem;         /* px-4 */
---msg-padding-y-start: 1rem;   /* pt-4 for group start */
+--msg-padding-x: 1rem; /* px-4 */
+--msg-padding-y-start: 1rem; /* pt-4 for group start */
 --msg-padding-y-mid: 0.125rem; /* py-0.5 for group middle */
---msg-padding-y-end: 0.75rem;  /* pb-3 for group end */
---msg-gap: 0.75rem;            /* gap-3 between indicator and content */
+--msg-padding-y-end: 0.75rem; /* pb-3 for group end */
+--msg-gap: 0.75rem; /* gap-3 between indicator and content */
 /* Compact density overrides */
 --msg-compact-padding-x: 0.75rem;
 --msg-compact-padding-y-start: 0.5rem;
 ```
 
 **4. Shape tokens** (group-position-aware):
+
 ```css
 /* For bubble-style messages (future option) */
 --msg-radius-solo: var(--radius);
@@ -183,6 +194,7 @@ const messageItem = tv({
 ```
 
 **5. Motion tokens**:
+
 ```css
 --msg-enter-duration: 200ms;
 --msg-enter-easing: cubic-bezier(0.34, 1.56, 0.64, 1); /* spring-like */
@@ -192,6 +204,7 @@ const messageItem = tv({
 ```
 
 **6. Interactive state tokens**:
+
 ```css
 --msg-hover-overlay: hsl(var(--muted) / 0.2);
 --msg-selected-bg: hsl(var(--ring) / 0.08);
@@ -200,6 +213,7 @@ const messageItem = tv({
 ```
 
 **7. Elevation tokens** (for tool cards):
+
 ```css
 --msg-tool-shadow: 0 1px 3px hsl(0 0% 0% / 0.08);
 --msg-tool-border: hsl(var(--border) / 0.6);
@@ -247,11 +261,13 @@ MessageItem (orchestrator, ~80 lines)
 All three patterns are viable; the recommendation is **Context + named sub-components** (not JSX compound pattern like `<Message.Root>`):
 
 **Why not JSX dot-notation compound pattern** (`<Message.Root>`, `<Message.Content>`):
+
 - Forces consumers to write boilerplate layout markup for every message
 - Virtualizer rows need a fixed structure; free-form composition adds complexity
 - The streaming use case requires specific part ordering that composing sites must enforce
 
 **Why Context + named sub-components is right here**:
+
 - `MessageContext` eliminates prop drilling for `sessionId`, `activeToolCallId`, etc.
 - Sub-components (`AssistantMessageContent`, `UserMessageContent`) are internal implementation details, not part of the public API surface
 - The virtualizer wrapper in `MessageList` stays clean — it just renders `<MessageItem>` and doesn't need to know anything about the internal decomposition

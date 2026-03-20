@@ -64,9 +64,7 @@ export function ConfigureStep({
         </div>
       )}
 
-      {currentSetupStep && (
-        <h4 className="text-sm font-medium">{currentSetupStep.title}</h4>
-      )}
+      {currentSetupStep && <h4 className="text-sm font-medium">{currentSetupStep.title}</h4>}
 
       <div className="space-y-2">
         <Label htmlFor="adapter-label">Name (optional)</Label>
@@ -76,17 +74,12 @@ export function ConfigureStep({
           value={label}
           onChange={(e) => onLabelChange(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-muted-foreground text-xs">
           A friendly name to identify this adapter instance.
         </p>
       </div>
 
-      <ConfigFieldGroup
-        fields={fields}
-        values={values}
-        onChange={onChange}
-        errors={errors}
-      />
+      <ConfigFieldGroup fields={fields} values={values} onChange={onChange} errors={errors} />
     </div>
   );
 }

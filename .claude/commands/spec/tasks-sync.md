@@ -32,6 +32,7 @@ SLUG=$(echo "$TASKS_FILE" | cut -d'/' -f2)
 ```
 
 Determine source type:
+
 - If path ends in `.json` → **JSON mode** (preferred)
 - If path ends in `.md` → **Markdown mode** (fallback)
 - If neither extension, check for `specs/<slug>/03-tasks.json` first, then `.md`
@@ -246,8 +247,8 @@ Nothing to create.
 
 ## Integration
 
-| Related Command   | Relationship                                                         |
-| ----------------- | -------------------------------------------------------------------- |
-| `/spec:decompose` | Creates 03-tasks.json + 03-tasks.md; main context creates tasks      |
-| `/spec:execute`   | Executes tasks created by decompose or this sync command             |
-| `TaskList()`      | View all synced tasks                                                |
+| Related Command   | Relationship                                                    |
+| ----------------- | --------------------------------------------------------------- |
+| `/spec:decompose` | Creates 03-tasks.json + 03-tasks.md; main context creates tasks |
+| `/spec:execute`   | Executes tasks created by decompose or this sync command        |
+| `TaskList()`      | View all synced tasks                                           |

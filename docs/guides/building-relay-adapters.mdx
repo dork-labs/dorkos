@@ -3,9 +3,9 @@ title: Building Relay Adapters
 description: How to build custom adapters that bridge external platforms into Relay
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Building Relay Adapters
 
@@ -23,7 +23,11 @@ interface RelayAdapter {
 
   start(relay: RelayPublisher): Promise<void>;
   stop(): Promise<void>;
-  deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult>;
+  deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult>;
   getStatus(): AdapterStatus;
 }
 ```
@@ -75,7 +79,9 @@ On server shutdown, `stop()` is called on every running adapter. Drain in-flight
 </Steps>
 
 <Callout type="warn">
-Both `start()` and `stop()` must be idempotent. The registry may call `start()` on an already-running adapter during hot-reload, or `stop()` on an already-stopped adapter during cleanup. Guard against double-initialization by checking connection state before acting.
+  Both `start()` and `stop()` must be idempotent. The registry may call `start()` on an
+  already-running adapter during hot-reload, or `stop()` on an already-stopped adapter during
+  cleanup. Guard against double-initialization by checking connection state before acting.
 </Callout>
 
 ## Inbound Messages
@@ -84,8 +90,9 @@ When your adapter receives a message from the external service, normalize the co
 
 ```typescript
 await this.relay.publish(
-  'relay.human.slack.U12345',   // subject
-  {                              // payload
+  'relay.human.slack.U12345', // subject
+  {
+    // payload
     content: 'Deploy the backend',
     senderName: 'alice',
     channelType: 'dm',
@@ -96,7 +103,7 @@ await this.relay.publish(
       instructions: 'Format responses as Slack markdown.',
     },
   },
-  { from: 'relay.human.slack.bot' }  // options
+  { from: 'relay.human.slack.bot' } // options
 );
 ```
 
@@ -254,14 +261,11 @@ export class SlackAdapter implements RelayAdapter {
     });
 
     // Subscribe to Relay signals (typing indicators, etc.)
-    this.signalUnsub = relay.onSignal(
-      `${SUBJECT_PREFIX}.>`,
-      (subject, signal) => {
-        if (signal.type === 'typing') {
-          // Slack does not support typing indicators via API — no-op
-        }
-      },
-    );
+    this.signalUnsub = relay.onSignal(`${SUBJECT_PREFIX}.>`, (subject, signal) => {
+      if (signal.type === 'typing') {
+        // Slack does not support typing indicators via API — no-op
+      }
+    });
 
     await this.client.start();
 
@@ -298,7 +302,7 @@ export class SlackAdapter implements RelayAdapter {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    _context?: AdapterContext,
+    _context?: AdapterContext
   ): Promise<DeliveryResult> {
     if (!this.client) {
       return { success: false, error: 'Adapter not started' };
@@ -315,9 +319,7 @@ export class SlackAdapter implements RelayAdapter {
 
     const content = this.extractContent(envelope.payload);
     const maxLen = this.config.maxMessageLength ?? DEFAULT_MAX_LENGTH;
-    const truncated = content.length > maxLen
-      ? content.slice(0, maxLen - 3) + '...'
-      : content;
+    const truncated = content.length > maxLen ? content.slice(0, maxLen - 3) + '...' : content;
 
     try {
       await this.client.client.chat.postMessage({
@@ -434,7 +436,9 @@ For adapters that handle external input:
 The built-in `WebhookAdapter` implements all of these patterns and serves as a reference for any adapter that accepts external HTTP requests.
 
 <Callout type="warn">
-Always use `crypto.timingSafeEqual()` instead of string equality (`===`) when comparing signatures. String comparison is vulnerable to timing-based oracle attacks that can recover the secret byte by byte.
+  Always use `crypto.timingSafeEqual()` instead of string equality (`===`) when comparing
+  signatures. String comparison is vulnerable to timing-based oracle attacks that can recover the
+  secret byte by byte.
 </Callout>
 
 ## Next Steps

@@ -56,9 +56,9 @@ The DorkOS codebase currently has no centralized env var validation. The result:
 
 ## Technical Dependencies
 
-| Dependency | Already available | Purpose |
-|---|---|---|
-| `zod` | ✅ All relevant packages | Schema validation |
+| Dependency           | Already available          | Purpose                     |
+| -------------------- | -------------------------- | --------------------------- |
+| `zod`                | ✅ All relevant packages   | Schema validation           |
 | `eslint` flat config | ✅ Root `eslint.config.js` | `no-restricted-syntax` rule |
 
 No new packages required.
@@ -82,7 +82,7 @@ const schema = z.object({
 const result = schema.safeParse(process.env);
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
-  result.error.issues.forEach(i => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
   console.error('\n  Copy .env.example to .env\n');
   process.exit(1);
 }
@@ -104,7 +104,10 @@ const port = env.DORKOS_PORT; // number, not string
 A reusable Zod type for feature flags, defined once in the server `env.ts`:
 
 ```ts
-const boolFlag = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const boolFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
 ```
 
 - Input: `'true'`, `'false'`, or `undefined` (which defaults to `'false'`)
@@ -129,6 +132,7 @@ beforeEach(() => {
 `packages/cli/src/cli.ts` is the process bootstrap — it sets `process.env.DORKOS_PORT`, `process.env.TUNNEL_ENABLED`, etc. to configure the server subprocess before importing the server. These are imperative writes, not reads, and cannot be replaced by `env.ts`.
 
 Resolution:
+
 - `packages/cli/src/env.ts` validates only what the CLI itself reads: `DORK_HOME`, `LOG_LEVEL`, `NODE_ENV`
 - Bootstrap `process.env` assignments in `cli.ts` keep the ESLint carve-out for that file
 - Each such assignment gets an inline disable comment:
@@ -143,6 +147,7 @@ process.env.DORKOS_PORT = String(port);
 The client (`apps/client`) uses `import.meta.env` (not `process.env`). Vite strips non-`VITE_*` vars from the browser bundle automatically. Currently there are no custom `VITE_*` vars — only `import.meta.env.DEV` (a Vite built-in).
 
 A stub `env.ts` is created to:
+
 1. Validate Vite built-ins with a Zod schema
 2. Establish the canonical import path (`@/env`)
 3. Show developers how to add `VITE_*` vars in comments
@@ -157,7 +162,10 @@ A stub `env.ts` is created to:
 import { z } from 'zod';
 
 /** Reusable Zod type for 'true'/'false' env flags → boolean. */
-const boolFlag = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const boolFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
 
 const serverEnvSchema = z.object({
   // Runtime
@@ -185,7 +193,7 @@ const result = serverEnvSchema.safeParse(process.env);
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
-  result.error.issues.forEach(i => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
   console.error('\n  Copy .env.example to .env\n');
   process.exit(1);
 }
@@ -231,7 +239,7 @@ const result = roadmapEnvSchema.safeParse(process.env);
 
 if (!result.success) {
   console.error('\n  Roadmap: invalid environment variables:\n');
-  result.error.issues.forEach(i => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
   process.exit(1);
 }
 
@@ -375,6 +383,7 @@ Add four vars to `globalPassThroughEnv`:
 Import `env` at the top and replace all `process.env.*` reads. Examples:
 
 **Before:**
+
 ```ts
 const PORT = parseInt(process.env.DORKOS_PORT ?? String(DEFAULT_PORT), 10);
 const pulseEnabled = process.env.DORKOS_PULSE_ENABLED === 'true';
@@ -384,6 +393,7 @@ const defaultCwd = process.env.DORKOS_DEFAULT_CWD ?? process.cwd();
 ```
 
 **After:**
+
 ```ts
 import { env } from './env';
 
@@ -396,20 +406,20 @@ const defaultCwd = env.DORKOS_DEFAULT_CWD ?? process.cwd();
 
 **Complete list of server files to migrate:**
 
-| File | Vars to migrate |
-|------|----------------|
-| `src/index.ts` | DORKOS_PORT, DORKOS_LOG_LEVEL, DORKOS_BOUNDARY, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, DORKOS_DEFAULT_CWD, TUNNEL_ENABLED, TUNNEL_PORT, NGROK_AUTHTOKEN, TUNNEL_AUTH, TUNNEL_DOMAIN |
-| `src/app.ts` | NODE_ENV, CLIENT_DIST_PATH |
-| `src/lib/dork-home.ts` | DORK_HOME, NODE_ENV |
-| `src/lib/logger.ts` | NODE_ENV |
-| `src/routes/config.ts` | DORKOS_PORT, TUNNEL_AUTH, NGROK_AUTHTOKEN |
-| `src/routes/tunnel.ts` | TUNNEL_PORT, NODE_ENV, DORKOS_PORT, NGROK_AUTHTOKEN |
-| `src/routes/commands.ts` | DORKOS_DEFAULT_CWD |
-| `src/services/core/config-manager.ts` | DORK_HOME |
-| `src/services/core/context-builder.ts` | DORKOS_VERSION, DORKOS_PORT |
-| `src/services/core/mcp-tool-server.ts` | DORKOS_PORT, DORKOS_VERSION |
-| `src/services/core/agent-manager.ts` | DORKOS_DEFAULT_CWD |
-| `src/services/pulse/pulse-store.ts` | DORK_HOME |
+| File                                   | Vars to migrate                                                                                                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`                         | DORKOS_PORT, DORKOS_LOG_LEVEL, DORKOS_BOUNDARY, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, DORKOS_DEFAULT_CWD, TUNNEL_ENABLED, TUNNEL_PORT, NGROK_AUTHTOKEN, TUNNEL_AUTH, TUNNEL_DOMAIN |
+| `src/app.ts`                           | NODE_ENV, CLIENT_DIST_PATH                                                                                                                                                                                    |
+| `src/lib/dork-home.ts`                 | DORK_HOME, NODE_ENV                                                                                                                                                                                           |
+| `src/lib/logger.ts`                    | NODE_ENV                                                                                                                                                                                                      |
+| `src/routes/config.ts`                 | DORKOS_PORT, TUNNEL_AUTH, NGROK_AUTHTOKEN                                                                                                                                                                     |
+| `src/routes/tunnel.ts`                 | TUNNEL_PORT, NODE_ENV, DORKOS_PORT, NGROK_AUTHTOKEN                                                                                                                                                           |
+| `src/routes/commands.ts`               | DORKOS_DEFAULT_CWD                                                                                                                                                                                            |
+| `src/services/core/config-manager.ts`  | DORK_HOME                                                                                                                                                                                                     |
+| `src/services/core/context-builder.ts` | DORKOS_VERSION, DORKOS_PORT                                                                                                                                                                                   |
+| `src/services/core/mcp-tool-server.ts` | DORKOS_PORT, DORKOS_VERSION                                                                                                                                                                                   |
+| `src/services/core/agent-manager.ts`   | DORKOS_DEFAULT_CWD                                                                                                                                                                                            |
+| `src/services/pulse/pulse-store.ts`    | DORK_HOME                                                                                                                                                                                                     |
 
 **Note on `routes/config.ts`:** This route currently reads `DORKOS_PORT` via `parseInt(process.env.DORKOS_PORT!, 10)`. After migration, `env.DORKOS_PORT` is already typed as `number` — remove the `parseInt` wrapper.
 
@@ -427,7 +437,7 @@ import { env } from '../env'; // or '../env' depending on relative path
 ```ts
 import { env } from './env';
 
-const port = env.ROADMAP_PORT;         // replaces parseInt(process.env.ROADMAP_PORT ?? '4243', 10)
+const port = env.ROADMAP_PORT; // replaces parseInt(process.env.ROADMAP_PORT ?? '4243', 10)
 const projectRoot = env.ROADMAP_PROJECT_ROOT; // replaces process.env.ROADMAP_PROJECT_ROOT ?? process.cwd()
 ```
 
@@ -439,8 +449,8 @@ Replace reads only. Keep all imperative writes with inline ESLint disables:
 import { env } from './env';
 
 // Replace reads:
-const dorkHome = env.DORK_HOME;   // was: process.env.DORK_HOME
-const logLevel = env.LOG_LEVEL;   // was: process.env.LOG_LEVEL
+const dorkHome = env.DORK_HOME; // was: process.env.DORK_HOME
+const logLevel = env.LOG_LEVEL; // was: process.env.LOG_LEVEL
 
 // Keep writes (with inline disable):
 // eslint-disable-next-line no-restricted-syntax -- CLI bootstrap: sets env for server subprocess
@@ -588,11 +598,11 @@ pnpm lint 2>&1 | grep "no-restricted-syntax"
 
 ## Documentation Changes
 
-| Document | Change |
-|---|---|
-| `contributing/environment-variables.md` | Create — full pattern guide + complete env var reference table |
-| `docs/` (user-facing) | No immediate changes — the env var reference can be added to user docs in a follow-up |
-| `CLAUDE.md` | No changes needed — architecture section already describes env var precedence |
+| Document                                | Change                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
+| `contributing/environment-variables.md` | Create — full pattern guide + complete env var reference table                        |
+| `docs/` (user-facing)                   | No immediate changes — the env var reference can be added to user docs in a follow-up |
+| `CLAUDE.md`                             | No changes needed — architecture section already describes env var precedence         |
 
 ---
 
@@ -634,13 +644,13 @@ After Phase 2: Server boots from `env.ts`. ESLint warnings should be reduced to 
 
 None. All decisions were resolved during ideation:
 
-| Decision | Resolution |
-|---|---|
-| Library | Manual Zod — no T3 Env |
-| Architecture | Per-app `env.ts` — no shared `packages/env/` |
-| Boolean flags | Transform to `boolean` via `z.enum(['true','false']).transform()` |
+| Decision      | Resolution                                                            |
+| ------------- | --------------------------------------------------------------------- |
+| Library       | Manual Zod — no T3 Env                                                |
+| Architecture  | Per-app `env.ts` — no shared `packages/env/`                          |
+| Boolean flags | Transform to `boolean` via `z.enum(['true','false']).transform()`     |
 | CLI treatment | Thin `env.ts` for reads; writes stay in `cli.ts` with inline disables |
-| Client env.ts | Create stub now; VITE_* vars added later as needed |
+| Client env.ts | Create stub now; VITE\_\* vars added later as needed                  |
 
 ---
 

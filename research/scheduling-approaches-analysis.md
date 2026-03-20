@@ -1,5 +1,5 @@
 ---
-title: "Job Scheduler Approaches for Node.js/TypeScript Desktop Applications"
+title: 'Job Scheduler Approaches for Node.js/TypeScript Desktop Applications'
 date: 2026-02-17
 type: internal-architecture
 status: archived
@@ -83,14 +83,15 @@ const oneOff = new Cron(new Date('2026-03-01T10:00:00'), {}, () => {
 job.pause();
 job.resume();
 job.trigger(); // immediate manual fire
-job.stop();    // stop and clean up
+job.stop(); // stop and clean up
 
 // Preview schedule
-job.nextRuns(5);      // next 5 fire dates
-job.previousRuns(3);  // last 3 fire dates (v10+)
+job.nextRuns(5); // next 5 fire dates
+job.previousRuns(3); // last 3 fire dates (v10+)
 ```
 
 **Scheduling formats**:
+
 - Standard 5-field cron: `"0 9 * * *"`
 - 6-field with seconds: `"30 0 9 * * *"` (enable with `hasSeconds: true`)
 - 7-field with year: `"0 9 * * * * 2027"`
@@ -100,6 +101,7 @@ job.previousRuns(3);  // last 3 fire dates (v10+)
 - Date object (one-off)
 
 **Pros**:
+
 - Zero deps, tiny bundle
 - Most complete cron syntax of any library
 - `match()` method to check if a date matches a pattern
@@ -108,6 +110,7 @@ job.previousRuns(3);  // last 3 fire dates (v10+)
 - Works in browser environments too (useful for Electron renderer)
 
 **Cons**:
+
 - No persistence (by design)
 - No built-in job queue or concurrency management
 - Must re-register jobs from persistent store on restart
@@ -124,12 +127,16 @@ import { ToadScheduler, SimpleIntervalJob, CronJob, Task } from 'toad-scheduler'
 const scheduler = new ToadScheduler();
 
 // Interval-based job
-const task = new Task('agent-heartbeat', () => { runTask(); });
+const task = new Task('agent-heartbeat', () => {
+  runTask();
+});
 const job = new SimpleIntervalJob({ minutes: 30 }, task);
 scheduler.addSimpleIntervalJob(job);
 
 // Cron-based job
-const cronTask = new Task('daily-report', () => { runReport(); });
+const cronTask = new Task('daily-report', () => {
+  runReport();
+});
 const cronJob = new CronJob({ cronExpression: '0 9 * * *' }, cronTask);
 scheduler.addCronJob(cronJob);
 
@@ -139,17 +146,20 @@ scheduler.startById('agent-heartbeat');
 ```
 
 **Scheduling formats**:
+
 - `SimpleIntervalJob`: `{ seconds, minutes, hours }` object
 - `CronJob`: standard cron string (delegated to croner)
 - No one-off date support natively
 
 **Pros**:
+
 - Clean TypeScript-first API
 - Simple interval DSL (no cron required for basic intervals)
 - Cluster-friendly (can configure to only run on one worker)
 - Good for background processing tasks
 
 **Cons**:
+
 - No persistence
 - Narrower feature set than using croner directly
 - Delegates cron parsing to croner anyway
@@ -164,29 +174,37 @@ scheduler.startById('agent-heartbeat');
 import schedule from 'node-schedule';
 
 // Cron string
-const job = schedule.scheduleJob('0 9 * * 1-5', () => { run(); });
+const job = schedule.scheduleJob('0 9 * * 1-5', () => {
+  run();
+});
 
 // Recurrence rule (object literal)
 const rule = new schedule.RecurrenceRule();
 rule.dayOfWeek = [1, 2, 3, 4, 5]; // Mon-Fri
 rule.hour = 9;
 rule.minute = 0;
-schedule.scheduleJob(rule, () => { run(); });
+schedule.scheduleJob(rule, () => {
+  run();
+});
 
 // One-off date
-schedule.scheduleJob(new Date('2026-03-15'), () => { runOnce(); });
+schedule.scheduleJob(new Date('2026-03-15'), () => {
+  runOnce();
+});
 
 // Cancel
 job.cancel();
 ```
 
 **Pros**:
+
 - Long-standing library (very stable)
 - Object literal scheduling (readable in code)
 - One-off date support
 - Timezone-aware
 
 **Cons**:
+
 - No persistence
 - Incomplete cron syntax (missing W and L modifiers)
 - Known sleep/wake drift issues on Windows (GitHub issue #278)
@@ -200,9 +218,13 @@ job.cancel();
 ```typescript
 import cron from 'node-cron';
 
-const task = cron.schedule('*/5 * * * *', () => {
-  runEvery5Minutes();
-}, { scheduled: true, timezone: 'America/New_York' });
+const task = cron.schedule(
+  '*/5 * * * *',
+  () => {
+    runEvery5Minutes();
+  },
+  { scheduled: true, timezone: 'America/New_York' }
+);
 
 task.stop();
 task.start();
@@ -236,11 +258,13 @@ await agenda.start();
 ```
 
 **Scheduling formats**:
+
 - Human-readable: `"every 5 minutes"`, `"in 20 minutes"`, `"at noon on tuesday"`
 - Cron strings: `"0 9 * * *"`
 - Date objects
 
 **Pros**:
+
 - Human-readable scheduling syntax (great for LLMs)
 - Job persistence via MongoDB
 - Agendash UI dashboard available
@@ -248,6 +272,7 @@ await agenda.start();
 - `agenda-rest` package adds a REST API layer
 
 **Cons**:
+
 - **Requires MongoDB** — a running server process, unacceptable for desktop/CLI
 - Heavyweight for single-user tools
 - MongoDB adds ~100-200MB RAM overhead
@@ -267,21 +292,27 @@ const worker = new Worker('agent-tasks', async (job) => {
 });
 
 // Repeatable (cron-based)
-await queue.add('daily-task', { userId: '123' }, {
-  repeat: { cron: '0 9 * * *' }
-});
+await queue.add(
+  'daily-task',
+  { userId: '123' },
+  {
+    repeat: { cron: '0 9 * * *' },
+  }
+);
 
 // Delayed one-off
 await queue.add('remind', {}, { delay: 60 * 60 * 1000 }); // in 1 hour
 ```
 
 **Pros**:
+
 - Industry-standard for distributed job queues
 - Bull Board / Arena dashboard UIs
 - Priorities, retries, rate limiting, concurrency
 - Job event hooks (completed, failed, progress)
 
 **Cons**:
+
 - **Requires Redis** — a running server process, unacceptable for desktop/CLI
 - Overkill for single-user applications
 - Redis adds significant memory overhead and setup complexity
@@ -322,6 +353,7 @@ await bree.remove('agent-task');
 ```
 
 **Job files** (`jobs/agent-task.js`) run in **worker threads** — fully sandboxed:
+
 ```javascript
 // jobs/agent-task.js
 const { workerData, parentPort } = require('worker_threads');
@@ -330,6 +362,7 @@ parentPort.postMessage({ done: true });
 ```
 
 **Scheduling formats** (most flexible of all libraries):
+
 - Cron strings: `"0 9 * * *"`
 - Human-readable: `"every 30 minutes"`, `"at 10:15 am"`
 - Date objects (one-off)
@@ -337,6 +370,7 @@ parentPort.postMessage({ done: true });
 - `ms` library strings: `"5m"`, `"2h"`
 
 **Pros**:
+
 - **No Redis or MongoDB required**
 - Worker thread isolation prevents one job from blocking others
 - Most flexible scheduling format (human + cron + ms + date)
@@ -344,6 +378,7 @@ parentPort.postMessage({ done: true });
 - Good fit for desktop apps
 
 **Cons**:
+
 - Each job must be a **separate file** in a `jobs/` directory — friction for simple callbacks
 - No built-in persistence (must implement yourself)
 - Smaller community than Bull/Agenda
@@ -374,12 +409,14 @@ crontab.load((err, tab) => {
 **How it works**: Reads the user's system crontab (`crontab -l`), manipulates entries as objects, writes back via `crontab -e` equivalent. Jobs run as OS-level cron entries that survive process restarts and even machine reboots.
 
 **Pros**:
+
 - Jobs persist independently of the application process
 - Native OS behavior (reliable timing, wake scheduling on macOS)
 - Standard cron syntax
 - No Node.js process needs to be running for jobs to fire
 
 **Cons**:
+
 - **macOS/Linux only** — no Windows support whatsoever
 - Jobs run in isolation — no access to app state or in-process libraries
 - Difficult to build a UI around (must parse crontab output)
@@ -436,8 +473,8 @@ jobs:
   - id: daily-digest
     name: Daily Digest
     description: Summarize activity from the last 24 hours
-    schedule: "0 9 * * 1-5"
-    schedule_human: "Weekdays at 9am"
+    schedule: '0 9 * * 1-5'
+    schedule_human: 'Weekdays at 9am'
     enabled: true
     command: summarize-activity
     args:
@@ -445,8 +482,8 @@ jobs:
 
   - id: weekly-review
     name: Weekly Review
-    schedule: "0 16 * * 5"
-    schedule_human: "Fridays at 4pm"
+    schedule: '0 16 * * 5'
+    schedule_human: 'Fridays at 4pm'
     enabled: false
 ```
 
@@ -486,6 +523,7 @@ class FileBasedScheduler {
 ```
 
 **Pros**:
+
 - Fully LLM-readable and LLM-editable (LLM can write the JSON/YAML directly)
 - Human-readable configuration
 - Version-controllable (can be committed to git)
@@ -493,11 +531,12 @@ class FileBasedScheduler {
 - No database dependencies
 
 **Cons**:
+
 - No atomic updates (race conditions on concurrent writes)
 - `lastRunAt` / `nextRunAt` must be updated back to the file — awkward dual-purpose file
 - File conflicts if multiple processes edit simultaneously
 - No transactional job state tracking
-- Better suited as the *config layer* on top of a database (not as the database itself)
+- Better suited as the _config layer_ on top of a database (not as the database itself)
 
 ---
 
@@ -554,6 +593,7 @@ CREATE INDEX idx_job_runs_status ON job_runs(status);
 ```
 
 Key SQLite pragmas for production use:
+
 - `PRAGMA journal_mode = WAL;` — enables concurrent readers during writes
 - `PRAGMA synchronous = 1;` — optimizes transaction flushing without full fsync
 - `PRAGMA busy_timeout = 5000;` — 5-second retry window for lock contention
@@ -609,20 +649,28 @@ class SQLiteScheduler {
 
     // Persist next run time
     const nextRun = cronJob.nextRun();
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT OR REPLACE INTO scheduler_state (job_id, next_run_at)
       VALUES (?, ?)
-    `).run(job.id, nextRun?.toISOString() ?? null);
+    `
+      )
+      .run(job.id, nextRun?.toISOString() ?? null);
   }
 
   private async executeJob(job: ScheduledJob) {
     const runId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
 
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO job_runs (id, job_id, status, triggered_by, started_at)
       VALUES (?, ?, 'running', 'schedule', ?)
-    `).run(runId, job.id, startedAt);
+    `
+      )
+      .run(runId, job.id, startedAt);
 
     try {
       const handler = this.handlers.get(job.command);
@@ -630,36 +678,51 @@ class SQLiteScheduler {
       const result = await handler(JSON.parse(job.args));
       const finishedAt = new Date().toISOString();
 
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         UPDATE job_runs
         SET status = 'done', finished_at = ?, output = ?
         WHERE id = ?
-      `).run(finishedAt, JSON.stringify(result), runId);
+      `
+        )
+        .run(finishedAt, JSON.stringify(result), runId);
 
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         UPDATE scheduler_state
         SET last_run_at = ?, run_count = run_count + 1, next_run_at = ?
         WHERE job_id = ?
-      `).run(startedAt, this.activeCrons.get(job.id)?.nextRun()?.toISOString(), job.id);
-
+      `
+        )
+        .run(startedAt, this.activeCrons.get(job.id)?.nextRun()?.toISOString(), job.id);
     } catch (err) {
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         UPDATE job_runs SET status = 'failed', finished_at = ?, error = ? WHERE id = ?
-      `).run(new Date().toISOString(), String(err), runId);
+      `
+        )
+        .run(new Date().toISOString(), String(err), runId);
 
-      this.db.prepare(
-        `UPDATE scheduler_state SET fail_count = fail_count + 1 WHERE job_id = ?`
-      ).run(job.id);
+      this.db
+        .prepare(`UPDATE scheduler_state SET fail_count = fail_count + 1 WHERE job_id = ?`)
+        .run(job.id);
     }
   }
 
   private recoverMissedJobs() {
-    const missed = this.db.prepare(`
+    const missed = this.db
+      .prepare(
+        `
       SELECT ss.*, sj.missed_run_policy
       FROM scheduler_state ss
       JOIN scheduled_jobs sj ON ss.job_id = sj.id
       WHERE ss.next_run_at < datetime('now') AND sj.enabled = 1
-    `).all() as Array<SchedulerState & { missed_run_policy: string }>;
+    `
+      )
+      .all() as Array<SchedulerState & { missed_run_policy: string }>;
 
     for (const state of missed) {
       const job = this.db
@@ -675,14 +738,23 @@ class SQLiteScheduler {
 
   addJob(def: NewScheduledJob) {
     const human = cronstrue.toString(def.cron);
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO scheduled_jobs (id, name, cron, cron_human, command, args, enabled, timezone)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      def.id, def.name, def.cron, human,
-      def.command, JSON.stringify(def.args ?? {}),
-      def.enabled ? 1 : 0, def.timezone ?? 'UTC'
-    );
+    `
+      )
+      .run(
+        def.id,
+        def.name,
+        def.cron,
+        human,
+        def.command,
+        JSON.stringify(def.args ?? {}),
+        def.enabled ? 1 : 0,
+        def.timezone ?? 'UTC'
+      );
 
     if (def.enabled) {
       const job = this.db
@@ -715,7 +787,9 @@ export const scheduledJobs = sqliteTable('scheduled_jobs', {
   args: text('args').default('{}'),
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
   timezone: text('timezone').default('UTC'),
-  missedRunPolicy: text('missed_run_policy', { enum: ['skip', 'run_once', 'run_all'] }).default('skip'),
+  missedRunPolicy: text('missed_run_policy', { enum: ['skip', 'run_once', 'run_all'] }).default(
+    'skip'
+  ),
   createdAt: text('created_at'),
   updatedAt: text('updated_at'),
 });
@@ -733,7 +807,9 @@ export const jobRuns = sqliteTable('job_runs', {
 });
 
 export const schedulerState = sqliteTable('scheduler_state', {
-  jobId: text('job_id').primaryKey().references(() => scheduledJobs.id),
+  jobId: text('job_id')
+    .primaryKey()
+    .references(() => scheduledJobs.id),
   lastRunAt: text('last_run_at'),
   nextRunAt: text('next_run_at'),
   runCount: integer('run_count').default(0),
@@ -742,6 +818,7 @@ export const schedulerState = sqliteTable('scheduler_state', {
 ```
 
 **Pros**:
+
 - Full ACID persistence — jobs survive crashes and restarts
 - Complete audit trail (job_runs table)
 - Query-able history (missed runs visible in DB)
@@ -752,6 +829,7 @@ export const schedulerState = sqliteTable('scheduler_state', {
 - UI-friendly (can query state for dashboards)
 
 **Cons**:
+
 - Requires initial schema setup and migration strategy
 - better-sqlite3 requires native compilation (Electron rebuild needed via `electron-rebuild` or `@electron/rebuild`)
 - Not human-readable in raw form (binary file)
@@ -766,14 +844,14 @@ Temporal, Prefect, Apache Airflow, and similar workflow orchestration engines ar
 
 **Verdict: Definitively overkill for a desktop app.**
 
-| Criterion | Temporal | DorkOS Need |
-|-----------|----------|-------------|
-| Infrastructure | Temporal server (separate process) + DB | Zero external services |
-| Scale | Thousands of concurrent workflows | Tens of scheduled jobs |
-| Determinism enforcement | Strict (no non-deterministic code in workflows) | Arbitrary AI agent code |
-| Setup complexity | High (SDK + server + namespace) | Low (single npm install) |
-| Debugging | Temporal Web UI, replay mechanism | Simple log + SQLite query |
-| Use case | Multi-step, long-running distributed workflows | Run an LLM call on a schedule |
+| Criterion               | Temporal                                        | DorkOS Need                   |
+| ----------------------- | ----------------------------------------------- | ----------------------------- |
+| Infrastructure          | Temporal server (separate process) + DB         | Zero external services        |
+| Scale                   | Thousands of concurrent workflows               | Tens of scheduled jobs        |
+| Determinism enforcement | Strict (no non-deterministic code in workflows) | Arbitrary AI agent code       |
+| Setup complexity        | High (SDK + server + namespace)                 | Low (single npm install)      |
+| Debugging               | Temporal Web UI, replay mechanism               | Simple log + SQLite query     |
+| Use case                | Multi-step, long-running distributed workflows  | Run an LLM call on a schedule |
 
 The only scenario where Temporal makes sense here is if individual agent tasks themselves become multi-step, multi-hour durable workflows with automatic retry and replay. Even then, the infrastructure burden is substantial.
 
@@ -785,14 +863,14 @@ The only scenario where Temporal makes sense here is if individual agent tasks t
 
 ### Format Comparison
 
-| Format | Example | Human-Readable | LLM-Friendly | Precision | Complexity |
-|--------|---------|---------------|--------------|-----------|------------|
-| Cron expression | `0 9 * * 1-5` | Low | Medium | High | Medium |
-| Natural language | `"every weekday at 9am"` | High | High | Medium | Low |
-| ISO 8601 interval | `PT30M` (every 30 min) | Low | Medium | High | Medium |
-| ms string | `"30m"`, `"2h"` | Medium | High | Medium | Low |
-| Interval object | `{ hours: 2, minutes: 30 }` | Medium | High | High | Low |
-| Date + recurrence | `Date + RecurrenceRule` | Medium | Medium | High | High |
+| Format            | Example                     | Human-Readable | LLM-Friendly | Precision | Complexity |
+| ----------------- | --------------------------- | -------------- | ------------ | --------- | ---------- |
+| Cron expression   | `0 9 * * 1-5`               | Low            | Medium       | High      | Medium     |
+| Natural language  | `"every weekday at 9am"`    | High           | High         | Medium    | Low        |
+| ISO 8601 interval | `PT30M` (every 30 min)      | Low            | Medium       | High      | Medium     |
+| ms string         | `"30m"`, `"2h"`             | Medium         | High         | Medium    | Low        |
+| Interval object   | `{ hours: 2, minutes: 30 }` | Medium         | High         | High      | Low        |
+| Date + recurrence | `Date + RecurrenceRule`     | Medium         | Medium       | High      | High       |
 
 ### Recommendation: Dual-Format Storage
 
@@ -809,7 +887,7 @@ Use `cronstrue` to generate the human label from any cron expression:
 
 ```typescript
 import cronstrue from 'cronstrue';
-cronstrue.toString("0 9 * * 1-5"); // => "At 09:00 AM, Monday through Friday"
+cronstrue.toString('0 9 * * 1-5'); // => "At 09:00 AM, Monday through Friday"
 ```
 
 **For LLM interaction**: Natural language input, converted to cron via the LLM itself (Claude can convert "every Tuesday and Thursday at 2pm" to `"0 14 * * 2,4"` reliably), with `cronstrue` used to confirm the translation back to English for user verification.
@@ -825,6 +903,7 @@ Claude and other LLMs handle cron expression generation well for standard patter
 ### The Problem
 
 When a macOS or Windows machine sleeps, all JavaScript timers freeze. On wake:
+
 - **node-schedule**: Known sleep/wake drift on Windows (issue #278) — timers may fire at wrong times
 - **croner**: Recalculates next run on wake, typically skips the missed window
 - **node-cron**: Fires the missed invocation immediately on wake (catch-up behavior)
@@ -846,12 +925,16 @@ sleeptime.start((err, data) => {
 
 function checkMissedJobs() {
   const now = new Date();
-  const missed = db.prepare(`
+  const missed = db
+    .prepare(
+      `
     SELECT ss.*, sj.*
     FROM scheduler_state ss
     JOIN scheduled_jobs sj ON ss.job_id = sj.id
     WHERE ss.next_run_at < ? AND sj.enabled = 1
-  `).all(now.toISOString());
+  `
+    )
+    .all(now.toISOString());
 
   for (const job of missed) {
     if (job.missed_run_policy === 'run_once') {
@@ -875,6 +958,7 @@ powerMonitor.on('resume', () => {
 #### Option 2: Per-Job Missed-Run Policy
 
 Store a `missed_run_policy` field in the job definition:
+
 - `"skip"` — if the scheduled time was missed, skip it and wait for the next occurrence (recommended for AI tasks)
 - `"run_once"` — run once on wake regardless of how many times it was missed
 - `"run_all"` — run once per missed occurrence (rarely appropriate for AI tasks)
@@ -887,22 +971,22 @@ On every app start, check `scheduler_state.next_run_at` against `NOW()`. Any job
 
 ## Evaluation Matrix
 
-| Criterion | croner + SQLite | Bree | Agenda | BullMQ | OS Cron | File-Based |
-|-----------|----------------|------|--------|--------|---------|------------|
-| Regular scheduled jobs | Yes | Yes | Yes | Yes | Yes | Yes |
-| One-off job support | Yes | Yes | Yes | Yes | Partial | Partial |
-| Complex cron syntax | Yes (OCPS 1.4) | Yes | Yes | Yes | Yes | Yes |
-| Job survival across restarts | Yes (SQLite) | No | Yes (MongoDB) | Yes (Redis) | Yes (OS-level) | Partial (file) |
-| macOS compatibility | Yes | Yes | No (needs Mongo) | No (needs Redis) | Yes | Yes |
-| Windows compatibility | Yes | Yes | No | No | No | Yes |
-| LLM-readable config | Partial (DB + export) | Yes | Yes | No | No | Yes |
-| Update via CLI/API | Yes | Yes | Yes | Yes | Partial | Partial |
-| UI-buildable | Yes | Partial | Yes (Agendash) | Yes (Bull Board) | No | Partial |
-| Custom LLM calls | Yes | Yes (worker file) | Yes | Yes | Partial | Yes |
-| Implementation complexity | Medium | Medium | High (MongoDB) | High (Redis) | Low (Unix only) | Low |
-| Sleep/wake handling | Manual + powerMonitor | Manual | N/A | N/A | OS handles | Manual |
-| External service required | No | No | MongoDB | Redis | No | No |
-| Electron-compatible | Yes (rebuild needed) | Yes | No | No | No | Yes |
+| Criterion                    | croner + SQLite       | Bree              | Agenda           | BullMQ           | OS Cron         | File-Based     |
+| ---------------------------- | --------------------- | ----------------- | ---------------- | ---------------- | --------------- | -------------- |
+| Regular scheduled jobs       | Yes                   | Yes               | Yes              | Yes              | Yes             | Yes            |
+| One-off job support          | Yes                   | Yes               | Yes              | Yes              | Partial         | Partial        |
+| Complex cron syntax          | Yes (OCPS 1.4)        | Yes               | Yes              | Yes              | Yes             | Yes            |
+| Job survival across restarts | Yes (SQLite)          | No                | Yes (MongoDB)    | Yes (Redis)      | Yes (OS-level)  | Partial (file) |
+| macOS compatibility          | Yes                   | Yes               | No (needs Mongo) | No (needs Redis) | Yes             | Yes            |
+| Windows compatibility        | Yes                   | Yes               | No               | No               | No              | Yes            |
+| LLM-readable config          | Partial (DB + export) | Yes               | Yes              | No               | No              | Yes            |
+| Update via CLI/API           | Yes                   | Yes               | Yes              | Yes              | Partial         | Partial        |
+| UI-buildable                 | Yes                   | Partial           | Yes (Agendash)   | Yes (Bull Board) | No              | Partial        |
+| Custom LLM calls             | Yes                   | Yes (worker file) | Yes              | Yes              | Partial         | Yes            |
+| Implementation complexity    | Medium                | Medium            | High (MongoDB)   | High (Redis)     | Low (Unix only) | Low            |
+| Sleep/wake handling          | Manual + powerMonitor | Manual            | N/A              | N/A              | OS handles      | Manual         |
+| External service required    | No                    | No                | MongoDB          | Redis            | No              | No             |
+| Electron-compatible          | Yes (rebuild needed)  | Yes               | No               | No               | No              | Yes            |
 
 ---
 
@@ -911,6 +995,7 @@ On every app start, check `scheduler_state.next_run_at` against `NOW()`. Any job
 ### Primary Recommendation: croner + SQLite + JSON export
 
 **Stack**:
+
 - **Scheduler runtime**: `croner` (zero-dep, OCPS 1.4, TypeScript-native)
 - **Persistence**: `better-sqlite3` with Drizzle ORM schema
 - **Config layer**: JSON export of `scheduled_jobs` table for LLM editing

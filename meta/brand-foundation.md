@@ -310,40 +310,40 @@ Use language like:
 
 ### Voice Examples
 
-| Don't say | Say |
-|---|---|
-| "Easy-to-use AI assistant" | "Autonomous agent operating system" |
-| "Get started in minutes!" | "Install. Configure. Run." |
-| "We help developers..." | "Built for developers who ship." |
-| "Powerful AI features" | "Agents that multiply what you accomplish." |
-| "No cloud dependency" | "Intelligence from the agents. Everything else is yours." |
+| Don't say                  | Say                                                       |
+| -------------------------- | --------------------------------------------------------- |
+| "Easy-to-use AI assistant" | "Autonomous agent operating system"                       |
+| "Get started in minutes!"  | "Install. Configure. Run."                                |
+| "We help developers..."    | "Built for developers who ship."                          |
+| "Powerful AI features"     | "Agents that multiply what you accomplish."               |
+| "No cloud dependency"      | "Intelligence from the agents. Everything else is yours." |
 
 ### Language to Avoid
 
-*Established during Value Architecture review (2026-02-27). These rules apply to all marketing copy, landing pages, docs, and README content.*
+_Established during Value Architecture review (2026-02-27). These rules apply to all marketing copy, landing pages, docs, and README content._
 
 #### Terms to Avoid
 
-| Avoid | Use Instead | Why |
-|---|---|---|
-| "server-side" | "independently" / "not tied to your IDE or terminal" / "keeps running when you close the terminal" | Most users run DorkOS on their laptop first. "Server-side" sounds enterprise/cloud. The real differentiator is independence from the IDE, not running on a server. |
-| "infrastructure" | "system" / "foundation" / "the layer" / just remove it | Too cold, too enterprise. DorkOS is a tool for builders, not an infrastructure play. |
-| "audit trail" | "every session recorded" / "full session history" | Enterprise compliance language. Focus on transparency and reviewability instead. |
-| "session locking" | Remove from marketing copy | Enterprise term. Keep only in technical API docs. |
-| "universal message bus" / "message bus" | "built-in messaging" / "your agents can message you and each other" | Too technical. Describe the outcome (agents reach you), not the mechanism. Think: how would Apple describe this? |
-| "agents that can talk" / "talk to each other" | "agents, connected" / "message each other" / "communicate" | Confused with voice/speech agents (ElevenLabs, etc.). "Connected" and "message" are unambiguous. |
-| "renting" (as metaphor for SaaS) | "it runs on your machine, you can read and change every line of code" | The rental metaphor is unclear. Be concrete about what ownership means. |
-| "durable delivery" / "dead-letter queue" / "budget envelopes" | Save for technical docs | These are real features but they're mechanism language, not benefit language. |
-| "processes" (as in "isolated processes") | "solo agents" / "disconnected agents" | "Processes" is systems-level jargon. Use human-scale language. |
+| Avoid                                                         | Use Instead                                                                                        | Why                                                                                                                                                                |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| "server-side"                                                 | "independently" / "not tied to your IDE or terminal" / "keeps running when you close the terminal" | Most users run DorkOS on their laptop first. "Server-side" sounds enterprise/cloud. The real differentiator is independence from the IDE, not running on a server. |
+| "infrastructure"                                              | "system" / "foundation" / "the layer" / just remove it                                             | Too cold, too enterprise. DorkOS is a tool for builders, not an infrastructure play.                                                                               |
+| "audit trail"                                                 | "every session recorded" / "full session history"                                                  | Enterprise compliance language. Focus on transparency and reviewability instead.                                                                                   |
+| "session locking"                                             | Remove from marketing copy                                                                         | Enterprise term. Keep only in technical API docs.                                                                                                                  |
+| "universal message bus" / "message bus"                       | "built-in messaging" / "your agents can message you and each other"                                | Too technical. Describe the outcome (agents reach you), not the mechanism. Think: how would Apple describe this?                                                   |
+| "agents that can talk" / "talk to each other"                 | "agents, connected" / "message each other" / "communicate"                                         | Confused with voice/speech agents (ElevenLabs, etc.). "Connected" and "message" are unambiguous.                                                                   |
+| "renting" (as metaphor for SaaS)                              | "it runs on your machine, you can read and change every line of code"                              | The rental metaphor is unclear. Be concrete about what ownership means.                                                                                            |
+| "durable delivery" / "dead-letter queue" / "budget envelopes" | Save for technical docs                                                                            | These are real features but they're mechanism language, not benefit language.                                                                                      |
+| "processes" (as in "isolated processes")                      | "solo agents" / "disconnected agents"                                                              | "Processes" is systems-level jargon. Use human-scale language.                                                                                                     |
 
 #### Metaphor Guidelines
 
-| Use | Don't Use | Why |
-|---|---|---|
-| "Agents work **like** teammates" | "Agents **are** teammates" | People aren't ready to place agents on the same level as human teammates yet. "Like" acknowledges the analogy without overclaiming. |
-| "Like giving your agents Slack" | "Kernel IPC for agents" | The Slack metaphor is immediately understood. IPC is jargon that excludes most of the audience. |
-| "From solo agents to a team" | "From isolated processes to a network" | Human-scale language. Teams, not networks. |
-| "Your agents can reach you" | "Your agents have a voice" | "Voice" implies speech/audio. "Reach" implies connection on any channel. |
+| Use                              | Don't Use                              | Why                                                                                                                                 |
+| -------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| "Agents work **like** teammates" | "Agents **are** teammates"             | People aren't ready to place agents on the same level as human teammates yet. "Like" acknowledges the analogy without overclaiming. |
+| "Like giving your agents Slack"  | "Kernel IPC for agents"                | The Slack metaphor is immediately understood. IPC is jargon that excludes most of the audience.                                     |
+| "From solo agents to a team"     | "From isolated processes to a network" | Human-scale language. Teams, not networks.                                                                                          |
+| "Your agents can reach you"      | "Your agents have a voice"             | "Voice" implies speech/audio. "Reach" implies connection on any channel.                                                            |
 
 #### Tone Guardrails
 
@@ -357,14 +357,14 @@ Use language like:
 
 DorkOS positions AI agents as tools for human creativity and empowerment — like Apple positions the Mac, iPhone, and iPad. The human is the creative force. The agents are the coordination layer that lets human vision scale.
 
-| Never Say | Say Instead | Why |
-|---|---|---|
-| "Your AI is smarter than you" | "Your AI amplifies what you build" | The human is the creator, the agent is the tool |
-| "You're the bottleneck" | "You've always had more ideas than hours" | Celebrate human ambition, don't diminish it |
-| "Agents that never stop" | "Agents that multiply what you accomplish" | Tirelessness framed as empowerment, not superiority |
-| "While you sleep" (as deficiency) | "So you can focus on what matters" | Human choices are valid, not limitations |
-| "Outship everyone" | "Ship what you've always imagined" | Empower, don't compete |
-| "Your agent works when you don't" | "Your ideas keep moving forward" | Center the human's vision, not the agent's labor |
+| Never Say                         | Say Instead                                | Why                                                 |
+| --------------------------------- | ------------------------------------------ | --------------------------------------------------- |
+| "Your AI is smarter than you"     | "Your AI amplifies what you build"         | The human is the creator, the agent is the tool     |
+| "You're the bottleneck"           | "You've always had more ideas than hours"  | Celebrate human ambition, don't diminish it         |
+| "Agents that never stop"          | "Agents that multiply what you accomplish" | Tirelessness framed as empowerment, not superiority |
+| "While you sleep" (as deficiency) | "So you can focus on what matters"         | Human choices are valid, not limitations            |
+| "Outship everyone"                | "Ship what you've always imagined"         | Empower, don't compete                              |
+| "Your agent works when you don't" | "Your ideas keep moving forward"           | Center the human's vision, not the agent's labor    |
 
 **Core thesis:** "Intelligence doesn't scale. Coordination does."
 **The Apple test:** Would Apple say this about the Mac? If not, reframe.
@@ -413,7 +413,7 @@ DorkOS should feel like:
 - Intelligence from the Agents. Everything Else Is Yours.
 - We Named It After Ourselves.
 - The Ones Who Care Too Much Build the Things That Matter Most.
-- You Slept. They Shipped. *(Use with awareness — the power is in celebrating the outcome, not framing sleep as deficiency.)*
+- You Slept. They Shipped. _(Use with awareness — the power is in celebrating the outcome, not framing sleep as deficiency.)_
 
 ---
 
@@ -497,18 +497,18 @@ That's DorkOS.
 
 What does "one person, ten agents" actually look like? Here's what Kai runs:
 
-| Agent | Project | Schedule | What It Does |
-|---|---|---|---|
-| **Atlas** | dorkos/core | Every night, 2am | Runs tests, fixes failures, opens PRs |
-| **Scout** | dorkos/docs | Every 6 hours | Checks for stale docs, updates examples |
-| **Sentinel** | production-api | Every 30 minutes | Monitors error rates, triages new errors |
-| **Forge** | client-app | On demand | Implements features from the roadmap |
-| **Lens** | analytics-service | Daily, 6am | Analyzes yesterday's metrics, files reports |
-| **Bridge** | integration-layer | On deploy | Runs integration tests across services |
-| **Archive** | knowledge-base | Weekly | Organizes and indexes new documentation |
-| **Patrol** | security-scanner | Daily, 4am | Dependency audit, vulnerability scanning |
-| **Herald** | all projects | Always on | Routes notifications to Telegram and Slack |
-| **Loop** | feedback-engine | Every 4 hours | Collects signals, dispatches improvement tasks |
+| Agent        | Project           | Schedule         | What It Does                                   |
+| ------------ | ----------------- | ---------------- | ---------------------------------------------- |
+| **Atlas**    | dorkos/core       | Every night, 2am | Runs tests, fixes failures, opens PRs          |
+| **Scout**    | dorkos/docs       | Every 6 hours    | Checks for stale docs, updates examples        |
+| **Sentinel** | production-api    | Every 30 minutes | Monitors error rates, triages new errors       |
+| **Forge**    | client-app        | On demand        | Implements features from the roadmap           |
+| **Lens**     | analytics-service | Daily, 6am       | Analyzes yesterday's metrics, files reports    |
+| **Bridge**   | integration-layer | On deploy        | Runs integration tests across services         |
+| **Archive**  | knowledge-base    | Weekly           | Organizes and indexes new documentation        |
+| **Patrol**   | security-scanner  | Daily, 4am       | Dependency audit, vulnerability scanning       |
+| **Herald**   | all projects      | Always on        | Routes notifications to Telegram and Slack     |
+| **Loop**     | feedback-engine   | Every 4 hours    | Collects signals, dispatches improvement tasks |
 
 Each agent has a name, a color, an icon, and a Relay address. They appear in Console as browser tabs — you know at a glance who's working, who's done, and who needs you.
 

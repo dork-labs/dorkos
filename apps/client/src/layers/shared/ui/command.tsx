@@ -5,10 +5,7 @@ import { SearchIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 /** Command palette root container with search and list support. */
-function Command({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive>) {
+function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
       data-slot="command"
@@ -42,10 +39,7 @@ function CommandInput({
 }
 
 /** Scrollable list container for command items and groups. */
-function CommandList({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive.List>) {
+function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
       data-slot="command-list"
@@ -98,10 +92,7 @@ function CommandSeparator({
 }
 
 /** Selectable item within a command list or group. */
-function CommandItem({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive.Item>) {
+function CommandItem({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
       data-slot="command-item"

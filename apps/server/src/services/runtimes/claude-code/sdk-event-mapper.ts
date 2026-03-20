@@ -5,11 +5,7 @@ import { buildTaskEvent, TASK_TOOL_NAMES } from './build-task-event.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Hook events that correlate to a specific tool call and render inside ToolCallCard. */
-const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set([
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-]);
+const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
 
 /** Map SDK result subtypes to user-facing error categories. */
 function mapErrorCategory(subtype: string): ErrorCategory {
@@ -350,9 +346,7 @@ export async function* mapSdkMessage(
   if (message.type === 'result') {
     const result = message as Record<string, unknown>;
     const usage = result.usage as Record<string, unknown> | undefined;
-    const modelUsageMap = result.modelUsage as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+    const modelUsageMap = result.modelUsage as Record<string, Record<string, unknown>> | undefined;
     const firstModelUsage = modelUsageMap ? Object.values(modelUsageMap)[0] : undefined;
 
     // Always emit session_status with final cost/token/model data

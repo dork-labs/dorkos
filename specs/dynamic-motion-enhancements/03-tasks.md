@@ -18,7 +18,7 @@ slug: dynamic-motion-enhancements
 Create the shared motion variants file that all animated components will import from. This file defines the animation language for the entire marketing page.
 
 ```typescript
-import type { Variants, Transition } from 'motion/react'
+import type { Variants, Transition } from 'motion/react';
 
 /** Overdamped spring — physics-based, no bounce. */
 export const SPRING: Transition = {
@@ -26,10 +26,10 @@ export const SPRING: Transition = {
   stiffness: 100,
   damping: 20,
   mass: 1,
-}
+};
 
 /** Standard viewport trigger config — fires once at 20% visible. */
-export const VIEWPORT = { once: true, amount: 0.2 } as const
+export const VIEWPORT = { once: true, amount: 0.2 } as const;
 
 /** Fade + slide up reveal for individual elements. */
 export const REVEAL: Variants = {
@@ -39,7 +39,7 @@ export const REVEAL: Variants = {
     y: 0,
     transition: SPRING,
   },
-}
+};
 
 /** Container variant that staggers children at 80ms intervals. */
 export const STAGGER: Variants = {
@@ -49,7 +49,7 @@ export const STAGGER: Variants = {
       staggerChildren: 0.08,
     },
   },
-}
+};
 
 /** Scale-in variant for SVG nodes. */
 export const SCALE_IN: Variants = {
@@ -59,7 +59,7 @@ export const SCALE_IN: Variants = {
     scale: 1,
     transition: SPRING,
   },
-}
+};
 
 /** Path drawing variant using pathLength. */
 export const DRAW_PATH: Variants = {
@@ -69,10 +69,11 @@ export const DRAW_PATH: Variants = {
     opacity: 1,
     transition: { duration: 1.2, ease: 'easeInOut' },
   },
-}
+};
 ```
 
 **Acceptance Criteria:**
+
 - [ ] File exists at `apps/web/src/layers/features/marketing/lib/motion-variants.ts`
 - [ ] Exports: `SPRING`, `VIEWPORT`, `REVEAL`, `STAGGER`, `SCALE_IN`, `DRAW_PATH`
 - [ ] All types import from `motion/react`
@@ -83,6 +84,7 @@ export const DRAW_PATH: Variants = {
 ### Task 1.2: Add MotionConfig to marketing layout
 
 **Files:**
+
 - `apps/web/src/app/(marketing)/layout.tsx` (MODIFY)
 - `apps/web/src/app/(marketing)/marketing-shell.tsx` (NEW)
 
@@ -110,6 +112,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
 The layout remains a server component. Only the new `MarketingShell` is a client component.
 
 **Acceptance Criteria:**
+
 - [ ] `<MotionConfig reducedMotion="user">` wraps all marketing page children
 - [ ] `metadata` export still works (page title, OG tags render correctly)
 - [ ] JSON-LD scripts still render in the HTML
@@ -174,6 +177,7 @@ Add the following CSS keyframes and reduced-motion overrides to the end of the g
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `@keyframes dash-flow` is defined in globals.css
 - [ ] `@keyframes draw-pulse` is defined in globals.css
 - [ ] `.architecture-dashes` class applies dash-flow animation
@@ -193,10 +197,11 @@ Add these lines:
 
 ```typescript
 // Motion
-export { SPRING, VIEWPORT, REVEAL, STAGGER, SCALE_IN, DRAW_PATH } from './lib/motion-variants'
+export { SPRING, VIEWPORT, REVEAL, STAGGER, SCALE_IN, DRAW_PATH } from './lib/motion-variants';
 ```
 
 **Acceptance Criteria:**
+
 - [ ] All 6 motion constants are re-exported from the barrel
 - [ ] Existing exports remain unchanged
 - [ ] `npm run typecheck` passes
@@ -214,6 +219,7 @@ export { SPRING, VIEWPORT, REVEAL, STAGGER, SCALE_IN, DRAW_PATH } from './lib/mo
 This is the flagship animation. The current file is a server component with static `<line>` and `<circle>` SVG elements. Convert it to a client component with three animation layers.
 
 **Current state (to be replaced):**
+
 - 4 `<line>` elements for connections (static dashed lines with `var(--border-warm)` stroke)
 - 5 `<g>` elements with `<circle>` and `<text>` for nodes (mapped from inline array)
 - Module cards grid with no hover effects
@@ -221,15 +227,15 @@ This is the flagship animation. The current file is a server component with stat
 **New implementation:**
 
 ```tsx
-'use client'
+'use client';
 
-import { useState, useCallback, useRef } from 'react'
-import { motion } from 'motion/react'
-import type { SystemModule } from '../lib/modules'
-import { REVEAL, STAGGER, SCALE_IN, DRAW_PATH, VIEWPORT } from '../lib/motion-variants'
+import { useState, useCallback, useRef } from 'react';
+import { motion } from 'motion/react';
+import type { SystemModule } from '../lib/modules';
+import { REVEAL, STAGGER, SCALE_IN, DRAW_PATH, VIEWPORT } from '../lib/motion-variants';
 
 interface SystemArchitectureProps {
-  modules: SystemModule[]
+  modules: SystemModule[];
 }
 
 const nodes = [
@@ -238,56 +244,51 @@ const nodes = [
   { x: 500, y: 50, label: 'Vault' },
   { x: 200, y: 160, label: 'Pulse' },
   { x: 400, y: 160, label: 'Channels' },
-] as const
+] as const;
 
 const connections = [
   { d: 'M150,50 L250,50', delay: 0 },
   { d: 'M350,50 L450,50', delay: 0.2 },
   { d: 'M300,75 L200,140', delay: 0.4 },
   { d: 'M300,75 L400,140', delay: 0.6 },
-] as const
+] as const;
 
 /** Interactive architecture diagram showing the 5 DorkOS modules as a connected system. */
 export function SystemArchitecture({ modules }: SystemArchitectureProps) {
-  const [revealComplete, setRevealComplete] = useState(false)
+  const [revealComplete, setRevealComplete] = useState(false);
 
   return (
-    <section id="system" className="py-32 px-8 bg-cream-tertiary">
-      <div className="max-w-5xl mx-auto">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={VIEWPORT}
-          variants={STAGGER}
-        >
+    <section id="system" className="bg-cream-tertiary px-8 py-32">
+      <div className="mx-auto max-w-5xl">
+        <motion.div initial="hidden" whileInView="visible" viewport={VIEWPORT} variants={STAGGER}>
           <motion.span
             variants={REVEAL}
-            className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange text-center block mb-6"
+            className="text-2xs text-brand-orange mb-6 block text-center font-mono tracking-[0.15em] uppercase"
           >
             The System
           </motion.span>
 
           <motion.p
             variants={REVEAL}
-            className="text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em] leading-[1.3] text-center max-w-2xl mx-auto mb-6"
+            className="text-charcoal mx-auto mb-6 max-w-2xl text-center text-[28px] leading-[1.3] font-medium tracking-[-0.02em] md:text-[32px]"
           >
             Five modules. One operating layer.
           </motion.p>
 
           <motion.p
             variants={REVEAL}
-            className="text-warm-gray text-base leading-[1.7] text-center max-w-xl mx-auto mb-16"
+            className="text-warm-gray mx-auto mb-16 max-w-xl text-center text-base leading-[1.7]"
           >
-            DorkOS isn&apos;t a chat UI. It&apos;s an autonomous agent system with
-            a heartbeat, a knowledge vault, and communication channels.
+            DorkOS isn&apos;t a chat UI. It&apos;s an autonomous agent system with a heartbeat, a
+            knowledge vault, and communication channels.
           </motion.p>
         </motion.div>
 
         {/* Architecture diagram - SVG connections */}
-        <div className="hidden md:block mb-16">
+        <div className="mb-16 hidden md:block">
           <motion.svg
             viewBox="0 0 600 200"
-            className="w-full max-w-2xl mx-auto h-auto architecture-particles"
+            className="architecture-particles mx-auto h-auto w-full max-w-2xl"
             preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
             initial="hidden"
@@ -336,7 +337,7 @@ export function SystemArchitecture({ modules }: SystemArchitectureProps) {
                   x={node.x}
                   y={node.y + 22}
                   textAnchor="middle"
-                  className="fill-charcoal text-[11px] font-mono"
+                  className="fill-charcoal font-mono text-[11px]"
                 >
                   {node.label}
                 </text>
@@ -347,7 +348,7 @@ export function SystemArchitecture({ modules }: SystemArchitectureProps) {
 
         {/* Module cards grid with spotlight + lift hover */}
         <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto"
+          className="mx-auto grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
           initial="hidden"
           whileInView="visible"
           viewport={VIEWPORT}
@@ -359,24 +360,24 @@ export function SystemArchitecture({ modules }: SystemArchitectureProps) {
         </motion.div>
       </div>
     </section>
-  )
+  );
 }
 
 /** Module card with spotlight cursor-tracking and spring lift hover. */
 function ModuleCard({ mod }: { mod: SystemModule }) {
-  const cardRef = useRef<HTMLDivElement>(null)
-  const rafRef = useRef<number>(0)
+  const cardRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number>(0);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    cancelAnimationFrame(rafRef.current)
+    cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      const card = cardRef.current
-      if (!card) return
-      const rect = card.getBoundingClientRect()
-      card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`)
-      card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`)
-    })
-  }, [])
+      const card = cardRef.current;
+      if (!card) return;
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+      card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+    });
+  }, []);
 
   return (
     <motion.div
@@ -385,11 +386,11 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
       whileHover={{ y: -4 }}
       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
       onMouseMove={handleMouseMove}
-      className="relative bg-cream-white rounded-lg p-6 border border-[var(--border-warm)] group overflow-hidden"
+      className="bg-cream-white group relative overflow-hidden rounded-lg border border-[var(--border-warm)] p-6"
     >
       {/* Spotlight overlay - desktop only */}
       <div
-        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none hidden [@media(hover:hover)]:block"
+        className="pointer-events-none absolute inset-0 hidden opacity-0 transition-opacity duration-300 group-hover:opacity-100 [@media(hover:hover)]:block"
         style={{
           background:
             'radial-gradient(250px circle at var(--mouse-x) var(--mouse-y), rgba(207, 114, 43, 0.06), transparent 80%)',
@@ -397,10 +398,10 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
       />
 
       <div className="relative z-10">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-charcoal text-lg">{mod.name}</h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-charcoal text-lg font-semibold">{mod.name}</h3>
           <span
-            className={`font-mono text-3xs tracking-[0.1em] uppercase px-2 py-0.5 rounded ${
+            className={`text-3xs rounded px-2 py-0.5 font-mono tracking-[0.1em] uppercase ${
               mod.status === 'available'
                 ? 'bg-brand-green/10 text-brand-green'
                 : 'bg-warm-gray-light/10 text-warm-gray-light'
@@ -409,17 +410,18 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
             {mod.status === 'available' ? 'Available' : 'Coming Soon'}
           </span>
         </div>
-        <p className="font-mono text-3xs text-warm-gray-light tracking-[0.05em] uppercase mb-2">
+        <p className="text-3xs text-warm-gray-light mb-2 font-mono tracking-[0.05em] uppercase">
           {mod.label}
         </p>
         <p className="text-warm-gray text-sm leading-relaxed">{mod.description}</p>
       </div>
     </motion.div>
-  )
+  );
 }
 ```
 
 **Key changes from current implementation:**
+
 - Add `'use client'` directive
 - Import `motion` from `motion/react` and motion variants from `../lib/motion-variants`
 - Replace 4 `<line>` elements with `<motion.path>` elements using `d="M{x1},{y1} L{x2},{y2}"` format
@@ -437,6 +439,7 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
 - Extract node and connection data to module-level constants
 
 **Acceptance Criteria:**
+
 - [ ] Architecture diagram connections draw in when scrolled into view (pathLength 0 to 1)
 - [ ] After reveal, connections show continuous animated dashed strokes (CSS dash-flow)
 - [ ] Small orange particles (r=2) travel along connection paths via SMIL animateMotion
@@ -462,6 +465,7 @@ function ModuleCard({ mod }: { mod: SystemModule }) {
 Add `'use client'` directive and wrap hero content elements in `motion.div` with stagger entrance animation. The Hero is above the fold, so use `initial` + `animate` (not `whileInView`).
 
 **Changes:**
+
 1. Add `'use client'` at top of file
 2. Add import: `import { motion } from 'motion/react'`
 3. Add import: `import { REVEAL } from '../lib/motion-variants'`
@@ -493,6 +497,7 @@ Add `'use client'` directive and wrap hero content elements in `motion.div` with
 The stagger is 100ms (0.1) for hero elements specifically (slightly wider than the default 80ms) for a more dramatic entrance.
 
 **Acceptance Criteria:**
+
 - [ ] Hero content staggers in on page load (label, headline, subhead, CTA, pulse, screenshot)
 - [ ] Animation uses `initial` + `animate` (not `whileInView`) since hero is above the fold
 - [ ] Stagger interval is 100ms between elements
@@ -509,36 +514,36 @@ The stagger is 100ms (0.1) for hero elements specifically (slightly wider than t
 Add `'use client'` directive and wrap the section content with motion stagger and whileInView.
 
 **Changes:**
+
 1. Add `'use client'` at top of file
 2. Add import: `import { motion } from 'motion/react'`
 3. Add import: `import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'`
 4. Wrap section inner content in `motion.div` with stagger:
 
 ```tsx
-<section id="features" className="py-40 px-8 bg-cream-primary">
-  <motion.div
-    initial="hidden"
-    whileInView="visible"
-    viewport={VIEWPORT}
-    variants={STAGGER}
-  >
-    <motion.span variants={REVEAL} className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange text-center block mb-6">
+<section id="features" className="bg-cream-primary px-8 py-40">
+  <motion.div initial="hidden" whileInView="visible" viewport={VIEWPORT} variants={STAGGER}>
+    <motion.span
+      variants={REVEAL}
+      className="text-2xs text-brand-orange mb-6 block text-center font-mono tracking-[0.15em] uppercase"
+    >
       What This Unlocks
     </motion.span>
 
-    <motion.p variants={REVEAL} className="text-charcoal text-[28px] md:text-[32px] font-medium tracking-[-0.02em] leading-[1.3] text-center max-w-2xl mx-auto mb-16">
+    <motion.p
+      variants={REVEAL}
+      className="text-charcoal mx-auto mb-16 max-w-2xl text-center text-[28px] leading-[1.3] font-medium tracking-[-0.02em] md:text-[32px]"
+    >
       Not features. Capabilities.
     </motion.p>
 
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
+    <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
       {useCases.map((uc) => (
         <motion.article key={uc.id} variants={REVEAL} className="text-left">
-          <h3 className="text-charcoal font-semibold text-lg tracking-[-0.01em] mb-2">
+          <h3 className="text-charcoal mb-2 text-lg font-semibold tracking-[-0.01em]">
             {uc.title}
           </h3>
-          <p className="text-warm-gray text-sm leading-relaxed">
-            {uc.description}
-          </p>
+          <p className="text-warm-gray text-sm leading-relaxed">{uc.description}</p>
         </motion.article>
       ))}
     </div>
@@ -547,6 +552,7 @@ Add `'use client'` directive and wrap the section content with motion stagger an
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Section label and heading fade in when scrolled into view
 - [ ] Grid items stagger in with 80ms delay between each
 - [ ] Animation fires once (does not replay on scroll back)
@@ -563,6 +569,7 @@ Add `'use client'` directive and wrap the section content with motion stagger an
 Remove the manual `IntersectionObserver` + `useRef` + `useState` pattern and replace with motion `whileInView`. The file is already `'use client'`.
 
 **Current pattern to remove:**
+
 - `const sectionRef = useRef<HTMLElement>(null)` and `const [isVisible, setIsVisible] = useState(false)`
 - The entire `useEffect` with `IntersectionObserver` (lines 65-79)
 - `ref={sectionRef}` on the `<section>` element
@@ -570,11 +577,11 @@ Remove the manual `IntersectionObserver` + `useRef` + `useState` pattern and rep
 **New implementation:**
 
 ```tsx
-'use client'
+'use client';
 
-import { useEffect, useRef, useState } from 'react'
-import { motion, useInView } from 'motion/react'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+import { useEffect, useRef, useState } from 'react';
+import { motion, useInView } from 'motion/react';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 // ... steps array remains unchanged ...
 
@@ -583,12 +590,12 @@ function TerminalBlock({ text, animate }: { text: string; animate: boolean }) {
 }
 
 export function HowItWorksSection() {
-  const sectionRef = useRef<HTMLDivElement>(null)
-  const isInView = useInView(sectionRef, { once: true, amount: 0.3 })
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(sectionRef, { once: true, amount: 0.3 });
 
   return (
     <motion.section
-      className="py-40 px-8 bg-cream-primary"
+      className="bg-cream-primary px-8 py-40"
       initial="hidden"
       whileInView="visible"
       viewport={VIEWPORT}
@@ -596,42 +603,36 @@ export function HowItWorksSection() {
     >
       <motion.span
         variants={REVEAL}
-        className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange text-center block mb-20"
+        className="text-2xs text-brand-orange mb-20 block text-center font-mono tracking-[0.15em] uppercase"
       >
         How It Works
       </motion.span>
 
-      <div
-        ref={sectionRef}
-        className="grid grid-cols-1 lg:grid-cols-3 gap-12 max-w-5xl mx-auto"
-      >
+      <div ref={sectionRef} className="mx-auto grid max-w-5xl grid-cols-1 gap-12 lg:grid-cols-3">
         {steps.map((step, index) => (
           <motion.div key={step.number} variants={REVEAL} className="text-center">
-            <span className="font-mono text-2xs tracking-[0.1em] text-brand-green block mb-4">
+            <span className="text-2xs text-brand-green mb-4 block font-mono tracking-[0.1em]">
               {step.number}
             </span>
-            <TerminalBlock
-              text={step.command}
-              animate={isInView && index < 2}
-            />
-            <p className="text-warm-gray text-sm leading-relaxed">
-              {step.description}
-            </p>
+            <TerminalBlock text={step.command} animate={isInView && index < 2} />
+            <p className="text-warm-gray text-sm leading-relaxed">{step.description}</p>
           </motion.div>
         ))}
       </div>
     </motion.section>
-  )
+  );
 }
 ```
 
 Key points:
+
 - Use `useInView` hook from `motion/react` instead of raw `IntersectionObserver` to trigger TerminalBlock typing animation
 - Keep a `sectionRef` for the `useInView` hook (but remove the manual observer and useState)
 - The step cards get `REVEAL` variant for fade+slide entrance
 - The `<section>` becomes `<motion.section>`
 
 **Acceptance Criteria:**
+
 - [ ] No raw `IntersectionObserver` code remains
 - [ ] Section label and step cards stagger in with whileInView
 - [ ] TerminalBlock typing animation still triggers when section enters viewport
@@ -650,10 +651,10 @@ Add `'use client'` directive, wrap content with motion stagger, and animate corn
 **New implementation:**
 
 ```tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../lib/motion-variants'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../lib/motion-variants';
 
 /** Corner bracket scale-in variant. */
 const BRACKET: typeof REVEAL = {
@@ -663,55 +664,74 @@ const BRACKET: typeof REVEAL = {
     scale: 1,
     transition: SPRING,
   },
-}
+};
 
 export function HonestySection() {
   return (
-    <section className="py-32 px-8 bg-cream-white">
+    <section className="bg-cream-white px-8 py-32">
       <motion.div
-        className="max-w-[600px] mx-auto text-center relative"
+        className="relative mx-auto max-w-[600px] text-center"
         initial="hidden"
         whileInView="visible"
         viewport={VIEWPORT}
         variants={STAGGER}
       >
         {/* Corner brackets with scale animation from their respective corners */}
-        <motion.div variants={BRACKET} className="absolute -top-8 -left-8 w-6 h-6 border-l-2 border-t-2 border-warm-gray-light/30 origin-top-left" />
-        <motion.div variants={BRACKET} className="absolute -top-8 -right-8 w-6 h-6 border-r-2 border-t-2 border-warm-gray-light/30 origin-top-right" />
-        <motion.div variants={BRACKET} className="absolute -bottom-8 -left-8 w-6 h-6 border-l-2 border-b-2 border-warm-gray-light/30 origin-bottom-left" />
-        <motion.div variants={BRACKET} className="absolute -bottom-8 -right-8 w-6 h-6 border-r-2 border-b-2 border-warm-gray-light/30 origin-bottom-right" />
+        <motion.div
+          variants={BRACKET}
+          className="border-warm-gray-light/30 absolute -top-8 -left-8 h-6 w-6 origin-top-left border-t-2 border-l-2"
+        />
+        <motion.div
+          variants={BRACKET}
+          className="border-warm-gray-light/30 absolute -top-8 -right-8 h-6 w-6 origin-top-right border-t-2 border-r-2"
+        />
+        <motion.div
+          variants={BRACKET}
+          className="border-warm-gray-light/30 absolute -bottom-8 -left-8 h-6 w-6 origin-bottom-left border-b-2 border-l-2"
+        />
+        <motion.div
+          variants={BRACKET}
+          className="border-warm-gray-light/30 absolute -right-8 -bottom-8 h-6 w-6 origin-bottom-right border-r-2 border-b-2"
+        />
 
-        <motion.span variants={REVEAL} className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-green block mb-10">
+        <motion.span
+          variants={REVEAL}
+          className="text-2xs text-brand-green mb-10 block font-mono tracking-[0.15em] uppercase"
+        >
           Honest by Design
         </motion.span>
 
-        <motion.p variants={REVEAL} className="text-warm-gray text-lg leading-[1.7] mb-6">
-          Claude Code uses Anthropic&apos;s API for inference. Your code context
-          is sent to their servers. DorkOS doesn&apos;t change that — and we
-          won&apos;t pretend it does.
+        <motion.p variants={REVEAL} className="text-warm-gray mb-6 text-lg leading-[1.7]">
+          Claude Code uses Anthropic&apos;s API for inference. Your code context is sent to their
+          servers. DorkOS doesn&apos;t change that — and we won&apos;t pretend it does.
         </motion.p>
 
-        <motion.p variants={REVEAL} className="text-charcoal font-semibold text-lg leading-[1.7] mb-6">
+        <motion.p
+          variants={REVEAL}
+          className="text-charcoal mb-6 text-lg leading-[1.7] font-semibold"
+        >
           Here&apos;s what DorkOS does control.
         </motion.p>
 
         <motion.p variants={REVEAL} className="text-warm-gray text-lg leading-[1.7]">
-          The agent runs on your machine. Sessions are stored locally. Tools
-          execute in your shell. The orchestration, the heartbeat, the vault —
-          that&apos;s all yours. We believe in honest tools for serious builders.
+          The agent runs on your machine. Sessions are stored locally. Tools execute in your shell.
+          The orchestration, the heartbeat, the vault — that&apos;s all yours. We believe in honest
+          tools for serious builders.
         </motion.p>
       </motion.div>
     </section>
-  )
+  );
 }
 ```
 
 Key points:
+
 - Corner brackets use `origin-top-left`, `origin-top-right`, `origin-bottom-left`, `origin-bottom-right` Tailwind classes so they scale from their respective corners
 - BRACKET variant scales from 0.5 to 1 (not 0 to 1, since corners are small and scaling from 0 would be too dramatic)
 - Paragraphs reveal sequentially via STAGGER (80ms between each)
 
 **Acceptance Criteria:**
+
 - [ ] Corner brackets animate in by scaling from their respective corners
 - [ ] Label, paragraphs reveal sequentially (stagger)
 - [ ] Animation fires once at 20% viewport visibility
@@ -729,19 +749,19 @@ Add `'use client'` directive and wrap content with motion stagger and whileInVie
 **New implementation:**
 
 ```tsx
-'use client'
+'use client';
 
-import Link from 'next/link'
-import { motion } from 'motion/react'
-import { PhilosophyCard } from './PhilosophyCard'
-import type { PhilosophyItem } from '../lib/types'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+import Link from 'next/link';
+import { motion } from 'motion/react';
+import { PhilosophyCard } from './PhilosophyCard';
+import type { PhilosophyItem } from '../lib/types';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 interface AboutSectionProps {
-  bylineText?: string
-  bylineHref?: string
-  description: string
-  philosophyItems?: PhilosophyItem[]
+  bylineText?: string;
+  bylineHref?: string;
+  description: string;
+  philosophyItems?: PhilosophyItem[];
 }
 
 export function AboutSection({
@@ -751,18 +771,19 @@ export function AboutSection({
   philosophyItems = [],
 }: AboutSectionProps) {
   return (
-    <section id="about" className="py-40 px-8 bg-cream-white text-center">
-      <motion.div
-        initial="hidden"
-        whileInView="visible"
-        viewport={VIEWPORT}
-        variants={STAGGER}
-      >
-        <motion.span variants={REVEAL} className="font-mono text-2xs tracking-[0.15em] uppercase text-charcoal block mb-16">
+    <section id="about" className="bg-cream-white px-8 py-40 text-center">
+      <motion.div initial="hidden" whileInView="visible" viewport={VIEWPORT} variants={STAGGER}>
+        <motion.span
+          variants={REVEAL}
+          className="text-2xs text-charcoal mb-16 block font-mono tracking-[0.15em] uppercase"
+        >
           About
         </motion.span>
 
-        <motion.p variants={REVEAL} className="text-charcoal text-[32px] font-medium tracking-[-0.02em] leading-[1.3] max-w-3xl mx-auto mb-6">
+        <motion.p
+          variants={REVEAL}
+          className="text-charcoal mx-auto mb-6 max-w-3xl text-[32px] leading-[1.3] font-medium tracking-[-0.02em]"
+        >
           DorkOS is an autonomous agent operating system{' '}
           <Link
             href={bylineHref}
@@ -775,14 +796,17 @@ export function AboutSection({
           .
         </motion.p>
 
-        <motion.p variants={REVEAL} className="text-warm-gray text-base leading-[1.7] max-w-xl mx-auto mb-20">
+        <motion.p
+          variants={REVEAL}
+          className="text-warm-gray mx-auto mb-20 max-w-xl text-base leading-[1.7]"
+        >
           {description}
         </motion.p>
 
         {philosophyItems.length > 0 && (
           <motion.div
             variants={STAGGER}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 max-w-4xl mx-auto mb-16"
+            className="mx-auto mb-16 grid max-w-4xl grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-4"
           >
             {philosophyItems.map((item) => (
               <motion.div key={item.number} variants={REVEAL}>
@@ -797,16 +821,18 @@ export function AboutSection({
         </motion.p>
       </motion.div>
     </section>
-  )
+  );
 }
 ```
 
 Key points:
+
 - The philosophy cards grid gets its own nested `STAGGER` variant so cards stagger independently
 - Each PhilosophyCard is wrapped in a `motion.div` with `REVEAL` (not modifying the PhilosophyCard component itself)
 - Heading with inline Link works fine inside `motion.p`
 
 **Acceptance Criteria:**
+
 - [ ] Section heading and description fade in with stagger
 - [ ] Philosophy cards stagger in with 80ms delay
 - [ ] Closing line fades in last
@@ -829,18 +855,18 @@ The current file uses a `<style jsx>` block for keyframes, which is non-standard
 **New implementation:**
 
 ```tsx
-'use client'
+'use client';
 
 /** Animated SVG heartbeat/EKG pulse line for the hero section. */
 export function PulseAnimation() {
   const pulsePath =
-    'M0,30 L80,30 L100,30 L110,10 L120,50 L130,20 L140,40 L150,30 L180,30 L200,30 L210,10 L220,50 L230,20 L240,40 L250,30 L280,30 L300,30 L310,10 L320,50 L330,20 L340,40 L350,30 L400,30'
+    'M0,30 L80,30 L100,30 L110,10 L120,50 L130,20 L140,40 L150,30 L180,30 L200,30 L210,10 L220,50 L230,20 L240,40 L250,30 L280,30 L300,30 L310,10 L320,50 L330,20 L340,40 L350,30 L400,30';
 
   return (
-    <div className="w-full max-w-md mx-auto mt-12 opacity-40">
+    <div className="mx-auto mt-12 w-full max-w-md opacity-40">
       <svg
         viewBox="0 0 400 60"
-        className="w-full h-auto"
+        className="h-auto w-full"
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
@@ -886,11 +912,12 @@ export function PulseAnimation() {
         />
       </svg>
     </div>
-  )
+  );
 }
 ```
 
 **Key changes:**
+
 - Remove the entire `<style jsx>` block (lines 23-40 of current file)
 - The `.animate-pulse-draw` class is now defined in globals.css (Task 1.3)
 - Extract the path `d` attribute to a `pulsePath` constant (DRY)
@@ -900,6 +927,7 @@ export function PulseAnimation() {
 - Keep main animated path with the constant
 
 **Acceptance Criteria:**
+
 - [ ] Ghost path shows full heartbeat shape at low opacity at all times
 - [ ] Glow layer creates CRT-style blur effect behind the main stroke
 - [ ] Main stroke still animates with draw-pulse keyframes
@@ -919,37 +947,35 @@ Replace the hard swap between button and email link with smooth `AnimatePresence
 **New implementation:**
 
 ```tsx
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import posthog from 'posthog-js'
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import posthog from 'posthog-js';
 
 interface ContactSectionProps {
-  email: string
-  promptText?: string
+  email: string;
+  promptText?: string;
 }
 
 export function ContactSection({
   email,
   promptText = 'Have feedback, want to contribute, or just say hello?',
 }: ContactSectionProps) {
-  const [revealed, setRevealed] = useState(false)
+  const [revealed, setRevealed] = useState(false);
 
   return (
-    <section id="contact" className="py-32 px-8 bg-cream-secondary">
-      <div className="max-w-md mx-auto text-center">
-        <span className="font-mono text-2xs tracking-[0.15em] uppercase text-brand-orange block mb-10">
+    <section id="contact" className="bg-cream-secondary px-8 py-32">
+      <div className="mx-auto max-w-md text-center">
+        <span className="text-2xs text-brand-orange mb-10 block font-mono tracking-[0.15em] uppercase">
           Contact
         </span>
 
-        <p className="text-warm-gray text-lg leading-[1.7] mb-10">
-          {promptText}
-        </p>
+        <p className="text-warm-gray mb-10 text-lg leading-[1.7]">{promptText}</p>
 
         {/* Terminal-style command */}
         <div className="inline-flex items-center justify-center gap-2">
-          <span className="font-mono text-lg text-warm-gray-light select-none">&gt;</span>
+          <span className="text-warm-gray-light font-mono text-lg select-none">&gt;</span>
           <AnimatePresence mode="wait">
             {revealed ? (
               <motion.a
@@ -959,7 +985,7 @@ export function ContactSection({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
                 href={`mailto:${email}`}
-                className="inline-flex items-center font-mono text-lg tracking-[0.02em] text-brand-orange hover:text-brand-green transition-smooth"
+                className="text-brand-orange hover:text-brand-green transition-smooth inline-flex items-center font-mono text-lg tracking-[0.02em]"
               >
                 {email}
                 <span className="cursor-blink" aria-hidden="true" />
@@ -972,10 +998,10 @@ export function ContactSection({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => {
-                  setRevealed(true)
-                  posthog.capture('contact_email_revealed')
+                  setRevealed(true);
+                  posthog.capture('contact_email_revealed');
                 }}
-                className="inline-flex items-center font-mono text-lg tracking-[0.02em] text-brand-orange hover:text-brand-green transition-smooth"
+                className="text-brand-orange hover:text-brand-green transition-smooth inline-flex items-center font-mono text-lg tracking-[0.02em]"
               >
                 <span>reveal_email</span>
                 <span className="cursor-blink" aria-hidden="true" />
@@ -985,11 +1011,12 @@ export function ContactSection({
         </div>
       </div>
     </section>
-  )
+  );
 }
 ```
 
 **Key changes:**
+
 - Import `AnimatePresence` and `motion` from `motion/react`
 - Wrap the conditional in `<AnimatePresence mode="wait">`
 - Convert `<a>` to `<motion.a>` with `key="email"`, initial/animate/exit props
@@ -998,6 +1025,7 @@ export function ContactSection({
 - `mode="wait"` ensures exit animation completes before enter animation starts
 
 **Acceptance Criteria:**
+
 - [ ] Clicking "reveal_email" smoothly transitions: button slides up and fades out, email slides up and fades in
 - [ ] Transition takes 200ms per direction
 - [ ] posthog event still fires on reveal
@@ -1009,20 +1037,20 @@ export function ContactSection({
 
 ## Dependency Graph
 
-| Phase | Task | Title | Depends On |
-|-------|------|-------|------------|
-| 1 | 1.1 | Create motion-variants.ts | -- |
-| 1 | 1.2 | Add MotionConfig to marketing layout | -- |
-| 1 | 1.3 | Add global CSS keyframes | -- |
-| 1 | 1.4 | Export motion-variants from barrel | 1.1 |
-| 2 | 2.1 | Convert SystemArchitecture to animated three-layer diagram | 1.1, 1.3, 1.4 |
-| 3 | 3.1 | Add stagger entrance to Hero | 1.1, 1.4 |
-| 3 | 3.2 | Add whileInView stagger to UseCasesGrid | 1.1, 1.4 |
-| 3 | 3.3 | Replace IntersectionObserver in HowItWorksSection | 1.1, 1.4 |
-| 3 | 3.4 | Add sequential reveal to HonestySection | 1.1, 1.4 |
-| 3 | 3.5 | Add philosophy card stagger to AboutSection | 1.1, 1.4 |
-| 4 | 4.1 | Enhance PulseAnimation with ghost path and glow | 1.3 |
-| 4 | 4.2 | Add AnimatePresence email reveal | 1.2 |
+| Phase | Task | Title                                                      | Depends On    |
+| ----- | ---- | ---------------------------------------------------------- | ------------- |
+| 1     | 1.1  | Create motion-variants.ts                                  | --            |
+| 1     | 1.2  | Add MotionConfig to marketing layout                       | --            |
+| 1     | 1.3  | Add global CSS keyframes                                   | --            |
+| 1     | 1.4  | Export motion-variants from barrel                         | 1.1           |
+| 2     | 2.1  | Convert SystemArchitecture to animated three-layer diagram | 1.1, 1.3, 1.4 |
+| 3     | 3.1  | Add stagger entrance to Hero                               | 1.1, 1.4      |
+| 3     | 3.2  | Add whileInView stagger to UseCasesGrid                    | 1.1, 1.4      |
+| 3     | 3.3  | Replace IntersectionObserver in HowItWorksSection          | 1.1, 1.4      |
+| 3     | 3.4  | Add sequential reveal to HonestySection                    | 1.1, 1.4      |
+| 3     | 3.5  | Add philosophy card stagger to AboutSection                | 1.1, 1.4      |
+| 4     | 4.1  | Enhance PulseAnimation with ghost path and glow            | 1.3           |
+| 4     | 4.2  | Add AnimatePresence email reveal                           | 1.2           |
 
 ## Parallel Execution Opportunities
 

@@ -8,7 +8,7 @@ Method /Introduction
 
 Software project management tools should build with the end users – the creators – in mind. Keeping individuals productive is more important than generating perfect reports.
 
-###  Purpose-built
+### Purpose-built
 
 Productivity software needs to be designed for purpose. It's the only way the product can truly do the heavy lifting. Flexible software lets everyone invent their own workflows, which eventually creates chaos as teams scale.
 

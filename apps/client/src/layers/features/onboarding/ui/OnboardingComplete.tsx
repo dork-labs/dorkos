@@ -89,9 +89,7 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
             </motion.span>
           )}
         </h2>
-        <p className="text-muted-foreground">
-          Your workspace is configured and ready.
-        </p>
+        <p className="text-muted-foreground">Your workspace is configured and ready.</p>
       </div>
 
       {/* Summary cards */}
@@ -120,9 +118,7 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
             className="flex items-center gap-3 rounded-lg border p-4"
           >
             <Icon className={`size-5 ${done ? 'text-primary' : 'text-muted-foreground/50'}`} />
-            <span className={done ? 'text-sm' : 'text-sm text-muted-foreground'}>
-              {label}
-            </span>
+            <span className={done ? 'text-sm' : 'text-muted-foreground text-sm'}>{label}</span>
           </motion.div>
         ))}
       </motion.div>
@@ -133,11 +129,7 @@ export function OnboardingComplete({ onComplete }: OnboardingCompleteProps) {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8, duration: 0.4 }}
       >
-        <HoverBorderGradient
-          className="px-6 py-2"
-          duration={1.2}
-          onClick={onComplete}
-        >
+        <HoverBorderGradient className="px-6 py-2" duration={1.2} onClick={onComplete}>
           Start your first session
         </HoverBorderGradient>
       </motion.div>

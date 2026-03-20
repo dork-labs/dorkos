@@ -2,11 +2,7 @@ import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton, Button } from '@/layers/shared/ui';
-import {
-  useAdapterCatalog,
-  useToggleAdapter,
-  useRemoveAdapter,
-} from '@/layers/entities/relay';
+import { useAdapterCatalog, useToggleAdapter, useRemoveAdapter } from '@/layers/entities/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { AdapterCard } from './AdapterCard';
 import { CatalogCard } from './CatalogCard';
@@ -59,12 +55,12 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
 
   // Configured: entries that have at least one instance — flatten to individual cards.
   const configuredCards = catalog.flatMap((entry) =>
-    entry.instances.map((inst) => ({ instance: inst, manifest: entry.manifest })),
+    entry.instances.map((inst) => ({ instance: inst, manifest: entry.manifest }))
   );
 
   // Available: entries with no instances, OR multiInstance entries (can always add more).
   const availableEntries = catalog.filter(
-    (entry) => entry.instances.length === 0 || entry.manifest.multiInstance,
+    (entry) => entry.instances.length === 0 || entry.manifest.multiInstance
   );
 
   const openWizardForAdd = (manifest: AdapterManifest) => {
@@ -77,9 +73,7 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
 
   // Find the existing instance data for edit mode in the wizard.
   const existingInstance = wizardState.instanceId
-    ? catalog
-        .flatMap((e) => e.instances)
-        .find((inst) => inst.id === wizardState.instanceId)
+    ? catalog.flatMap((e) => e.instances).find((inst) => inst.id === wizardState.instanceId)
     : undefined;
 
   const handleRefresh = () => {
@@ -91,7 +85,7 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
       {/* Configured Adapters */}
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
             Configured Adapters
           </h3>
           <Button
@@ -105,7 +99,7 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           </Button>
         </div>
         {configuredCards.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No adapters configured yet.</p>
+          <p className="text-muted-foreground text-sm">No adapters configured yet.</p>
         ) : (
           <div className="space-y-3">
             {configuredCards.map(({ instance, manifest }) => (
@@ -124,11 +118,11 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
 
       {/* Available Adapters */}
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
           Available Adapters
         </h3>
         {availableEntries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             All available adapter types are configured.
           </p>
         ) : (

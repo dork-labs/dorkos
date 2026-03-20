@@ -72,7 +72,7 @@ export class DeliveryPipeline {
 
   constructor(
     private readonly deps: DeliveryPipelineDeps,
-    private backpressureConfig: BackpressureConfig,
+    private backpressureConfig: BackpressureConfig
   ) {}
 
   /** Update the backpressure config (called on hot-reload). */
@@ -111,7 +111,7 @@ export class DeliveryPipeline {
    */
   async deliverToEndpoint(
     endpoint: EndpointInfo,
-    envelope: RelayEnvelope,
+    envelope: RelayEnvelope
   ): Promise<EndpointDeliveryResult> {
     // 1. Backpressure check
     const newCount = this.deps.sqliteIndex.countNewByEndpoint(endpoint.hash);
@@ -151,7 +151,7 @@ export class DeliveryPipeline {
       await this.deps.deadLetterQueue.reject(
         endpoint.hash,
         envelope,
-        budgetResult.reason ?? 'budget enforcement failed',
+        budgetResult.reason ?? 'budget enforcement failed'
       );
       return {
         delivered: false,
@@ -173,7 +173,7 @@ export class DeliveryPipeline {
       await this.deps.deadLetterQueue.reject(
         endpoint.hash,
         envelope,
-        `delivery failed: ${deliverResult.error}`,
+        `delivery failed: ${deliverResult.error}`
       );
       return { delivered: false, pressure: bpResult.pressure };
     }
@@ -213,7 +213,7 @@ export class DeliveryPipeline {
   async dispatchToSubscribers(
     endpoint: EndpointInfo,
     messageId: string,
-    _envelope: RelayEnvelope,
+    _envelope: RelayEnvelope
   ): Promise<void> {
     const handlers = this.deps.subscriptionRegistry.getSubscribers(endpoint.subject);
     if (handlers.length === 0) return;

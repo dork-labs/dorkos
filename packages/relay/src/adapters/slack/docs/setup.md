@@ -92,21 +92,21 @@ Click **Save Changes**.
 
 Navigate to **Features > OAuth & Permissions** and scroll to **Scopes > Bot Token Scopes**. Add all of the following:
 
-| Scope | Purpose |
-|---|---|
-| `channels:history` | Read messages in public channels |
-| `channels:read` | List and get info about public channels |
-| `chat:write` | Send messages as the bot |
-| `groups:history` | Read messages in private channels |
-| `groups:read` | List and get info about private channels |
-| `im:history` | Read direct message history |
-| `im:read` | List and get info about DM conversations |
-| `im:write` | Open and manage DM conversations |
-| `mpim:history` | Read group DM history |
-| `reactions:read` | Remove typing indicator reactions |
-| `reactions:write` | Add typing indicator reactions |
-| `app_mentions:read` | Read @mention events |
-| `users:read` | Resolve user display names |
+| Scope               | Purpose                                  |
+| ------------------- | ---------------------------------------- |
+| `channels:history`  | Read messages in public channels         |
+| `channels:read`     | List and get info about public channels  |
+| `chat:write`        | Send messages as the bot                 |
+| `groups:history`    | Read messages in private channels        |
+| `groups:read`       | List and get info about private channels |
+| `im:history`        | Read direct message history              |
+| `im:read`           | List and get info about DM conversations |
+| `im:write`          | Open and manage DM conversations         |
+| `mpim:history`      | Read group DM history                    |
+| `reactions:read`    | Remove typing indicator reactions        |
+| `reactions:write`   | Add typing indicator reactions           |
+| `app_mentions:read` | Read @mention events                     |
+| `users:read`        | Resolve user display names               |
 
 ### Step 5: Install the App
 

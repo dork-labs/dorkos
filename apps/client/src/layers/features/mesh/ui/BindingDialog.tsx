@@ -105,7 +105,7 @@ export function BindingDialog({
   const [adapterId, setAdapterId] = useState(initialValues?.adapterId ?? '');
   const [agentId, setAgentId] = useState(initialValues?.agentId ?? '');
   const [strategy, setStrategy] = useState<SessionStrategy>(
-    initialValues?.sessionStrategy ?? 'per-chat',
+    initialValues?.sessionStrategy ?? 'per-chat'
   );
   const [label, setLabel] = useState(initialValues?.label ?? '');
   // Use SELECT_ANY as the internal "no filter" value; empty string is forbidden by Radix Select.
@@ -113,11 +113,11 @@ export function BindingDialog({
   const [channelType, setChannelType] = useState(initialValues?.channelType ?? SELECT_ANY);
   // Auto-open chat filter section when initial values already have a filter set.
   const [chatFilterOpen, setChatFilterOpen] = useState(
-    !!(initialValues?.chatId || initialValues?.channelType),
+    !!(initialValues?.chatId || initialValues?.channelType)
   );
   // Permission fields — defaults match AdapterBindingSchema defaults.
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
-    initialValues?.permissionMode ?? 'acceptEdits',
+    initialValues?.permissionMode ?? 'acceptEdits'
   );
   const [canInitiate, setCanInitiate] = useState(initialValues?.canInitiate ?? false);
   const [canReply, setCanReply] = useState(initialValues?.canReply ?? true);
@@ -130,9 +130,10 @@ export function BindingDialog({
       initialValues?.canInitiate ||
       initialValues?.canReply === false ||
       initialValues?.canReceive === false ||
-      (initialValues?.permissionMode !== undefined && initialValues.permissionMode !== 'acceptEdits') ||
+      (initialValues?.permissionMode !== undefined &&
+        initialValues.permissionMode !== 'acceptEdits') ||
       (initialValues?.sessionStrategy && initialValues.sessionStrategy !== 'per-chat')
-    ),
+    )
   );
 
   // Sync all state when initialValues change (e.g. opening a different binding to edit)
@@ -156,7 +157,8 @@ export function BindingDialog({
         initialValues.canInitiate ||
         initialValues.canReply === false ||
         initialValues.canReceive === false ||
-        (initialValues.permissionMode !== undefined && initialValues.permissionMode !== 'acceptEdits') ||
+        (initialValues.permissionMode !== undefined &&
+          initialValues.permissionMode !== 'acceptEdits') ||
         (initialValues.sessionStrategy && initialValues.sessionStrategy !== 'per-chat')
       ) {
         setAdvancedOpen(true);
@@ -175,8 +177,10 @@ export function BindingDialog({
       .filter((inst) => inst.enabled)
       .map((inst) => ({
         id: inst.id,
-        label: inst.label ? `${inst.label} (${entry.manifest.displayName})` : `${inst.id} (${entry.manifest.displayName})`,
-      })),
+        label: inst.label
+          ? `${inst.label} (${entry.manifest.displayName})`
+          : `${inst.id} (${entry.manifest.displayName})`,
+      }))
   );
 
   const agentOptions = agentsData?.agents ?? [];
@@ -184,7 +188,12 @@ export function BindingDialog({
   // SELECT_ANY means "no filter selected" — convert back to undefined before submitting.
   const hasChatFilter = chatId !== SELECT_ANY || channelType !== SELECT_ANY;
   // Advanced section has non-default values when strategy or permissions deviate from defaults.
-  const hasAdvancedChanges = strategy !== 'per-chat' || permissionMode !== 'acceptEdits' || canInitiate || !canReply || !canReceive;
+  const hasAdvancedChanges =
+    strategy !== 'per-chat' ||
+    permissionMode !== 'acceptEdits' ||
+    canInitiate ||
+    !canReply ||
+    !canReceive;
 
   function handleConfirm() {
     onConfirm({
@@ -195,9 +204,7 @@ export function BindingDialog({
       permissionMode,
       chatId: chatId === SELECT_ANY ? undefined : chatId,
       channelType:
-        channelType === SELECT_ANY
-          ? undefined
-          : (channelType as BindingFormValues['channelType']),
+        channelType === SELECT_ANY ? undefined : (channelType as BindingFormValues['channelType']),
       canInitiate,
       canReply,
       canReceive,
@@ -244,7 +251,9 @@ export function BindingDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="max-h-[85vh] max-w-md gap-0 p-0">
         <ResponsiveDialogHeader className="border-b px-4 py-3">
-          <ResponsiveDialogTitle>{isEdit ? 'Edit Binding' : 'Create Binding'}</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>
+            {isEdit ? 'Edit Binding' : 'Create Binding'}
+          </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
             {isEdit
               ? 'Modify the binding configuration'
@@ -255,11 +264,9 @@ export function BindingDialog({
         <div className="space-y-5 overflow-y-auto px-4 py-5">
           {isEdit ? (
             /* Edit mode: adapter and agent are read-only */
-            <p className="text-sm text-muted-foreground">
-              Binding:{' '}
-              <span className="font-medium text-foreground">{adapterName}</span>
-              {' '}to{' '}
-              <span className="font-medium text-foreground">{agentName}</span>
+            <p className="text-muted-foreground text-sm">
+              Binding: <span className="text-foreground font-medium">{adapterName}</span> to{' '}
+              <span className="text-foreground font-medium">{agentName}</span>
             </p>
           ) : (
             /* Create mode: adapter and agent pickers */
@@ -314,7 +321,13 @@ export function BindingDialog({
             open={chatFilterOpen}
             onOpenChange={setChatFilterOpen}
             trigger="Chat Filter"
-            badge={hasChatFilter ? <Badge variant="secondary" className="text-xs">Active</Badge> : undefined}
+            badge={
+              hasChatFilter ? (
+                <Badge variant="secondary" className="text-xs">
+                  Active
+                </Badge>
+              ) : undefined
+            }
           >
             {/* ChatId picker */}
             <div className="space-y-1.5 px-4 py-3">
@@ -329,7 +342,7 @@ export function BindingDialog({
                     <SelectItem key={chat.chatId} value={chat.chatId}>
                       <span>{chat.displayName ?? chat.chatId}</span>
                       {(chat.channelType || chat.messageCount > 0) && (
-                        <span className="ml-2 text-xs text-muted-foreground">
+                        <span className="text-muted-foreground ml-2 text-xs">
                           {[chat.channelType, `${chat.messageCount} msgs`]
                             .filter(Boolean)
                             .join(' · ')}
@@ -393,7 +406,11 @@ export function BindingDialog({
           {isEdit && onDelete && bindingId && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
+                >
                   <Trash2 className="mr-1.5 size-3.5" />
                   Delete
                 </Button>

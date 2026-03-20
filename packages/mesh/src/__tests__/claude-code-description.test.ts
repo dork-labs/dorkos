@@ -34,9 +34,7 @@ This is a project that does something useful.
 
 ## More details
 `;
-    expect(extractFirstParagraph(content)).toBe(
-      'This is a project that does something useful.',
-    );
+    expect(extractFirstParagraph(content)).toBe('This is a project that does something useful.');
   });
 
   it('skips multiple headings before content', () => {
@@ -57,7 +55,7 @@ Second line of paragraph.
 Next paragraph.
 `;
     expect(extractFirstParagraph(content)).toBe(
-      'First line of paragraph. Second line of paragraph.',
+      'First line of paragraph. Second line of paragraph.'
     );
   });
 
@@ -115,7 +113,7 @@ This project is a backend API for managing widgets.
 ## Commands
 Some commands here.
 `,
-      'utf-8',
+      'utf-8'
     );
 
     const hints = await strategy.extractHints(dir);
@@ -123,20 +121,14 @@ Some commands here.
     expect(hints.suggestedName).toBe('my-project');
     expect(hints.detectedRuntime).toBe('claude-code');
     expect(hints.inferredCapabilities).toEqual(['code']);
-    expect(hints.description).toBe(
-      'This project is a backend API for managing widgets.',
-    );
+    expect(hints.description).toBe('This project is a backend API for managing widgets.');
   });
 
   it('returns no description when root CLAUDE.md has only headings', async () => {
     const parent = await makeTempDir();
     const dir = path.join(parent, 'headings-only');
     await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(
-      path.join(dir, 'CLAUDE.md'),
-      `# Title\n## Subtitle\n### Section\n`,
-      'utf-8',
-    );
+    await fs.writeFile(path.join(dir, 'CLAUDE.md'), `# Title\n## Subtitle\n### Section\n`, 'utf-8');
 
     const hints = await strategy.extractHints(dir);
     expect(hints.description).toBeUndefined();

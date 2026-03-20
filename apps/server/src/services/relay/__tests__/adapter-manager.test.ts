@@ -182,9 +182,7 @@ describe('AdapterManager', () => {
       expect(readFile).toHaveBeenCalledWith(configPath, 'utf-8');
       // Only tg-main is enabled, wh-github is disabled
       expect(registry.register).toHaveBeenCalledOnce();
-      expect(registry.register).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'tg-main' }),
-      );
+      expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'tg-main' }));
     });
 
     it('skips disabled adapters', async () => {
@@ -203,10 +201,13 @@ describe('AdapterManager', () => {
 
       await manager.initialize();
 
-      expect(chokidar.watch).toHaveBeenCalledWith(configPath, expect.objectContaining({
-        persistent: true,
-        ignoreInitial: true,
-      }));
+      expect(chokidar.watch).toHaveBeenCalledWith(
+        configPath,
+        expect.objectContaining({
+          persistent: true,
+          ignoreInitial: true,
+        })
+      );
     });
   });
 
@@ -243,9 +244,7 @@ describe('AdapterManager', () => {
       // tg-main should be unregistered (now disabled)
       expect(registry.unregister).toHaveBeenCalledWith('tg-main');
       // wh-github should be registered (now enabled)
-      expect(registry.register).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'wh-github' }),
-      );
+      expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'wh-github' }));
     });
 
     it('unregisters adapters removed from config', async () => {
@@ -273,12 +272,10 @@ describe('AdapterManager', () => {
       expect(writeFile).toHaveBeenCalledWith(
         `${configPath}.tmp`,
         expect.stringContaining('"enabled": true'),
-        'utf-8',
+        'utf-8'
       );
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
-      expect(registry.register).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'wh-github' }),
-      );
+      expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'wh-github' }));
     });
 
     it('throws for unknown adapter ID', async () => {
@@ -300,7 +297,7 @@ describe('AdapterManager', () => {
       expect(writeFile).toHaveBeenCalledWith(
         `${configPath}.tmp`,
         expect.stringContaining('"enabled": false'),
-        'utf-8',
+        'utf-8'
       );
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       expect(registry.unregister).toHaveBeenCalledWith('tg-main');
@@ -311,7 +308,7 @@ describe('AdapterManager', () => {
       await manager.initialize();
 
       await expect(manager.disable('nonexistent')).rejects.toThrow(
-        'Adapter not found: nonexistent',
+        'Adapter not found: nonexistent'
       );
     });
   });
@@ -836,7 +833,7 @@ describe('AdapterManager', () => {
       expect(writeFile).toHaveBeenCalledWith(
         `${configPath}.tmp`,
         expect.stringContaining('"wh-new"'),
-        'utf-8',
+        'utf-8'
       );
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
       const adapters = manager.listAdapters();
@@ -854,9 +851,7 @@ describe('AdapterManager', () => {
         outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
       });
 
-      expect(registry.register).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'wh-new' }),
-      );
+      expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'wh-new' }));
     });
 
     it('does not start the adapter if disabled', async () => {
@@ -864,10 +859,15 @@ describe('AdapterManager', () => {
       await manager.initialize();
       vi.clearAllMocks();
 
-      await manager.addAdapter('webhook', 'wh-new', {
-        inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
-        outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
-      }, false);
+      await manager.addAdapter(
+        'webhook',
+        'wh-new',
+        {
+          inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
+          outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+        },
+        false
+      );
 
       expect(registry.register).not.toHaveBeenCalled();
     });
@@ -876,9 +876,7 @@ describe('AdapterManager', () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
       await manager.initialize();
 
-      await expect(
-        manager.addAdapter('webhook', 'tg-main', {}),
-      ).rejects.toThrow(AdapterError);
+      await expect(manager.addAdapter('webhook', 'tg-main', {})).rejects.toThrow(AdapterError);
 
       try {
         await manager.addAdapter('webhook', 'tg-main', {});
@@ -891,9 +889,9 @@ describe('AdapterManager', () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
       await manager.initialize();
 
-      await expect(
-        manager.addAdapter('nonexistent-type', 'new-id', {}),
-      ).rejects.toThrow(AdapterError);
+      await expect(manager.addAdapter('nonexistent-type', 'new-id', {})).rejects.toThrow(
+        AdapterError
+      );
 
       try {
         await manager.addAdapter('nonexistent-type', 'new-id', {});
@@ -913,9 +911,9 @@ describe('AdapterManager', () => {
       await manager.initialize();
 
       // claude-code is non-multiInstance, cc-main already exists
-      await expect(
-        manager.addAdapter('claude-code', 'cc-second', {}),
-      ).rejects.toThrow(AdapterError);
+      await expect(manager.addAdapter('claude-code', 'cc-second', {})).rejects.toThrow(
+        AdapterError
+      );
 
       try {
         await manager.addAdapter('claude-code', 'cc-second', {});
@@ -933,7 +931,7 @@ describe('AdapterManager', () => {
         manager.addAdapter('webhook', 'wh-second', {
           inbound: { subject: 'relay.webhook.test2', secret: 'secret-16-chars!!' },
           outbound: { url: 'https://example2.com', secret: 'secret-16-chars!!' },
-        }),
+        })
       ).resolves.not.toThrow();
 
       const adapters = manager.listAdapters();
@@ -948,7 +946,7 @@ describe('AdapterManager', () => {
 
       // telegram is multiInstance, tg-main already exists
       await expect(
-        manager.addAdapter('telegram', 'tg-second', { token: 'tok2', mode: 'polling' }),
+        manager.addAdapter('telegram', 'tg-second', { token: 'tok2', mode: 'polling' })
       ).resolves.not.toThrow();
 
       const adapters = manager.listAdapters();
@@ -977,8 +975,18 @@ describe('AdapterManager', () => {
     it('independent enable/disable works for each Telegram instance', async () => {
       const twoTelegramConfig = JSON.stringify({
         adapters: [
-          { id: 'tg-first', type: 'telegram', enabled: true, config: { token: 'tok1', mode: 'polling' } },
-          { id: 'tg-second', type: 'telegram', enabled: true, config: { token: 'tok2', mode: 'polling' } },
+          {
+            id: 'tg-first',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'tok1', mode: 'polling' },
+          },
+          {
+            id: 'tg-second',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'tok2', mode: 'polling' },
+          },
         ],
       });
       vi.mocked(readFile).mockResolvedValue(twoTelegramConfig);
@@ -1008,7 +1016,7 @@ describe('AdapterManager', () => {
         'tg-labeled',
         { token: 'tok', mode: 'polling' },
         true,
-        '@MyBot',
+        '@MyBot'
       );
 
       // Label is stored in persisted config
@@ -1064,7 +1072,7 @@ describe('AdapterManager', () => {
         'tg-test',
         { token: 'tok', mode: 'polling' },
         true,
-        '@ShouldNotPassThrough',
+        '@ShouldNotPassThrough'
       );
 
       // The label should not appear in the config passed to the adapter constructor
@@ -1214,9 +1222,7 @@ describe('AdapterManager', () => {
       await manager.initialize();
 
       const mockBindingStore = {
-        getAll: vi.fn().mockReturnValue([
-          { id: 'b1', adapterId: 'wh-github', agentId: 'agent-1' },
-        ]),
+        getAll: vi.fn().mockReturnValue([{ id: 'b1', adapterId: 'wh-github', agentId: 'agent-1' }]),
         delete: vi.fn().mockResolvedValue(true),
       };
       (manager as any).bindingSubsystem = { getBindingStore: () => mockBindingStore };
@@ -1314,9 +1320,7 @@ describe('AdapterManager', () => {
 
       // Should unregister and re-register
       expect(registry.unregister).toHaveBeenCalledWith('tg-main');
-      expect(registry.register).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'tg-main' }),
-      );
+      expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'tg-main' }));
     });
 
     it('does not restart disabled adapter after config change', async () => {
@@ -1359,11 +1363,7 @@ describe('AdapterManager', () => {
       });
 
       // writeFile should write to tmp path
-      expect(writeFile).toHaveBeenCalledWith(
-        `${configPath}.tmp`,
-        expect.any(String),
-        'utf-8',
-      );
+      expect(writeFile).toHaveBeenCalledWith(`${configPath}.tmp`, expect.any(String), 'utf-8');
       // rename should move tmp to final path
       expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
 
@@ -1375,7 +1375,9 @@ describe('AdapterManager', () => {
   });
 
   describe('buildContext()', () => {
-    function createMockMeshCore(projectPaths: Record<string, string | undefined>): AdapterMeshCoreLike {
+    function createMockMeshCore(
+      projectPaths: Record<string, string | undefined>
+    ): AdapterMeshCoreLike {
       return {
         getProjectPath: vi.fn((agentId: string) => projectPaths[agentId]),
       };
@@ -1545,9 +1547,11 @@ describe('AdapterManager', () => {
     });
 
     it('invalid schema -> log warning, empty adapter list', async () => {
-      vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-        adapters: [{ id: '', type: 'unknown-type', enabled: true, config: {} }],
-      }));
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [{ id: '', type: 'unknown-type', enabled: true, config: {} }],
+        })
+      );
 
       await manager.initialize();
 

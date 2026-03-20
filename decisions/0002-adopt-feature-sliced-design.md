@@ -34,4 +34,4 @@ We will adopt Feature-Sliced Design (FSD) with strict unidirectional layer impor
 
 - Initial overhead: ~20 directories and barrel files required before writing the first feature
 - Simple 1-2 file features still require module directories with `ui/`, `model/`, and `index.ts`
-- Layer rules are enforced as ESLint hard errors via `no-restricted-imports` in `eslint.config.js`, but cross-feature *model* imports rely on `.claude/rules/fsd-layers.md` and code review rather than static analysis
+- Layer rules are enforced as ESLint hard errors via `no-restricted-imports` in `eslint.config.js`, but cross-feature _model_ imports rely on `.claude/rules/fsd-layers.md` and code review rather than static analysis

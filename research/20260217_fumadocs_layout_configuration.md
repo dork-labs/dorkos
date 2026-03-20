@@ -1,5 +1,5 @@
 ---
-title: "Fumadocs Layout Configuration Research"
+title: 'Fumadocs Layout Configuration Research'
 date: 2026-02-17
 type: implementation
 status: archived
@@ -30,11 +30,11 @@ Sourced directly from the installed type definitions at `node_modules/fumadocs-u
 ```typescript
 interface NavOptions {
   enabled: boolean;
-  component: ReactNode;                         // fully replace the navbar
-  title?: ReactNode | ((props: ComponentProps<'a'>) => ReactNode);  // logo + name here
-  url?: string;                                  // where clicking title navigates (default: '/')
-  transparentMode?: 'always' | 'top' | 'none';  // default: 'none'
-  children?: ReactNode;                          // inject extra content into navbar
+  component: ReactNode; // fully replace the navbar
+  title?: ReactNode | ((props: ComponentProps<'a'>) => ReactNode); // logo + name here
+  url?: string; // where clicking title navigates (default: '/')
+  transparentMode?: 'always' | 'top' | 'none'; // default: 'none'
+  children?: ReactNode; // inject extra content into navbar
 }
 
 interface BaseLayoutProps {
@@ -48,8 +48,8 @@ interface BaseLayoutProps {
     components: Partial<{ sm: ReactNode; lg: ReactNode }>;
   }>;
   i18n?: boolean | I18nConfig;
-  githubUrl?: string;       // shortcut: adds GitHub icon link automatically
-  links?: LinkItemType[];   // nav link items
+  githubUrl?: string; // shortcut: adds GitHub icon link automatically
+  links?: LinkItemType[]; // nav link items
   nav?: Partial<NavOptions>;
   children?: ReactNode;
 }
@@ -61,7 +61,7 @@ From `node_modules/fumadocs-ui/dist/utils/link-item.d.ts`:
 
 ```typescript
 // Where the item appears
-type FilterOn = 'menu' | 'nav' | 'all';  // default: 'all'
+type FilterOn = 'menu' | 'nav' | 'all'; // default: 'all'
 
 // Standard link (text with optional icon)
 interface MainItemType {
@@ -70,7 +70,7 @@ interface MainItemType {
   text: ReactNode;
   description?: ReactNode;
   url: string;
-  active?: 'url' | 'nested-url' | 'none';  // default: 'url'
+  active?: 'url' | 'nested-url' | 'none'; // default: 'url'
   external?: boolean;
   on?: FilterOn;
 }
@@ -78,11 +78,11 @@ interface MainItemType {
 // Icon-only button (secondary by default)
 interface IconItemType {
   type: 'icon';
-  label?: string;    // aria-label
+  label?: string; // aria-label
   icon: ReactNode;
-  text: ReactNode;   // tooltip text
+  text: ReactNode; // tooltip text
   url: string;
-  secondary?: boolean;  // default: true
+  secondary?: boolean; // default: true
   on?: FilterOn;
 }
 
@@ -92,7 +92,7 @@ interface ButtonItemType {
   icon?: ReactNode;
   text: ReactNode;
   url: string;
-  secondary?: boolean;  // default: false
+  secondary?: boolean; // default: false
   on?: FilterOn;
 }
 
@@ -103,7 +103,7 @@ interface MenuItemType {
   text: ReactNode;
   url?: string;
   items: (MainItemType | CustomItemType)[];
-  secondary?: boolean;  // default: false
+  secondary?: boolean; // default: false
   on?: FilterOn;
 }
 
@@ -111,7 +111,7 @@ interface MenuItemType {
 interface CustomItemType {
   type: 'custom';
   children: ReactNode;
-  secondary?: boolean;  // default: false
+  secondary?: boolean; // default: false
   on?: FilterOn;
 }
 
@@ -126,7 +126,7 @@ From `node_modules/fumadocs-ui/dist/layouts/docs/index.d.ts`:
 
 ```typescript
 interface DocsLayoutProps extends BaseLayoutProps {
-  tree: PageTree.Root;          // REQUIRED - the page tree from source.pageTree
+  tree: PageTree.Root; // REQUIRED - the page tree from source.pageTree
   sidebar?: SidebarOptions;
   tabMode?: 'top' | 'auto';
   containerProps?: HTMLAttributes<HTMLDivElement>;
@@ -134,13 +134,13 @@ interface DocsLayoutProps extends BaseLayoutProps {
 
 interface SidebarOptions {
   enabled?: boolean;
-  component?: ReactNode;        // fully replace sidebar
+  component?: ReactNode; // fully replace sidebar
   components?: Partial<SidebarPageTreeComponents>;
   tabs?: SidebarTabWithProps[] | GetSidebarTabsOptions | false;
-  banner?: ReactNode;           // content above sidebar nav
-  footer?: ReactNode;           // content below sidebar nav
-  collapsible?: boolean;        // default: true
-  defaultOpenLevel?: number;    // default: 0
+  banner?: ReactNode; // content above sidebar nav
+  footer?: ReactNode; // content below sidebar nav
+  collapsible?: boolean; // default: true
+  defaultOpenLevel?: number; // default: 0
   prefetch?: boolean;
   // ...also accepts aside HTML attributes
 }
@@ -154,9 +154,11 @@ From `node_modules/fumadocs-ui/dist/layouts/home/index.d.ts`:
 
 ```typescript
 interface HomeLayoutProps extends BaseLayoutProps {
-  nav?: Partial<NavOptions & {
-    enableHoverToOpen?: boolean;  // open mobile menu on hover
-  }>;
+  nav?: Partial<
+    NavOptions & {
+      enableHoverToOpen?: boolean; // open mobile menu on hover
+    }
+  >;
 }
 ```
 
@@ -169,7 +171,7 @@ From `node_modules/fumadocs-ui/dist/layouts/docs/page/index.d.ts`:
 ```typescript
 interface FooterOptions {
   enabled: boolean;
-  component: ReactNode;         // replace prev/next footer entirely
+  component: ReactNode; // replace prev/next footer entirely
   // ...also FooterProps (prev/next items)
 }
 
@@ -207,7 +209,7 @@ export const baseOptions: BaseLayoutProps = {
         <span className="font-semibold">DorkOS</span>
       </span>
     ),
-    url: '/',  // clicking logo goes home
+    url: '/', // clicking logo goes home
   },
   githubUrl: 'https://github.com/dork-labs/dorkos',
 };
@@ -238,7 +240,7 @@ export const baseOptions: BaseLayoutProps = {
   nav: {
     title: 'DorkOS',
   },
-  githubUrl: 'https://github.com/dork-labs/dorkos',  // auto-adds GitHub icon
+  githubUrl: 'https://github.com/dork-labs/dorkos', // auto-adds GitHub icon
   links: [
     // Standard text link
     {
@@ -342,8 +344,8 @@ export default function Layout({ children }) {
       <DocsLayout {...baseOptions} tree={source.pageTree}>
         {children}
       </DocsLayout>
-      <footer className="border-t px-6 py-8 text-sm text-muted-foreground">
-        <div className="mx-auto max-w-screen-xl flex justify-between">
+      <footer className="text-muted-foreground border-t px-6 py-8 text-sm">
+        <div className="mx-auto flex max-w-screen-xl justify-between">
           <span>© 2026 Dork Labs</span>
           <a href="https://dorkos.ai">dorkos.ai</a>
         </div>
@@ -376,24 +378,26 @@ However, wrapping DocsLayout in a footer this way can cause layout issues with t
 Three common patterns for linking from docs to the main marketing site:
 
 **1. Nav link (appears in docs top navbar):**
+
 ```tsx
-links: [
-  { text: 'dorkos.ai', url: 'https://dorkos.ai', on: 'nav', external: true },
-]
+links: [{ text: 'dorkos.ai', url: 'https://dorkos.ai', on: 'nav', external: true }];
 ```
 
 **2. Sidebar footer (persistent, bottom of sidebar):**
+
 ```tsx
 sidebar: {
-  footer: (
-    <a href="https://dorkos.ai" className="text-xs text-muted-foreground hover:text-foreground">
-      ← Back to main site
-    </a>
-  )
+  footer: <a
+    href="https://dorkos.ai"
+    className="text-muted-foreground hover:text-foreground text-xs"
+  >
+    ← Back to main site
+  </a>;
 }
 ```
 
 **3. Nav title links to main site instead of `/docs`:**
+
 ```tsx
 nav: {
   title: 'DorkOS',
@@ -433,7 +437,7 @@ Then override the CSS variable for layout calculations:
 ```css
 /* global.css */
 :root {
-  --fd-nav-height: 64px !important;  /* must match your navbar height exactly */
+  --fd-nav-height: 64px !important; /* must match your navbar height exactly */
 }
 ```
 
@@ -459,9 +463,7 @@ The current `apps/web/src/app/(docs)/layout.tsx` (as of this research) is minima
 export default function Layout({ children }) {
   return (
     <RootProvider>
-      <DocsLayout tree={source.pageTree}>
-        {children}
-      </DocsLayout>
+      <DocsLayout tree={source.pageTree}>{children}</DocsLayout>
     </RootProvider>
   );
 }

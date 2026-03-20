@@ -130,11 +130,11 @@ Full research documented in `research/fumadocs-blog-research.md`.
 
 **Three surfaces, three purposes:**
 
-| Surface | Purpose | Content |
-|---|---|---|
-| `CHANGELOG.md` | Developer reference | Structured bullets (Added/Changed/Fixed) |
-| `blog/dorkos-X-Y-Z.mdx` | Public storytelling | Narrative with context, screenshots, migration guides |
-| GitHub Release | Distribution channel | Theme + highlights + all changes (copied from CHANGELOG.md) |
+| Surface                 | Purpose              | Content                                                     |
+| ----------------------- | -------------------- | ----------------------------------------------------------- |
+| `CHANGELOG.md`          | Developer reference  | Structured bullets (Added/Changed/Fixed)                    |
+| `blog/dorkos-X-Y-Z.mdx` | Public storytelling  | Narrative with context, screenshots, migration guides       |
+| GitHub Release          | Distribution channel | Theme + highlights + all changes (copied from CHANGELOG.md) |
 
 **Key fixes:**
 
@@ -154,6 +154,7 @@ Adapted from the life-os-starter example but simplified for DorkOS:
 ### RSS Feed
 
 Single route handler at `apps/web/src/app/blog/feed.xml/route.ts`:
+
 - Generates RSS 2.0 XML from `blog.getPages()`
 - Sorted by date descending
 - Includes title, link, pubDate, description per item

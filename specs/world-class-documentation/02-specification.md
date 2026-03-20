@@ -48,13 +48,13 @@ Rich internal documentation exists in `contributing/` that can be adapted for ex
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `fumadocs-core` | 16.6.2 | Core docs framework, MDX processing |
-| `fumadocs-ui` | 16.6.2 | UI components (Callout, Steps, Cards, Tabs, TypeTable, Files) |
-| `fumadocs-mdx` | 12.1.1 | MDX source loader |
-| `fumadocs-openapi` | 10.3.5 | OpenAPI → MDX generation, APIPage Server Component |
-| `next` | 16.x | App router, Server Components |
+| Dependency         | Version | Purpose                                                       |
+| ------------------ | ------- | ------------------------------------------------------------- |
+| `fumadocs-core`    | 16.6.2  | Core docs framework, MDX processing                           |
+| `fumadocs-ui`      | 16.6.2  | UI components (Callout, Steps, Cards, Tabs, TypeTable, Files) |
+| `fumadocs-mdx`     | 12.1.1  | MDX source loader                                             |
+| `fumadocs-openapi` | 10.3.5  | OpenAPI → MDX generation, APIPage Server Component            |
+| `next`             | 16.x    | App router, Server Components                                 |
 
 All dependencies are already installed in `apps/web/package.json`. No new packages needed.
 
@@ -69,17 +69,20 @@ All dependencies are already installed in `apps/web/package.json`. No new packag
 **Change:** Remove the `'use client'` directive at line 1. The `APIPage` component from `fumadocs-openapi/ui` is an async Server Component that performs file I/O to load the OpenAPI spec. The `'use client'` directive forces it into client rendering where async I/O fails.
 
 **Before:**
+
 ```typescript
-'use client'
-export { APIPage } from '@/lib/openapi'
+'use client';
+export { APIPage } from '@/lib/openapi';
 ```
 
 **After:**
+
 ```typescript
-export { APIPage } from '@/lib/openapi'
+export { APIPage } from '@/lib/openapi';
 ```
 
 Then regenerate the API docs:
+
 ```bash
 npm run docs:export-api
 npm run generate:api-docs -w apps/web
@@ -100,6 +103,7 @@ npm run generate:api-docs -w apps/web
 Full quickstart using `<Steps>` component. Target: user gets first Claude response within 5 minutes of reading.
 
 Content outline:
+
 1. Prerequisites (`<Callout type="info">` — Node 20+, Claude Code CLI installed)
 2. Install DorkOS (`<Tabs groupId="pkg" persist>` — npm/pnpm/yarn/bun)
 3. Start the server (code block with expected terminal output, `// [!code highlight]` on URL line)
@@ -114,6 +118,7 @@ Source: `packages/cli/src/cli.ts` for flags/defaults, `apps/server/src/index.ts`
 Full CLI reference page.
 
 Content outline:
+
 - Overview of `dorkos` command
 - Global flags table (`<TypeTable>`) — `--port`/`-p` (number, default 4242), `--dir`/`-d` (string, cwd), `--boundary`/`-b` (string, home dir), `--tunnel`/`-t` (boolean), `--log-level`/`-l` (string, "info"), `--yes`/`-y` (boolean), `--help`/`-h`, `--version`/`-v`
 - Config subcommands (`<Steps>`): `dorkos config get <key>`, `set <key> <value>`, `list`, `reset`, `edit`, `path`, `validate`
@@ -128,6 +133,7 @@ Source: `packages/cli/src/cli.ts`, `packages/cli/src/config-commands.ts`, `contr
 Landing page rewrite.
 
 Content outline:
+
 - Hero text: "A web UI and REST API for Claude Code" with one-line value prop
 - "Who is this for?" section with 3 Cards (end users, integrators, contributors)
 - Feature highlights as Cards (chat UI, tool approval, session sync, Obsidian plugin, self-hosting)
@@ -137,6 +143,7 @@ Content outline:
 #### 2d. Enhance `docs/getting-started/installation.mdx`
 
 Content additions:
+
 - `<Tabs groupId="install-target" persist>` for: npm CLI (global install), Obsidian plugin (community plugins), self-hosted (git clone + build)
 - Package manager tabs within each target (`<Tabs groupId="pkg" persist>`)
 - Verification step with expected `dorkos --version` output
@@ -148,6 +155,7 @@ Content additions:
 #### 3a. Write `docs/guides/slash-commands.mdx`
 
 Content outline:
+
 - What are slash commands
 - Directory structure: `.claude/commands/` with `*.md` files
 - YAML frontmatter format (parsed by gray-matter): `description`, `allowed-tools`, `argument-hint`
@@ -161,6 +169,7 @@ Source: `apps/server/src/services/command-registry.ts` (CommandEntry schema, sca
 #### 3b. Write `docs/guides/tunnel-setup.mdx`
 
 Content outline:
+
 - Why tunnels (access DorkOS from mobile, share with teammates)
 - Prerequisites: ngrok account, authtoken
 - Environment variables (`<TypeTable>`): `TUNNEL_ENABLED`, `NGROK_AUTHTOKEN`, `TUNNEL_PORT`, `TUNNEL_AUTH` (user:pass for basic auth), `TUNNEL_DOMAIN` (custom domain)
@@ -176,6 +185,7 @@ Source: `apps/server/src/services/tunnel-manager.ts` (TunnelConfig, TunnelStatus
 #### 4a. Write `docs/integrations/building-integrations.mdx`
 
 Content outline:
+
 - The Transport interface concept (hexagonal architecture port)
 - `HttpTransport` — REST/SSE adapter for standalone web usage. Constructor takes `{ baseUrl }`. All methods map to HTTP endpoints.
 - `DirectTransport` — In-process adapter for embedded usage (Obsidian plugin). Constructor takes service instances directly. No network overhead.
@@ -188,6 +198,7 @@ Source: `packages/shared/src/transport.ts`, `contributing/architecture.md`.
 #### 4b. Write `docs/integrations/sse-protocol.mdx`
 
 Content outline:
+
 - SSE wire format overview
 - Event types table (`<TypeTable>`): `text_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`
 - Connection lifecycle: POST `/api/sessions/:id/messages` → SSE stream
@@ -202,6 +213,7 @@ Source: `contributing/api-reference.md`, `packages/shared/src/schemas.ts` (Strea
 #### 4c. Write `docs/self-hosting/deployment.mdx`
 
 Content outline:
+
 - Build steps (`<Steps>`): `git clone`, `npm install`, `npm run build`, `npm start`
 - Environment variables (`<TypeTable>`): `DORKOS_PORT`, `DORKOS_DEFAULT_CWD`, `DORKOS_BOUNDARY`, `NODE_ENV`, `ANTHROPIC_API_KEY`
 - Production config recommendations (`<Callout>`)
@@ -212,6 +224,7 @@ Content outline:
 #### 4d. Write `docs/self-hosting/reverse-proxy.mdx`
 
 Content outline:
+
 - Why a reverse proxy (TLS, domain name, SSE buffering)
 - nginx config (`<Tabs>` for nginx vs Caddy):
   - `proxy_buffering off` for SSE
@@ -226,6 +239,7 @@ Content outline:
 #### 5a. Write `docs/contributing/development-setup.mdx`
 
 Content outline:
+
 - Prerequisites (`<Callout>`): Node 20+, npm 10+, git
 - Clone and install (`<Steps>`)
 - `.env` setup: copy `.env.example`, set `ANTHROPIC_API_KEY`
@@ -239,6 +253,7 @@ Source: `CLAUDE.md` (Commands section).
 #### 5b. Write `docs/contributing/architecture.mdx`
 
 Content outline:
+
 - System overview diagram (ASCII art): User → DorkOS Client → Transport → DorkOS Server → Claude Agent SDK → Claude API
 - Hexagonal architecture explanation
 - Transport interface as the core port
@@ -252,6 +267,7 @@ Source: `contributing/architecture.md` (adapt for external audience — less imp
 #### 5c. Write `docs/contributing/testing.mdx`
 
 Content outline:
+
 - Test framework: Vitest + React Testing Library
 - Running tests (`<Tabs>` for all/single/watch)
 - Test file location: `__tests__/` directories alongside source
@@ -268,6 +284,7 @@ Source: `.claude/rules/testing.md`, `packages/test-utils/`.
 #### 6a. Create `docs/concepts/` directory
 
 New `docs/concepts/meta.json`:
+
 ```json
 {
   "title": "Concepts",
@@ -280,6 +297,7 @@ Add `"concepts"` to root `docs/meta.json` between `"guides"` and `"api"`.
 #### 6b. Write `docs/concepts/architecture.mdx`
 
 User-facing system overview (not implementation details):
+
 - What DorkOS is: a web UI + REST/SSE API for Claude Code
 - How it connects: DorkOS → Claude Agent SDK → Claude API
 - The three deployment modes: standalone CLI, Obsidian plugin, self-hosted
@@ -288,6 +306,7 @@ User-facing system overview (not implementation details):
 #### 6c. Write `docs/concepts/sessions.mdx`
 
 Session model explanation:
+
 - Sessions are JSONL files in `~/.claude/projects/{project-slug}/`
 - Session ID = UUID (from filename)
 - All clients see the same sessions (CLI-started, DorkOS-started, etc.)
@@ -297,6 +316,7 @@ Session model explanation:
 #### 6d. Write `docs/concepts/transport.mdx`
 
 Transport abstraction explanation:
+
 - Why it exists: decouple UI from backend (hexagonal architecture)
 - `HttpTransport`: REST/SSE over the network — for standalone web usage
 - `DirectTransport`: in-process function calls — for Obsidian plugin (no network)
@@ -307,19 +327,20 @@ Transport abstraction explanation:
 
 Every page must use appropriate Fumadocs components:
 
-| Component | Import | Usage |
-|---|---|---|
-| `<Steps>` / `<Step>` | `fumadocs-ui/components/steps` | All procedural content |
-| `<Cards>` / `<Card>` | `fumadocs-ui/components/card` | Index page, section landings, next steps |
-| `<Tabs>` / `<Tab>` | `fumadocs-ui/components/tabs` | Install commands (groupId="pkg" persist), multi-target content |
-| `<Callout type="info\|warn\|error">` | `fumadocs-ui/components/callout` | Notes, warnings, tips |
-| `<TypeTable>` | `fumadocs-ui/components/type-table` | CLI flags, config options, env vars, event types |
-| `<Files>` / `<Folder>` / `<File>` | `fumadocs-ui/components/files` | Project structure diagrams |
-| `// [!code highlight]` | Built-in | Key lines in code blocks |
+| Component                            | Import                              | Usage                                                          |
+| ------------------------------------ | ----------------------------------- | -------------------------------------------------------------- |
+| `<Steps>` / `<Step>`                 | `fumadocs-ui/components/steps`      | All procedural content                                         |
+| `<Cards>` / `<Card>`                 | `fumadocs-ui/components/card`       | Index page, section landings, next steps                       |
+| `<Tabs>` / `<Tab>`                   | `fumadocs-ui/components/tabs`       | Install commands (groupId="pkg" persist), multi-target content |
+| `<Callout type="info\|warn\|error">` | `fumadocs-ui/components/callout`    | Notes, warnings, tips                                          |
+| `<TypeTable>`                        | `fumadocs-ui/components/type-table` | CLI flags, config options, env vars, event types               |
+| `<Files>` / `<Folder>` / `<File>`    | `fumadocs-ui/components/files`      | Project structure diagrams                                     |
+| `// [!code highlight]`               | Built-in                            | Key lines in code blocks                                       |
 
 ## User Experience
 
 ### Before (Current State)
+
 - 9 of 17 pages show only placeholder bullet points
 - API reference pages error with "suspended by uncached promise"
 - Navigation sidebar is missing entire sections (integrations, self-hosting)
@@ -327,6 +348,7 @@ Every page must use appropriate Fumadocs components:
 - Dead ends — pages don't link to next steps
 
 ### After (Target State)
+
 - All pages have substantive, runnable content
 - API reference renders correctly with interactive try-it-out forms
 - Full navigation sidebar with all sections visible
@@ -338,24 +360,29 @@ Every page must use appropriate Fumadocs components:
 ## Testing Strategy
 
 ### Build Verification
+
 - `npm run build -w apps/web` must succeed (catches MDX syntax errors, broken imports, missing frontmatter)
 - All new MDX files must have valid frontmatter (`title`, `description`)
 - All Fumadocs component imports must resolve
 
 ### Navigation Verification
+
 - Every page listed in a `meta.json` must have a corresponding `.mdx` file
 - Every `.mdx` file in a section must be listed in its `meta.json`
 - Root `docs/meta.json` must include all section directories
 
 ### API Docs Verification
+
 - After removing `'use client'`, verify `/docs/api/api/sessions/get` renders without errors
 - Verify the OpenAPI spec at `docs/api/openapi.json` is up-to-date by running `npm run docs:export-api`
 
 ### Link Verification
+
 - All "next steps" Cards must link to valid pages
 - No broken internal links between doc pages
 
 ### Content Quality Checklist (Per Page)
+
 - [ ] Uses appropriate Fumadocs components (not plain markdown for structured content)
 - [ ] Code blocks are copy-paste-runnable
 - [ ] Has "next steps" or navigation at the end
@@ -382,6 +409,7 @@ This spec IS the documentation improvement. No additional documentation updates 
 ## Implementation Phases
 
 ### Phase 1: Quick Wins
+
 - Fix API docs bug (1 line change in `api-page.tsx`)
 - Regenerate API docs (`docs:export-api` + `generate:api-docs`)
 - Fix `docs/meta.json` (add integrations, self-hosting, concepts)
@@ -389,27 +417,32 @@ This spec IS the documentation improvement. No additional documentation updates 
 - Create `docs/concepts/meta.json`
 
 ### Phase 2: High-Traffic Pages
+
 - Rewrite `docs/getting-started/quickstart.mdx`
 - Write `docs/guides/cli-usage.mdx`
 - Enhance `docs/index.mdx`
 - Enhance `docs/getting-started/installation.mdx`
 
 ### Phase 3: Guides
+
 - Write `docs/guides/slash-commands.mdx`
 - Write `docs/guides/tunnel-setup.mdx`
 
 ### Phase 4: Integrations & Self-Hosting
+
 - Write `docs/integrations/building-integrations.mdx`
 - Write `docs/integrations/sse-protocol.mdx`
 - Write `docs/self-hosting/deployment.mdx`
 - Write `docs/self-hosting/reverse-proxy.mdx`
 
 ### Phase 5: Contributing
+
 - Write `docs/contributing/development-setup.mdx`
 - Write `docs/contributing/architecture.mdx`
 - Write `docs/contributing/testing.mdx`
 
 ### Phase 6: Concepts Section
+
 - Create `docs/concepts/architecture.mdx`
 - Create `docs/concepts/sessions.mdx`
 - Create `docs/concepts/transport.mdx`
@@ -431,6 +464,7 @@ This spec IS the documentation improvement. No additional documentation updates 
 ## Open Questions
 
 None — all clarifications were resolved during ideation:
+
 - Concepts section: Yes, add it
 - Quickstart strategy: One quickstart (npm CLI) + install target Cards
 - Fumadocs components: Full adoption

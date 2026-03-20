@@ -1,5 +1,5 @@
 ---
-title: "MCP Tool Injection Patterns for DorkOS Agent Manager"
+title: 'MCP Tool Injection Patterns for DorkOS Agent Manager'
 date: 2026-02-17
 type: implementation
 status: archived
@@ -62,14 +62,15 @@ mcp__{server-name}__{tool-name}
 ```
 
 Examples:
+
 - Server `"dorkos-tools"`, tool `"ping"` → `mcp__dorkos-tools__ping`
 - Server `"dorkos-tools"`, tool `"get_session_stats"` → `mcp__dorkos-tools__get_session_stats`
 
 The `allowedTools` option must explicitly list these names or use wildcards:
 
 ```typescript
-allowedTools: ['mcp__dorkos-tools__*']  // All tools from server
-allowedTools: ['mcp__dorkos-tools__ping'] // Single tool
+allowedTools: ['mcp__dorkos-tools__*']; // All tools from server
+allowedTools: ['mcp__dorkos-tools__ping']; // Single tool
 ```
 
 ### 3. `resume` + `mcpServers` Compatibility
@@ -96,10 +97,10 @@ The function returns `McpSdkServerConfigWithInstance`:
 
 ```typescript
 type McpSdkServerConfigWithInstance = {
-  type: "sdk";
+  type: 'sdk';
   name: string;
   instance: McpServer;
-}
+};
 ```
 
 This is passed into `mcpServers` as a value in the record object:
@@ -167,23 +168,19 @@ export function createDorkOsToolServer(deps: { transcriptReader: TranscriptReade
     version: '1.0.0',
     tools: [
       tool('ping', 'Check server health', {}, async () => ({
-        content: [{ type: 'text', text: 'pong' }]
+        content: [{ type: 'text', text: 'pong' }],
       })),
-      tool(
-        'get_session_count',
-        'Return number of active SDK sessions',
-        {},
-        async () => {
-          const sessions = await deps.transcriptReader.listSessions();
-          return { content: [{ type: 'text', text: `${sessions.length} sessions` }] };
-        }
-      ),
+      tool('get_session_count', 'Return number of active SDK sessions', {}, async () => {
+        const sessions = await deps.transcriptReader.listSessions();
+        return { content: [{ type: 'text', text: `${sessions.length} sessions` }] };
+      }),
     ],
   });
 }
 ```
 
 **Pros:**
+
 - Single `mcpServers` entry, simple to manage
 - All tools in one place, easy to discover
 - One wildcard `allowedTools` covers everything: `mcp__dorkos-tools__*`
@@ -191,6 +188,7 @@ export function createDorkOsToolServer(deps: { transcriptReader: TranscriptReade
 - Easy to test the server as a unit
 
 **Cons:**
+
 - Tools from unrelated domains (session info, file ops, git) share one server namespace
 - Cannot enable/disable individual feature groups without listing individual tool names
 - As tool count grows, the server file violates the 300-line limit
@@ -212,12 +210,14 @@ mcpServers: {
 ```
 
 **Pros:**
+
 - Clean domain separation, consistent with server's flat `services/` approach
 - Can enable/disable entire domains: `allowedTools: ['mcp__dorkos-session__*']`
 - Tools for a domain stay co-located with that domain's service code
 - Smaller individual server files
 
 **Cons:**
+
 - More `mcpServers` entries to compose
 - Tool naming is more verbose: `mcp__dorkos-session__get_count` vs `mcp__dorkos__get_session_count`
 - Multi-server composition requires a registry/factory pattern
@@ -239,12 +239,14 @@ agentManager.setMcpServers({ 'dorkos-tools': mcpServer });
 The `AgentManager` holds the server instance and injects it into every `query()` call.
 
 **Pros:**
+
 - Zero per-request setup cost
 - Dependencies injected once at construction time
 - Consistent tool availability across all sessions
 - Simple to reason about: tools are always there
 
 **Cons:**
+
 - Cannot vary tools per session or per user
 - Hot-reload of tool definitions requires server restart
 - Dependencies captured at startup (fine for singletons like `transcriptReader`)
@@ -265,11 +267,13 @@ sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...tools.allowedN
 ```
 
 **Pros:**
+
 - Can customize tool availability based on session permissions
 - Can inject session-specific context into tool closures
 - Enables future per-user tool subsets
 
 **Cons:**
+
 - `createSdkMcpServer()` is called on every message — unclear if this is safe/cheap
 - The SDK docs do not document whether creating a new MCP server instance per call is supported
 - More complex, harder to debug
@@ -293,7 +297,7 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
         // deps.transcriptReader is captured from the outer scope
         const sessions = await deps.transcriptReader.listSessions();
         return {
-          content: [{ type: 'text', text: JSON.stringify(sessions.map(s => s.id)) }]
+          content: [{ type: 'text', text: JSON.stringify(sessions.map((s) => s.id)) }],
         };
       }),
     ],
@@ -309,6 +313,7 @@ agentManager.setMcpServers({ 'dorkos-tools': mcpToolServer });
 ```
 
 This pattern:
+
 - Keeps tool handlers pure (no global state access)
 - Makes dependencies explicit and testable
 - Allows mocking `deps` in unit tests
@@ -379,6 +384,7 @@ Poor description → Claude ignores the tool or uses it incorrectly.
 ### Proof-of-Concept Tool Design: `ping`
 
 The ideal PoC tool is `ping` because it:
+
 - Has zero input schema (validates that empty Zod schemas work)
 - Has a synchronous handler (no async complexity)
 - Has a deterministic response (easy to assert in tests)
@@ -391,12 +397,14 @@ tool(
   'Check that the DorkOS server MCP integration is working. Returns "pong" with a timestamp. Use when asked to verify the server connection.',
   {},
   async (_args): Promise<CallToolResult> => ({
-    content: [{
-      type: 'text',
-      text: JSON.stringify({ status: 'pong', timestamp: new Date().toISOString() })
-    }]
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({ status: 'pong', timestamp: new Date().toISOString() }),
+      },
+    ],
   })
-)
+);
 ```
 
 A second good PoC tool is `get_server_info` with a simple Zod schema:
@@ -418,10 +426,11 @@ tool(
     }
     return { content: [{ type: 'text', text: JSON.stringify(info, null, 2) }] };
   }
-)
+);
 ```
 
 This validates:
+
 - Optional Zod fields work
 - `args` is correctly typed
 - Environment variable access works from handlers
@@ -457,10 +466,7 @@ if (hasMcpServers) {
   sdkOptions.mcpServers = this.mcpServers;
   // Merge MCP tool names with any existing allowedTools
   if (this.mcpAllowedTools.length > 0) {
-    sdkOptions.allowedTools = [
-      ...(sdkOptions.allowedTools ?? []),
-      ...this.mcpAllowedTools,
-    ];
+    sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...this.mcpAllowedTools];
   }
 }
 
@@ -487,6 +493,7 @@ const agentQuery = query({ prompt: makePrompt(content), options: sdkOptions });
 #### 3. No changes to `canUseTool`
 
 MCP tool calls arrive with `mcp__*` names. The existing handler correctly routes them:
+
 - `permissionMode === 'default'` → user sees approval prompt (correct — user should approve custom tools)
 - `permissionMode === 'acceptEdits'` or `bypassPermissions'` → auto-allowed (correct)
 
@@ -501,12 +508,14 @@ No changes needed.
 **What:** Add a `setMcpServers()` method to `AgentManager`. Create `services/mcp-tool-server.ts` with a `ping` tool and a `get_server_info` tool. Wire up in `index.ts`. Always use the `AsyncIterable` prompt form.
 
 **Pros:**
+
 - Minimal diff, low risk
 - Validates the full plumbing end-to-end
 - Single server, single `allowedTools` wildcard
 - No new abstractions — stays within current flat `services/` structure (16 files, within the 15-20 range but borderline)
 
 **Cons:**
+
 - Does not handle per-session tool variation (not needed yet)
 - Tool server creation is eager (acceptable for singletons)
 
@@ -519,11 +528,13 @@ No changes needed.
 **What:** A `McpToolRegistry` service that tools register themselves with. The registry assembles the `createSdkMcpServer()` call. Tools are declared as plain objects with a `handler` function and Zod schema.
 
 **Pros:**
+
 - Tools can be defined close to their domain service
 - Registry provides a central inventory for debugging/logging
 - Can add tool middleware (timing, error wrapping) in one place
 
 **Cons:**
+
 - Extra abstraction layer for 2-3 tools
 - More complex than needed for a PoC
 - Registry pattern risks becoming a service locator anti-pattern
@@ -537,10 +548,12 @@ No changes needed.
 **What:** Use the SDK's `plugins` option to load tool servers from plugin directories. Each plugin can export an MCP server.
 
 **Pros:**
+
 - Hot-reloadable tools
 - Third-party tool extension points
 
 **Cons:**
+
 - Plugins require a local directory path, not in-process instances
 - No benefit over `createSdkMcpServer()` for internal tools
 - Adds filesystem coupling
@@ -599,6 +612,7 @@ const agentQuery = query({ prompt: makeUserPrompt(content), options: sdkOptions 
 ### Step 2: Create `services/mcp-tool-server.ts`
 
 New file with:
+
 - `McpToolDeps` interface (explicit dependency types)
 - Exported pure handler functions (for unit testing)
 - `createDorkOsToolServer(deps)` factory function
@@ -619,12 +633,12 @@ After the server starts and singletons are initialized, call `agentManager.setMc
 
 ### File Impact
 
-| File | Change Type | Notes |
-|------|-------------|-------|
-| `apps/server/src/services/agent-manager.ts` | Modify | Add `setMcpServers()`, convert prompt to AsyncIterable |
-| `apps/server/src/services/mcp-tool-server.ts` | New | PoC tool definitions and factory |
-| `apps/server/src/index.ts` | Modify | Wire up tool server after startup |
-| `apps/server/src/services/__tests__/mcp-tool-server.test.ts` | New | Unit tests for tool handlers |
+| File                                                         | Change Type | Notes                                                  |
+| ------------------------------------------------------------ | ----------- | ------------------------------------------------------ |
+| `apps/server/src/services/agent-manager.ts`                  | Modify      | Add `setMcpServers()`, convert prompt to AsyncIterable |
+| `apps/server/src/services/mcp-tool-server.ts`                | New         | PoC tool definitions and factory                       |
+| `apps/server/src/index.ts`                                   | Modify      | Wire up tool server after startup                      |
+| `apps/server/src/services/__tests__/mcp-tool-server.test.ts` | New         | Unit tests for tool handlers                           |
 
 Service count after: 17 files — within the "consider domain grouping" advisory range (15-20) per server-structure rules.
 

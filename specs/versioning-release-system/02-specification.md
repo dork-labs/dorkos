@@ -71,6 +71,7 @@ Create a plain-text `VERSION` file at the repo root containing the current versi
 No trailing newline, no `v` prefix, no quotes. This is the canonical version for the entire DorkOS project.
 
 **Sync flow during release:**
+
 ```
 VERSION (edited by /system:release)
   → packages/cli/package.json   (synced by /system:release)
@@ -103,6 +104,7 @@ Modify `packages/cli/src/cli.ts` to display a startup banner after the server st
 ```
 
 Implementation:
+
 - After the server binds, print the banner to stdout
 - Use `os.networkInterfaces()` to find the first non-internal IPv4 address for the Network line
 - If no network interface is found, omit the Network line
@@ -154,10 +156,13 @@ export async function checkForUpdate(currentVersion: string): Promise<string | n
 
     // 3. Write cache
     await mkdir(join(homedir(), '.dork', 'cache'), { recursive: true });
-    await writeFile(CACHE_PATH, JSON.stringify({
-      latestVersion: data.version,
-      checkedAt: Date.now(),
-    }));
+    await writeFile(
+      CACHE_PATH,
+      JSON.stringify({
+        latestVersion: data.version,
+        checkedAt: Date.now(),
+      })
+    );
 
     return isNewer(data.version, currentVersion) ? data.version : null;
   } catch {
@@ -176,6 +181,7 @@ function isNewer(a: string, b: string): boolean {
 ```
 
 **CLI integration** (`packages/cli/src/cli.ts`):
+
 - After server starts and banner prints, fire `checkForUpdate(__CLI_VERSION__)` without awaiting
 - Attach a `.then()` that prints a boxed update message if a newer version exists:
 
@@ -225,6 +231,7 @@ export async function getLatestVersion(): Promise<string | null> {
 ```
 
 Key differences from CLI update check:
+
 - In-memory cache only (no file I/O — server is long-running)
 - 1-hour TTL (server stays running, should reflect updates sooner)
 - 5-second timeout (server has more tolerance than CLI startup)
@@ -236,7 +243,10 @@ Add `latestVersion` to `ServerConfigSchema`:
 ```typescript
 export const ServerConfigSchema = z.object({
   version: z.string().openapi({ description: 'Current server version' }),
-  latestVersion: z.string().nullable().openapi({ description: 'Latest available version from npm, or null if unknown' }),
+  latestVersion: z
+    .string()
+    .nullable()
+    .openapi({ description: 'Latest available version from npm, or null if unknown' }),
   port: z.number().int(),
   // ... rest unchanged
 });
@@ -284,6 +294,7 @@ Create `apps/client/src/layers/features/status/ui/VersionItem.tsx`:
 ```
 
 Behavior:
+
 - Reads `version` and `latestVersion` from the server config query (already fetched by Settings)
 - If `latestVersion` is null or equal to `version`: show `v{version}` in muted text
 - If `latestVersion` is newer: show `↑ v{latestVersion}` with the accent/warning color
@@ -305,6 +316,7 @@ Modify `apps/client/src/layers/features/settings/ui/ServerTab.tsx`:
 Complete rewrite of `.claude/commands/system/release.md`. The command accepts an optional argument: `patch`, `minor`, `major`, or an explicit version like `1.2.3`. If omitted, the command auto-detects the bump type.
 
 **Phase 1: Pre-flight Checks**
+
 - Verify clean git working tree (`git status --porcelain` is empty)
 - Verify on `main` branch
 - Verify `VERSION` file exists
@@ -312,6 +324,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 - Verify npm authentication (`npm whoami`)
 
 **Phase 2: Changelog Backfill**
+
 - Run `git log v{current}..HEAD --oneline` to get commits since last tag
 - Present commits to user, organized by conventional commit type
 - Identify any commits that aren't reflected in `CHANGELOG.md` `[Unreleased]` section
@@ -319,6 +332,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 - User can edit, approve, or skip
 
 **Phase 3: Version Analysis**
+
 - If bump type not specified, launch a subagent (haiku model) to analyze:
   - CHANGELOG.md `[Unreleased]` entries
   - Commit messages since last tag
@@ -327,12 +341,14 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 - Present recommendation to user
 
 **Phase 4: User Confirmation**
+
 - Display: current version → new version
 - Show changelog entries that will be included
 - Show files that will be modified
 - AskUserQuestion: "Proceed with release v{new}?" with options: Yes / Change bump type / Abort
 
 **Phase 5: Execute**
+
 1. Update `VERSION` file with new version
 2. Update `packages/cli/package.json` version field
 3. Update root `package.json` version field
@@ -344,6 +360,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 9. Create GitHub Release via `gh release create v{new} --title "v{new}" --notes-file -` with narrative release notes (generated using `/writing-changelogs` skill patterns)
 
 **Phase 6: Report**
+
 - Print summary with links: npm package URL, GitHub Release URL, git tag
 - Confirm all steps completed successfully
 
@@ -379,6 +396,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 ### Unit Tests
 
 **`packages/cli/src/__tests__/update-check.test.ts`**
+
 - Test cache hit (returns cached result when fresh)
 - Test cache miss (fetches from registry when stale)
 - Test cache miss (fetches when no cache file exists)
@@ -389,6 +407,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 - Mock `fetch` and `fs/promises` — no real network or file I/O
 
 **`apps/server/src/services/__tests__/update-checker.test.ts`**
+
 - Test in-memory cache behavior (returns cached value within TTL)
 - Test cache expiry (re-fetches after TTL)
 - Test fetch failure (returns stale cached value)
@@ -396,6 +415,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 - Mock `fetch` — no real network I/O
 
 **`apps/client/src/layers/features/status/__tests__/VersionItem.test.tsx`**
+
 - Test renders current version when no update available
 - Test renders update indicator when `latestVersion > version`
 - Test renders nothing / current version when `latestVersion` is null
@@ -444,16 +464,20 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 ### Phase 1: Version Infrastructure
 
 **Files created:**
+
 - `VERSION` — plain text file, content: `0.1.0`
 
 **Files modified:**
+
 - `specs/manifest.json` — update status to `implementing`
 
 **Manual steps:**
+
 - Create retroactive `v0.1.0` annotated git tag
 - Push tag to origin
 
 **Acceptance criteria:**
+
 - `VERSION` file exists at repo root
 - `v0.1.0` tag exists on the correct commit
 - `git describe --tags` returns `v0.1.0` (or `v0.1.0-N-gSHA` if commits exist after)
@@ -461,15 +485,19 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 ### Phase 2: CLI Startup Banner & Update Check
 
 **Files created:**
+
 - `packages/cli/src/update-check.ts` — npm registry check with file-based caching
 
 **Files modified:**
+
 - `packages/cli/src/cli.ts` — startup banner + non-blocking update notification
 
 **Tests created:**
+
 - `packages/cli/src/__tests__/update-check.test.ts`
 
 **Acceptance criteria:**
+
 - `dorkos` shows startup banner with version and URLs
 - `dorkos` shows update notification when a newer version exists on npm (from cache)
 - Update check does not delay server startup
@@ -478,10 +506,12 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 ### Phase 3: Web UI Update Indicator
 
 **Files created:**
+
 - `apps/server/src/services/update-checker.ts` — server-side npm check with in-memory cache
 - `apps/client/src/layers/features/status/ui/VersionItem.tsx` — status bar version badge
 
 **Files modified:**
+
 - `packages/shared/src/schemas.ts` — add `latestVersion` to `ServerConfigSchema`
 - `apps/server/src/routes/config.ts` — include `latestVersion` in response
 - `apps/server/src/routes/health.ts` — fix version to use correct source (not server package.json)
@@ -490,10 +520,12 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 - `apps/client/src/layers/features/settings/ui/ServerTab.tsx` — add update notice
 
 **Tests created:**
+
 - `apps/server/src/services/__tests__/update-checker.test.ts`
 - `apps/client/src/layers/features/status/__tests__/VersionItem.test.tsx`
 
 **Acceptance criteria:**
+
 - Status bar shows version badge
 - When update is available, badge shows update indicator with accent styling
 - Settings > Server tab shows update notice when outdated
@@ -504,9 +536,11 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 ### Phase 4: `/system:release` Command Overhaul
 
 **Files modified:**
+
 - `.claude/commands/system/release.md` — complete rewrite
 
 **Acceptance criteria:**
+
 - Command reads version from `VERSION` file
 - Command syncs VERSION → package.json files
 - Command finalizes CHANGELOG.md correctly
@@ -522,6 +556,7 @@ None. All design decisions were resolved during ideation (see [01-ideation.md](.
 ## Related ADRs
 
 No existing ADRs directly relate to this spec. Consider creating:
+
 - **ADR: VERSION file as single source of truth** — Documents the decision to use a plain-text VERSION file instead of relying solely on package.json
 
 ## References

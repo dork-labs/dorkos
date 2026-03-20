@@ -25,9 +25,7 @@ describe('BindingStore', () => {
   beforeEach(async () => {
     chokidarChangeHandler = undefined;
     nextMtime = 1000;
-    vi.mocked(readFile).mockRejectedValue(
-      Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
-    );
+    vi.mocked(readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
     vi.mocked(mkdir).mockResolvedValue(undefined);
     vi.mocked(writeFile).mockResolvedValue();
     vi.mocked(rename).mockResolvedValue();
@@ -346,7 +344,7 @@ describe('BindingStore', () => {
       expect(freshStore.getAll()).toHaveLength(1);
       expect(freshStore.getById('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')).toBeDefined();
       expect(freshStore.getById('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')?.adapterId).toBe(
-        'telegram-main',
+        'telegram-main'
       );
 
       await freshStore.shutdown();
@@ -453,7 +451,7 @@ describe('BindingStore', () => {
               updatedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
-        }),
+        })
       );
 
       await chokidarChangeHandler?.();
@@ -486,7 +484,7 @@ describe('BindingStore', () => {
               updatedAt: '2026-01-01T00:00:00.000Z',
             },
           ],
-        }),
+        })
       );
 
       await chokidarChangeHandler?.();

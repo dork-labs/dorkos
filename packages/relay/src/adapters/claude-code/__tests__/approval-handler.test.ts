@@ -16,7 +16,7 @@ function createMockAgentManager(): AgentRuntimeLike {
     sendMessage: vi.fn().mockReturnValue(
       (async function* () {
         /* empty */
-      })(),
+      })()
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
     approveTool: vi.fn().mockReturnValue(true),
@@ -44,7 +44,7 @@ function createMockLogger() {
 }
 
 function createApprovalEnvelope(
-  overrides?: Partial<{ payload: Record<string, unknown> }>,
+  overrides?: Partial<{ payload: Record<string, unknown> }>
 ): RelayEnvelope {
   return {
     id: 'approval-msg-001',
@@ -90,10 +90,7 @@ describe('approval-handler', () => {
       subscribeApprovalHandler(relay, agentManager, log);
 
       expect(relay.subscribe).toHaveBeenCalledOnce();
-      expect(relay.subscribe).toHaveBeenCalledWith(
-        APPROVAL_SUBJECT_PATTERN,
-        expect.any(Function),
-      );
+      expect(relay.subscribe).toHaveBeenCalledWith(APPROVAL_SUBJECT_PATTERN, expect.any(Function));
     });
 
     it('returns an unsubscribe function', () => {
@@ -110,11 +107,7 @@ describe('approval-handler', () => {
       const envelope = createApprovalEnvelope();
       relay.capturedHandler!(envelope);
 
-      expect(agentManager.approveTool).toHaveBeenCalledWith(
-        'session-abc',
-        'tool-call-123',
-        true,
-      );
+      expect(agentManager.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
     });
   });
 
@@ -123,11 +116,7 @@ describe('approval-handler', () => {
       const envelope = createApprovalEnvelope();
       handleApprovalResponse(envelope, agentManager, log);
 
-      expect(agentManager.approveTool).toHaveBeenCalledWith(
-        'session-abc',
-        'tool-call-123',
-        true,
-      );
+      expect(agentManager.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
     });
 
     it('calls approveTool with approved=false for denial', () => {
@@ -144,23 +133,15 @@ describe('approval-handler', () => {
 
       handleApprovalResponse(envelope, agentManager, log);
 
-      expect(agentManager.approveTool).toHaveBeenCalledWith(
-        'session-xyz',
-        'tool-deny-456',
-        false,
-      );
+      expect(agentManager.approveTool).toHaveBeenCalledWith('session-xyz', 'tool-deny-456', false);
     });
 
     it('logs debug message with approval details', () => {
       const envelope = createApprovalEnvelope();
       handleApprovalResponse(envelope, agentManager, log);
 
-      expect(log.debug).toHaveBeenCalledWith(
-        expect.stringContaining('approve'),
-      );
-      expect(log.debug).toHaveBeenCalledWith(
-        expect.stringContaining('tool-call-123'),
-      );
+      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('approve'));
+      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('tool-call-123'));
     });
 
     it('logs debug message with deny details', () => {
@@ -176,9 +157,7 @@ describe('approval-handler', () => {
 
       handleApprovalResponse(envelope, agentManager, log);
 
-      expect(log.debug).toHaveBeenCalledWith(
-        expect.stringContaining('deny'),
-      );
+      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('deny'));
     });
 
     it('warns when approveTool returns false (interaction not found)', () => {
@@ -187,20 +166,18 @@ describe('approval-handler', () => {
       const envelope = createApprovalEnvelope();
       handleApprovalResponse(envelope, agentManager, log);
 
-      expect(log.warn).toHaveBeenCalledWith(
-        expect.stringContaining('interaction not found'),
-      );
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('interaction not found'));
     });
 
     describe('malformed payloads', () => {
       it('does not crash when payload is null', () => {
-        const envelope = createApprovalEnvelope({ payload: null as unknown as Record<string, unknown> });
+        const envelope = createApprovalEnvelope({
+          payload: null as unknown as Record<string, unknown>,
+        });
 
         expect(() => handleApprovalResponse(envelope, agentManager, log)).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
-        expect(log.warn).toHaveBeenCalledWith(
-          expect.stringContaining('malformed payload'),
-        );
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('malformed payload'));
       });
 
       it('does not crash when payload has wrong type field', () => {
@@ -262,9 +239,7 @@ describe('approval-handler', () => {
 
       handleApprovalResponse(envelope, agentManager, log);
 
-      expect(log.debug).toHaveBeenCalledWith(
-        expect.stringContaining('platform=unknown'),
-      );
+      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('platform=unknown'));
     });
   });
 });

@@ -1,5 +1,5 @@
 ---
-title: "Relay Adapter SDK Design — Plugin Patterns, DX, Versioning, and Testing"
+title: 'Relay Adapter SDK Design — Plugin Patterns, DX, Versioning, and Testing'
 date: 2026-03-11
 type: external-best-practices
 status: active
@@ -30,30 +30,33 @@ The TypeScript ecosystem has converged strongly on **interface + factory functio
 The TypeScript ecosystem's consensus is nuanced: it is **not** "always interface" or "always abstract class" — it is "interface for the contract, abstract class for shared implementation the host can legitimately provide."
 
 **Use a pure interface when:**
+
 - The contract is purely structural and the implementor provides all the code
 - You want to allow multiple inheritance (interfaces compose; abstract classes do not)
 - You want zero risk of the base class becoming a maintenance burden for plugin authors
 
 **Add an optional abstract base class when:**
+
 - The framework has genuine shared behavior that belongs in the host (not the plugin)
 - The shared code would otherwise need to be copy-pasted into every adapter
 - The Template Method pattern applies — the algorithm skeleton is fixed, only steps vary
 
 **Real examples showing the split:**
 
-| System | Interface | Abstract Class | What the class provides |
-|---|---|---|---|
-| Obsidian | `Plugin` interface (conceptual contract) | `Plugin extends Component` | Lifecycle mgmt, `register()`, auto-cleanup on `unload()`, `loadData`/`saveData` |
-| Winston | `Transport` (duck-typed, no formal interface) | `TransportStream extends Writable` | Stream infrastructure, error events, backpressure, `exceptions.handle()` |
-| Socket.IO | `Adapter` (conceptual) | `Adapter extends EventEmitter` | Room management, broadcast bookkeeping |
-| Rollup/Vite | `Plugin` type (object interface) | None — purely object-based | N/A |
-| Fastify | `FastifyPlugin` type | None — purely functional | N/A |
-| ESLint | Rule schema (plain object) | None | N/A |
-| Babel | Plugin descriptor (plain object) | None | N/A |
+| System      | Interface                                     | Abstract Class                     | What the class provides                                                         |
+| ----------- | --------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
+| Obsidian    | `Plugin` interface (conceptual contract)      | `Plugin extends Component`         | Lifecycle mgmt, `register()`, auto-cleanup on `unload()`, `loadData`/`saveData` |
+| Winston     | `Transport` (duck-typed, no formal interface) | `TransportStream extends Writable` | Stream infrastructure, error events, backpressure, `exceptions.handle()`        |
+| Socket.IO   | `Adapter` (conceptual)                        | `Adapter extends EventEmitter`     | Room management, broadcast bookkeeping                                          |
+| Rollup/Vite | `Plugin` type (object interface)              | None — purely object-based         | N/A                                                                             |
+| Fastify     | `FastifyPlugin` type                          | None — purely functional           | N/A                                                                             |
+| ESLint      | Rule schema (plain object)                    | None                               | N/A                                                                             |
+| Babel       | Plugin descriptor (plain object)              | None                               | N/A                                                                             |
 
 The pattern is clear: **if the framework can own meaningful lifecycle or state management code, an abstract base class is worthwhile**. If the contract is purely about method signatures, an interface is the right choice.
 
 **For DorkOS relay adapters specifically**, the base class case is moderate:
+
 - `getStatus()` implementation (tracking `messageCount`, `errorCount`, `lastError`, `startedAt`, `state`) is identical boilerplate across all adapters
 - `start()` / `stop()` idempotency guards (`if (this._started) return`) are identical
 - Telemetry hooks (`this._emitEvent('adapter.started')`, `this._emitEvent('adapter.error', err)`) belong in the host
@@ -61,6 +64,7 @@ The pattern is clear: **if the framework can own meaningful lifecycle or state m
 A `BaseRelayAdapter` abstract class that handles this state machinery — while leaving `start`, `stop`, and `deliver` abstract — is the right call. **The abstract class should be opt-in, not required.** Third-party adapters may implement `RelayAdapter` directly without extending it.
 
 **Anti-pattern to avoid:** Making the abstract class load-bearing in ways that break composition. Specifically:
+
 - Do not put network logic in the base class (Obsidian violates this with its `requestUrl` being a class method — every plugin carries HTTP machinery)
 - Do not make the base class constructor require framework internals as parameters (the factory function pattern decouples instantiation from construction)
 - Do not use protected members that plugin authors need to touch for basic functionality — if it needs to be protected, reconsider whether it belongs in the base at all
@@ -84,6 +88,7 @@ export function getManifest(): AdapterManifest {
 ```
 
 This is confirmed by:
+
 - **Rollup/Vite**: "It is common convention to author a plugin as a factory function that returns the actual plugin object." The plugin object must have a `name` property.
 - **Fastify**: `module.exports = function (fastify, options, done) {}` — a function, not a class.
 - **unplugin**: `createUnplugin(factory)` where factory takes `(options, meta)` and returns the plugin object.
@@ -98,6 +103,7 @@ This is confirmed by:
 4. **Framework flexibility**: The host can call the factory at any time with a validated config object; it doesn't need to know the class constructor signature
 
 **Naming convention:**
+
 - Package: `dorkos-relay-adapter-slack` or `@my-org/relay-adapter-discord`
 - Main export: `export default function createSlackAdapter(config: SlackAdapterConfig): RelayAdapter`
 - Manifest export: `export function getManifest(): AdapterManifest`
@@ -152,7 +158,7 @@ const hostApiVersion = '1.0.0'; // from @dorkos/relay package.json
 if (!semver.satisfies(adapterApiVersion, `>=${hostApiVersion}`)) {
   logger.warn(
     `[PluginLoader] Adapter '${entry.id}' was built for relay API v${adapterApiVersion}, ` +
-    `but host requires v${hostApiVersion}. It may not work correctly.`
+      `but host requires v${hostApiVersion}. It may not work correctly.`
   );
   // Non-fatal: proceed but warn. Breaking changes force a major bump.
 }
@@ -174,6 +180,7 @@ if (!semver.satisfies(adapterApiVersion, `>=${hostApiVersion}`)) {
 5. Major version bumps break compatibility; minor/patch are always additive
 
 **What not to do:**
+
 - Do not check at type-check time only (TypeScript is erased at runtime — the check must be runtime)
 - Do not hard-block on mismatched versions unless you KNOW the interface changed in a breaking way
 - Do not require adapters to re-register or re-publish on every relay minor release
@@ -240,12 +247,14 @@ The existing `validateAdapterShape` function already gives specific errors. Good
 This translates directly to the relay adapter system:
 
 **The host (AdapterRegistry) MUST:**
+
 - Wrap every call to `adapter.start()`, `adapter.stop()`, and `adapter.deliver()` in try/catch
 - Never let an adapter failure propagate to the relay publish pipeline
 - Log suppressed errors ("whenever the library suppresses an error that would otherwise have been exposed to the user, the library SHOULD log the error")
 - Return a safe default (a `DeliveryResult { success: false, error: ... }`) rather than propagating the exception
 
 **The base class (BaseRelayAdapter) SHOULD:**
+
 - NOT wrap `deliver()` automatically — this would hide errors from plugin authors during development
 - Instead, instrument telemetry hooks called by `AdapterRegistry` around each method call
 - The division of responsibility: AdapterRegistry catches → BaseRelayAdapter tracks metrics
@@ -320,7 +329,11 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
   abstract stop(): Promise<void>;
 
   // deliver() is NOT wrapped — let errors propagate naturally to AdapterRegistry
-  abstract deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult>;
+  abstract deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult>;
 
   // Provided implementation — no boilerplate for adapter authors
   getStatus(): AdapterStatus {
@@ -347,6 +360,7 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
 ```
 
 **What the base class does NOT do:**
+
 - Does not make HTTP requests (those belong to the concrete adapter)
 - Does not own external connections (the subclass manages the lifecycle)
 - Does not implement any delivery logic (purely tracking state)
@@ -366,7 +380,7 @@ Both packages export a test suite that third-party implementors can run against 
 
 **What the DorkOS relay adapter compliance suite should look like:**
 
-```typescript
+````typescript
 // @dorkos/relay/testing — a sub-export from the relay package
 // (or @dorkos/relay-test-utils as a separate lightweight package)
 
@@ -388,7 +402,7 @@ export function runAdapterComplianceSuite(options: {
   create: () => RelayAdapter;
   destroy?: (adapter: RelayAdapter) => Promise<void>;
 }): void;
-```
+````
 
 **What the suite tests:**
 
@@ -412,10 +426,11 @@ import createMyAdapter from '../src/index.js';
 
 describe('MyAdapter compliance', () => {
   runAdapterComplianceSuite({
-    create: () => createMyAdapter({
-      // Test credentials — use environment variables in CI
-      token: process.env.MY_ADAPTER_TEST_TOKEN ?? 'test-token',
-    }),
+    create: () =>
+      createMyAdapter({
+        // Test credentials — use environment variables in CI
+        token: process.env.MY_ADAPTER_TEST_TOKEN ?? 'test-token',
+      }),
   });
 });
 ```
@@ -464,16 +479,19 @@ Every adapter needs `messageCount`, `errorCount`, `lastError`, `lastErrorAt`, `s
 
 **2. Idempotency guards**
 `start()` must be safe to call twice. `stop()` must be safe to call before `start()`. The pattern is always:
+
 ```typescript
 if (this._started) return;
 this._started = true;
 ```
+
 This belongs in the base class, not in every adapter.
 
 **3. Lifecycle event emission**
 Emitting `adapter.started`, `adapter.stopped`, `adapter.error` events on the host event bus — this is cross-cutting infrastructure, not adapter-specific logic.
 
 **What does NOT belong in the base class:**
+
 - Any retry logic — retry policy belongs to `AdapterRegistry`
 - Any delivery buffering — that's `AdapterRegistry` territory
 - Any external connection management — the subclass controls the network
@@ -484,12 +502,14 @@ Emitting `adapter.started`, `adapter.stopped`, `adapter.error` events on the hos
 ### Factory Naming: `createXxx` vs `defineXxx`
 
 Both appear in the wild:
+
 - `createUnplugin()` (unplugin)
 - `createVitePlugin()` (Vite ecosystem)
 - `defineConfig()` (Vite config)
 - `definePlugin()` (some esbuild patterns)
 
 The emerging convention in 2024–2025:
+
 - `create*` = creates an instance of something (`createSlackAdapter`, `createWebhookAdapter`)
 - `define*` = declares/registers something without creating an instance (`defineConfig`, `defineManifest`)
 
@@ -515,6 +535,7 @@ VS Code's three-stage model is instructive:
 3. **Stable API** (committed): backward-compatible guarantee
 
 For DorkOS adapters, a simpler two-stage model suffices:
+
 - **Pre-1.0 / `apiVersion < "1.0.0"`**: No breaking change guarantees. Adapters built against pre-1.0 may break.
 - **Post-1.0**: SemVer guarantees. Minor versions are additive. Major versions can break.
 
@@ -543,9 +564,16 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
 ```
 
 Export from the relay package index so adapter authors can import it:
+
 ```typescript
 // packages/relay/src/index.ts
-export type { RelayAdapter, DeliveryResult, AdapterStatus, AdapterContext, RelayPublisher } from './types.js';
+export type {
+  RelayAdapter,
+  DeliveryResult,
+  AdapterStatus,
+  AdapterContext,
+  RelayPublisher,
+} from './types.js';
 export { BaseRelayAdapter } from './base-adapter.js';
 ```
 
@@ -575,6 +603,7 @@ The plugin loader should be updated to check for `apiVersion` as a named export 
 ### D. Compliance Test Suite (Implement This)
 
 Create `packages/relay/src/testing/index.ts` (or a separate `packages/relay-testing` package):
+
 - `runAdapterComplianceSuite(options)` — the main export
 - `createMockRelayPublisher()` — for adapter unit tests
 - `createMockRelayEnvelope(overrides?)` — returns a valid `RelayEnvelope` for testing `deliver()`
@@ -584,10 +613,11 @@ This becomes the primary quality gate for third-party adapters. "Does it pass th
 ### E. Onboarding Template (Implement This)
 
 Create a `relay-adapter-template` repository (or directory in the DorkOS monorepo under `templates/relay-adapter/`) with:
+
 - Complete, working implementation of a minimal no-op adapter
 - Compliance tests pre-wired
 - `package.json` with correct keywords (`dorkos-relay-adapter`), peer deps, and build scripts
-- `README.md` that covers: "1. Fill in these 4 config fields. 2. Implement _start(), stop(), deliver(). 3. Run pnpm test. 4. Publish."
+- `README.md` that covers: "1. Fill in these 4 config fields. 2. Implement \_start(), stop(), deliver(). 3. Run pnpm test. 4. Publish."
 
 ### F. Error Message Quality (Already Mostly There)
 
@@ -597,8 +627,8 @@ The existing `validateAdapterShape` function is good. Enhance it with:
 // More specific messages that tell plugin authors what to do
 throw new Error(
   `Adapter '${id}': missing 'deliver()' method.\n` +
-  `Your factory function must return an object with a deliver(subject, envelope, context?) method.\n` +
-  `See: https://dorkos.dev/docs/relay/adapter-authoring`
+    `Your factory function must return an object with a deliver(subject, envelope, context?) method.\n` +
+    `See: https://dorkos.dev/docs/relay/adapter-authoring`
 );
 ```
 

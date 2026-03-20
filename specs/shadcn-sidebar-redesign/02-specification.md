@@ -1,10 +1,10 @@
 ---
 number: 86
 slug: shadcn-sidebar-redesign
-title: "Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status"
+title: 'Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status'
 status: draft
 created: 2026-03-03
-authors: ["Claude Code"]
+authors: ['Claude Code']
 ideation: specs/shadcn-sidebar-redesign/01-ideation.md
 research: research/20260303_shadcn_sidebar_redesign.md
 ---
@@ -143,6 +143,7 @@ Rationale: Sidebar background is intentionally slightly different from `--backgr
 **Embedded path** (`embedded={true}`): Completely unchanged. The existing AnimatePresence overlay code stays.
 
 **Remove**:
+
 - Custom Cmd+B handler effect (lines 74-85) — Shadcn has built-in `SIDEBAR_KEYBOARD_SHORTCUT = "b"`
 - Custom Escape key handler for standalone mode — Shadcn Sheet handles this for mobile; desktop offcanvas doesn't need escape
 - Floating `PanelLeft` toggle button (lines 196-216) — replaced by `SidebarTrigger` in `SidebarInset` header
@@ -150,6 +151,7 @@ Rationale: Sidebar background is intentionally slightly different from `--backgr
 - Desktop push motion.div block (lines 245-256) — replaced by `SidebarProvider` + `Sidebar`
 
 **Keep**:
+
 - Embedded mode overlay code (lines 89-169)
 - Embedded Escape key handler (scoped to containerRef)
 - Embedded floating toggle button
@@ -225,13 +227,9 @@ Wrap each session in `SidebarMenuItem` > `SidebarMenuButton` for consistent Shad
     onClick={() => handleSessionClick(session.id)}
     className="h-auto py-2"
   >
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-muted-foreground text-xs">
-        {formatRelativeTime(session.updatedAt)}
-      </span>
-      <span className="text-muted-foreground/70 truncate text-xs">
-        {session.title}
-      </span>
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="text-muted-foreground text-xs">{formatRelativeTime(session.updatedAt)}</span>
+      <span className="text-muted-foreground/70 truncate text-xs">{session.title}</span>
     </div>
   </SidebarMenuButton>
 </SidebarMenuItem>
@@ -250,12 +248,18 @@ New component rendered at App.tsx root level, outside `SidebarProvider`:
 ```tsx
 function DialogHost() {
   const {
-    settingsOpen, setSettingsOpen,
-    pulseOpen, setPulseOpen,
-    relayOpen, setRelayOpen,
-    meshOpen, setMeshOpen,
-    pickerOpen, setPickerOpen,
-    agentDialogOpen, setAgentDialogOpen,
+    settingsOpen,
+    setSettingsOpen,
+    pulseOpen,
+    setPulseOpen,
+    relayOpen,
+    setRelayOpen,
+    meshOpen,
+    setMeshOpen,
+    pickerOpen,
+    setPickerOpen,
+    agentDialogOpen,
+    setAgentDialogOpen,
   } = useAppStore();
   const [selectedCwd] = useDirectoryState();
   const { recentCwds } = useAppStore();
@@ -290,11 +294,8 @@ function DialogHost() {
         />
       )}
       {onboardingStep !== null && (
-        <div className="fixed inset-0 z-50 bg-background">
-          <OnboardingFlow
-            initialStep={onboardingStep}
-            onComplete={() => setOnboardingStep(null)}
-          />
+        <div className="bg-background fixed inset-0 z-50">
+          <OnboardingFlow initialStep={onboardingStep} onComplete={() => setOnboardingStep(null)} />
         </div>
       )}
     </>
@@ -325,16 +326,16 @@ export function AgentContextChips() {
           <button
             onClick={() => setPulseOpen(true)}
             className={cn(
-              "relative rounded-md p-1.5 transition-colors",
+              'relative rounded-md p-1.5 transition-colors',
               pulseEnabled
-                ? "text-muted-foreground hover:text-foreground"
-                : "text-muted-foreground/25 hover:text-muted-foreground/40"
+                ? 'text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground/25 hover:text-muted-foreground/40'
             )}
             aria-label="Pulse scheduler"
           >
             <icons.pulse className="size-(--size-icon-sm)" />
             {activeRunCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-green-500" />
             )}
           </button>
         </TooltipTrigger>
@@ -354,6 +355,7 @@ export function AgentContextChips() {
 ```
 
 Design principles:
+
 - **Tooltip-first**: Status details shown in tooltips, not inline text. The footer is too narrow for labels.
 - **Muted disabled states**: `text-muted-foreground/25` for disabled features — visually de-emphasizes without hiding.
 - **Status dots**: Green animated dot for active Pulse runs; amber dot for unviewed completions.
@@ -470,17 +472,17 @@ App.tsx
 
 ### 13. File Changes Summary
 
-| File | Change | Lines Before → After (est.) |
-|------|--------|-----------------------------|
-| `layers/shared/ui/sidebar.tsx` | NEW — Shadcn install | 0 → ~350 (generated) |
-| `features/session-list/ui/SessionSidebar.tsx` | Major refactor | 392 → ~150 |
-| `features/session-list/ui/AgentHeader.tsx` | Minor — remove close button constraint | 133 → ~130 |
-| `features/session-list/ui/AgentContextChips.tsx` | NEW | 0 → ~80 |
-| `features/session-list/ui/SidebarFooterBar.tsx` | NEW | 0 → ~60 |
-| `App.tsx` | Major — SidebarProvider layout + DialogHost | 280 → ~200 |
-| `shared/model/app-store.ts` | Minor — add agentDialogOpen, onboardingStep | 408 → ~420 |
-| `index.css` | Minor — add --sidebar-* CSS vars | 426 → ~445 |
-| `features/session-list/index.ts` | Minor — export new components | 7 → ~10 |
+| File                                             | Change                                      | Lines Before → After (est.) |
+| ------------------------------------------------ | ------------------------------------------- | --------------------------- |
+| `layers/shared/ui/sidebar.tsx`                   | NEW — Shadcn install                        | 0 → ~350 (generated)        |
+| `features/session-list/ui/SessionSidebar.tsx`    | Major refactor                              | 392 → ~150                  |
+| `features/session-list/ui/AgentHeader.tsx`       | Minor — remove close button constraint      | 133 → ~130                  |
+| `features/session-list/ui/AgentContextChips.tsx` | NEW                                         | 0 → ~80                     |
+| `features/session-list/ui/SidebarFooterBar.tsx`  | NEW                                         | 0 → ~60                     |
+| `App.tsx`                                        | Major — SidebarProvider layout + DialogHost | 280 → ~200                  |
+| `shared/model/app-store.ts`                      | Minor — add agentDialogOpen, onboardingStep | 408 → ~420                  |
+| `index.css`                                      | Minor — add --sidebar-\* CSS vars           | 426 → ~445                  |
+| `features/session-list/index.ts`                 | Minor — export new components               | 7 → ~10                     |
 
 **Net code change**: ~200 lines of custom sidebar/overlay code deleted, ~140 lines of new focused components added, plus ~350 generated Shadcn sidebar code.
 

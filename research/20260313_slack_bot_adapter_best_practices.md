@@ -1,9 +1,10 @@
 ---
-title: "Slack Bot Adapter — Best Practices for DorkOS Relay"
+title: 'Slack Bot Adapter — Best Practices for DorkOS Relay'
 date: 2026-03-13
 type: external-best-practices
 status: active
-tags: [slack, bolt, adapter, relay, socket-mode, threading, streaming, mrkdwn, rate-limits, typescript]
+tags:
+  [slack, bolt, adapter, relay, socket-mode, threading, streaming, mrkdwn, rate-limits, typescript]
 feature_slug: relay-external-adapters
 searches_performed: 8
 sources_count: 28
@@ -37,6 +38,7 @@ The Slack bot ecosystem in 2026 is substantially more mature than when the initi
 - Socket Mode's primary production weakness (WebSocket drops with missed events) is not a concern for DorkOS: messages are agent-to-human notifications, not mission-critical financial transactions
 
 **When to use HTTP Events API instead:**
+
 - Distributing the bot as a Slack Marketplace app (Socket Mode is prohibited)
 - Deploying behind a load balancer with multiple server instances
 - When sub-second reconnection gaps would lose critical message context
@@ -48,6 +50,7 @@ The Slack bot ecosystem in 2026 is substantially more mature than when the initi
 **Use `@slack/bolt` v4.x.** Do not mix in lower-level packages separately.
 
 `@slack/bolt` wraps:
+
 - `@slack/web-api` — all REST API calls
 - `@slack/socket-mode` — WebSocket connection management
 - `@slack/events-api` — signature verification (for HTTP mode)
@@ -105,16 +108,16 @@ Required env vars for Socket Mode:
 
 Slack uses `mrkdwn` — a non-standard Markdown dialect:
 
-| Format | Standard Markdown | Slack mrkdwn |
-|---|---|---|
-| Bold | `**text**` | `*text*` |
-| Italic | `_text_` | `_text_` |
-| Strikethrough | `~~text~~` | `~text~` |
-| Inline code | `` `code` `` | `` `code` `` |
-| Code block | ` ```code``` ` | ` ```code``` ` |
-| Link | `[text](url)` | `<url\|text>` |
-| User mention | N/A | `<@U123456>` |
-| Channel mention | N/A | `<#C123456>` |
+| Format          | Standard Markdown | Slack mrkdwn   |
+| --------------- | ----------------- | -------------- |
+| Bold            | `**text**`        | `*text*`       |
+| Italic          | `_text_`          | `_text_`       |
+| Strikethrough   | `~~text~~`        | `~text~`       |
+| Inline code     | `` `code` ``      | `` `code` ``   |
+| Code block      | ` ```code``` `    | ` ```code``` ` |
+| Link            | `[text](url)`     | `<url\|text>`  |
+| User mention    | N/A               | `<@U123456>`   |
+| Channel mention | N/A               | `<#C123456>`   |
 
 AI model responses use standard Markdown. Convert with **`slackify-markdown`**:
 
@@ -132,6 +135,7 @@ await client.chat.postMessage({ channel, text: slackText });
 `slackify-markdown` v5.0.0 (released November 2025, 179K weekly downloads, ~60 npm dependents) is the current best option. It is based on `unified`/`remark` and handles all standard Markdown constructs including tables, nested lists, and fenced code blocks.
 
 **Message length limits:**
+
 - `text` field: 4,000 characters (hard limit for `chat.postMessage`)
 - Messages are truncated at 40,000 characters total
 - For long AI responses: chunk at ~3,500 characters on paragraph boundaries and send as sequential messages (or use the streaming API)
@@ -139,6 +143,7 @@ await client.chat.postMessage({ channel, text: slackText });
 #### Block Kit (for rich structured messages)
 
 Block Kit is preferred when:
+
 - Sending structured agent status updates (plan steps, task lists)
 - Rendering agent responses with action buttons (approve, reject, etc.)
 - Adding feedback buttons to AI responses (new in October 2025)
@@ -148,16 +153,18 @@ The `text` field should always be populated as a fallback for notifications:
 ```typescript
 await client.chat.postMessage({
   channel,
-  text: 'Agent response (fallback)',  // Always include for notifications
+  text: 'Agent response (fallback)', // Always include for notifications
   blocks: [
     {
       type: 'rich_text',
-      elements: [{
-        type: 'rich_text_section',
-        elements: [{ type: 'text', text: 'Agent response' }]
-      }]
-    }
-  ]
+      elements: [
+        {
+          type: 'rich_text_section',
+          elements: [{ type: 'text', text: 'Agent response' }],
+        },
+      ],
+    },
+  ],
 });
 ```
 
@@ -170,7 +177,7 @@ Slack's threading is `ts`-based. The `ts` field (Unix timestamp string like `"17
 ```typescript
 await client.chat.postMessage({
   channel: event.channel,
-  thread_ts: event.ts,    // thread_ts = ts of the parent message
+  thread_ts: event.ts, // thread_ts = ts of the parent message
   text: 'Reply in thread',
 });
 ```
@@ -187,12 +194,12 @@ app.message(async ({ message, say }) => {
 
   await say({
     text: 'Processing...',
-    thread_ts: message.ts,  // reply in thread
+    thread_ts: message.ts, // reply in thread
   });
 });
 ```
 
-**Thread reply chains:** Once you start a thread (using `message.ts` as `thread_ts`), all subsequent replies to that conversation should use the *same* original `thread_ts`, not the `ts` of intermediate replies. This keeps all agent turns in one thread.
+**Thread reply chains:** Once you start a thread (using `message.ts` as `thread_ts`), all subsequent replies to that conversation should use the _same_ original `thread_ts`, not the `ts` of intermediate replies. This keeps all agent turns in one thread.
 
 ```typescript
 // Session key for per-conversation state:
@@ -204,6 +211,7 @@ const sessionKey = `${channel}:${thread_ts ?? message_ts}`;
 Slack released a native streaming API in October 2025 specifically for AI agent use cases. This is the correct pattern for DorkOS's streaming agent responses.
 
 **Three methods:**
+
 - `chat.startStream` — creates a streaming message placeholder in Slack
 - `chat.appendStream` — appends a chunk of text to the in-progress stream
 - `chat.stopStream` — closes the stream, optionally attaching Block Kit blocks (e.g., feedback buttons)
@@ -228,7 +236,7 @@ app.message(async ({ message, client }) => {
   // Start a streaming message in a thread
   const stream = await client.chatStream({
     channel: message.channel,
-    thread_ts: message.ts,     // reply in thread
+    thread_ts: message.ts, // reply in thread
     // recipient_user_id: message.user,  // optional: direct the stream to a specific user
   });
 
@@ -243,10 +251,14 @@ app.message(async ({ message, client }) => {
       {
         type: 'actions',
         elements: [
-          { type: 'button', text: { type: 'plain_text', text: 'Run again' }, action_id: 'run_again' }
-        ]
-      }
-    ]
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Run again' },
+            action_id: 'run_again',
+          },
+        ],
+      },
+    ],
   });
 });
 ```
@@ -268,11 +280,12 @@ let lastUpdateAt = Date.now();
 
 for await (const chunk of agentStream) {
   accumulated += chunk.text;
-  if (Date.now() - lastUpdateAt > 1000) {  // throttle: max 1 update/second
+  if (Date.now() - lastUpdateAt > 1000) {
+    // throttle: max 1 update/second
     await client.chat.update({
       channel,
       ts: botMsgTs,
-      text: slackifyMarkdown(accumulated) + ' ▌',  // cursor indicator
+      text: slackifyMarkdown(accumulated) + ' ▌', // cursor indicator
     });
     lastUpdateAt = Date.now();
   }
@@ -291,15 +304,18 @@ await client.chat.update({
 ### 7. Rate Limits and Best Practices
 
 **Sending messages (`chat.postMessage`):**
+
 - Tier: Special
 - Limit: 1 message/second per channel
 - Workspace-level burst cap applies (hundreds per minute)
 
 **Streaming API methods (`chat.appendStream`):**
+
 - Not subject to the same 1/sec per channel limit as `postMessage`
 - Designed for high-frequency chunk delivery — throttle to reasonable human reading speed (~50ms between chunks)
 
 **Read methods (for non-Marketplace, internal apps — exempt from May 2025 restrictions):**
+
 - `conversations.history`, `conversations.replies`: Standard tier limits apply (not the 1 request/minute restriction that affects commercial non-Marketplace apps)
 - Internal apps installed to a single workspace you own are **exempt** from the May 2025 rate limit tightening
 
@@ -315,7 +331,7 @@ async function postWithRetry(client, params, maxRetries = 3) {
     } catch (err) {
       if (err.code === 'slack_webapi_rate_limited') {
         const retryAfter = err.retryAfter ?? 1;
-        await new Promise(r => setTimeout(r, retryAfter * 1000));
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
         continue;
       }
       throw err;
@@ -354,6 +370,7 @@ function chunkMarkdown(text: string, maxChars = 3500): string[] {
 #### Socket Mode Security Model
 
 Socket Mode uses a long-lived WebSocket connection authenticated with the `xapp-...` app-level token. Security properties:
+
 - No inbound HTTP endpoint exposed — no SSRF attack surface
 - No need for HMAC signature verification (no webhook payloads)
 - The WebSocket connection is initiated by your server to Slack's infrastructure (outbound only)
@@ -374,6 +391,7 @@ const app = new App({
 ```
 
 Bolt verifies:
+
 1. `X-Slack-Signature` header using HMAC-SHA256 with `SLACK_SIGNING_SECRET`
 2. `X-Slack-Request-Timestamp` header (5-minute window, prevents replay attacks)
 3. Responds to Slack's URL verification challenge automatically
@@ -385,8 +403,8 @@ Bolt verifies:
 ```typescript
 export const SlackAdapterConfigSchema = AdapterConfigBaseSchema.extend({
   type: z.literal('slack'),
-  botToken: z.string().describe('xoxb-... Bot Token'),      // password field
-  signingSecret: z.string().describe('Signing Secret'),      // password field
+  botToken: z.string().describe('xoxb-... Bot Token'), // password field
+  signingSecret: z.string().describe('Signing Secret'), // password field
   appToken: z.string().describe('xapp-... App-Level Token'), // password field (Socket Mode)
 });
 ```
@@ -428,7 +446,7 @@ app.message(async ({ message, client, logger }) => {
     from: msg.user,
     channel: msg.channel,
     ts: msg.ts,
-    threadTs: msg.thread_ts,   // present if this is a thread reply
+    threadTs: msg.thread_ts, // present if this is a thread reply
     channelType: msg.channel_type, // 'channel' | 'im' | 'group'
   });
 });
@@ -457,7 +475,7 @@ process.once('SIGINT', () => app.stop());
 
 ```typescript
 await app.client.chat.postMessage({
-  channel: channelId,   // C1234567890
+  channel: channelId, // C1234567890
   text: slackifyMarkdown(agentResponse),
   mrkdwn: true,
 });
@@ -468,7 +486,7 @@ await app.client.chat.postMessage({
 ```typescript
 await app.client.chat.postMessage({
   channel: channelId,
-  thread_ts: originalMessageTs,  // ts of the message that triggered the conversation
+  thread_ts: originalMessageTs, // ts of the message that triggered the conversation
   text: slackifyMarkdown(agentResponse),
   mrkdwn: true,
 });
@@ -479,7 +497,7 @@ await app.client.chat.postMessage({
 ```typescript
 // Step 1: Open or retrieve the DM channel
 const { channel } = await app.client.conversations.open({
-  users: userId,   // U1234567890
+  users: userId, // U1234567890
 });
 // Step 2: Send to the DM channel
 await app.client.chat.postMessage({
@@ -509,13 +527,13 @@ async function getDmChannel(userId: string): Promise<string> {
 // Mapping Slack event fields to DorkOS relay concepts:
 
 interface SlackInboundContext {
-  adapterId: string;         // 'slack'
+  adapterId: string; // 'slack'
   platform: 'slack';
-  channelId: string;         // event.channel (C.../D.../G...)
-  userId: string;            // event.user
-  messageId: string;         // event.ts  (used as message ID)
-  threadId: string | null;   // event.thread_ts (null if top-level)
-  text: string;              // event.text
+  channelId: string; // event.channel (C.../D.../G...)
+  userId: string; // event.user
+  messageId: string; // event.ts  (used as message ID)
+  threadId: string | null; // event.thread_ts (null if top-level)
+  text: string; // event.text
   channelType: 'channel' | 'im' | 'group'; // event.channel_type
 }
 
@@ -563,47 +581,54 @@ vi.mock('@slack/bolt', () => ({
 
 ## Quick Reference: Slack vs Telegram Adapter Implementation
 
-| Concern | Telegram (grammY) | Slack (Bolt) |
-|---|---|---|
-| **Initialization** | `new Bot(token)` | `new App({ token, signingSecret, appToken })` |
-| **Start** | `bot.start()` | `app.start()` |
-| **Receive message** | `bot.on('message', handler)` | `app.message(handler)` |
-| **Reply** | `ctx.reply(text)` | `say(text)` or `client.chat.postMessage` |
-| **Reply in thread** | N/A (no threads) | `{ thread_ts: event.ts }` |
-| **Send DM** | `bot.api.sendMessage(userId, text)` | `conversations.open` + `postMessage` (2 calls) |
-| **Message ID** | `message.message_id` (integer) | `event.ts` (timestamp string) |
-| **Sender ID** | `message.from.id` | `event.user` |
-| **Channel ID** | `message.chat.id` | `event.channel` |
-| **Format conversion** | Built-in MarkdownV2/HTML | `slackify-markdown` (npm install) |
-| **Streaming response** | Edit + `ctx.reply` repeatedly | `client.chatStream()` (native API) |
-| **Credentials** | 1 (bot token) | 3 (bot token + signing secret + app token) |
-| **Local dev setup** | Zero infrastructure | Zero infrastructure (Socket Mode) |
-| **Typing indicator** | `sendChatAction('typing')` | None — use immediate ack message |
-| **Rate limit handling** | `@grammyjs/auto-retry` | Bolt WebClient handles automatically |
+| Concern                 | Telegram (grammY)                   | Slack (Bolt)                                   |
+| ----------------------- | ----------------------------------- | ---------------------------------------------- |
+| **Initialization**      | `new Bot(token)`                    | `new App({ token, signingSecret, appToken })`  |
+| **Start**               | `bot.start()`                       | `app.start()`                                  |
+| **Receive message**     | `bot.on('message', handler)`        | `app.message(handler)`                         |
+| **Reply**               | `ctx.reply(text)`                   | `say(text)` or `client.chat.postMessage`       |
+| **Reply in thread**     | N/A (no threads)                    | `{ thread_ts: event.ts }`                      |
+| **Send DM**             | `bot.api.sendMessage(userId, text)` | `conversations.open` + `postMessage` (2 calls) |
+| **Message ID**          | `message.message_id` (integer)      | `event.ts` (timestamp string)                  |
+| **Sender ID**           | `message.from.id`                   | `event.user`                                   |
+| **Channel ID**          | `message.chat.id`                   | `event.channel`                                |
+| **Format conversion**   | Built-in MarkdownV2/HTML            | `slackify-markdown` (npm install)              |
+| **Streaming response**  | Edit + `ctx.reply` repeatedly       | `client.chatStream()` (native API)             |
+| **Credentials**         | 1 (bot token)                       | 3 (bot token + signing secret + app token)     |
+| **Local dev setup**     | Zero infrastructure                 | Zero infrastructure (Socket Mode)              |
+| **Typing indicator**    | `sendChatAction('typing')`          | None — use immediate ack message               |
+| **Rate limit handling** | `@grammyjs/auto-retry`              | Bolt WebClient handles automatically           |
 
 ---
 
 ## Recommendations Summary
 
 ### Mode: Socket Mode
+
 Use `socketMode: true` with `SLACK_APP_TOKEN`. No public URL needed for development or self-hosted production. RTM is deprecated and must not be used.
 
 ### SDK: `@slack/bolt` v4
+
 Single package covers all needs. Do not separately install `@slack/web-api` or `@slack/socket-mode`.
 
 ### Streaming: Native `chatStream` API
+
 Released October 2025, designed for AI agent use cases. Use `client.chatStream()` over the edit-in-place pattern. Fall back to edit-in-place for environments where the streaming API is unavailable.
 
 ### Threading: Always Reply in Threads
+
 Set `thread_ts` on all bot replies. Keeps channels clean. Track `originalTs` per conversation as the thread anchor.
 
 ### Markdown: `slackify-markdown`
+
 `npm install slackify-markdown` — v5.0.0, 179K weekly downloads, actively maintained. Pass all agent Markdown output through this before sending.
 
 ### DMs: Cache `conversations.open` Results
+
 The two-step DM pattern (`conversations.open` → `postMessage`) should be cached per user in a `Map<userId, dmChannelId>` to avoid redundant API calls.
 
 ### Session Keys: Thread-Scoped
+
 Use `${channelId}:${thread_ts ?? message_ts}` as the conversation session key in the binding router to keep agent context per-thread.
 
 ---

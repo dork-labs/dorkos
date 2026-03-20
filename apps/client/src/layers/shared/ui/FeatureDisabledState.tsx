@@ -16,12 +16,12 @@ export function FeatureDisabledState({
 }: FeatureDisabledStateProps) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-      <Icon className="size-8 text-muted-foreground/50" />
+      <Icon className="text-muted-foreground/50 size-8" />
       <div>
         <p className="font-medium">{name} is currently disabled</p>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <p className="text-muted-foreground mt-1 text-sm">{description}</p>
       </div>
-      <code className="mt-2 rounded-md bg-muted px-3 py-1.5 font-mono text-sm">{command}</code>
+      <code className="bg-muted mt-2 rounded-md px-3 py-1.5 font-mono text-sm">{command}</code>
     </div>
   );
 }

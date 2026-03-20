@@ -30,7 +30,17 @@ import type {
   UploadResult,
   UploadProgress,
 } from './types.js';
-import type { AdapterConfig, AdapterStatus, TraceSpan, DeliveryMetrics, CatalogEntry, RelayConversation, AdapterBinding, CreateBindingRequest, ObservedChat } from './relay-schemas.js';
+import type {
+  AdapterConfig,
+  AdapterStatus,
+  TraceSpan,
+  DeliveryMetrics,
+  CatalogEntry,
+  RelayConversation,
+  AdapterBinding,
+  CreateBindingRequest,
+  ObservedChat,
+} from './relay-schemas.js';
 import type {
   AgentManifest,
   AgentPathEntry,
@@ -175,7 +185,10 @@ export interface Transport {
    *
    * @returns A map of runtime type → capabilities, plus the default runtime type.
    */
-  getCapabilities(): Promise<{ capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }>;
+  getCapabilities(): Promise<{
+    capabilities: Record<string, RuntimeCapabilities>;
+    defaultRuntime: string;
+  }>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
@@ -265,7 +278,11 @@ export interface Transport {
   /** Retrieve the adapter catalog with available types and configured instances. */
   getAdapterCatalog(): Promise<CatalogEntry[]>;
   /** Add a new relay adapter instance. */
-  addRelayAdapter(type: string, id: string, config: Record<string, unknown>): Promise<{ ok: boolean }>;
+  addRelayAdapter(
+    type: string,
+    id: string,
+    config: Record<string, unknown>
+  ): Promise<{ ok: boolean }>;
   /** Remove a relay adapter by ID. */
   removeRelayAdapter(id: string): Promise<{ ok: boolean }>;
   /** Update the config for an existing relay adapter. */
@@ -273,7 +290,7 @@ export interface Transport {
   /** Test connectivity for an adapter type and config without registering it. */
   testRelayAdapterConnection(
     type: string,
-    config: Record<string, unknown>,
+    config: Record<string, unknown>
   ): Promise<{ ok: boolean; error?: string; botUsername?: string }>;
   /** Fetch adapter lifecycle events by adapter instance ID. */
   getAdapterEvents(adapterId: string, limit?: number): Promise<{ events: AdapterEvent[] }>;
@@ -291,7 +308,18 @@ export interface Transport {
   /** Update an existing binding's mutable fields. */
   updateBinding(
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
+    updates: Partial<
+      Pick<
+        AdapterBinding,
+        | 'sessionStrategy'
+        | 'label'
+        | 'chatId'
+        | 'channelType'
+        | 'canInitiate'
+        | 'canReply'
+        | 'canReceive'
+      >
+    >
   ): Promise<AdapterBinding>;
 
   // --- Mesh Agent Discovery ---
@@ -299,13 +327,23 @@ export interface Transport {
   /** List registered agents with their project paths (lightweight, for onboarding). */
   listMeshAgentPaths(): Promise<{ agents: AgentPathEntry[] }>;
   /** Discover agent candidates by scanning filesystem roots. */
-  discoverMeshAgents(roots: string[], maxDepth?: number): Promise<{ candidates: DiscoveryCandidate[] }>;
+  discoverMeshAgents(
+    roots: string[],
+    maxDepth?: number
+  ): Promise<{ candidates: DiscoveryCandidate[] }>;
   /** List registered mesh agents with optional filters. */
-  listMeshAgents(filters?: { runtime?: string; capability?: string }): Promise<{ agents: AgentManifest[] }>;
+  listMeshAgents(filters?: {
+    runtime?: string;
+    capability?: string;
+  }): Promise<{ agents: AgentManifest[] }>;
   /** Get a single mesh agent by ID. */
   getMeshAgent(id: string): Promise<AgentManifest>;
   /** Register a discovered agent into the mesh registry. */
-  registerMeshAgent(path: string, overrides?: Partial<AgentManifest>, approver?: string): Promise<AgentManifest>;
+  registerMeshAgent(
+    path: string,
+    overrides?: Partial<AgentManifest>,
+    approver?: string
+  ): Promise<AgentManifest>;
   /** Update an existing mesh agent's metadata. */
   updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
   /** Unregister a mesh agent by ID. */
@@ -342,7 +380,12 @@ export interface Transport {
   /** Batch resolve agents for multiple paths. Returns a map of path -> manifest|null. */
   resolveAgents(paths: string[]): Promise<Record<string, AgentManifest | null>>;
   /** Create a new agent at the given path. Returns the created manifest. */
-  createAgent(path: string, name?: string, description?: string, runtime?: string): Promise<AgentManifest>;
+  createAgent(
+    path: string,
+    name?: string,
+    description?: string,
+    runtime?: string
+  ): Promise<AgentManifest>;
   /** Update an agent's fields by path. Returns the updated manifest. */
   updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
 
@@ -358,7 +401,7 @@ export interface Transport {
   scan(
     options: TransportScanOptions,
     onEvent: (event: TransportScanEvent) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<void>;
 
   // --- File Uploads ---

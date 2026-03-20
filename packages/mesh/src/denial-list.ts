@@ -95,11 +95,7 @@ export class DenialList {
    * @returns All denials ordered by denial date (newest first)
    */
   list(): DenialRecord[] {
-    const rows = this.db
-      .select()
-      .from(agentDenials)
-      .orderBy(desc(agentDenials.createdAt))
-      .all();
+    const rows = this.db.select().from(agentDenials).orderBy(desc(agentDenials.createdAt)).all();
     return rows.map((row) => this.rowToRecord(row));
   }
 
@@ -111,10 +107,7 @@ export class DenialList {
    */
   clear(filePath: string): boolean {
     const canonicalPath = this.canonicalize(filePath);
-    const result = this.db
-      .delete(agentDenials)
-      .where(eq(agentDenials.path, canonicalPath))
-      .run();
+    const result = this.db.delete(agentDenials).where(eq(agentDenials.path, canonicalPath)).run();
     return result.changes > 0;
   }
 

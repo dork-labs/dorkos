@@ -24,7 +24,12 @@ import { parseBody } from '../lib/route-utils.js';
  * @param dorkHome - Resolved data directory path
  * @param meshCore - Optional MeshCore for validating agentId on create/update
  */
-export function createPulseRouter(store: PulseStore, scheduler: SchedulerService, dorkHome: string, meshCore?: MeshCore): Router {
+export function createPulseRouter(
+  store: PulseStore,
+  scheduler: SchedulerService,
+  dorkHome: string,
+  meshCore?: MeshCore
+): Router {
   const router = Router();
 
   // === Preset endpoints ===

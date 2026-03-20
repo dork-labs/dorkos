@@ -1,5 +1,5 @@
 ---
-title: "Versioning & Release System Research"
+title: 'Versioning & Release System Research'
 date: 2026-02-16
 type: implementation
 status: archived
@@ -17,17 +17,17 @@ Studied the `life-os-starter` repository at `/Users/doriancollier/Keep/life-os-s
 
 ### Components
 
-| Component | File | Purpose |
-|---|---|---|
-| **VERSION file** | `VERSION` | Single source of truth for current version (plain text, e.g. `0.13.0`) |
-| **Changelog** | `workspace/0-System/changelog.md` | Keep-a-Changelog format with `[Unreleased]` section |
-| **Auto-changelog hook** | `.claude/hooks/changelog-populator.py` | Post-commit git hook: parses conventional commits, auto-populates `[Unreleased]` section, amends commit to include changelog update |
-| **Backfill script** | `.claude/scripts/changelog_backfill.py` | Catches missed changelog entries from non-conventional commits; uses Jaccard similarity matching |
-| **Release command** | `.claude/commands/system/release.md` | Orchestrator: version bump, changelog finalization, git tag, GitHub Release, upgrade notes |
-| **Changelog skill** | `.claude/skills/changelog-writing/SKILL.md` | Model-invoked guidance for writing user-friendly changelog entries |
-| **Version check hook** | `.claude/hooks/version-check.py` | SessionStart hook: checks for newer tags on remote, notifies user of updates |
-| **Upgrade notes** | `.claude/upgrade-notes/` | Per-version migration instructions for users |
-| **Upgrade command** | `.claude/commands/system/upgrade.md` | Consumer-side: fetch updates, run migrations, create task list |
+| Component               | File                                        | Purpose                                                                                                                             |
+| ----------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **VERSION file**        | `VERSION`                                   | Single source of truth for current version (plain text, e.g. `0.13.0`)                                                              |
+| **Changelog**           | `workspace/0-System/changelog.md`           | Keep-a-Changelog format with `[Unreleased]` section                                                                                 |
+| **Auto-changelog hook** | `.claude/hooks/changelog-populator.py`      | Post-commit git hook: parses conventional commits, auto-populates `[Unreleased]` section, amends commit to include changelog update |
+| **Backfill script**     | `.claude/scripts/changelog_backfill.py`     | Catches missed changelog entries from non-conventional commits; uses Jaccard similarity matching                                    |
+| **Release command**     | `.claude/commands/system/release.md`        | Orchestrator: version bump, changelog finalization, git tag, GitHub Release, upgrade notes                                          |
+| **Changelog skill**     | `.claude/skills/changelog-writing/SKILL.md` | Model-invoked guidance for writing user-friendly changelog entries                                                                  |
+| **Version check hook**  | `.claude/hooks/version-check.py`            | SessionStart hook: checks for newer tags on remote, notifies user of updates                                                        |
+| **Upgrade notes**       | `.claude/upgrade-notes/`                    | Per-version migration instructions for users                                                                                        |
+| **Upgrade command**     | `.claude/commands/system/upgrade.md`        | Consumer-side: fetch updates, run migrations, create task list                                                                      |
 
 ### Flow
 
@@ -73,14 +73,14 @@ version-check.py (SessionStart hook)
 
 ### Version Locations
 
-| Location | Version | Purpose |
-|---|---|---|
-| `package.json` (root) | `0.1.0` | Workspace root |
-| `packages/cli/package.json` | `0.1.0` | Published npm package (source of truth for CLI) |
-| `apps/client/package.json` | `0.0.0` | Not published |
-| `apps/server/package.json` | `0.0.0` | Not published |
-| `apps/obsidian-plugin/package.json` | `0.0.0` | Not published |
-| `packages/shared/package.json` | `0.0.0` | Not published |
+| Location                            | Version | Purpose                                         |
+| ----------------------------------- | ------- | ----------------------------------------------- |
+| `package.json` (root)               | `0.1.0` | Workspace root                                  |
+| `packages/cli/package.json`         | `0.1.0` | Published npm package (source of truth for CLI) |
+| `apps/client/package.json`          | `0.0.0` | Not published                                   |
+| `apps/server/package.json`          | `0.0.0` | Not published                                   |
+| `apps/obsidian-plugin/package.json` | `0.0.0` | Not published                                   |
+| `packages/shared/package.json`      | `0.0.0` | Not published                                   |
 
 ### How Version Is Used
 
@@ -145,6 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **For DorkOS:** The publishable artifact is `packages/cli/package.json`. Using `npm version` is the standard npm workflow. A separate VERSION file would be redundant unless we want a single place that represents "the DorkOS version" independent of npm.
 
 **Recommendation:** Use a root `VERSION` file as the single source of truth for the project version. The release command should sync it to `packages/cli/package.json` and `package.json` (root). Rationale:
+
 - DorkOS is more than just the CLI package — it's also the Obsidian plugin and dev server
 - A VERSION file is simpler to read/parse in hooks and scripts
 - The release command can handle the sync to package.json files
@@ -158,6 +159,7 @@ The life-os post-commit hook that amends commits is clever but aggressive. For a
 #### 4. Release Command Updates
 
 The existing `/system:release` command needs updates:
+
 - Reference `CHANGELOG.md` (root) instead of `workspace/0-System/changelog.md`
 - Update VERSION + sync to `packages/cli/package.json`
 - Add npm publish step after git tag
@@ -171,6 +173,7 @@ Life-os checks git tags because it's distributed via git. DorkOS is distributed 
 **Recommendation:** Use the standard npm pattern: `npm outdated -g dorkos` or check the npm registry API. Libraries like `update-notifier` handle this elegantly with caching and non-blocking checks. This is the standard pattern for CLI tools (used by npm itself, create-react-app, etc.).
 
 The check should run on CLI startup (`packages/cli/src/cli.ts`) and display a message like:
+
 ```
 Update available: 0.1.0 → 0.2.0
 Run `npm update -g dorkos` to update
@@ -210,6 +213,7 @@ Start tagging releases with `v` prefix (e.g., `v0.1.0`). The `/system:release` c
 **Current:** Root + CLI both at 0.1.0, other packages at 0.0.0.
 
 **Recommendation:** Single version for the whole project ("fixed" versioning, like Turborepo itself uses). Rationale:
+
 - Only one publishable package (CLI)
 - Client, server, shared are internal — their versions don't matter to consumers
 - Simpler mental model: "DorkOS 0.2.0" not "CLI 0.2.0, server 0.1.3, client 0.1.5"
@@ -217,6 +221,7 @@ Start tagging releases with `v` prefix (e.g., `v0.1.0`). The `/system:release` c
 ### npm Publish in Release
 
 The release command should include:
+
 ```bash
 # After git tag + push
 cd packages/cli && npm publish
@@ -227,6 +232,7 @@ This is already documented in CLAUDE.md memory: `npm publish -w packages/cli` wi
 ### What Gets Versioned
 
 Only these files need version updates during release:
+
 - `VERSION` (source of truth)
 - `packages/cli/package.json` (for npm publish)
 - `package.json` (root, for consistency)

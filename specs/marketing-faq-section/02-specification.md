@@ -34,11 +34,11 @@ The marketing homepage progresses through a narrative arc (villain, pivot, subsy
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `motion/react` | workspace | Section reveal + stagger animations |
+| Dependency                 | Version   | Purpose                                   |
+| -------------------------- | --------- | ----------------------------------------- |
+| `motion/react`             | workspace | Section reveal + stagger animations       |
 | `@base-ui/react/accordion` | workspace | Accordion primitives (via shadcn wrapper) |
-| Tailwind CSS v4 | workspace | Styling |
+| Tailwind CSS v4            | workspace | Styling                                   |
 
 No new dependencies required.
 
@@ -64,19 +64,20 @@ Follows the `subsystems.ts` pattern — interface + exported const array:
 
 ```typescript
 export interface FaqItem {
-  id: string
-  question: string
-  answer: string
+  id: string;
+  question: string;
+  answer: string;
 }
 
 export const faqItems: FaqItem[] = [
   {
     id: 'what-is-agent',
     question: 'What do you mean by "agent"?',
-    answer: 'An agent is an AI coding tool — like Claude Code, Cursor, or Codex — that can read, write, and run code on your machine. DorkOS doesn\'t replace your agents. It gives them the infrastructure to work when you\'re not watching: scheduling, communication, memory, and coordination.',
+    answer:
+      "An agent is an AI coding tool — like Claude Code, Cursor, or Codex — that can read, write, and run code on your machine. DorkOS doesn't replace your agents. It gives them the infrastructure to work when you're not watching: scheduling, communication, memory, and coordination.",
   },
   // ... 6 more items (copy finalized in ideation Section 7)
-]
+];
 ```
 
 All 7 questions from ideation Section 7 are included verbatim. The `id` field serves as the React key and the accordion `value` prop.
@@ -86,17 +87,17 @@ All 7 questions from ideation Section 7 are included verbatim. The `id` field se
 Follows the `SubsystemsSection.tsx` pattern:
 
 ```tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
+import { motion } from 'motion/react';
 import {
   Accordion,
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
-} from '@/components/ui/accordion'
-import { faqItems } from '../lib/faq-items'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+} from '@/components/ui/accordion';
+import { faqItems } from '../lib/faq-items';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 export function FAQSection() {
   return (
@@ -111,7 +112,7 @@ export function FAQSection() {
         {/* Eyebrow */}
         <motion.span
           variants={REVEAL}
-          className="mb-6 block text-center font-mono text-2xs uppercase tracking-[0.2em] text-brand-orange"
+          className="text-2xs text-brand-orange mb-6 block text-center font-mono tracking-[0.2em] uppercase"
         >
           Questions
         </motion.span>
@@ -123,9 +124,7 @@ export function FAQSection() {
               <AccordionItem key={item.id} value={item.id}>
                 <AccordionTrigger>{item.question}</AccordionTrigger>
                 <AccordionContent>
-                  <p className="text-warm-gray leading-relaxed">
-                    {item.answer}
-                  </p>
+                  <p className="text-warm-gray leading-relaxed">{item.answer}</p>
                 </AccordionContent>
               </AccordionItem>
             ))}
@@ -133,7 +132,7 @@ export function FAQSection() {
         </motion.div>
       </motion.div>
     </section>
-  )
+  );
 }
 ```
 
@@ -151,13 +150,13 @@ Add three exports to the existing barrel file:
 
 ```typescript
 // UI components
-export { FAQSection } from './ui/FAQSection'
+export { FAQSection } from './ui/FAQSection';
 
 // Data
-export { faqItems } from './lib/faq-items'
+export { faqItems } from './lib/faq-items';
 
 // Types
-export type { FaqItem } from './lib/faq-items'
+export type { FaqItem } from './lib/faq-items';
 ```
 
 ### Page Composition: `page.tsx`
@@ -195,6 +194,7 @@ pnpm build --filter=@dorkos/site
 ```
 
 This validates:
+
 - TypeScript compilation (no type errors in new files)
 - All imports resolve (barrel exports, component imports, data imports)
 - No build-time rendering errors
@@ -202,6 +202,7 @@ This validates:
 ### Visual Verification
 
 Manual check in dev mode (`pnpm dev --filter=@dorkos/site`):
+
 - Section appears between IdentityClose and InstallMoment
 - Background color alternation is correct (cream-secondary)
 - All 7 questions render with correct copy

@@ -16,12 +16,14 @@
 #### Batch 1 (Parallel: #20, #24)
 
 **Task #20: Add listRelayDeadLetters to Transport interface and adapters**
+
 - Added `listRelayDeadLetters(filters?)` to Transport interface in `packages/shared/src/transport.ts`
 - Implemented in HttpTransport (`GET /api/relay/dead-letters` with query params)
 - Added DirectTransport stub returning empty array
 - 7 tests added and passing
 
 **Task #24: Wire MessageTrace into MessageRow with expand/collapse**
+
 - Refactored MessageRow from single `<button>` to `<div>` + inner `<button>` pattern for nested interactivity
 - Added trace icon toggle (Activity from lucide-react) with independent expand state
 - MessageTrace loads lazily only when trace is toggled open
@@ -30,12 +32,14 @@
 #### Batch 2 (Parallel: #21, #22)
 
 **Task #21: Create useDeadLetters entity hook**
+
 - Created `entities/relay/model/use-dead-letters.ts` with DeadLetter interface and useDeadLetters hook
 - TanStack Query with 30s polling, enabled gate, filter passthrough
 - Exported from relay entity barrel
 - 4 tests added and passing
 
 **Task #22: Create RelayHealthBar component**
+
 - Created `features/relay/ui/RelayHealthBar.tsx` following MeshStatsHeader pattern
 - Shows adapter count (green/amber dot), message throughput, failure count (clickable), avg latency
 - BarChart3 button opens Dialog with DeliveryMetricsDashboard
@@ -45,6 +49,7 @@
 #### Batch 3 (#23)
 
 **Task #23: Create DeadLetterSection component**
+
 - Created `features/relay/ui/DeadLetterSection.tsx` with collapsible dead letter list
 - AlertTriangle icon, destructive Badge count, ChevronRight/Down toggle
 - Color-coded reason badges (hop_limit=orange, ttl_expired=yellow, cycle_detected=purple, budget_exhausted=red)
@@ -55,6 +60,7 @@
 #### Batch 4 (#25)
 
 **Task #25: Update RelayPanel layout with health bar and dead letters**
+
 - RelayHealthBar rendered above tabs in RelayPanel
 - Tabs changed from defaultValue to controlled `value={activeTab}` with `onValueChange`
 - `handleFailedClick` callback switches to activity tab and scrolls to dead letters via ref
@@ -64,30 +70,35 @@
 #### Batch 5 (Parallel: #26, #27, #28, #29, #31)
 
 **Task #26: Add motion animations to ActivityFeed message list**
+
 - Wrapped message list in AnimatePresence mode="popLayout"
 - New SSE messages animate in (fade + slide up 8px, 200ms), history skips animation via initialIdsRef
 - Exit animations for filtered-out messages
 - 14 tests added and passing
 
 **Task #27: Add motion to MessageRow expand/collapse and tab transitions**
+
 - MessageRow expand/collapse wrapped in AnimatePresence + motion.div (height + opacity, 200ms)
 - RelayPanel tab content fades on switch (150ms)
 - AdapterSetupWizard steps cross-fade (200ms)
 - hover:shadow-sm on MessageRow cards
 
 **Task #28: Apply unified status color system**
+
 - Created `features/relay/lib/status-colors.ts` with RELAY_STATUS_COLORS map
 - Helper functions: getStatusDotColor, getStatusTextColor, getStatusBorderColor
 - AdapterCard: replaced dot with 2px colored left border, "System" badge for built-in
 - MessageRow: colored left border based on status
 
 **Task #29: Create ConnectionStatusBanner**
+
 - Refactored useRelayEventStream to return { connectionState, failedAttempts }
 - ConnectionStatusBanner: hidden when connected, amber when reconnecting, red after 3 failures
 - Rendered between health bar and tabs in RelayPanel
 - 5 tests added and passing
 
 **Task #31: Create ComposeMessageDialog**
+
 - Dialog with Subject, From (default "relay.human.console"), Payload fields
 - JSON or plain text payload (auto-wraps plain text as { content: "..." })
 - useSendRelayMessage mutation, toast on success, inline error
@@ -97,6 +108,7 @@
 #### Batch 6 (Parallel: #30, #33)
 
 **Task #30: Enhance ActivityFeed filters**
+
 - Three filter controls: Source dropdown, Status dropdown (All/Delivered/Failed/Pending), Subject text input
 - "Clear filters" button appears when any filter active
 - Client-side filtering with correct status mapping (Delivered→cur, Failed→failed+dead_letter, Pending→new)
@@ -104,6 +116,7 @@
 - 27 ActivityFeed tests, 24 MessageRow tests
 
 **Task #33: Enhance EndpointList with health indicators**
+
 - Upgraded from bare subject strings to informative cards
 - Health dot using getStatusDotColor(), Inbox icon, monospace subject
 - Message count, last activity, description when available
@@ -113,6 +126,7 @@
 ## Files Modified/Created
 
 **Source files:**
+
 - `packages/shared/src/transport.ts` — added `listRelayDeadLetters` method to Transport interface
 - `apps/client/src/layers/shared/lib/http-transport.ts` — HttpTransport implementation
 - `apps/client/src/layers/shared/lib/direct-transport.ts` — DirectTransport stub
@@ -133,6 +147,7 @@
 - `apps/client/src/layers/features/relay/__tests__/AdapterCard.test.tsx` — updated for left border
 
 **Test files:**
+
 - `apps/client/src/layers/shared/lib/__tests__/transport-dead-letters.test.ts` (7 tests)
 - `apps/client/src/layers/features/relay/ui/__tests__/MessageRow.test.tsx` (24 tests)
 - `apps/client/src/layers/entities/relay/__tests__/use-dead-letters.test.tsx` (4 tests)
@@ -146,6 +161,7 @@
 #### Batch 7 (#32)
 
 **Task #32: Add onboarding empty states**
+
 - ActivityFeed: context-aware empty states (no messages vs no matching filters)
 - "Set up an adapter" CTA button switches to Adapters tab via `onSwitchToAdapters` callback
 - "Clear filters" button resets all active filters
@@ -155,6 +171,7 @@
 #### Batch 8 (#34)
 
 **Task #34: Update barrel exports and CLAUDE.md**
+
 - Verified features/relay and entities/relay barrel exports already complete from prior agents
 - Updated CLAUDE.md FSD table: entities/relay row (added adapter catalog hooks), features/relay row (added 8 new components)
 - Full typecheck passing (14/14 Turborepo tasks, 0 errors)

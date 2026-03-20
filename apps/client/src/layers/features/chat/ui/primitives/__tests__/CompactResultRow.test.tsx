@@ -13,7 +13,7 @@ describe('CompactResultRow', () => {
       <CompactResultRow
         icon={<span data-testid="icon">V</span>}
         label={<span>Approved tool</span>}
-      />,
+      />
     );
     expect(screen.getByTestId('icon')).toBeDefined();
     expect(screen.getByText('Approved tool')).toBeDefined();
@@ -25,7 +25,7 @@ describe('CompactResultRow', () => {
         icon={<span>V</span>}
         label={<span>Tool</span>}
         trailing={<span>Badge</span>}
-      />,
+      />
     );
     expect(screen.getByText('Badge')).toBeDefined();
   });
@@ -34,7 +34,7 @@ describe('CompactResultRow', () => {
     render(
       <CompactResultRow icon={<span>V</span>} label={<span>Tool</span>}>
         <p>Timeout message</p>
-      </CompactResultRow>,
+      </CompactResultRow>
     );
     expect(screen.getByText('Timeout message')).toBeDefined();
   });
@@ -46,7 +46,7 @@ describe('CompactResultRow', () => {
         label={<span>Tool</span>}
         data-testid="result-row"
         data-decision="approved"
-      />,
+      />
     );
     const row = screen.getByTestId('result-row');
     expect(row.getAttribute('data-decision')).toBe('approved');
@@ -54,7 +54,7 @@ describe('CompactResultRow', () => {
 
   it('does not render trailing when not provided', () => {
     const { container } = render(
-      <CompactResultRow icon={<span>V</span>} label={<span>Tool</span>} />,
+      <CompactResultRow icon={<span>V</span>} label={<span>Tool</span>} />
     );
     const flexRow = container.querySelector('.flex.items-center.gap-2');
     // Should have exactly 2 children: icon and label

@@ -1,5 +1,5 @@
 ---
-title: "@ngrok/ngrok Node.js SDK Research"
+title: '@ngrok/ngrok Node.js SDK Research'
 date: 2026-02-12
 type: implementation
 status: archived

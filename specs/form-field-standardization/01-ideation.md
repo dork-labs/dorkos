@@ -153,17 +153,18 @@ N/A — this is a feature/standardization task, not a bug fix.
 Shadcn Field provides the exact primitives we need (orientation-aware layout, accessible label/description/error association) and aligns with our existing Shadcn-based design system. Building SettingRow as a thin wrapper on `<Field orientation="horizontal">` gives us accessibility for free while maintaining the exact same visual pattern. The migration is mechanical and low-risk — each inline pattern replacement is a 1:1 swap.
 
 **Caveats:**
+
 - TanStack Form should be revisited when a second multi-step wizard is introduced
 - The FieldError horizontal positioning bug (#8388) should be verified before relying on error display in horizontal layouts
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Form library adoption | None (defer TanStack Form) | Settings use live-binding with no submit lifecycle; only one wizard exists. Revisit when a second wizard is needed. |
-| 2 | Foundation primitives | Shadcn Field (10 sub-components) | Provides accessible, orientation-aware field layout matching both our horizontal (settings) and vertical (wizard) patterns. Already compatible with React 19 + Tailwind 4 + new-york style. |
-| 3 | SettingRow implementation | Thin wrapper on `<Field orientation="horizontal">` | Preserves the exact same visual pattern while adding accessibility (aria-describedby, label-for). Mechanical 1:1 migration from 26+ inline copies. |
-| 4 | PasswordInput extraction | Standalone shared/ui component | Currently ~50 lines inline in ConfigFieldInput. Needed by both settings and wizard contexts. Eye/eye-off toggle, sentinel mode, trim behavior, pattern validation on blur. |
-| 5 | Compound components | Not needed | Flat props API is sufficient. SettingRow takes `label`, `description`, `children` — no need for `<SettingRow.Label>` slots. Compound components add API surface without proportional benefit at current scale. |
-| 6 | ConfigFieldInput migration | Incremental, keep descriptor-driven architecture | Rebuild internal rendering on Shadcn Field primitives; keep the public API (`descriptor` + `value` + `onChange`) unchanged. |
-| 7 | Layout convention | Horizontal for settings, vertical for wizards | This matches current patterns. Shadcn Field's `orientation` prop formalizes what was previously implicit. |
+| #   | Decision                   | Choice                                             | Rationale                                                                                                                                                                                                      |
+| --- | -------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Form library adoption      | None (defer TanStack Form)                         | Settings use live-binding with no submit lifecycle; only one wizard exists. Revisit when a second wizard is needed.                                                                                            |
+| 2   | Foundation primitives      | Shadcn Field (10 sub-components)                   | Provides accessible, orientation-aware field layout matching both our horizontal (settings) and vertical (wizard) patterns. Already compatible with React 19 + Tailwind 4 + new-york style.                    |
+| 3   | SettingRow implementation  | Thin wrapper on `<Field orientation="horizontal">` | Preserves the exact same visual pattern while adding accessibility (aria-describedby, label-for). Mechanical 1:1 migration from 26+ inline copies.                                                             |
+| 4   | PasswordInput extraction   | Standalone shared/ui component                     | Currently ~50 lines inline in ConfigFieldInput. Needed by both settings and wizard contexts. Eye/eye-off toggle, sentinel mode, trim behavior, pattern validation on blur.                                     |
+| 5   | Compound components        | Not needed                                         | Flat props API is sufficient. SettingRow takes `label`, `description`, `children` — no need for `<SettingRow.Label>` slots. Compound components add API surface without proportional benefit at current scale. |
+| 6   | ConfigFieldInput migration | Incremental, keep descriptor-driven architecture   | Rebuild internal rendering on Shadcn Field primitives; keep the public API (`descriptor` + `value` + `onChange`) unchanged.                                                                                    |
+| 7   | Layout convention          | Horizontal for settings, vertical for wizards      | This matches current patterns. Shadcn Field's `orientation` prop formalizes what was previously implicit.                                                                                                      |

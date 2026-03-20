@@ -1,9 +1,18 @@
 ---
-title: "Claude Agent SDK — Message History & Session Listing API"
+title: 'Claude Agent SDK — Message History & Session Listing API'
 date: 2026-03-19
 type: implementation
 status: active
-tags: [claude-agent-sdk, message-history, session-management, listSessions, getSessionMessages, jsonl, transcript]
+tags:
+  [
+    claude-agent-sdk,
+    message-history,
+    session-management,
+    listSessions,
+    getSessionMessages,
+    jsonl,
+    transcript,
+  ]
 searches_performed: 3
 sources_count: 4
 ---
@@ -33,33 +42,33 @@ function listSessions(options?: ListSessionsOptions): Promise<SDKSessionInfo[]>;
 
 **Parameters:**
 
-| Parameter | Type | Default | Description |
-|:---|:---|:---|:---|
-| `options.dir` | `string` | `undefined` | Directory to list sessions for. When omitted, returns sessions across all projects |
-| `options.limit` | `number` | `undefined` | Maximum number of sessions to return |
-| `options.includeWorktrees` | `boolean` | `true` | When `dir` is inside a git repo, include sessions from all worktree paths |
+| Parameter                  | Type      | Default     | Description                                                                        |
+| :------------------------- | :-------- | :---------- | :--------------------------------------------------------------------------------- |
+| `options.dir`              | `string`  | `undefined` | Directory to list sessions for. When omitted, returns sessions across all projects |
+| `options.limit`            | `number`  | `undefined` | Maximum number of sessions to return                                               |
+| `options.includeWorktrees` | `boolean` | `true`      | When `dir` is inside a git repo, include sessions from all worktree paths          |
 
 **Return type: `SDKSessionInfo[]`**
 
-| Property | Type | Description |
-|:---|:---|:---|
-| `sessionId` | `string` | Unique session identifier (UUID) |
-| `summary` | `string` | Display title: custom title, auto-generated summary, or first prompt |
-| `lastModified` | `number` | Last modified time in milliseconds since epoch |
-| `fileSize` | `number` | Session file size in bytes |
-| `customTitle` | `string \| undefined` | User-set session title (via `/rename`) |
-| `firstPrompt` | `string \| undefined` | First meaningful user prompt in the session |
-| `gitBranch` | `string \| undefined` | Git branch at the end of the session |
-| `cwd` | `string \| undefined` | Working directory for the session |
+| Property       | Type                  | Description                                                          |
+| :------------- | :-------------------- | :------------------------------------------------------------------- |
+| `sessionId`    | `string`              | Unique session identifier (UUID)                                     |
+| `summary`      | `string`              | Display title: custom title, auto-generated summary, or first prompt |
+| `lastModified` | `number`              | Last modified time in milliseconds since epoch                       |
+| `fileSize`     | `number`              | Session file size in bytes                                           |
+| `customTitle`  | `string \| undefined` | User-set session title (via `/rename`)                               |
+| `firstPrompt`  | `string \| undefined` | First meaningful user prompt in the session                          |
+| `gitBranch`    | `string \| undefined` | Git branch at the end of the session                                 |
+| `cwd`          | `string \| undefined` | Working directory for the session                                    |
 
 Results are **sorted by `lastModified` descending** (newest first).
 
 **Example:**
 
 ```typescript
-import { listSessions } from "@anthropic-ai/claude-agent-sdk";
+import { listSessions } from '@anthropic-ai/claude-agent-sdk';
 
-const sessions = await listSessions({ dir: "/path/to/project", limit: 10 });
+const sessions = await listSessions({ dir: '/path/to/project', limit: 10 });
 
 for (const session of sessions) {
   console.log(`${session.summary} (${session.sessionId})`);
@@ -79,34 +88,34 @@ function getSessionMessages(
 
 **Parameters:**
 
-| Parameter | Type | Default | Description |
-|:---|:---|:---|:---|
-| `sessionId` | `string` | required | Session UUID to read (from `listSessions()`) |
-| `options.dir` | `string` | `undefined` | Project directory to find the session in. When omitted, searches all projects |
-| `options.limit` | `number` | `undefined` | Maximum number of messages to return |
-| `options.offset` | `number` | `undefined` | Number of messages to skip from the start |
+| Parameter        | Type     | Default     | Description                                                                   |
+| :--------------- | :------- | :---------- | :---------------------------------------------------------------------------- |
+| `sessionId`      | `string` | required    | Session UUID to read (from `listSessions()`)                                  |
+| `options.dir`    | `string` | `undefined` | Project directory to find the session in. When omitted, searches all projects |
+| `options.limit`  | `number` | `undefined` | Maximum number of messages to return                                          |
+| `options.offset` | `number` | `undefined` | Number of messages to skip from the start                                     |
 
 **Return type: `SessionMessage[]`**
 
-| Property | Type | Description |
-|:---|:---|:---|
-| `type` | `"user" \| "assistant"` | Message role |
-| `uuid` | `string` | Unique message identifier |
-| `session_id` | `string` | Session this message belongs to |
-| `message` | `unknown` | Raw message payload from the transcript |
-| `parent_tool_use_id` | `null` | Reserved |
+| Property             | Type                    | Description                             |
+| :------------------- | :---------------------- | :-------------------------------------- |
+| `type`               | `"user" \| "assistant"` | Message role                            |
+| `uuid`               | `string`                | Unique message identifier               |
+| `session_id`         | `string`                | Session this message belongs to         |
+| `message`            | `unknown`               | Raw message payload from the transcript |
+| `parent_tool_use_id` | `null`                  | Reserved                                |
 
 **Example:**
 
 ```typescript
-import { listSessions, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { listSessions, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
 
-const [latest] = await listSessions({ dir: "/path/to/project", limit: 1 });
+const [latest] = await listSessions({ dir: '/path/to/project', limit: 1 });
 
 if (latest) {
   const messages = await getSessionMessages(latest.sessionId, {
-    dir: "/path/to/project",
-    limit: 20
+    dir: '/path/to/project',
+    limit: 20,
   });
 
   for (const msg of messages) {
@@ -133,11 +142,11 @@ Example of the gap:
 
 ```typescript
 const sessionQuery = query({
-  prompt: "",
+  prompt: '',
   options: {
-    resume: "34e94925-f4cc-4685-8869-83c77062ad14",
-    maxTurns: 0
-  }
+    resume: '34e94925-f4cc-4685-8869-83c77062ad14',
+    maxTurns: 0,
+  },
 });
 
 // Only streams 3 messages: system, assistant, result
@@ -150,17 +159,19 @@ for await (const message of sessionQuery) {
 **Proposed solutions from the issue (not yet implemented):**
 
 Option A — An `includeHistory` parameter on `query()`:
+
 ```typescript
 query({
-  prompt: "",
+  prompt: '',
   options: {
     resume: sessionId,
-    includeHistory: true // proposed, not yet implemented
-  }
+    includeHistory: true, // proposed, not yet implemented
+  },
 });
 ```
 
 Option B — A dedicated `getSessionHistory()` function:
+
 ```typescript
 import { getSessionHistory } from '@anthropic-ai/claude-agent-sdk';
 const history = await getSessionHistory(sessionId);
@@ -176,7 +187,7 @@ const history = await getSessionHistory(sessionId);
 
 ```typescript
 type SDKUserMessageReplay = {
-  type: "user";
+  type: 'user';
   uuid: UUID;
   session_id: string;
   message: MessageParam;
@@ -207,6 +218,7 @@ type BaseHookInput = {
 ### 6. Session Storage Location
 
 Sessions are stored at:
+
 ```
 ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
 ```

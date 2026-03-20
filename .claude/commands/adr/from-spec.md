@@ -16,6 +16,7 @@ category: documentation
 ### Step 1: Read the Specification
 
 Read both spec documents:
+
 1. `specs/$ARGUMENTS/01-ideation.md` (exploration and research)
 2. `specs/$ARGUMENTS/02-specification.md` (final decisions)
 
@@ -33,6 +34,7 @@ Scan the spec documents for decision signals:
 - **Rejected alternatives**: "We considered X but...", "Option A vs Option B"
 
 For each candidate decision, assess:
+
 - Is it significant enough for an ADR? (Not trivial implementation details)
 - Is it already covered by an existing ADR?
 - Does it affect the project beyond this single feature?
@@ -44,10 +46,10 @@ Present the identified decisions to the user for review:
 ```markdown
 ## Candidate ADRs from spec: $ARGUMENTS
 
-| # | Proposed Title | Signal | Already Covered? |
-|---|---------------|--------|------------------|
-| 1 | [Title] | [Quote or summary from spec] | No |
-| 2 | [Title] | [Quote or summary from spec] | ADR 0003 |
+| #   | Proposed Title | Signal                       | Already Covered? |
+| --- | -------------- | ---------------------------- | ---------------- |
+| 1   | [Title]        | [Quote or summary from spec] | No               |
+| 2   | [Title]        | [Quote or summary from spec] | ADR 0003         |
 
 Which decisions should become ADRs? (Enter numbers, e.g., "1, 3")
 ```

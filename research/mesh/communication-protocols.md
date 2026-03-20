@@ -1,5 +1,5 @@
 ---
-title: "DorkOS Mesh: Agent-to-Agent Communication Protocols"
+title: 'DorkOS Mesh: Agent-to-Agent Communication Protocols'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -61,6 +61,7 @@ A KQML message is an S-expression with a performative as the outermost token and
 **Key KQML performatives** include: `tell`, `ask-one`, `ask-all`, `achieve`, `subscribe`, `advertise`, `broker-one`, `forward`. The `advertise` and `broker-one` performatives enabled an early form of service discovery through **communication facilitators** — routing agents that knew which agents could handle which types of requests.
 
 **Weaknesses that led to FIPA ACL:**
+
 - No formal semantics; implementations varied widely
 - No interoperability guarantees between systems
 - The meaning of performatives was underspecified
@@ -74,21 +75,21 @@ A KQML message is an S-expression with a performative as the outermost token and
 
 Every FIPA ACL message must contain exactly one **performative** (the communicative act type) and may contain any combination of:
 
-| Parameter | Description |
-|---|---|
-| `:performative` | Mandatory. The speech act (request, inform, query-if, etc.) |
-| `:sender` | Agent identifier of sender |
-| `:receiver` | One or more agent identifiers |
-| `:reply-to` | Where to send replies (if different from sender) |
-| `:content` | The actual payload (in a content language) |
-| `:language` | Content language (e.g., FIPA-SL, Prolog, KIF) |
-| `:encoding` | Content encoding |
-| `:ontology` | Ontology name for interpreting content |
-| `:protocol` | Interaction protocol this message belongs to |
-| `:conversation-id` | Groups messages belonging to a dialogue |
-| `:reply-with` | Expected reply identifier |
-| `:in-reply-to` | Identifier this message replies to |
-| `:reply-by` | Deadline for a reply |
+| Parameter          | Description                                                 |
+| ------------------ | ----------------------------------------------------------- |
+| `:performative`    | Mandatory. The speech act (request, inform, query-if, etc.) |
+| `:sender`          | Agent identifier of sender                                  |
+| `:receiver`        | One or more agent identifiers                               |
+| `:reply-to`        | Where to send replies (if different from sender)            |
+| `:content`         | The actual payload (in a content language)                  |
+| `:language`        | Content language (e.g., FIPA-SL, Prolog, KIF)               |
+| `:encoding`        | Content encoding                                            |
+| `:ontology`        | Ontology name for interpreting content                      |
+| `:protocol`        | Interaction protocol this message belongs to                |
+| `:conversation-id` | Groups messages belonging to a dialogue                     |
+| `:reply-with`      | Expected reply identifier                                   |
+| `:in-reply-to`     | Identifier this message replies to                          |
+| `:reply-by`        | Deadline for a reply                                        |
 
 **FIPA ACL Performatives (22 total):**
 
@@ -176,6 +177,7 @@ ToolCallSummaryMessage(...)
 ```
 
 **Key message fields:**
+
 - `id` — UUID of the message
 - `source` — string name of the sending agent
 - `content` — payload (string, list, or Pydantic BaseModel)
@@ -185,13 +187,13 @@ ToolCallSummaryMessage(...)
 
 **Orchestration patterns AutoGen supports:**
 
-| Pattern | Description | Use Case |
-|---|---|---|
-| Sequential | Agent A → Agent B → Agent C in fixed order | Pipeline workflows |
-| Group Chat | All agents see the same thread; a selector picks who responds | Deliberation, debate |
-| Handoff | Active agent transfers control with context to next agent | Specialization routing |
-| Hierarchical | Supervisor decomposes and delegates to sub-agents | Complex tasks |
-| Concurrent | Multiple agents handle independent subtasks in parallel | Batch processing |
+| Pattern      | Description                                                   | Use Case               |
+| ------------ | ------------------------------------------------------------- | ---------------------- |
+| Sequential   | Agent A → Agent B → Agent C in fixed order                    | Pipeline workflows     |
+| Group Chat   | All agents see the same thread; a selector picks who responds | Deliberation, debate   |
+| Handoff      | Active agent transfers control with context to next agent     | Specialization routing |
+| Hierarchical | Supervisor decomposes and delegates to sub-agents             | Complex tasks          |
+| Concurrent   | Multiple agents handle independent subtasks in parallel       | Batch processing       |
 
 **Critical v0.4 architectural shift:** All interactions are now **asynchronous message exchanges** using Python `asyncio`. Agents run as actors with mailboxes. This eliminates blocking and enables prolonged multi-step workflows.
 
@@ -242,13 +244,13 @@ transfer_to_coder = create_handoff_tool(agent_name="coder")
 
 **Orchestration patterns:**
 
-| Pattern | Description |
-|---|---|
-| Supervisor | Central coordinator node routes to specialist nodes |
-| Scatter-Gather | Fan out to N agents, merge results downstream |
-| Pipeline | Sequential linear graph |
-| Cyclical (loop) | Nodes can route back to previous nodes (with termination conditions) |
-| Peer-to-peer handoff | Agents transfer control without central coordinator |
+| Pattern              | Description                                                          |
+| -------------------- | -------------------------------------------------------------------- |
+| Supervisor           | Central coordinator node routes to specialist nodes                  |
+| Scatter-Gather       | Fan out to N agents, merge results downstream                        |
+| Pipeline             | Sequential linear graph                                              |
+| Cyclical (loop)      | Nodes can route back to previous nodes (with termination conditions) |
+| Peer-to-peer handoff | Agents transfer control without central coordinator                  |
 
 **Key differentiator:** LangGraph explicitly supports **cyclical graphs** (feedback loops), which other frameworks avoid. This enables iterative refinement patterns (write → review → revise → review → ...) but requires careful termination conditions.
 
@@ -282,15 +284,16 @@ MetaGPT takes a radically different approach: **agents communicate via structure
 
 **The MetaGPT insight:** Unstructured natural language between agents introduces noise, ambiguity, and information loss. MetaGPT assigns each role a specific structured output format:
 
-| Role | Output Format |
-|---|---|
+| Role            | Output Format           |
+| --------------- | ----------------------- |
 | Product Manager | PRD document (markdown) |
-| Architect | System design document |
-| Project Manager | Task list (JSON) |
-| Engineer | Source code files |
-| QA Engineer | Test cases |
+| Architect       | System design document  |
+| Project Manager | Task list (JSON)        |
+| Engineer        | Source code files       |
+| QA Engineer     | Test cases              |
 
 **Communication mechanism:**
+
 - Agents implement a **publish-subscribe mechanism** where roles subscribe to specific document types
 - A shared environment (the "blackboard") stores published documents
 - Agents pull relevant documents from the environment rather than receiving pushed messages
@@ -335,6 +338,7 @@ MCP is a **tool and context injection protocol** that defines how a single agent
 **Message format:** JSON-RPC 2.0 over stdio or HTTP+SSE
 
 **Core capabilities:**
+
 - **Tools:** LLM-invocable functions (external APIs, file system, etc.)
 - **Resources:** Application-controlled context datasets
 - **Prompts:** Reusable prompt templates
@@ -410,13 +414,13 @@ ANP uses **Decentralized Identifiers (DIDs)** for agent identity and JSON-LD for
 
 ### 3.5 Protocol Comparison Table
 
-| Protocol | Scope | Transport | Discovery | Session | Best For |
-|---|---|---|---|---|---|
-| MCP | Agent ↔ Tool | HTTP/stdio/SSE | Static | Stateless | Tool injection |
-| A2A | Agent ↔ Agent | HTTP + SSE | Agent Card | Session-aware | Enterprise delegation |
-| ACP | Agent ↔ Agent | HTTP streams | Registry/manifest | Session-aware | Infrastructure agents |
-| ANP | Agent ↔ Agent | HTTPS + DID | Search/P2P | DID-authenticated | Open internet |
-| FIPA ACL | Agent ↔ Agent | Any | AMS directory | Conversation-tracked | Academic/industrial |
+| Protocol | Scope         | Transport      | Discovery         | Session              | Best For              |
+| -------- | ------------- | -------------- | ----------------- | -------------------- | --------------------- |
+| MCP      | Agent ↔ Tool  | HTTP/stdio/SSE | Static            | Stateless            | Tool injection        |
+| A2A      | Agent ↔ Agent | HTTP + SSE     | Agent Card        | Session-aware        | Enterprise delegation |
+| ACP      | Agent ↔ Agent | HTTP streams   | Registry/manifest | Session-aware        | Infrastructure agents |
+| ANP      | Agent ↔ Agent | HTTPS + DID    | Search/P2P        | DID-authenticated    | Open internet         |
+| FIPA ACL | Agent ↔ Agent | Any            | AMS directory     | Conversation-tracked | Academic/industrial   |
 
 ---
 
@@ -429,6 +433,7 @@ DorkOS Mesh is local-first. Here is a comprehensive analysis of IPC options.
 Unix domain sockets (AF_UNIX) are the gold standard for bidirectional local IPC.
 
 **Characteristics:**
+
 - Full duplex (simultaneous read/write)
 - Stream (SOCK_STREAM) or datagram (SOCK_DGRAM) modes
 - No network stack overhead — kernel copies directly between process buffers
@@ -436,6 +441,7 @@ Unix domain sockets (AF_UNIX) are the gold standard for bidirectional local IPC.
 - Path: `/tmp/dorkos-mesh.sock` or `/run/dorkos/agent-{id}.sock`
 
 **Performance:**
+
 - Small messages (100-500 bytes): ~30% slower than named pipes
 - Large messages (10KB+): ~350% faster than named pipes
 - Overall: 15-50% faster than TCP localhost depending on message size
@@ -460,6 +466,7 @@ client.write(JSON.stringify(meshMessage));
 ```
 
 **Tradeoffs:**
+
 - Requires both processes to be running simultaneously
 - Connection management complexity (reconnection, backpressure)
 - No persistence — messages lost if receiver is down
@@ -469,12 +476,14 @@ client.write(JSON.stringify(meshMessage));
 Named pipes are unidirectional channels backed by a kernel buffer.
 
 **Characteristics:**
+
 - Half-duplex (one direction per pipe; need two for bidirectional)
 - File-system path: `/tmp/dorkos-to-researcher`
 - Blocking by default (writer blocks until reader opens)
 - Fastest for small messages (<500 bytes)
 
 **Tradeoffs:**
+
 - Unidirectional — need two pipes per agent pair for full communication
 - Blocking semantics complicate async code
 - No built-in message framing (stream, not message-oriented)
@@ -482,11 +491,13 @@ Named pipes are unidirectional channels backed by a kernel buffer.
 ### 4.3 Shared Memory / Memory-Mapped Files
 
 **Characteristics:**
+
 - Fastest possible IPC — zero copy, no kernel involvement for reads
 - Requires explicit locking (mutexes, semaphores) to prevent races
 - Node.js: `mmap-io` package or `SharedArrayBuffer` (with limitations)
 
 **Tradeoffs:**
+
 - Significantly higher implementation complexity
 - Locking bugs can deadlock the entire system
 - No persistence after process death
@@ -508,6 +519,7 @@ Named pipes are unidirectional channels backed by a kernel buffer.
 ```
 
 **Delivery protocol:**
+
 1. Sender writes message to `tmp/{unique-id}` using an atomic write
 2. Sender calls `rename(tmp/{id}, new/{id})` — atomic on POSIX filesystems
 3. Receiver polls `new/` directory or uses `fs.watch()`
@@ -517,6 +529,7 @@ Named pipes are unidirectional channels backed by a kernel buffer.
 **Why rename is atomic:** POSIX guarantees that `rename()` is atomic — either the file appears in the destination or it does not. There is no intermediate state. This is why Maildir needs no locks.
 
 **Advantages for DorkOS Mesh:**
+
 - Works even when agents are offline — messages persist on disk
 - No server process required
 - Agents can be implemented in any language
@@ -542,7 +555,7 @@ async function sendMessage(toAgentId: string, msg: MeshMessage): Promise<void> {
   const newPath = path.join(agentMailbox, 'new', msgId);
 
   await fs.writeFile(tmpPath, JSON.stringify(msg, null, 2), 'utf-8');
-  await fs.rename(tmpPath, newPath);  // Atomic delivery
+  await fs.rename(tmpPath, newPath); // Atomic delivery
 }
 
 function watchMailbox(agentId: string, handler: (msg: MeshMessage) => Promise<void>): void {
@@ -554,11 +567,11 @@ function watchMailbox(agentId: string, handler: (msg: MeshMessage) => Promise<vo
     const curPath = path.join(MESH_ROOT, agentId, 'mailbox', 'cur', filename);
 
     try {
-      await fs.rename(newPath, curPath);  // Claim the message
+      await fs.rename(newPath, curPath); // Claim the message
       const content = await fs.readFile(curPath, 'utf-8');
       const msg: MeshMessage = JSON.parse(content);
       await handler(msg);
-      await fs.unlink(curPath);  // Done
+      await fs.unlink(curPath); // Done
     } catch {
       // Another process claimed it first — that's fine
     }
@@ -606,6 +619,7 @@ RETURNING *;
 ```
 
 **Advantages:**
+
 - Full ACID durability — messages survive crashes
 - Easy to query for debugging (`SELECT * FROM mesh_messages WHERE from_agent = 'researcher'`)
 - Already a DorkOS dependency (`better-sqlite3` is used by PulseStore)
@@ -613,6 +627,7 @@ RETURNING *;
 - Consumer groups via the claim pattern
 
 **Disadvantages:**
+
 - Not designed for real-time push notification — requires polling or SQLite update hooks
 - Write contention under high volume (WAL mode mitigates this)
 - Database-as-IPC is considered an anti-pattern at scale, but fine at local agent counts
@@ -622,12 +637,14 @@ RETURNING *;
 ### 4.6 Local HTTP / gRPC
 
 **Local HTTP (localhost):**
+
 - Each agent runs an HTTP server on a dedicated port
 - Agents discover each other via the registry (ports published in manifests)
 - High implementation overhead; port management complexity
 - Easiest for developers familiar with REST
 
 **gRPC (HTTP/2 over TCP):**
+
 - Strongly typed via Protocol Buffers
 - Bidirectional streaming support
 - Overkill for a local-first system
@@ -635,14 +652,14 @@ RETURNING *;
 
 ### 4.7 IPC Method Comparison for DorkOS Mesh
 
-| Method | Persistence | Push | Lock-Free | Debuggability | Complexity | Recommended |
-|---|---|---|---|---|---|---|
-| Unix domain sockets | No | Yes | Yes | Low | Medium | For real-time |
-| Named pipes | No | Yes (blocking) | No | Low | High | Avoid |
-| Shared memory | No | No (poll) | No | Very Low | Very High | Avoid |
-| Maildir (files) | Yes | Via fs.watch | Yes | High | Low | **Primary** |
-| SQLite | Yes | Via hooks | No (locking) | High | Medium | **Persistent queue** |
-| Local HTTP | No | No (poll) | Yes | High | High | For cross-machine |
+| Method              | Persistence | Push           | Lock-Free    | Debuggability | Complexity | Recommended          |
+| ------------------- | ----------- | -------------- | ------------ | ------------- | ---------- | -------------------- |
+| Unix domain sockets | No          | Yes            | Yes          | Low           | Medium     | For real-time        |
+| Named pipes         | No          | Yes (blocking) | No           | Low           | High       | Avoid                |
+| Shared memory       | No          | No (poll)      | No           | Very Low      | Very High  | Avoid                |
+| Maildir (files)     | Yes         | Via fs.watch   | Yes          | High          | Low        | **Primary**          |
+| SQLite              | Yes         | Via hooks      | No (locking) | High          | Medium     | **Persistent queue** |
+| Local HTTP          | No          | No (poll)      | Yes          | High          | High       | For cross-machine    |
 
 ---
 
@@ -678,11 +695,13 @@ Reviewer2  <──[deliver]─────────────────�
 ### 5.3 Actor Model / Mailbox Pattern
 
 Each agent is an **actor**: an independent unit with:
+
 1. A private **mailbox** (message queue)
 2. Private **state** (not shared)
 3. A **behavior** (message handler)
 
 An actor can only affect the world by:
+
 - Sending messages to other actors
 - Creating new actors
 - Changing its own state for the next message
@@ -690,6 +709,7 @@ An actor can only affect the world by:
 **Key property:** Actors process **one message at a time** from their mailbox. This eliminates concurrency bugs within an actor. Multiple actors can run in parallel.
 
 **Why this maps perfectly to DorkOS Mesh:** Each Claude Code agent is naturally an actor. It has:
+
 - A mailbox (the agent's `/mailbox/new/` directory)
 - Private state (its JSONL transcript, memory files)
 - A behavior (its CLAUDE.md rules and system prompt)
@@ -705,6 +725,7 @@ Producer ──[enqueue]──> Queue ──[dequeue]──> Consumer
 Each message is consumed by exactly one consumer. Reliable delivery via acknowledgements. If the consumer crashes before ACK, the message goes back to the queue.
 
 **Relevant queue systems for local use:**
+
 - **Redis Streams:** Durable, supports consumer groups, requires Redis process
 - **NATS JetStream:** High-performance, built-in persistence, requires NATS process
 - **SQLite queue:** Zero additional dependencies, ACID-safe, good for low-volume
@@ -728,6 +749,7 @@ This is MetaGPT's approach — agents publish structured documents to a shared e
 When a message cannot be delivered (agent offline, TTL expired, repeated failures), it goes to a **Dead Letter Queue (DLQ)**. An operator or supervisor agent can inspect and retry or discard dead letters.
 
 **DorkOS Mesh implementation:**
+
 ```
 ~/.dork/mesh/agents/{agent-id}/mailbox/
   new/     # Delivered
@@ -740,6 +762,7 @@ When a message cannot be delivered (agent offline, TTL expired, repeated failure
 ## 6. Loop Prevention and Safety
 
 This is the most critical safety concern for autonomous agent networks. Loops manifest as:
+
 - Agent A asks Agent B → Agent B asks Agent A → infinite cycle
 - Agent A creates a task → Scheduler runs the task → task spawns Agent A again
 - Cascading delegations that explode exponentially
@@ -751,20 +774,20 @@ Every message in DorkOS Mesh should carry these safety fields:
 ```typescript
 interface MeshMessage {
   // Identity
-  id: string;              // UUID v4 — globally unique message ID
-  conversationId: string;  // Groups all messages in one logical conversation
-  correlationId?: string;  // For request/reply matching
+  id: string; // UUID v4 — globally unique message ID
+  conversationId: string; // Groups all messages in one logical conversation
+  correlationId?: string; // For request/reply matching
 
   // Routing
-  from: string;            // Sending agent ID
-  to: string;              // Receiving agent ID
-  replyTo?: string;        // Where to send the response
+  from: string; // Sending agent ID
+  to: string; // Receiving agent ID
+  replyTo?: string; // Where to send the response
 
   // Loop prevention
-  hopCount: number;        // Incremented at each agent boundary
-  maxHops: number;         // Hard limit (default: 5)
+  hopCount: number; // Incremented at each agent boundary
+  maxHops: number; // Hard limit (default: 5)
   ancestorChain: string[]; // Full path of agent IDs that touched this message
-  ttl: number;             // Unix timestamp expiry (default: now + 30 minutes)
+  ttl: number; // Unix timestamp expiry (default: now + 30 minutes)
 
   // Content
   performative: MeshPerformative;
@@ -772,7 +795,7 @@ interface MeshMessage {
   contentType: 'application/json' | 'text/plain' | 'text/markdown';
 
   // Metadata
-  createdAt: string;       // ISO 8601
+  createdAt: string; // ISO 8601
   priority: 'low' | 'normal' | 'high';
 }
 ```
@@ -807,6 +830,7 @@ function receiveMessage(msg: MeshMessage): void {
 Messages expire after a configurable duration. If an agent retrieves a message with `ttl < Date.now()`, it discards it without processing.
 
 **Default TTL recommendations:**
+
 - Simple requests: 5 minutes
 - Long-running research tasks: 2 hours
 - Background/scheduled tasks: 24 hours
@@ -822,6 +846,7 @@ This is analogous to BGP's AS_PATH attribute in internet routing, which prevents
 A per-agent-pair circuit breaker prevents one misbehaving agent from flooding another.
 
 **States:**
+
 - **CLOSED:** Normal operation. Messages pass through.
 - **OPEN:** Failure threshold exceeded. All messages to this agent are rejected immediately.
 - **HALF-OPEN:** After cool-down period, let one probe message through. If it succeeds, CLOSE. If it fails, OPEN again.
@@ -864,6 +889,7 @@ class AgentCircuitBreaker {
 ### 6.6 Rate Limiting
 
 Agents should have per-sender rate limits. An agent that receives more than N messages from the same sender in a time window should:
+
 1. Queue the excess (if backpressure is acceptable)
 2. Reject with a `RATE_LIMITED` response
 3. Trigger circuit breaker investigation
@@ -919,8 +945,8 @@ const conversationId = `mesh-${randomUUID()}`;
 // All derived messages inherit conversationId
 const delegatedMsg = {
   ...subTask,
-  conversationId,  // Same as parent
-  correlationId: randomUUID(),  // New for this specific request/reply pair
+  conversationId, // Same as parent
+  correlationId: randomUUID(), // New for this specific request/reply pair
 };
 ```
 
@@ -960,69 +986,69 @@ Upgrade to Unix domain sockets for real-time message delivery, keeping Maildir f
 
 ```typescript
 type MeshPerformative =
-  | 'request'          // Ask agent to do something
-  | 'inform'           // Share information (no response expected)
-  | 'query'            // Ask a question, expect an answer
-  | 'answer'           // Response to a query
-  | 'delegate'         // Contract Net: assign a task
-  | 'propose'          // Contract Net: offer to do a task
-  | 'accept-proposal'  // Contract Net: award the contract
-  | 'reject-proposal'  // Contract Net: decline the bid
-  | 'result'           // Deliver completed work
-  | 'failure'          // Report that a task failed
-  | 'cancel'           // Cancel an in-progress task
-  | 'subscribe'        // Subscribe to a topic
-  | 'publish'          // Publish an event to a topic
-  | 'ping'             // Health check
-  | 'pong'             // Health check response
+  | 'request' // Ask agent to do something
+  | 'inform' // Share information (no response expected)
+  | 'query' // Ask a question, expect an answer
+  | 'answer' // Response to a query
+  | 'delegate' // Contract Net: assign a task
+  | 'propose' // Contract Net: offer to do a task
+  | 'accept-proposal' // Contract Net: award the contract
+  | 'reject-proposal' // Contract Net: decline the bid
+  | 'result' // Deliver completed work
+  | 'failure' // Report that a task failed
+  | 'cancel' // Cancel an in-progress task
+  | 'subscribe' // Subscribe to a topic
+  | 'publish' // Publish an event to a topic
+  | 'ping' // Health check
+  | 'pong'; // Health check response
 
 interface MeshMessage {
   // Version
   meshVersion: '1.0';
 
   // Identity
-  id: string;                    // UUID v4
-  conversationId: string;        // UUID v4 — groups related messages
-  correlationId?: string;        // For request/reply matching
+  id: string; // UUID v4
+  conversationId: string; // UUID v4 — groups related messages
+  correlationId?: string; // For request/reply matching
 
   // Routing
-  from: AgentRef;                // { id, manifestPath }
+  from: AgentRef; // { id, manifestPath }
   to: AgentRef;
-  replyTo?: AgentRef;            // Where to send response (if different)
+  replyTo?: AgentRef; // Where to send response (if different)
 
   // Loop prevention (required)
-  hopCount: number;              // Starts at 0, incremented at each hop
-  maxHops: number;               // Default: 5
-  ancestorChain: string[];       // Agent IDs that handled this message
-  ttl: number;                   // Unix timestamp (ms) expiry
+  hopCount: number; // Starts at 0, incremented at each hop
+  maxHops: number; // Default: 5
+  ancestorChain: string[]; // Agent IDs that handled this message
+  ttl: number; // Unix timestamp (ms) expiry
   budget?: {
     maxSteps?: number;
     maxTokens?: number;
-    deadline?: number;           // Unix timestamp (ms)
+    deadline?: number; // Unix timestamp (ms)
   };
 
   // Content
   performative: MeshPerformative;
   content: unknown;
   contentType: 'application/json' | 'text/plain' | 'text/markdown';
-  artifacts?: MeshArtifact[];    // Output files, structured results
+  artifacts?: MeshArtifact[]; // Output files, structured results
 
   // Metadata
-  createdAt: string;             // ISO 8601
+  createdAt: string; // ISO 8601
   priority: 'low' | 'normal' | 'high';
-  tags?: string[];               // For routing/filtering
+  tags?: string[]; // For routing/filtering
 }
 
 interface AgentRef {
-  id: string;           // Stable agent identifier (e.g., "researcher", "coder")
+  id: string; // Stable agent identifier (e.g., "researcher", "coder")
   manifestPath: string; // Absolute path to agent's manifest.json
 }
 
 interface MeshArtifact {
   name: string;
   contentType: string;
-  content?: string;    // Inline for small artifacts
-  path?: string;       // File path for large artifacts
+  content?: string; // Inline for small artifacts
+  path?: string; // File path for large artifacts
 }
 ```
 
@@ -1190,6 +1216,7 @@ FactChecker ──[delegate]──> Planner
 ## 10. Sources
 
 ### Classical Protocols
+
 - [FIPA ACL Introduction - SmythOS](https://smythos.com/developers/agent-development/fipa-agent-communication-language/)
 - [Agent Communications Language - Wikipedia](https://en.wikipedia.org/wiki/Agent_Communications_Language)
 - [FIPA ACL JADE Tutorial (PDF)](https://jade.tilab.com/papers/JADETutorialIEEE/JADETutorial_FIPA.pdf)
@@ -1199,6 +1226,7 @@ FactChecker ──[delegate]──> Planner
 - [The Contract Net Protocol: High-Level Communication (Smith 1980)](https://www.reidgsmith.com/The_Contract_Net_Protocol_Dec-1980.pdf)
 
 ### Modern AI Frameworks
+
 - [AutoGen Microsoft Research](https://www.microsoft.com/en-us/research/project/autogen/)
 - [AutoGen Messages Documentation](https://microsoft.github.io/autogen/dev/user-guide/agentchat-user-guide/tutorial/messages.html)
 - [AutoGen AgentChat Messages API Reference](https://microsoft.github.io/autogen/stable//reference/python/autogen_agentchat.messages.html)
@@ -1213,6 +1241,7 @@ FactChecker ──[delegate]──> Planner
 - [Agency Swarm GitHub](https://github.com/VRSEN/agency-swarm)
 
 ### Interoperability Standards
+
 - [A2A Protocol Announcement - Google Developers Blog](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)
 - [A2A Protocol Site](https://a2a-protocol.org/latest/)
 - [Survey of Agent Interoperability Protocols (MCP, A2A, ACP, ANP) - arxiv](https://arxiv.org/html/2505.02279v1)
@@ -1220,6 +1249,7 @@ FactChecker ──[delegate]──> Planner
 - [What is A2A - InfoWorld](https://www.infoworld.com/article/4088217/what-is-a2a-how-the-agent-to-agent-protocol-enables-autonomous-collaboration.html)
 
 ### IPC and Message Passing
+
 - [IPC Performance Comparison - Baeldung](https://www.baeldung.com/linux/ipc-performance-comparison)
 - [Benchmark TCP/IP, Unix domain socket, Named pipe](https://www.yanxurui.cc/posts/server/2023-11-28-benchmark-tcp-uds-namedpipe/)
 - [Maildir - Wikipedia](https://en.wikipedia.org/wiki/Maildir)
@@ -1230,6 +1260,7 @@ FactChecker ──[delegate]──> Planner
 - [Erlang Actor Model - Underjord](https://underjord.io/unpacking-elixir-the-actor-model.html)
 
 ### Loop Prevention and Safety
+
 - [Prevent Agent Loops - Codieshub](https://codieshub.com/for-ai/prevent-agent-loops-costs)
 - [Why Multi-Agent LLM Systems Fail - Galileo](https://galileo.ai/blog/multi-agent-llm-systems-fail)
 - [Circuit Breaker Pattern - Aerospike](https://aerospike.com/blog/circuit-breaker-pattern/)
@@ -1238,10 +1269,12 @@ FactChecker ──[delegate]──> Planner
 - [Correlation IDs - Microsoft Engineering Playbook](https://microsoft.github.io/code-with-engineering-playbook/observability/correlation-id/)
 
 ### Agent Discovery
+
 - [A2A Agent Discovery](https://a2a-protocol.org/latest/topics/agent-discovery/)
 - [Agent Communication Protocol Discovery](https://agentcommunicationprotocol.dev/core-concepts/agent-discovery)
 - [Agent Name Service (ANS) - arxiv](https://arxiv.org/html/2505.10609v1)
 
 ### Redis / NATS
+
 - [Redis Streams vs Pub/Sub - Redis blog](https://redis.io/blog/what-to-choose-for-your-synchronous-and-asynchronous-communication-needs-redis-streams-redis-pub-sub-kafka-etc-best-approaches-synchronous-asynchronous-communication/)
 - [NATS vs Redis - hoop.dev](https://hoop.dev/blog/what-nats-redis-actually-does-and-when-to-use-it/)

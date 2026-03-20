@@ -27,12 +27,14 @@
 ## Files Created
 
 **Source files:**
+
 - `apps/server/src/services/agent-types.ts` (49 lines)
 - `apps/server/src/lib/sdk-utils.ts` (43 lines)
 - `apps/server/src/services/sdk-event-mapper.ts` (139 lines)
 - `apps/server/src/services/context-builder.ts` (92 lines)
 
 **Test files:**
+
 - `apps/server/src/services/__tests__/sdk-event-mapper.test.ts` (11 tests)
 - `apps/server/src/services/__tests__/context-builder.test.ts` (12 tests)
 

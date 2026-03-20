@@ -54,13 +54,13 @@ status: ideation
 
 ### Primary Components
 
-| File | Role | Lines |
-|---|---|---|
-| `apps/server/src/services/agent-manager.ts` | SDK orchestration — the ONLY place that calls `query()` | 550 |
-| `apps/server/src/services/interactive-handlers.ts` | Tool approval + question flows via `canUseTool` | 106 |
-| `apps/server/src/routes/sessions.ts` | HTTP route handlers for messages, sessions | 300 |
-| `apps/server/src/index.ts` | Server startup, singleton wiring | ~80 |
-| `packages/shared/src/schemas.ts` | Zod schemas for all shared types | ~300 |
+| File                                               | Role                                                    | Lines |
+| -------------------------------------------------- | ------------------------------------------------------- | ----- |
+| `apps/server/src/services/agent-manager.ts`        | SDK orchestration — the ONLY place that calls `query()` | 550   |
+| `apps/server/src/services/interactive-handlers.ts` | Tool approval + question flows via `canUseTool`         | 106   |
+| `apps/server/src/routes/sessions.ts`               | HTTP route handlers for messages, sessions              | 300   |
+| `apps/server/src/index.ts`                         | Server startup, singleton wiring                        | ~80   |
+| `packages/shared/src/schemas.ts`                   | Zod schemas for all shared types                        | ~300  |
 
 ### Shared Dependencies
 
@@ -103,12 +103,14 @@ User message (string)
 ### Potential Blast Radius
 
 **Direct changes (MUST change):**
+
 1. `apps/server/src/services/agent-manager.ts` — Add `setMcpServers()`, convert prompt to AsyncIterable
 2. `apps/server/src/services/mcp-tool-server.ts` — **NEW FILE** — PoC tool definitions
 3. `apps/server/src/index.ts` — Wire up MCP tool server at startup
 4. `apps/server/src/services/__tests__/mcp-tool-server.test.ts` — **NEW FILE** — Tool handler unit tests
 
 **Indirectly affected (VERIFY, no changes expected):**
+
 - `routes/sessions.ts` — Generic handler, will auto-work
 - `interactive-handlers.ts` — `canUseTool` handles `mcp__*` names transparently
 - Client layer — Receives same `StreamEvent` types, tool_call rendering is generic
@@ -166,25 +168,27 @@ Build MCP servers per `sendMessage()` call based on session context.
 
 ### SDK Constraints Discovered
 
-| Constraint | Impact |
-|---|---|
-| **`prompt` must be `AsyncIterable` when `mcpServers` is set** | Must wrap string prompt in generator. Safe to apply unconditionally. |
-| Tool names follow `mcp__{server}__{tool}` pattern | PoC tools will appear as `mcp__dorkos__ping`, `mcp__dorkos__get_server_info` |
-| `canUseTool` fires for MCP tools | Existing approval flow works unchanged |
-| `resume` compatible with `mcpServers` | Session continuity preserved |
-| SDK MCP servers must be re-injected on each `query()` call | Static field on AgentManager, passed every time |
-| Tool handler errors should return `{ isError: true }`, not throw | Wrap handlers in try/catch |
-| `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` default is 60s | Set env var if tools take >60s (not needed for PoC) |
+| Constraint                                                       | Impact                                                                       |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **`prompt` must be `AsyncIterable` when `mcpServers` is set**    | Must wrap string prompt in generator. Safe to apply unconditionally.         |
+| Tool names follow `mcp__{server}__{tool}` pattern                | PoC tools will appear as `mcp__dorkos__ping`, `mcp__dorkos__get_server_info` |
+| `canUseTool` fires for MCP tools                                 | Existing approval flow works unchanged                                       |
+| `resume` compatible with `mcpServers`                            | Session continuity preserved                                                 |
+| SDK MCP servers must be re-injected on each `query()` call       | Static field on AgentManager, passed every time                              |
+| Tool handler errors should return `{ isError: true }`, not throw | Wrap handlers in try/catch                                                   |
+| `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` default is 60s                | Set env var if tools take >60s (not needed for PoC)                          |
 
 ### PoC Tool Design
 
 **Tool 1: `ping`** (validates basic plumbing)
+
 - Zero input schema (validates empty Zod object works)
 - Synchronous handler
 - Returns `{ status: "pong", timestamp: "...", server: "dorkos" }`
 - Agent will use it when asked "can you ping the server?"
 
 **Tool 2: `get_server_info`** (validates Zod input, async handler, service access)
+
 - Zod schema with optional boolean field
 - Accesses `process.uptime()`, `process.env.DORKOS_PORT`, server version
 - Returns structured JSON

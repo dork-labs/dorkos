@@ -9,12 +9,7 @@ import {
   SidebarTabRow,
   SidebarFooterBar,
 } from '@/layers/features/session-list';
-import {
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  TooltipProvider,
-} from '@/layers/shared/ui';
+import { SidebarGroup, SidebarMenu, SidebarMenuItem, TooltipProvider } from '@/layers/shared/ui';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -112,33 +107,21 @@ function SessionItemShowcase() {
       <ShowcaseLabel>Default (inactive)</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem
-            session={MOCK_SESSIONS[0]}
-            isActive={false}
-            onClick={() => {}}
-          />
+          <SessionItem session={MOCK_SESSIONS[0]} isActive={false} onClick={() => {}} />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Active</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem
-            session={MOCK_SESSIONS[0]}
-            isActive={true}
-            onClick={() => {}}
-          />
+          <SessionItem session={MOCK_SESSIONS[0]} isActive={true} onClick={() => {}} />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Bypass permissions</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem
-            session={MOCK_SESSIONS[3]}
-            isActive={false}
-            onClick={() => {}}
-          />
+          <SessionItem session={MOCK_SESSIONS[3]} isActive={false} onClick={() => {}} />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
@@ -156,12 +139,7 @@ function SessionItemShowcase() {
           </button>
           {showNew && (
             <SidebarItemWrapper>
-              <SessionItem
-                session={MOCK_SESSIONS[0]}
-                isActive={false}
-                onClick={() => {}}
-                isNew
-              />
+              <SessionItem session={MOCK_SESSIONS[0]} isActive={false} onClick={() => {}} isNew />
             </SidebarItemWrapper>
           )}
         </div>
@@ -188,9 +166,7 @@ function SidebarItemWrapper({ children }: { children: React.ReactNode }) {
 // ---------------------------------------------------------------------------
 
 function SessionsViewShowcase() {
-  const [activeId, setActiveId] = useState<string | null>(
-    MOCK_SESSIONS[0].id
-  );
+  const [activeId, setActiveId] = useState<string | null>(MOCK_SESSIONS[0].id);
 
   return (
     <PlaygroundSection
@@ -211,11 +187,7 @@ function SessionsViewShowcase() {
       <ShowcaseLabel>Empty state</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="border-border h-40 w-64 overflow-hidden rounded-lg border">
-          <SessionsView
-            activeSessionId={null}
-            groupedSessions={[]}
-            onSessionClick={() => {}}
-          />
+          <SessionsView activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -227,15 +199,9 @@ function SessionsViewShowcase() {
 // ---------------------------------------------------------------------------
 
 function SidebarTabRowShowcase() {
-  const [tab1, setTab1] = useState<'sessions' | 'schedules' | 'connections'>(
-    'sessions'
-  );
-  const [tab2, setTab2] = useState<'sessions' | 'schedules' | 'connections'>(
-    'sessions'
-  );
-  const [tab3, setTab3] = useState<'sessions' | 'schedules' | 'connections'>(
-    'sessions'
-  );
+  const [tab1, setTab1] = useState<'sessions' | 'schedules' | 'connections'>('sessions');
+  const [tab2, setTab2] = useState<'sessions' | 'schedules' | 'connections'>('sessions');
+  const [tab3, setTab3] = useState<'sessions' | 'schedules' | 'connections'>('sessions');
 
   return (
     <PlaygroundSection

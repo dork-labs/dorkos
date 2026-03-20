@@ -14,13 +14,13 @@ Every agent rejected "Your AI Never Sleeps" as the primary headline. Every agent
 
 ## What Each Agent Contributed
 
-| Agent | Core Concept | Best Line | Unique Contribution |
-|---|---|---|---|
-| **Ogilvy** | Session → Employment | "Give your agent a job." | The employment infrastructure table (schedule = Pulse, mailbox = Relay, org chart = Mesh). Devastating specificity. |
-| **Jobs** | Tool → Operational | "Your agents are brilliant. They just have no idea what to do when you leave the room." | Narrative walkthrough (Kai's day, before/after). OS metaphor must be *earned*, not stated. |
-| **Godin** | Intelligence ↔ Infrastructure gap | "You know how Claude forgets everything between sessions? Someone built an OS for that." | The "word of mouth sentence" test. Tribal recognition as the purple cow. |
-| **Ive** | Boot sequence as website experience | "DorkOS is starting." / "Ready." | The site itself should feel like an OS initializing. Subsystems activating on scroll. |
-| **Wieden** | Human-gated intelligence | "You slept. They shipped." | The 2:47am timeline. Identity over features. The sticker test. |
+| Agent      | Core Concept                        | Best Line                                                                                | Unique Contribution                                                                                                 |
+| ---------- | ----------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Ogilvy** | Session → Employment                | "Give your agent a job."                                                                 | The employment infrastructure table (schedule = Pulse, mailbox = Relay, org chart = Mesh). Devastating specificity. |
+| **Jobs**   | Tool → Operational                  | "Your agents are brilliant. They just have no idea what to do when you leave the room."  | Narrative walkthrough (Kai's day, before/after). OS metaphor must be _earned_, not stated.                          |
+| **Godin**  | Intelligence ↔ Infrastructure gap   | "You know how Claude forgets everything between sessions? Someone built an OS for that." | The "word of mouth sentence" test. Tribal recognition as the purple cow.                                            |
+| **Ive**    | Boot sequence as website experience | "DorkOS is starting." / "Ready."                                                         | The site itself should feel like an OS initializing. Subsystems activating on scroll.                               |
+| **Wieden** | Human-gated intelligence            | "You slept. They shipped."                                                               | The 2:47am timeline. Identity over features. The sticker test.                                                      |
 
 ---
 
@@ -48,15 +48,19 @@ DorkOS closes the gap.
 Open with the gap. Not the product. Not the category. The felt absurdity.
 
 **Primary headline** (combining Jobs + Wieden):
+
 > Your agents are brilliant. They just can't do anything when you leave.
 
 **Or** (Ogilvy's long-form option):
+
 > You hired the smartest developer who ever lived. Then you gave them amnesia, no schedule, and a terminal that closes when you look away.
 
 **Subhead:**
+
 > The operating system for autonomous AI agents.
 
 **CTA:**
+
 > `npm install -g dorkos`
 
 ### 2. The Villain — Recognition (first scroll)
@@ -68,7 +72,7 @@ Name the specific moments. Not abstract. Felt. (Wieden's "Dead Terminal" cards +
 - The tab graveyard — ten agents, no coordination
 - The flow-killer — 15 minutes lost for a 10-second answer
 
-Then the pivot (Jobs): *"We solved this for applications fifty years ago. We called it an operating system."*
+Then the pivot (Jobs): _"We solved this for applications fifty years ago. We called it an operating system."_
 
 This line earns its place mid-page, after the emotional setup. Not as the opener.
 
@@ -76,16 +80,17 @@ This line earns its place mid-page, after the emotional setup. Not as the opener
 
 Reveal modules as answers to the villain moments (Godin + Ogilvy):
 
-| The gap | The fix | Module |
-|---|---|---|
-| No schedule | Cron-based autonomous execution | Pulse |
-| No communication | Built-in messaging + Telegram | Relay |
-| No colleagues | Agent discovery and network | Mesh |
-| No memory | Persistent context across sessions | Wing |
-| No oversight | Browser-based command center | Console |
-| No improvement loop | Signal → hypothesis → dispatch | Loop |
+| The gap             | The fix                            | Module  |
+| ------------------- | ---------------------------------- | ------- |
+| No schedule         | Cron-based autonomous execution    | Pulse   |
+| No communication    | Built-in messaging + Telegram      | Relay   |
+| No colleagues       | Agent discovery and network        | Mesh    |
+| No memory           | Persistent context across sessions | Wing    |
+| No oversight        | Browser-based command center       | Console |
+| No improvement loop | Signal → hypothesis → dispatch     | Loop    |
 
 **Or** as Wieden's timeline narrative:
+
 - 11:14pm — schedule tasks
 - 11:15pm — close the laptop
 - 2:47am — CI breaks, agent fixes it
@@ -101,7 +106,7 @@ npm install -g dorkos
 
 Ive: presented like a terminal prompt — monospaced, high contrast, generous whitespace. The gravity of an action, not a suggestion.
 
-Below it: *Open source. Self-hosted. Yours.* (Ogilvy)
+Below it: _Open source. Self-hosted. Yours._ (Ogilvy)
 
 ### 5. The Identity Close — The Tribe
 
@@ -115,22 +120,22 @@ Origin story as provenance stamp (Ive): brief, factual, present without demandin
 
 ## Lines to Keep
 
-| Line | Where it lives | Why |
-|---|---|---|
-| "Your AI Never Sleeps" | Pulse section header | It's a feature line, not a concept. Perfect for the scheduling module. |
-| "Built by dorks. For dorks. Run by you." | Identity close / footer | Closing tribal line, not opener. Premature at the top. |
-| "We solved this for applications fifty years ago." | Mid-page pivot | Only works AFTER the emotional setup. |
-| "One Person. Ten Agents. Ship Around the Clock." | Below install CTA | Paints the after-picture. |
-| `npm install -g dorkos` | Primary CTA | Presented once, at maximum desire. |
+| Line                                               | Where it lives          | Why                                                                    |
+| -------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| "Your AI Never Sleeps"                             | Pulse section header    | It's a feature line, not a concept. Perfect for the scheduling module. |
+| "Built by dorks. For dorks. Run by you."           | Identity close / footer | Closing tribal line, not opener. Premature at the top.                 |
+| "We solved this for applications fifty years ago." | Mid-page pivot          | Only works AFTER the emotional setup.                                  |
+| "One Person. Ten Agents. Ship Around the Clock."   | Below install CTA       | Paints the after-picture.                                              |
+| `npm install -g dorkos`                            | Primary CTA             | Presented once, at maximum desire.                                     |
 
 ## New Lines to Consider
 
-| Line | Source | Use |
-|---|---|---|
-| "You slept. They shipped." | Wieden | Sticker-ready. Social bio. Could be primary tagline. |
-| "Give your agent a job." | Ogilvy | CTA alternative. Implies the whole product in 5 words. |
-| "DorkOS is starting." / "Ready." | Ive | Design language for the boot-sequence experience. |
-| "You know how Claude forgets everything? Someone built an OS for that." | Godin | The word-of-mouth sentence. |
+| Line                                                                    | Source | Use                                                    |
+| ----------------------------------------------------------------------- | ------ | ------------------------------------------------------ |
+| "You slept. They shipped."                                              | Wieden | Sticker-ready. Social bio. Could be primary tagline.   |
+| "Give your agent a job."                                                | Ogilvy | CTA alternative. Implies the whole product in 5 words. |
+| "DorkOS is starting." / "Ready."                                        | Ive    | Design language for the boot-sequence experience.      |
+| "You know how Claude forgets everything? Someone built an OS for that." | Godin  | The word-of-mouth sentence.                            |
 
 ---
 

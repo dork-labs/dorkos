@@ -22,9 +22,7 @@ export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanel
       transition={{ duration: 0.2 }}
       className="mb-1.5 overflow-hidden"
     >
-      <div className="text-muted-foreground mb-1 text-xs font-medium">
-        Queued ({queue.length})
-      </div>
+      <div className="text-muted-foreground mb-1 text-xs font-medium">Queued ({queue.length})</div>
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">
           {queue.map((item, i) => (
@@ -44,14 +42,10 @@ export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanel
                 onClick={() => onEdit(i)}
                 className={cn(
                   'group flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors',
-                  editingIndex === i
-                    ? 'border-primary bg-muted border-l-2'
-                    : 'hover:bg-muted/50'
+                  editingIndex === i ? 'border-primary bg-muted border-l-2' : 'hover:bg-muted/50'
                 )}
               >
-                <span className="text-muted-foreground shrink-0 text-xs font-medium">
-                  {i + 1}.
-                </span>
+                <span className="text-muted-foreground shrink-0 text-xs font-medium">{i + 1}.</span>
                 <span className="text-muted-foreground line-clamp-1 flex-1 text-sm">
                   {item.content}
                 </span>

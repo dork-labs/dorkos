@@ -21,6 +21,7 @@ status: draft
 Build `@dorkos/mesh` — a pure TypeScript library package at `packages/mesh/` that implements agent discovery, registration, and registry for DorkOS. This is the foundation for the Mesh module: everything in Mesh Specs 2-4 (HTTP routes, client UI, topology, observability) builds on this library.
 
 The library provides:
+
 - **Pluggable discovery strategies** that scan the filesystem for agent projects (`.claude/`, `.cursor/`, `.codex/`)
 - **A two-phase lifecycle** — discovery finds candidates, registration commits them to the mesh
 - **SQLite-backed persistence** for the agent registry and deny list
@@ -59,14 +60,14 @@ Relay Specs 1-2 are complete — `@dorkos/relay` provides endpoint registration 
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `better-sqlite3` | `^11.0.0` | SQLite persistence (WAL mode) for registry + deny list |
-| `@types/better-sqlite3` | `^7.6.0` | TypeScript types (devDep) |
-| `ulidx` | `^2.4.0` | Monotonic ULID generation for agent IDs |
-| `@dorkos/shared` | `*` | Zod schemas (mesh-schemas.ts) |
-| `@dorkos/relay` | `*` | Optional peer dependency for endpoint registration |
-| `@dorkos/typescript-config` | `*` | Shared tsconfig preset (devDep) |
+| Dependency                  | Version   | Purpose                                                |
+| --------------------------- | --------- | ------------------------------------------------------ |
+| `better-sqlite3`            | `^11.0.0` | SQLite persistence (WAL mode) for registry + deny list |
+| `@types/better-sqlite3`     | `^7.6.0`  | TypeScript types (devDep)                              |
+| `ulidx`                     | `^2.4.0`  | Monotonic ULID generation for agent IDs                |
+| `@dorkos/shared`            | `*`       | Zod schemas (mesh-schemas.ts)                          |
+| `@dorkos/relay`             | `*`       | Optional peer dependency for endpoint registration     |
+| `@dorkos/typescript-config` | `*`       | Shared tsconfig preset (devDep)                        |
 
 ## 6. Detailed Design
 
@@ -132,9 +133,7 @@ export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
 
 export const AgentBehaviorSchema = z
   .object({
-    responseMode: z
-      .enum(['always', 'direct-only', 'mention-only', 'silent'])
-      .default('always'),
+    responseMode: z.enum(['always', 'direct-only', 'mention-only', 'silent']).default('always'),
     escalationThreshold: z.number().optional(),
   })
   .openapi('AgentBehavior');
@@ -212,6 +211,7 @@ export type DenialRecord = z.infer<typeof DenialRecordSchema>;
 ```
 
 Add `./mesh-schemas` subpath export to `packages/shared/package.json`:
+
 ```json
 "./mesh-schemas": {
   "types": "./src/mesh-schemas.ts",
@@ -242,11 +242,11 @@ export interface DiscoveryStrategy {
 
 **Built-in strategies:**
 
-| Strategy | Detection Logic | Runtime | Name Derivation |
-|---|---|---|---|
+| Strategy             | Detection Logic                                      | Runtime       | Name Derivation      |
+| -------------------- | ---------------------------------------------------- | ------------- | -------------------- |
 | `ClaudeCodeStrategy` | `.claude/` directory exists AND contains `CLAUDE.md` | `claude-code` | `path.basename(dir)` |
-| `CursorStrategy` | `.cursor/` directory exists | `cursor` | `path.basename(dir)` |
-| `CodexStrategy` | `.codex/` directory exists | `codex` | `path.basename(dir)` |
+| `CursorStrategy`     | `.cursor/` directory exists                          | `cursor`      | `path.basename(dir)` |
+| `CodexStrategy`      | `.codex/` directory exists                           | `codex`       | `path.basename(dir)` |
 
 Each strategy file is ~30-40 lines. Detection uses `fs.promises.access()` to check existence.
 
@@ -255,30 +255,40 @@ Each strategy file is ~30-40 lines. Detection uses `fs.promises.access()` to che
 The discovery engine performs depth-limited async BFS across configured root directories.
 
 **Interface:**
+
 ```typescript
 export interface DiscoveryOptions {
-  maxDepth?: number;              // Default: 5
-  excludedDirs?: Set<string>;     // Default: EXCLUDED_DIRS
-  followSymlinks?: boolean;       // Default: false
+  maxDepth?: number; // Default: 5
+  excludedDirs?: Set<string>; // Default: EXCLUDED_DIRS
+  followSymlinks?: boolean; // Default: false
 }
 
 const EXCLUDED_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.cache',
-  '__pycache__', '.venv', 'venv', '.tox', '.DS_Store',
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.cache',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.tox',
+  '.DS_Store',
 ]);
 ```
 
 **Core algorithm:**
+
 ```typescript
 async function* scanDirectory(
   rootDir: string,
   strategies: DiscoveryStrategy[],
   registry: AgentRegistry,
   denialList: DenialList,
-  options: DiscoveryOptions,
+  options: DiscoveryOptions
 ): AsyncGenerator<DiscoveryCandidate | AutoImportedAgent> {
   const queue: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
-  const visited = new Set<string>();  // realpath-based cycle detection
+  const visited = new Set<string>(); // realpath-based cycle detection
 
   while (queue.length > 0) {
     const { dir, depth } = queue.shift()!;
@@ -294,6 +304,7 @@ async function* scanDirectory(
 ```
 
 **Key behaviors:**
+
 1. **Auto-import:** If `.dork/agent.json` exists, read manifest and yield an `AutoImportedAgent` event. The caller (MeshCore) upserts this to the registry without approval.
 2. **Denial filter:** Check `denialList.isDenied(realpath)` before running strategies.
 3. **Registration filter:** Check `registry.getByPath(dir)` to skip already-registered paths.
@@ -307,6 +318,7 @@ SQLite persistence using better-sqlite3, following the exact pattern from `packa
 **Database:** `{dataDir}/mesh.db` (shared with denial list)
 
 **Schema:**
+
 ```sql
 -- Migration 1: Initial schema
 CREATE TABLE IF NOT EXISTS agents (
@@ -326,6 +338,7 @@ CREATE INDEX IF NOT EXISTS idx_agents_runtime ON agents(runtime);
 ```
 
 **Constructor pattern:**
+
 ```typescript
 constructor(dbPath: string) {
   this.db = new Database(dbPath);
@@ -349,6 +362,7 @@ constructor(dbPath: string) {
 ```
 
 **Public methods:**
+
 ```typescript
 insert(agent: AgentRegistryEntry): void
 get(id: string): AgentRegistryEntry | undefined
@@ -368,6 +382,7 @@ close(): void
 Shares the same SQLite database (`mesh.db`) as the agent registry.
 
 **Schema:**
+
 ```sql
 -- Part of Migration 1 (same transaction as agents table)
 CREATE TABLE IF NOT EXISTS denials (
@@ -380,6 +395,7 @@ CREATE TABLE IF NOT EXISTS denials (
 ```
 
 **Public methods:**
+
 ```typescript
 deny(path: string, strategy: string, reason: string | undefined, denier: string): void
 isDenied(path: string): boolean
@@ -393,11 +409,13 @@ close(): void  // shared with registry -- only one close() on the db
 ### 6.7 Manifest Reader/Writer
 
 **`readManifest(projectDir: string): Promise<AgentManifest | null>`**
+
 - Read `{projectDir}/.dork/agent.json`
 - Parse JSON, validate with `AgentManifestSchema.safeParse()`
 - Return parsed manifest or `null` if file doesn't exist or validation fails
 
 **`writeManifest(projectDir: string, manifest: AgentManifest): Promise<void>`**
+
 - Create `.dork/` directory if it doesn't exist (`mkdir -p` equivalent)
 - Write to a temp file in `.dork/` first
 - Atomic rename from temp file to `agent.json`
@@ -449,28 +467,25 @@ export class MeshCore {
   private denialList: DenialList;
   private relayBridge: RelayBridge;
   private strategies: DiscoveryStrategy[];
-  private generateId: () => string;  // monotonicFactory from ulidx
+  private generateId: () => string; // monotonicFactory from ulidx
 
   constructor(options?: MeshOptions);
 
   /** Scan directories for agent candidates. Yields candidates as found. */
-  async *discover(
-    roots: string[],
-    options?: DiscoveryOptions,
-  ): AsyncGenerator<DiscoveryCandidate>;
+  async *discover(roots: string[], options?: DiscoveryOptions): AsyncGenerator<DiscoveryCandidate>;
 
   /** Register a discovered candidate as an agent. */
   async register(
     candidate: DiscoveryCandidate,
     overrides?: Partial<AgentManifest>,
-    approver?: string,
+    approver?: string
   ): Promise<AgentManifest>;
 
   /** Register an agent by path (manual registration, bypasses discovery). */
   async registerByPath(
     projectPath: string,
     manifest: Partial<AgentManifest>,
-    approver?: string,
+    approver?: string
   ): Promise<AgentManifest>;
 
   /** Deny a candidate -- persists in SQLite, filtered from future scans. */
@@ -497,6 +512,7 @@ export class MeshCore {
 ```
 
 **Registration flow:**
+
 1. Generate ULID via `monotonicFactory()`
 2. Build full `AgentManifest` from candidate hints + overrides + defaults
 3. Write `.dork/agent.json` to the project directory
@@ -506,6 +522,7 @@ export class MeshCore {
 
 **Auto-import during discovery:**
 When `discover()` encounters a directory with an existing `.dork/agent.json`:
+
 1. Read and validate the manifest
 2. Upsert to registry (update if exists, insert if new)
 3. Do NOT yield as a candidate (it's already registered)
@@ -514,6 +531,7 @@ When `discover()` encounters a directory with an existing `.dork/agent.json`:
 ### 6.10 Package Configuration Files
 
 **`packages/mesh/package.json`:**
+
 ```json
 {
   "name": "@dorkos/mesh",
@@ -552,6 +570,7 @@ When `discover()` encounters a directory with an existing `.dork/agent.json`:
 ```
 
 **`packages/mesh/tsconfig.json`:**
+
 ```json
 {
   "extends": "@dorkos/typescript-config/node.json",
@@ -563,6 +582,7 @@ When `discover()` encounters a directory with an existing `.dork/agent.json`:
 ```
 
 **`packages/mesh/vitest.config.ts`:**
+
 ```typescript
 import { defineConfig } from 'vitest/config';
 
@@ -589,6 +609,7 @@ export default defineConfig({
 This spec produces a library with no direct user interface. The UX surfaces in Mesh Spec 2 (HTTP routes, MCP tools, client UI).
 
 Developers interact with `MeshCore` programmatically:
+
 ```typescript
 import { MeshCore } from '@dorkos/mesh';
 
@@ -610,15 +631,15 @@ const agents = mesh.list({ runtime: 'claude-code' });
 
 ### Unit Tests
 
-| Test File | What It Tests |
-|---|---|
-| `strategies.test.ts` | All 3 built-in strategies: detection logic, hint extraction, edge cases (missing files, empty dirs) |
-| `discovery-engine.test.ts` | BFS traversal, depth limits, excluded dirs, symlink handling, auto-import, denial/registration filtering |
-| `agent-registry.test.ts` | CRUD operations, persistence across close/reopen, filtering by runtime/capability, unique path constraint |
-| `denial-list.test.ts` | Deny/isDenied/clear lifecycle, path canonicalization, persistence |
-| `manifest.test.ts` | Read/write round-trip, Zod validation, atomic write, missing directory creation |
-| `relay-bridge.test.ts` | Endpoint registration with mocked RelayCore, no-op behavior without RelayCore |
-| `mesh-core.test.ts` | Full lifecycle: discover -> register -> list -> unregister. Manual registration. Auto-import. Denial filtering. |
+| Test File                  | What It Tests                                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `strategies.test.ts`       | All 3 built-in strategies: detection logic, hint extraction, edge cases (missing files, empty dirs)             |
+| `discovery-engine.test.ts` | BFS traversal, depth limits, excluded dirs, symlink handling, auto-import, denial/registration filtering        |
+| `agent-registry.test.ts`   | CRUD operations, persistence across close/reopen, filtering by runtime/capability, unique path constraint       |
+| `denial-list.test.ts`      | Deny/isDenied/clear lifecycle, path canonicalization, persistence                                               |
+| `manifest.test.ts`         | Read/write round-trip, Zod validation, atomic write, missing directory creation                                 |
+| `relay-bridge.test.ts`     | Endpoint registration with mocked RelayCore, no-op behavior without RelayCore                                   |
+| `mesh-core.test.ts`        | Full lifecycle: discover -> register -> list -> unregister. Manual registration. Auto-import. Denial filtering. |
 
 ### Test Infrastructure
 
@@ -712,6 +733,7 @@ it('persists agents across MeshCore restarts', async () => {
 ### Phase 1: Foundation (Schemas + Package Setup)
 
 **Files created:**
+
 - `packages/mesh/package.json`
 - `packages/mesh/tsconfig.json`
 - `packages/mesh/vitest.config.ts`
@@ -719,6 +741,7 @@ it('persists agents across MeshCore restarts', async () => {
 - `packages/shared/src/mesh-schemas.ts`
 
 **Files modified:**
+
 - `packages/shared/package.json` (add `./mesh-schemas` export)
 - `vitest.workspace.ts` (add `'packages/mesh'`)
 
@@ -727,6 +750,7 @@ it('persists agents across MeshCore restarts', async () => {
 ### Phase 2: Discovery (Strategies + Engine)
 
 **Files created:**
+
 - `packages/mesh/src/discovery-strategy.ts`
 - `packages/mesh/src/strategies/claude-code-strategy.ts`
 - `packages/mesh/src/strategies/cursor-strategy.ts`
@@ -741,6 +765,7 @@ it('persists agents across MeshCore restarts', async () => {
 ### Phase 3: Persistence (Registry + Denial List + Manifest)
 
 **Files created:**
+
 - `packages/mesh/src/agent-registry.ts`
 - `packages/mesh/src/denial-list.ts`
 - `packages/mesh/src/manifest.ts`
@@ -753,6 +778,7 @@ it('persists agents across MeshCore restarts', async () => {
 ### Phase 4: Integration (Relay Bridge + MeshCore)
 
 **Files created:**
+
 - `packages/mesh/src/relay-bridge.ts`
 - `packages/mesh/src/mesh-core.ts`
 - `packages/mesh/src/__tests__/relay-bridge.test.ts`
@@ -766,12 +792,12 @@ No open questions -- all design decisions were resolved during ideation.
 
 ## 14. Related ADRs
 
-| ADR | Relevance |
-|---|---|
-| `0012-use-ulid-for-relay-message-ids.md` | Same ULID pattern (ulidx + monotonicFactory) used for agent IDs |
-| `0013-hybrid-maildir-sqlite-storage.md` | SQLite pattern reference (WAL mode, migrations, prepared statements) |
+| ADR                                       | Relevance                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------- |
+| `0012-use-ulid-for-relay-message-ids.md`  | Same ULID pattern (ulidx + monotonicFactory) used for agent IDs                 |
+| `0013-hybrid-maildir-sqlite-storage.md`   | SQLite pattern reference (WAL mode, migrations, prepared statements)            |
 | `0011-use-nats-style-subject-matching.md` | Subject hierarchy (`relay.agent.{project}.{id}`) used for endpoint registration |
-| `0004-monorepo-with-turborepo.md` | Package structure conventions |
+| `0004-monorepo-with-turborepo.md`         | Package structure conventions                                                   |
 
 ## 15. References
 

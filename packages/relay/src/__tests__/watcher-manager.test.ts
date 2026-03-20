@@ -62,7 +62,7 @@ function wait(ms: number): Promise<void> {
 async function waitForCall(
   mockFn: ReturnType<typeof vi.fn>,
   timeoutMs = 5000,
-  intervalMs = 50,
+  intervalMs = 50
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -175,7 +175,7 @@ describe('WatcherManager', () => {
       // Write a JSON file — the dedup guard should prevent claim
       fsSync.writeFileSync(
         path.join(maildirPath, 'new', 'msg-dup-001.json'),
-        JSON.stringify({ subject: 'test' }),
+        JSON.stringify({ subject: 'test' })
       );
 
       // Let chokidar detect and process the first file before changing the guard
@@ -216,7 +216,7 @@ describe('WatcherManager', () => {
 
       fsSync.writeFileSync(
         path.join(maildirPath, 'new', 'msg-new-001.json'),
-        JSON.stringify({ subject: 'test' }),
+        JSON.stringify({ subject: 'test' })
       );
 
       await waitForCall(vi.mocked(maildirStore.claim));
@@ -278,7 +278,7 @@ describe('WatcherManager', () => {
       // Write a json file to know when the watcher has processed
       fsSync.writeFileSync(
         path.join(maildirPath, 'new', 'sentinel.json'),
-        JSON.stringify({ subject: 'test' }),
+        JSON.stringify({ subject: 'test' })
       );
       await waitForCall(vi.mocked(maildirStore.claim));
 
@@ -304,7 +304,7 @@ describe('WatcherManager', () => {
 
       fsSync.writeFileSync(
         path.join(maildirPath, 'new', 'msg-002.json'),
-        JSON.stringify({ subject: 'test' }),
+        JSON.stringify({ subject: 'test' })
       );
 
       // Poll until the fail mock is called (handler rejection settles)

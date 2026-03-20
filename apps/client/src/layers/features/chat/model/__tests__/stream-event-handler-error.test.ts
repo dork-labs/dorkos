@@ -24,7 +24,9 @@ function createMinimalDeps() {
   const orphanHooksRef = { current: new Map() };
   const thinkingStartRef = { current: null };
   const onTaskEventRef = { current: undefined as ((event: TaskUpdateEvent) => void) | undefined };
-  const onSessionIdChangeRef = { current: undefined as ((newSessionId: string) => void) | undefined };
+  const onSessionIdChangeRef = {
+    current: undefined as ((newSessionId: string) => void) | undefined,
+  };
   const onStreamingDoneRef = { current: undefined as (() => void) | undefined };
 
   const handler = createStreamEventHandler({
@@ -65,12 +67,16 @@ describe('stream-event-handler — error events', () => {
     // rather than using the error banner, so they persist in scroll history.
     const { handler, currentPartsRef, setError } = createMinimalDeps();
 
-    handler('error', {
-      message: 'Turn limit reached',
-      code: 'error_max_turns',
-      category: 'max_turns',
-      details: 'Reached 10 turn limit',
-    }, 'asst-1');
+    handler(
+      'error',
+      {
+        message: 'Turn limit reached',
+        code: 'error_max_turns',
+        category: 'max_turns',
+        details: 'Reached 10 turn limit',
+      },
+      'asst-1'
+    );
 
     const errorPart = currentPartsRef.current.find((p) => p.type === 'error');
     expect(errorPart).toBeDefined();
@@ -89,9 +95,13 @@ describe('stream-event-handler — error events', () => {
     // not the inline message stream.
     const { handler, currentPartsRef, setError, setStatus } = createMinimalDeps();
 
-    handler('error', {
-      message: 'Network connection lost',
-    }, 'asst-1');
+    handler(
+      'error',
+      {
+        message: 'Network connection lost',
+      },
+      'asst-1'
+    );
 
     // Should set banner error
     expect(setError).toHaveBeenCalledWith({
@@ -109,10 +119,14 @@ describe('stream-event-handler — error events', () => {
     // ensureAssistantMessage + updateAssistantMessage must be called.
     const { handler, setMessages } = createMinimalDeps();
 
-    handler('error', {
-      message: 'Budget exceeded',
-      category: 'budget_exceeded',
-    }, 'asst-1');
+    handler(
+      'error',
+      {
+        message: 'Budget exceeded',
+        category: 'budget_exceeded',
+      },
+      'asst-1'
+    );
 
     // setMessages should have been called (ensureAssistantMessage + updateAssistantMessage)
     expect(setMessages).toHaveBeenCalled();

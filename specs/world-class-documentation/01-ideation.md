@@ -58,6 +58,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary files to modify (docs content):**
+
 - `docs/index.mdx` — landing page rewrite
 - `docs/getting-started/installation.mdx` — enhance with tabs, targets
 - `docs/getting-started/quickstart.mdx` — full rewrite
@@ -74,10 +75,12 @@ status: ideation
 - `docs/meta.json` — add missing sections (integrations, self-hosting)
 
 **API docs fix:**
+
 - `apps/web/src/components/api-page.tsx` — remove `'use client'` directive
 - `apps/web/src/lib/openapi.ts` — verify Server Component compatibility
 
 **Source material (internal docs to draw from):**
+
 - `contributing/api-reference.md` → `docs/integrations/sse-protocol.mdx`
 - `contributing/interactive-tools.md` → `docs/guides/tool-approval.mdx`
 - `contributing/configuration.md` → `docs/getting-started/configuration.mdx`
@@ -88,6 +91,7 @@ status: ideation
 - `contributing/styling-theming.md` → contributor docs
 
 **Navigation gaps:**
+
 - `docs/meta.json` lists: getting-started, guides, api, contributing, changelog
 - **Missing from root meta.json:** `integrations`, `self-hosting`
 - `docs/guides/meta.json` lists only 3 of 6 existing files (missing: cli-usage, slash-commands, tunnel-setup)
@@ -105,6 +109,7 @@ status: ideation
 **Fix:** Remove the `'use client'` directive from `apps/web/src/components/api-page.tsx`. The component should remain a Server Component since it performs async data loading. The catch-all docs page (`[[...slug]]/page.tsx`) is already a Server Component, so the import chain works correctly without the client directive.
 
 **Evidence:**
+
 - Console error: "A component was suspended by an uncached promise" (confirmed by browser agent)
 - `fumadocs-openapi@10.3.5` — `createAPIPage` returns a Server Component
 - The `'use client'` directive was likely added by mistake or to satisfy a linting rule
@@ -116,6 +121,7 @@ status: ideation
 Full research saved to `research/20260217_world_class_developer_docs.md`. Key findings:
 
 ### Diátaxis Framework (Gold Standard for Docs IA)
+
 - **Tutorials**: Learning-oriented (quickstart)
 - **How-to guides**: Task-oriented (guides/)
 - **Reference**: Information-oriented (API docs, config reference)
@@ -123,20 +129,22 @@ Full research saved to `research/20260217_world_class_developer_docs.md`. Key fi
 - Critical: keep these types strictly separate
 
 ### Fumadocs Components We Should Adopt
-| Component | Where to Use | Current State |
-|---|---|---|
-| `<Steps>` / `<Step>` | All procedural content (quickstart, guides) | Not used — using plain numbered lists |
-| `<Cards>` / `<Card>` | Index page, section landing pages | Not used — using link lists |
-| `<Tabs groupId persist>` | Install commands, multi-target config | Not used |
-| `<Callout type>` | Warnings, notes, tips throughout | Not used — using bold text |
-| `<TypeTable>` | Config reference, CLI flags | Not used — using markdown tables |
-| `<Files>` / `<Folder>` | Project structure diagrams | Not used |
-| `<DocsCategory>` | Section landing pages (auto-generate child links) | Not used |
-| `<Include>` | Shared content (prerequisites, API key setup) | Not used |
-| NPM code tabs | All install commands (auto npm/pnpm/yarn/bun) | Not used |
-| `// [!code highlight]` | Code examples with key lines highlighted | Not used |
+
+| Component                | Where to Use                                      | Current State                         |
+| ------------------------ | ------------------------------------------------- | ------------------------------------- |
+| `<Steps>` / `<Step>`     | All procedural content (quickstart, guides)       | Not used — using plain numbered lists |
+| `<Cards>` / `<Card>`     | Index page, section landing pages                 | Not used — using link lists           |
+| `<Tabs groupId persist>` | Install commands, multi-target config             | Not used                              |
+| `<Callout type>`         | Warnings, notes, tips throughout                  | Not used — using bold text            |
+| `<TypeTable>`            | Config reference, CLI flags                       | Not used — using markdown tables      |
+| `<Files>` / `<Folder>`   | Project structure diagrams                        | Not used                              |
+| `<DocsCategory>`         | Section landing pages (auto-generate child links) | Not used                              |
+| `<Include>`              | Shared content (prerequisites, API key setup)     | Not used                              |
+| NPM code tabs            | All install commands (auto npm/pnpm/yarn/bun)     | Not used                              |
+| `// [!code highlight]`   | Code examples with key lines highlighted          | Not used                              |
 
 ### Key Principles from Stripe/Supabase/Tailwind
+
 1. **30-second test**: Within 30 seconds, answer: what is this? is it for me? how do I start?
 2. **Progressive disclosure**: Reveal complexity gradually, not all at once
 3. **Copy-paste-runnable code**: Every code block works when pasted without modification
@@ -146,17 +154,20 @@ Full research saved to `research/20260217_world_class_developer_docs.md`. Key fi
 ### Potential Approaches
 
 **1. Content-first (fill all stubs, then polish)**
+
 - Pros: Fastest path to completeness, highest immediate value
 - Cons: May need restructuring later
 - Complexity: Medium
 - Recommendation: **Do this**
 
 **2. Structure-first (reorganize IA, add concepts section, then fill)**
+
 - Pros: Better long-term organization
 - Cons: Slower to deliver user value, may over-engineer
 - Complexity: High
 
 **3. Hybrid (fix API bug + fill critical stubs first, then restructure)**
+
 - Pros: Quick wins first, then systematic improvement
 - Cons: Two passes over same files
 - Recommendation: Best overall approach
@@ -173,7 +184,7 @@ Full research saved to `research/20260217_world_class_developer_docs.md`. Key fi
    - Minimal: Just fill content, use plain markdown
    - Moderate: Use Steps, Callouts, Tabs where obvious
    - Full: Adopt all recommended components (Steps, Cards, Tabs, TypeTable, Files, DocsCategory, Include)
-   **Recommended: Full adoption — these components are what make the difference between "adequate" and "world class"**
+     **Recommended: Full adoption — these components are what make the difference between "adequate" and "world class"**
 
 4. **Should the changelog be populated?** It exists but may be thin. The `/system:release` skill already generates changelog entries. **Recommended: Yes, populate from git history.**
 

@@ -68,10 +68,7 @@ export default [
   {
     files: ['**/*.ts', '**/*.tsx'],
     rules: {
-      'max-lines': [
-        'warn',
-        { max: 500, skipBlankLines: true, skipComments: true },
-      ],
+      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
     },
   },
 

@@ -1,5 +1,5 @@
 ---
-title: "NanoClaw Scheduler Architecture Analysis"
+title: 'NanoClaw Scheduler Architecture Analysis'
 date: 2026-02-17
 type: internal-architecture
 status: archived
@@ -78,6 +78,7 @@ Result → updateTaskAfterRun() → next_run recalculated
 **Package**: `cron-parser` v5.5.0 (`CronExpressionParser`)
 
 This library is used in exactly two roles:
+
 1. **Validation**: When a task is created (via IPC), the cron expression is parsed and if invalid, the task creation is rejected with an error returned to Claude.
 2. **Next-run calculation**: After a task completes, `interval.next().toISOString()` calculates the next `next_run` timestamp.
 
@@ -91,16 +92,16 @@ Jobs are defined via the `ScheduledTask` TypeScript interface (from `src/types.t
 
 ```typescript
 interface ScheduledTask {
-  id: string;                          // "task-{timestamp}-{random}"
-  group_folder: string;                // Which group owns this task
-  chat_jid: string;                    // WhatsApp JID for message delivery
-  prompt: string;                      // What Claude should do when it runs
+  id: string; // "task-{timestamp}-{random}"
+  group_folder: string; // Which group owns this task
+  chat_jid: string; // WhatsApp JID for message delivery
+  prompt: string; // What Claude should do when it runs
   schedule_type: 'cron' | 'interval' | 'once';
-  schedule_value: string;              // Cron expr, ms string, or ISO timestamp
+  schedule_value: string; // Cron expr, ms string, or ISO timestamp
   context_mode: 'group' | 'isolated'; // Session continuity mode
-  next_run: string | null;             // ISO timestamp, null for paused/completed
+  next_run: string | null; // ISO timestamp, null for paused/completed
   last_run: string | null;
-  last_result: string | null;          // First 200 chars of last output
+  last_result: string | null; // First 200 chars of last output
   status: 'active' | 'paused' | 'completed';
   created_at: string;
 }
@@ -138,6 +139,7 @@ CREATE INDEX IF NOT EXISTS idx_status ON scheduled_tasks(status);
 - **Recurring**: No, runs once and auto-completes
 
 The relevant `updateTaskAfterRun` SQL:
+
 ```sql
 UPDATE scheduled_tasks
 SET next_run = ?, last_run = ?, last_result = ?,
@@ -151,23 +153,20 @@ WHERE id = ?
 
 ```typescript
 const loop = async () => {
-  const dueTasks = getDueTasks();  // SELECT WHERE status='active' AND next_run <= NOW()
+  const dueTasks = getDueTasks(); // SELECT WHERE status='active' AND next_run <= NOW()
   for (const task of dueTasks) {
-    const currentTask = getTaskById(task.id);  // Re-read to check for concurrent changes
+    const currentTask = getTaskById(task.id); // Re-read to check for concurrent changes
     if (!currentTask || currentTask.status !== 'active') continue;
 
-    deps.queue.enqueueTask(
-      currentTask.chat_jid,
-      currentTask.id,
-      () => runTask(currentTask, deps),
-    );
+    deps.queue.enqueueTask(currentTask.chat_jid, currentTask.id, () => runTask(currentTask, deps));
   }
-  setTimeout(loop, SCHEDULER_POLL_INTERVAL);  // 60,000 ms
+  setTimeout(loop, SCHEDULER_POLL_INTERVAL); // 60,000 ms
 };
 loop();
 ```
 
 Key properties:
+
 - **No cron daemon**: It is a plain `setTimeout` recursion, not a cron-style wake-up.
 - **Double-check before dispatch**: `getTaskById()` re-reads from SQLite before dispatching, preventing races where a task was paused between the poll query and the dispatch.
 - **Duplicate-safe queue**: `GroupQueue.enqueueTask()` checks if a task ID is already in the pending queue and skips re-enqueuing.
@@ -232,6 +231,7 @@ The task inherits the group's full container setup: mounted group directory, glo
 2. **Per-group serialization**: Only one container runs per group at a time. If a group already has an active container (e.g., answering a user message) and a scheduled task fires, the task is queued and runs after the active container finishes.
 
 Task priority: within a group's queue, **tasks take priority over pending messages** (in `drainGroup()`):
+
 ```typescript
 // Tasks first (they won't be re-discovered from SQLite like messages)
 if (state.pendingTasks.length > 0) {
@@ -268,17 +268,17 @@ Container execution logs are written to `groups/{folder}/logs/container-{timesta
 
 ## Source File Map
 
-| File | Role |
-|------|------|
-| `src/task-scheduler.ts` | Scheduler loop, `runTask()`, next-run calculation |
-| `src/ipc.ts` | IPC watcher, `processTaskIpc()`, `createTask()` dispatch |
-| `src/db.ts` | All SQLite operations: `createTask`, `getDueTasks`, `updateTaskAfterRun`, `logTaskRun`, etc. |
-| `src/group-queue.ts` | Concurrency management, per-group serialization |
-| `src/container-runner.ts` | Container spawn, volume mounts, output streaming |
-| `src/config.ts` | `SCHEDULER_POLL_INTERVAL=60000`, `TIMEZONE`, `IDLE_TIMEOUT`, `MAX_CONCURRENT_CONTAINERS` |
-| `src/types.ts` | `ScheduledTask`, `TaskRunLog` interfaces |
+| File                                          | Role                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `src/task-scheduler.ts`                       | Scheduler loop, `runTask()`, next-run calculation                                                             |
+| `src/ipc.ts`                                  | IPC watcher, `processTaskIpc()`, `createTask()` dispatch                                                      |
+| `src/db.ts`                                   | All SQLite operations: `createTask`, `getDueTasks`, `updateTaskAfterRun`, `logTaskRun`, etc.                  |
+| `src/group-queue.ts`                          | Concurrency management, per-group serialization                                                               |
+| `src/container-runner.ts`                     | Container spawn, volume mounts, output streaming                                                              |
+| `src/config.ts`                               | `SCHEDULER_POLL_INTERVAL=60000`, `TIMEZONE`, `IDLE_TIMEOUT`, `MAX_CONCURRENT_CONTAINERS`                      |
+| `src/types.ts`                                | `ScheduledTask`, `TaskRunLog` interfaces                                                                      |
 | `container/agent-runner/src/ipc-mcp-stdio.ts` | MCP server inside container — `schedule_task`, `list_tasks`, `pause_task`, `resume_task`, `cancel_task` tools |
-| `container/agent-runner/src/index.ts` | Agent runner entrypoint — receives prompt, runs `query()`, handles IPC, scheduled-task prefix injection |
+| `container/agent-runner/src/index.ts`         | Agent runner entrypoint — receives prompt, runs `query()`, handles IPC, scheduled-task prefix injection       |
 
 ---
 

@@ -277,7 +277,7 @@ function StreamingContent({ state }: { state: Extract<StripState, { type: 'strea
           <motion.span
             ref={verbRef}
             key={state.verbKey}
-            className="absolute left-0 top-0 whitespace-nowrap"
+            className="absolute top-0 left-0 whitespace-nowrap"
             initial={{ opacity: 0, y: 2 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -2 }}

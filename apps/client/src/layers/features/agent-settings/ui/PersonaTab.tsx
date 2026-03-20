@@ -92,11 +92,7 @@ export function PersonaTab({ agent, onUpdate }: PersonaTabProps) {
             <FieldLabel htmlFor="persona-toggle" className="text-sm font-medium">
               Inject persona into sessions
             </FieldLabel>
-            <Switch
-              id="persona-toggle"
-              checked={isEnabled}
-              onCheckedChange={handleToggle}
-            />
+            <Switch id="persona-toggle" checked={isEnabled} onCheckedChange={handleToggle} />
           </Field>
 
           {/* Textarea */}
@@ -109,7 +105,7 @@ export function PersonaTab({ agent, onUpdate }: PersonaTabProps) {
               rows={8}
               maxLength={MAX_CHARS}
               disabled={!isEnabled}
-              className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               placeholder="You are backend-bot, an expert in REST API design..."
             />
             <p className="text-muted-foreground text-right text-xs">

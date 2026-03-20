@@ -25,7 +25,15 @@ const PAGE_LABELS: Record<Page, string> = {
 };
 
 /** Ordered list of pages for consistent group rendering. */
-const PAGE_ORDER: Page[] = ['overview', 'tokens', 'forms', 'components', 'chat', 'features', 'simulator'];
+const PAGE_ORDER: Page[] = [
+  'overview',
+  'tokens',
+  'forms',
+  'components',
+  'chat',
+  'features',
+  'simulator',
+];
 
 /** Group registry sections by their page. */
 function groupByPage(sections: PlaygroundSection[]): Map<Page, PlaygroundSection[]> {
@@ -66,7 +74,7 @@ export function PlaygroundSearch({ open, onOpenChange, onSelect }: PlaygroundSea
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* aria-describedby={undefined} suppresses Radix warning — no description needed for a search palette */}
-      <DialogContent className="overflow-hidden p-0 shadow-modal" aria-describedby={undefined}>
+      <DialogContent className="shadow-modal overflow-hidden p-0" aria-describedby={undefined}>
         {/* sr-only title satisfies Radix accessibility requirement without visible heading */}
         <DialogTitle className="sr-only">Search playground sections</DialogTitle>
         <Command>

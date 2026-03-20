@@ -1,5 +1,5 @@
 ---
-title: "@dorkos/mesh Core Library Research"
+title: '@dorkos/mesh Core Library Research'
 date: 2026-02-24
 type: internal-architecture
 status: archived
@@ -31,21 +31,22 @@ The Agent2Agent (A2A) Protocol was launched by Google in April 2025 and moved to
 
 **Complete AgentCard field inventory:**
 
-| Field | Required | Type | Description |
-|-------|----------|------|-------------|
-| `name` | Yes | string | Human-readable agent name |
-| `description` | Yes | string | Agent functionality overview |
-| `url` | Yes | string | Service URL where agent is hosted |
-| `version` | Yes | string | Agent version (provider-defined format) |
-| `defaultInputModes` | Yes | string[] | Supported input MIME types |
-| `defaultOutputModes` | Yes | string[] | Supported output MIME types |
-| `authentication` | Yes | object | Auth schemes and credential requirements |
-| `skills` | Yes | object[] | Collection of capability units |
-| `provider` | No | object | Organization name and URL |
-| `documentationUrl` | No | string | Link to agent documentation |
-| `capabilities` | No | object | streaming, pushNotifications, stateTransitionHistory, extendedAgentCard |
+| Field                | Required | Type     | Description                                                             |
+| -------------------- | -------- | -------- | ----------------------------------------------------------------------- |
+| `name`               | Yes      | string   | Human-readable agent name                                               |
+| `description`        | Yes      | string   | Agent functionality overview                                            |
+| `url`                | Yes      | string   | Service URL where agent is hosted                                       |
+| `version`            | Yes      | string   | Agent version (provider-defined format)                                 |
+| `defaultInputModes`  | Yes      | string[] | Supported input MIME types                                              |
+| `defaultOutputModes` | Yes      | string[] | Supported output MIME types                                             |
+| `authentication`     | Yes      | object   | Auth schemes and credential requirements                                |
+| `skills`             | Yes      | object[] | Collection of capability units                                          |
+| `provider`           | No       | object   | Organization name and URL                                               |
+| `documentationUrl`   | No       | string   | Link to agent documentation                                             |
+| `capabilities`       | No       | object   | streaming, pushNotifications, stateTransitionHistory, extendedAgentCard |
 
 **AgentSkill object:**
+
 - `id` (string, required) — unique identifier
 - `name` (string, required) — human-readable name
 - `description` (string, required) — what the skill does
@@ -55,6 +56,7 @@ The Agent2Agent (A2A) Protocol was launched by Google in April 2025 and moved to
 - `outputModes` (string[], optional) — skill-specific output MIME overrides
 
 **AgentCapabilities object:**
+
 - `streaming` (boolean) — SSE streaming support
 - `pushNotifications` (boolean) — webhook push support
 - `stateTransitionHistory` (boolean) — state tracking support
@@ -66,16 +68,16 @@ The Agent2Agent (A2A) Protocol was launched by Google in April 2025 and moved to
 
 Both are 128-bit, time-ordered, lexicographically sortable identifiers. Key comparison:
 
-| Property | ULID | UUID v7 |
-|----------|------|---------|
-| Encoding | Base32, 26 chars | Hex with dashes, 36 chars |
-| Random bits | 80 bits | ~74 bits |
-| URL-safe | Yes | No (has dashes) |
-| DB index friendliness | High (sequential) | High (sequential) |
-| Ecosystem compatibility | ULID-specific | UUID-standard (PostgreSQL native type) |
-| Monotonicity | Via monotonicFactory (explicit) | Via counter bits (impl-specific) |
-| Performance | Faster (83.7% less network overhead in one study) | Slightly slower |
-| JS library | ulidx (TypeScript-native, ESM+CJS) | `uuid` package |
+| Property                | ULID                                              | UUID v7                                |
+| ----------------------- | ------------------------------------------------- | -------------------------------------- |
+| Encoding                | Base32, 26 chars                                  | Hex with dashes, 36 chars              |
+| Random bits             | 80 bits                                           | ~74 bits                               |
+| URL-safe                | Yes                                               | No (has dashes)                        |
+| DB index friendliness   | High (sequential)                                 | High (sequential)                      |
+| Ecosystem compatibility | ULID-specific                                     | UUID-standard (PostgreSQL native type) |
+| Monotonicity            | Via monotonicFactory (explicit)                   | Via counter bits (impl-specific)       |
+| Performance             | Faster (83.7% less network overhead in one study) | Slightly slower                        |
+| JS library              | ulidx (TypeScript-native, ESM+CJS)                | `uuid` package                         |
 
 **ulidx monotonicFactory behavior**: When multiple ULIDs are generated within the same millisecond, the factory increments the least-significant random bit, guaranteeing strict lexicographic ordering. If a lower timestamp is passed, the factory still produces a ULID that sorts after the previous one. This is explicit opt-in — the default `ulid()` function does NOT guarantee monotonicity.
 
@@ -176,6 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_skill_tags_tag ON skill_tags(tag);
 FTS5 full-text search on agent name/description is available via better-sqlite3 (SQLite is compiled with FTS5 by default in Node.js distributions). Omit from initial implementation and add later if needed.
 
 **Deny list design**: A separate `deny_list` table keyed by `project_path` is preferable to a status flag on the agents table because:
+
 1. Agents can be denied before they are fully registered
 2. Deny list entries should survive agent record deletion/re-registration
 3. Simpler to query and maintain independently
@@ -206,7 +209,7 @@ Pure Node.js recursive BFS with an explicit queue and visited-path Set for cycle
 ```typescript
 async function* discoverManifests(
   rootDir: string,
-  options: DiscoveryOptions,
+  options: DiscoveryOptions
 ): AsyncGenerator<string> {
   const queue: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
   const visited = new Set<string>();
@@ -217,7 +220,7 @@ async function* discoverManifests(
 
     let entries: import('fs').Dirent[];
     try {
-      entries = await import('fs/promises').then(fs => fs.readdir(dir, { withFileTypes: true }));
+      entries = await import('fs/promises').then((fs) => fs.readdir(dir, { withFileTypes: true }));
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'EACCES' || code === 'EPERM') continue;
@@ -225,11 +228,11 @@ async function* discoverManifests(
     }
 
     for (const entry of entries) {
-      const fullPath = import('path').then(p => p.join(dir, entry.name));
+      const fullPath = import('path').then((p) => p.join(dir, entry.name));
       if (entry.isSymbolicLink()) {
         // Explicit cycle detection via realpath
         const realPath = await import('fs/promises')
-          .then(fs => fs.realpath(String(fullPath)))
+          .then((fs) => fs.realpath(String(fullPath)))
           .catch(() => null);
         if (!realPath || visited.has(realPath)) continue;
         visited.add(realPath);
@@ -263,6 +266,7 @@ export interface DiscoveryStrategy {
 ```
 
 Built-in strategies:
+
 1. **FilesystemStrategy** — Custom BFS (default for home directory scanning)
 2. **GlobStrategy** — fast-glob based (for targeted searches with known root patterns)
 3. **ProjectListStrategy** — Reads user-configured list of known project directories (no scanning)
@@ -277,6 +281,7 @@ AutoGen, CrewAI, and LangGraph do NOT use filesystem-based discovery:
 - **LangGraph**: Graph nodes for agent steps, no filesystem artifact concept
 
 The closest analogues to filesystem-based discovery in the ecosystem:
+
 - **MCP servers**: Discovered via `.claude/mcp.json` or `~/.claude/settings.json`
 - **npm workspaces**: Discovered via `package.json#workspaces` glob patterns
 - **A2A protocol**: `/.well-known/agent-card.json` at a known HTTP path
@@ -338,6 +343,7 @@ This keeps A2A alignment for future HTTP interoperability while accommodating lo
 ### Discovery Engine: Depth-Limited BFS Parameters
 
 For scanning a home directory, recommended defaults:
+
 - **maxDepth**: 5 (covers `~/projects/company/repo/.dork/agent.json`)
 - **Excluded dirs**: `node_modules`, `.git`, `.DS_Store`, `dist`, `build`, `.cache`, `vendor`, `__pycache__`, `.venv`, `venv`
 - **Symlink policy**: `followSymbolicLinks: false` by default, opt-in `true` with explicit cycle detection
@@ -349,6 +355,7 @@ For scanning a home directory, recommended defaults:
 ## Potential Solutions
 
 ### 1. Glob-based Discovery (fast-glob)
+
 - Description: Use fast-glob with depth and ignore options to find all `.dork/agent.json` files.
 - Pros: Simple API, battle-tested, handles basic ignore patterns, TypeScript types built-in
 - Cons: No cycle detection (cyclic symlinks can OOM), returns all results at once, must keep followSymbolicLinks false
@@ -356,6 +363,7 @@ For scanning a home directory, recommended defaults:
 - Maintenance: Low
 
 ### 2. @nodelib/fs.walk Direct Usage
+
 - Description: Use fast-glob's underlying walk library with entryFilter/deepFilter callbacks.
 - Pros: Streaming callbacks, precise filter control, graceful errorFilter for permission errors
 - Cons: Lower-level API, less documentation, symlink cycle detection still manual
@@ -363,6 +371,7 @@ For scanning a home directory, recommended defaults:
 - Maintenance: Low-Medium
 
 ### 3. Custom Async BFS Generator (Recommended)
+
 - Description: Depth-limited BFS using explicit queue, AsyncGenerator for streaming, Set for cycle detection.
 - Pros: Explicit cycle detection, streaming via AsyncGenerator, zero extra dependencies, graceful error handling per entry
 - Cons: ~80 lines of code to maintain, BFS queue can grow for very wide trees
@@ -370,6 +379,7 @@ For scanning a home directory, recommended defaults:
 - Maintenance: Medium
 
 ### 4. Pluggable Strategy Pattern with Multiple Built-ins
+
 - Description: DiscoveryStrategy interface with FilesystemStrategy, GlobStrategy, and ProjectListStrategy implementations.
 - Pros: Extensible, different strategies for different use cases, user-provided custom strategies, future-proof
 - Cons: Most code upfront, requires strategy selection logic
@@ -377,6 +387,7 @@ For scanning a home directory, recommended defaults:
 - Maintenance: Medium
 
 ### SQLite: Flat JSON Columns
+
 - Description: Single agents table with capabilities and skills as JSON text blobs.
 - Pros: Simplest schema, no JOINs, easy full-record reads
 - Cons: Cannot efficiently query by capability or skill tag, requires JSON parsing for filtering
@@ -384,6 +395,7 @@ For scanning a home directory, recommended defaults:
 - Maintenance: Low
 
 ### SQLite: Normalized Tables (Recommended)
+
 - Description: Separate relational tables with foreign keys and targeted indexes.
 - Pros: Efficient indexed queries by runtime/capability/tag, referential integrity, SQL-native filtering
 - Cons: More tables, JOIN queries required for full agent records
@@ -391,6 +403,7 @@ For scanning a home directory, recommended defaults:
 - Maintenance: Medium
 
 ### SQLite: Normalized + FTS5
+
 - Description: Normalized schema plus FTS5 virtual table for full-text search on names and descriptions.
 - Pros: Keyword search with BM25 ranking across agent descriptions
 - Cons: FTS5 index sync complexity, likely overkill for initial use case
@@ -444,6 +457,7 @@ For scanning a home directory, recommended defaults:
 **Rationale**: Maximizes consistency with existing codebase (relay SQLite patterns, adapter plugin pattern, ulidx), provides safe filesystem scanning defaults, leaves clean extension points for future capabilities.
 
 **Caveats**:
+
 - Custom BFS requires thorough testing with edge cases (permission errors, symlink cycles, very deep nesting, empty directories). Use Vitest with temp directory fixtures.
 - Writing the ULID back to `dorkos.id` in the manifest requires file locking if multiple processes scan simultaneously.
 - A2A spec uses protocol buffer (proto) as normative definition — monitor the spec for AgentCard field changes as it matures under Linux Foundation governance.

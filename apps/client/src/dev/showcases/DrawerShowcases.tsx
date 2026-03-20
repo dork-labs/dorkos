@@ -30,11 +30,9 @@ export function DrawerShowcases() {
             <DrawerContent>
               <DrawerHeader>
                 <DrawerTitle>Agent Configuration</DrawerTitle>
-                <DrawerDescription>
-                  Adjust settings for the active agent session.
-                </DrawerDescription>
+                <DrawerDescription>Adjust settings for the active agent session.</DrawerDescription>
               </DrawerHeader>
-              <div className="px-4 pb-4 text-sm text-muted-foreground">
+              <div className="text-muted-foreground px-4 pb-4 text-sm">
                 Drawer body content goes here.
               </div>
               <DrawerFooter>

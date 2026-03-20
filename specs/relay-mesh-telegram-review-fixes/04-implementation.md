@@ -53,6 +53,7 @@
 ### Session 1
 
 All 18 issues from the code review remediation spec addressed across 5 tasks in 2 parallel batches:
+
 - Batch 1: relay-core split + Telegram fixes + Mesh UI fixes (3 parallel agents)
 - Batch 2: binding-router fixes + adapter-manager fixes (2 parallel agents)
 

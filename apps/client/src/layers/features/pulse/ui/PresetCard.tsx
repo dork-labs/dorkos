@@ -67,16 +67,13 @@ export function PresetCard({
         'hover:bg-accent/50',
         'min-h-11',
         variant === 'toggle' && checked && 'border-primary/40 bg-accent/30',
-        variant === 'selectable' && selected && 'border-primary ring-1 ring-primary bg-accent/30',
+        variant === 'selectable' && selected && 'border-primary ring-primary bg-accent/30 ring-1',
         className
       )}
     >
       {/* Spotlight overlay */}
       {spotlightStyle && (
-        <div
-          className="pointer-events-none absolute inset-0 rounded-lg"
-          style={spotlightStyle}
-        />
+        <div className="pointer-events-none absolute inset-0 rounded-lg" style={spotlightStyle} />
       )}
 
       {/* Toggle switch — only for toggle variant */}
@@ -93,9 +90,9 @@ export function PresetCard({
 
       <div className="min-w-0 flex-1 space-y-1">
         <div className="font-medium">{preset.name}</div>
-        <p className="text-sm text-muted-foreground">{preset.description}</p>
-        <p className="text-xs text-muted-foreground">{formatCron(preset.cron)}</p>
-        <p className="line-clamp-2 text-sm text-muted-foreground/80">{preset.prompt}</p>
+        <p className="text-muted-foreground text-sm">{preset.description}</p>
+        <p className="text-muted-foreground text-xs">{formatCron(preset.cron)}</p>
+        <p className="text-muted-foreground/80 line-clamp-2 text-sm">{preset.prompt}</p>
       </div>
     </button>
   );

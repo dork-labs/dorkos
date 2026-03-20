@@ -52,11 +52,11 @@ The current OG image and metadata setup has several issues:
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `next/og` (ImageResponse) | Next.js 16 built-in | Dynamic OG image generation at edge runtime |
-| `fumadocs-core` | existing | `source.getPages()` and `blog.getPages()` for sitemap |
-| `fumadocs-mdx` | existing | Blog post frontmatter (title, description, date, author) |
+| Dependency                | Version             | Purpose                                                  |
+| ------------------------- | ------------------- | -------------------------------------------------------- |
+| `next/og` (ImageResponse) | Next.js 16 built-in | Dynamic OG image generation at edge runtime              |
+| `fumadocs-core`           | existing            | `source.getPages()` and `blog.getPages()` for sitemap    |
+| `fumadocs-mdx`            | existing            | Blog post frontmatter (title, description, date, author) |
 
 No new packages are required. All changes use existing Next.js APIs and Fumadocs sources.
 
@@ -82,142 +82,124 @@ Replace the current graph-paper pattern with a clean, modern share card:
 Complete rewrite of the existing file:
 
 ```tsx
-import { ImageResponse } from 'next/og'
+import { ImageResponse } from 'next/og';
 
-export const runtime = 'edge'
+export const runtime = 'edge';
 
-export const alt = 'DorkOS - The operating system for autonomous AI agents'
+export const alt = 'DorkOS - The operating system for autonomous AI agents';
 export const size = {
   width: 1200,
   height: 630,
-}
-export const contentType = 'image/png'
+};
+export const contentType = 'image/png';
 
 export default async function Image() {
   return new ImageResponse(
-    (
+    <div
+      style={{
+        background: 'linear-gradient(135deg, #1A1A1A 0%, #2A2A2A 100%)',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        padding: '60px',
+      }}
+    >
+      {/* Dorkian logo SVG -- geometric DORK lettering in white */}
+      <svg
+        width="400"
+        height="138"
+        viewBox="0 0 2325 799"
+        fill="none"
+        style={{ marginBottom: '40px' }}
+      >
+        <rect x="50" y="50" width="2225" height="699" stroke="#FFFFFF" strokeWidth="100" />
+        <path d="M200 599V200H492L599.5 296V491.5L492 599H200Z" fill="#FFFFFF" />
+        <path d="M699.5 599V296.5L802.5 200H1108V497.5L1001 599H699.5Z" fill="#FFFFFF" />
+        <path d="M1208 599V200H1616.5L1509.5 395L1616.5 599L1409 499.5L1208 599Z" fill="#FFFFFF" />
+        <path
+          d="M1716.5 599V200L1917.5 291.5L2125 200L2017.5 400L2125 599H1917.5H1716.5Z"
+          fill="#FFFFFF"
+        />
+      </svg>
+
+      {/* Headline */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #1A1A1A 0%, #2A2A2A 100%)',
-          width: '100%',
-          height: '100%',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          padding: '60px',
+          gap: '4px',
         }}
       >
-        {/* Dorkian logo SVG -- geometric DORK lettering in white */}
-        <svg
-          width="400"
-          height="138"
-          viewBox="0 0 2325 799"
-          fill="none"
-          style={{ marginBottom: '40px' }}
-        >
-          <rect
-            x="50"
-            y="50"
-            width="2225"
-            height="699"
-            stroke="#FFFFFF"
-            strokeWidth="100"
-          />
-          <path
-            d="M200 599V200H492L599.5 296V491.5L492 599H200Z"
-            fill="#FFFFFF"
-          />
-          <path
-            d="M699.5 599V296.5L802.5 200H1108V497.5L1001 599H699.5Z"
-            fill="#FFFFFF"
-          />
-          <path
-            d="M1208 599V200H1616.5L1509.5 395L1616.5 599L1409 499.5L1208 599Z"
-            fill="#FFFFFF"
-          />
-          <path
-            d="M1716.5 599V200L1917.5 291.5L2125 200L2017.5 400L2125 599H1917.5H1716.5Z"
-            fill="#FFFFFF"
-          />
-        </svg>
-
-        {/* Headline */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '4px',
-          }}
-        >
-          <span
-            style={{
-              fontSize: '48px',
-              fontWeight: 700,
-              color: '#FFFFFF',
-              letterSpacing: '-0.03em',
-              lineHeight: 1.2,
-            }}
-          >
-            Your agents are brilliant.
-          </span>
-          <span
-            style={{
-              fontSize: '48px',
-              fontWeight: 700,
-              color: '#E86C3A',
-              letterSpacing: '-0.03em',
-              lineHeight: 1.2,
-              textAlign: 'center',
-            }}
-          >
-            They just can&apos;t do anything
-          </span>
-          <span
-            style={{
-              fontSize: '48px',
-              fontWeight: 700,
-              color: '#E86C3A',
-              letterSpacing: '-0.03em',
-              lineHeight: 1.2,
-            }}
-          >
-            when you leave.
-          </span>
-        </div>
-
-        {/* Tagline */}
         <span
           style={{
-            fontSize: '24px',
-            color: '#9A9A9A',
-            marginTop: '24px',
-            fontWeight: 300,
+            fontSize: '48px',
+            fontWeight: 700,
+            color: '#FFFFFF',
+            letterSpacing: '-0.03em',
+            lineHeight: 1.2,
           }}
         >
-          You slept. They shipped.
+          Your agents are brilliant.
         </span>
-
-        {/* Bottom accent stripes */}
-        <div
+        <span
           style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            display: 'flex',
-            flexDirection: 'column',
+            fontSize: '48px',
+            fontWeight: 700,
+            color: '#E86C3A',
+            letterSpacing: '-0.03em',
+            lineHeight: 1.2,
+            textAlign: 'center',
           }}
         >
-          <div style={{ height: '4px', background: '#E86C3A' }} />
-          <div style={{ height: '4px', background: '#5B8C5A' }} />
-        </div>
+          They just can&apos;t do anything
+        </span>
+        <span
+          style={{
+            fontSize: '48px',
+            fontWeight: 700,
+            color: '#E86C3A',
+            letterSpacing: '-0.03em',
+            lineHeight: 1.2,
+          }}
+        >
+          when you leave.
+        </span>
       </div>
-    ),
+
+      {/* Tagline */}
+      <span
+        style={{
+          fontSize: '24px',
+          color: '#9A9A9A',
+          marginTop: '24px',
+          fontWeight: 300,
+        }}
+      >
+        You slept. They shipped.
+      </span>
+
+      {/* Bottom accent stripes */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ height: '4px', background: '#E86C3A' }} />
+        <div style={{ height: '4px', background: '#5B8C5A' }} />
+      </div>
+    </div>,
     { ...size }
-  )
+  );
 }
 ```
 
@@ -228,7 +210,7 @@ Replace the current file with a re-export of the OG image for guaranteed parity:
 ```tsx
 // Twitter uses the exact same image as OpenGraph for consistency.
 // Re-exporting ensures both routes always render identically.
-export { default, alt, size, contentType, runtime } from './opengraph-image'
+export { default, alt, size, contentType, runtime } from './opengraph-image';
 ```
 
 #### 6.1.4 File: `apps/web/src/app/(marketing)/layout.tsx` -- iMessage Bug Fix
@@ -258,7 +240,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: '/',
   },
-}
+};
 ```
 
 The `/opengraph-image` path is the convention Next.js uses for file-based OG image route handlers. By explicitly including it here, the metadata merge chain preserves the image reference through the marketing layout.
@@ -270,11 +252,11 @@ The `/opengraph-image` path is the convention Next.js uses for file-based OG ima
 Import the `blog` source and append blog pages to the sitemap output.
 
 ```typescript
-import type { MetadataRoute } from 'next'
-import { siteConfig } from '@/config/site'
-import { source, blog } from '@/lib/source'
+import type { MetadataRoute } from 'next';
+import { siteConfig } from '@/config/site';
+import { source, blog } from '@/lib/source';
 
-const BASE_URL = siteConfig.url
+const BASE_URL = siteConfig.url;
 
 /**
  * Generate the sitemap for the DorkOS marketing site.
@@ -314,27 +296,28 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 0.6,
     },
-  ]
+  ];
 
   const docPages: MetadataRoute.Sitemap = source.getPages().map((page) => ({
     url: `${BASE_URL}${page.url}`,
     lastModified: new Date(),
     changeFrequency: 'weekly' as const,
     priority: 0.7,
-  }))
+  }));
 
   const blogPages: MetadataRoute.Sitemap = blog.getPages().map((page) => ({
     url: `${BASE_URL}${page.url}`,
     lastModified: new Date(),
     changeFrequency: 'monthly' as const,
     priority: 0.6,
-  }))
+  }));
 
-  return [...staticPages, ...docPages, ...blogPages]
+  return [...staticPages, ...docPages, ...blogPages];
 }
 ```
 
 Changes from current:
+
 - Import `blog` alongside `source` from `@/lib/source`
 - Add `/blog` index page to static pages
 - Add `blogPages` array from `blog.getPages()`
@@ -387,8 +370,8 @@ Note: The doc links should be verified against the actual docs directory structu
 Add AI crawler-specific rules to block aggressive scrapers while allowing beneficial ones. Also disallow `/test/` routes.
 
 ```typescript
-import type { MetadataRoute } from 'next'
-import { siteConfig } from '@/config/site'
+import type { MetadataRoute } from 'next';
+import { siteConfig } from '@/config/site';
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -426,7 +409,7 @@ export default function robots(): MetadataRoute.Robots {
       },
     ],
     sitemap: `${siteConfig.url}/sitemap.xml`,
-  }
+  };
 }
 ```
 
@@ -460,7 +443,7 @@ const blogPostingJsonLd = {
     '@type': 'WebPage',
     '@id': `${siteConfig.url}/blog/${params.slug}`,
   },
-}
+};
 ```
 
 The script tag is rendered at the top of the component's return JSX, using the same XSS-safe pattern (`replace(/</g, '\\u003c')`) as the existing JSON-LD in `(marketing)/layout.tsx`:
@@ -477,6 +460,7 @@ The script tag is rendered at the top of the component's return JSX, using the s
 ```
 
 Key decisions:
+
 - `dateModified` defaults to `datePublished` (Fumadocs blog frontmatter has no separate modified date field; can be enhanced later if the schema adds one)
 - Author falls back to the organization name when no author is specified in frontmatter
 - The XSS escaping pattern matches the existing convention in `(marketing)/layout.tsx`
@@ -508,9 +492,9 @@ export const siteConfig = {
    * Set to `true` to hide the banner completely.
    */
   disableCookieBanner: true,
-} as const
+} as const;
 
-export type SiteConfig = typeof siteConfig
+export type SiteConfig = typeof siteConfig;
 ```
 
 Before removing, verify no code references `siteConfig.ogImage` with a codebase search. If any references exist, update them to remove the dependency.
@@ -520,6 +504,7 @@ Before removing, verify no code references `siteConfig.ogImage` with a codebase 
 The current description ("The operating system for autonomous AI agents. Scheduling, communication, memory, and a command center. Open source. Self-hosted.") already matches the marketing copy well. Verify it aligns with the homepage and update if the marketing copy has diverged.
 
 If the description needs updating, change it in `siteConfig.description`. This propagates to:
+
 - Root layout `<meta name="description">`
 - Marketing layout `og:description`
 - `SoftwareApplication` JSON-LD `description`
@@ -529,13 +514,14 @@ If the description needs updating, change it in `siteConfig.description`. This p
 
 ### Phase 1: Share Card Fix (Critical)
 
-| Step | File | Change |
-|---|---|---|
-| 1a | `apps/web/src/app/opengraph-image.tsx` | Rewrite with new design (gradient bg, Dorkian logo, hero copy) |
-| 1b | `apps/web/src/app/twitter-image.tsx` | Replace with re-export from opengraph-image |
-| 1c | `apps/web/src/app/(marketing)/layout.tsx` | Add `images` array to `openGraph` metadata |
+| Step | File                                      | Change                                                         |
+| ---- | ----------------------------------------- | -------------------------------------------------------------- |
+| 1a   | `apps/web/src/app/opengraph-image.tsx`    | Rewrite with new design (gradient bg, Dorkian logo, hero copy) |
+| 1b   | `apps/web/src/app/twitter-image.tsx`      | Replace with re-export from opengraph-image                    |
+| 1c   | `apps/web/src/app/(marketing)/layout.tsx` | Add `images` array to `openGraph` metadata                     |
 
 **Validation:** Deploy to Vercel preview. Test share card rendering on:
+
 - iMessage (paste link in conversation)
 - Facebook Sharing Debugger (`https://developers.facebook.com/tools/debug/`)
 - Twitter Card Validator
@@ -545,51 +531,54 @@ If the description needs updating, change it in `siteConfig.description`. This p
 
 ### Phase 2: SEO & Discoverability (High)
 
-| Step | File | Change |
-|---|---|---|
-| 2a | `apps/web/src/app/sitemap.ts` | Add blog import and blogPages array |
-| 2b | `apps/web/public/llms.txt` | Create new file with structured AI-readable content |
+| Step | File                          | Change                                              |
+| ---- | ----------------------------- | --------------------------------------------------- |
+| 2a   | `apps/web/src/app/sitemap.ts` | Add blog import and blogPages array                 |
+| 2b   | `apps/web/public/llms.txt`    | Create new file with structured AI-readable content |
 
 **Validation:**
+
 - Visit `/sitemap.xml` and confirm blog post URLs appear
 - Visit `/llms.txt` and confirm it returns plain text content
 - Submit updated sitemap to Google Search Console
 
 ### Phase 3: Crawler Rules & Structured Data (Medium)
 
-| Step | File | Change |
-|---|---|---|
-| 3a | `apps/web/src/app/robots.ts` | Add AI crawler rules (allow/block) |
-| 3b | `apps/web/src/app/(marketing)/blog/[slug]/page.tsx` | Add BlogPosting JSON-LD |
+| Step | File                                                | Change                             |
+| ---- | --------------------------------------------------- | ---------------------------------- |
+| 3a   | `apps/web/src/app/robots.ts`                        | Add AI crawler rules (allow/block) |
+| 3b   | `apps/web/src/app/(marketing)/blog/[slug]/page.tsx` | Add BlogPosting JSON-LD            |
 
 **Validation:**
+
 - Visit `/robots.txt` and confirm CCBot/Bytespider are blocked
 - Use Google Rich Results Test on a blog post URL to verify JSON-LD
 - Check that the `BlogPosting` structured data includes headline, datePublished, and author
 
 ### Phase 4: Cleanup (Low)
 
-| Step | File | Change |
-|---|---|---|
-| 4a | `apps/web/src/config/site.ts` | Remove `ogImage` field |
-| 4b | `apps/web/src/config/site.ts` | Verify/update `description` |
+| Step | File                          | Change                      |
+| ---- | ----------------------------- | --------------------------- |
+| 4a   | `apps/web/src/config/site.ts` | Remove `ogImage` field      |
+| 4b   | `apps/web/src/config/site.ts` | Verify/update `description` |
 
 **Validation:**
+
 - `grep -r "ogImage" apps/web/` returns no results
 - Existing metadata on all pages renders correctly (no regressions)
 
 ## 8. File Change Summary
 
-| File | Action | Priority |
-|---|---|---|
-| `apps/web/src/app/opengraph-image.tsx` | Rewrite | Critical |
-| `apps/web/src/app/twitter-image.tsx` | Rewrite (re-export) | Critical |
-| `apps/web/src/app/(marketing)/layout.tsx` | Edit (add images to openGraph) | Critical |
-| `apps/web/src/app/sitemap.ts` | Edit (add blog pages) | High |
-| `apps/web/public/llms.txt` | Create | High |
-| `apps/web/src/app/robots.ts` | Edit (add crawler rules) | Medium |
-| `apps/web/src/app/(marketing)/blog/[slug]/page.tsx` | Edit (add JSON-LD) | Medium |
-| `apps/web/src/config/site.ts` | Edit (remove ogImage) | Low |
+| File                                                | Action                         | Priority |
+| --------------------------------------------------- | ------------------------------ | -------- |
+| `apps/web/src/app/opengraph-image.tsx`              | Rewrite                        | Critical |
+| `apps/web/src/app/twitter-image.tsx`                | Rewrite (re-export)            | Critical |
+| `apps/web/src/app/(marketing)/layout.tsx`           | Edit (add images to openGraph) | Critical |
+| `apps/web/src/app/sitemap.ts`                       | Edit (add blog pages)          | High     |
+| `apps/web/public/llms.txt`                          | Create                         | High     |
+| `apps/web/src/app/robots.ts`                        | Edit (add crawler rules)       | Medium   |
+| `apps/web/src/app/(marketing)/blog/[slug]/page.tsx` | Edit (add JSON-LD)             | Medium   |
+| `apps/web/src/config/site.ts`                       | Edit (remove ogImage)          | Low      |
 
 ## 9. Edge Cases & Risks
 
@@ -631,6 +620,7 @@ If the description needs updating, change it in `siteConfig.description`. This p
 ### Automated Testing
 
 No new automated tests are required. These changes are:
+
 - Static file additions (`llms.txt`)
 - Metadata configuration changes (tested via manual share card validation)
 - Edge runtime image generation (not unit-testable in jsdom)

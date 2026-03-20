@@ -17,7 +17,7 @@ export interface SSEEvent<T = unknown> {
  */
 export async function* parseSSEStream<T = unknown>(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  options?: { onParseError?: 'skip' | 'throw' },
+  options?: { onParseError?: 'skip' | 'throw' }
 ): AsyncGenerator<SSEEvent<T>> {
   const decoder = new TextDecoder();
   const errorMode = options?.onParseError ?? 'skip';

@@ -11,7 +11,7 @@ const MESSAGES_KEY = ['relay', 'messages'] as const;
  */
 export function useRelayMessages(
   filters?: { subject?: string; status?: string; from?: string; cursor?: string; limit?: number },
-  enabled = true,
+  enabled = true
 ) {
   const transport = useTransport();
 

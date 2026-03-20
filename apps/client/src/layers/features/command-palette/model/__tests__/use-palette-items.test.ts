@@ -99,10 +99,11 @@ describe('usePaletteItems', () => {
     expect(ids).toContain('settings');
   });
 
-  it('quickActions is a static list of 4 items', () => {
+  it('quickActions is a static list of 5 items', () => {
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.quickActions).toHaveLength(4);
+    expect(result.current.quickActions).toHaveLength(5);
     const ids = result.current.quickActions.map((q) => q.id);
+    expect(ids).toContain('dashboard');
     expect(ids).toContain('new-session');
     expect(ids).toContain('discover');
     expect(ids).toContain('browse');
@@ -157,7 +158,7 @@ describe('usePaletteItems', () => {
     const agents = [agentA, agentB, agentC, agentD, agentE, agentF];
     mockUseMeshAgentPaths.mockReturnValue({ data: { agents }, isLoading: false });
     mockUseAgentFrecency.mockReturnValue(
-      makeFrecency(['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e', 'agent-f']),
+      makeFrecency(['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e', 'agent-f'])
     );
 
     const { result } = renderHook(() => usePaletteItems(null));
@@ -334,7 +335,13 @@ describe('usePaletteItems', () => {
     const recentTime = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 min ago
     mockUseSessions.mockReturnValue({
       sessions: [
-        { id: 's1', title: 'Fix bug', cwd: '/projects/a', updatedAt: recentTime, createdAt: recentTime },
+        {
+          id: 's1',
+          title: 'Fix bug',
+          cwd: '/projects/a',
+          updatedAt: recentTime,
+          createdAt: recentTime,
+        },
       ],
     });
     const { result } = renderHook(() => usePaletteItems('/projects/a'));
@@ -348,7 +355,13 @@ describe('usePaletteItems', () => {
     const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2h ago
     mockUseSessions.mockReturnValue({
       sessions: [
-        { id: 's1', title: 'Old session', cwd: '/projects/a', updatedAt: oldTime, createdAt: oldTime },
+        {
+          id: 's1',
+          title: 'Old session',
+          cwd: '/projects/a',
+          updatedAt: oldTime,
+          createdAt: oldTime,
+        },
       ],
     });
     const { result } = renderHook(() => usePaletteItems('/projects/a'));
@@ -390,13 +403,23 @@ describe('usePaletteItems', () => {
     mockUseMeshAgentPaths.mockReturnValue({ data: { agents: [agentA] }, isLoading: false });
     mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a']));
     const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    expect(result.current.suggestions.find((s) => s.id === 'suggestion-switchback')).toBeUndefined();
+    expect(
+      result.current.suggestions.find((s) => s.id === 'suggestion-switchback')
+    ).toBeUndefined();
   });
 
   it('caps suggestions at 3 items', () => {
     const recentTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     mockUseSessions.mockReturnValue({
-      sessions: [{ id: 's1', title: 'Session', cwd: '/projects/a', updatedAt: recentTime, createdAt: recentTime }],
+      sessions: [
+        {
+          id: 's1',
+          title: 'Session',
+          cwd: '/projects/a',
+          updatedAt: recentTime,
+          createdAt: recentTime,
+        },
+      ],
     });
     mockUseActiveRunCount.mockReturnValue({ data: 2 });
     mockUseAppStore.mockReturnValue({ previousCwd: '/projects/b' });

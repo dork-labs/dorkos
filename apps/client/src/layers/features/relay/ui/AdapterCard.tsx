@@ -1,8 +1,21 @@
 import { useMemo, useState } from 'react';
-import { Activity, AlertTriangle, ChevronRight, Link2, MoreVertical, Plus, Settings, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ChevronRight,
+  Link2,
+  MoreVertical,
+  Plus,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui/collapsible';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/layers/shared/ui/collapsible';
 import { Switch } from '@/layers/shared/ui/switch';
 import {
   DropdownMenu,
@@ -20,15 +33,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/layers/shared/ui/alert-dialog';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/layers/shared/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/layers/shared/ui/sheet';
 import { cn } from '@/layers/shared/lib';
-import type { AdapterBinding, AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
-import { useBindings, useCreateBinding, useDeleteBinding, useUpdateBinding } from '@/layers/entities/binding';
+import type {
+  AdapterBinding,
+  AdapterManifest,
+  CatalogInstance,
+} from '@dorkos/shared/relay-schemas';
+import {
+  useBindings,
+  useCreateBinding,
+  useDeleteBinding,
+  useUpdateBinding,
+} from '@/layers/entities/binding';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { getCategoryColorClasses } from '../lib/category-colors';
 import { AdapterEventLog } from './AdapterEventLog';
@@ -47,7 +64,13 @@ interface AdapterCardProps {
 }
 
 /** Displays a configured adapter instance with status, toggle, and kebab menu actions. */
-export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemove }: AdapterCardProps) {
+export function AdapterCard({
+  instance,
+  manifest,
+  onToggle,
+  onConfigure,
+  onRemove,
+}: AdapterCardProps) {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [eventsSheetOpen, setEventsSheetOpen] = useState(false);
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false);
@@ -64,7 +87,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
   // Prefer custom label as primary display name, fall back to status displayName or id.
   const primaryName = instance.label || instance.status.displayName || instance.id;
   // When a custom label exists, show the manifest type name as secondary context.
-  const secondaryName = instance.label ? (instance.status.displayName || manifest.displayName) : null;
+  const secondaryName = instance.label ? instance.status.displayName || manifest.displayName : null;
 
   const { data: allBindings = [] } = useBindings();
   const { data: agentsData } = useRegisteredAgents();
@@ -74,7 +97,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
 
   const adapterBindings = useMemo(
     () => allBindings.filter((b) => b.adapterId === instance.id),
-    [allBindings, instance.id],
+    [allBindings, instance.id]
   );
 
   const boundAgentRows = useMemo(() => {
@@ -108,10 +131,14 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
     instance.status.state === 'disconnected' && 'bg-gray-400',
     instance.status.state === 'starting' && 'animate-pulse bg-blue-400',
     instance.status.state === 'stopping' && 'animate-pulse bg-gray-400',
-    !['error', 'connected', 'disconnected', 'starting', 'stopping'].includes(instance.status.state) && 'bg-gray-400',
+    !['error', 'connected', 'disconnected', 'starting', 'stopping'].includes(
+      instance.status.state
+    ) && 'bg-gray-400'
   );
 
-  const visibleBindings = showAllBindings ? boundAgentRows : boundAgentRows.slice(0, MAX_VISIBLE_BINDINGS);
+  const visibleBindings = showAllBindings
+    ? boundAgentRows
+    : boundAgentRows.slice(0, MAX_VISIBLE_BINDINGS);
   const overflowCount = boundAgentRows.length - MAX_VISIBLE_BINDINGS;
 
   /** Resolves a registered agent's display name from its ID. */
@@ -143,8 +170,8 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
     <>
       <div
         className={cn(
-          'rounded-xl border p-5 shadow-soft transition-shadow hover:shadow-elevated',
-          isBuiltinClaude && 'border-dashed',
+          'shadow-soft hover:shadow-elevated rounded-xl border p-5 transition-shadow',
+          isBuiltinClaude && 'border-dashed'
         )}
       >
         {/* Header: status dot, emoji, name, toggle, kebab */}
@@ -164,7 +191,12 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="size-7 p-0" aria-label="Adapter actions">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-7 p-0"
+                  aria-label="Adapter actions"
+                >
                   <MoreVertical className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -196,11 +228,12 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
 
         {/* Subtitle: adapter type + category */}
         <div className="mt-1 flex items-center gap-2 pl-[18px]">
-          {secondaryName && (
-            <span className="text-xs text-muted-foreground">{secondaryName}</span>
-          )}
-          {secondaryName && <span className="text-xs text-muted-foreground/50">&middot;</span>}
-          <Badge variant="secondary" className={cn('text-xs', getCategoryColorClasses(manifest.category))}>
+          {secondaryName && <span className="text-muted-foreground text-xs">{secondaryName}</span>}
+          {secondaryName && <span className="text-muted-foreground/50 text-xs">&middot;</span>}
+          <Badge
+            variant="secondary"
+            className={cn('text-xs', getCategoryColorClasses(manifest.category))}
+          >
             {manifest.category}
           </Badge>
         </div>
@@ -208,8 +241,9 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
         {/* Body: bindings or CCA summary */}
         <div className="mt-3 space-y-1.5 pl-[18px]">
           {isBuiltinClaude ? (
-            <p className="text-sm text-muted-foreground">
-              Serving {totalAgentCount} {totalAgentCount === 1 ? 'agent' : 'agents'} &middot; Chat + Pulse
+            <p className="text-muted-foreground text-sm">
+              Serving {totalAgentCount} {totalAgentCount === 1 ? 'agent' : 'agents'} &middot; Chat +
+              Pulse
             </p>
           ) : hasBindings ? (
             <>
@@ -219,7 +253,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
                   <button
                     key={row.bindingId}
                     type="button"
-                    className="group/row flex w-full cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50"
+                    className="group/row hover:bg-muted/50 flex w-full cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors"
                     onClick={() => {
                       setEditingBinding(binding);
                       setBindingDialogMode('edit');
@@ -241,7 +275,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
               {overflowCount > 0 && !showAllBindings && (
                 <button
                   type="button"
-                  className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  className="text-muted-foreground hover:text-foreground mt-1 text-xs hover:underline"
                   onClick={() => setShowAllBindings(true)}
                 >
                   and {overflowCount} more
@@ -250,7 +284,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
               {showAllBindings && boundAgentRows.length > MAX_VISIBLE_BINDINGS && (
                 <button
                   type="button"
-                  className="mt-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  className="text-muted-foreground hover:text-foreground mt-1 text-xs hover:underline"
                   onClick={() => setShowAllBindings(false)}
                 >
                   Show less
@@ -259,7 +293,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
               <Button
                 variant="ghost"
                 size="sm"
-                className="mt-1 h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground mt-1 h-6 gap-1 px-2 text-xs"
                 onClick={openBindingCreate}
               >
                 <Plus className="size-3" />
@@ -285,7 +319,10 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
             {instance.status.errorCount > 0 && !instance.status.lastError && (
               <div className="flex items-center gap-1 text-xs text-red-500">
                 <AlertTriangle className="size-3" />
-                <span>{instance.status.errorCount} {instance.status.errorCount === 1 ? 'error' : 'errors'}</span>
+                <span>
+                  {instance.status.errorCount}{' '}
+                  {instance.status.errorCount === 1 ? 'error' : 'errors'}
+                </span>
               </div>
             )}
             {instance.status.lastError && (
@@ -297,9 +334,7 @@ export function AdapterCard({ instance, manifest, onToggle, onConfigure, onRemov
                       aria-label="Toggle full error message"
                     >
                       <ChevronRight className="size-3 transition-transform data-[state=open]:rotate-90" />
-                      {instance.status.errorCount > 0 && (
-                        <AlertTriangle className="size-3" />
-                      )}
+                      {instance.status.errorCount > 0 && <AlertTriangle className="size-3" />}
                       <span className="max-w-[200px] truncate">
                         {instance.status.errorCount > 0
                           ? `${instance.status.errorCount} ${instance.status.errorCount === 1 ? 'error' : 'errors'}`

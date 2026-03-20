@@ -74,13 +74,13 @@ function parseApprovalPayload(payload: unknown): ApprovalPayload | null {
 export function handleApprovalResponse(
   envelope: RelayEnvelope,
   agentManager: AgentRuntimeLike,
-  log: Pick<Console, 'warn' | 'debug'>,
+  log: Pick<Console, 'warn' | 'debug'>
 ): void {
   const approval = parseApprovalPayload(envelope.payload);
   if (!approval) {
     log.warn(
       `[CCA] approval-handler: received malformed payload on ${envelope.subject} — ` +
-        `expected type='approval_response' with toolCallId, sessionId, approved`,
+        `expected type='approval_response' with toolCallId, sessionId, approved`
     );
     return;
   }
@@ -88,7 +88,7 @@ export function handleApprovalResponse(
   const { toolCallId, sessionId, approved, platform = 'unknown' } = approval;
   log.debug?.(
     `[CCA] approval-handler: ${approved ? 'approve' : 'deny'} ` +
-      `toolCallId=${toolCallId} sessionId=${sessionId} platform=${platform}`,
+      `toolCallId=${toolCallId} sessionId=${sessionId} platform=${platform}`
   );
 
   const resolved = agentManager.approveTool(sessionId, toolCallId, approved);
@@ -96,7 +96,7 @@ export function handleApprovalResponse(
     // Interaction already settled (e.g., timeout auto-denied before user clicked)
     log.warn(
       `[CCA] approval-handler: approveTool returned false — ` +
-        `interaction not found (already timed out?) toolCallId=${toolCallId} sessionId=${sessionId}`,
+        `interaction not found (already timed out?) toolCallId=${toolCallId} sessionId=${sessionId}`
     );
   }
 }
@@ -115,7 +115,7 @@ export function handleApprovalResponse(
 export function subscribeApprovalHandler(
   relay: RelayPublisher,
   agentManager: AgentRuntimeLike,
-  log: Pick<Console, 'warn' | 'debug'>,
+  log: Pick<Console, 'warn' | 'debug'>
 ): Unsubscribe {
   return relay.subscribe(APPROVAL_SUBJECT_PATTERN, (envelope) => {
     handleApprovalResponse(envelope, agentManager, log);

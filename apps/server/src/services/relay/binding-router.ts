@@ -31,9 +31,12 @@ export interface RelayCoreLike {
   publish(
     subject: string,
     payload: unknown,
-    options: PublishOptions,
+    options: PublishOptions
   ): Promise<{ messageId: string; deliveredTo: number }>;
-  subscribe(pattern: string, handler: (envelope: RelayEnvelope) => void | Promise<void>): Unsubscribe;
+  subscribe(
+    pattern: string,
+    handler: (envelope: RelayEnvelope) => void | Promise<void>
+  ): Unsubscribe;
 }
 
 export interface BindingRouterDeps {
@@ -78,7 +81,7 @@ export class BindingRouter {
     // like `relay.human.telegram.123456` have 4+ tokens.
     this.unsubscribe = this.deps.relayCore.subscribe(
       'relay.human.>',
-      this.handleInbound.bind(this),
+      this.handleInbound.bind(this)
     );
     logger.info(`BindingRouter initialized with ${this.sessionMap.size} persisted session(s)`);
   }
@@ -102,7 +105,10 @@ export class BindingRouter {
       try {
         await this.saveSessionMap();
       } catch (err) {
-        logger.warn('BindingRouter: failed to persist session map after cleanup, will retry on next write', err);
+        logger.warn(
+          'BindingRouter: failed to persist session map after cleanup, will retry on next write',
+          err
+        );
       }
       logger.info(`Cleaned up ${removed} orphaned session mapping(s)`);
     }
@@ -127,9 +133,7 @@ export class BindingRouter {
 
       const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
       if (!binding) {
-        logger.info(
-          `BindingRouter: no binding for adapter=${adapterId} chat=${chatId}, skipping`,
-        );
+        logger.info(`BindingRouter: no binding for adapter=${adapterId} chat=${chatId}, skipping`);
         return;
       }
 
@@ -137,7 +141,7 @@ export class BindingRouter {
       if (binding.canReceive === false) {
         logger.debug(
           '[BindingRouter] Dropping inbound \u2014 canReceive=false for binding %s',
-          binding.id,
+          binding.id
         );
         return;
       }
@@ -145,7 +149,7 @@ export class BindingRouter {
       const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
       if (!projectPath) {
         logger.warn(
-          `BindingRouter: agent '${binding.agentId}' not found in mesh registry, skipping`,
+          `BindingRouter: agent '${binding.agentId}' not found in mesh registry, skipping`
         );
         return;
       }
@@ -173,12 +177,12 @@ export class BindingRouter {
 
       logger.info(
         `BindingRouter: routed ${envelope.subject} → relay.agent.${sessionId} ` +
-        `(binding=${binding.id}, projectPath=${projectPath})`,
+          `(binding=${binding.id}, projectPath=${projectPath})`
       );
     } catch (err) {
       logger.error(
         `BindingRouter: failed to route ${envelope.subject}:`,
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.message : err
       );
     }
   }
@@ -186,7 +190,7 @@ export class BindingRouter {
   private async resolveSession(
     binding: AdapterBinding,
     chatId: string | undefined,
-    envelope: RelayEnvelope,
+    envelope: RelayEnvelope
   ): Promise<string> {
     switch (binding.sessionStrategy) {
       case 'stateless':
@@ -195,9 +199,7 @@ export class BindingRouter {
       case 'per-user': {
         const metadata = envelope as Record<string, unknown>;
         const userId =
-          (metadata.metadata as Record<string, unknown> | undefined)?.userId ??
-          chatId ??
-          'unknown';
+          (metadata.metadata as Record<string, unknown> | undefined)?.userId ?? chatId ?? 'unknown';
         const key = `${binding.id}:user:${String(userId)}`;
         return this.getOrCreateSession(key, binding);
       }
@@ -231,7 +233,10 @@ export class BindingRouter {
         try {
           await this.saveSessionMap();
         } catch (err) {
-          logger.warn('BindingRouter: failed to persist session map, will retry on next write', err);
+          logger.warn(
+            'BindingRouter: failed to persist session map, will retry on next write',
+            err
+          );
         }
         return sessionId;
       } finally {
@@ -270,10 +275,7 @@ export class BindingRouter {
       agentId: binding.agentId,
       projectPath,
     });
-    const session = await this.deps.agentManager.createSession(
-      projectPath,
-      binding.permissionMode,
-    );
+    const session = await this.deps.agentManager.createSession(projectPath, binding.permissionMode);
     return session.id;
   }
 
@@ -300,8 +302,7 @@ export class BindingRouter {
     if (!platformType) return {};
 
     // Resolve platform type → adapter instance ID (e.g., 'telegram' → 'tg-bot-1')
-    const adapterId =
-      this.deps.resolveAdapterInstanceId?.(platformType) ?? platformType;
+    const adapterId = this.deps.resolveAdapterInstanceId?.(platformType) ?? platformType;
 
     // Remaining tokens form the chat context
     const remaining = parts.slice(3);
@@ -336,12 +337,12 @@ export class BindingRouter {
           Array.isArray(entry) &&
           entry.length === 2 &&
           typeof entry[0] === 'string' &&
-          typeof entry[1] === 'string',
+          typeof entry[1] === 'string'
       );
 
       if (valid.length < parsed.length) {
         logger.warn(
-          `BindingRouter: discarded ${parsed.length - valid.length} malformed sessionMap entries`,
+          `BindingRouter: discarded ${parsed.length - valid.length} malformed sessionMap entries`
         );
       }
 
@@ -358,7 +359,10 @@ export class BindingRouter {
   }
 
   private saveSessionMap(): Promise<void> {
-    this.writeLock = this.writeLock.then(() => this.doSaveSessionMap(), () => this.doSaveSessionMap());
+    this.writeLock = this.writeLock.then(
+      () => this.doSaveSessionMap(),
+      () => this.doSaveSessionMap()
+    );
     return this.writeLock;
   }
 

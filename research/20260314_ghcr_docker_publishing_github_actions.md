@@ -1,9 +1,10 @@
 ---
-title: "GHCR Docker Image Publishing via GitHub Actions"
+title: 'GHCR Docker Image Publishing via GitHub Actions'
 date: 2026-03-14
 type: implementation
 status: active
-tags: [docker, ghcr, github-actions, ci-cd, containers, release, multi-platform, cosign, supply-chain]
+tags:
+  [docker, ghcr, github-actions, ci-cd, containers, release, multi-platform, cosign, supply-chain]
 feature_slug: docker-image-publishing
 searches_performed: 10
 sources_count: 22
@@ -33,10 +34,10 @@ Use `secrets.GITHUB_TOKEN` — not a PAT — for GHCR authentication in GitHub A
 
 Two viable triggers exist:
 
-| Trigger | Pros | Cons |
-|---|---|---|
-| `on: push: tags: ['v*']` | Simple, reliable, fires immediately on `git push --tags`, works with `GITHUB_TOKEN` | Must ensure tags follow the version bump process |
-| `on: release: types: [published]` | Tight coupling to GitHub Release UX, release notes available | Requires non-`GITHUB_TOKEN` if the release is created by another workflow; draft release does not fire |
+| Trigger                           | Pros                                                                                | Cons                                                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `on: push: tags: ['v*']`          | Simple, reliable, fires immediately on `git push --tags`, works with `GITHUB_TOKEN` | Must ensure tags follow the version bump process                                                       |
+| `on: release: types: [published]` | Tight coupling to GitHub Release UX, release notes available                        | Requires non-`GITHUB_TOKEN` if the release is created by another workflow; draft release does not fire |
 
 **Recommendation**: Use `on: push: tags: ['v*']` as the primary trigger, with `workflow_dispatch` as a secondary for manual re-runs. This matches the existing npm publish pattern (which also fires on version tags) and avoids `GITHUB_TOKEN` chaining issues.
 
@@ -46,12 +47,13 @@ The canonical four-action stack (all from Docker's official GitHub org):
 
 ```yaml
 - uses: docker/login-action@v3
-- uses: docker/setup-buildx-action@v3      # required for cache and multi-platform
+- uses: docker/setup-buildx-action@v3 # required for cache and multi-platform
 - uses: docker/metadata-action@v5
 - uses: docker/build-push-action@v6
 ```
 
 Plus GitHub's own attestation action:
+
 ```yaml
 - uses: actions/attest-build-provenance@v2
 ```
@@ -74,12 +76,14 @@ tags: |
 **`latest` tag**: Controlled via `flavor: latest=auto` (the default). With `auto`, `latest` is only applied when the git tag is not a pre-release (i.e., no `-rc`, `-beta`, `-alpha` suffix). This is the correct behavior — do not set `latest=true` explicitly.
 
 **Full tags example for `v0.11.0`**:
+
 - `ghcr.io/dork-labs/dorkos:0.11.0`
 - `ghcr.io/dork-labs/dorkos:0.11`
 - `ghcr.io/dork-labs/dorkos:sha-abc1234`
 - `ghcr.io/dork-labs/dorkos:latest`
 
 **For a pre-release `v0.11.0-rc.1`**:
+
 - `ghcr.io/dork-labs/dorkos:0.11.0-rc.1`
 - `ghcr.io/dork-labs/dorkos:sha-abc1234`
 - (`latest` NOT applied — correct behavior)
@@ -89,6 +93,7 @@ tags: |
 GHCR packages are not automatically linked to a repository when pushed from Actions. Two mechanisms connect them:
 
 **Option A — Dockerfile `LABEL` (recommended, persistent)**:
+
 ```dockerfile
 LABEL org.opencontainers.image.source="https://github.com/dork-labs/dorkos"
 LABEL org.opencontainers.image.description="DorkOS — the operating system for autonomous AI agents"
@@ -118,18 +123,19 @@ This is a one-time manual operation. Once public, it cannot be made private agai
 
 **Trade-offs**:
 
-| Approach | Build time | Complexity | Use case |
-|---|---|---|---|
-| `linux/amd64` only | Fast (2-5 min) | Zero overhead | Default; covers all GitHub-hosted runners |
-| QEMU emulation (amd64 + arm64) | Very slow (10-30x slower for arm64 emulation on amd64 host) | Moderate | Acceptable for infrequent release builds |
-| Matrix + merge manifest | Fast (parallel native runners) | High | Production-grade; requires 2+ runners |
-| Docker Build Cloud | Fast (offloaded) | Low (paid service) | Worth evaluating if build times become painful |
+| Approach                       | Build time                                                  | Complexity         | Use case                                       |
+| ------------------------------ | ----------------------------------------------------------- | ------------------ | ---------------------------------------------- |
+| `linux/amd64` only             | Fast (2-5 min)                                              | Zero overhead      | Default; covers all GitHub-hosted runners      |
+| QEMU emulation (amd64 + arm64) | Very slow (10-30x slower for arm64 emulation on amd64 host) | Moderate           | Acceptable for infrequent release builds       |
+| Matrix + merge manifest        | Fast (parallel native runners)                              | High               | Production-grade; requires 2+ runners          |
+| Docker Build Cloud             | Fast (offloaded)                                            | Low (paid service) | Worth evaluating if build times become painful |
 
 **QEMU setup** (for single-runner multi-platform):
+
 ```yaml
 - uses: docker/setup-qemu-action@v3
 - uses: docker/setup-buildx-action@v3
-# then in build-push-action:
+  # then in build-push-action:
   platforms: linux/amd64,linux/arm64
 ```
 
@@ -139,11 +145,11 @@ This is a one-time manual operation. Once public, it cannot be made private agai
 
 Three approaches:
 
-| Cache backend | How | Pros | Cons |
-|---|---|---|---|
-| **GHA cache** (`type=gha`) | GitHub Actions cache service | Zero external deps, works out of the box | 10 GB limit total; requires Buildx ≥ 0.21.0 (for API v2, mandatory post April 2025) |
-| **Registry cache** (`type=registry`) | Separate tag in GHCR (e.g., `:buildcache`) | `mode=max` for full layer cache | Uses extra GHCR storage; always pulled |
-| **Inline cache** | Embedded in image | Simplest | Only supports `mode=min`; not useful for Node.js multi-stage builds |
+| Cache backend                        | How                                        | Pros                                     | Cons                                                                                |
+| ------------------------------------ | ------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| **GHA cache** (`type=gha`)           | GitHub Actions cache service               | Zero external deps, works out of the box | 10 GB limit total; requires Buildx ≥ 0.21.0 (for API v2, mandatory post April 2025) |
+| **Registry cache** (`type=registry`) | Separate tag in GHCR (e.g., `:buildcache`) | `mode=max` for full layer cache          | Uses extra GHCR storage; always pulled                                              |
+| **Inline cache**                     | Embedded in image                          | Simplest                                 | Only supports `mode=min`; not useful for Node.js multi-stage builds                 |
 
 **Recommendation**: Start with `type=gha,mode=max`. It is zero-cost, zero-setup, and the 10 GB limit is more than sufficient for a Node.js image. If the build starts being cache-busted frequently (due to the 10 GB cap being shared with other workflows), switch to `type=registry` with a dedicated `:buildcache` tag.
 
@@ -157,6 +163,7 @@ cache-to: type=gha,mode=max
 **GitHub Artifact Attestations (recommended — zero extra tooling)**:
 
 `actions/attest-build-provenance` generates a SLSA provenance attestation and publishes it to the GHCR registry alongside the image. This is GitHub's native answer to cosign and requires:
+
 - `attestations: write` permission on the job
 - `id-token: write` permission on the job
 - The image digest from `build-push-action` outputs
@@ -264,6 +271,7 @@ jobs:
 ```
 
 **Notes on this workflow**:
+
 - Uses `Dockerfile.run` (the runtime image, not the smoke-test `Dockerfile`). Confirm the correct Dockerfile target before shipping.
 - `IMAGE_NAME` is hardcoded to `dork-labs/dorkos` rather than `${{ github.repository }}` to prevent accidental renames from affecting the published namespace.
 - `workflow_dispatch` allows manual re-runs on existing tags.
@@ -306,6 +314,7 @@ When the release process bumps the version and creates a git tag programmaticall
 ### Pre-release Tags and `latest`
 
 With `flavor: latest=auto`, the metadata-action uses the following logic:
+
 - Tag `v0.11.0` (no prerelease identifier) → `latest` IS applied
 - Tag `v0.11.0-rc.1` → `latest` is NOT applied (pre-release suffix detected)
 - Tag `v0.11.0-beta.3` → `latest` is NOT applied
@@ -358,4 +367,4 @@ The `type=semver,pattern={{major}}` tag (which would produce just `0` for `v0.11
 
 - Searches performed: 10
 - Most productive terms: `docker/metadata-action semver tags`, `GHCR GITHUB_TOKEN workflow`, `docker buildx QEMU arm64 build time trade-offs`, `github actions docker layer caching gha mode`
-- Primary sources: docs.docker.com, docs.github.com, github.com/docker/* repos, community write-ups on DEV.to and Medium
+- Primary sources: docs.docker.com, docs.github.com, github.com/docker/\* repos, community write-ups on DEV.to and Medium

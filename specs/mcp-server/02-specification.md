@@ -1,10 +1,10 @@
 ---
 slug: mcp-server
 number: 107
-title: "MCP Server — Expose DorkOS Tools to External Agents"
+title: 'MCP Server — Expose DorkOS Tools to External Agents'
 created: 2026-03-09
 status: draft
-authors: ["Claude Code"]
+authors: ['Claude Code']
 ideation: specs/mcp-server/01-ideation.md
 research: research/20260309_mcp_server_express_embedding.md
 ---
@@ -52,11 +52,11 @@ The Model Context Protocol (MCP) is the industry standard for connecting AI agen
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@modelcontextprotocol/sdk` | latest | `McpServer`, `NodeStreamableHTTPServerTransport`, `isInitializeRequest` |
-| `zod` | existing | Tool input schemas (already in project) |
-| `express` | existing | Route mounting |
+| Dependency                  | Version  | Purpose                                                                 |
+| --------------------------- | -------- | ----------------------------------------------------------------------- |
+| `@modelcontextprotocol/sdk` | latest   | `McpServer`, `NodeStreamableHTTPServerTransport`, `isInitializeRequest` |
+| `zod`                       | existing | Tool input schemas (already in project)                                 |
+| `express`                   | existing | Route mounting                                                          |
 
 **Import paths** (from `@modelcontextprotocol/sdk`):
 
@@ -105,16 +105,16 @@ import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/ser
 
 ### File Changes
 
-| File | Change | Description |
-|---|---|---|
-| `apps/server/src/services/core/mcp-server.ts` | **New** | Factory: creates `McpServer` with all 28 tools registered |
-| `apps/server/src/routes/mcp.ts` | **New** | Express router: POST/GET/DELETE handlers for Streamable HTTP |
-| `apps/server/src/middleware/mcp-auth.ts` | **New** | API key auth middleware for `/mcp` route |
-| `apps/server/src/app.ts` | **Modify** | Mount `/mcp` router before `finalizeApp()` |
-| `apps/server/src/index.ts` | **Modify** | Create external MCP server, pass to route factory |
-| `apps/server/src/env.ts` | **Modify** | Add `MCP_API_KEY` optional env var |
-| `apps/server/package.json` | **Modify** | Add `@modelcontextprotocol/sdk` dependency |
-| `turbo.json` | **Modify** | Add `MCP_API_KEY` to `globalPassThroughEnv` |
+| File                                          | Change     | Description                                                  |
+| --------------------------------------------- | ---------- | ------------------------------------------------------------ |
+| `apps/server/src/services/core/mcp-server.ts` | **New**    | Factory: creates `McpServer` with all 28 tools registered    |
+| `apps/server/src/routes/mcp.ts`               | **New**    | Express router: POST/GET/DELETE handlers for Streamable HTTP |
+| `apps/server/src/middleware/mcp-auth.ts`      | **New**    | API key auth middleware for `/mcp` route                     |
+| `apps/server/src/app.ts`                      | **Modify** | Mount `/mcp` router before `finalizeApp()`                   |
+| `apps/server/src/index.ts`                    | **Modify** | Create external MCP server, pass to route factory            |
+| `apps/server/src/env.ts`                      | **Modify** | Add `MCP_API_KEY` optional env var                           |
+| `apps/server/package.json`                    | **Modify** | Add `@modelcontextprotocol/sdk` dependency                   |
+| `turbo.json`                                  | **Modify** | Add `MCP_API_KEY` to `globalPassThroughEnv`                  |
 
 ### 1. MCP Server Factory (`services/core/mcp-server.ts`)
 
@@ -131,7 +131,11 @@ Creates a single `McpServer` instance with all 28 DorkOS tools registered using 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
-import { handlePing, handleGetServerInfo, createGetSessionCountHandler, /* ... */ } from '../runtimes/claude-code/mcp-tools/index.js';
+import {
+  handlePing,
+  handleGetServerInfo,
+  createGetSessionCountHandler /* ... */,
+} from '../runtimes/claude-code/mcp-tools/index.js';
 
 export function createExternalMcpServer(deps: McpToolDeps): McpServer {
   const server = new McpServer({
@@ -140,13 +144,28 @@ export function createExternalMcpServer(deps: McpToolDeps): McpServer {
   });
 
   // Core tools
-  server.tool('ping', 'Check that the DorkOS server is running. Returns pong with a timestamp.', {}, handlePing);
-  server.tool('get_server_info', 'Returns DorkOS server metadata.', {
-    include_uptime: z.boolean().optional().describe('Include server uptime in seconds'),
-  }, handleGetServerInfo);
+  server.tool(
+    'ping',
+    'Check that the DorkOS server is running. Returns pong with a timestamp.',
+    {},
+    handlePing
+  );
+  server.tool(
+    'get_server_info',
+    'Returns DorkOS server metadata.',
+    {
+      include_uptime: z.boolean().optional().describe('Include server uptime in seconds'),
+    },
+    handleGetServerInfo
+  );
 
   const handleGetSessionCount = createGetSessionCountHandler(deps);
-  server.tool('get_session_count', 'Returns the number of active sessions.', {}, handleGetSessionCount);
+  server.tool(
+    'get_session_count',
+    'Returns the number of active sessions.',
+    {},
+    handleGetSessionCount
+  );
 
   // ... remaining 25 tools follow the same pattern
   // Each tool group (pulse, relay, adapter, binding, trace, mesh) is registered
@@ -185,7 +204,10 @@ export function createMcpRouter(server: McpServer): Router {
   router.get('/', (_req, res) => {
     res.status(405).json({
       jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed. This server operates in stateless mode.' },
+      error: {
+        code: -32000,
+        message: 'Method not allowed. This server operates in stateless mode.',
+      },
       id: null,
     });
   });
@@ -194,7 +216,10 @@ export function createMcpRouter(server: McpServer): Router {
   router.delete('/', (_req, res) => {
     res.status(405).json({
       jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed. This server operates in stateless mode.' },
+      error: {
+        code: -32000,
+        message: 'Method not allowed. This server operates in stateless mode.',
+      },
       id: null,
     });
   });
@@ -241,6 +266,7 @@ export function mcpApiKeyAuth(req: Request, res: Response, next: NextFunction): 
 ```
 
 **Security properties:**
+
 - Constant-time comparison is not strictly needed for a single-user self-hosted server, but if desired, use `crypto.timingSafeEqual()`.
 - Auth is enforced on every request, not just initialization (session ID is not auth).
 - The middleware is mounted on the `/mcp` route only — does not affect other API routes.
@@ -318,10 +344,7 @@ function validateMcpOrigin(req: Request, res: Response, next: NextFunction): voi
 
   // Check against allowed origins (localhost + tunnel)
   const port = env.DORKOS_PORT;
-  const allowed = [
-    `http://localhost:${port}`,
-    `http://127.0.0.1:${port}`,
-  ];
+  const allowed = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
 
   // Add tunnel origin if active
   const tunnelUrl = tunnelManager.status.url;
@@ -500,16 +523,16 @@ When API key is configured:
 
 ## Open Questions
 
-*None — all decisions resolved during ideation.*
+_None — all decisions resolved during ideation._
 
 ## Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| ADR-0070 | Per-Agent Tool Filtering via `allowedTools` | Internal tool filtering mechanism. External MCP server exposes all tools; client-side filtering is the external equivalent. |
-| ADR-0068 | Static XML Blocks for Tool Context | Tool usage documentation injected into internal agent system prompts. External agents do not receive these context blocks (they use MCP tool descriptions instead). |
-| ADR-0071 | Implicit Tool Group Hierarchy | Tools inherit feature flags from parent services. The same guards apply to external tool calls. |
-| ADR-0062 | Remove Mesh Feature Flag (Always-On) | Mesh tools are always available. Sets precedent for MCP server being always-on. |
+| ADR      | Title                                       | Relevance                                                                                                                                                           |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0070 | Per-Agent Tool Filtering via `allowedTools` | Internal tool filtering mechanism. External MCP server exposes all tools; client-side filtering is the external equivalent.                                         |
+| ADR-0068 | Static XML Blocks for Tool Context          | Tool usage documentation injected into internal agent system prompts. External agents do not receive these context blocks (they use MCP tool descriptions instead). |
+| ADR-0071 | Implicit Tool Group Hierarchy               | Tools inherit feature flags from parent services. The same guards apply to external tool calls.                                                                     |
+| ADR-0062 | Remove Mesh Feature Flag (Always-On)        | Mesh tools are always available. Sets precedent for MCP server being always-on.                                                                                     |
 
 ## References
 

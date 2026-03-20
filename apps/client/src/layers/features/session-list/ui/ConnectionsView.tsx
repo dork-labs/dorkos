@@ -102,7 +102,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
   // the query from firing when agentId is absent.
   const { data: accessData, isLoading: accessLoading } = useAgentAccess(
     agentId ?? '',
-    meshEnabled && !!agentId,
+    meshEnabled && !!agentId
   );
 
   // Show only adapters that are either the built-in CCA (serves all agents) or
@@ -113,7 +113,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
       a.config.type === 'claude-code' && a.config.builtin === true;
     if (!agentId) return adapters.filter(isCca);
     const boundAdapterIds = new Set(
-      bindings.filter((b) => b.agentId === agentId).map((b) => b.adapterId),
+      bindings.filter((b) => b.agentId === agentId).map((b) => b.adapterId)
     );
     return adapters.filter((a) => isCca(a) || boundAdapterIds.has(a.config.id));
   }, [adapters, bindings, agentId]);
@@ -154,7 +154,10 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                 <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
                   Adapters
                 </SidebarGroupLabel>
-                <SidebarGroupAction aria-label="Open Relay panel" onClick={() => setRelayOpen(true)}>
+                <SidebarGroupAction
+                  aria-label="Open Relay panel"
+                  onClick={() => setRelayOpen(true)}
+                >
                   <ArrowUpRight />
                 </SidebarGroupAction>
 
@@ -206,7 +209,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                                   'size-2 shrink-0 rounded-full',
                                   ADAPTER_STATE_COLORS[adapter.status.state] ??
                                     'bg-muted-foreground/20',
-                                  adapter.status.state === 'connected' && 'animate-pulse',
+                                  adapter.status.state === 'connected' && 'animate-pulse'
                                 )}
                               />
                               <span className="truncate">{adapter.status.displayName}</span>
@@ -220,7 +223,6 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                     </motion.div>
                   )}
                 </AnimatePresence>
-
               </SidebarGroup>
             </motion.div>
           )}
@@ -290,7 +292,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                               className="text-sm"
                             >
                               {/* Registered agents show a neutral dot — health status requires a separate topology query */}
-                              <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+                              <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-full" />
                               <span className="truncate">{agent.name}</span>
                             </SidebarMenuButton>
                           </SidebarMenuItem>
@@ -315,7 +317,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                                     onClick={() => setMeshOpen(true)}
                                     className="text-sm"
                                   >
-                                    <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+                                    <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-full" />
                                     <span className="truncate">{agent.name}</span>
                                   </SidebarMenuButton>
                                 </SidebarMenuItem>
@@ -352,7 +354,6 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                     </button>
                   </div>
                 )}
-
               </SidebarGroup>
             </motion.div>
           )}
@@ -363,7 +364,10 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
           <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
             Tools
           </SidebarGroupLabel>
-          <SidebarGroupAction aria-label="Edit capabilities" onClick={() => setAgentDialogOpen(true)}>
+          <SidebarGroupAction
+            aria-label="Edit capabilities"
+            onClick={() => setAgentDialogOpen(true)}
+          >
             <ArrowUpRight />
           </SidebarGroupAction>
 
@@ -375,10 +379,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                 <SidebarMenuItem key={key}>
                   <SidebarMenuButton className="text-sm" onClick={() => setAgentDialogOpen(true)}>
                     <span
-                      className={cn(
-                        'size-2 shrink-0 rounded-full',
-                        TOOL_STATUS_COLORS[state],
-                      )}
+                      className={cn('size-2 shrink-0 rounded-full', TOOL_STATUS_COLORS[state])}
                     />
                     <span className="truncate">{label}</span>
                     <span className="text-muted-foreground/50 ml-auto text-xs">
@@ -399,7 +400,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                     className={cn(
                       'size-2 shrink-0 rounded-full',
                       MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40',
-                      server.status === 'connected' && 'animate-pulse',
+                      server.status === 'connected' && 'animate-pulse'
                     )}
                   />
                   <span className="truncate">{server.name}</span>
@@ -428,7 +429,7 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                           className={cn(
                             'size-2 shrink-0 rounded-full',
                             MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40',
-                            server.status === 'connected' && 'animate-pulse',
+                            server.status === 'connected' && 'animate-pulse'
                           )}
                         />
                         <span className="truncate">{server.name}</span>
@@ -465,7 +466,6 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
               </button>
             </div>
           )}
-
         </SidebarGroup>
       </div>
     </ScrollArea>

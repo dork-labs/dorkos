@@ -20,6 +20,7 @@ Rename the marketing/docs app from `apps/web` to `apps/site` and update the CLAU
 ## Background / Problem Statement
 
 The DorkOS monorepo contains two web-based apps:
+
 - `apps/client` — the React 19 SPA (the product's web application)
 - `apps/web` — the Next.js 16 marketing site + Fumadocs documentation
 
@@ -28,6 +29,7 @@ A new contributor's natural assumption is "the web app is in `apps/web`" — whi
 Industry convention (Vercel, Linear, shadcn/ui) uses `apps/site` or `apps/www` for marketing sites when the monorepo also contains a product web app. DorkOS has this inverted.
 
 Additionally, CLAUDE.md says "four apps and four shared packages" but the monorepo actually has **5 apps** and **7 packages**:
+
 - Missing apps: `apps/e2e`
 - Missing packages: `packages/db`, `packages/relay`, `packages/mesh`
 
@@ -66,10 +68,13 @@ git mv apps/web apps/site
 #### 1b. Update package.json name
 
 In `apps/site/package.json`, change:
+
 ```json
 "name": "@dorkos/web"
 ```
+
 to:
+
 ```json
 "name": "@dorkos/site"
 ```
@@ -77,6 +82,7 @@ to:
 #### 1c. Update internal script comments
 
 In `apps/site/scripts/generate-api-docs.ts`, update lines 8-9:
+
 ```
 - * Must be run from the apps/web/ directory
 + * Must be run from the apps/site/ directory
@@ -101,6 +107,7 @@ Three changes:
 1. **Line 17** — Update count: "four apps and four shared packages" → "five apps and seven shared packages"
 
 2. **Lines 19-36** — Update ASCII tree to include all apps and packages:
+
 ```
 dorkos/
 ├── apps/
@@ -120,6 +127,7 @@ dorkos/
 ```
 
 3. **Line 269** — Update documentation section reference:
+
 ```
 - The `apps/web` workspace (`@dorkos/web`) is a Next.js 16 marketing site
 + The `apps/site` workspace (`@dorkos/site`) is a Next.js 16 marketing site
@@ -128,6 +136,7 @@ dorkos/
 #### 2b. `CONTRIBUTING.md`
 
 **Line 36** — Update table row:
+
 ```
 - | `apps/web` | `@dorkos/web` | Marketing site & docs (Next.js 16, Fumadocs) |
 + | `apps/site` | `@dorkos/site` | Marketing site & docs (Next.js 16, Fumadocs) |
@@ -138,6 +147,7 @@ Also add missing entries for `apps/e2e`, `packages/db`, `packages/relay`, `packa
 #### 2c. `contributing/project-structure.md`
 
 **Line 14** — Update ASCII tree entry:
+
 ```
 - │   ├── web/              # @dorkos/web — Marketing site & docs (Next.js 16, Fumadocs)
 + │   ├── site/             # @dorkos/site — Marketing site & docs (Next.js 16, Fumadocs)
@@ -148,6 +158,7 @@ Also add missing app/package entries to match CLAUDE.md structure.
 #### 2d. `contributing/environment-variables.md`
 
 **Line 17** — Update table row:
+
 ```
 - | `apps/web`       | `apps/web/src/env.ts`                    |
 + | `apps/site`      | `apps/site/src/env.ts`                   |
@@ -156,12 +167,14 @@ Also add missing app/package entries to match CLAUDE.md structure.
 #### 2e. `docs/contributing/development-setup.mdx`
 
 **Line 107** — Update folder tree:
+
 ```
 - <Folder name="web">
 + <Folder name="site">
 ```
 
 **Line 137** — Update table row:
+
 ```
 - | `apps/web` | `@dorkos/web` | Marketing site & docs (Next.js 16, Fumadocs) |
 + | `apps/site` | `@dorkos/site` | Marketing site & docs (Next.js 16, Fumadocs) |
@@ -170,6 +183,7 @@ Also add missing app/package entries to match CLAUDE.md structure.
 #### 2f. `.claude/agents/typescript/typescript-expert.md`
 
 **Line 247** — Update path reference:
+
 ```
 - { "path": "./apps/web" }
 + { "path": "./apps/site" }
@@ -178,6 +192,7 @@ Also add missing app/package entries to match CLAUDE.md structure.
 #### 2g. `apps/e2e/BROWSER_TEST_PLAN.md`
 
 **Line 213** — Update section header:
+
 ```
 - ## 10. Marketing Site (apps/web)
 + ## 10. Marketing Site (apps/site)
@@ -221,12 +236,14 @@ This spec IS the documentation change. All doc updates are detailed in Phase 2 a
 ## Implementation Phases
 
 ### Phase 1: Rename & Regenerate
+
 1. `git mv apps/web apps/site`
 2. Update `apps/site/package.json` name field
 3. Update `apps/site/scripts/generate-api-docs.ts` comments
 4. `pnpm install` to regenerate lockfile
 
 ### Phase 2: Update Live References
+
 5. Update `CLAUDE.md` (structure tree + counts + doc section reference)
 6. Update `CONTRIBUTING.md`
 7. Update `contributing/project-structure.md`
@@ -236,6 +253,7 @@ This spec IS the documentation change. All doc updates are detailed in Phase 2 a
 11. Update `apps/e2e/BROWSER_TEST_PLAN.md`
 
 ### Phase 3: Verify
+
 12. `pnpm install` (verify clean lockfile)
 13. `turbo build --filter=@dorkos/site` (verify Next.js build)
 14. `pnpm typecheck` (verify no broken refs)

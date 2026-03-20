@@ -112,27 +112,14 @@ export function InputShowcases() {
 
   return (
     <>
-      <PlaygroundSection
-        title="ChatInput"
-        description="Chat text input in different states."
-      >
+      <PlaygroundSection title="ChatInput" description="Chat text input in different states.">
         <ChatInputDemo label="Idle" />
-        <ChatInputDemo
-          label="With text"
-          initialValue="Can you help me refactor the auth module?"
-        />
+        <ChatInputDemo label="With text" initialValue="Can you help me refactor the auth module?" />
         <ChatInputDemo label="Streaming (stop button)" isStreaming />
-        <ChatInputDemo
-          label="Streaming with queue"
-          isStreaming
-          queueDepth={2}
-        />
+        <ChatInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="FileChipBar"
-        description="File chips in various upload states."
-      >
+      <PlaygroundSection title="FileChipBar" description="File chips in various upload states.">
         <ShowcaseDemo>
           <FileChipBar
             files={files}
@@ -157,12 +144,7 @@ export function InputShowcases() {
 
         <ShowcaseLabel>With item being edited</ShowcaseLabel>
         <ShowcaseDemo>
-          <QueuePanel
-            queue={SAMPLE_QUEUE}
-            editingIndex={1}
-            onEdit={() => {}}
-            onRemove={() => {}}
-          />
+          <QueuePanel queue={SAMPLE_QUEUE} editingIndex={1} onEdit={() => {}} onRemove={() => {}} />
         </ShowcaseDemo>
       </PlaygroundSection>
 
@@ -182,11 +164,7 @@ export function InputShowcases() {
         <ShowcaseLabel>With suggestions</ShowcaseLabel>
         <ShowcaseDemo>
           <PromptSuggestionChips
-            suggestions={[
-              'Run the tests',
-              'Review the changes',
-              'Commit this work',
-            ]}
+            suggestions={['Run the tests', 'Review the changes', 'Commit this work']}
             onChipClick={() => {}}
           />
         </ShowcaseDemo>
@@ -206,10 +184,7 @@ export function InputShowcases() {
 
         <ShowcaseLabel>Single suggestion</ShowcaseLabel>
         <ShowcaseDemo>
-          <PromptSuggestionChips
-            suggestions={['Run the tests']}
-            onChipClick={() => {}}
-          />
+          <PromptSuggestionChips suggestions={['Run the tests']} onChipClick={() => {}} />
         </ShowcaseDemo>
       </PlaygroundSection>
 

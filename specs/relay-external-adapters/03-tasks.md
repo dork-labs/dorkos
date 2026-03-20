@@ -11,6 +11,7 @@
 ### Task 1: [relay-external-adapters] [P1] Add RelayAdapter interface and adapter config types
 
 **Files to modify:**
+
 - `packages/relay/src/types.ts`
 - `packages/relay/src/index.ts`
 
@@ -130,6 +131,7 @@ export type {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `RelayAdapter` interface exported from `packages/relay`
 - [ ] `AdapterStatus`, `AdapterConfig`, `TelegramAdapterConfig`, `WebhookAdapterConfig` types exported
 - [ ] No circular dependency between types.ts and relay-core.ts
@@ -140,6 +142,7 @@ export type {
 ### Task 2: [relay-external-adapters] [P1] Add adapter Zod schemas to shared relay-schemas
 
 **Files to modify:**
+
 - `packages/shared/src/relay-schemas.ts`
 
 **Implementation:**
@@ -149,55 +152,72 @@ Add the following schemas to `packages/shared/src/relay-schemas.ts`:
 ```typescript
 export const AdapterTypeSchema = z.enum(['telegram', 'webhook']);
 
-export const TelegramAdapterConfigSchema = z.object({
-  token: z.string().min(1),
-  mode: z.enum(['polling', 'webhook']).default('polling'),
-  webhookUrl: z.string().url().optional(),
-  webhookPort: z.number().int().positive().optional(),
-}).openapi('TelegramAdapterConfig');
+export const TelegramAdapterConfigSchema = z
+  .object({
+    token: z.string().min(1),
+    mode: z.enum(['polling', 'webhook']).default('polling'),
+    webhookUrl: z.string().url().optional(),
+    webhookPort: z.number().int().positive().optional(),
+  })
+  .openapi('TelegramAdapterConfig');
 
-export const WebhookInboundConfigSchema = z.object({
-  subject: z.string().min(1),
-  secret: z.string().min(16),
-  previousSecret: z.string().optional(),
-}).openapi('WebhookInboundConfig');
+export const WebhookInboundConfigSchema = z
+  .object({
+    subject: z.string().min(1),
+    secret: z.string().min(16),
+    previousSecret: z.string().optional(),
+  })
+  .openapi('WebhookInboundConfig');
 
-export const WebhookOutboundConfigSchema = z.object({
-  url: z.string().url(),
-  secret: z.string().min(16),
-  headers: z.record(z.string()).optional(),
-}).openapi('WebhookOutboundConfig');
+export const WebhookOutboundConfigSchema = z
+  .object({
+    url: z.string().url(),
+    secret: z.string().min(16),
+    headers: z.record(z.string()).optional(),
+  })
+  .openapi('WebhookOutboundConfig');
 
-export const WebhookAdapterConfigSchema = z.object({
-  inbound: WebhookInboundConfigSchema,
-  outbound: WebhookOutboundConfigSchema,
-}).openapi('WebhookAdapterConfig');
+export const WebhookAdapterConfigSchema = z
+  .object({
+    inbound: WebhookInboundConfigSchema,
+    outbound: WebhookOutboundConfigSchema,
+  })
+  .openapi('WebhookAdapterConfig');
 
-export const AdapterConfigSchema = z.object({
-  id: z.string().min(1).regex(/^[a-z0-9-]+$/),
-  type: AdapterTypeSchema,
-  enabled: z.boolean().default(true),
-  config: z.union([TelegramAdapterConfigSchema, WebhookAdapterConfigSchema]),
-}).openapi('AdapterConfig');
+export const AdapterConfigSchema = z
+  .object({
+    id: z
+      .string()
+      .min(1)
+      .regex(/^[a-z0-9-]+$/),
+    type: AdapterTypeSchema,
+    enabled: z.boolean().default(true),
+    config: z.union([TelegramAdapterConfigSchema, WebhookAdapterConfigSchema]),
+  })
+  .openapi('AdapterConfig');
 
-export const AdapterStatusSchema = z.object({
-  id: z.string(),
-  type: AdapterTypeSchema,
-  displayName: z.string(),
-  state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping']),
-  messageCount: z.object({
-    inbound: z.number().int().nonnegative(),
-    outbound: z.number().int().nonnegative(),
-  }),
-  errorCount: z.number().int().nonnegative(),
-  lastError: z.string().optional(),
-  lastErrorAt: z.string().datetime().optional(),
-  startedAt: z.string().datetime().optional(),
-}).openapi('AdapterStatus');
+export const AdapterStatusSchema = z
+  .object({
+    id: z.string(),
+    type: AdapterTypeSchema,
+    displayName: z.string(),
+    state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping']),
+    messageCount: z.object({
+      inbound: z.number().int().nonnegative(),
+      outbound: z.number().int().nonnegative(),
+    }),
+    errorCount: z.number().int().nonnegative(),
+    lastError: z.string().optional(),
+    lastErrorAt: z.string().datetime().optional(),
+    startedAt: z.string().datetime().optional(),
+  })
+  .openapi('AdapterStatus');
 
-export const AdaptersConfigFileSchema = z.object({
-  adapters: z.array(AdapterConfigSchema),
-}).openapi('AdaptersConfigFile');
+export const AdaptersConfigFileSchema = z
+  .object({
+    adapters: z.array(AdapterConfigSchema),
+  })
+  .openapi('AdaptersConfigFile');
 ```
 
 Also export inferred TypeScript types:
@@ -212,6 +232,7 @@ export type AdaptersConfigFile = z.infer<typeof AdaptersConfigFileSchema>;
 ```
 
 **Acceptance Criteria:**
+
 - [ ] All schemas exported from `@dorkos/shared/relay-schemas`
 - [ ] Schemas validate correctly (token min 1, secret min 16, id regex, etc.)
 - [ ] `npm run typecheck` passes
@@ -222,6 +243,7 @@ export type AdaptersConfigFile = z.infer<typeof AdaptersConfigFileSchema>;
 ### Task 3: [relay-external-adapters] [P1] Implement AdapterRegistry class
 
 **Files to create:**
+
 - `packages/relay/src/adapter-registry.ts`
 
 **Implementation:**
@@ -317,9 +339,7 @@ export class AdapterRegistry {
 
   /** Stop all adapters gracefully. Uses Promise.allSettled for error isolation. */
   async shutdown(): Promise<void> {
-    const results = await Promise.allSettled(
-      [...this.adapters.values()].map(a => a.stop())
-    );
+    const results = await Promise.allSettled([...this.adapters.values()].map((a) => a.stop()));
     // Log failures but don't throw — all adapters get a chance to stop
     for (const result of results) {
       if (result.status === 'rejected') {
@@ -332,11 +352,13 @@ export class AdapterRegistry {
 ```
 
 Export from `packages/relay/src/index.ts`:
+
 ```typescript
 export { AdapterRegistry } from './adapter-registry.js';
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `AdapterRegistry` class created in `packages/relay/src/adapter-registry.ts`
 - [ ] register() starts adapter, supports hot-reload (start new, swap, stop old)
 - [ ] Hot-reload abort: if new adapter start() throws, old stays active
@@ -350,12 +372,14 @@ export { AdapterRegistry } from './adapter-registry.js';
 ### Task 4: [relay-external-adapters] [P1] Integrate AdapterRegistry into RelayCore publish pipeline
 
 **Files to modify:**
+
 - `packages/relay/src/relay-core.ts`
 - `packages/relay/src/types.ts` (RelayOptions update)
 
 **Implementation:**
 
 In `packages/relay/src/types.ts`, add `adapterRegistry` to `RelayOptions`:
+
 ```typescript
 import type { AdapterRegistry } from './adapter-registry.js';
 
@@ -365,13 +389,14 @@ export interface RelayOptions {
   defaultTtlMs?: number;
   defaultCallBudget?: number;
   reliability?: ReliabilityConfig;
-  adapterRegistry?: AdapterRegistry;  // NEW
+  adapterRegistry?: AdapterRegistry; // NEW
 }
 ```
 
 In `packages/relay/src/relay-core.ts`:
 
 1. Store the adapter registry in the constructor:
+
 ```typescript
 private adapterRegistry?: AdapterRegistry;
 
@@ -385,6 +410,7 @@ constructor(options: RelayOptions = {}) {
 ```
 
 2. In the `publish()` method, after delivering to Maildir endpoints, add adapter delivery:
+
 ```typescript
 // After delivering to Maildir endpoints, also deliver to matching adapters
 if (this.adapterRegistry) {
@@ -401,6 +427,7 @@ if (this.adapterRegistry) {
 ```
 
 3. In the `shutdown()` method, shut down adapters:
+
 ```typescript
 if (this.adapterRegistry) {
   await this.adapterRegistry.shutdown();
@@ -408,6 +435,7 @@ if (this.adapterRegistry) {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `RelayOptions` includes optional `adapterRegistry`
 - [ ] RelayCore constructor accepts and stores adapter registry
 - [ ] RelayCore calls `adapterRegistry.setRelay(this)` during construction
@@ -422,9 +450,11 @@ if (this.adapterRegistry) {
 ### Task 5: [relay-external-adapters] [P1] Write AdapterRegistry unit tests
 
 **Files to create:**
+
 - `packages/relay/src/__tests__/adapter-registry.test.ts`
 
 **Test helper** (add to `packages/test-utils/`):
+
 ```typescript
 export function createMockAdapter(overrides?: Partial<RelayAdapter>): RelayAdapter {
   return {
@@ -445,6 +475,7 @@ export function createMockAdapter(overrides?: Partial<RelayAdapter>): RelayAdapt
 ```
 
 **Test cases:**
+
 ```typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AdapterRegistry } from '../adapter-registry';
@@ -487,6 +518,7 @@ describe('AdapterRegistry', () => {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] All test cases listed above are implemented and passing
 - [ ] Mock adapter factory reusable from test-utils
 - [ ] Tests cover hot-reload edge cases (abort on failure, start-before-stop ordering)
@@ -536,11 +568,13 @@ apps/server/src/services/
 ```
 
 Steps:
+
 1. `mkdir -p apps/server/src/services/{core,session,pulse,relay}`
 2. `git mv` each file to its domain folder
 3. Use `git mv` to preserve history
 
 **Acceptance Criteria:**
+
 - [ ] All 24 service files moved to their domain folders
 - [ ] No service files remain directly in `apps/server/src/services/` (only subdirectories)
 - [ ] Git history preserved via `git mv`
@@ -564,6 +598,7 @@ Pattern: `from '../services/foo.js'` becomes `from '../services/core/foo.js'` (o
 For intra-domain imports within the same folder, update to `./` relative imports.
 
 **Acceptance Criteria:**
+
 - [ ] All route files import from correct domain paths
 - [ ] `index.ts` imports from correct domain paths
 - [ ] Cross-service imports updated
@@ -576,6 +611,7 @@ For intra-domain imports within the same folder, update to `./` relative imports
 ### Task 8: [relay-external-adapters] [P2] Add barrel exports for domain folders and verify tests
 
 **Files to create:**
+
 - `apps/server/src/services/core/index.ts`
 - `apps/server/src/services/session/index.ts`
 - `apps/server/src/services/pulse/index.ts`
@@ -624,6 +660,7 @@ Note: These barrel exports are for convenience. Existing direct imports still wo
 Run full test suite: `npm test -- --run`
 
 **Acceptance Criteria:**
+
 - [ ] Barrel `index.ts` created for each domain folder
 - [ ] All existing tests pass without modifications beyond import path fixes
 - [ ] `npm run typecheck` passes
@@ -645,6 +682,7 @@ npm install grammy @grammyjs/auto-retry
 Add as regular dependencies (not peer deps) since the adapter implementations live in this package.
 
 Verify `packages/relay/package.json` has:
+
 ```json
 {
   "dependencies": {
@@ -655,6 +693,7 @@ Verify `packages/relay/package.json` has:
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `grammy` and `@grammyjs/auto-retry` in `packages/relay/package.json` dependencies
 - [ ] `npm install` completes without errors
 - [ ] `npm run typecheck` passes (grammy types available)
@@ -664,6 +703,7 @@ Verify `packages/relay/package.json` has:
 ### Task 10: [relay-external-adapters] [P3] Implement Telegram adapter
 
 **Files to create:**
+
 - `packages/relay/src/adapters/telegram-adapter.ts`
 
 **Implementation:**
@@ -728,9 +768,10 @@ export class TelegramAdapter implements RelayAdapter {
     // Inbound message handler
     this.bot.on('message', async (ctx) => {
       const chatId = ctx.chat.id;
-      const subject = chatId < 0
-        ? `${this.subjectPrefix}.group.${Math.abs(chatId)}`
-        : `${this.subjectPrefix}.${chatId}`;
+      const subject =
+        chatId < 0
+          ? `${this.subjectPrefix}.group.${Math.abs(chatId)}`
+          : `${this.subjectPrefix}.${chatId}`;
 
       const payload = {
         type: 'text',
@@ -808,12 +849,13 @@ export class TelegramAdapter implements RelayAdapter {
     const lastSent = this.lastSentAt.get(chatId) ?? 0;
     const waitMs = Math.max(0, 1000 - (now - lastSent));
     if (waitMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, waitMs));
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
 
-    const text = typeof envelope.payload === 'object' && envelope.payload !== null
-      ? (envelope.payload as { text?: string }).text ?? JSON.stringify(envelope.payload)
-      : String(envelope.payload);
+    const text =
+      typeof envelope.payload === 'object' && envelope.payload !== null
+        ? ((envelope.payload as { text?: string }).text ?? JSON.stringify(envelope.payload))
+        : String(envelope.payload);
 
     await this.bot.api.sendMessage(chatId, text, { parse_mode: 'HTML' });
     this.lastSentAt.set(chatId, Date.now());
@@ -840,11 +882,13 @@ export class TelegramAdapter implements RelayAdapter {
 ```
 
 Export from `packages/relay/src/index.ts`:
+
 ```typescript
 export { TelegramAdapter } from './adapters/telegram-adapter.js';
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `TelegramAdapter` implements `RelayAdapter` interface
 - [ ] Inbound: Telegram messages published to correct Relay subjects
 - [ ] Outbound: deliver() sends messages via bot.api.sendMessage with HTML parse mode
@@ -862,6 +906,7 @@ export { TelegramAdapter } from './adapters/telegram-adapter.js';
 ### Task 11: [relay-external-adapters] [P3] Implement Webhook adapter
 
 **Files to create:**
+
 - `packages/relay/src/adapters/webhook-adapter.ts`
 
 **Implementation:**
@@ -940,7 +985,7 @@ export class WebhookAdapter implements RelayAdapter {
    */
   async handleInbound(
     rawBody: Buffer,
-    headers: Record<string, string | string[] | undefined>,
+    headers: Record<string, string | string[] | undefined>
   ): Promise<{ ok: boolean; error?: string }> {
     if (!this.relay) return { ok: false, error: 'Adapter not started' };
 
@@ -966,7 +1011,7 @@ export class WebhookAdapter implements RelayAdapter {
       timestamp,
       signature,
       this.config.inbound.secret,
-      this.config.inbound.previousSecret,
+      this.config.inbound.previousSecret
     );
     if (!valid) {
       return { ok: false, error: 'Invalid signature' };
@@ -1045,7 +1090,7 @@ export function verifySignature(
   timestamp: string,
   signature: string,
   secret: string,
-  previousSecret?: string,
+  previousSecret?: string
 ): boolean {
   const message = `${timestamp}.${rawBody.toString()}`;
   const expected = crypto.createHmac('sha256', secret).update(message).digest();
@@ -1057,11 +1102,10 @@ export function verifySignature(
 
   // Try previous secret for rotation
   if (previousSecret) {
-    const expectedPrev = crypto
-      .createHmac('sha256', previousSecret)
-      .update(message)
-      .digest();
-    return received.length === expectedPrev.length && crypto.timingSafeEqual(received, expectedPrev);
+    const expectedPrev = crypto.createHmac('sha256', previousSecret).update(message).digest();
+    return (
+      received.length === expectedPrev.length && crypto.timingSafeEqual(received, expectedPrev)
+    );
   }
 
   return false;
@@ -1069,11 +1113,13 @@ export function verifySignature(
 ```
 
 Export from `packages/relay/src/index.ts`:
+
 ```typescript
 export { WebhookAdapter, verifySignature } from './adapters/webhook-adapter.js';
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `WebhookAdapter` implements `RelayAdapter` interface
 - [ ] handleInbound() verifies HMAC-SHA256 with `crypto.timingSafeEqual()`
 - [ ] Timestamp window: ±300 seconds
@@ -1090,15 +1136,17 @@ export { WebhookAdapter, verifySignature } from './adapters/webhook-adapter.js';
 ### Task 12: [relay-external-adapters] [P3] Write unit tests for Telegram and Webhook adapters
 
 **Files to create:**
+
 - `packages/relay/src/adapters/__tests__/telegram-adapter.test.ts`
 - `packages/relay/src/adapters/__tests__/webhook-adapter.test.ts`
 
 **Add to test-utils** (`packages/test-utils/`):
+
 ```typescript
 export function signPayload(
   body: string,
   secret: string,
-  timestamp?: number,
+  timestamp?: number
 ): { signature: string; timestamp: string; nonce: string } {
   const ts = String(timestamp ?? Math.floor(Date.now() / 1000));
   const nonce = crypto.randomUUID();
@@ -1109,6 +1157,7 @@ export function signPayload(
 ```
 
 **Telegram adapter tests:**
+
 ```typescript
 describe('TelegramAdapter', () => {
   // Mock grammy: vi.mock('grammy', () => ({ Bot: MockBot }))
@@ -1129,6 +1178,7 @@ describe('TelegramAdapter', () => {
 ```
 
 **Webhook adapter tests:**
+
 ```typescript
 describe('WebhookAdapter', () => {
   const secret = 'a-very-long-secret-at-least-16';
@@ -1147,6 +1197,7 @@ describe('WebhookAdapter', () => {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] All Telegram adapter test cases pass
 - [ ] All Webhook adapter test cases pass
 - [ ] grammy is fully mocked (no real Telegram API calls)
@@ -1162,6 +1213,7 @@ describe('WebhookAdapter', () => {
 ### Task 13: [relay-external-adapters] [P4] Create AdapterManager service
 
 **Files to create:**
+
 - `apps/server/src/services/relay/adapter-manager.ts`
 
 **Implementation:**
@@ -1190,7 +1242,7 @@ export class AdapterManager {
   constructor(
     private relay: RelayCore,
     registry: AdapterRegistry,
-    configPath: string,
+    configPath: string
   ) {
     this.registry = registry;
     this.configPath = configPath;
@@ -1205,12 +1257,12 @@ export class AdapterManager {
 
   /** Reload config from disk and reconcile adapter state. */
   async reload(): Promise<void> {
-    const oldConfigs = new Map(this.configs.map(c => [c.id, c]));
+    const oldConfigs = new Map(this.configs.map((c) => [c.id, c]));
     await this.loadConfig();
 
     // Stop adapters that are no longer in config or disabled
     for (const [id] of oldConfigs) {
-      const newConfig = this.configs.find(c => c.id === id);
+      const newConfig = this.configs.find((c) => c.id === id);
       if (!newConfig || !newConfig.enabled) {
         await this.registry.unregister(id);
       }
@@ -1222,7 +1274,7 @@ export class AdapterManager {
 
   /** Enable a specific adapter by ID. Updates config file. */
   async enable(id: string): Promise<void> {
-    const config = this.configs.find(c => c.id === id);
+    const config = this.configs.find((c) => c.id === id);
     if (!config) throw new Error(`Adapter not found: ${id}`);
     config.enabled = true;
     await this.saveConfig();
@@ -1232,7 +1284,7 @@ export class AdapterManager {
 
   /** Disable a specific adapter by ID. Updates config file. */
   async disable(id: string): Promise<void> {
-    const config = this.configs.find(c => c.id === id);
+    const config = this.configs.find((c) => c.id === id);
     if (!config) throw new Error(`Adapter not found: ${id}`);
     config.enabled = false;
     await this.saveConfig();
@@ -1241,7 +1293,7 @@ export class AdapterManager {
 
   /** Get all adapter statuses. */
   listAdapters(): Array<{ config: AdapterConfig; status: AdapterStatus }> {
-    return this.configs.map(config => {
+    return this.configs.map((config) => {
       const adapter = this.registry.get(config.id);
       const status: AdapterStatus = adapter?.getStatus() ?? {
         state: 'disconnected',
@@ -1254,7 +1306,7 @@ export class AdapterManager {
 
   /** Get single adapter status. */
   getAdapter(id: string): { config: AdapterConfig; status: AdapterStatus } | undefined {
-    const config = this.configs.find(c => c.id === id);
+    const config = this.configs.find((c) => c.id === id);
     if (!config) return undefined;
     const adapter = this.registry.get(id);
     const status: AdapterStatus = adapter?.getStatus() ?? {
@@ -1286,7 +1338,10 @@ export class AdapterManager {
       if (parsed.success) {
         this.configs = parsed.data.adapters;
       } else {
-        console.warn('AdapterManager: malformed config, skipping invalid entries:', parsed.error.flatten());
+        console.warn(
+          'AdapterManager: malformed config, skipping invalid entries:',
+          parsed.error.flatten()
+        );
         this.configs = [];
       }
     } catch (err) {
@@ -1301,11 +1356,7 @@ export class AdapterManager {
 
   private async saveConfig(): Promise<void> {
     await mkdir(dirname(this.configPath), { recursive: true });
-    await writeFile(
-      this.configPath,
-      JSON.stringify({ adapters: this.configs }, null, 2),
-      'utf-8',
-    );
+    await writeFile(this.configPath, JSON.stringify({ adapters: this.configs }, null, 2), 'utf-8');
   }
 
   private async startEnabledAdapters(): Promise<void> {
@@ -1342,7 +1393,7 @@ export class AdapterManager {
       awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
     });
     this.configWatcher.on('change', () => {
-      this.reload().catch(err => {
+      this.reload().catch((err) => {
         console.warn('AdapterManager: hot-reload failed:', err);
       });
     });
@@ -1351,6 +1402,7 @@ export class AdapterManager {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `AdapterManager` reads config from `~/.dork/relay/adapters.json`
 - [ ] initialize() loads config and starts enabled adapters
 - [ ] reload() reconciles adapter state (stop removed, start new)
@@ -1366,11 +1418,13 @@ export class AdapterManager {
 ### Task 14: [relay-external-adapters] [P4] Add adapter HTTP routes to relay router
 
 **Files to modify:**
+
 - `apps/server/src/routes/relay.ts`
 
 **Implementation:**
 
 Update the `createRelayRouter` signature:
+
 ```typescript
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import express from 'express';
@@ -1448,7 +1502,10 @@ if (adapterManager) {
 
     // WebhookAdapter has handleInbound method
     const webhookAdapter = adapter as import('@dorkos/relay').WebhookAdapter;
-    const result = await webhookAdapter.handleInbound(req.body, req.headers as Record<string, string>);
+    const result = await webhookAdapter.handleInbound(
+      req.body,
+      req.headers as Record<string, string>
+    );
 
     if (result.ok) {
       return res.status(200).json({ ok: true });
@@ -1459,6 +1516,7 @@ if (adapterManager) {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `createRelayRouter` accepts optional `AdapterManager` (backward compatible)
 - [ ] GET `/adapters` returns list of adapter configs + statuses
 - [ ] GET `/adapters/:id` returns single adapter or 404
@@ -1475,11 +1533,13 @@ if (adapterManager) {
 ### Task 15: [relay-external-adapters] [P4] Add adapter MCP tools to mcp-tool-server
 
 **Files to modify:**
+
 - `apps/server/src/services/core/mcp-tool-server.ts` (or `apps/server/src/services/mcp-tool-server.ts` pre-restructuring)
 
 **Implementation:**
 
 Update `McpToolDeps`:
+
 ```typescript
 import type { AdapterManager } from '../relay/adapter-manager.js';
 
@@ -1488,7 +1548,7 @@ export interface McpToolDeps {
   defaultCwd: string;
   pulseStore?: PulseStore;
   relayCore?: RelayCore;
-  adapterManager?: AdapterManager;  // NEW
+  adapterManager?: AdapterManager; // NEW
 }
 ```
 
@@ -1499,18 +1559,12 @@ if (deps.adapterManager) {
   const adapterManager = deps.adapterManager;
 
   // relay_list_adapters
-  tool(
-    server,
-    'relay_list_adapters',
-    'List all Relay adapters with their status',
-    {},
-    async () => {
-      const adapters = adapterManager.listAdapters();
-      return {
-        content: [{ type: 'text', text: JSON.stringify(adapters, null, 2) }],
-      };
-    },
-  );
+  tool(server, 'relay_list_adapters', 'List all Relay adapters with their status', {}, async () => {
+    const adapters = adapterManager.listAdapters();
+    return {
+      content: [{ type: 'text', text: JSON.stringify(adapters, null, 2) }],
+    };
+  });
 
   // relay_enable_adapter
   tool(
@@ -1521,9 +1575,11 @@ if (deps.adapterManager) {
     async (args) => {
       await adapterManager.enable(args.id);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, id: args.id, action: 'enabled' }) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ ok: true, id: args.id, action: 'enabled' }) },
+        ],
       };
-    },
+    }
   );
 
   // relay_disable_adapter
@@ -1535,9 +1591,11 @@ if (deps.adapterManager) {
     async (args) => {
       await adapterManager.disable(args.id);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, id: args.id, action: 'disabled' }) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ ok: true, id: args.id, action: 'disabled' }) },
+        ],
       };
-    },
+    }
   );
 
   // relay_reload_adapters
@@ -1550,14 +1608,17 @@ if (deps.adapterManager) {
       await adapterManager.reload();
       const adapters = adapterManager.listAdapters();
       return {
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, adapterCount: adapters.length }) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ ok: true, adapterCount: adapters.length }) },
+        ],
       };
-    },
+    }
   );
 }
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `McpToolDeps` includes optional `adapterManager`
 - [ ] `relay_list_adapters` returns JSON array of adapter configs + statuses
 - [ ] `relay_enable_adapter` enables adapter by ID
@@ -1571,6 +1632,7 @@ if (deps.adapterManager) {
 ### Task 16: [relay-external-adapters] [P4] Wire AdapterManager into server startup
 
 **Files to modify:**
+
 - `apps/server/src/index.ts`
 
 **Implementation:**
@@ -1601,7 +1663,7 @@ const toolServer = createDorkOsToolServer({
   defaultCwd,
   pulseStore,
   relayCore,
-  adapterManager,  // NEW
+  adapterManager, // NEW
 });
 
 // Update SIGTERM handler — shutdown adapters before relay:
@@ -1613,6 +1675,7 @@ process.on('SIGTERM', async () => {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] AdapterManager created when Relay is enabled
 - [ ] Config path: `~/.dork/relay/adapters.json`
 - [ ] AdapterManager.initialize() called before server starts listening
@@ -1626,10 +1689,12 @@ process.on('SIGTERM', async () => {
 ### Task 17: [relay-external-adapters] [P4] Write tests for AdapterManager, routes, and MCP tools
 
 **Files to create:**
+
 - `apps/server/src/services/relay/__tests__/adapter-manager.test.ts`
 - Route and MCP tool tests (can be inline or separate files)
 
 **AdapterManager tests:**
+
 ```typescript
 describe('AdapterManager', () => {
   it('initialize() reads config and starts enabled adapters', async () => { ... });
@@ -1648,6 +1713,7 @@ describe('AdapterManager', () => {
 Mock `fs/promises` for config file reading/writing. Mock `chokidar` for config watcher. Mock `TelegramAdapter` and `WebhookAdapter` constructors.
 
 **Adapter route integration tests** (supertest):
+
 ```typescript
 describe('Adapter Routes', () => {
   it('GET /api/relay/adapters -> list of adapter statuses', async () => { ... });
@@ -1660,6 +1726,7 @@ describe('Adapter Routes', () => {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] AdapterManager unit tests cover all public methods
 - [ ] Edge cases tested: missing config, malformed config, unknown adapter type
 - [ ] Route integration tests verify HTTP status codes and response shapes
@@ -1673,9 +1740,11 @@ describe('Adapter Routes', () => {
 ### Task 18: [relay-external-adapters] [P5] Add useRelayAdapters and useToggleAdapter hooks
 
 **Files to create:**
+
 - `apps/client/src/layers/entities/relay/model/use-relay-adapters.ts`
 
 **Modify:**
+
 - `apps/client/src/layers/entities/relay/index.ts` (add exports)
 
 **Implementation:**
@@ -1718,12 +1787,14 @@ export function useToggleAdapter() {
 ```
 
 Update barrel export:
+
 ```typescript
 // In apps/client/src/layers/entities/relay/index.ts
 export { useRelayAdapters, useToggleAdapter } from './model/use-relay-adapters';
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `useRelayAdapters` hook fetches from `/api/relay/adapters` with 10s polling
 - [ ] `useToggleAdapter` mutation calls enable/disable endpoint, invalidates query cache
 - [ ] Hooks exported from entity barrel
@@ -1734,6 +1805,7 @@ export { useRelayAdapters, useToggleAdapter } from './model/use-relay-adapters';
 ### Task 19: [relay-external-adapters] [P5] Add Adapters tab to RelayPanel
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/relay/ui/RelayPanel.tsx`
 
 **Implementation:**
@@ -1754,13 +1826,15 @@ The Adapters tab renders a list of `AdapterCard` components (Task 20). Uses `use
 ```
 
 Create `AdapterList` as a simple wrapper that maps over `useRelayAdapters()` data:
+
 ```tsx
 function AdapterList() {
   const { data: adapters, isLoading } = useRelayAdapters();
   const toggle = useToggleAdapter();
 
-  if (isLoading) return <div className="p-4 text-muted-foreground">Loading adapters...</div>;
-  if (!adapters?.length) return <div className="p-4 text-muted-foreground">No adapters configured</div>;
+  if (isLoading) return <div className="text-muted-foreground p-4">Loading adapters...</div>;
+  if (!adapters?.length)
+    return <div className="text-muted-foreground p-4">No adapters configured</div>;
 
   return (
     <div className="space-y-2 p-2">
@@ -1778,6 +1852,7 @@ function AdapterList() {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] RelayPanel has three tabs: Activity, Endpoints, Adapters
 - [ ] Adapters tab shows list of adapter cards
 - [ ] Loading state shown while fetching
@@ -1789,11 +1864,13 @@ function AdapterList() {
 ### Task 20: [relay-external-adapters] [P5] Create AdapterCard component
 
 **Files to create:**
+
 - `apps/client/src/layers/features/relay/ui/AdapterCard.tsx`
 
 **Implementation:**
 
 Each adapter card displays:
+
 - Adapter name and type icon (use simple text labels: "TG" for Telegram, "WH" for webhook, or small SVG icons)
 - Status badge: green dot = connected, gray = disconnected, red = error, yellow = starting/stopping
 - Message counts (inbound / outbound)
@@ -1829,25 +1906,21 @@ export function AdapterCard({ config, status, onToggle }: AdapterCardProps) {
             <span className="font-medium">{config.id}</span>
             <Badge variant="outline">{config.type}</Badge>
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-muted-foreground text-xs">
             In: {status.messageCount.inbound} | Out: {status.messageCount.outbound}
             {status.errorCount > 0 && ` | Errors: ${status.errorCount}`}
           </div>
-          {status.lastError && (
-            <div className="mt-1 text-xs text-red-500">{status.lastError}</div>
-          )}
+          {status.lastError && <div className="mt-1 text-xs text-red-500">{status.lastError}</div>}
         </div>
       </div>
-      <Switch
-        checked={config.enabled}
-        onCheckedChange={(checked) => onToggle(checked)}
-      />
+      <Switch checked={config.enabled} onCheckedChange={(checked) => onToggle(checked)} />
     </div>
   );
 }
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Shows adapter name, type badge, status dot
 - [ ] Status dot color: green=connected, gray=disconnected, red=error, yellow=starting/stopping
 - [ ] Message counts displayed (inbound/outbound)
@@ -1861,16 +1934,19 @@ export function AdapterCard({ config, status, onToggle }: AdapterCardProps) {
 ### Task 21: [relay-external-adapters] [P5] Enhance ActivityFeed with adapter event awareness
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx`
 
 **Implementation:**
 
 Enhance message rows with:
+
 - Source indicator: Show a small badge or icon for adapter source (Telegram, webhook, system)
 - Direction indicator: Inbound arrow (down) or outbound arrow (up) based on message `from` field
 - Filter dropdown: All / Telegram / Webhook / System
 
 The filter should be a Select component at the top of the activity feed:
+
 ```tsx
 <Select value={filter} onValueChange={setFilter}>
   <SelectTrigger className="w-40">
@@ -1886,11 +1962,13 @@ The filter should be a Select component at the top of the activity feed:
 ```
 
 Filter logic: Check message subject prefix:
+
 - `relay.human.telegram.*` -> telegram
 - `relay.webhook.*` -> webhook
 - Everything else -> system
 
 **Acceptance Criteria:**
+
 - [ ] Message rows show adapter source indicator
 - [ ] Direction indicators for inbound/outbound
 - [ ] Filter dropdown: All / Telegram / Webhook / System
@@ -1902,10 +1980,12 @@ Filter logic: Check message subject prefix:
 ### Task 22: [relay-external-adapters] [P5] Write tests for new client hooks and components
 
 **Files to create:**
+
 - `apps/client/src/layers/entities/relay/__tests__/use-relay-adapters.test.ts`
 - `apps/client/src/layers/features/relay/__tests__/AdapterCard.test.tsx`
 
 **Hook tests:**
+
 ```typescript
 describe('useRelayAdapters', () => {
   it('fetches adapter list from transport', async () => { ... });
@@ -1920,6 +2000,7 @@ describe('useToggleAdapter', () => {
 ```
 
 **Component tests:**
+
 ```typescript
 /**
  * @vitest-environment jsdom
@@ -1935,6 +2016,7 @@ describe('AdapterCard', () => {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Hook tests verify fetch URL and polling interval
 - [ ] Toggle mutation tests verify correct endpoint called
 - [ ] Component tests verify rendering for all status states
@@ -1947,6 +2029,7 @@ describe('AdapterCard', () => {
 ### Task 23: [relay-external-adapters] [P6] Update ActivityFeedHero.tsx simulated data
 
 **Files to modify:**
+
 - `apps/web/src/layers/features/marketing/ui/ActivityFeedHero.tsx`
 
 **Implementation:**
@@ -1967,6 +2050,7 @@ const ACTIVITY_POOL: Array<Omit<FeedEntry, 'id' | 'secondsAgo'>> = [
 Keep as static simulated data (no live server connection). The format now mirrors real subject hierarchy and event descriptions.
 
 **Acceptance Criteria:**
+
 - [ ] `ACTIVITY_POOL` relay entries updated to match real Relay subject format
 - [ ] Non-relay entries preserved
 - [ ] Still static simulated data (no server connection)
@@ -1977,9 +2061,11 @@ Keep as static simulated data (no live server connection). The format now mirror
 ### Task 24: [relay-external-adapters] [P6] Create contributing/relay-adapters.md developer guide
 
 **Files to create:**
+
 - `contributing/relay-adapters.md`
 
 **Content outline:**
+
 - How to implement the `RelayAdapter` interface
 - Subject hierarchy conventions (`relay.human.{platform}.{id}`, `relay.webhook.{name}`)
 - Adapter lifecycle (start, stop, hot-reload)
@@ -1990,6 +2076,7 @@ Keep as static simulated data (no live server connection). The format now mirror
 - Example: creating a minimal adapter
 
 **Acceptance Criteria:**
+
 - [ ] Guide covers adapter interface implementation
 - [ ] Config file format documented
 - [ ] Testing patterns documented
@@ -2000,6 +2087,7 @@ Keep as static simulated data (no live server connection). The format now mirror
 ### Task 25: [relay-external-adapters] [P6] Update architecture docs with adapter registry section
 
 **Files to modify:**
+
 - `contributing/architecture.md`
 
 **Implementation:**
@@ -2015,12 +2103,13 @@ external communication platforms into the Relay subject hierarchy. The `AdapterM
 `~/.dork/relay/adapters.json`, chokidar hot-reload, and Express route integration.
 
 Adapter flow: External message -> Adapter.handleInbound() -> RelayCore.publish()
-             RelayCore.publish() -> AdapterRegistry.deliver() -> Adapter.deliver() -> External API
+RelayCore.publish() -> AdapterRegistry.deliver() -> Adapter.deliver() -> External API
 
 Built-in adapters: TelegramAdapter (grammY), WebhookAdapter (HMAC-SHA256).
 ```
 
 **Acceptance Criteria:**
+
 - [ ] Architecture doc updated with adapter registry section
 - [ ] Data flow documented
 - [ ] Adapter types listed

@@ -57,7 +57,7 @@ export async function handlePulseMessage(
   startTime: number,
   config: PulseHandlerConfig,
   deps: PulseHandlerDeps,
-  relay: RelayPublisher | null,
+  relay: RelayPublisher | null
 ): Promise<DeliveryResult> {
   const traceId = randomUUID();
   const spanId = randomUUID();
@@ -230,7 +230,7 @@ async function publishResponse(
   originalEnvelope: RelayEnvelope,
   event: import('@dorkos/shared/types').StreamEvent,
   fromId: string,
-  relay: RelayPublisher,
+  relay: RelayPublisher
 ): Promise<void> {
   if (!originalEnvelope.replyTo) return;
   const opts: PublishOptions = {

@@ -14,13 +14,13 @@ Parse `$ARGUMENTS` for these options:
 
 ### Scope (mutually exclusive, default: interactive selection)
 
-| Scope       | Description                                    |
-| ----------- | ---------------------------------------------- |
-| _(none)_    | Interactive scope selection                    |
+| Scope       | Description                          |
+| ----------- | ------------------------------------ |
+| _(none)_    | Interactive scope selection          |
 | `all`       | Update everything (harness + guides) |
-| `harness`   | Update `.claude/` directory only               |
-| `guides`    | Update `contributing/` only                          |
-| `selective` | Choose individual files to update              |
+| `harness`   | Update `.claude/` directory only     |
+| `guides`    | Update `contributing/` only          |
+| `selective` | Choose individual files to update    |
 
 ### Flags
 
@@ -464,7 +464,6 @@ Filter to updateable files and present grouped by component:
 - [ ] contributing/project-structure.md
 - [ ] contributing/02-environment-variables.md
       ...
-
 ```
 
 Use AskUserQuestion to confirm selection.
@@ -550,7 +549,7 @@ Algorithm:
 | ---------------------- | --------------------------------------------------------- | --------------------------------- |
 | **Harness Core**       | `.claude/hooks/`, `.claude/scripts/`                      | Replace                           |
 | **Harness Extensible** | `.claude/commands/`, `.claude/skills/`, `.claude/agents/` | Replace (preserve user additions) |
-| **Guides**             | `contributing/*.md`                                             | Replace                           |
+| **Guides**             | `contributing/*.md`                                       | Replace                           |
 | **Gray Zone**          | `CLAUDE.md`, `package.json`                               | Merge (Phase 8)                   |
 | **User Space**         | `src/**`, `public/**`, `prisma/schema.prisma`             | Never touch                       |
 | **User Additions**     | Files not in template                                     | Never touch                       |
@@ -1289,7 +1288,7 @@ Track as skipped and continue with remaining files. Don't abort the entire updat
     "guides": {
       "path": "contributing/",
       "strategy": "replace"
-    },
+    }
   },
   "skipPatterns": ["src/**", "public/**", "prisma/schema.prisma", ".env*"],
   "userAdditions": [".claude/skills/my-custom-skill/", ".claude/commands/my-command.md"],

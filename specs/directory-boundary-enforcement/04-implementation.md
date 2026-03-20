@@ -16,11 +16,13 @@
 #### Batch 1 (Parallel: Task #1 + Task #2)
 
 **Task #1: Create Boundary Utility Module** — SUCCESS
+
 - Created `apps/server/src/lib/boundary.ts` with 5 exports: `BoundaryError`, `initBoundary()`, `getBoundary()`, `validateBoundary()`, `isWithinBoundary()`
 - Created `apps/server/src/lib/__tests__/boundary.test.ts` with 25 comprehensive tests
 - Fixes prefix collision bug (`startsWith(boundary + path.sep)`)
 
 **Task #2: Update Config Schema and CLI** — SUCCESS
+
 - Added `server.boundary` to `UserConfigSchema` in `packages/shared/src/config-schema.ts`
 - Added `--boundary` CLI flag, `DORKOS_BOUNDARY` env var handling to `packages/cli/src/cli.ts`
 - Startup CWD validation: warns and falls back if CWD outside boundary
@@ -29,10 +31,12 @@
 #### Batch 2 (Parallel: Task #3 + Task #8)
 
 **Task #3: Server Startup Boundary Init** — SUCCESS
+
 - Updated `apps/server/src/index.ts` to call `initBoundary()` after `initConfigManager()` and before `createApp()`
 - Reads `DORKOS_BOUNDARY` from env, logs resolved boundary at startup
 
 **Task #8: Documentation Updates** — SUCCESS
+
 - Updated `contributing/configuration.md` with `server.boundary` reference, env var, CLI flag
 - Updated `CLAUDE.md` with `DORKOS_BOUNDARY` and `--boundary` mentions
 - Updated `docs/getting-started/configuration.mdx` with env var
@@ -41,15 +45,18 @@
 #### Batch 3 (Parallel: Task #4 + Task #5 + Task #6)
 
 **Task #4: Refactor Directory Route + Sessions Validation** — SUCCESS
+
 - Refactored `routes/directory.ts`: removed hardcoded HOME, uses `getBoundary()`/`validateBoundary()`
 - Added boundary validation to all 5 cwd-accepting endpoints in `routes/sessions.ts`
 - Updated `routes/__tests__/directory.test.ts` with boundary mocks and 5 new tests
 
 **Task #5: Add Validation to Files, Commands, Git Routes** — SUCCESS
+
 - Added `validateBoundary()` to `routes/files.ts` (required cwd), `routes/commands.ts` (optional cwd), `routes/git.ts` (optional dir)
 - All return 403 with `{ error, code }` for boundary violations
 
 **Task #6: Defense-in-Depth Services** — SUCCESS
+
 - Added `validateBoundary()` to `agent-manager.ts` (sendMessage), `file-lister.ts` (listFiles), `git-status.ts` (getGitStatus), `transcript-reader.ts` (all 6 public methods)
 - Added JSDoc to `command-registry.ts` (sync constructor, can't call async)
 - Added boundary mocks to 6 service test files
@@ -57,6 +64,7 @@
 #### Batch 4 (Task #7)
 
 **Task #7: Route Boundary Rejection Tests** — SUCCESS
+
 - Added 11 boundary enforcement tests across 4 route test files
 - Tests cover: sessions (6 tests), files (2 tests), commands (1 test), git (2 tests)
 - Includes OUTSIDE_BOUNDARY and NULL_BYTE code verification

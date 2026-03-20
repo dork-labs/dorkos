@@ -10,12 +10,12 @@
 
 All Phase 1 tasks can run in parallel. They are independent bug fixes with no inter-dependencies.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 1.1 | Fix dynamic CORS origin to allow tunnel URL | small | high | -- |
-| 1.2 | Fix transport abstraction leak in TunnelDialog | small | high | -- |
-| 1.3 | Fix wrong DEV_CLIENT_PORT constant in tunnel route | small | high | -- |
-| 1.4 | Remove 0.0.0.0 binding when tunnel is enabled | small | high | -- |
+| ID  | Task                                               | Size  | Priority | Dependencies |
+| --- | -------------------------------------------------- | ----- | -------- | ------------ |
+| 1.1 | Fix dynamic CORS origin to allow tunnel URL        | small | high     | --           |
+| 1.2 | Fix transport abstraction leak in TunnelDialog     | small | high     | --           |
+| 1.3 | Fix wrong DEV_CLIENT_PORT constant in tunnel route | small | high     | --           |
+| 1.4 | Remove 0.0.0.0 binding when tunnel is enabled      | small | high     | --           |
 
 ### 1.1 Fix dynamic CORS origin to allow tunnel URL
 
@@ -47,11 +47,11 @@ Replace `const host = env.TUNNEL_ENABLED ? '0.0.0.0' : 'localhost'` with `const 
 
 Phase 2 depends on Phase 1 completion. Tasks 2.1 and 2.2 can run in parallel. Task 2.3 depends on both.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 2.1 | Add EventEmitter mixin and on_status_change to TunnelManager | medium | high | 1.1-1.4 |
-| 2.2 | Create unified TunnelStatus Zod schema | medium | high | 1.1-1.4 |
-| 2.3 | Add SSE endpoint and route improvements | medium | high | 2.1, 2.2 |
+| ID  | Task                                                         | Size   | Priority | Dependencies |
+| --- | ------------------------------------------------------------ | ------ | -------- | ------------ |
+| 2.1 | Add EventEmitter mixin and on_status_change to TunnelManager | medium | high     | 1.1-1.4      |
+| 2.2 | Create unified TunnelStatus Zod schema                       | medium | high     | 1.1-1.4      |
+| 2.3 | Add SSE endpoint and route improvements                      | medium | high     | 2.1, 2.2     |
 
 ### 2.1 EventEmitter mixin and on_status_change
 
@@ -77,10 +77,10 @@ Add `GET /api/tunnel/stream` (SSE), `GET /api/tunnel/status` (JSON), Zod validat
 
 Phase 3 depends on Phase 2. Tasks 3.1 and 3.2 can run in parallel.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 3.1 | Create BroadcastChannel wrapper utility | small | medium | 2.1-2.3 |
-| 3.2 | Create entities/tunnel module with status and sync hooks | medium | medium | 2.1-2.3 |
+| ID  | Task                                                     | Size   | Priority | Dependencies |
+| --- | -------------------------------------------------------- | ------ | -------- | ------------ |
+| 3.1 | Create BroadcastChannel wrapper utility                  | small  | medium   | 2.1-2.3      |
+| 3.2 | Create entities/tunnel module with status and sync hooks | medium | medium   | 2.1-2.3      |
 
 ### 3.1 BroadcastChannel wrapper
 
@@ -102,15 +102,15 @@ Generic `createChannel<T>(name)` wrapper with `postMessage`, `onMessage` (return
 
 Phase 4 depends on Phases 2-3. Tasks 4.2-4.6 can run in parallel after 4.1. Task 4.7 can run in parallel with 4.1.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 4.1 | Fix TunnelDialog state machine and stale closure bug | medium | medium | 2.1-3.2 |
-| 4.2 | Add onboarding flow component | medium | medium | 4.1 |
-| 4.3 | Add custom domain field | small | medium | 4.1 |
-| 4.4 | Add connection quality indicator | small | low | 4.1 |
-| 4.5 | Add session sharing copy button | small | low | 4.1 |
-| 4.6 | Expand error states and disconnect/reconnect toasts | medium | medium | 4.1 |
-| 4.7 | Add embedded mode guard for tunnel UI | small | medium | 2.1-3.2 |
+| ID  | Task                                                 | Size   | Priority | Dependencies |
+| --- | ---------------------------------------------------- | ------ | -------- | ------------ |
+| 4.1 | Fix TunnelDialog state machine and stale closure bug | medium | medium   | 2.1-3.2      |
+| 4.2 | Add onboarding flow component                        | medium | medium   | 4.1          |
+| 4.3 | Add custom domain field                              | small  | medium   | 4.1          |
+| 4.4 | Add connection quality indicator                     | small  | low      | 4.1          |
+| 4.5 | Add session sharing copy button                      | small  | low      | 4.1          |
+| 4.6 | Expand error states and disconnect/reconnect toasts  | medium | medium   | 4.1          |
+| 4.7 | Add embedded mode guard for tunnel UI                | small  | medium   | 2.1-3.2      |
 
 ### 4.1 State machine fix
 
@@ -146,9 +146,9 @@ Hide TunnelDialog and TunnelItem when in DirectTransport (Obsidian) mode. Check 
 
 ## Phase 5: Status Bar (1 task)
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 5.1 | Improve TunnelItem with quality dot and useTunnelStatus | small | low | 3.2, 4.1 |
+| ID  | Task                                                    | Size  | Priority | Dependencies |
+| --- | ------------------------------------------------------- | ----- | -------- | ------------ |
+| 5.1 | Improve TunnelItem with quality dot and useTunnelStatus | small | low      | 3.2, 4.1     |
 
 ### 5.1 TunnelItem improvements
 
@@ -160,10 +160,10 @@ Replace props-based approach with `useTunnelStatus()` hook. Add small colored do
 
 Phase 6 depends on Phase 2 (EventEmitter). Tasks 6.1 and 6.2 can run in parallel.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 6.1 | Add terminal QR code when tunnel starts in CLI | medium | low | 2.1 |
-| 6.2 | Add tunnel URL to CLI startup banner | small | low | 2.1 |
+| ID  | Task                                           | Size   | Priority | Dependencies |
+| --- | ---------------------------------------------- | ------ | -------- | ------------ |
+| 6.1 | Add terminal QR code when tunnel starts in CLI | medium | low      | 2.1          |
+| 6.2 | Add tunnel URL to CLI startup banner           | small  | low      | 2.1          |
 
 ### 6.1 Terminal QR code
 
@@ -179,13 +179,13 @@ Print `  Tunnel:  {url}` in the CLI startup banner after Local/Network URLs. Han
 
 All Phase 7 tasks can run in parallel, provided their feature dependencies are met.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 7.1 | Add CORS integration test | medium | medium | 1.1 |
-| 7.2 | Add EventEmitter and on_status_change tests | medium | medium | 2.1 |
-| 7.3 | Add comprehensive TunnelDialog tests | medium | medium | 4.1-4.3 |
-| 7.4 | Update tunnel route tests | medium | medium | 1.3, 2.3 |
-| 7.5 | Add cross-tab sync tests | medium | medium | 3.1, 3.2 |
+| ID  | Task                                        | Size   | Priority | Dependencies |
+| --- | ------------------------------------------- | ------ | -------- | ------------ |
+| 7.1 | Add CORS integration test                   | medium | medium   | 1.1          |
+| 7.2 | Add EventEmitter and on_status_change tests | medium | medium   | 2.1          |
+| 7.3 | Add comprehensive TunnelDialog tests        | medium | medium   | 4.1-4.3      |
+| 7.4 | Update tunnel route tests                   | medium | medium   | 1.3, 2.3     |
+| 7.5 | Add cross-tab sync tests                    | medium | medium   | 3.1, 3.2     |
 
 ### 7.1 CORS integration test
 
@@ -214,6 +214,7 @@ Fix NODE_ENV cleanup with `vi.stubEnv`. Add 409 test. Add GET /status test. Add 
 ### 7.5 Cross-tab sync tests
 
 **New files:**
+
 - `apps/client/src/layers/shared/lib/__tests__/broadcast-channel.test.ts`
 - `apps/client/src/layers/entities/tunnel/__tests__/use-tunnel-sync.test.ts`
 
@@ -225,11 +226,11 @@ Test BroadcastChannel wrapper (create, post/receive, unsubscribe, close, fallbac
 
 All Phase 8 tasks can run in parallel.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 8.1 | Update tunnel-setup.mdx documentation | medium | low | 2.2, 2.3, 6.1 |
-| 8.2 | Replace Record<string, unknown> with typed forwardOpts | small | low | 2.1 |
-| 8.3 | Fix DirectTransport tunnel methods | small | low | 2.2 |
+| ID  | Task                                                   | Size   | Priority | Dependencies  |
+| --- | ------------------------------------------------------ | ------ | -------- | ------------- |
+| 8.1 | Update tunnel-setup.mdx documentation                  | medium | low      | 2.2, 2.3, 6.1 |
+| 8.2 | Replace Record<string, unknown> with typed forwardOpts | small  | low      | 2.1           |
+| 8.3 | Fix DirectTransport tunnel methods                     | small  | low      | 2.2           |
 
 ### 8.1 Docs update
 
@@ -253,17 +254,17 @@ Change `startTunnel()` to return `{ url: '' }` instead of throwing. Change `stop
 
 ## Summary
 
-| Phase | Tasks | Parallel Opportunities |
-|-------|-------|----------------------|
-| P1: Critical Bug Fixes | 4 | All 4 in parallel |
-| P2: Architecture | 3 | 2.1 + 2.2 in parallel, then 2.3 |
-| P3: Multi-Tab Sync | 2 | Both in parallel |
-| P4: TunnelDialog UX | 7 | 4.2-4.6 in parallel after 4.1; 4.7 parallel with 4.1 |
-| P5: Status Bar | 1 | -- |
-| P6: CLI Improvements | 2 | Both in parallel |
-| P7: Testing | 5 | All 5 in parallel (per dependency) |
-| P8: Documentation & Cleanup | 3 | All 3 in parallel |
-| **Total** | **27** | |
+| Phase                       | Tasks  | Parallel Opportunities                               |
+| --------------------------- | ------ | ---------------------------------------------------- |
+| P1: Critical Bug Fixes      | 4      | All 4 in parallel                                    |
+| P2: Architecture            | 3      | 2.1 + 2.2 in parallel, then 2.3                      |
+| P3: Multi-Tab Sync          | 2      | Both in parallel                                     |
+| P4: TunnelDialog UX         | 7      | 4.2-4.6 in parallel after 4.1; 4.7 parallel with 4.1 |
+| P5: Status Bar              | 1      | --                                                   |
+| P6: CLI Improvements        | 2      | Both in parallel                                     |
+| P7: Testing                 | 5      | All 5 in parallel (per dependency)                   |
+| P8: Documentation & Cleanup | 3      | All 3 in parallel                                    |
+| **Total**                   | **27** |                                                      |
 
 **Critical path:** P1 (parallel) -> P2.1+P2.2 (parallel) -> P2.3 -> P3 (parallel) -> P4.1 -> P4.2-4.6 (parallel)
 

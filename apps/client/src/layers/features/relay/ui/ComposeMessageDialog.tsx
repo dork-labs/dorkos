@@ -32,7 +32,10 @@ interface ComposeMessageDialogProps {
 }
 
 /** Dialog for composing and sending a test message through the Relay bus. */
-export function ComposeMessageDialog({ open: controlledOpen, onOpenChange: controlledOnOpenChange }: ComposeMessageDialogProps = {}) {
+export function ComposeMessageDialog({
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+}: ComposeMessageDialogProps = {}) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [subject, setSubject] = useState('');
   const [from, setFrom] = useState('relay.human.console');
@@ -75,7 +78,7 @@ export function ComposeMessageDialog({ open: controlledOpen, onOpenChange: contr
         onError: (err) => {
           setError(err instanceof Error ? err.message : 'Failed to send message');
         },
-      },
+      }
     );
   }
 
@@ -92,9 +95,7 @@ export function ComposeMessageDialog({ open: controlledOpen, onOpenChange: contr
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Send Test Message</DialogTitle>
-          <DialogDescription>
-            Compose a message to send through the Relay bus.
-          </DialogDescription>
+          <DialogDescription>Compose a message to send through the Relay bus.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -126,9 +127,7 @@ export function ComposeMessageDialog({ open: controlledOpen, onOpenChange: contr
               rows={4}
             />
           </div>
-          {error !== null && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+          {error !== null && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex justify-end">
             <Button type="submit" disabled={sendMessage.isPending}>
               {sendMessage.isPending ? (

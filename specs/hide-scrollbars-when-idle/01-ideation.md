@@ -75,9 +75,16 @@ N/A — This is a UI polish task, not a bug fix. However, the "always visible" b
 **Root cause:** The global `::-webkit-scrollbar` rules in `index.css` define `width: 6px` and a non-transparent thumb color. On macOS Chrome, any `::-webkit-scrollbar` pseudo-element with a non-zero width forces the scrollbar track to render permanently, overriding the OS "Show scroll bars: Automatic" setting. This is a well-documented browser behavior — styling webkit scrollbar pseudo-elements opts out of the OS auto-hide.
 
 **Evidence:** The `index.css` file contains:
+
 ```css
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
 ```
 
 These rules apply globally to all scrollable elements, forcing scrollbar visibility on macOS.
@@ -87,7 +94,6 @@ These rules apply globally to all scrollable elements, forcing scrollbar visibil
 Full research report: `research/20260310_hide_scrollbars_when_idle.md`
 
 - **Potential solutions:**
-
   1. **Fix root cause (remove/scope global `::-webkit-scrollbar` rules)**
      - Pros: Restores macOS native auto-hide, zero new code, fixes all scroll containers at once
      - Cons: Loses the thin custom scrollbar styling on Windows/Linux; may not provide consistent cross-platform auto-hide behavior
@@ -117,8 +123,8 @@ Full research report: `research/20260310_hide_scrollbars_when_idle.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Scrollbar visibility behavior | Auto-show on scroll, fade out after ~800ms | Matches macOS-native behavior. Command palette already implements this pattern. Users retain scroll position awareness during active scrolling. |
-| 2 | MessageList implementation approach | CSS + JS scroll state tracking | Zero new dependencies. Builds on existing wheel/touch listeners from ADR-0092. The `use-scroll-overlay.ts` hook already tracks scroll activity — can extend it to set a `data-scrolling` attribute for CSS targeting. |
-| 3 | Root cause handling | Fix root cause first, then layer on auto-hide | The global `::-webkit-scrollbar` styling is forcing scrollbar visibility. Removing/scoping it restores macOS native auto-hide. Then add CSS + JS auto-hide for consistent cross-platform behavior. |
+| #   | Decision                            | Choice                                        | Rationale                                                                                                                                                                                                             |
+| --- | ----------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Scrollbar visibility behavior       | Auto-show on scroll, fade out after ~800ms    | Matches macOS-native behavior. Command palette already implements this pattern. Users retain scroll position awareness during active scrolling.                                                                       |
+| 2   | MessageList implementation approach | CSS + JS scroll state tracking                | Zero new dependencies. Builds on existing wheel/touch listeners from ADR-0092. The `use-scroll-overlay.ts` hook already tracks scroll activity — can extend it to set a `data-scrolling` attribute for CSS targeting. |
+| 3   | Root cause handling                 | Fix root cause first, then layer on auto-hide | The global `::-webkit-scrollbar` styling is forcing scrollbar visibility. Removing/scoping it restores macOS native auto-hide. Then add CSS + JS auto-hide for consistent cross-platform behavior.                    |

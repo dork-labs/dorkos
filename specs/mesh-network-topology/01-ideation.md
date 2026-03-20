@@ -60,19 +60,19 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|------|------|
-| `packages/mesh/src/mesh-core.ts` | Orchestrates discovery → registration lifecycle. Entry point for all mesh operations. |
-| `packages/mesh/src/relay-bridge.ts` | Creates/removes Relay endpoints when agents are registered. Currently does NOT write access rules. |
-| `packages/mesh/src/agent-registry.ts` | SQLite persistence for registered agents. No namespace column yet. |
-| `packages/relay/src/access-control.ts` | Policy engine. Evaluates allow/deny rules against (from, to) subject pairs. |
-| `packages/relay/src/relay-core.ts` | Main message bus. Delegates to AccessControl before every delivery. |
-| `packages/relay/src/budget-enforcer.ts` | Enforces budget constraints (maxHops, callBudget, TTL) before delivery. |
-| `apps/server/src/routes/mesh.ts` | HTTP endpoints for mesh operations. |
-| `apps/server/src/services/core/mcp-tool-server.ts` | MCP tools for agent use. |
-| `packages/shared/src/mesh-schemas.ts` | Zod schemas for mesh types and API validation. |
-| `apps/client/src/layers/features/mesh/` | UI components for mesh panel. |
-| `apps/client/src/layers/entities/mesh/` | TanStack Query hooks for mesh data fetching. |
+| File                                               | Role                                                                                               |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `packages/mesh/src/mesh-core.ts`                   | Orchestrates discovery → registration lifecycle. Entry point for all mesh operations.              |
+| `packages/mesh/src/relay-bridge.ts`                | Creates/removes Relay endpoints when agents are registered. Currently does NOT write access rules. |
+| `packages/mesh/src/agent-registry.ts`              | SQLite persistence for registered agents. No namespace column yet.                                 |
+| `packages/relay/src/access-control.ts`             | Policy engine. Evaluates allow/deny rules against (from, to) subject pairs.                        |
+| `packages/relay/src/relay-core.ts`                 | Main message bus. Delegates to AccessControl before every delivery.                                |
+| `packages/relay/src/budget-enforcer.ts`            | Enforces budget constraints (maxHops, callBudget, TTL) before delivery.                            |
+| `apps/server/src/routes/mesh.ts`                   | HTTP endpoints for mesh operations.                                                                |
+| `apps/server/src/services/core/mcp-tool-server.ts` | MCP tools for agent use.                                                                           |
+| `packages/shared/src/mesh-schemas.ts`              | Zod schemas for mesh types and API validation.                                                     |
+| `apps/client/src/layers/features/mesh/`            | UI components for mesh panel.                                                                      |
+| `apps/client/src/layers/entities/mesh/`            | TanStack Query hooks for mesh data fetching.                                                       |
 
 **Shared Dependencies:**
 
@@ -130,24 +130,28 @@ Research agent consulted 24 sources including Kubernetes NetworkPolicy, Istio Au
 ### Potential Solutions
 
 **1. Scan-Root Namespace + Namespace-to-Namespace ACLs**
+
 - Description: Namespace from first path segment after scan root. ACL rules as flat `(source_ns, dest_ns, action)`. Default same=allow, cross=deny.
 - Pros: Zero config, simple schema, minimal code
 - Cons: Coarse (all-or-nothing per project pair), no escape hatch if directory structure doesn't match logical boundaries, fragile if scan roots change
 - Complexity: Low | Maintenance: Low
 
 **2. Hybrid Namespace + Subject-Pattern ACLs (Selected)**
+
 - Description: Filesystem-derived namespace with optional manifest override. ACL rules use NATS-style subject patterns reusing ADR 0011 matching. 404 invisible boundary for cross-namespace queries.
 - Pros: Zero-config for common case, flexible override for edge cases, reuses ADR 0011/0014/0016 infrastructure, security-correct invisible boundary, incremental implementation path
 - Cons: Medium complexity, manifest schema change (optional namespace field), ACL engine adds ~200 lines
 - Complexity: Medium | Maintenance: Medium
 
 **3. Git-Remote Namespace + RBAC Roles**
+
 - Description: Parse `git remote get-url origin` for globally unique namespace. Assign roles to agents for capability-scoped ACLs.
 - Pros: Globally unique namespace, survives directory relocation
 - Cons: Requires git and shell execution during discovery, role management complexity, doesn't work for non-git projects
 - Complexity: High | Maintenance: High
 
 **4. Pure Manifest Namespace + Capability-Gated ABAC**
+
 - Description: All agents declare namespace and capabilities. Rules gate by capability across namespaces.
 - Pros: Fully explicit, semantically rich policy
 - Cons: Breaks zero-config auto-discovery, requires capability taxonomy, complex policy engine
@@ -175,9 +179,9 @@ Research agent consulted 24 sources including Kubernetes NetworkPolicy, Istio Au
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Namespace derivation strategy | Hybrid: filesystem-derived with manifest override | Default namespace from first path segment after scan root (e.g., `~/projects/dorkos/core` discovered from `~/projects` → namespace `dorkos`). Optional `namespace` field in `.dork/agent.json` overrides. Operator confirms at registration. Zero-config for common case, explicit when needed. Mirrors Kubernetes topology-derived namespaces and Docker Compose project naming. |
-| 2 | ACL rule granularity | Namespace-to-namespace with NATS-style subject patterns | Rules expressed as `relay.agent.projectA.* → relay.agent.projectB.*`. Reuses ADR 0011 subject-matching already in Relay. Same-namespace default-allow, cross-namespace default-deny. Simple mental model: "project A can talk to project B." Can be refined to agent-level later. |
-| 3 | ACL rule authorship | Any principal can author rules | Maximum autonomy — both human and agent principals can create/modify ACL rules directly. No approval queue. Simplifies implementation and enables fully autonomous agent networks. |
-| 4 | Budget enforcement approach | Map manifest budgets to Relay budget enforcement | Agent manifest `maxHopsPerMessage` maps to Relay's `maxHops` budget field. `maxCallsPerHour` enforced via sliding window counters (reusing ADR 0014 algorithm) in a `budget_counters` SQLite table. Leverages existing BudgetEnforcer. Project-level caps deferred to a future spec. |
+| #   | Decision                      | Choice                                                  | Rationale                                                                                                                                                                                                                                                                                                                                                                         |
+| --- | ----------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Namespace derivation strategy | Hybrid: filesystem-derived with manifest override       | Default namespace from first path segment after scan root (e.g., `~/projects/dorkos/core` discovered from `~/projects` → namespace `dorkos`). Optional `namespace` field in `.dork/agent.json` overrides. Operator confirms at registration. Zero-config for common case, explicit when needed. Mirrors Kubernetes topology-derived namespaces and Docker Compose project naming. |
+| 2   | ACL rule granularity          | Namespace-to-namespace with NATS-style subject patterns | Rules expressed as `relay.agent.projectA.* → relay.agent.projectB.*`. Reuses ADR 0011 subject-matching already in Relay. Same-namespace default-allow, cross-namespace default-deny. Simple mental model: "project A can talk to project B." Can be refined to agent-level later.                                                                                                 |
+| 3   | ACL rule authorship           | Any principal can author rules                          | Maximum autonomy — both human and agent principals can create/modify ACL rules directly. No approval queue. Simplifies implementation and enables fully autonomous agent networks.                                                                                                                                                                                                |
+| 4   | Budget enforcement approach   | Map manifest budgets to Relay budget enforcement        | Agent manifest `maxHopsPerMessage` maps to Relay's `maxHops` budget field. `maxCallsPerHour` enforced via sliding window counters (reusing ADR 0014 algorithm) in a `budget_counters` SQLite table. Leverages existing BudgetEnforcer. Project-level caps deferred to a future spec.                                                                                              |

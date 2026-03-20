@@ -42,9 +42,7 @@ export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
 
 export const AgentBehaviorSchema = z
   .object({
-    responseMode: z
-      .enum(['always', 'direct-only', 'mention-only', 'silent'])
-      .default('always'),
+    responseMode: z.enum(['always', 'direct-only', 'mention-only', 'silent']).default('always'),
     escalationThreshold: z.number().optional(),
   })
   .openapi('AgentBehavior');
@@ -133,6 +131,7 @@ Add this subpath export alongside the existing ones:
 ```
 
 **Verification:**
+
 - `npm run typecheck` passes
 - All schemas export both the Zod schema and inferred TypeScript type
 - OpenAPI metadata is attached via `.openapi()`
@@ -253,6 +252,7 @@ export default defineWorkspace([
 ```
 
 **Steps:**
+
 1. Run `npm install` to resolve the new workspace package
 2. Run `npm run typecheck` to verify the package compiles
 3. Verify `packages/mesh` appears in workspace resolution
@@ -292,6 +292,7 @@ export interface DiscoveryStrategy {
 ```
 
 Export from `src/index.ts`:
+
 ```typescript
 export type { DiscoveryStrategy } from './discovery-strategy.js';
 ```
@@ -404,6 +405,7 @@ export class CodexStrategy implements DiscoveryStrategy {
 ```
 
 Export all strategies from `src/index.ts`:
+
 ```typescript
 export { ClaudeCodeStrategy } from './strategies/claude-code-strategy.js';
 export { CursorStrategy } from './strategies/cursor-strategy.js';
@@ -420,6 +422,7 @@ export { CodexStrategy } from './strategies/codex-strategy.js';
 Create `packages/mesh/src/__tests__/strategies.test.ts` and test fixture directories.
 
 **Test fixture directories to create:**
+
 ```
 packages/mesh/src/__tests__/fixtures/
 ├── claude-project/.claude/CLAUDE.md
@@ -430,6 +433,7 @@ packages/mesh/src/__tests__/fixtures/
 ```
 
 **Test cases:**
+
 1. `ClaudeCodeStrategy.detect()` returns `true` for `claude-project/`
 2. `ClaudeCodeStrategy.detect()` returns `false` for `claude-no-md/` (`.claude/` exists but no `CLAUDE.md`)
 3. `ClaudeCodeStrategy.detect()` returns `false` for `empty-project/`
@@ -466,14 +470,22 @@ import { readManifest } from './manifest.js';
 
 /** Directories excluded from BFS traversal. */
 export const EXCLUDED_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', '.cache',
-  '__pycache__', '.venv', 'venv', '.tox', '.DS_Store',
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.cache',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.tox',
+  '.DS_Store',
 ]);
 
 export interface DiscoveryOptions {
-  maxDepth?: number;              // Default: 5
-  excludedDirs?: Set<string>;     // Default: EXCLUDED_DIRS
-  followSymlinks?: boolean;       // Default: false
+  maxDepth?: number; // Default: 5
+  excludedDirs?: Set<string>; // Default: EXCLUDED_DIRS
+  followSymlinks?: boolean; // Default: false
 }
 
 /** Event emitted when an existing .dork/agent.json is found during scan. */
@@ -497,14 +509,14 @@ export async function* scanDirectory(
   strategies: DiscoveryStrategy[],
   registry: AgentRegistry,
   denialList: DenialList,
-  options: DiscoveryOptions = {},
+  options: DiscoveryOptions = {}
 ): AsyncGenerator<DiscoveryCandidate | AutoImportedAgent> {
   const maxDepth = options.maxDepth ?? 5;
   const excludedDirs = options.excludedDirs ?? EXCLUDED_DIRS;
   const followSymlinks = options.followSymlinks ?? false;
 
   const queue: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
-  const visited = new Set<string>();  // realpath-based cycle detection
+  const visited = new Set<string>(); // realpath-based cycle detection
 
   while (queue.length > 0) {
     const { dir, depth } = queue.shift()!;
@@ -556,7 +568,14 @@ export async function* scanDirectory(
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory() && !(followSymlinks && entry.isSymbolicLink())) continue;
-        if (entry.name.startsWith('.') && entry.name !== '.claude' && entry.name !== '.cursor' && entry.name !== '.codex' && entry.name !== '.dork') continue;
+        if (
+          entry.name.startsWith('.') &&
+          entry.name !== '.claude' &&
+          entry.name !== '.cursor' &&
+          entry.name !== '.codex' &&
+          entry.name !== '.dork'
+        )
+          continue;
         if (excludedDirs.has(entry.name)) continue;
 
         // Skip symlinks when followSymlinks is false
@@ -577,6 +596,7 @@ export async function* scanDirectory(
 ```
 
 **Important implementation notes:**
+
 - The BFS does NOT descend into dot-directories except `.claude`, `.cursor`, `.codex`, and `.dork`
 - First strategy match wins (no multi-strategy matches per directory)
 - `readManifest()` dependency means this task depends on Task 3.3 at implementation time, but the interface/type can be stubbed initially
@@ -592,6 +612,7 @@ export async function* scanDirectory(
 Create `packages/mesh/src/__tests__/discovery-engine.test.ts`.
 
 **Test fixture structure (created in temp dir per test):**
+
 ```
 tmpDir/
 ├── project-a/.claude/CLAUDE.md
@@ -603,6 +624,7 @@ tmpDir/
 ```
 
 **Test cases:**
+
 1. BFS traversal finds agents in nested directories up to maxDepth
 2. `maxDepth: 1` skips `deep/nested/project-c/`
 3. `node_modules/` is in EXCLUDED_DIRS, so `hidden/` is never reached
@@ -614,6 +636,7 @@ tmpDir/
 9. Symlinks are ignored entirely when `followSymlinks: false`
 
 **Mock approach:**
+
 - Use real temp filesystem fixtures for directory structure
 - Use simple mock objects for `AgentRegistry` and `DenialList` with `vi.fn()` methods
 
@@ -631,6 +654,7 @@ Create `packages/mesh/src/agent-registry.ts` with SQLite persistence following t
 **File: `packages/mesh/src/agent-registry.ts` (NEW)**
 
 **SQL DDL (Migration 1):**
+
 ```sql
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
@@ -649,6 +673,7 @@ CREATE INDEX IF NOT EXISTS idx_agents_runtime ON agents(runtime);
 ```
 
 **AgentRegistryEntry type:**
+
 ```typescript
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
@@ -658,6 +683,7 @@ export interface AgentRegistryEntry extends AgentManifest {
 ```
 
 **Constructor pattern:**
+
 ```typescript
 constructor(dbPath: string) {
   this.db = new Database(dbPath);
@@ -682,6 +708,7 @@ constructor(dbPath: string) {
 ```
 
 **Public methods:**
+
 - `insert(agent: AgentRegistryEntry): void` — insert a new agent, stores capabilities as JSON array, full manifest as JSON
 - `get(id: string): AgentRegistryEntry | undefined` — look up by ULID
 - `getByPath(projectPath: string): AgentRegistryEntry | undefined` — look up by canonical project path
@@ -704,6 +731,7 @@ Create `packages/mesh/src/denial-list.ts` sharing the same SQLite database as th
 **File: `packages/mesh/src/denial-list.ts` (NEW)**
 
 **SQL DDL (part of Migration 1, same transaction as agents table):**
+
 ```sql
 CREATE TABLE IF NOT EXISTS denials (
   path TEXT PRIMARY KEY,
@@ -730,6 +758,7 @@ constructor(db: Database.Database) {
 ```
 
 **Public methods:**
+
 - `deny(path: string, strategy: string, reason: string | undefined, denier: string): void` — canonicalize path via `fs.realpathSync()`, insert/replace
 - `isDenied(path: string): boolean` — canonicalize path, check existence
 - `list(): DenialRecord[]` — return all denial records
@@ -808,6 +837,7 @@ export async function writeManifest(projectDir: string, manifest: AgentManifest)
 Create `packages/mesh/src/__tests__/agent-registry.test.ts`.
 
 **Test cases:**
+
 1. `insert()` and `get()` round-trip — insert an agent, retrieve by id, verify all fields
 2. `getByPath()` returns the correct agent for a project path
 3. `list()` returns all agents ordered by `registered_at` DESC
@@ -833,6 +863,7 @@ Create `packages/mesh/src/__tests__/agent-registry.test.ts`.
 Create `packages/mesh/src/__tests__/denial-list.test.ts`.
 
 **Test cases:**
+
 1. `deny()` and `isDenied()` round-trip — deny a path, verify it's denied
 2. `isDenied()` returns false for non-denied path
 3. `clear()` removes a denial and returns true
@@ -855,6 +886,7 @@ Create `packages/mesh/src/__tests__/denial-list.test.ts`.
 Create `packages/mesh/src/__tests__/manifest.test.ts`.
 
 **Test cases:**
+
 1. `readManifest()` / `writeManifest()` round-trip — write a manifest, read it back, verify equality
 2. `readManifest()` returns null when `.dork/agent.json` doesn't exist
 3. `readManifest()` returns null when JSON is invalid
@@ -930,6 +962,7 @@ export class RelayBridge {
 Create `packages/mesh/src/__tests__/relay-bridge.test.ts`.
 
 **Test cases:**
+
 1. `registerAgent()` with RelayCore calls `registerEndpoint` with correct subject
 2. Subject format is `relay.agent.{basename(projectPath)}.{agentId}`
 3. `registerAgent()` returns the registered subject string
@@ -963,7 +996,11 @@ import { RelayBridge } from './relay-bridge.js';
 import { ClaudeCodeStrategy } from './strategies/claude-code-strategy.js';
 import { CursorStrategy } from './strategies/cursor-strategy.js';
 import { CodexStrategy } from './strategies/codex-strategy.js';
-import { scanDirectory, type DiscoveryOptions, type AutoImportedAgent } from './discovery-engine.js';
+import {
+  scanDirectory,
+  type DiscoveryOptions,
+  type AutoImportedAgent,
+} from './discovery-engine.js';
 import { writeManifest } from './manifest.js';
 
 export interface MeshOptions {
@@ -977,6 +1014,7 @@ export interface MeshOptions {
 ```
 
 **Constructor:**
+
 - Resolve `dataDir` (default `~/.dork/mesh`), create directory if needed
 - Initialize `AgentRegistry` with `{dataDir}/mesh.db`
 - Initialize `DenialList` sharing the registry's database
@@ -1007,6 +1045,7 @@ export interface MeshOptions {
 Create `packages/mesh/src/__tests__/mesh-core.test.ts`.
 
 **Test fixture structure (created in temp dir per test):**
+
 ```
 tmpDir/
 ├── data/                 (dataDir for MeshCore)
@@ -1017,6 +1056,7 @@ tmpDir/
 ```
 
 **Test cases:**
+
 1. Full lifecycle: `discover()` -> `register()` -> `list()` -> `unregister()`
    - Discover finds project-a and project-b as candidates
    - Register project-a, verify manifest written to `.dork/agent.json`
@@ -1094,6 +1134,7 @@ export { RelayBridge } from './relay-bridge.js';
 ```
 
 **Verification checklist (from spec section 16):**
+
 - [ ] `npm test` passes for `packages/mesh`
 - [ ] `npm run typecheck` passes
 - [ ] MeshCore can be instantiated and discover agents in a test fixture directory
@@ -1143,10 +1184,10 @@ Phase 4 (Integration):
 
 ## Estimated Effort
 
-| Phase | Tasks | Estimated Lines | Complexity |
-|---|---|---|---|
-| Phase 1: Foundation | 3 | ~200 | Low |
-| Phase 2: Discovery | 5 | ~500 | Medium |
-| Phase 3: Persistence | 6 | ~600 | Medium |
-| Phase 4: Integration | 5 | ~700 | High |
-| **Total** | **19** | **~2000** | -- |
+| Phase                | Tasks  | Estimated Lines | Complexity |
+| -------------------- | ------ | --------------- | ---------- |
+| Phase 1: Foundation  | 3      | ~200            | Low        |
+| Phase 2: Discovery   | 5      | ~500            | Medium     |
+| Phase 3: Persistence | 6      | ~600            | Medium     |
+| Phase 4: Integration | 5      | ~700            | High       |
+| **Total**            | **19** | **~2000**       | --         |

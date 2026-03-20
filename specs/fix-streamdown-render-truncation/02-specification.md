@@ -32,6 +32,7 @@ DorkOS renders assistant messages via `StreamingText.tsx`, which wraps the `<Str
 `remend@1.2.2` release notes: _"fixes emphasis completion handlers incorrectly closing markers inside complete inline code spans."_ `streamdown@2.4.0` bundles this fix.
 
 **Evidence from DOM inspection:**
+
 - Streaming: `li25.textContent === "Array"` — content truncated
 - After reload: `li25.textContent === "Array literals: numbers is typed as number[]"` — correct
 - JSONL raw bytes: `- **Array literals**: \`numbers\` is typed as \`number[]\`` — data is intact
@@ -58,10 +59,10 @@ DorkOS renders assistant messages via `StreamingText.tsx`, which wraps the `<Str
 
 ## Technical Dependencies
 
-| Dependency | Current | Target | Notes |
-|---|---|---|---|
-| `streamdown` | `latest` → resolves `2.3.0` | `^2.4.0` | `remend@1.2.2` bundled |
-| `remend` | `1.2.1` (transitive) | `1.2.2` (transitive) | Auto-resolved by pnpm after bump |
+| Dependency   | Current                     | Target               | Notes                            |
+| ------------ | --------------------------- | -------------------- | -------------------------------- |
+| `streamdown` | `latest` → resolves `2.3.0` | `^2.4.0`             | `remend@1.2.2` bundled           |
+| `remend`     | `1.2.1` (transitive)        | `1.2.2` (transitive) | Auto-resolved by pnpm after bump |
 
 No new direct dependencies. No API surface changes.
 
@@ -134,6 +135,7 @@ Streamdown renderer: renders full content (correct)
 ### New test: `apps/client/src/layers/features/chat/__tests__/StreamingText.test.tsx`
 
 One test case added to the existing `StreamingText` describe block (detailed above in Detailed Design). The test:
+
 - Renders `<StreamingText>` with content containing `` `number[]` `` followed by a trailing paragraph
 - Asserts that the full content string, including the `[]` and the trailing paragraph, appears in the Streamdown mock's output unchanged
 - Will fail if remend truncation regresses

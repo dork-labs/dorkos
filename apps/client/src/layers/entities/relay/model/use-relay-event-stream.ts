@@ -15,7 +15,7 @@ export type RelayConnectionState = 'connected' | 'reconnecting' | 'disconnected'
  */
 export function useRelayEventStream(
   enabled: boolean,
-  pattern?: string,
+  pattern?: string
 ): { connectionState: RelayConnectionState; failedAttempts: number } {
   const queryClient = useQueryClient();
   const [connectionState, setConnectionState] = useState<RelayConnectionState>('connected');

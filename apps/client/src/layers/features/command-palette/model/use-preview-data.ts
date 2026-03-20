@@ -34,7 +34,7 @@ export function usePreviewData(agentId: string, agentCwd: string): PreviewData {
 
   const agentSessions = useMemo(
     () => sessions.filter((s) => s.cwd === agentCwd),
-    [sessions, agentCwd],
+    [sessions, agentCwd]
   );
 
   const recentSessions: RecentSession[] = useMemo(
@@ -44,7 +44,7 @@ export function usePreviewData(agentId: string, agentCwd: string): PreviewData {
         title: s.title ?? null,
         lastActive: s.updatedAt,
       })),
-    [agentSessions],
+    [agentSessions]
   );
 
   return {

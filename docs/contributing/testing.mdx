@@ -9,24 +9,12 @@ DorkOS uses Vitest for all testing, with React Testing Library for component tes
 
 ## Running Tests
 
-<Tabs items={["All tests", "Single run", "Specific file"]}>
-<Tab value="All tests">
-```bash
-pnpm test
-```
-Runs all tests in watch mode.
-</Tab>
-<Tab value="Single run">
-```bash
-pnpm test -- --run
-```
-Runs all tests once. Use this for CI.
-</Tab>
-<Tab value="Specific file">
-```bash
-pnpm vitest run apps/server/src/services/__tests__/transcript-reader.test.ts
-```
-</Tab>
+<Tabs items={['All tests', 'Single run', 'Specific file']}>
+  <Tab value="All tests">```bash pnpm test ``` Runs all tests in watch mode.</Tab>
+  <Tab value="Single run">```bash pnpm test -- --run ``` Runs all tests once. Use this for CI.</Tab>
+  <Tab value="Specific file">
+    ```bash pnpm vitest run apps/server/src/services/__tests__/transcript-reader.test.ts ```
+  </Tab>
 </Tabs>
 
 ## Test File Structure
@@ -73,6 +61,7 @@ Every component test file must start with:
  * @vitest-environment jsdom
  */
 ```
+
 </Step>
 
 <Step>
@@ -97,6 +86,7 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 ```
+
 </Step>
 
 <Step>
@@ -110,6 +100,7 @@ describe('MyComponent', () => {
   });
 });
 ```
+
 </Step>
 </Steps>
 
@@ -151,18 +142,36 @@ describe('useCustomHook', () => {
 
 ## Key Conventions
 
-<TypeTable type={{
-  "@vitest-environment jsdom": { type: "directive", description: "Required at the top of every component test file" },
-  "createMockTransport()": { type: "function", description: "Creates a fully mocked Transport from @dorkos/test-utils" },
-  "TransportProvider wrapper": { type: "pattern", description: "Wrap components in TransportProvider with a mock Transport" },
-  "@testing-library/jest-dom": { type: "import", description: "DOM assertion matchers like toBeInTheDocument()" },
-  "matchMedia mock": { type: "pattern", description: "Mock window.matchMedia in beforeAll for responsive components" }
-}} />
+<TypeTable
+  type={{
+    '@vitest-environment jsdom': {
+      type: 'directive',
+      description: 'Required at the top of every component test file',
+    },
+    'createMockTransport()': {
+      type: 'function',
+      description: 'Creates a fully mocked Transport from @dorkos/test-utils',
+    },
+    'TransportProvider wrapper': {
+      type: 'pattern',
+      description: 'Wrap components in TransportProvider with a mock Transport',
+    },
+    '@testing-library/jest-dom': {
+      type: 'import',
+      description: 'DOM assertion matchers like toBeInTheDocument()',
+    },
+    'matchMedia mock': {
+      type: 'pattern',
+      description: 'Mock window.matchMedia in beforeAll for responsive components',
+    },
+  }}
+/>
 
 ## Mock Browser APIs
 
 <Callout type="warn">
-Components that use browser APIs like `matchMedia` need explicit mocks. Add them in `beforeAll` and clean up in `afterEach`.
+  Components that use browser APIs like `matchMedia` need explicit mocks. Add them in `beforeAll`
+  and clean up in `afterEach`.
 </Callout>
 
 ```typescript
@@ -213,9 +222,7 @@ beforeEach(() => {
 
 ## Anti-Patterns
 
-<Callout type="error">
-Avoid these common testing mistakes.
-</Callout>
+<Callout type="error">Avoid these common testing mistakes.</Callout>
 
 ```typescript
 // NEVER test implementation details

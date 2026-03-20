@@ -51,13 +51,17 @@ interface ToolGroupRowProps {
  * A single tool group row with switch, inherited/overridden state label,
  * and optional reset button.
  */
-function ToolGroupRow({ domain, agentOverride, globalDefault, onToggle, onReset }: ToolGroupRowProps) {
+function ToolGroupRow({
+  domain,
+  agentOverride,
+  globalDefault,
+  onToggle,
+  onReset,
+}: ToolGroupRowProps) {
   const isOverridden = agentOverride !== undefined;
   const effectiveValue = agentOverride ?? globalDefault;
 
-  const stateLabel = isOverridden
-    ? `Overridden: ${effectiveValue ? 'On' : 'Off'}`
-    : 'Inherited';
+  const stateLabel = isOverridden ? `Overridden: ${effectiveValue ? 'On' : 'Off'}` : 'Inherited';
 
   if (domain.serverDisabled) {
     return (
@@ -375,7 +379,11 @@ export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
       </p>
       <FieldCard>
         <FieldCardContent>
-          <SettingRow label="Core Tools" description="ping, server info, agent identity" className="py-1">
+          <SettingRow
+            label="Core Tools"
+            description="ping, server info, agent identity"
+            className="py-1"
+          >
             <span className="text-muted-foreground text-xs">Always enabled</span>
           </SettingRow>
 

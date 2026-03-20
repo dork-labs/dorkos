@@ -134,11 +134,14 @@ vi.mock('../ui/ShortcutChips', () => ({
 }));
 
 vi.mock('@/layers/features/status', () => ({
-  StatusLine: Object.assign(vi.fn(() => <div data-testid="status-line">StatusLine</div>), {
-    Item: vi.fn(({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
-      visible ? <>{children}</> : null
-    ),
-  }),
+  StatusLine: Object.assign(
+    vi.fn(() => <div data-testid="status-line">StatusLine</div>),
+    {
+      Item: vi.fn(({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
+        visible ? <>{children}</> : null
+      ),
+    }
+  ),
   CwdItem: vi.fn(() => null),
   GitStatusItem: vi.fn(() => null),
   PermissionModeItem: vi.fn(() => null),

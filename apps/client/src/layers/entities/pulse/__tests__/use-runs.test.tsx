@@ -93,7 +93,7 @@ describe('useRuns', () => {
       await vi.advanceTimersByTimeAsync(10_000);
 
       expect((transport.listRuns as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
-        initialCallCount,
+        initialCallCount
       );
     } finally {
       vi.useRealTimers();
@@ -117,7 +117,7 @@ describe('useRuns', () => {
       await vi.advanceTimersByTimeAsync(10_000);
 
       expect((transport.listRuns as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
-        initialCallCount,
+        initialCallCount
       );
     } finally {
       vi.useRealTimers();
@@ -244,7 +244,7 @@ describe('useCancelRun', () => {
     // listRuns should have been called again due to query invalidation
     await waitFor(() => {
       expect((transport.listRuns as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
-        callsBefore,
+        callsBefore
       );
     });
   });

@@ -52,7 +52,6 @@ describe('logger module', () => {
       expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalledWith('/custom/logs', { recursive: true });
       expect(loggerModule.getLogDir()).toBe('/custom/logs');
     });
-
   });
 
   // ---------------------------------------------------------------------------
@@ -172,7 +171,7 @@ describe('logger module', () => {
 
       expect(vi.mocked(fs.renameSync)).toHaveBeenCalledWith(
         '/test/logs/dorkos.log',
-        `/test/logs/dorkos.${expectedDate}.log`,
+        `/test/logs/dorkos.${expectedDate}.log`
       );
     });
 
@@ -186,15 +185,15 @@ describe('logger module', () => {
         mtime: yesterday,
       } as unknown as ReturnType<typeof fs.statSync>);
       vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue(
-        [`dorkos.${expectedDate}.log`] as unknown as ReturnType<typeof fs.readdirSync>,
-      );
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        `dorkos.${expectedDate}.log`,
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
 
       loggerModule.initLogger({ logDir: '/test/logs' });
 
       expect(vi.mocked(fs.renameSync)).toHaveBeenCalledWith(
         '/test/logs/dorkos.log',
-        `/test/logs/dorkos.${expectedDate}.1.log`,
+        `/test/logs/dorkos.${expectedDate}.1.log`
       );
     });
 
@@ -212,7 +211,7 @@ describe('logger module', () => {
 
       expect(vi.mocked(fs.renameSync)).toHaveBeenCalledWith(
         '/test/logs/dorkos.log',
-        `/test/logs/dorkos.${todayStr}.1.log`,
+        `/test/logs/dorkos.${todayStr}.1.log`
       );
     });
 
@@ -258,7 +257,7 @@ describe('logger module', () => {
         return `dorkos.2026-01-${d}.log`;
       });
       vi.mocked(fs.readdirSync).mockReturnValue(
-        rotatedFiles as unknown as ReturnType<typeof fs.readdirSync>,
+        rotatedFiles as unknown as ReturnType<typeof fs.readdirSync>
       );
 
       loggerModule.initLogger({ logDir: '/test/logs' });
@@ -283,7 +282,7 @@ describe('logger module', () => {
         return `dorkos.2026-01-${d}.log`;
       });
       vi.mocked(fs.readdirSync).mockReturnValue(
-        rotatedFiles as unknown as ReturnType<typeof fs.readdirSync>,
+        rotatedFiles as unknown as ReturnType<typeof fs.readdirSync>
       );
 
       loggerModule.initLogger({ logDir: '/test/logs', maxLogFiles: 3 });

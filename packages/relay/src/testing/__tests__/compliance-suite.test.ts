@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { runAdapterComplianceSuite, createMockRelayPublisher, createMockRelayEnvelope } from '../index.js';
+import {
+  runAdapterComplianceSuite,
+  createMockRelayPublisher,
+  createMockRelayEnvelope,
+} from '../index.js';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type { DeliveryResult } from '../../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -9,8 +13,12 @@ class MinimalTestAdapter extends BaseRelayAdapter {
     super('compliance-test', 'relay.test.compliance', 'Compliance Test');
   }
 
-  protected async _start(): Promise<void> { /* no-op */ }
-  protected async _stop(): Promise<void> { /* no-op */ }
+  protected async _start(): Promise<void> {
+    /* no-op */
+  }
+  protected async _stop(): Promise<void> {
+    /* no-op */
+  }
 
   async deliver(_subject: string, _envelope: RelayEnvelope): Promise<DeliveryResult> {
     this.trackOutbound();

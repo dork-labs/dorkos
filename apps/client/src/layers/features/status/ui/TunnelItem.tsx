@@ -34,14 +34,12 @@ export function TunnelItem({ tunnel: tunnelProp }: TunnelItemProps) {
           <Globe className="size-(--size-icon-xs)" />
           <span
             className={cn(
-              'absolute -right-0.5 -top-0.5 size-1.5 rounded-full transition-colors duration-300',
-              dotColor,
+              'absolute -top-0.5 -right-0.5 size-1.5 rounded-full transition-colors duration-300',
+              dotColor
             )}
           />
         </span>
-        {tunnel.connected && hostname && (
-          <span className="max-w-24 truncate">{hostname}</span>
-        )}
+        {tunnel.connected && hostname && <span className="max-w-24 truncate">{hostname}</span>}
         {!tunnel.connected && <span>Remote</span>}
       </button>
       <TunnelDialog open={dialogOpen} onOpenChange={setDialogOpen} />

@@ -19,19 +19,19 @@ Three deferred enhancements from spec #91 (relay-async-query):
 
 ## Task Summary
 
-| ID | Phase | Title | Size | Priority | Depends On |
-|----|-------|-------|------|----------|------------|
-| 1.1 | 1 | Add EndpointType and inferEndpointType to packages/relay/src/types.ts | small | high | — |
-| 1.2 | 1 | Extend RelayOptions with TTL fields in packages/relay/src/types.ts | small | high | 1.1 |
-| 2.1 | 2 | Add TTL sweeper and getDispatchInboxTtlMs to RelayCore | medium | high | 1.1, 1.2 |
-| 2.2 | 2 | Write TTL sweeper integration test in relay-cca-roundtrip.test.ts | medium | high | 2.1 |
-| 3.1 | 3 | Update createRelayQueryHandler to accumulate progress events | medium | high | 1.1 |
-| 3.2 | 3 | Write relay_query progress unit tests in relay-tools.test.ts | medium | high | 3.1 |
-| 4.1 | 4 | Update ClaudeCodeAdapter to stream progress for all relay.inbox.* replyTos | medium | high | 1.1, 2.1 |
-| 4.2 | 4 | Update existing backward-compat test in relay-cca-roundtrip.test.ts | small | high | 4.1 |
-| 5.1 | 5 | Update createRelayListEndpointsHandler to include type and expiresAt fields | small | high | 1.1, 2.1 |
-| 6.1 | 6 | Update RELAY_TOOLS_CONTEXT in context-builder.ts | small | medium | 3.1, 4.1, 5.1 |
-| 7.1 | 7 | Run full test suite and verify all phases pass | small | high | all |
+| ID  | Phase | Title                                                                       | Size   | Priority | Depends On    |
+| --- | ----- | --------------------------------------------------------------------------- | ------ | -------- | ------------- |
+| 1.1 | 1     | Add EndpointType and inferEndpointType to packages/relay/src/types.ts       | small  | high     | —             |
+| 1.2 | 1     | Extend RelayOptions with TTL fields in packages/relay/src/types.ts          | small  | high     | 1.1           |
+| 2.1 | 2     | Add TTL sweeper and getDispatchInboxTtlMs to RelayCore                      | medium | high     | 1.1, 1.2      |
+| 2.2 | 2     | Write TTL sweeper integration test in relay-cca-roundtrip.test.ts           | medium | high     | 2.1           |
+| 3.1 | 3     | Update createRelayQueryHandler to accumulate progress events                | medium | high     | 1.1           |
+| 3.2 | 3     | Write relay_query progress unit tests in relay-tools.test.ts                | medium | high     | 3.1           |
+| 4.1 | 4     | Update ClaudeCodeAdapter to stream progress for all relay.inbox.\* replyTos | medium | high     | 1.1, 2.1      |
+| 4.2 | 4     | Update existing backward-compat test in relay-cca-roundtrip.test.ts         | small  | high     | 4.1           |
+| 5.1 | 5     | Update createRelayListEndpointsHandler to include type and expiresAt fields | small  | high     | 1.1, 2.1      |
+| 6.1 | 6     | Update RELAY_TOOLS_CONTEXT in context-builder.ts                            | small  | medium   | 3.1, 4.1, 5.1 |
+| 7.1 | 7     | Run full test suite and verify all phases pass                              | small  | high     | all           |
 
 **Total tasks:** 11
 
@@ -56,14 +56,15 @@ export type EndpointType = 'dispatch' | 'query' | 'persistent' | 'agent' | 'unkn
  */
 export function inferEndpointType(subject: string): EndpointType {
   if (subject.startsWith('relay.inbox.dispatch.')) return 'dispatch';
-  if (subject.startsWith('relay.inbox.query.'))    return 'query';
-  if (subject.startsWith('relay.inbox.'))           return 'persistent';
-  if (subject.startsWith('relay.agent.'))           return 'agent';
+  if (subject.startsWith('relay.inbox.query.')) return 'query';
+  if (subject.startsWith('relay.inbox.')) return 'persistent';
+  if (subject.startsWith('relay.agent.')) return 'agent';
   return 'unknown';
 }
 ```
 
 Add to `index.ts`:
+
 ```typescript
 export { inferEndpointType } from './types.js';
 export type { EndpointType } from './types.js';
@@ -122,6 +123,7 @@ private startTtlSweeper(): void {
 ```
 
 Close teardown (first lines of `close()`):
+
 ```typescript
 if (this.ttlSweepInterval) {
   clearInterval(this.ttlSweepInterval);
@@ -182,11 +184,15 @@ const reply = await new Promise<{
     resolve({ payload, progress: progressEvents, from: envelope.from, id: envelope.id });
   });
 
-  cleanup = () => { clearTimeout(timer); unsub(); };
+  cleanup = () => {
+    clearTimeout(timer);
+    unsub();
+  };
 });
 ```
 
 3. Update return statement to include `progress`:
+
 ```typescript
 return jsonContent({
   reply: reply.payload,
@@ -208,10 +214,12 @@ Also update the `relay_query` tool description to document the new `progress[]` 
 Add four tests across two describe blocks:
 
 **`relay_list_endpoints with type metadata`:**
+
 - Verify `inferEndpointType` is applied (dispatch → `'dispatch'`, query → `'query'`, etc.)
 - Verify `expiresAt` is ISO string for dispatch, `null` for others
 
 **`relay_query progress accumulation`:**
+
 - Mock emits 2 progress events then `agent_result` → `progress.length === 2`
 - Mock emits plain `{ text: 'hello' }` → `progress` is empty array (backward compat)
 
@@ -219,7 +227,7 @@ Add four tests across two describe blocks:
 
 ## Phase 4 — CCA Unified Inbox Streaming
 
-### Task 4.1 — Update ClaudeCodeAdapter to stream progress for all relay.inbox.* replyTos
+### Task 4.1 — Update ClaudeCodeAdapter to stream progress for all relay.inbox.\* replyTos
 
 **Files:** `packages/relay/src/adapters/claude-code-adapter.ts`
 
@@ -336,6 +344,7 @@ pnpm test -- --run
 ```
 
 Common failure points to check:
+
 - `inferEndpointType` not exported from `packages/relay/src/index.ts`
 - `getDispatchInboxTtlMs()` missing from `RelayCore` public API
 - Fake timers leaking between tests (ensure `vi.useRealTimers()` after TTL test)

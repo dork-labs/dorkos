@@ -23,10 +23,7 @@ export function validateMcpOrigin(req: Request, res: Response, next: NextFunctio
 
   // Check against allowed origins (localhost + tunnel)
   const port = env.DORKOS_PORT;
-  const allowed = [
-    `http://localhost:${port}`,
-    `http://127.0.0.1:${port}`,
-  ];
+  const allowed = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
 
   // Add tunnel origin if active
   const tunnelUrl = tunnelManager.status.url;

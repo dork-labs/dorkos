@@ -1,5 +1,5 @@
 ---
-title: "Multi-Client Session Indicator: UX Patterns & Implementation Approach"
+title: 'Multi-Client Session Indicator: UX Patterns & Implementation Approach'
 date: 2026-03-16
 type: external-best-practices
 status: active
@@ -41,11 +41,13 @@ Key insight: the existing broadcaster already cleans up on `res.on('close')`. Th
 Two viable patterns for delivering client count updates to the web client:
 
 **Option A: Piggyback on existing sync SSE stream (`/api/sessions/:id/stream`)**
+
 - Add a `presence_update` event type alongside existing `sync_connected`/`sync_update`
 - Broadcaster emits when count changes (on register/deregister)
 - Zero new infrastructure; client already has an established SSE connection
 
 **Option B: Dedicated REST poll (`/api/sessions/:id/presence`)**
+
 - Client polls on interval (e.g., every 5s)
 - Simple, resilient to SSE edge cases
 - Adds latency; presence changes feel sluggish
@@ -56,11 +58,11 @@ Option A is strongly preferred. The sync SSE stream is already open and persiste
 
 The server currently stores `clientId` in `SessionLockManager` (which client holds the write lock) and passes `_clientId` to `SessionBroadcaster.registerClient()` (currently unused). The `X-Client-Id` header is already sent by `HttpTransport`. The Obsidian plugin and MCP clients would need to send distinct client ID prefixes to allow type inference:
 
-| Client | Suggested ID prefix | Type label |
-|--------|---------------------|------------|
-| Web browser | `web-{uuid}` | "web" |
-| Obsidian plugin | `obsidian-{uuid}` | "obsidian" |
-| MCP external agent | `mcp-{uuid}` | "mcp" |
+| Client             | Suggested ID prefix | Type label |
+| ------------------ | ------------------- | ---------- |
+| Web browser        | `web-{uuid}`        | "web"      |
+| Obsidian plugin    | `obsidian-{uuid}`   | "obsidian" |
+| MCP external agent | `mcp-{uuid}`        | "mcp"      |
 
 The broadcaster can infer type from the prefix without a separate registry. However, exposing exact client types in the UI warrants a brief privacy consideration (see Security section).
 
@@ -69,12 +71,14 @@ The broadcaster can infer type from the prefix without a separate registry. Howe
 After reviewing Carbon Design System, Material 3, NN/g indicators guide, and the existing StatusLine compound component:
 
 **Show:**
+
 - Small badge or dot in the StatusLine when `clientCount > 1`
 - Count: "2 clients" or just "2" with an icon
 - On hover/click: tooltip listing types ("1 web Â· 1 obsidian")
 - Animation: animate-in/out following existing `StatusLine.Item` pattern
 
 **Do not show:**
+
 - Indicator when only 1 client (the normal case; don't add noise)
 - Named user identifiers (this is single-user; all clients belong to the same operator)
 - Full-screen banners or toasts for connect/disconnect (too disruptive for developer flow)
@@ -88,7 +92,7 @@ NN/g guidelines and Carbon Design System are clear: toasts are for transient con
 
 The correct pattern: **silent state update to the status badge**. The badge changes from hidden to "2 clients" with a smooth animate-in (the existing StatusLine.Item animation handles this). No toast. The count decrements silently when a client leaves.
 
-Exception: if the session is *locked* (another client is actively writing), an inline "locked" state on the input area is appropriate â€” this is a blocking condition the user must be aware of. This is separate from the presence count.
+Exception: if the session is _locked_ (another client is actively writing), an inline "locked" state on the input area is appropriate â€” this is a blocking condition the user must be aware of. This is separate from the presence count.
 
 ## Detailed Analysis
 
@@ -131,17 +135,18 @@ The `StatusLine.Item` system already handles animate-in/animate-out, separator m
 
 Two distinct states need different visual treatment:
 
-| State | Visual | Meaning |
-|-------|--------|---------|
-| `clientCount > 1`, no lock contention | Neutral badge: "2 clients" with users icon | Informational only |
-| `clientCount > 1`, locked by other client | Amber badge: "locked" with lock icon | Input blocked |
-| `clientCount == 1` | Hidden (StatusLine.Item visible=false) | Normal state |
+| State                                     | Visual                                     | Meaning            |
+| ----------------------------------------- | ------------------------------------------ | ------------------ |
+| `clientCount > 1`, no lock contention     | Neutral badge: "2 clients" with users icon | Informational only |
+| `clientCount > 1`, locked by other client | Amber badge: "locked" with lock icon       | Input blocked      |
+| `clientCount == 1`                        | Hidden (StatusLine.Item visible=false)     | Normal state       |
 
 The input disabling when locked is already implemented. The indicator provides the human reason.
 
 ### Privacy and Security Considerations
 
 Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â€” all clients belong to the same operator. However:
+
 - Do not expose raw client UUIDs in the UI (no user value, potential fingerprinting vector)
 - Client type is inferred from a prefix convention, not from trust-verified identity
 - If DorkOS ever supports multi-user sessions, this model would need revisiting
@@ -160,12 +165,14 @@ Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â
 **Description:** `StatusLine.Item` with `visible={clientCount > 1}`. Shows count and lock state. Tooltip on hover lists client types.
 
 **Pros:**
+
 - Consistent with existing StatusLine compound component pattern
 - Already animates in/out via existing `AnimatePresence` infrastructure
 - Non-disruptive: hidden when solo (the common case)
 - Precise: distinguishes count-only from locked state
 
 **Cons:**
+
 - Small target; users may not notice it at first
 - Requires piggybacking `presence_update` events on sync SSE stream
 
@@ -177,9 +184,11 @@ Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â
 **Description:** Small pill near session title in the sidebar or chat header.
 
 **Pros:**
+
 - More prominent, easier to notice on first encounter
 
 **Cons:**
+
 - Sidebar items are dense; a presence badge would need careful spacing
 - Harder to integrate without touching more components
 - Chat header area does not currently exist as a dedicated component
@@ -192,10 +201,12 @@ Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â
 **Description:** Badge from Approach 1, but clicking opens a popover listing each connected client with type and connection duration.
 
 **Pros:**
+
 - Rich information available on demand without cluttering the UI
 - Follows progressive disclosure principle
 
 **Cons:**
+
 - Additional complexity; requires managing popover state
 - Tooltip on a small status item may be hard to trigger on touch
 
@@ -207,9 +218,11 @@ Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â
 **Description:** Show ephemeral toast ("Obsidian client connected") when a client joins or leaves.
 
 **Pros:**
+
 - Very noticeable; cannot be missed
 
 **Cons:**
+
 - Disruptive to developer flow â€” NN/g explicitly warns against toasts for system events outside the user's current task
 - Toasts for connection churn (Obsidian plugin reconnecting) would be noisy
 - Accessibility barriers (screen reader interruption)
@@ -224,9 +237,11 @@ Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â
 **Description:** Annotate each chat message with which client sent it ("sent from Obsidian").
 
 **Pros:**
+
 - Provides history of which client was active at each point
 
 **Cons:**
+
 - Visual clutter on every message
 - The session model (shared JSONL) doesn't currently track originating client per-message
 - Adds complexity to the message rendering layer
@@ -256,6 +271,7 @@ Exposing client type labels ("obsidian", "mcp") is safe for a single-user tool â
 ## Contradictions & Disputes
 
 None significant. There is broad agreement in the literature that:
+
 1. Non-collaborative tools should show less presence information than collaborative ones
 2. System-initiated events (client connects) should not use toasts
 3. The indicator should be hidden in the common case (single client) and appear only when relevant

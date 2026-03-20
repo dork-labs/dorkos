@@ -41,6 +41,7 @@ turbo run build --filter=@dorkos/obsidian-plugin
 ```
 
 This outputs three files to `apps/obsidian-plugin/dist/`:
+
 - `main.js` — the plugin code
 - `styles.css` — plugin styles
 - `manifest.json` — plugin metadata
@@ -131,15 +132,15 @@ The session list shows all your chat sessions — including those started from t
 
 ## How It Differs from Standalone Mode
 
-| Feature | Standalone Web | Obsidian Plugin |
-| --- | --- | --- |
-| Transport | HTTP/SSE to Express | In-process (no network calls) |
-| Session ID storage | URL query parameter | Internal state |
-| Active file context | Not available | Auto-tracked |
-| File drag-and-drop | Not available | From Obsidian file explorer |
-| Open file action | Not available | Opens in Obsidian editor |
-| Theme | DorkOS custom properties | Obsidian theme variables |
-| Working directory | Configurable via directory picker | Vault parent (automatic) |
+| Feature             | Standalone Web                    | Obsidian Plugin               |
+| ------------------- | --------------------------------- | ----------------------------- |
+| Transport           | HTTP/SSE to Express               | In-process (no network calls) |
+| Session ID storage  | URL query parameter               | Internal state                |
+| Active file context | Not available                     | Auto-tracked                  |
+| File drag-and-drop  | Not available                     | From Obsidian file explorer   |
+| Open file action    | Not available                     | Opens in Obsidian editor      |
+| Theme               | DorkOS custom properties          | Obsidian theme variables      |
+| Working directory   | Configurable via directory picker | Vault parent (automatic)      |
 
 The plugin uses `DirectTransport` — services run in-process inside Obsidian's Electron environment with no HTTP or SSE. This is what makes the plugin fast and what makes standard Node.js module patterns require adaptation for Electron.
 
@@ -214,7 +215,7 @@ If you encounter issues not covered here:
 
 ## Next Steps
 
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 <Cards>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">

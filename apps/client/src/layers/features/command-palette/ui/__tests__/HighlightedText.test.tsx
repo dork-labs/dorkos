@@ -19,9 +19,7 @@ describe('HighlightedText', () => {
   });
 
   it('renders mark elements for matched ranges', () => {
-    const { container } = render(
-      <HighlightedText text="Hello" indices={[[0, 2]]} />
-    );
+    const { container } = render(<HighlightedText text="Hello" indices={[[0, 2]]} />);
     const marks = container.querySelectorAll('mark');
     expect(marks).toHaveLength(1);
     expect(marks[0].textContent).toBe('Hel');
@@ -29,7 +27,13 @@ describe('HighlightedText', () => {
 
   it('renders non-matched text between matches', () => {
     const { container } = render(
-      <HighlightedText text="Hello" indices={[[0, 0], [4, 4]]} />
+      <HighlightedText
+        text="Hello"
+        indices={[
+          [0, 0],
+          [4, 4],
+        ]}
+      />
     );
     const marks = container.querySelectorAll('mark');
     expect(marks).toHaveLength(2);
@@ -39,24 +43,26 @@ describe('HighlightedText', () => {
   });
 
   it('handles match at the start of the string', () => {
-    const { container } = render(
-      <HighlightedText text="abcdef" indices={[[0, 1]]} />
-    );
+    const { container } = render(<HighlightedText text="abcdef" indices={[[0, 1]]} />);
     const marks = container.querySelectorAll('mark');
     expect(marks[0].textContent).toBe('ab');
   });
 
   it('handles match at the end of the string', () => {
-    const { container } = render(
-      <HighlightedText text="abcdef" indices={[[4, 5]]} />
-    );
+    const { container } = render(<HighlightedText text="abcdef" indices={[[4, 5]]} />);
     const marks = container.querySelectorAll('mark');
     expect(marks[0].textContent).toBe('ef');
   });
 
   it('handles adjacent match ranges', () => {
     const { container } = render(
-      <HighlightedText text="abcdef" indices={[[0, 2], [3, 5]]} />
+      <HighlightedText
+        text="abcdef"
+        indices={[
+          [0, 2],
+          [3, 5],
+        ]}
+      />
     );
     const marks = container.querySelectorAll('mark');
     expect(marks).toHaveLength(2);
@@ -65,24 +71,18 @@ describe('HighlightedText', () => {
   });
 
   it('applies font-semibold class to mark elements', () => {
-    const { container } = render(
-      <HighlightedText text="Hello" indices={[[0, 0]]} />
-    );
+    const { container } = render(<HighlightedText text="Hello" indices={[[0, 0]]} />);
     const mark = container.querySelector('mark');
     expect(mark).toHaveClass('font-semibold');
   });
 
   it('applies custom className to wrapper span', () => {
-    const { container } = render(
-      <HighlightedText text="Hello" className="custom-class" />
-    );
+    const { container } = render(<HighlightedText text="Hello" className="custom-class" />);
     expect(container.firstChild).toHaveClass('custom-class');
   });
 
   it('preserves full text content regardless of highlighting', () => {
-    const { container } = render(
-      <HighlightedText text="Auth Service" indices={[[0, 3]]} />
-    );
+    const { container } = render(<HighlightedText text="Auth Service" indices={[[0, 3]]} />);
     expect(container.textContent).toBe('Auth Service');
   });
 });

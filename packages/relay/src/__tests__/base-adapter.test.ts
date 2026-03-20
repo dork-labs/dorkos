@@ -35,14 +35,30 @@ class TestAdapter extends BaseRelayAdapter {
   }
 
   // Expose protected helpers for testing
-  callTrackInbound(): void { this.trackInbound(); }
-  callRecordError(err: unknown): void { this.recordError(err); }
-  callSetReconnecting(): void { this.setReconnecting(); }
-  callMarkConnected(): void { this.markConnected(); }
-  callIsStopped(): boolean { return this.isStopped; }
-  getRelayRef(): RelayPublisher | null { return this.relay; }
-  callMakeInboundCallbacks() { return this.makeInboundCallbacks(); }
-  callMakeOutboundCallbacks() { return this.makeOutboundCallbacks(); }
+  callTrackInbound(): void {
+    this.trackInbound();
+  }
+  callRecordError(err: unknown): void {
+    this.recordError(err);
+  }
+  callSetReconnecting(): void {
+    this.setReconnecting();
+  }
+  callMarkConnected(): void {
+    this.markConnected();
+  }
+  callIsStopped(): boolean {
+    return this.isStopped;
+  }
+  getRelayRef(): RelayPublisher | null {
+    return this.relay;
+  }
+  callMakeInboundCallbacks() {
+    return this.makeInboundCallbacks();
+  }
+  callMakeOutboundCallbacks() {
+    return this.makeOutboundCallbacks();
+  }
 }
 
 function createMockRelay(): RelayPublisher {
@@ -151,11 +167,19 @@ describe('BaseRelayAdapter', () => {
 
   it('stop() clears relay ref in finally even if _stop() throws', async () => {
     class ThrowingStopAdapter extends BaseRelayAdapter {
-      constructor() { super('t', 'relay.t.', 'T'); }
+      constructor() {
+        super('t', 'relay.t.', 'T');
+      }
       protected async _start(): Promise<void> {}
-      protected async _stop(): Promise<void> { throw new Error('stop failed'); }
-      async deliver(): Promise<DeliveryResult> { return { success: true }; }
-      getRelayRefPublic(): RelayPublisher | null { return this.relay; }
+      protected async _stop(): Promise<void> {
+        throw new Error('stop failed');
+      }
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+      getRelayRefPublic(): RelayPublisher | null {
+        return this.relay;
+      }
     }
     const a = new ThrowingStopAdapter();
     await a.start(relay);
@@ -171,8 +195,17 @@ describe('BaseRelayAdapter', () => {
   it('deliver() calling trackOutbound() increments outbound count', async () => {
     await adapter.start(relay);
     const envelope = {
-      id: 'e1', subject: 'relay.test.sub', from: 'relay.test.sender',
-      payload: {}, budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 1000, callBudgetRemaining: 5 },
+      id: 'e1',
+      subject: 'relay.test.sub',
+      from: 'relay.test.sender',
+      payload: {},
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ancestorChain: [],
+        ttl: Date.now() + 1000,
+        callBudgetRemaining: 5,
+      },
       createdAt: new Date().toISOString(),
     };
     await adapter.deliver('relay.test.sub', envelope);

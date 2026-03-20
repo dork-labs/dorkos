@@ -44,15 +44,15 @@ The streaming assistant message had the error part in-memory (pushed at `stream-
 
 The transcript parser gap extends beyond errors. A full comparison of SSE streaming vs JSONL history reveals:
 
-| Data Element | In SSE Stream? | In JSONL History? | Impact |
-|---|---|---|---|
-| Text response | Yes | Yes | No loss |
-| Thinking blocks | Yes (with `elapsedMs` timing) | Text only | Thinking duration lost |
-| Tool calls (input + result) | Yes | Yes | No loss |
-| **Error parts** | Yes | **No** | Errors vanish from history |
-| **Subagent parts** | Yes (started/progress/done) | **No** | Multi-agent orchestration invisible |
-| **Hook parts** (stdout/stderr/exitCode) | Yes | **No** | Build/test output lost |
-| **Tool progress output** | Yes | **No** | Real-time execution output lost |
+| Data Element                            | In SSE Stream?                | In JSONL History? | Impact                              |
+| --------------------------------------- | ----------------------------- | ----------------- | ----------------------------------- |
+| Text response                           | Yes                           | Yes               | No loss                             |
+| Thinking blocks                         | Yes (with `elapsedMs` timing) | Text only         | Thinking duration lost              |
+| Tool calls (input + result)             | Yes                           | Yes               | No loss                             |
+| **Error parts**                         | Yes                           | **No**            | Errors vanish from history          |
+| **Subagent parts**                      | Yes (started/progress/done)   | **No**            | Multi-agent orchestration invisible |
+| **Hook parts** (stdout/stderr/exitCode) | Yes                           | **No**            | Build/test output lost              |
+| **Tool progress output**                | Yes                           | **No**            | Real-time execution output lost     |
 
 ---
 
@@ -121,6 +121,7 @@ Mark the optimistic user message and the streaming assistant message with a `_st
 When polling or cross-client sync brings in server history, the incremental append path currently checks `currentIds.has(m.id)`. Enhance this to also check: "does a tagged streaming message exist that matches this server message by role and corresponds to the same turn?"
 
 The matching strategy (in order of preference):
+
 - **Position-from-end**: The tagged messages are always the last user + last assistant messages. Server history's last user + assistant messages correspond to them.
 - **Content match on user message**: The user message content is exact (we submitted it). The assistant message is the one immediately following the matched user message.
 
@@ -160,14 +161,14 @@ The tagged-message set is bounded at 0-2 messages (one user, one assistant) per 
 
 ## Key Files
 
-| File | Role |
-|---|---|
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Session hook — seed effect, executeSubmission, history query |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | SSE event handler — done handler, error handling, session remap |
-| `apps/client/src/layers/features/chat/model/stream-event-helpers.ts` | Helper functions for stream event processing |
-| `apps/client/src/layers/features/chat/model/chat-types.ts` | ChatMessage type definition (needs `_streaming` flag) |
-| `apps/server/src/services/runtimes/claude-code/transcript-parser.ts` | JSONL parser — currently skips error/subagent/hook blocks |
-| `packages/shared/src/schemas.ts` | MessagePart union — defines all part types including error/subagent/hook |
+| File                                                                 | Role                                                                     |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`     | Session hook — seed effect, executeSubmission, history query             |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | SSE event handler — done handler, error handling, session remap          |
+| `apps/client/src/layers/features/chat/model/stream-event-helpers.ts` | Helper functions for stream event processing                             |
+| `apps/client/src/layers/features/chat/model/chat-types.ts`           | ChatMessage type definition (needs `_streaming` flag)                    |
+| `apps/server/src/services/runtimes/claude-code/transcript-parser.ts` | JSONL parser — currently skips error/subagent/hook blocks                |
+| `packages/shared/src/schemas.ts`                                     | MessagePart union — defines all part types including error/subagent/hook |
 
 ---
 

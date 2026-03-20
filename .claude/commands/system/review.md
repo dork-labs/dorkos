@@ -29,7 +29,7 @@ Review Claude Code processes (commands, agents, hooks, configuration) for clarit
 | **Rules**               | `/.claude/rules/*.md`         | Path patterns, content relevance, no overlaps           |
 | **Hooks**               | `/.claude/settings.json`      | Hook configuration, lifecycle events                    |
 | **ADRs**                | `/decisions/*.md`             | Frontmatter, active voice, consequences, manifest sync  |
-| **Developer Guides**    | `/contributing/*.md`                | Patterns, best practices                                |
+| **Developer Guides**    | `/contributing/*.md`          | Patterns, best practices                                |
 | **UI Documentation**    | `apps/client/src/**/*.tsx`    | Stats accuracy, component lists, content currency       |
 
 ## Order of Operations
@@ -310,8 +310,8 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 
   ### High-Priority Candidates (Strong Skill Fit)
 
-  | Source          | Proposed Skill Name | Why Extract?                                   |
-  | --------------- | ------------------- | ---------------------------------------------- |
+  | Source                | Proposed Skill Name | Why Extract?                                   |
+  | --------------------- | ------------------- | ---------------------------------------------- |
   | `contributing/xyz.md` | `reviewing-xyz`     | Reusable expertise, auto-activation beneficial |
 
   ### Medium-Priority Candidates (Consider Converting)

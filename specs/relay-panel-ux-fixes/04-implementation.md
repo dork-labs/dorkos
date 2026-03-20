@@ -14,17 +14,20 @@
 ### Session 1 - 2026-03-15
 
 **Batch 1** (independent files):
+
 - Task #14: [P0] Add binding CRUD to AdapterCard via BindingDialog integration
 - Task #20: [P2] Add dismiss confirmation dialog to DeadLetterSection
 - Task #21: [P2] Show existing bindings in ConversationRow route popover
 
 **Batch 2** (ActivityFeed + related):
+
 - Task #15: [P0] Fix health bar click to auto-open dead letter section
 - Task #16: [P0] Fix Activity tab empty state copy
 - Task #17: [P1] Rename Failures → Dead Letters, Relay → Connections
 - Task #18: [P1] Move delivery metrics inline as MetricsSummary
 
 **Batch 3** (dependency on #15):
+
 - Task #19: [P1] Auto-show dead letters when they exist with user override
 
 ## Files Modified/Created

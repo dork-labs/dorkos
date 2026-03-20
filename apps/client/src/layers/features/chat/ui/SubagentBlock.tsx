@@ -47,7 +47,7 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
       header={
         <>
           {getToolStatusIcon(part.status)}
-          <span className="text-3xs font-mono truncate">{part.description}</span>
+          <span className="text-3xs truncate font-mono">{part.description}</span>
           {toolSummary && (
             <span className="text-3xs text-muted-foreground ml-1 shrink-0">{toolSummary}</span>
           )}
@@ -61,9 +61,7 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
           </p>
         )}
         {part.summary && (
-          <pre className="text-xs whitespace-pre-wrap overflow-x-auto">
-            {part.summary}
-          </pre>
+          <pre className="overflow-x-auto text-xs whitespace-pre-wrap">{part.summary}</pre>
         )}
       </div>
     </CollapsibleCard>

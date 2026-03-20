@@ -58,8 +58,17 @@ const telegramManifest: AdapterManifest = {
   multiInstance: true,
   configFields: [
     { key: 'token', label: 'Bot Token', type: 'password', required: true },
-    { key: 'mode', label: 'Mode', type: 'select', required: true, default: 'polling',
-      options: [{ label: 'Long Polling', value: 'polling' }, { label: 'Webhook', value: 'webhook' }] },
+    {
+      key: 'mode',
+      label: 'Mode',
+      type: 'select',
+      required: true,
+      default: 'polling',
+      options: [
+        { label: 'Long Polling', value: 'polling' },
+        { label: 'Webhook', value: 'webhook' },
+      ],
+    },
   ],
 };
 
@@ -116,14 +125,9 @@ describe('AdapterSetupWizard', () => {
 
   it('opens in add mode with empty form and no adapter ID field (auto-generated)', () => {
     const { Wrapper } = createWrapper();
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     expect(screen.getByText('Add Slack')).toBeInTheDocument();
     // Adapter ID is auto-generated — no input field shown
@@ -141,7 +145,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     expect(screen.getByText('Edit Slack')).toBeInTheDocument();
@@ -162,7 +166,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -177,12 +181,8 @@ describe('AdapterSetupWizard', () => {
   it('displays setup instructions when provided', () => {
     const { Wrapper } = createWrapper();
     render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={manifestWithInstructions}
-      />,
-      { wrapper: Wrapper },
+      <AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={manifestWithInstructions} />,
+      { wrapper: Wrapper }
     );
 
     expect(screen.getByText('Go to slack.com/api to get your token.')).toBeInTheDocument();
@@ -190,14 +190,9 @@ describe('AdapterSetupWizard', () => {
 
   it('blocks Continue when required fields are empty', () => {
     const { Wrapper } = createWrapper();
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     // Token is required and empty — clicking Continue should show error
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
@@ -218,7 +213,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     // Fill required token field and continue
@@ -250,7 +245,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -274,7 +269,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -298,7 +293,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -328,7 +323,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -354,14 +349,9 @@ describe('AdapterSetupWizard', () => {
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     // Fill required fields
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -384,21 +374,16 @@ describe('AdapterSetupWizard', () => {
       expect(mockTransport.addRelayAdapter).toHaveBeenCalledWith(
         'slack',
         'slack',
-        expect.objectContaining({ token: 'new-token', channel: '#general' }),
+        expect.objectContaining({ token: 'new-token', channel: '#general' })
       );
     });
   });
 
   it('label input renders on configure step', () => {
     const { Wrapper } = createWrapper();
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     expect(screen.getByLabelText(/name \(optional\)/i)).toBeInTheDocument();
     // Placeholder should be the manifest displayName
@@ -410,18 +395,15 @@ describe('AdapterSetupWizard', () => {
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     // Fill required fields and set label
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
-    fireEvent.change(screen.getByLabelText(/name \(optional\)/i), { target: { value: 'My Slack Bot' } });
+    fireEvent.change(screen.getByLabelText(/name \(optional\)/i), {
+      target: { value: 'My Slack Bot' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
@@ -438,7 +420,7 @@ describe('AdapterSetupWizard', () => {
       expect(mockTransport.addRelayAdapter).toHaveBeenCalledWith(
         'slack',
         'slack',
-        expect.objectContaining({ token: 'my-token', label: 'My Slack Bot' }),
+        expect.objectContaining({ token: 'my-token', label: 'My Slack Bot' })
       );
     });
   });
@@ -448,14 +430,9 @@ describe('AdapterSetupWizard', () => {
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
     // Leave label empty
@@ -475,7 +452,7 @@ describe('AdapterSetupWizard', () => {
       expect(mockTransport.addRelayAdapter).toHaveBeenCalledWith(
         'slack',
         'slack',
-        expect.not.objectContaining({ label: expect.anything() }),
+        expect.not.objectContaining({ label: expect.anything() })
       );
     });
   });
@@ -493,7 +470,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     // Leave label empty and proceed to test step
@@ -526,7 +503,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     // Set a label before testing
@@ -560,7 +537,7 @@ describe('AdapterSetupWizard', () => {
         manifest={baseManifest}
         existingInstance={existingInstance}
       />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -582,7 +559,7 @@ describe('AdapterSetupWizard', () => {
     await waitFor(() => {
       expect(mockTransport.updateRelayAdapterConfig).toHaveBeenCalledWith(
         'slack-1',
-        expect.objectContaining({ token: 'updated-token', channel: '#dev' }),
+        expect.objectContaining({ token: 'updated-token', channel: '#dev' })
       );
     });
   });
@@ -592,14 +569,9 @@ describe('AdapterSetupWizard', () => {
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
@@ -626,14 +598,9 @@ describe('AdapterSetupWizard', () => {
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={baseManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
 
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
@@ -661,14 +628,9 @@ describe('AdapterSetupWizard', () => {
       .mockResolvedValue({ ok: true, botUsername: 'mybot' });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
-    render(
-      <AdapterSetupWizard
-        open={true}
-        onOpenChange={vi.fn()}
-        manifest={telegramManifest}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={telegramManifest} />, {
+      wrapper: Wrapper,
+    });
 
     fireEvent.change(screen.getByLabelText(/bot token/i), { target: { value: 'my-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));

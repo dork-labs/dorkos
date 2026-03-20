@@ -16,8 +16,7 @@ vi.mock('@xyflow/react', () => ({
     <div data-testid="edge-label-renderer">{children}</div>
   ),
   getBezierPath: () => ['M0,0 C50,0 50,100 100,100', 50, 50],
-  useStore: (selector: (s: unknown) => unknown) =>
-    selector({ transform: [0, 0, 1] }),
+  useStore: (selector: (s: unknown) => unknown) => selector({ transform: [0, 0, 1] }),
   Position: {
     Left: 'left',
     Right: 'right',
@@ -80,19 +79,13 @@ describe('BindingEdge', () => {
           {...BASE_EDGE_PROPS}
           selected
           data={{ label: 'Customer Support', sessionStrategy: 'per-chat' }}
-        />,
+        />
       );
       expect(screen.getByText('Customer Support')).toBeInTheDocument();
     });
 
     it('falls back to sessionStrategy when no label and selected', () => {
-      render(
-        <BindingEdge
-          {...BASE_EDGE_PROPS}
-          selected
-          data={{ sessionStrategy: 'per-user' }}
-        />,
-      );
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ sessionStrategy: 'per-user' }} />);
       expect(screen.getByText('per-user')).toBeInTheDocument();
     });
 
@@ -109,23 +102,12 @@ describe('BindingEdge', () => {
 
   describe('delete button', () => {
     it('renders delete button when selected and onDelete is provided', () => {
-      render(
-        <BindingEdge
-          {...BASE_EDGE_PROPS}
-          selected
-          data={{ onDelete: vi.fn() }}
-        />,
-      );
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete: vi.fn() }} />);
       expect(screen.getByRole('button', { name: /delete binding/i })).toBeInTheDocument();
     });
 
     it('does not render delete button when not selected even with onDelete', () => {
-      render(
-        <BindingEdge
-          {...BASE_EDGE_PROPS}
-          data={{ onDelete: vi.fn() }}
-        />,
-      );
+      render(<BindingEdge {...BASE_EDGE_PROPS} data={{ onDelete: vi.fn() }} />);
       expect(screen.queryByRole('button', { name: /delete binding/i })).not.toBeInTheDocument();
     });
 
@@ -136,13 +118,7 @@ describe('BindingEdge', () => {
 
     it('calls onDelete with the edge id when delete button is clicked', () => {
       const onDelete = vi.fn();
-      render(
-        <BindingEdge
-          {...BASE_EDGE_PROPS}
-          selected
-          data={{ onDelete }}
-        />,
-      );
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete }} />);
       fireEvent.click(screen.getByRole('button', { name: /delete binding/i }));
       expect(onDelete).toHaveBeenCalledWith('binding-edge-1');
       expect(onDelete).toHaveBeenCalledTimes(1);
@@ -156,7 +132,7 @@ describe('BindingEdge', () => {
           {...BASE_EDGE_PROPS}
           selected
           data={{ chatId: '12345', sessionStrategy: 'per-chat' }}
-        />,
+        />
       );
       expect(screen.getByText('12345')).toBeInTheDocument();
     });
@@ -167,7 +143,7 @@ describe('BindingEdge', () => {
           {...BASE_EDGE_PROPS}
           selected
           data={{ channelType: 'private', sessionStrategy: 'per-chat' }}
-        />,
+        />
       );
       expect(screen.getByText('private')).toBeInTheDocument();
     });
@@ -178,20 +154,14 @@ describe('BindingEdge', () => {
           {...BASE_EDGE_PROPS}
           selected
           data={{ chatId: '12345', channelType: 'group', sessionStrategy: 'per-chat' }}
-        />,
+        />
       );
       expect(screen.getByText('12345')).toBeInTheDocument();
       expect(screen.getByText('group')).toBeInTheDocument();
     });
 
     it('does not render filter badges when neither chatId nor channelType present', () => {
-      render(
-        <BindingEdge
-          {...BASE_EDGE_PROPS}
-          selected
-          data={{ sessionStrategy: 'per-chat' }}
-        />,
-      );
+      render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ sessionStrategy: 'per-chat' }} />);
       // Only the session strategy label should be shown, no filter badges
       expect(screen.getByText('per-chat')).toBeInTheDocument();
       expect(screen.queryByText('12345')).not.toBeInTheDocument();
@@ -199,10 +169,7 @@ describe('BindingEdge', () => {
 
     it('does not render filter badges when not selected or hovered', () => {
       render(
-        <BindingEdge
-          {...BASE_EDGE_PROPS}
-          data={{ chatId: '12345', channelType: 'private' }}
-        />,
+        <BindingEdge {...BASE_EDGE_PROPS} data={{ chatId: '12345', channelType: 'private' }} />
       );
       // Label (and badges) should not be visible at rest
       expect(screen.queryByText('12345')).not.toBeInTheDocument();

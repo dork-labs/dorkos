@@ -41,11 +41,11 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|------|------|
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` (436 lines) | Main chat hook — streaming state, polling config, Relay EventSource, sync_update handler, staleness detector |
-| `apps/server/src/routes/sessions.ts` (379 lines) | Express routes — POST /messages dispatches via Relay; GET /messages reads transcript history |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` (289 lines) | SSE event processor — not a bug site, but processes `relay_message` and text_delta events |
+| File                                                                             | Role                                                                                                         |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts` (436 lines)     | Main chat hook — streaming state, polling config, Relay EventSource, sync_update handler, staleness detector |
+| `apps/server/src/routes/sessions.ts` (379 lines)                                 | Express routes — POST /messages dispatches via Relay; GET /messages reads transcript history                 |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` (289 lines) | SSE event processor — not a bug site, but processes `relay_message` and text_delta events                    |
 
 **Shared Dependencies:**
 
@@ -121,18 +121,21 @@ Concurrently: refetchInterval fires every 3s → GET /messages [BUG 2] → 503 (
 **Potential solutions summary** (full analysis in `research/20260307_relay_streaming_bugs_tanstack_query.md`):
 
 **Bug 1 approaches evaluated:**
+
 1. **Guard `invalidateQueries` with `statusRef`** — 3 lines, surgical, uses existing ref. Recommended primary fix.
 2. **ID-based deduplication in seed effect** — 4 lines, eliminates whole class of timing races. Recommended safety net.
 3. **Optimistic `setQueryData` during streaming** — Requires reverse-mapping ChatMessage → HistoryMessage (non-trivial). Not recommended.
 4. **Zustand for in-progress state** — Major refactor, multi-day effort. Out of scope.
 
 **Bug 2 approaches evaluated:**
+
 1. **`|| relayEnabled` in `refetchInterval`** — 1 line, `relayEnabled` already in scope. Recommended primary fix.
 2. **try/catch + `next(err)` in Express route** — Fixes correctness issue for all callers, not just Relay. Recommended alongside fix A.
 3. **`staleTime: Infinity` + remove `refetchInterval` in Relay mode** — Good long-term improvement but more code than needed now. Post-v1 option.
 4. **`enabled: !relayEnabled`** — Breaks `invalidateQueries()` (disabled queries ignore invalidation in TanStack Query v5). Wrong approach.
 
 **Key TanStack Query v5 pattern (confirmed):**
+
 ```typescript
 // Correct: refetchInterval as function returning false disables polling
 // Correct: invalidateQueries still works even when refetchInterval returns false
@@ -140,7 +143,7 @@ Concurrently: refetchInterval fires every 3s → GET /messages [BUG 2] → 503 (
 refetchInterval: () => {
   if (isStreaming || relayEnabled) return false;
   return QUERY_TIMING.ACTIVE_TAB_REFETCH_MS;
-}
+};
 ```
 
 **Recommendation:** Implement all four fixes. Total diff: ~10-15 lines across 2 files. Each fix is independently correct; together they fully resolve both bugs.
@@ -151,10 +154,10 @@ refetchInterval: () => {
 
 No ambiguities required interactive clarification — task brief and exploration/research findings converged on the same implementation. All decisions were resolved by evidence:
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Bug 1 primary fix mechanism | Guard `sync_update` with `statusRef.current !== 'streaming'` | `statusRef` already exists at line 134 and tracks the exact state needed; surgical change with no refactor |
-| 2 | Bug 1 safety net | Add ID-set deduplication to seed effect (`history.filter((m) => !currentIds.has(m.id))`) | Eliminates the entire class of timing-race duplicates; `HistoryMessage.id` is already a UUID on all messages |
-| 3 | Bug 2 primary fix mechanism | Add `\|\| relayEnabled` to `refetchInterval` guard | `relayEnabled` is already in scope at line 85; sync_update SSE makes polling redundant in Relay mode; 1-line fix |
-| 4 | Bug 2 secondary fix | Add try/catch + `next(err)` to GET /messages Express route | Express 4 does not auto-forward async rejections; this is a correctness issue independent of Relay mode and should land regardless |
-| 5 | Scope of Express fix | All callers (not Relay-specific guard) | The try/catch is correct behavior for any GET /messages failure, not just Relay-mode failures; no reason to add a Relay branch |
+| #   | Decision                    | Choice                                                                                   | Rationale                                                                                                                          |
+| --- | --------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Bug 1 primary fix mechanism | Guard `sync_update` with `statusRef.current !== 'streaming'`                             | `statusRef` already exists at line 134 and tracks the exact state needed; surgical change with no refactor                         |
+| 2   | Bug 1 safety net            | Add ID-set deduplication to seed effect (`history.filter((m) => !currentIds.has(m.id))`) | Eliminates the entire class of timing-race duplicates; `HistoryMessage.id` is already a UUID on all messages                       |
+| 3   | Bug 2 primary fix mechanism | Add `\|\| relayEnabled` to `refetchInterval` guard                                       | `relayEnabled` is already in scope at line 85; sync_update SSE makes polling redundant in Relay mode; 1-line fix                   |
+| 4   | Bug 2 secondary fix         | Add try/catch + `next(err)` to GET /messages Express route                               | Express 4 does not auto-forward async rejections; this is a correctness issue independent of Relay mode and should land regardless |
+| 5   | Scope of Express fix        | All callers (not Relay-specific guard)                                                   | The try/catch is correct behavior for any GET /messages failure, not just Relay-mode failures; no reason to add a Relay branch     |

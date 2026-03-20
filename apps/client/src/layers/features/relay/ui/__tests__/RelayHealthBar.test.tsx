@@ -19,7 +19,6 @@ vi.mock('@/layers/entities/relay', () => ({
   useAdapterCatalog: (...args: unknown[]) => mockUseAdapterCatalog(...args),
 }));
 
-
 import { RelayHealthBar, computeHealthState } from '../RelayHealthBar';
 
 // ---------------------------------------------------------------------------
@@ -53,21 +52,59 @@ const mockMetricsNoFailures = {
 const connectedInstance = {
   id: 'tg-1',
   enabled: true,
-  status: { id: 'tg-1', type: 'telegram', displayName: 'Telegram', state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
+  status: {
+    id: 'tg-1',
+    type: 'telegram',
+    displayName: 'Telegram',
+    state: 'connected',
+    messageCount: { inbound: 10, outbound: 5 },
+    errorCount: 0,
+  },
 };
 
 const disconnectedInstance = {
   id: 'tg-2',
   enabled: true,
-  status: { id: 'tg-2', type: 'telegram', displayName: 'Telegram 2', state: 'disconnected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 },
+  status: {
+    id: 'tg-2',
+    type: 'telegram',
+    displayName: 'Telegram 2',
+    state: 'disconnected',
+    messageCount: { inbound: 0, outbound: 0 },
+    errorCount: 0,
+  },
 };
 
 const catalogAllConnected = [
-  { manifest: { type: 'telegram', displayName: 'Telegram', description: '', iconEmoji: '📨', category: 'messaging', builtin: false, configFields: [], multiInstance: false }, instances: [connectedInstance] },
+  {
+    manifest: {
+      type: 'telegram',
+      displayName: 'Telegram',
+      description: '',
+      iconEmoji: '📨',
+      category: 'messaging',
+      builtin: false,
+      configFields: [],
+      multiInstance: false,
+    },
+    instances: [connectedInstance],
+  },
 ];
 
 const catalogPartiallyConnected = [
-  { manifest: { type: 'telegram', displayName: 'Telegram', description: '', iconEmoji: '📨', category: 'messaging', builtin: false, configFields: [], multiInstance: false }, instances: [connectedInstance, disconnectedInstance] },
+  {
+    manifest: {
+      type: 'telegram',
+      displayName: 'Telegram',
+      description: '',
+      iconEmoji: '📨',
+      category: 'messaging',
+      builtin: false,
+      configFields: [],
+      multiInstance: false,
+    },
+    instances: [connectedInstance, disconnectedInstance],
+  },
 ];
 
 const emptyMetrics = {
@@ -85,7 +122,9 @@ const emptyMetrics = {
 // Helper to enable relay with data
 // ---------------------------------------------------------------------------
 
-function enableRelayWithData(options: { metrics?: typeof mockMetrics; catalog?: typeof catalogAllConnected } = {}) {
+function enableRelayWithData(
+  options: { metrics?: typeof mockMetrics; catalog?: typeof catalogAllConnected } = {}
+) {
   const { metrics = mockMetrics, catalog = catalogAllConnected } = options;
   mockUseRelayEnabled.mockReturnValue(true);
   mockUseDeliveryMetrics.mockReturnValue({ data: metrics, isLoading: false });
@@ -116,7 +155,7 @@ describe('computeHealthState', () => {
     const result = computeHealthState(
       { ...mockMetrics, failedCount: 2, deadLetteredCount: 0 },
       3,
-      3,
+      3
     );
     expect(result.state).toBe('healthy');
     expect(result.message).toBe('3 connections active');
@@ -144,7 +183,7 @@ describe('computeHealthState', () => {
     const result = computeHealthState(
       { ...mockMetrics, failedCount: 10, deadLetteredCount: 0 },
       3,
-      3,
+      3
     );
     expect(result.state).toBe('degraded');
     expect(result.message).toContain('10 failures in last 24h');
@@ -155,7 +194,7 @@ describe('computeHealthState', () => {
     const result = computeHealthState(
       { ...mockMetrics, totalMessages: 100, failedCount: 60, deadLetteredCount: 0 },
       3,
-      3,
+      3
     );
     expect(result.state).toBe('critical');
     expect(result.message).toContain('60% failure rate');
@@ -172,17 +211,13 @@ describe('computeHealthState', () => {
     const result = computeHealthState(
       { ...mockMetrics, totalMessages: 100, failedCount: 50, deadLetteredCount: 10 },
       3,
-      3,
+      3
     );
     expect(result.state).toBe('critical');
   });
 
   it('returns healthy when no messages sent and all adapters connected', () => {
-    const result = computeHealthState(
-      { ...emptyMetrics, totalMessages: 0, failedCount: 0 },
-      2,
-      2,
-    );
+    const result = computeHealthState({ ...emptyMetrics, totalMessages: 0, failedCount: 0 }, 2, 2);
     expect(result.state).toBe('healthy');
     expect(result.message).toBe('2 connections active');
   });
@@ -292,7 +327,9 @@ describe('RelayHealthBar', () => {
       enableRelayWithData({ metrics: mockMetricsNoFailures, catalog: catalogPartiallyConnected });
       const onFailedClick = vi.fn();
       render(<RelayHealthBar onFailedClick={onFailedClick} />);
-      fireEvent.click(screen.getByRole('button', { name: /disconnected — click to view failures/ }));
+      fireEvent.click(
+        screen.getByRole('button', { name: /disconnected — click to view failures/ })
+      );
       expect(onFailedClick).toHaveBeenCalledTimes(1);
     });
 

@@ -61,15 +61,18 @@ Not a company. A moment.
 Seven modules, three tiers:
 
 **Platform (the foundation):**
+
 - **Engine** — Runtime that connects agents via adapters, exposes REST/SSE API, manages sessions
 - **Console** — Browser-based command center. Chat, approve tools, browse sessions, manage everything
 
 **Modules (composable capabilities):**
+
 - **Pulse** — Cron-based agent scheduling. Agents run while you sleep. Independent of IDE/terminal
 - **Relay** — Built-in messaging. Agents reach you on Telegram, notify each other, connect through any channel
 - **Mesh** — Agent discovery and network. Scans projects, registers agents, governs access
 
 **Extensions (integrated from outside):**
+
 - **Wing** — Persistent memory and life context across all sessions (coming soon)
 - **Loop** — Autonomous improvement engine. Signals, hypotheses, dispatch, measurement (live)
 
@@ -156,6 +159,7 @@ He named it after himself. Because the people who build at 3am, who have opinion
 ## Success Criteria
 
 A developer lands on this page and:
+
 1. Within 5 seconds, knows what this is (autonomous agent OS)
 2. Within 15 seconds, recognizes their own pain (the villain moments)
 3. Within 60 seconds, understands the product shape (modules, what it does)

@@ -111,6 +111,7 @@ sendMessage(sessionId, content, opts)
 ## 4) Root Cause Analysis
 
 N/A — This is not a bug fix. The motivating issue is:
+
 1. `agent-manager.ts` violates the 500-line hard limit at 579 lines
 2. The SDK is using only a minimal system prompt (no Claude Code guidelines injected)
 
@@ -155,6 +156,7 @@ Modified files:
 ```
 
 **What to include (Tier 1 — always):**
+
 - Current date/time (ISO 8601 with timezone) — model uses this for version recency reasoning
 - OS platform + coarse version — affects shell commands (brew vs apt), path conventions
 - Node.js version — affects API availability (`--env-file` needs Node 20.6+, etc.)
@@ -165,11 +167,13 @@ Modified files:
 - DorkOS product name + version — helps model self-reference in docs/messages
 
 **What to include (Tier 2 — conditionally):**
+
 - Ahead/behind counts — only when `ahead > 0 || behind > 0` (surface as human-readable text:
   "2 commits ahead of origin")
 - Detached HEAD flag — only when true; orphaned commits are a real risk
 
 **What to exclude (noise):**
+
 - Recent commit log — Claude Code's `claude_code` preset already injects this; duplicating wastes
   tokens. (See clarification #1 below.)
 - Hardware metrics (CPU, memory, disk) — not actionable for coding agents
@@ -190,6 +194,7 @@ Separating them is both philosophically correct and gets us well under the 300-l
 Do NOT extract the streaming loop — the `Promise.race` concurrency pattern must stay intact.
 
 **Anti-patterns to avoid:**
+
 - Don't split `sendMessage()` itself — the event loop + iterator race is a tightly coupled state machine
 - Don't create a `SdkEventMapper` class — `export async function*` is the right shape for a pure generator
 - Don't barrel re-export extracted internals through `agent-manager.ts` — only the public class is the contract
@@ -197,15 +202,15 @@ Do NOT extract the streaming loop — the `Promise.race` concurrency pattern mus
 
 **Extraction decisions:**
 
-| Extract? | What | Why |
-|----------|------|-----|
-| ✅ Yes | `mapSdkMessage()` → `sdk-event-mapper.ts` | Pure async generator, ~130 lines, fully unit-testable |
-| ✅ Yes | `resolveClaudeCliPath()` + `makeUserPrompt()` → `lib/sdk-utils.ts` | Pure utilities, no class deps |
-| ✅ Yes | `AgentSession`, `ToolState` interfaces → `agent-types.ts` | Needed by both agent-manager + event-mapper |
-| ✅ Yes | Runtime context → `context-builder.ts` | New feature, entirely orthogonal responsibility |
-| ❌ No | `sendMessage()` streaming loop | Tightly coupled concurrency pattern; splitting harms debuggability |
-| ❌ No | `AgentManager` class methods | Class cohesion; ~200 lines after removals, well within 300 |
-| ❌ No | Session store (ensureSession, checkHealth) | Defer; in-memory Map is appropriately simple today |
+| Extract? | What                                                               | Why                                                                |
+| -------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| ✅ Yes   | `mapSdkMessage()` → `sdk-event-mapper.ts`                          | Pure async generator, ~130 lines, fully unit-testable              |
+| ✅ Yes   | `resolveClaudeCliPath()` + `makeUserPrompt()` → `lib/sdk-utils.ts` | Pure utilities, no class deps                                      |
+| ✅ Yes   | `AgentSession`, `ToolState` interfaces → `agent-types.ts`          | Needed by both agent-manager + event-mapper                        |
+| ✅ Yes   | Runtime context → `context-builder.ts`                             | New feature, entirely orthogonal responsibility                    |
+| ❌ No    | `sendMessage()` streaming loop                                     | Tightly coupled concurrency pattern; splitting harms debuggability |
+| ❌ No    | `AgentManager` class methods                                       | Class cohesion; ~200 lines after removals, well within 300         |
+| ❌ No    | Session store (ensureSession, checkHealth)                         | Defer; in-memory Map is appropriately simple today                 |
 
 ### Recommendation
 
@@ -217,13 +222,13 @@ focused files, each under 300 lines, with `agent-manager.ts` as the thin orchest
 
 ## 6) File Size Projections After Refactor
 
-| File | Before | After | Status |
-|------|--------|-------|--------|
-| `agent-manager.ts` | 579 | ~240 | ✅ Under 300 |
-| `sdk-event-mapper.ts` | — | ~140 | ✅ New, under 300 |
-| `lib/sdk-utils.ts` | — | ~40 | ✅ New, under 300 |
-| `agent-types.ts` | — | ~35 | ✅ New, under 300 |
-| `context-builder.ts` | — | ~100 | ✅ New, under 300 |
+| File                  | Before | After | Status            |
+| --------------------- | ------ | ----- | ----------------- |
+| `agent-manager.ts`    | 579    | ~240  | ✅ Under 300      |
+| `sdk-event-mapper.ts` | —      | ~140  | ✅ New, under 300 |
+| `lib/sdk-utils.ts`    | —      | ~40   | ✅ New, under 300 |
+| `agent-types.ts`      | —      | ~35   | ✅ New, under 300 |
+| `context-builder.ts`  | —      | ~100  | ✅ New, under 300 |
 
 ---
 
@@ -231,22 +236,22 @@ focused files, each under 300 lines, with `agent-manager.ts` as the thin orchest
 
 1. **Recent git commits in context?** — Claude Code's `claude_code` preset already injects recent
    commit history. Should our `append` also include it (risking duplication) or explicitly skip it?
-   *Recommendation: skip — trust the preset, avoid token waste.*
+   _Recommendation: skip — trust the preset, avoid token waste._
 
 2. **Hostname in context?** — Low signal for most coding tasks. Include or exclude?
-   *Recommendation: include (it's one line, helps with multi-machine debugging).*
+   _Recommendation: include (it's one line, helps with multi-machine debugging)._
 
 3. **DorkOS version format** — `process.env.DORKOS_VERSION` may be undefined in dev mode (the CLI
    sets it but `npm run dev` doesn't). Should we fall back to reading from `packages/cli/package.json`
    or use a `"development"` sentinel?
-   *Recommendation: `DORKOS_VERSION ?? 'development'` — consistent with `mcp-tool-server.ts`.*
+   _Recommendation: `DORKOS_VERSION ?? 'development'` — consistent with `mcp-tool-server.ts`._
 
 4. **`agent-types.ts` location** — Should it live in `services/agent-types.ts` (alongside other
    services) or `types/agent.ts` (in a dedicated types directory)? The server currently has no
    `types/` directory.
-   *Recommendation: `services/agent-types.ts` — consistent with server's flat structure.*
+   _Recommendation: `services/agent-types.ts` — consistent with server's flat structure._
 
 5. **Test coverage expectation** — Should new files (`context-builder.ts`, `sdk-event-mapper.ts`,
    `sdk-utils.ts`) get full test coverage before this spec is considered done?
-   *Recommendation: yes — `context-builder` and `sdk-event-mapper` are independently testable and
-   worth testing; `sdk-utils` is trivial enough to skip.*
+   _Recommendation: yes — `context-builder` and `sdk-event-mapper` are independently testable and
+   worth testing; `sdk-utils` is trivial enough to skip._

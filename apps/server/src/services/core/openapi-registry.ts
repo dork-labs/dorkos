@@ -670,9 +670,7 @@ registry.registerPath({
       description: 'Array of endpoints',
       content: {
         'application/json': {
-          schema: z.array(
-            z.object({ subject: z.string(), description: z.string().optional() })
-          ),
+          schema: z.array(z.object({ subject: z.string(), description: z.string().optional() })),
         },
       },
     },
@@ -1034,7 +1032,9 @@ registry.registerPath({
 // --- Generator ---
 
 /** Generate the full OpenAPI 3.1.0 document from registered paths and schemas. */
-export function generateOpenAPISpec(): ReturnType<InstanceType<typeof OpenApiGeneratorV31>['generateDocument']> {
+export function generateOpenAPISpec(): ReturnType<
+  InstanceType<typeof OpenApiGeneratorV31>['generateDocument']
+> {
   const generator = new OpenApiGeneratorV31(registry.definitions);
   return generator.generateDocument({
     openapi: '3.1.0',

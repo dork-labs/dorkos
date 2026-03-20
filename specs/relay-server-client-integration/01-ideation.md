@@ -68,23 +68,27 @@ status: ideation
 
 **Primary Components/Modules:**
 
-*Server Layer (new/modified):*
+_Server Layer (new/modified):_
+
 - `apps/server/src/routes/relay.ts` (NEW) — HTTP routes: POST /messages, GET /messages, GET /endpoints, POST /endpoints, GET /endpoints/:subject/inbox, GET /dead-letters, GET /metrics, GET /stream (SSE)
 - `apps/server/src/services/relay-state.ts` (NEW) — Feature flag holder: `setRelayEnabled()`/`isRelayEnabled()`, same as `pulse-state.ts`
 - `apps/server/src/services/mcp-tool-server.ts` (MODIFY) — Add `relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint` tools with `requireRelay()` guard
 - `apps/server/src/index.ts` (MODIFY) — Initialize RelayCore if enabled, mount routes, inject into MCP deps, graceful shutdown
 - `apps/server/src/app.ts` (MODIFY) — Mount `/api/relay` router conditionally
 
-*Client Layer (new):*
+_Client Layer (new):_
+
 - `apps/client/src/layers/entities/relay/` (NEW) — Entity hooks: `useRelayEnabled`, `useRelayMessages`, `useRelayEndpoints`, `useRelayMetrics`, `useSendMessage`, `useRelayEventStream`
 - `apps/client/src/layers/features/relay/` (NEW) — UI components: `RelayPanel` (tabs: Activity Feed + Endpoints), `ActivityFeed`, `MessageRow`, `EndpointList`, `InboxView`
 
-*Shared (modified):*
+_Shared (modified):_
+
 - `packages/shared/src/relay-schemas.ts` (MODIFY) — Add request/response schemas for HTTP routes (SendMessageRequest, InboxQuery, etc.)
 - `packages/shared/src/config-schema.ts` (MODIFY) — Add `relay` config section
 - `turbo.json` (MODIFY) — Add `DORKOS_RELAY_ENABLED` to `globalPassThroughEnv`
 
 **Shared Dependencies:**
+
 - `packages/relay/` — RelayCore singleton, injected into routes and MCP tools
 - `packages/shared/src/relay-schemas.ts` — Zod schemas shared between server routes, client types, MCP tools
 - `apps/server/src/services/stream-adapter.ts` — SSE helpers reused for Relay event stream
@@ -123,6 +127,7 @@ Client RelayPanel
 ```
 
 **Feature Flags/Config:**
+
 - `DORKOS_RELAY_ENABLED` env var (default: false) — added to `turbo.json` `globalPassThroughEnv`
 - `~/.dork/config.json` → `relay.enabled` (boolean, default: false)
 - Precedence: env var > config file > default (false)
@@ -152,36 +157,42 @@ Research saved to `research/20260224_relay_server_client_integration.md` (17 sou
 **Potential solutions:**
 
 **1. Dedicated Relay Panel (Activity Feed Only)**
+
 - Single-purpose panel in sidebar showing real-time message events
 - Pros: Lowest complexity, exact Pulse pattern reuse, fast to ship
 - Cons: No inbox browsing, no endpoint management, limited utility
 - Complexity: Low | Maintenance: Low
 
 **2. Integrated into Session View**
+
 - Relay messages shown inline with chat messages
 - Pros: Maximum context — see relay activity alongside agent conversation
 - Cons: FSD layer violations, clutters chat, hard to view without active session
 - Complexity: High | Maintenance: High
 
 **3. Notification Drawer from Status Bar**
+
 - Slide-out overlay triggered by Relay icon in status bar
 - Pros: Non-intrusive, accessible from anywhere
 - Cons: New UI primitive (no existing pattern), overlay disrupts work, unsuitable as sole inbox UI
 - Complexity: Medium | Maintenance: Medium
 
 **4. Split Panel with Tabs — Activity Feed + Endpoints/Inbox (RECOMMENDED)**
+
 - Dedicated panel with "Activity" tab (real-time feed) + "Endpoints" tab (inbox browser)
 - Pros: Clean separation of monitoring vs management, follows Pulse pattern, incremental delivery (ship Activity tab first, Endpoints tab next)
 - Cons: More initial design surface, tabs may feel heavyweight for early usage
 - Complexity: Medium | Maintenance: Low
 
 **REST API recommendations:**
+
 - Cursor-based pagination using ULIDs as opaque cursors — immune to insert/delete races
 - Return `deliveredTo: 0` with warning (not 4xx) when no endpoints match
 - Accept optional `idempotencyKey` header on send for safe MCP retries
 - Endpoint structure: `/api/relay/messages`, `/api/relay/endpoints/:subject/inbox`, `/api/relay/stream`, `/api/relay/dead-letters`, `/api/relay/metrics`
 
 **SSE streaming recommendations:**
+
 - Reuse `initSSEStream`/`sendSSEEvent`/`endSSEStream` from `stream-adapter.ts`
 - Register one `RelayCore.subscribe(pattern)` per SSE connection (not global fan-out)
 - Send keepalive comments every 15 seconds to prevent proxy drops
@@ -189,6 +200,7 @@ Research saved to `research/20260224_relay_server_client_integration.md` (17 sou
 - 5 event types: `relay_connected`, `relay_message`, `relay_delivery`, `relay_dead_letter`, `relay_metrics`
 
 **Activity feed UI recommendations:**
+
 - Flat chronological list (newest-first), compact rows by default
 - Status indicators: `new` → clock icon, `cur` → check icon, `failed` → alert-triangle + destructive color, `dead_letter` → mail-x + warning color
 - Expand on click for full payload + budget details
@@ -196,15 +208,16 @@ Research saved to `research/20260224_relay_server_client_integration.md` (17 sou
 - "Load more" button (not infinite scroll) to avoid virtual list complexity initially
 
 **MCP tool recommendations:**
+
 - All responses wrapped via `jsonContent()` helper (Pulse pattern)
 - Error handling: `isError: true` with `{ error, code, hint }` so agents can self-correct
 - Distinct error codes: `ACCESS_DENIED`, `BUDGET_EXCEEDED`, `INVALID_SUBJECT`, `ENDPOINT_NOT_FOUND`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Client panel structure | Split panel with tabs (Activity Feed + Endpoints/Inbox) | Clean separation of monitoring vs management, follows Pulse panel pattern, supports incremental delivery — ship Activity Feed first, add Endpoints tab next |
-| 2 | MCP tool scope | Core 3 + register (relay_send, relay_inbox, relay_list_endpoints, relay_register_endpoint) | The register tool is essential for agents to self-provision endpoints without manual setup. Metrics and dead-letter tools deferred to avoid scope creep |
-| 3 | SSE event filtering | Server-side subject pattern filter via query param | `GET /api/relay/stream?subject=relay.agent.*` — uses `RelayCore.subscribe(pattern)` internally, prevents flooding clients with irrelevant events, scales better than client-side filtering |
-| 4 | Endpoint creation model | Server bootstrap + MCP tool | Server auto-registers system endpoints (`relay.system.*`) on startup. Agents create their own endpoints via `relay_register_endpoint` MCP tool. No client UI for endpoint creation in this spec |
+| #   | Decision                | Choice                                                                                     | Rationale                                                                                                                                                                                       |
+| --- | ----------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Client panel structure  | Split panel with tabs (Activity Feed + Endpoints/Inbox)                                    | Clean separation of monitoring vs management, follows Pulse panel pattern, supports incremental delivery — ship Activity Feed first, add Endpoints tab next                                     |
+| 2   | MCP tool scope          | Core 3 + register (relay_send, relay_inbox, relay_list_endpoints, relay_register_endpoint) | The register tool is essential for agents to self-provision endpoints without manual setup. Metrics and dead-letter tools deferred to avoid scope creep                                         |
+| 3   | SSE event filtering     | Server-side subject pattern filter via query param                                         | `GET /api/relay/stream?subject=relay.agent.*` — uses `RelayCore.subscribe(pattern)` internally, prevents flooding clients with irrelevant events, scales better than client-side filtering      |
+| 4   | Endpoint creation model | Server bootstrap + MCP tool                                                                | Server auto-registers system endpoints (`relay.system.*`) on startup. Agents create their own endpoints via `relay_register_endpoint` MCP tool. No client UI for endpoint creation in this spec |

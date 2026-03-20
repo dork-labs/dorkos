@@ -15,6 +15,7 @@ lastDecompose: 2026-02-17
 Create `apps/server/src/routes/tunnel.ts` with two POST endpoints and register in `apps/server/src/app.ts`.
 
 **Files to create/modify:**
+
 - `apps/server/src/routes/tunnel.ts` (new)
 - `apps/server/src/app.ts` (add route registration)
 
@@ -77,6 +78,7 @@ export default router;
 
 **Route registration in `apps/server/src/app.ts`:**
 Add after the existing git routes:
+
 ```typescript
 import tunnelRoutes from './routes/tunnel.js';
 // ...
@@ -84,6 +86,7 @@ app.use('/api/tunnel', tunnelRoutes);
 ```
 
 **Acceptance criteria:**
+
 - POST /api/tunnel/start returns 200 with `{ url }` when token is available
 - POST /api/tunnel/start returns 400 when no auth token configured
 - POST /api/tunnel/start returns 500 when tunnelManager.start() throws
@@ -96,6 +99,7 @@ app.use('/api/tunnel', tunnelRoutes);
 Create `apps/server/src/routes/__tests__/tunnel.test.ts` following the existing health.test.ts pattern.
 
 **File to create:**
+
 - `apps/server/src/routes/__tests__/tunnel.test.ts`
 
 **Implementation:**
@@ -158,7 +162,13 @@ describe('Tunnel Routes', () => {
       process.env.NGROK_AUTHTOKEN = 'test-token';
       vi.mocked(tunnelManager.start).mockResolvedValue('https://test.ngrok.io');
       Object.defineProperty(tunnelManager, 'status', {
-        get: () => ({ enabled: true, connected: true, url: 'https://test.ngrok.io', port: 4242, startedAt: new Date().toISOString() }),
+        get: () => ({
+          enabled: true,
+          connected: true,
+          url: 'https://test.ngrok.io',
+          port: 4242,
+          startedAt: new Date().toISOString(),
+        }),
         configurable: true,
       });
 
@@ -189,12 +199,21 @@ describe('Tunnel Routes', () => {
       vi.mocked(tunnelManager.start).mockResolvedValue('https://test.ngrok.io');
       vi.mocked(configManager.get).mockReturnValue({ enabled: false });
       Object.defineProperty(tunnelManager, 'status', {
-        get: () => ({ enabled: true, connected: true, url: 'https://test.ngrok.io', port: 4242, startedAt: new Date().toISOString() }),
+        get: () => ({
+          enabled: true,
+          connected: true,
+          url: 'https://test.ngrok.io',
+          port: 4242,
+          startedAt: new Date().toISOString(),
+        }),
         configurable: true,
       });
 
       await request(app).post('/api/tunnel/start');
-      expect(configManager.set).toHaveBeenCalledWith('tunnel', expect.objectContaining({ enabled: true }));
+      expect(configManager.set).toHaveBeenCalledWith(
+        'tunnel',
+        expect.objectContaining({ enabled: true })
+      );
     });
   });
 
@@ -212,7 +231,10 @@ describe('Tunnel Routes', () => {
       vi.mocked(configManager.get).mockReturnValue({ enabled: true });
 
       await request(app).post('/api/tunnel/stop');
-      expect(configManager.set).toHaveBeenCalledWith('tunnel', expect.objectContaining({ enabled: false }));
+      expect(configManager.set).toHaveBeenCalledWith(
+        'tunnel',
+        expect.objectContaining({ enabled: false })
+      );
     });
 
     it('returns 500 when tunnelManager.stop() throws', async () => {
@@ -227,6 +249,7 @@ describe('Tunnel Routes', () => {
 ```
 
 **Acceptance criteria:**
+
 - All 7 test cases pass
 - Tests follow existing health.test.ts mocking pattern
 - Tests mock tunnelManager and configManager
@@ -236,6 +259,7 @@ describe('Tunnel Routes', () => {
 Extend the Transport interface and implement in HttpTransport, DirectTransport, and mock transport.
 
 **Files to modify:**
+
 - `packages/shared/src/transport.ts`
 - `apps/client/src/layers/shared/lib/http-transport.ts`
 - `apps/client/src/layers/shared/lib/direct-transport.ts`
@@ -317,6 +341,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
 Note: If `createMockTransport` doesn't already exist in mock-factories.ts, create it. If it exists elsewhere, add the two new methods to it.
 
 **Acceptance criteria:**
+
 - Transport interface has `startTunnel()` and `stopTunnel()` methods
 - HttpTransport calls POST /tunnel/start and /tunnel/stop
 - DirectTransport throws "not available in embedded mode" errors
@@ -330,27 +355,32 @@ Note: If `createMockTransport` doesn't already exist in mock-factories.ts, creat
 Add the `showStatusBarTunnel` boolean preference to the Zustand store following the existing pattern.
 
 **File to modify:**
+
 - `apps/client/src/layers/shared/model/app-store.ts`
 
 **Changes:**
 
 1. Add to `AppState` interface:
+
 ```typescript
 showStatusBarTunnel: boolean;
 setShowStatusBarTunnel: (v: boolean) => void;
 ```
 
 2. Add to `BOOL_KEYS`:
+
 ```typescript
 showStatusBarTunnel: 'dorkos-show-status-bar-tunnel',
 ```
 
 3. Add to `BOOL_DEFAULTS`:
+
 ```typescript
 showStatusBarTunnel: true,
 ```
 
 4. Add the state/setter pair inside `create()`:
+
 ```typescript
 showStatusBarTunnel: readBool(BOOL_KEYS.showStatusBarTunnel, true),
 setShowStatusBarTunnel: (v) => {
@@ -360,6 +390,7 @@ setShowStatusBarTunnel: (v) => {
 ```
 
 **Acceptance criteria:**
+
 - `showStatusBarTunnel` defaults to `true`
 - Persists to localStorage under `dorkos-show-status-bar-tunnel`
 - Follows the exact same pattern as `showStatusBarVersion`, `showStatusBarSound`, etc.
@@ -370,9 +401,11 @@ setShowStatusBarTunnel: (v) => {
 Install the `react-qr-code` dependency and create the TunnelDialog component.
 
 **Dependency:**
+
 - `npm install react-qr-code -w apps/client`
 
 **File to create:**
+
 - `apps/client/src/layers/features/settings/ui/TunnelDialog.tsx`
 
 **Implementation:**
@@ -576,6 +609,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 ```
 
 **Acceptance criteria:**
+
 - Dialog shows toggle switch reflecting current tunnel state
 - Shows auth token input when `tokenConfigured` is false
 - Shows QR code and URL when connected
@@ -589,6 +623,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 Create the status bar widget following the NotificationSoundItem pattern.
 
 **File to create:**
+
 - `apps/client/src/layers/features/status/ui/TunnelItem.tsx`
 
 **Implementation:**
@@ -632,6 +667,7 @@ export function TunnelItem({ tunnel }: TunnelItemProps) {
 ```
 
 **Acceptance criteria:**
+
 - Renders green dot and hostname when connected
 - Renders gray dot and "Tunnel" text when disconnected
 - Opens TunnelDialog on click
@@ -643,6 +679,7 @@ export function TunnelItem({ tunnel }: TunnelItemProps) {
 Wire up the TunnelItem in StatusLine, update ServerTab with "Manage" button, add tunnel toggle to Settings Status Bar tab, and update barrel exports.
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/status/ui/StatusLine.tsx`
 - `apps/client/src/layers/features/status/index.ts`
 - `apps/client/src/layers/features/settings/ui/ServerTab.tsx`
@@ -703,6 +740,7 @@ interface ServerTabProps {
 3. Pass to ServerTab: `onOpenTunnelDialog={() => setTunnelDialogOpen(true)}`
 4. Render TunnelDialog: `<TunnelDialog open={tunnelDialogOpen} onOpenChange={setTunnelDialogOpen} />`
 5. Add to Status Bar tab content:
+
 ```typescript
 <SettingRow label="Show tunnel" description="Display tunnel status and control">
   <Switch checked={showStatusBarTunnel} onCheckedChange={setShowStatusBarTunnel} />
@@ -716,6 +754,7 @@ export { TunnelDialog } from './ui/TunnelDialog';
 ```
 
 **Acceptance criteria:**
+
 - TunnelItem appears in status bar when `showStatusBarTunnel` is true and tunnel config exists
 - ServerTab shows "Manage" button that opens TunnelDialog
 - Settings Status Bar tab has toggle for tunnel visibility
@@ -730,6 +769,7 @@ export { TunnelDialog } from './ui/TunnelDialog';
 Create tests for both new UI components.
 
 **Files to create:**
+
 - `apps/client/src/layers/features/settings/__tests__/TunnelDialog.test.tsx`
 - `apps/client/src/layers/features/status/__tests__/TunnelItem.test.tsx`
 
@@ -855,6 +895,7 @@ describe('TunnelItem', () => {
 ```
 
 **Acceptance criteria:**
+
 - TunnelDialog tests verify: toggle renders, auth input appears when needed, switch disables during transition
 - TunnelItem tests verify: connected state, disconnected state, dialog opens on click
 - All tests pass with `npx vitest run`
@@ -864,6 +905,7 @@ describe('TunnelItem', () => {
 Run full verification suite to ensure everything integrates cleanly.
 
 **Commands to run:**
+
 ```bash
 npm run typecheck
 npm run lint
@@ -872,6 +914,7 @@ npm test -- --run
 ```
 
 **Acceptance criteria:**
+
 - `npm run typecheck` passes with zero errors
 - `npm run lint` passes (warnings ok, no errors)
 - `npm run build` succeeds for all apps

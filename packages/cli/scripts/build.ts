@@ -56,11 +56,7 @@ async function buildCLI() {
   // 2.5: Copy Drizzle migration files alongside bundled server.
   // At runtime, runMigrations() resolves migrations via path.join(__dirname, '../../drizzle').
   // In the CLI bundle, __dirname is dist/server/, so ../../drizzle resolves to dist/drizzle/.
-  cpSync(
-    path.join(ROOT, 'packages/db/drizzle'),
-    path.join(OUT, 'drizzle'),
-    { recursive: true },
-  );
+  cpSync(path.join(ROOT, 'packages/db/drizzle'), path.join(OUT, 'drizzle'), { recursive: true });
   console.log('  ✓ Copied Drizzle migrations to dist/drizzle/');
 
   // 3. Compile CLI entry
@@ -75,24 +71,26 @@ async function buildCLI() {
     format: 'esm',
     outfile: path.join(OUT, 'bin/cli.js'),
     external: ['dotenv', '../server/index.js', 'conf', '@inquirer/prompts', '@ngrok/ngrok'],
-    plugins: [{
-      name: 'resolve-monorepo-imports',
-      setup(build) {
-        // Resolve ../server/services/* to the actual server source tree
-        build.onResolve({ filter: /\.\.\/server\/services\// }, (args) => {
-          const match = args.path.match(/\.\.\/server\/services\/(.+)/);
-          if (!match) return undefined;
-          const relativePath = match[1].replace(/\.js$/, '.ts');
-          return { path: path.join(ROOT, 'apps/server/src/services', relativePath) };
-        });
+    plugins: [
+      {
+        name: 'resolve-monorepo-imports',
+        setup(build) {
+          // Resolve ../server/services/* to the actual server source tree
+          build.onResolve({ filter: /\.\.\/server\/services\// }, (args) => {
+            const match = args.path.match(/\.\.\/server\/services\/(.+)/);
+            if (!match) return undefined;
+            const relativePath = match[1].replace(/\.js$/, '.ts');
+            return { path: path.join(ROOT, 'apps/server/src/services', relativePath) };
+          });
 
-        // Resolve @dorkos/shared/* subpath imports to source .ts files
-        build.onResolve({ filter: /^@dorkos\/shared\// }, (args) => {
-          const subpath = args.path.replace('@dorkos/shared/', '');
-          return { path: path.join(ROOT, 'packages/shared/src', `${subpath}.ts`) };
-        });
+          // Resolve @dorkos/shared/* subpath imports to source .ts files
+          build.onResolve({ filter: /^@dorkos\/shared\// }, (args) => {
+            const subpath = args.path.replace('@dorkos/shared/', '');
+            return { path: path.join(ROOT, 'packages/shared/src', `${subpath}.ts`) };
+          });
+        },
       },
-    }],
+    ],
     define: { __CLI_VERSION__: JSON.stringify(version) },
     banner: { js: '#!/usr/bin/env node' },
   });

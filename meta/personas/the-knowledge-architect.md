@@ -63,6 +63,7 @@ Priya thinks: "I have the best note system and the best coding agent. And they d
 ## How Priya Talks (Language Patterns)
 
 When describing the problem to a colleague:
+
 - "I was in the middle of a design doc and had to context-switch to the terminal"
 - "Every time I switch, I lose 15 minutes of mental state"
 - "The thinking environment and the doing environment should be the same"
@@ -70,6 +71,7 @@ When describing the problem to a colleague:
 - "Cross-cutting concern" / "separation of concerns" (thinks in architecture)
 
 When excited about a tool:
+
 - "It just... stays out of the way"
 - "I queried the agent without leaving my doc"
 - "The session I started in Obsidian was right there in the browser later"

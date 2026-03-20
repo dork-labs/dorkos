@@ -57,17 +57,22 @@ Extends `BaseRelayAdapter` (unlike Telegram which implements `RelayAdapter` dire
 
 ```typescript
 export class SlackAdapter extends BaseRelayAdapter {
-  constructor(id: string, config: SlackAdapterConfig, displayName?: string)
+  constructor(id: string, config: SlackAdapterConfig, displayName?: string);
 
   // BaseRelayAdapter hooks
-  protected async _start(relay: RelayPublisher): Promise<void>
-  protected async _stop(): Promise<void>
-  async deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult>
-  async testConnection(): Promise<{ ok: boolean; error?: string; botUsername?: string }>
+  protected async _start(relay: RelayPublisher): Promise<void>;
+  protected async _stop(): Promise<void>;
+  async deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult>;
+  async testConnection(): Promise<{ ok: boolean; error?: string; botUsername?: string }>;
 }
 ```
 
 **`_start(relay)`:**
+
 1. Create `@slack/bolt` `App` instance with `socketMode: true`, `token` (xoxb-), `appToken` (xapp-)
 2. Register event listeners: `message` (channels + DMs), `app_mention` (when bot is @-mentioned in channels)
 3. Start the Bolt app (`app.start()` — Socket Mode connects automatically)
@@ -75,17 +80,20 @@ export class SlackAdapter extends BaseRelayAdapter {
 5. Cache bot's own user ID (from `auth.test`) for echo prevention
 
 **`_stop()`:**
+
 1. Unsubscribe from Relay signals
 2. Call `app.stop()` — Bolt handles Socket Mode WebSocket cleanup
 3. Clear DM channel cache and response stream state
 
 **`testConnection()`:**
+
 1. Create a temporary `WebClient` with the bot token
 2. Call `auth.test()` — returns bot user ID and workspace name
 3. Return `{ ok: true, botUsername }` or `{ ok: false, error }`
 4. No side effects (no Socket Mode connection, no event listeners)
 
 **Signal handling:**
+
 - Subscribe to `relay.human.slack.>` signals
 - On `typing` signal with `state: 'active'`: call Bolt's `client.chat.postMessage` with a typing indicator (Slack doesn't have a native typing action for bots — skip this, unlike Telegram)
 
@@ -94,18 +102,19 @@ export class SlackAdapter extends BaseRelayAdapter {
 ```typescript
 export const SUBJECT_PREFIX = 'relay.human.slack';
 
-export function buildSubject(channelId: string, isGroup: boolean): string
-export function extractChannelId(subject: string): string | null
+export function buildSubject(channelId: string, isGroup: boolean): string;
+export function extractChannelId(subject: string): string | null;
 export async function handleInboundMessage(
   event: SlackMessageEvent,
   client: WebClient,
   relay: RelayPublisher,
   botUserId: string,
-  callbacks: InboundCallbacks,
-): Promise<void>
+  callbacks: InboundCallbacks
+): Promise<void>;
 ```
 
 **`handleInboundMessage`:**
+
 1. Skip bot's own messages (compare `event.user` against cached bot user ID) — echo prevention
 2. Skip message subtypes that aren't user-generated text (`channel_join`, `channel_leave`, `bot_message`, etc.)
 3. Determine channel type:
@@ -117,13 +126,13 @@ export async function handleInboundMessage(
 
 ```typescript
 const payload: StandardPayload = {
-  content: event.text.slice(0, MAX_CONTENT_LENGTH),  // 32KB cap
-  senderName: await resolveUserName(client, event.user),  // cached
+  content: event.text.slice(0, MAX_CONTENT_LENGTH), // 32KB cap
+  senderName: await resolveUserName(client, event.user), // cached
   channelName: isGroup ? channelName : undefined,
   channelType: isGroup ? 'group' : 'dm',
   responseContext: {
     platform: 'slack',
-    maxLength: MAX_MESSAGE_LENGTH,  // 4000 chars (Slack's limit)
+    maxLength: MAX_MESSAGE_LENGTH, // 4000 chars (Slack's limit)
     supportedFormats: ['text', 'mrkdwn'],
     instructions: `Reply to subject ${subject} to respond to this Slack message.`,
   },
@@ -140,11 +149,13 @@ const payload: StandardPayload = {
 7. Publish to relay with `from: 'relay.human.slack.bot'`, `replyTo: subject`
 
 **User name resolution:**
+
 - Call `users.info` API → cache result by user ID (Map<string, string>)
 - Fallback to `event.user` (the user ID) if API call fails
 - Cache is per-adapter-lifetime (cleared on stop)
 
 **Channel name resolution:**
+
 - Call `conversations.info` API → cache by channel ID
 - Fallback to channel ID if API call fails
 
@@ -159,8 +170,8 @@ export async function deliverMessage(
   client: WebClient | null,
   streamState: Map<string, ActiveStream>,
   botUserId: string,
-  callbacks: OutboundCallbacks,
-): Promise<DeliveryResult>
+  callbacks: OutboundCallbacks
+): Promise<DeliveryResult>;
 ```
 
 **Key difference from Telegram:** Instead of buffering `text_delta` chunks and sending one message at the end, the Slack adapter uses native streaming:
@@ -185,6 +196,7 @@ export async function deliverMessage(
 4. **Silent events** (`SILENT_EVENT_TYPES`): skip silently, return success
 
 **Standard payload (non-StreamEvent):**
+
 - Extract content via `extractPayloadContent()`
 - Convert to mrkdwn via `formatForPlatform(content, 'slack')`
 - Truncate to `MAX_MESSAGE_LENGTH` (4000 chars)
@@ -192,16 +204,19 @@ export async function deliverMessage(
 - Always include `thread_ts` from the original inbound message's `platformData.ts`
 
 **Thread tracking:**
+
 - The `streamState` map stores `{ streamer: ChatStreamer, threadTs: string }` per channel
 - `threadTs` comes from the inbound message's `platformData.ts` (the original message timestamp serves as thread parent)
 - For DMs: `thread_ts` is still set (Slack threads work in DMs too, keeping context grouped)
 
 **DM channel resolution:**
+
 - For subjects like `relay.human.slack.D12345`, the channel ID is the DM channel — send directly
 - For subjects routed through bindings, the channel ID is already in the subject
 - Cache `conversations.open` results for programmatic DM initiation (not needed for reply-based flow, but available for agent-initiated outbound)
 
 **Echo prevention:**
+
 - Skip envelopes where `envelope.from` starts with `relay.human.slack` (same pattern as Telegram)
 
 ### 4. `SLACK_MANIFEST` — Static Manifest
@@ -211,7 +226,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
   type: 'slack',
   displayName: 'Slack',
   description: 'Send and receive messages in Slack channels and DMs.',
-  iconEmoji: '#',  // Slack's hash symbol
+  iconEmoji: '#', // Slack's hash symbol
   category: 'messaging',
   docsUrl: 'https://api.slack.com/start',
   builtin: true,
@@ -224,7 +239,8 @@ export const SLACK_MANIFEST: AdapterManifest = {
     {
       stepId: 'create-app',
       title: 'Create a Slack App',
-      description: 'Go to api.slack.com/apps → Create New App → From Scratch. Enable Socket Mode in the app settings.',
+      description:
+        'Go to api.slack.com/apps → Create New App → From Scratch. Enable Socket Mode in the app settings.',
       fields: ['botToken', 'appToken', 'signingSecret'],
     },
   ],
@@ -246,7 +262,8 @@ export const SLACK_MANIFEST: AdapterManifest = {
       type: 'password',
       required: true,
       placeholder: 'xapp-...',
-      description: 'App-Level Token with connections:write scope. Generate in Basic Information → App-Level Tokens.',
+      description:
+        'App-Level Token with connections:write scope. Generate in Basic Information → App-Level Tokens.',
       pattern: '^xapp-',
       patternMessage: 'App tokens start with xapp-',
       visibleByDefault: true,
@@ -283,11 +300,12 @@ Add a `formatForPlatform()` function to `packages/relay/src/lib/payload-utils.ts
  */
 export function formatForPlatform(
   content: string,
-  platform: 'slack' | 'telegram' | 'plain',
-): string
+  platform: 'slack' | 'telegram' | 'plain'
+): string;
 ```
 
 **Implementation:**
+
 - `'slack'`: Use `slackify-markdown` to convert standard Markdown → Slack mrkdwn
 - `'telegram'`: Pass through (Telegram accepts standard Markdown via `parse_mode: 'MarkdownV2'`, but our current implementation sends plain text — this is a future enhancement, not in scope for this spec)
 - `'plain'`: Strip Markdown formatting (for webhook adapter and similar)
@@ -388,12 +406,14 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 ## Implementation Phases
 
 ### Phase 1: Shared Infrastructure
+
 1. Add `slackify-markdown` to `packages/relay/package.json`
 2. Add `formatForPlatform()` to `payload-utils.ts` with tests
 3. Add `'slack'` to `AdapterTypeSchema` and `SlackAdapterConfigSchema` in shared schemas
 4. Add `SlackAdapterConfig` type re-export in `packages/relay/src/types.ts`
 
 ### Phase 2: Slack Adapter Core
+
 5. Create `packages/relay/src/adapters/slack/inbound.ts` — subject builders, event parsing, StandardPayload construction
 6. Create `packages/relay/src/adapters/slack/outbound.ts` — deliver via chatStream() / postMessage, stream state management, echo prevention
 7. Create `packages/relay/src/adapters/slack/slack-adapter.ts` — facade extending BaseRelayAdapter, Bolt app lifecycle, testConnection()
@@ -401,11 +421,13 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 9. Add `@slack/bolt` to `packages/relay/package.json`
 
 ### Phase 3: Integration
+
 10. Export `SlackAdapter`, `SLACK_MANIFEST` from `packages/relay/src/index.ts`
 11. Add `slack` case to `adapter-factory.ts`
 12. Register `SLACK_MANIFEST` in `adapter-manager.ts`
 
 ### Phase 4: Tests
+
 13. Write `inbound.test.ts` — subject building, event parsing, echo prevention, user name caching
 14. Write `outbound.test.ts` — stream lifecycle (start → append → stop), standard payload delivery, echo prevention, error handling
 15. Write `slack-adapter.test.ts` — lifecycle idempotency, testConnection, signal handling
@@ -418,6 +440,7 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 ### Unit Tests
 
 **`inbound.test.ts`:**
+
 - `buildSubject()` returns correct subjects for DMs vs groups
 - `extractChannelId()` parses subjects correctly, returns null for invalid
 - `handleInboundMessage()` skips bot's own messages (echo prevention)
@@ -428,6 +451,7 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 - `handleInboundMessage()` records error on relay.publish failure without throwing
 
 **`outbound.test.ts`:**
+
 - `deliverMessage()` skips envelopes from `relay.human.slack.*` (echo prevention)
 - `deliverMessage()` returns error when client is null
 - `deliverMessage()` starts stream on first `text_delta`, appends on subsequent
@@ -439,6 +463,7 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 - `deliverMessage()` truncates messages to `MAX_MESSAGE_LENGTH`
 
 **`slack-adapter.test.ts`:**
+
 - Constructor sets correct `id`, `subjectPrefix`, `displayName`
 - `start()` is idempotent (second call returns without error)
 - `stop()` is idempotent
@@ -447,6 +472,7 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 - `deliver()` delegates to `deliverMessage()`
 
 **`payload-utils.test.ts` additions:**
+
 - `formatForPlatform('**bold**', 'slack')` returns `*bold*`
 - `formatForPlatform('**bold**', 'plain')` returns `bold`
 - `formatForPlatform('**bold**', 'telegram')` passes through unchanged (for now)
@@ -462,12 +488,12 @@ export type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 
 ## Constants
 
-| Constant | Value | Rationale |
-|----------|-------|-----------|
-| `SUBJECT_PREFIX` | `'relay.human.slack'` | Parallel to Telegram's `relay.human.telegram` |
-| `MAX_MESSAGE_LENGTH` | `4000` | Slack's hard limit is 4000 chars for text content |
-| `MAX_CONTENT_LENGTH` | `32_768` | Same 32KB inbound cap as Telegram |
-| `GROUP_SEGMENT` | `'group'` | Same segment name as Telegram for consistency |
+| Constant             | Value                 | Rationale                                         |
+| -------------------- | --------------------- | ------------------------------------------------- |
+| `SUBJECT_PREFIX`     | `'relay.human.slack'` | Parallel to Telegram's `relay.human.telegram`     |
+| `MAX_MESSAGE_LENGTH` | `4000`                | Slack's hard limit is 4000 chars for text content |
+| `MAX_CONTENT_LENGTH` | `32_768`              | Same 32KB inbound cap as Telegram                 |
+| `GROUP_SEGMENT`      | `'group'`             | Same segment name as Telegram for consistency     |
 
 ---
 

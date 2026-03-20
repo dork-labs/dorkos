@@ -9,9 +9,7 @@ Get DorkOS running locally for development.
 
 ## Prerequisites
 
-<Callout type="info">
-DorkOS requires Node.js 18 or later. Check with `node --version`.
-</Callout>
+<Callout type="info">DorkOS requires Node.js 18 or later. Check with `node --version`.</Callout>
 
 - **Node.js 18+**
 - **pnpm 10+**
@@ -28,6 +26,7 @@ git clone https://github.com/dork-labs/dorkos.git
 cd dorkos
 pnpm install
 ```
+
 </Step>
 
 <Step>
@@ -38,6 +37,7 @@ cp .env.example .env
 ```
 
 Edit `.env` and set `ANTHROPIC_API_KEY=your-key-here`.
+
 </Step>
 
 <Step>
@@ -48,52 +48,59 @@ pnpm dev
 ```
 
 This starts both the Express server (port 6242) and the Vite dev server (port 6241). Open [http://localhost:6241](http://localhost:6241) in your browser.
+
 </Step>
 </Steps>
 
 ### Running Individual Apps
 
-<Tabs items={["Server only", "Client only"]}>
-<Tab value="Server only">
-```bash
-dotenv -- turbo dev --filter=@dorkos/server
-```
-</Tab>
-<Tab value="Client only">
-```bash
-dotenv -- turbo dev --filter=@dorkos/client
-```
-</Tab>
+<Tabs items={['Server only', 'Client only']}>
+  <Tab value="Server only">```bash dotenv -- turbo dev --filter=@dorkos/server ```</Tab>
+  <Tab value="Client only">```bash dotenv -- turbo dev --filter=@dorkos/client ```</Tab>
 </Tabs>
 
 <Callout type="warn">
-Always use `pnpm` scripts or prefix commands with `dotenv --` to ensure `.env` is loaded. Bare `turbo` commands do not pick up environment variables.
+  Always use `pnpm` scripts or prefix commands with `dotenv --` to ensure `.env` is loaded. Bare
+  `turbo` commands do not pick up environment variables.
 </Callout>
 
 ## Common Commands
 
-<TypeTable type={{
-  "pnpm dev": { type: "command", description: "Start all dev servers" },
-  "pnpm test": { type: "command", description: "Run all tests (Vitest, watch mode)" },
-  "pnpm test -- --run": { type: "command", description: "Single test run (no watch)" },
-  "pnpm build": { type: "command", description: "Build all packages" },
-  "pnpm typecheck": { type: "command", description: "Type-check all packages" },
-  "pnpm lint": { type: "command", description: "ESLint across all packages" },
-  "pnpm lint -- --fix": { type: "command", description: "Auto-fix ESLint issues" },
-  "pnpm format": { type: "command", description: "Prettier format all files" },
-  "pnpm format:check": { type: "command", description: "Check formatting without writing" }
-}} />
+<TypeTable
+  type={{
+    'pnpm dev': { type: 'command', description: 'Start all dev servers' },
+    'pnpm test': { type: 'command', description: 'Run all tests (Vitest, watch mode)' },
+    'pnpm test -- --run': { type: 'command', description: 'Single test run (no watch)' },
+    'pnpm build': { type: 'command', description: 'Build all packages' },
+    'pnpm typecheck': { type: 'command', description: 'Type-check all packages' },
+    'pnpm lint': { type: 'command', description: 'ESLint across all packages' },
+    'pnpm lint -- --fix': { type: 'command', description: 'Auto-fix ESLint issues' },
+    'pnpm format': { type: 'command', description: 'Prettier format all files' },
+    'pnpm format:check': { type: 'command', description: 'Check formatting without writing' },
+  }}
+/>
 
 ## Docker & Smoke Tests
 
-<TypeTable type={{
-  "pnpm smoke:docker": { type: "command", description: "CLI install smoke test in Docker" },
-  "pnpm smoke:integration": { type: "command", description: "Full integration test (server + API + client in Docker)" },
-  "pnpm smoke:npm": { type: "command", description: "Integration test against published npm package" },
-  "pnpm docker:build": { type: "command", description: "Build runnable Docker image from local code" },
-  "pnpm docker:run": { type: "command", description: "Run DorkOS in Docker (build first)" },
-  "pnpm publish:cli": { type: "command", description: "Publish dorkos CLI to npm" }
-}} />
+<TypeTable
+  type={{
+    'pnpm smoke:docker': { type: 'command', description: 'CLI install smoke test in Docker' },
+    'pnpm smoke:integration': {
+      type: 'command',
+      description: 'Full integration test (server + API + client in Docker)',
+    },
+    'pnpm smoke:npm': {
+      type: 'command',
+      description: 'Integration test against published npm package',
+    },
+    'pnpm docker:build': {
+      type: 'command',
+      description: 'Build runnable Docker image from local code',
+    },
+    'pnpm docker:run': { type: 'command', description: 'Run DorkOS in Docker (build first)' },
+    'pnpm publish:cli': { type: 'command', description: 'Publish dorkos CLI to npm' },
+  }}
+/>
 
 ## Running Specific Tests
 
@@ -155,22 +162,22 @@ pnpm vitest run apps/server/src/services/__tests__/transcript-reader.test.ts
   <File name="package.json" />
 </Files>
 
-| Directory | Package | Description |
-|---|---|---|
-| `apps/client` | `@dorkos/client` | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui) |
-| `apps/server` | `@dorkos/server` | Express API server |
-| `apps/site` | `@dorkos/site` | Marketing site & docs (Next.js 16, Fumadocs) |
-| `apps/obsidian-plugin` | `@dorkos/obsidian-plugin` | Obsidian sidebar plugin |
-| `apps/e2e` | `@dorkos/e2e` | Playwright browser tests |
-| `packages/cli` | `dorkos` | Publishable npm CLI |
-| `packages/shared` | `@dorkos/shared` | Zod schemas, shared types, Transport interface |
-| `packages/db` | `@dorkos/db` | Drizzle ORM schemas (SQLite) |
-| `packages/relay` | `@dorkos/relay` | Inter-agent messaging |
-| `packages/mesh` | `@dorkos/mesh` | Agent discovery & registry |
-| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets |
-| `packages/eslint-config` | `@dorkos/eslint-config` | Shared ESLint presets (base, react, node, test) |
-| `packages/icons` | `@dorkos/icons` | SVG icon & logo registry |
-| `packages/test-utils` | `@dorkos/test-utils` | Mock factories, test helpers |
+| Directory                    | Package                     | Description                                     |
+| ---------------------------- | --------------------------- | ----------------------------------------------- |
+| `apps/client`                | `@dorkos/client`            | React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)    |
+| `apps/server`                | `@dorkos/server`            | Express API server                              |
+| `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs)    |
+| `apps/obsidian-plugin`       | `@dorkos/obsidian-plugin`   | Obsidian sidebar plugin                         |
+| `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                        |
+| `packages/cli`               | `dorkos`                    | Publishable npm CLI                             |
+| `packages/shared`            | `@dorkos/shared`            | Zod schemas, shared types, Transport interface  |
+| `packages/db`                | `@dorkos/db`                | Drizzle ORM schemas (SQLite)                    |
+| `packages/relay`             | `@dorkos/relay`             | Inter-agent messaging                           |
+| `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry                      |
+| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets                         |
+| `packages/eslint-config`     | `@dorkos/eslint-config`     | Shared ESLint presets (base, react, node, test) |
+| `packages/icons`             | `@dorkos/icons`             | SVG icon & logo registry                        |
+| `packages/test-utils`        | `@dorkos/test-utils`        | Mock factories, test helpers                    |
 
 ## Next Steps
 

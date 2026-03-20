@@ -122,6 +122,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 ### Bug 1 Solutions
 
 **1. Streaming guard on seed effect (Recommended)**
+
 - Add `if (isStreaming) return;` to the initial-seed branch in use-chat-session.ts
 - Pros: 3-line change, matches existing guard philosophy, defers seeding until streaming completes
 - Cons: If `done` event is lost, seed never fires (existing edge case handled by staleness detector)
@@ -129,6 +130,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 - Maintenance: Clean, follows codebase conventions
 
 **2. ID-based merge in seed path**
+
 - Replace `setMessages(history.map(...))` with ID-based merge
 - Pros: More robust against future paths that reset historySeededRef
 - Cons: Ordering complexity, ID mismatch between client UUID and server-persisted ID
@@ -136,6 +138,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 - Maintenance: More brittle
 
 **3. Don't reset historySeededRef during streaming**
+
 - Skip the reset when `statusRef.current === 'streaming'`
 - Pros: Simple
 - Cons: Logically insufficient — for create-on-first-message, historySeededRef was already false
@@ -144,6 +147,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 ### Bug 2 Solutions
 
 **1. Convergence effect (Recommended)**
+
 - Remove `setLocalModel(null)` from success path; add useEffect that clears localModel only when `session?.model === localModel`
 - Pros: Eliminates render gap, data-driven, self-documenting
 - Cons: If server normalizes model ID differently, convergence never fires (need fallback timer or onSettled cleanup)
@@ -151,6 +155,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 - Maintenance: Clean
 
 **2. React 19 useOptimistic**
+
 - Replace useState with useOptimistic hook
 - Pros: Purpose-built, eliminates bug class permanently
 - Cons: Requires wrapping updateSession in startTransition, structural change
@@ -158,6 +163,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 - Maintenance: Lower long-term (idiomatic React 19)
 
 **3. Query invalidation after PATCH**
+
 - Add queryClient.invalidateQueries instead of setQueryData
 - Pros: Simpler
 - Cons: Network round-trip, still has brief render gap
@@ -165,6 +171,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 - Maintenance: Medium
 
 ### Sources
+
 - TanStack Query optimistic updates documentation
 - Radix UI RadioGroup controlled value patterns
 - React 19 useOptimistic reference
@@ -172,7 +179,7 @@ Bug 2: User clicks model -> `onChangeModel` -> `updateSession({ model })` -> `se
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | P0 fix approach | Streaming guard only | 3-line change, matches existing guard philosophy in the file. Defers seeding until streaming completes, which is semantically correct since server history is incomplete during streaming. No new state, no ordering complexity. |
-| 2 | P1 fix approach | Convergence effect | Surgical fix that eliminates the render gap between optimistic clear and query cache propagation. Holds localModel until session.model confirms the same value. No structural changes required, aligns with existing codebase patterns. |
+| #   | Decision        | Choice               | Rationale                                                                                                                                                                                                                               |
+| --- | --------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | P0 fix approach | Streaming guard only | 3-line change, matches existing guard philosophy in the file. Defers seeding until streaming completes, which is semantically correct since server history is incomplete during streaming. No new state, no ordering complexity.        |
+| 2   | P1 fix approach | Convergence effect   | Surgical fix that eliminates the render gap between optimistic clear and query cache propagation. Holds localModel until session.model confirms the same value. No structural changes required, aligns with existing codebase patterns. |

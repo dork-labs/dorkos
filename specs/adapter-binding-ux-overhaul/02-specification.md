@@ -143,7 +143,7 @@ Add a "Name" text input on the Configure step, above the adapter-specific config
     value={label}
     onChange={(e) => setLabel(e.target.value)}
   />
-  <p className="text-xs text-muted-foreground">
+  <p className="text-muted-foreground text-xs">
     A friendly name to identify this adapter instance.
   </p>
 </div>
@@ -159,12 +159,8 @@ Display both the custom label (primary, larger text) and the adapter type's `dis
 
 ```tsx
 <div className="flex flex-col">
-  <span className="text-sm font-medium">
-    {instance.label || instance.id}
-  </span>
-  <span className="text-xs text-muted-foreground">
-    {manifest.displayName}
-  </span>
+  <span className="text-sm font-medium">{instance.label || instance.id}</span>
+  <span className="text-muted-foreground text-xs">{manifest.displayName}</span>
 </div>
 ```
 
@@ -178,7 +174,7 @@ Add a "New Binding" button at the top of the binding list, next to the heading:
 
 ```tsx
 <div className="flex items-center justify-between px-4 py-2">
-  <h3 className="text-sm font-medium text-muted-foreground">Bindings</h3>
+  <h3 className="text-muted-foreground text-sm font-medium">Bindings</h3>
   <Button variant="outline" size="sm" onClick={() => setDialogState({ mode: 'create' })}>
     <Plus className="mr-1.5 size-3.5" />
     New Binding
@@ -228,6 +224,7 @@ interface BindingFormValues {
 ```
 
 In **create mode**:
+
 - Show adapter picker dropdown (populated from `useAdapterCatalog()` — only enabled adapter instances)
 - Show agent picker dropdown (populated from `useRegisteredAgents()`)
 - Show project path field (auto-filled from the selected agent's `cwd` or the current directory)
@@ -236,6 +233,7 @@ In **create mode**:
 - Show chat filter section (see 3b below)
 
 In **edit mode**:
+
 - Adapter and agent shown as read-only text (cannot change which adapter/agent a binding routes to)
 - Session strategy, label, chatId, channelType are editable
 
@@ -251,7 +249,9 @@ Add a collapsible "Chat Filter" section below the session strategy:
     <ChevronRight className="size-3.5 transition-transform data-[state=open]:rotate-90" />
     Chat Filter
     {(chatId || channelType) && (
-      <Badge variant="secondary" className="text-xs">Active</Badge>
+      <Badge variant="secondary" className="text-xs">
+        Active
+      </Badge>
     )}
   </CollapsibleTrigger>
   <CollapsibleContent className="space-y-3 pt-2">
@@ -264,7 +264,7 @@ Add a collapsible "Chat Filter" section below the session strategy:
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="">Any chat (wildcard)</SelectItem>
-          {observedChats.map(chat => (
+          {observedChats.map((chat) => (
             <SelectItem key={chat.chatId} value={chat.chatId}>
               {chat.displayName || chat.chatId}
               <span className="text-muted-foreground ml-2 text-xs">
@@ -294,7 +294,14 @@ Add a collapsible "Chat Filter" section below the session strategy:
     </div>
 
     {(chatId || channelType) && (
-      <Button variant="ghost" size="sm" onClick={() => { setChatId(''); setChannelType(''); }}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          setChatId('');
+          setChannelType('');
+        }}
+      >
         Clear filters
       </Button>
     )}
@@ -408,6 +415,7 @@ interface AdapterCardBindingInfo {
 ```
 
 Display:
+
 - **Status dot** in the card header:
   - Green: adapter connected + has bindings + recent message flow
   - Blue: adapter connected + has bindings + quiet (no recent messages)
@@ -557,6 +565,7 @@ No changes to the `Transport` interface signature — `label` travels inside the
 ### Unit Tests
 
 **BindingDialog tests** (`apps/client/src/layers/features/relay/ui/__tests__/BindingDialog.test.tsx`):
+
 - Renders adapter/agent pickers in create mode
 - Renders read-only adapter/agent in edit mode
 - Submits with correct form values including chatId/channelType
@@ -564,22 +573,26 @@ No changes to the `Transport` interface signature — `label` travels inside the
 - Pre-fills fields when `initialValues` provided (duplicate flow)
 
 **BindingList tests** (`apps/client/src/layers/features/relay/ui/__tests__/BindingList.test.tsx`):
+
 - Renders "New Binding" button
 - Opens BindingDialog in create mode when button clicked
 - Shows "Add similar binding" in kebab menu
 - Pre-fills dialog correctly for duplicate (chatId cleared)
 
 **AdapterCard tests** (`apps/client/src/layers/features/relay/__tests__/AdapterCard.test.tsx`):
+
 - Shows amber dot and "No agent bound" when no bindings
 - Shows green dot and bound agent names when bindings exist
 - Shows adapter label as primary text, type name as secondary
 
 **CatalogCard tests**:
+
 - Shows instance count badge when `instanceCount > 0`
 - Shows "Add Another" button text for multi-instance types with existing instances
 - Shows "Add" button text when no instances exist
 
 **PATCH route tests** (`apps/server/src/routes/__tests__/relay-bindings.test.ts`):
+
 - Returns 200 with updated binding for valid PATCH
 - Returns 400 for invalid update payload
 - Returns 404 for non-existent binding ID
@@ -587,6 +600,7 @@ No changes to the `Transport` interface signature — `label` travels inside the
 - Supports null values to clear optional fields (chatId, channelType)
 
 **Observed chats tests** (`apps/server/src/routes/__tests__/relay-observed-chats.test.ts`):
+
 - Returns aggregated chats from trace data
 - Returns empty array when no traces exist for adapter
 - Groups by chatId with correct counts and timestamps
@@ -673,13 +687,13 @@ No changes to the `Transport` interface signature — `label` travels inside the
 ## Open Questions
 
 1. ~~**Observed chats data source**~~ (RESOLVED)
-**Answer:** Extract from trace store metadata. Traces already contain adapter ID, chat ID, and channel type from inbound messages.
+   **Answer:** Extract from trace store metadata. Traces already contain adapter ID, chat ID, and channel type from inbound messages.
 
 2. ~~**Adapter label persistence format**~~ (RESOLVED)
-**Answer:** Top-level field in the adapter config JSON (alongside `id`, `type`, `enabled`). Cleaner separation. Existing configs without `label` default to `undefined` — no migration needed.
+   **Answer:** Top-level field in the adapter config JSON (alongside `id`, `type`, `enabled`). Cleaner separation. Existing configs without `label` default to `undefined` — no migration needed.
 
 3. ~~**ConversationRow "Route to Agent" — popover vs dialog**~~ (RESOLVED)
-**Answer:** Popover with "More options..." link. Quick agent selection in a small inline popover for the fast path, with a "More options..." link that opens the full BindingDialog pre-filled for users who want to set chatId, channelType, or other advanced fields.
+   **Answer:** Popover with "More options..." link. Quick agent selection in a small inline popover for the fast path, with a "More options..." link that opens the full BindingDialog pre-filled for users who want to set chatId, channelType, or other advanced fields.
 
 ## Related ADRs
 
@@ -700,5 +714,6 @@ No changes to the `Transport` interface signature — `label` travels inside the
 ## Changelog
 
 ### 2026-03-11 — Initial Draft
+
 - Full specification covering all 7 areas of improvement
 - Based on ideation document decisions and two research reports

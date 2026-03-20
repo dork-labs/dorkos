@@ -132,9 +132,9 @@ status: ideation
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Primary fix target | Fix both `void flush()` AND add subscribe-first | Both are real bugs that compound. Exploration confirmed void flush() causes write serialization loss; research confirmed subscribe-first eliminates the timing window. |
-| 2 | Session ID resolution | Standardize on SDK-Session-ID in messaging layer | The duality is the fundamental bug. Agent-ID is metadata about a session, not its identity. A bidirectional mapping would be a band-aid. World-class apps don't have confused identity abstractions. |
-| 3 | Relay pending buffer | Yes — add 5-second pending buffer in RelayCore | Defense-in-depth: even with subscribe-first, reconnects and edge cases could still drop messages. Short-lived buffer catches these. Follows Mercure's dual-buffer design pattern. |
-| 4 | Generator error handling | Add try/catch/finally to CCA generator loop | Ensures terminal `done` event is always sent, preventing silent hangs when SDK generator throws. 30-minute fix with high reliability impact. |
+| #   | Decision                 | Choice                                           | Rationale                                                                                                                                                                                            |
+| --- | ------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Primary fix target       | Fix both `void flush()` AND add subscribe-first  | Both are real bugs that compound. Exploration confirmed void flush() causes write serialization loss; research confirmed subscribe-first eliminates the timing window.                               |
+| 2   | Session ID resolution    | Standardize on SDK-Session-ID in messaging layer | The duality is the fundamental bug. Agent-ID is metadata about a session, not its identity. A bidirectional mapping would be a band-aid. World-class apps don't have confused identity abstractions. |
+| 3   | Relay pending buffer     | Yes — add 5-second pending buffer in RelayCore   | Defense-in-depth: even with subscribe-first, reconnects and edge cases could still drop messages. Short-lived buffer catches these. Follows Mercure's dual-buffer design pattern.                    |
+| 4   | Generator error handling | Add try/catch/finally to CCA generator loop      | Ensures terminal `done` event is always sent, preventing silent hangs when SDK generator throws. 30-minute fix with high reliability impact.                                                         |

@@ -22,7 +22,7 @@ export type AdapterErrorCode =
 export class AdapterError extends Error {
   constructor(
     message: string,
-    public readonly code: AdapterErrorCode,
+    public readonly code: AdapterErrorCode
   ) {
     super(message);
     this.name = 'AdapterError';

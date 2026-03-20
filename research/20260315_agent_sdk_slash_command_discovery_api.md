@@ -1,5 +1,5 @@
 ---
-title: "Claude Agent SDK — Slash Command Discovery API"
+title: 'Claude Agent SDK — Slash Command Discovery API'
 date: 2026-03-15
 type: implementation
 status: active
@@ -49,12 +49,12 @@ Every session emits a `SDKSystemMessage` with `subtype: "init"` as its first mes
 
 ```typescript
 type SDKSystemMessage = {
-  type: "system";
-  subtype: "init";
+  type: 'system';
+  subtype: 'init';
   uuid: UUID;
   session_id: string;
   tools: string[];
-  slash_commands: string[];  // <-- here
+  slash_commands: string[]; // <-- here
   skills: string[];
   // ...
 };
@@ -63,11 +63,11 @@ type SDKSystemMessage = {
 Example usage:
 
 ```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query } from '@anthropic-ai/claude-agent-sdk';
 
-for await (const message of query({ prompt: "Hello Claude", options: { maxTurns: 1 } })) {
-  if (message.type === "system" && message.subtype === "init") {
-    console.log("Available slash commands:", message.slash_commands);
+for await (const message of query({ prompt: 'Hello Claude', options: { maxTurns: 1 } })) {
+  if (message.type === 'system' && message.subtype === 'init') {
+    console.log('Available slash commands:', message.slash_commands);
     // Example: ["/compact", "/clear", "/help", "/refactor", "/security-check"]
   }
 }
@@ -81,7 +81,7 @@ The `Query` object also exposes `initializationResult()`, which returns `SDKCont
 
 ```typescript
 type SDKControlInitializeResponse = {
-  commands: SlashCommand[];   // full SlashCommand objects, not just strings
+  commands: SlashCommand[]; // full SlashCommand objects, not just strings
   agents: AgentInfo[];
   output_style: string;
   available_output_styles: string[];
@@ -102,16 +102,16 @@ The `.claude/commands/` directory format (namespaced subdirectories with `.md` f
 
 ## Comparison: SDK Discovery vs DorkOS's `command-registry.ts`
 
-| Aspect | SDK (`supportedCommands()`) | DorkOS `CommandRegistryService` |
-|---|---|---|
-| Source | Claude Code process (authoritative) | Direct filesystem scan of `.claude/commands/` |
-| Data returned | `name`, `description`, `argumentHint` | `namespace`, `command`, `fullCommand`, `description`, `argumentHint`, `allowedTools`, `filePath` |
-| Built-in commands | Included (`/compact`, `/clear`, `/help`, etc.) | Not included (only scans custom command files) |
-| Skills format support | Yes (`.claude/skills/`) | No (only `.claude/commands/`) |
-| Requires active session | Yes (need a `Query` instance) | No (pure filesystem read, no session needed) |
-| Caching | Resolved per-session at init time | 5-minute TTL in-process cache |
-| `cwd` awareness | Yes (per-session `cwd`) | Yes (via `vaultRoot` constructor param) |
-| `allowedTools` extraction | No (not in `SlashCommand` type) | Yes (parsed from frontmatter) |
+| Aspect                    | SDK (`supportedCommands()`)                    | DorkOS `CommandRegistryService`                                                                  |
+| ------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Source                    | Claude Code process (authoritative)            | Direct filesystem scan of `.claude/commands/`                                                    |
+| Data returned             | `name`, `description`, `argumentHint`          | `namespace`, `command`, `fullCommand`, `description`, `argumentHint`, `allowedTools`, `filePath` |
+| Built-in commands         | Included (`/compact`, `/clear`, `/help`, etc.) | Not included (only scans custom command files)                                                   |
+| Skills format support     | Yes (`.claude/skills/`)                        | No (only `.claude/commands/`)                                                                    |
+| Requires active session   | Yes (need a `Query` instance)                  | No (pure filesystem read, no session needed)                                                     |
+| Caching                   | Resolved per-session at init time              | 5-minute TTL in-process cache                                                                    |
+| `cwd` awareness           | Yes (per-session `cwd`)                        | Yes (via `vaultRoot` constructor param)                                                          |
+| `allowedTools` extraction | No (not in `SlashCommand` type)                | Yes (parsed from frontmatter)                                                                    |
 
 **Key difference:** DorkOS's registry provides richer per-command metadata (`allowedTools`, `filePath`, `namespace`) that the SDK's `SlashCommand` type does not expose. The SDK's approach is authoritative and includes built-ins + skills; DorkOS's is a superset for custom command metadata.
 
@@ -122,14 +122,14 @@ The `.claude/commands/` directory format (namespaced subdirectories with `.md` f
 ### Method 1: `Query.supportedCommands()` (Recommended for Full Metadata)
 
 ```typescript
-import { query, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 
 const q = query({
-  prompt: "Hello",
+  prompt: 'Hello',
   options: {
     maxTurns: 1,
-    settingSources: ["project", "user"]  // required to load custom commands
-  }
+    settingSources: ['project', 'user'], // required to load custom commands
+  },
 });
 
 // Call before or during iteration — resolves after session init
@@ -140,14 +140,16 @@ for (const cmd of commands) {
 }
 
 // Still need to iterate to consume the query
-for await (const message of q) { /* ... */ }
+for await (const message of q) {
+  /* ... */
+}
 ```
 
 ### Method 2: `slash_commands` on the Init Message (Lightweight)
 
 ```typescript
-for await (const message of query({ prompt: "Hello", options: { maxTurns: 1 } })) {
-  if (message.type === "system" && message.subtype === "init") {
+for await (const message of query({ prompt: 'Hello', options: { maxTurns: 1 } })) {
+  if (message.type === 'system' && message.subtype === 'init') {
     // string[] — command names only, no metadata
     const names: string[] = message.slash_commands;
   }
@@ -157,7 +159,7 @@ for await (const message of query({ prompt: "Hello", options: { maxTurns: 1 } })
 ### Method 3: `initializationResult()` (All Init Data at Once)
 
 ```typescript
-const q = query({ prompt: "Hello", options: { maxTurns: 1, settingSources: ["project"] } });
+const q = query({ prompt: 'Hello', options: { maxTurns: 1, settingSources: ['project'] } });
 
 // Await full init result without iterating the stream
 const init = await q.initializationResult();
@@ -165,7 +167,9 @@ const commands: SlashCommand[] = init.commands;
 const models = init.models;
 const accountInfo = init.account;
 
-for await (const message of q) { /* ... */ }
+for await (const message of q) {
+  /* ... */
+}
 ```
 
 ---
@@ -179,6 +183,7 @@ DorkOS's `CommandRegistryService` (in `apps/server/src/services/runtimes/claude-
 3. It does **not** include built-in SDK commands (`/compact`, `/clear`, `/help`) or skills-format commands.
 
 If DorkOS wants to surface built-in commands or skills in the command palette, it would need to either:
+
 - Call `Query.supportedCommands()` from a session (e.g., on session init) and merge the results with the filesystem scan.
 - Or use `initializationResult()` to get commands at session start, then cache them per-cwd.
 

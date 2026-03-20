@@ -125,8 +125,8 @@ export function ContextTab() {
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        Control which tool usage instructions are injected into the agent system prompt.
-        These blocks teach the agent how to use DorkOS tools together.
+        Control which tool usage instructions are injected into the agent system prompt. These
+        blocks teach the agent how to use DorkOS tools together.
       </p>
 
       <FieldCard>

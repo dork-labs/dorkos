@@ -1,10 +1,5 @@
 import { memo, useCallback } from 'react';
-import {
-  Handle,
-  Position,
-  NodeToolbar,
-  type NodeProps,
-} from '@xyflow/react';
+import { Handle, Position, NodeToolbar, type NodeProps } from '@xyflow/react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Zap, Clock, Settings, Heart, Copy, MessageCircle } from 'lucide-react';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
@@ -93,11 +88,11 @@ function CardHeader({
             <span className="absolute inset-0 animate-ping rounded-full bg-green-500 opacity-30" />
           )}
         </span>
-        <span className="truncate text-sm font-medium text-foreground">
+        <span className="text-foreground truncate text-sm font-medium">
           {d.emoji ? `${d.emoji} ` : ''}
           {d.label}
         </span>
-        <Badge variant="outline" className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+        <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 text-[10px]">
           Agent
         </Badge>
       </div>
@@ -113,7 +108,7 @@ function CardHeader({
           </Badge>
         ))}
         {overflowCount > 0 && (
-          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+          <Badge variant="outline" className="text-muted-foreground text-[10px]">
             +{overflowCount}
           </Badge>
         )}
@@ -123,20 +118,28 @@ function CardHeader({
 }
 
 /** Compact pill rendered when zoom < 0.6 (~120x28px). */
-function CompactPill({ d, dotColor, selected }: { d: AgentNodeData; dotColor: string; selected?: boolean }) {
+function CompactPill({
+  d,
+  dotColor,
+  selected,
+}: {
+  d: AgentNodeData;
+  dotColor: string;
+  selected?: boolean;
+}) {
   const borderColor = resolveBorderColor(d);
 
   return (
     <div
       className={cn(
-        'flex w-[120px] items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 shadow-sm',
-        selected && 'ring-2 ring-primary',
+        'bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2.5 py-1 shadow-sm',
+        selected && 'ring-primary ring-2'
       )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
       <Handle type="target" position={Position.Left} className="bg-muted-foreground!" />
       <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
-      <span className="truncate text-xs font-medium text-foreground">
+      <span className="text-foreground truncate text-xs font-medium">
         {d.emoji ? `${d.emoji} ` : ''}
         {d.label}
       </span>
@@ -164,8 +167,8 @@ function DefaultCard({
   return (
     <div
       className={cn(
-        'w-[200px] rounded-lg border bg-card px-3 py-2 shadow-sm hover:shadow-md',
-        selected && 'ring-2 ring-primary',
+        'bg-card w-[200px] rounded-lg border px-3 py-2 shadow-sm hover:shadow-md',
+        selected && 'ring-primary ring-2'
       )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
@@ -175,7 +178,7 @@ function DefaultCard({
 
       {/* Bottom indicator row */}
       {(hasRelay || hasPulse) && (
-        <div className="mt-1.5 flex items-center gap-2 text-muted-foreground">
+        <div className="text-muted-foreground mt-1.5 flex items-center gap-2">
           {hasRelay && <Zap className="size-3" />}
           {hasPulse && (
             <span className="flex items-center gap-0.5">
@@ -210,8 +213,8 @@ function ExpandedCard({
   return (
     <div
       className={cn(
-        'w-[240px] rounded-lg border bg-card px-3 py-2 shadow-sm hover:shadow-md',
-        selected && 'ring-2 ring-primary',
+        'bg-card w-[240px] rounded-lg border px-3 py-2 shadow-sm hover:shadow-md',
+        selected && 'ring-primary ring-2'
       )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
@@ -221,12 +224,12 @@ function ExpandedCard({
 
       {/* Description */}
       {d.description && (
-        <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">{d.description}</p>
+        <p className="text-muted-foreground mt-1.5 line-clamp-2 text-xs">{d.description}</p>
       )}
 
       {/* Relay adapters + Pulse schedule count */}
       {(hasRelay || hasPulse) && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-muted-foreground">
+        <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-2">
           {hasRelay &&
             d.relayAdapters!.map((adapter) => (
               <span key={adapter} className="flex items-center gap-0.5">
@@ -245,7 +248,7 @@ function ExpandedCard({
 
       {/* Budget display */}
       {d.budget && (
-        <p className="mt-1 text-[10px] text-muted-foreground">
+        <p className="text-muted-foreground mt-1 text-[10px]">
           {d.budget.maxCallsPerHour} calls/hr &middot; {d.budget.maxHopsPerMessage} max hops
         </p>
       )}
@@ -253,7 +256,7 @@ function ExpandedCard({
       {/* Bottom row: last seen + behavior mode */}
       <div className="mt-1 flex items-center gap-2">
         {d.lastSeenAt && (
-          <span className="text-[10px] text-muted-foreground">{relativeTime(d.lastSeenAt)}</span>
+          <span className="text-muted-foreground text-[10px]">{relativeTime(d.lastSeenAt)}</span>
         )}
         {d.behavior && (
           <Badge variant="outline" className="text-[10px]">
@@ -281,7 +284,7 @@ function ToolbarButton({
     <button
       onClick={onClick}
       title={label}
-      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1.5"
     >
       <Icon className="size-3.5" />
     </button>
@@ -302,7 +305,7 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
 
   const toolbar = (
     <NodeToolbar position={Position.Top} isVisible={selected}>
-      <div className="flex items-center gap-0.5 rounded-lg border bg-card px-1 py-0.5 shadow-md">
+      <div className="bg-card flex items-center gap-0.5 rounded-lg border px-1 py-0.5 shadow-md">
         {d.onOpenSettings && (
           <ToolbarButton icon={Settings} label="Settings" onClick={() => d.onOpenSettings?.(id)} />
         )}
@@ -311,7 +314,11 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
         )}
         <ToolbarButton icon={Copy} label="Copy ID" onClick={handleCopyId} />
         {d.onOpenChat && d.projectPath && (
-          <ToolbarButton icon={MessageCircle} label="Chat" onClick={() => d.onOpenChat?.(id, d.projectPath ?? '')} />
+          <ToolbarButton
+            icon={MessageCircle}
+            label="Chat"
+            onClick={() => d.onOpenChat?.(id, d.projectPath ?? '')}
+          />
         )}
       </div>
     </NodeToolbar>
@@ -323,9 +330,23 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
   if (band === 'compact') {
     content = <CompactPill d={d} dotColor={dotColor} selected={selected} />;
   } else if (band === 'expanded') {
-    content = <ExpandedCard d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} selected={selected} />;
+    content = (
+      <ExpandedCard
+        d={d}
+        dotColor={dotColor}
+        prefersReducedMotion={prefersReducedMotion}
+        selected={selected}
+      />
+    );
   } else {
-    content = <DefaultCard d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} selected={selected} />;
+    content = (
+      <DefaultCard
+        d={d}
+        dotColor={dotColor}
+        prefersReducedMotion={prefersReducedMotion}
+        selected={selected}
+      />
+    );
   }
 
   return (

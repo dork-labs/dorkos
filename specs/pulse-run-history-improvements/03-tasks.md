@@ -10,6 +10,7 @@
 ### Task 1.1: Fix RunRow navigation with `scheduleCwd` prop and directory-aware navigation
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 - `apps/client/src/layers/features/pulse/ui/ScheduleRow.tsx`
 
@@ -64,15 +65,16 @@ export function RunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
 
 ```tsx
 // Before
-onNavigate={setActiveSession}
+onNavigate = { setActiveSession };
 
 // After
-onNavigate={handleNavigateToRun}
+onNavigate = { handleNavigateToRun };
 ```
 
 Add `useCallback` to the import from `react`.
 
 **Acceptance criteria:**
+
 - Clicking a completed run row navigates to the correct session even when the schedule's `cwd` differs from the currently selected directory
 - When `scheduleCwd` matches `selectedCwd`, navigation sets session directly without touching directory
 - When `scheduleCwd` is null, navigation sets session directly
@@ -82,6 +84,7 @@ Add `useCallback` to the import from `react`.
 ### Task 1.2: Update existing tests and add navigation tests
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/__tests__/RunHistoryPanel.test.tsx`
 
 **Changes:**
@@ -116,9 +119,7 @@ it('navigates to schedule directory before setting session', async () => {
   const { useDirectoryState } = await import('@/layers/entities/session');
   vi.mocked(useDirectoryState).mockReturnValue(['/current-dir', mockSetDirectory]);
 
-  const runs = [
-    createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-abc' }),
-  ];
+  const runs = [createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-abc' })];
   const transport = createMockTransport({
     listRuns: vi.fn().mockResolvedValue(runs),
   });
@@ -152,9 +153,7 @@ it('does not change directory when schedule cwd matches current', async () => {
   const { useDirectoryState } = await import('@/layers/entities/session');
   vi.mocked(useDirectoryState).mockReturnValue(['/same-dir', mockSetDirectory]);
 
-  const runs = [
-    createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-abc' }),
-  ];
+  const runs = [createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-abc' })];
   const transport = createMockTransport({
     listRuns: vi.fn().mockResolvedValue(runs),
   });
@@ -179,6 +178,7 @@ it('does not change directory when schedule cwd matches current', async () => {
 ```
 
 **Acceptance criteria:**
+
 - All 5 existing tests pass with updated `scheduleCwd` prop
 - New navigation tests verify directory-first and direct-session paths
 - `mockSetDirectory` and `mockSetActiveSession` are cleared in `beforeEach`
@@ -190,6 +190,7 @@ it('does not change directory when schedule cwd matches current', async () => {
 ### Task 2.1: Add ARIA attributes and keyboard support to RunRow
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 
 **Changes:**
@@ -226,6 +227,7 @@ Update the RunRow `<div>` element (currently at line ~97) to include ARIA attrib
 ```
 
 Key changes from current code:
+
 - Add `role="button"` (conditional on `isClickable`)
 - Add `tabIndex={0}` (conditional on `isClickable`)
 - Add `aria-label` with descriptive text including status and relative time
@@ -234,6 +236,7 @@ Key changes from current code:
 - Remove the `// eslint-disable-next-line jsx-a11y/no-static-element-interactions` comment since the element now has proper `role`
 
 **Acceptance criteria:**
+
 - RunRow is focusable via Tab when it has a sessionId
 - Enter and Space keys trigger navigation
 - Focus ring is visible on keyboard focus but not on click
@@ -245,6 +248,7 @@ Key changes from current code:
 ### Task 2.2: Add cancel toast feedback with sonner
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 
 **Changes:**
@@ -272,6 +276,7 @@ onCancel={(id) =>
 ```
 
 **Acceptance criteria:**
+
 - Successful cancel shows "Run cancelled" toast
 - Failed cancel shows error message in toast
 - Toast matches existing sonner usage in ScheduleRow.tsx
@@ -283,6 +288,7 @@ onCancel={(id) =>
 ### Task 3.1: Add `status` filter to schema, server store, route, and transport
 
 **Files to modify:**
+
 - `packages/shared/src/schemas.ts`
 - `apps/server/src/services/pulse-store.ts`
 - `apps/server/src/routes/pulse.ts`
@@ -296,7 +302,7 @@ onCancel={(id) =>
 export const ListRunsQuerySchema = z
   .object({
     scheduleId: z.string().optional(),
-    status: PulseRunStatusSchema.optional(),  // NEW
+    status: PulseRunStatusSchema.optional(), // NEW
     limit: z.coerce.number().int().min(1).max(500).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
   })
@@ -308,7 +314,7 @@ export const ListRunsQuerySchema = z
 ```typescript
 interface ListRunsOptions {
   scheduleId?: string;
-  status?: string;   // NEW
+  status?: string; // NEW
   limit?: number;
   offset?: number;
 }
@@ -351,7 +357,7 @@ Note: The `listRunsBySchedule` prepared statement is no longer needed since `lis
 ```typescript
 const runs = store.listRuns({
   scheduleId: result.data.scheduleId,
-  status: result.data.status,   // NEW
+  status: result.data.status, // NEW
   limit: result.data.limit,
   offset: result.data.offset,
 });
@@ -370,6 +376,7 @@ listRuns(opts?: Partial<ListRunsQuery>): Promise<PulseRun[]> {
 ```
 
 **Acceptance criteria:**
+
 - `GET /api/pulse/runs?status=failed` returns only failed runs
 - `GET /api/pulse/runs?scheduleId=X&status=running` returns only running runs for schedule X
 - Zod validates status against `PulseRunStatusSchema` (rejects invalid values with 400)
@@ -380,6 +387,7 @@ listRuns(opts?: Partial<ListRunsQuery>): Promise<PulseRun[]> {
 ### Task 3.2: Add status filter Select UI and "Load more" pagination
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 
 **Changes:**
@@ -388,13 +396,7 @@ listRuns(opts?: Partial<ListRunsQuery>): Promise<PulseRun[]> {
 
 ```tsx
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/layers/shared/ui';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/layers/shared/ui';
 ```
 
 2. Add state variables inside `RunHistoryPanel`:
@@ -439,7 +441,7 @@ useEffect(() => {
 
 ```tsx
 <div className="mb-2 flex items-center justify-between">
-  <span className="text-xs font-medium text-muted-foreground">Run History</span>
+  <span className="text-muted-foreground text-xs font-medium">Run History</span>
   <Select value={statusFilter} onValueChange={setStatusFilter}>
     <SelectTrigger className="h-6 w-[120px] text-xs">
       <SelectValue />
@@ -458,32 +460,39 @@ useEffect(() => {
 6. Render `allRuns` instead of `runs` in the map, and add "Load more" button:
 
 ```tsx
-{allRuns.map((run) => (
-  <RunRow
-    key={run.id}
-    run={run}
-    onNavigate={handleNavigateToRun}
-    onCancel={(id) =>
-      cancelRun.mutate(id, {
-        onSuccess: () => toast('Run cancelled'),
-        onError: (err) =>
-          toast.error(`Failed to cancel: ${err instanceof Error ? err.message : 'Unknown error'}`),
-      })
-    }
-    isCancelling={cancelRun.isPending}
-  />
-))}
-{runs.length === LIMIT && (
-  <button
-    onClick={() => setOffset((prev) => prev + LIMIT)}
-    className="w-full py-2 text-center text-xs text-muted-foreground hover:text-foreground"
-  >
-    Load more...
-  </button>
-)}
+{
+  allRuns.map((run) => (
+    <RunRow
+      key={run.id}
+      run={run}
+      onNavigate={handleNavigateToRun}
+      onCancel={(id) =>
+        cancelRun.mutate(id, {
+          onSuccess: () => toast('Run cancelled'),
+          onError: (err) =>
+            toast.error(
+              `Failed to cancel: ${err instanceof Error ? err.message : 'Unknown error'}`
+            ),
+        })
+      }
+      isCancelling={cancelRun.isPending}
+    />
+  ));
+}
+{
+  runs.length === LIMIT && (
+    <button
+      onClick={() => setOffset((prev) => prev + LIMIT)}
+      className="text-muted-foreground hover:text-foreground w-full py-2 text-center text-xs"
+    >
+      Load more...
+    </button>
+  );
+}
 ```
 
 **Acceptance criteria:**
+
 - Status filter dropdown appears above run list
 - Selecting a status filters the displayed runs
 - "Load more" button appears when exactly `LIMIT` runs are returned
@@ -498,6 +507,7 @@ useEffect(() => {
 ### Task 4.1: Conditional polling in `useRuns()`
 
 **Files to modify:**
+
 - `apps/client/src/layers/entities/pulse/model/use-runs.ts`
 
 **Changes:**
@@ -521,6 +531,7 @@ export function useRuns(opts?: Partial<ListRunsQuery>, enabled = true) {
 This stops polling when no runs are in `running` state, saving network/battery. When a run completes, the next fetch will see no running status and polling stops.
 
 **Acceptance criteria:**
+
 - Polling runs every 10s when at least one run has `status: 'running'`
 - Polling stops (returns `false`) when no runs are running
 - Polling resumes if a new run starts (manual trigger or scheduled)
@@ -530,6 +541,7 @@ This stops polling when no runs are in `running` state, saving network/battery. 
 ### Task 4.2: Add `RunTimestamp` component and trigger type badges
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 
 **Changes:**
@@ -610,6 +622,7 @@ function RunTimestamp({ iso }: { iso: string }) {
 ```
 
 **Acceptance criteria:**
+
 - Runs < 7 days old show relative time with absolute time in tooltip
 - Runs >= 7 days old show absolute time with relative time in tooltip
 - Scheduled runs show a clock icon before the trigger label
@@ -621,6 +634,7 @@ function RunTimestamp({ iso }: { iso: string }) {
 ### Task 4.3: Add Skeleton loading state and truncated text tooltips
 
 **Files to modify:**
+
 - `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`
 - Run `npx shadcn@latest add skeleton` in `apps/client/` directory
 
@@ -678,21 +692,26 @@ if (isLoading) {
 
 ```tsx
 // Output summary (add title attribute)
-{run.outputSummary && (
-  <span className="truncate text-muted-foreground" title={run.outputSummary}>
-    {firstLine(run.outputSummary)}
-  </span>
-)}
+{
+  run.outputSummary && (
+    <span className="text-muted-foreground truncate" title={run.outputSummary}>
+      {firstLine(run.outputSummary)}
+    </span>
+  );
+}
 
 // Error message (add title attribute)
-{run.status === 'failed' && run.error && (
-  <span className="truncate text-destructive" title={run.error}>
-    {firstLine(run.error)}
-  </span>
-)}
+{
+  run.status === 'failed' && run.error && (
+    <span className="text-destructive truncate" title={run.error}>
+      {firstLine(run.error)}
+    </span>
+  );
+}
 ```
 
 **Acceptance criteria:**
+
 - Loading state shows 3 skeleton rows matching the grid layout
 - Skeleton rows use `data-slot="skeleton"` (shadcn default)
 - Hovering truncated output summary shows full text in native tooltip
@@ -711,19 +730,21 @@ Phase 4 (P4): Task 4.1, Task 4.2, Task 4.3 (all parallel, blocked by P1)
 ```
 
 Within-phase parallelism:
+
 - P2: Tasks 2.1 and 2.2 can run in parallel (different concerns, same file but non-overlapping sections)
 - P4: Tasks 4.1, 4.2, and 4.3 can all run in parallel (different files/concerns)
 
 Cross-phase parallelism:
+
 - P2, P3, and P4 can all run in parallel after P1 completes
 - P3 tasks are sequential (3.1 schema/server before 3.2 UI)
 
 ## Estimated Effort
 
-| Phase | Tasks | Estimated Time |
-|-------|-------|---------------|
-| P1: Bug Fixes | 1.1, 1.2 | 30 min |
-| P2: Accessibility & Feedback | 2.1, 2.2 | 20 min |
-| P3: Filtering & Pagination | 3.1, 3.2 | 45 min |
-| P4: Performance & Polish | 4.1, 4.2, 4.3 | 30 min |
-| **Total** | **9 tasks** | **~2 hours** |
+| Phase                        | Tasks         | Estimated Time |
+| ---------------------------- | ------------- | -------------- |
+| P1: Bug Fixes                | 1.1, 1.2      | 30 min         |
+| P2: Accessibility & Feedback | 2.1, 2.2      | 20 min         |
+| P3: Filtering & Pagination   | 3.1, 3.2      | 45 min         |
+| P4: Performance & Polish     | 4.1, 4.2, 4.3 | 30 min         |
+| **Total**                    | **9 tasks**   | **~2 hours**   |

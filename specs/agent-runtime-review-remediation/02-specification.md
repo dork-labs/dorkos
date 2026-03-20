@@ -15,6 +15,7 @@
 Address 12 issues identified in the code review of the agent-runtime-abstraction refactor (commit `bc0fe8b`). This is a cleanup/remediation spec — no user-visible behavior changes. All 1168 server tests currently pass.
 
 The issues fall into four groups:
+
 - **Group A (Route Migration):** Two routes bypass `RuntimeRegistry`, creating duplicate service instances and defeating the abstraction
 - **Group B (Import Cleanup):** Stale import paths, backward-compatibility shims, old naming conventions, and misplaced test files
 - **Group C (Interface Refinement):** Type safety gaps in the `AgentRuntime` interface — an overly broad `SseResponse`, a dead `watchSession()` stub, and `unknown` DI types
@@ -66,6 +67,7 @@ These changes form the foundation that other phases depend on.
 **File:** `packages/shared/src/agent-runtime.ts`
 
 **Current:**
+
 ```typescript
 export interface SseResponse {
   on(event: string, cb: () => void): void;
@@ -73,6 +75,7 @@ export interface SseResponse {
 ```
 
 **Change to:**
+
 ```typescript
 /** Minimal response interface for session locking — only needs close event detection. */
 export interface SseResponse {
@@ -83,11 +86,13 @@ export interface SseResponse {
 **File:** `apps/server/src/services/runtimes/claude-code/session-lock.ts`
 
 **Current (line 23):**
+
 ```typescript
 acquireLock(sessionId: string, clientId: string, res: Response): boolean {
 ```
 
 **Change to:**
+
 ```typescript
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
 
@@ -99,6 +104,7 @@ Remove the `import type { Response } from 'express'` import.
 **File:** `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts`
 
 **Remove the cast (line 590):**
+
 ```typescript
 // Before
 return this.lockManager.acquireLock(sessionId, clientId, res as Response);
@@ -141,6 +147,7 @@ export interface RelayPort {
 ```
 
 **Update the interface methods:**
+
 ```typescript
 // Before
 setMeshCore?(meshCore: unknown): void;
@@ -204,6 +211,7 @@ registerCallback(
 ```
 
 The implementation should:
+
 1. Store callbacks in a `Map<string, { callback, sessionId, projectDir }>` (parallel to the existing SSE client map)
 2. In `broadcastUpdate()`, iterate callbacks for the session and invoke them with the parsed events
 3. Start file watcher for the session if not already watching (same logic as `registerClient`)
@@ -235,11 +243,13 @@ This is the simpler migration. The route currently maintains a per-CWD `CommandR
 **However**, the route's per-CWD caching is not captured by the current interface — `getCommands()` has no `cwd` parameter. Two options:
 
 **Option A (minimal):** Add `cwd` parameter to `AgentRuntime.getCommands()`:
+
 ```typescript
 getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry>;
 ```
 
 And implement per-CWD dispatch in `ClaudeCodeRuntime`:
+
 ```typescript
 async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
   const root = cwd || this.cwd;
@@ -259,6 +269,7 @@ async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry
 **Decision: Option A.** The route legitimately needs per-CWD commands (different working directories have different `.claude/commands/`).
 
 **Updated route:**
+
 ```typescript
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 
@@ -321,6 +332,7 @@ Verify no other files import the singleton by grepping for `from.*transcript-rea
 With `watchSession()` now functional (Phase 1.3), routes can call the runtime interface instead of accessing `app.locals.sessionBroadcaster`.
 
 **Current (lines 274-279):**
+
 ```typescript
 const sessionBroadcaster = claudeRuntime.getSessionBroadcaster();
 if (relayCore) {
@@ -330,6 +342,7 @@ app.locals.sessionBroadcaster = sessionBroadcaster;
 ```
 
 **After:**
+
 ```typescript
 // Configure relay on the runtime's broadcaster (internal to the runtime)
 if (relayCore) {
@@ -350,6 +363,7 @@ sessionBroadcaster.registerClient(internalSessionId, cwd, res, clientId);
 ```
 
 This needs to become:
+
 ```typescript
 const runtime = runtimeRegistry.getDefault();
 // For SSE streaming, we still need the Express Response for HTTP SSE protocol
@@ -389,6 +403,7 @@ Remove `SessionBroadcaster` import from `sessions.ts`.
 **File:** `apps/obsidian-plugin/src/views/CopilotView.tsx`
 
 First, verify that `apps/server/package.json` already has the canonical export:
+
 ```json
 "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts"
 ```
@@ -396,6 +411,7 @@ First, verify that `apps/server/package.json` already has the canonical export:
 This exists. But we need to verify what's exported from the barrel. Check/update `apps/server/src/services/runtimes/claude-code/index.ts` to export `ClaudeCodeRuntime`, `TranscriptReader`, and `CommandRegistryService`.
 
 **Update imports:**
+
 ```typescript
 // Before
 import { ClaudeCodeRuntime } from '@dorkos/server/services/agent-manager';
@@ -413,6 +429,7 @@ import {
 **File:** `apps/server/package.json`
 
 Remove old export shims:
+
 ```json
 // REMOVE these three lines
 "./services/agent-manager": "./src/services/runtimes/claude-code/claude-code-runtime.ts",
@@ -421,6 +438,7 @@ Remove old export shims:
 ```
 
 Keep only:
+
 ```json
 "exports": {
   "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts"
@@ -434,6 +452,7 @@ Keep only:
 Remove all Claude Code-specific re-exports. The barrel should only export core infrastructure:
 
 **Remove:**
+
 - `ClaudeCodeRuntime as AgentManager` alias
 - `AgentSession`, `ToolState`, `createToolState` re-exports
 - `buildSystemPromptAppend` re-export
@@ -443,6 +462,7 @@ Remove all Claude Code-specific re-exports. The barrel should only export core i
 - Interactive handler re-exports
 
 **Keep:**
+
 - `RuntimeRegistry` / `runtimeRegistry` exports
 - `StreamAdapter` / SSE helper exports
 - `ConfigManager` exports
@@ -481,6 +501,7 @@ export type {
 ```
 
 **Also add a deprecated re-export for safety:**
+
 ```typescript
 /** @deprecated Use ClaudeCodeAgentRuntimeLike instead */
 export type { AgentRuntimeLike as ClaudeCodeAgentManagerLike } from './adapters/claude-code-adapter.js';
@@ -496,14 +517,15 @@ Update imports from `AgentManagerLike` / `ClaudeCodeAgentManagerLike` to `AgentR
 
 Move 4 test files from `apps/server/src/services/core/__tests__/` to `apps/server/src/services/runtimes/claude-code/__tests__/`:
 
-| Old Path | New Path |
-|----------|----------|
-| `core/__tests__/agent-manager.test.ts` | `runtimes/claude-code/__tests__/claude-code-runtime.test.ts` |
-| `core/__tests__/agent-manager-locking.test.ts` | `runtimes/claude-code/__tests__/claude-code-runtime-locking.test.ts` |
-| `core/__tests__/agent-manager-models.test.ts` | `runtimes/claude-code/__tests__/claude-code-runtime-models.test.ts` |
+| Old Path                                           | New Path                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `core/__tests__/agent-manager.test.ts`             | `runtimes/claude-code/__tests__/claude-code-runtime.test.ts`             |
+| `core/__tests__/agent-manager-locking.test.ts`     | `runtimes/claude-code/__tests__/claude-code-runtime-locking.test.ts`     |
+| `core/__tests__/agent-manager-models.test.ts`      | `runtimes/claude-code/__tests__/claude-code-runtime-models.test.ts`      |
 | `core/__tests__/agent-manager-interactive.test.ts` | `runtimes/claude-code/__tests__/claude-code-runtime-interactive.test.ts` |
 
 Inside each file:
+
 - Update `describe` block names from `AgentManager` to `ClaudeCodeRuntime`
 - Update import paths if they reference `../../core/` (adjust to relative paths from new location)
 - Verify mock paths are correct for the new location
@@ -594,11 +616,13 @@ pnpm vitest run apps/server/src/services/runtimes/claude-code/__tests__/
 #### `watchSession()` Integration
 
 Add tests to `claude-code-runtime.test.ts`:
+
 - `watchSession()` returns an unsubscribe function
 - Calling the unsubscribe function stops callback invocation
 - Callback receives `StreamEvent` objects when session changes
 
 Add tests to a new `session-broadcaster-callback.test.ts`:
+
 - `registerCallback()` stores the callback
 - `broadcastUpdate()` invokes registered callbacks
 - Unsubscribe removes the callback
@@ -607,6 +631,7 @@ Add tests to a new `session-broadcaster-callback.test.ts`:
 #### `SseResponse` Narrowing
 
 Add a type-level test (or compile-time assertion) that Express `Response` satisfies `SseResponse`:
+
 ```typescript
 import type { Response } from 'express';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
@@ -618,6 +643,7 @@ const _: SseResponse = {} as Response;
 #### Port Interface Structural Typing
 
 Similar type-level assertions that `MeshCore` satisfies `AgentRegistryPort` and `RelayCore` satisfies `RelayPort`:
+
 ```typescript
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
@@ -652,6 +678,7 @@ pnpm lint                             # Lint across all packages
 ## Documentation
 
 After implementation, update `CLAUDE.md`:
+
 - Remove references to `app.locals.sessionBroadcaster`
 - Update the `core/index.ts` barrel description
 - Update test file locations
@@ -661,6 +688,7 @@ After implementation, update `CLAUDE.md`:
 ## Implementation Phases
 
 ### Phase 1: Interface Refinement (Group C)
+
 1. Narrow `SseResponse` to `on(event: 'close', ...)`
 2. Update `SessionLockManager` to accept `SseResponse`
 3. Remove `as Response` cast in `ClaudeCodeRuntime`
@@ -670,6 +698,7 @@ After implementation, update `CLAUDE.md`:
 7. Implement `watchSession()` in `ClaudeCodeRuntime`
 
 ### Phase 2: Route Migration (Group A)
+
 1. Add `cwd` parameter to `AgentRuntime.getCommands()`
 2. Migrate `commands.ts` to use `runtimeRegistry.getDefault().getCommands()`
 3. Migrate `relay.ts` to use `runtimeRegistry.getDefault().getSession()`
@@ -678,6 +707,7 @@ After implementation, update `CLAUDE.md`:
 6. Remove `sessionBroadcaster` from `app.locals`
 
 ### Phase 3: Import Cleanup (Group B)
+
 1. Update Obsidian plugin imports to canonical paths
 2. Remove old `package.json` export shims
 3. Clean up `core/index.ts` barrel
@@ -685,11 +715,13 @@ After implementation, update `CLAUDE.md`:
 5. Rename and relocate 4 test files
 
 ### Phase 4: File Size Reduction (Group D)
+
 1. Extract `executeSdkQuery()` into `message-sender.ts`
 2. Update `sendMessage()` to delegate
 3. Verify file is under 500 lines
 
 ### Phase 5: Verification
+
 1. Run `pnpm test -- --run` (all 1168+ tests pass)
 2. Run `pnpm typecheck` (all packages clean)
 3. Run `pnpm lint` (no new errors)

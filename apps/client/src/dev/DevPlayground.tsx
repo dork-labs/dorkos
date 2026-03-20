@@ -18,7 +18,19 @@ import {
   Separator,
 } from '@/layers/shared/ui';
 import { TransportProvider, useTheme } from '@/layers/shared/model';
-import { LayoutDashboard, Palette, TextCursorInput, Component, MessageSquare, Blocks, Play, Sun, Monitor, Moon, Search } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Palette,
+  TextCursorInput,
+  Component,
+  MessageSquare,
+  Blocks,
+  Play,
+  Sun,
+  Monitor,
+  Moon,
+  Search,
+} from 'lucide-react';
 import { createPlaygroundTransport } from './playground-transport';
 import { ChatPage } from './pages/ChatPage';
 import { FeaturesPage } from './pages/FeaturesPage';
@@ -138,15 +150,12 @@ export default function DevPlayground() {
     history.pushState(null, '', id === 'overview' ? '/dev' : `/dev/${id}`);
   }, []);
 
-  const handleSelect = useCallback(
-    (section: PlaygroundSection) => {
-      const url = section.page === 'overview' ? '/dev' : `/dev/${section.page}`;
-      setPage(section.page);
-      history.pushState(null, '', `${url}#${section.id}`);
-      scrollToSection(section.id);
-    },
-    []
-  );
+  const handleSelect = useCallback((section: PlaygroundSection) => {
+    const url = section.page === 'overview' ? '/dev' : `/dev/${section.page}`;
+    setPage(section.page);
+    history.pushState(null, '', `${url}#${section.id}`);
+    scrollToSection(section.id);
+  }, []);
 
   // Sync page state when the user navigates with browser back/forward.
   useEffect(() => {

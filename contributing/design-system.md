@@ -41,33 +41,34 @@ Tokens are defined as HSL custom properties in `:root`/`.dark` in `apps/client/s
 
 ### Light Mode
 
-| Tailwind class       | HSL value      | Usage                          |
-| -------------------- | -------------- | ------------------------------ |
-| `bg-background`      | `0 0% 98%`     | Page background                |
-| `bg-muted`           | `0 0% 96%`     | Subtle backgrounds             |
-| `bg-secondary`       | `0 0% 92%`     | User message tint              |
-| `bg-card`            | `0 0% 100%`    | Elevated cards, popovers       |
-| `text-foreground`    | `0 0% 9%`      | Body text                      |
-| `text-muted-foreground` | `0 0% 32%`  | Labels, metadata               |
-| `border-border`      | `0 0% 83%`     | Card borders, inputs           |
+| Tailwind class          | HSL value   | Usage                    |
+| ----------------------- | ----------- | ------------------------ |
+| `bg-background`         | `0 0% 98%`  | Page background          |
+| `bg-muted`              | `0 0% 96%`  | Subtle backgrounds       |
+| `bg-secondary`          | `0 0% 92%`  | User message tint        |
+| `bg-card`               | `0 0% 100%` | Elevated cards, popovers |
+| `text-foreground`       | `0 0% 9%`   | Body text                |
+| `text-muted-foreground` | `0 0% 32%`  | Labels, metadata         |
+| `border-border`         | `0 0% 83%`  | Card borders, inputs     |
 
 ### Dark Mode
 
-| Tailwind class       | HSL value      | Usage                          |
-| -------------------- | -------------- | ------------------------------ |
-| `bg-background`      | `0 0% 4%`      | Page background                |
-| `bg-muted`           | `0 0% 9%`      | Subtle backgrounds             |
-| `bg-secondary`       | `0 0% 14%`     | User message tint              |
-| `bg-card`            | `0 0% 4%`      | Elevated cards, popovers       |
-| `text-foreground`    | `0 0% 93%`     | Body text                      |
-| `text-muted-foreground` | `0 0% 64%`  | Labels, metadata               |
-| `border-border`      | `0 0% 25%`     | Card borders, inputs           |
+| Tailwind class          | HSL value  | Usage                    |
+| ----------------------- | ---------- | ------------------------ |
+| `bg-background`         | `0 0% 4%`  | Page background          |
+| `bg-muted`              | `0 0% 9%`  | Subtle backgrounds       |
+| `bg-secondary`          | `0 0% 14%` | User message tint        |
+| `bg-card`               | `0 0% 4%`  | Elevated cards, popovers |
+| `text-foreground`       | `0 0% 93%` | Body text                |
+| `text-muted-foreground` | `0 0% 64%` | Labels, metadata         |
+| `border-border`         | `0 0% 25%` | Card borders, inputs     |
 
 ### Brand Accent
 
 One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88% 55%` dark). Derived from the DorkOS brand palette (`#E85D04`), slightly adjusted for AA contrast.
 
 **Where brand orange appears:**
+
 - Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
 - `HoverBorderGradient` — the onboarding CTA, the first branded moment users see
 - `brand` button variant — opt-in for exceptional CTAs (`<Button variant="brand">`)
@@ -75,6 +76,7 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 - Assistant message links and inline code — via `--ring`
 
 **Where gray stays:**
+
 - `--primary` — default buttons, switches, badges, selections (the quiet workhorse)
 - `--accent` — hover backgrounds in menus, dropdowns
 - `--secondary` — user message tint
@@ -103,12 +105,12 @@ Users can override font family via Settings → Appearance. The app store (`setF
 
 Base values at desktop (no mobile scaling applied). Actual rendered sizes multiply by `--_st` on mobile (default 1.25x). Users can apply a further `--user-font-scale` via Settings → Appearance.
 
-| Token       | Base size | Usage                     |
-| ----------- | --------- | ------------------------- |
-| `text-xs`   | 12px      | Timestamps, tool status   |
+| Token       | Base size | Usage                                     |
+| ----------- | --------- | ----------------------------------------- |
+| `text-xs`   | 12px      | Timestamps, tool status                   |
 | `text-sm`   | 14px      | Message body text, code, metadata, labels |
 | `text-base` | 16px      | (unused in chat UI)                       |
-| `text-lg`   | 18px      | In-message headings (h3+) |
+| `text-lg`   | 18px      | In-message headings (h3+)                 |
 
 ### Weights
 
@@ -272,16 +274,16 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 
 The sidebar uses a custom tab bar (`SidebarTabRow`, not Radix Tabs) for switching between Sessions, Schedules, and Connections views. Keyboard shortcuts `Cmd+1`/`Cmd+2`/`Cmd+3` switch tabs directly.
 
-| Element | Specification |
-|---|---|
-| Tab bar height | Auto (`py-1.5`) |
-| Tab button padding | `p-2` |
-| Tab icon size | `--size-icon-sm` |
-| Sliding indicator | `h-0.5 rounded-full bg-brand` |
-| Indicator animation | Spring: stiffness 280, damping 32 |
-| Schedules badge | `text-[10px] size-4 bg-green-500` (numeric count) |
-| Connections dot | `size-1.5 rounded-full` (status indicator) |
-| Status colors | green = ok, amber = partial, red = error |
+| Element             | Specification                                     |
+| ------------------- | ------------------------------------------------- |
+| Tab bar height      | Auto (`py-1.5`)                                   |
+| Tab button padding  | `p-2`                                             |
+| Tab icon size       | `--size-icon-sm`                                  |
+| Sliding indicator   | `h-0.5 rounded-full bg-brand`                     |
+| Indicator animation | Spring: stiffness 280, damping 32                 |
+| Schedules badge     | `text-[10px] size-4 bg-green-500` (numeric count) |
+| Connections dot     | `size-1.5 rounded-full` (status indicator)        |
+| Status colors       | green = ok, amber = partial, red = error          |
 
 All three views are mounted simultaneously and use CSS `hidden` toggling to preserve state (scroll position, expanded items) across tab switches. See ADR-0107 for the decision rationale.
 
@@ -290,6 +292,7 @@ ARIA semantics follow the WAI tablist pattern: `role="tablist"` on the container
 ### Tooltip
 
 Standard shadcn Radix tooltip from `shared/ui/tooltip.tsx`. Used for:
+
 - Disabled state indicators (e.g., "Pulse is disabled" on HeartPulse icon)
 - Contextual information on icon-only buttons
 
@@ -300,10 +303,12 @@ Standard shadcn Radix tooltip from `shared/ui/tooltip.tsx`. Used for:
 Theme-aware toast via `sonner` from `shared/ui/sonner.tsx`. `<Toaster />` mounted in `App.tsx`.
 
 **When to toast:**
+
 - Background actions with no immediate visible UI change ("Run triggered", "Schedule approved")
 - Error notifications for failed mutations
 
 **When NOT to toast:**
+
 - Toggle on/off (switch state is self-evidencing)
 - Form submission success (dialog closes)
 - Cancel run (status updates inline)
@@ -348,7 +353,7 @@ import { SettingRow, Switch } from '@/layers/shared/ui';
 
 <SettingRow label="Notifications" description="Enable push alerts">
   <Switch checked={enabled} onCheckedChange={setEnabled} />
-</SettingRow>
+</SettingRow>;
 ```
 
 For compound controls (e.g., Badge + Switch), wrap them in a flex container:
@@ -419,10 +424,10 @@ Used across settings panels, agent config tabs, adapter wizard, and binding dial
 
 ### Field Orientation Conventions
 
-| Context | Orientation | Component |
-|---|---|---|
-| Settings rows | `horizontal` | `<SettingRow>` |
-| Wizard/form fields | `vertical` | `<Field orientation="vertical">` |
+| Context            | Orientation  | Component                          |
+| ------------------ | ------------ | ---------------------------------- |
+| Settings rows      | `horizontal` | `<SettingRow>`                     |
+| Wizard/form fields | `vertical`   | `<Field orientation="vertical">`   |
 | Responsive layouts | `responsive` | `<Field orientation="responsive">` |
 
 For rows that have a label but no description (e.g., simple toggles), use `<Field orientation="horizontal">` + `<FieldLabel>` directly instead of `SettingRow`.
@@ -470,11 +475,11 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 
 Status indicators that depend on both per-entity configuration and global feature flags use a 3-state model driven by `useAgentToolStatus()`:
 
-| State | Visual | Meaning |
-|-------|--------|---------|
-| `enabled` | Full color, normal opacity | Feature is active for this agent |
-| `disabled-by-agent` | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
-| `disabled-by-server` | Hidden (not rendered) | Feature is disabled server-wide |
+| State                | Visual                                 | Meaning                                 |
+| -------------------- | -------------------------------------- | --------------------------------------- |
+| `enabled`            | Full color, normal opacity             | Feature is active for this agent        |
+| `disabled-by-agent`  | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
+| `disabled-by-server` | Hidden (not rendered)                  | Feature is disabled server-wide         |
 
 In the sidebar, this pattern surfaces as badge indicators on the tab bar (schedule count badge, connections status dot). The `SidebarTabRow` shows badges only when the corresponding feature is enabled.
 
@@ -482,11 +487,11 @@ In the sidebar, this pattern surfaces as badge indicators on the tab bar (schedu
 
 The CapabilitiesTab uses a 3-state display for per-agent tool group toggles:
 
-| State | Visual | Meaning |
-|-------|--------|---------|
-| Inherited (enabled) | Switch ON, "Inherited" badge | Agent inherits the global default (enabled) |
-| Overridden (disabled) | Switch OFF, "Overridden" badge | Agent explicitly disables this tool group |
-| Inherited (disabled) | Switch OFF, disabled, "Server disabled" badge | Server feature flag is off; toggle is non-interactive |
+| State                 | Visual                                        | Meaning                                               |
+| --------------------- | --------------------------------------------- | ----------------------------------------------------- |
+| Inherited (enabled)   | Switch ON, "Inherited" badge                  | Agent inherits the global default (enabled)           |
+| Overridden (disabled) | Switch OFF, "Overridden" badge                | Agent explicitly disables this tool group             |
+| Inherited (disabled)  | Switch OFF, disabled, "Server disabled" badge | Server feature flag is off; toggle is non-interactive |
 
 The toggle writes to the agent manifest's `enabledToolGroups` field. When a toggle is flipped, it sets an explicit value; when reset, the field is removed (returning to inherited behavior).
 
@@ -664,12 +669,12 @@ Use instead of plain `Dialog` when the dialog content needs full-screen treatmen
 
 ## File Reference
 
-| Concern                  | File                                        |
-| ------------------------ | ------------------------------------------- |
-| CSS variables & Tailwind | `apps/client/src/index.css`                 |
-| shadcn config            | `apps/client/components.json`               |
-| Component library        | `apps/client/src/layers/shared/ui/`                          |
-| Chat components          | `apps/client/src/layers/features/chat/`                      |
-| Session components       | `apps/client/src/layers/features/session-list/`              |
-| App state                | `apps/client/src/layers/shared/model/app-store.ts`           |
+| Concern                  | File                                                             |
+| ------------------------ | ---------------------------------------------------------------- |
+| CSS variables & Tailwind | `apps/client/src/index.css`                                      |
+| shadcn config            | `apps/client/components.json`                                    |
+| Component library        | `apps/client/src/layers/shared/ui/`                              |
+| Chat components          | `apps/client/src/layers/features/chat/`                          |
+| Session components       | `apps/client/src/layers/features/session-list/`                  |
+| App state                | `apps/client/src/layers/shared/model/app-store.ts`               |
 | Chat state               | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |

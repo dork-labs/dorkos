@@ -95,7 +95,6 @@ N/A — This is a feature, not a bug fix.
 ## 5) Research
 
 - **Potential solutions:**
-
   1. **Follow Relay Integration Pattern 1:1** — Use the exact same patterns: route factory, feature flag module, MCP tool guards, FSD entity/feature layers, TanStack Query hooks, Transport interface extension.
      - Pros: Proven patterns, consistent codebase, fast to implement, ADR-17 mandates this
      - Cons: None significant — this is the established path
@@ -133,8 +132,8 @@ N/A — This is a feature, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Discovery API style | Synchronous collection (POST returns JSON array) | Simpler client integration, matches Relay patterns. MeshCore.discover() AsyncGenerator is collected server-side. Scans typically complete in <2 seconds for local directories. |
-| 2 | Panel access pattern | Sidebar tab alongside Relay and Pulse | Follows established pattern — RelayPanel and PulsePanel are both sidebar panel tabs. Consistent UX for all subsystem panels. |
-| 3 | Graceful shutdown | Add close() to MeshCore and include in shutdown sequence | MeshCore.close() will close the SQLite database (AgentRegistry + DenialList). Added to graceful shutdown in index.ts after RelayCore.close(). Follows PulseStore/RelayCore pattern. |
+| #   | Decision             | Choice                                                   | Rationale                                                                                                                                                                           |
+| --- | -------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Discovery API style  | Synchronous collection (POST returns JSON array)         | Simpler client integration, matches Relay patterns. MeshCore.discover() AsyncGenerator is collected server-side. Scans typically complete in <2 seconds for local directories.      |
+| 2   | Panel access pattern | Sidebar tab alongside Relay and Pulse                    | Follows established pattern — RelayPanel and PulsePanel are both sidebar panel tabs. Consistent UX for all subsystem panels.                                                        |
+| 3   | Graceful shutdown    | Add close() to MeshCore and include in shutdown sequence | MeshCore.close() will close the SQLite database (AgentRegistry + DenialList). Added to graceful shutdown in index.ts after RelayCore.close(). Follows PulseStore/RelayCore pattern. |

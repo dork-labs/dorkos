@@ -51,13 +51,13 @@ The `RelayAdapter` plugin interface was designed in the relay-litepaper and rela
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `grammy` | `^1.x` | Telegram Bot API framework (TypeScript-first, 1.2M weekly downloads) |
-| `@grammyjs/auto-retry` | `^2.x` | Automatic retry for 429 flood limits, 500 errors, network failures |
-| `chokidar` | `^4.0.0` | Already in relay package — reuse for adapter config hot-reload |
-| `@dorkos/relay` | workspace | RelayCore, types, existing infrastructure |
-| `@dorkos/shared` | workspace | Zod schemas, types |
+| Dependency             | Version   | Purpose                                                              |
+| ---------------------- | --------- | -------------------------------------------------------------------- |
+| `grammy`               | `^1.x`    | Telegram Bot API framework (TypeScript-first, 1.2M weekly downloads) |
+| `@grammyjs/auto-retry` | `^2.x`    | Automatic retry for 429 flood limits, 500 errors, network failures   |
+| `chokidar`             | `^4.0.0`  | Already in relay package — reuse for adapter config hot-reload       |
+| `@dorkos/relay`        | workspace | RelayCore, types, existing infrastructure                            |
+| `@dorkos/shared`       | workspace | Zod schemas, types                                                   |
 
 Both `grammy` and `@grammyjs/auto-retry` are added to `packages/relay/package.json` as dependencies (not peer deps) since the adapter implementations live in this package.
 
@@ -188,12 +188,14 @@ export class AdapterRegistry {
 ```
 
 **Hot-reload sequence** (no message gap):
+
 1. Create new adapter instance with updated config
 2. `await newAdapter.start(relay)` — if this throws, abort reload, old instance stays active
 3. `registry.set(id, newAdapter)` — register new (now live)
 4. `await oldAdapter.stop()` — stop old (drain in-flight)
 
 **Error isolation**: All multi-adapter operations use `Promise.allSettled()`:
+
 ```typescript
 async shutdown(): Promise<void> {
   const results = await Promise.allSettled(
@@ -208,6 +210,7 @@ async shutdown(): Promise<void> {
 Modify `packages/relay/src/relay-core.ts` to integrate the adapter registry:
 
 **Constructor change**: Accept optional `adapterRegistry` in `RelayOptions`:
+
 ```typescript
 export interface RelayOptions {
   dataDir?: string;
@@ -215,11 +218,12 @@ export interface RelayOptions {
   defaultTtlMs?: number;
   defaultCallBudget?: number;
   reliability?: ReliabilityConfig;
-  adapterRegistry?: AdapterRegistry;  // NEW
+  adapterRegistry?: AdapterRegistry; // NEW
 }
 ```
 
 **Publish pipeline modification** (after endpoint delivery, before returning result):
+
 ```typescript
 // After delivering to Maildir endpoints, also deliver to matching adapters
 if (this.adapterRegistry) {
@@ -239,16 +243,19 @@ New file: `packages/relay/src/adapters/telegram-adapter.ts`
 **Dependencies**: `grammy`, `@grammyjs/auto-retry`
 
 **Subject mapping**:
+
 - DM: `relay.human.telegram.{chatId}` (positive chat IDs)
 - Group: `relay.human.telegram.group.{chatId}` (negative chat IDs)
 
 **Inbound flow** (Telegram → Relay):
+
 1. grammY `bot.on('message')` handler receives Telegram update
 2. Extract chat ID, sender info, message text/attachments
 3. Build `StandardPayload` with `responseContext: { platform: 'telegram', maxLength: 4096, supportedFormats: ['text', 'markdown'] }`
 4. Call `relay.publish(subject, payload, { from: 'relay.human.telegram.{chatId}' })`
 
 **Outbound flow** (Relay → Telegram):
+
 1. `deliver(subject, envelope)` called by AdapterRegistry
 2. Extract chat ID from subject: `relay.human.telegram.{chatId}` → chatId
 3. Extract text from `envelope.payload` (as `StandardPayload`)
@@ -256,10 +263,12 @@ New file: `packages/relay/src/adapters/telegram-adapter.ts`
 5. Enforce per-chat rate limit: 1 msg/s with `lastSentAt` Map
 
 **Typing signals**:
+
 - Inbound: When Relay signal `typing` is published to a telegram subject, call `bot.api.sendChatAction(chatId, 'typing')`
 - Outbound: Not implemented in Phase 1 (Telegram doesn't expose typing events for bots)
 
 **Lifecycle**:
+
 ```typescript
 async start(relay: RelayCore): Promise<void> {
   this.relay = relay;
@@ -292,6 +301,7 @@ async stop(): Promise<void> {
 New file: `packages/relay/src/adapters/webhook-adapter.ts`
 
 **Inbound flow** (HTTP POST → Relay):
+
 1. Express route at `/api/relay/webhooks/{adapterId}` receives POST
 2. Raw body captured via Express `verify` callback
 3. Verify HMAC-SHA256: `HMAC-SHA256(secret, "${timestamp}.${rawBody}")`
@@ -301,19 +311,21 @@ New file: `packages/relay/src/adapters/webhook-adapter.ts`
 7. Publish to configured subject
 
 **Outbound flow** (Relay → HTTP POST):
+
 1. `deliver(subject, envelope)` called by AdapterRegistry
 2. Build request body from envelope payload
 3. Generate timestamp + HMAC-SHA256 signature
 4. POST to configured URL with headers: `X-Signature`, `X-Timestamp`, `X-Nonce`
 
 **Security implementation**:
+
 ```typescript
 function verifySignature(
   rawBody: Buffer,
   timestamp: string,
   signature: string,
   secret: string,
-  previousSecret?: string,
+  previousSecret?: string
 ): boolean {
   const message = `${timestamp}.${rawBody.toString()}`;
   const expected = crypto.createHmac('sha256', secret).update(message).digest();
@@ -326,7 +338,9 @@ function verifySignature(
   // Try previous secret for rotation
   if (previousSecret) {
     const expectedPrev = crypto.createHmac('sha256', previousSecret).update(message).digest();
-    return received.length === expectedPrev.length && crypto.timingSafeEqual(received, expectedPrev);
+    return (
+      received.length === expectedPrev.length && crypto.timingSafeEqual(received, expectedPrev)
+    );
   }
 
   return false;
@@ -334,6 +348,7 @@ function verifySignature(
 ```
 
 **Nonce tracking**:
+
 ```typescript
 private nonceMap = new Map<string, number>(); // nonce → expiresAt
 private nonceInterval: NodeJS.Timeout;
@@ -352,6 +367,7 @@ this.nonceInterval = setInterval(() => {
 New file: `apps/server/src/services/relay/adapter-manager.ts`
 
 **Responsibilities**:
+
 - Load adapter config from `~/.dork/relay/adapters.json`
 - Instantiate and start adapters based on config
 - Watch config file for changes (chokidar), hot-reload adapters
@@ -390,6 +406,7 @@ export class AdapterManager {
 ```
 
 **Config file format** (`~/.dork/relay/adapters.json`):
+
 ```json
 {
   "adapters": [
@@ -422,6 +439,7 @@ export class AdapterManager {
 ```
 
 **Hot-reload via chokidar**:
+
 ```typescript
 this.configWatcher = chokidar.watch(this.configPath, {
   persistent: true,
@@ -454,21 +472,21 @@ router.post('/webhooks/:adapterId', express.raw({ type: '*/*' }), (req, res) => 
 
 Add to `apps/server/src/routes/relay.ts` (extended, not a separate file):
 
-| Method | Path | Handler |
-|--------|------|---------|
-| GET | `/adapters` | List all adapters with status |
-| GET | `/adapters/:id` | Get single adapter status |
-| POST | `/adapters/:id/enable` | Enable adapter |
-| POST | `/adapters/:id/disable` | Disable adapter |
-| POST | `/adapters/reload` | Trigger config hot-reload |
-| POST | `/webhooks/:adapterId` | Inbound webhook receiver |
+| Method | Path                    | Handler                       |
+| ------ | ----------------------- | ----------------------------- |
+| GET    | `/adapters`             | List all adapters with status |
+| GET    | `/adapters/:id`         | Get single adapter status     |
+| POST   | `/adapters/:id/enable`  | Enable adapter                |
+| POST   | `/adapters/:id/disable` | Disable adapter               |
+| POST   | `/adapters/reload`      | Trigger config hot-reload     |
+| POST   | `/webhooks/:adapterId`  | Inbound webhook receiver      |
 
 All adapter routes are nested under the existing `/api/relay/` prefix. The router factory signature changes:
 
 ```typescript
 export function createRelayRouter(
   relayCore: RelayCore,
-  adapterManager?: AdapterManager,  // NEW — optional for backward compat
+  adapterManager?: AdapterManager // NEW — optional for backward compat
 ): Router;
 ```
 
@@ -476,21 +494,22 @@ export function createRelayRouter(
 
 Add to `apps/server/src/services/mcp-tool-server.ts`:
 
-| Tool | Description |
-|------|-------------|
-| `relay_list_adapters` | List all adapters with status |
-| `relay_enable_adapter(id)` | Enable an adapter |
-| `relay_disable_adapter(id)` | Disable an adapter |
-| `relay_reload_adapters` | Trigger config hot-reload |
+| Tool                        | Description                   |
+| --------------------------- | ----------------------------- |
+| `relay_list_adapters`       | List all adapters with status |
+| `relay_enable_adapter(id)`  | Enable an adapter             |
+| `relay_disable_adapter(id)` | Disable an adapter            |
+| `relay_reload_adapters`     | Trigger config hot-reload     |
 
 **McpToolDeps extension**:
+
 ```typescript
 export interface McpToolDeps {
   transcriptReader: TranscriptReader;
   defaultCwd: string;
   pulseStore?: PulseStore;
   relayCore?: RelayCore;
-  adapterManager?: AdapterManager;  // NEW
+  adapterManager?: AdapterManager; // NEW
 }
 ```
 
@@ -501,65 +520,84 @@ Add to `packages/shared/src/relay-schemas.ts`:
 ```typescript
 export const AdapterTypeSchema = z.enum(['telegram', 'webhook']);
 
-export const TelegramAdapterConfigSchema = z.object({
-  token: z.string().min(1),
-  mode: z.enum(['polling', 'webhook']).default('polling'),
-  webhookUrl: z.string().url().optional(),
-  webhookPort: z.number().int().positive().optional(),
-}).openapi('TelegramAdapterConfig');
+export const TelegramAdapterConfigSchema = z
+  .object({
+    token: z.string().min(1),
+    mode: z.enum(['polling', 'webhook']).default('polling'),
+    webhookUrl: z.string().url().optional(),
+    webhookPort: z.number().int().positive().optional(),
+  })
+  .openapi('TelegramAdapterConfig');
 
-export const WebhookInboundConfigSchema = z.object({
-  subject: z.string().min(1),
-  secret: z.string().min(16),
-  previousSecret: z.string().optional(),
-}).openapi('WebhookInboundConfig');
+export const WebhookInboundConfigSchema = z
+  .object({
+    subject: z.string().min(1),
+    secret: z.string().min(16),
+    previousSecret: z.string().optional(),
+  })
+  .openapi('WebhookInboundConfig');
 
-export const WebhookOutboundConfigSchema = z.object({
-  url: z.string().url(),
-  secret: z.string().min(16),
-  headers: z.record(z.string()).optional(),
-}).openapi('WebhookOutboundConfig');
+export const WebhookOutboundConfigSchema = z
+  .object({
+    url: z.string().url(),
+    secret: z.string().min(16),
+    headers: z.record(z.string()).optional(),
+  })
+  .openapi('WebhookOutboundConfig');
 
-export const WebhookAdapterConfigSchema = z.object({
-  inbound: WebhookInboundConfigSchema,
-  outbound: WebhookOutboundConfigSchema,
-}).openapi('WebhookAdapterConfig');
+export const WebhookAdapterConfigSchema = z
+  .object({
+    inbound: WebhookInboundConfigSchema,
+    outbound: WebhookOutboundConfigSchema,
+  })
+  .openapi('WebhookAdapterConfig');
 
-export const AdapterConfigSchema = z.object({
-  id: z.string().min(1).regex(/^[a-z0-9-]+$/),
-  type: AdapterTypeSchema,
-  enabled: z.boolean().default(true),
-  config: z.union([TelegramAdapterConfigSchema, WebhookAdapterConfigSchema]),
-}).openapi('AdapterConfig');
+export const AdapterConfigSchema = z
+  .object({
+    id: z
+      .string()
+      .min(1)
+      .regex(/^[a-z0-9-]+$/),
+    type: AdapterTypeSchema,
+    enabled: z.boolean().default(true),
+    config: z.union([TelegramAdapterConfigSchema, WebhookAdapterConfigSchema]),
+  })
+  .openapi('AdapterConfig');
 
-export const AdapterStatusSchema = z.object({
-  id: z.string(),
-  type: AdapterTypeSchema,
-  displayName: z.string(),
-  state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping']),
-  messageCount: z.object({
-    inbound: z.number().int().nonnegative(),
-    outbound: z.number().int().nonnegative(),
-  }),
-  errorCount: z.number().int().nonnegative(),
-  lastError: z.string().optional(),
-  lastErrorAt: z.string().datetime().optional(),
-  startedAt: z.string().datetime().optional(),
-}).openapi('AdapterStatus');
+export const AdapterStatusSchema = z
+  .object({
+    id: z.string(),
+    type: AdapterTypeSchema,
+    displayName: z.string(),
+    state: z.enum(['connected', 'disconnected', 'error', 'starting', 'stopping']),
+    messageCount: z.object({
+      inbound: z.number().int().nonnegative(),
+      outbound: z.number().int().nonnegative(),
+    }),
+    errorCount: z.number().int().nonnegative(),
+    lastError: z.string().optional(),
+    lastErrorAt: z.string().datetime().optional(),
+    startedAt: z.string().datetime().optional(),
+  })
+  .openapi('AdapterStatus');
 
-export const AdaptersConfigFileSchema = z.object({
-  adapters: z.array(AdapterConfigSchema),
-}).openapi('AdaptersConfigFile');
+export const AdaptersConfigFileSchema = z
+  .object({
+    adapters: z.array(AdapterConfigSchema),
+  })
+  .openapi('AdaptersConfigFile');
 ```
 
 ### 11. Client UI Updates
 
 **RelayPanel.tsx** — Add Adapters tab:
+
 ```
 Tabs: Activity | Endpoints | Adapters
 ```
 
 The Adapters tab shows a list of adapter cards, each displaying:
+
 - Adapter name and type icon (Telegram logo / webhook icon)
 - Status badge: green dot = connected, gray = disconnected, red = error
 - Message counts (inbound/outbound)
@@ -589,6 +627,7 @@ export function useToggleAdapter() {
 ```
 
 **ActivityFeed.tsx** — Enhance with adapter event awareness:
+
 - Show adapter source in message rows (Telegram icon, webhook icon)
 - Direction indicator (inbound arrow, outbound arrow)
 - Filter dropdown: All / Telegram / Webhook / System
@@ -649,6 +688,7 @@ apps/server/src/services/
 **Import path update strategy**: All imports within `apps/server/` that reference `../services/foo.ts` must be updated to `../services/{domain}/foo.ts`. This is a mechanical find-and-replace per file. Route files, `index.ts`, and `lib/` are the primary consumers.
 
 Each domain folder gets a barrel `index.ts` for cleaner imports:
+
 ```typescript
 // services/session/index.ts
 export { SessionBroadcaster } from './session-broadcaster';
@@ -659,6 +699,7 @@ export { SessionLock } from './session-lock';
 ## User Experience
 
 ### Adapter Setup Flow
+
 1. User creates a Telegram bot via @BotFather, receives a token
 2. User creates/edits `~/.dork/relay/adapters.json` with Telegram config
 3. Server detects config change, starts Telegram adapter
@@ -667,12 +708,14 @@ export { SessionLock } from './session-lock';
 6. Agents can send messages back to Telegram via `relay.publish('relay.human.telegram.{chatId}', ...)`
 
 ### Webhook Setup Flow
+
 1. User configures a webhook adapter in `adapters.json` with secret and subject
 2. External service sends POST to `http://localhost:4242/api/relay/webhooks/{adapterId}`
 3. Server verifies HMAC signature, publishes to configured Relay subject
 4. Agent receives message via subscription, can respond via outbound webhook
 
 ### Adapter Management
+
 - View adapter status in Relay panel Adapters tab
 - Enable/disable adapters via toggle (persists to config file)
 - Agents can manage adapters via MCP tools (list, enable, disable, reload)
@@ -682,6 +725,7 @@ export { SessionLock } from './session-lock';
 ### Unit Tests
 
 **AdapterRegistry** (`packages/relay/src/__tests__/adapter-registry.test.ts`):
+
 - Register adapter → appears in list
 - Unregister adapter → removed, stop() called
 - deliver() routes to correct adapter by subject prefix
@@ -692,6 +736,7 @@ export { SessionLock } from './session-lock';
 - Error isolation: one adapter stop() rejection doesn't prevent others
 
 **TelegramAdapter** (`packages/relay/src/adapters/__tests__/telegram-adapter.test.ts`):
+
 - Mock `grammy` Bot class: `vi.mock('grammy')`
 - start() creates bot, registers handlers, begins polling
 - stop() calls bot.stop() (async)
@@ -702,6 +747,7 @@ export { SessionLock } from './session-lock';
 - Group messages map to relay.human.telegram.group.{chatId}
 
 **WebhookAdapter** (`packages/relay/src/adapters/__tests__/webhook-adapter.test.ts`):
+
 - Valid HMAC + timestamp → message published to Relay
 - Invalid HMAC → rejected with 401
 - Expired timestamp (> 300s) → rejected
@@ -711,6 +757,7 @@ export { SessionLock } from './session-lock';
 - Nonce map prunes expired entries
 
 **AdapterManager** (`apps/server/src/services/relay/__tests__/adapter-manager.test.ts`):
+
 - initialize() reads config, starts enabled adapters
 - reload() detects config changes, reconciles adapter state
 - enable()/disable() update config and adapter lifecycle
@@ -721,11 +768,13 @@ export { SessionLock } from './session-lock';
 ### Integration Tests
 
 **Webhook receiver** (supertest):
+
 - POST to `/api/relay/webhooks/{id}` with valid signature → 200
 - POST with invalid signature → 401
 - POST to nonexistent adapter → 404
 
 **Adapter routes** (supertest):
+
 - GET `/api/relay/adapters` → list of adapter statuses
 - POST `/api/relay/adapters/:id/enable` → adapter started
 - POST `/api/relay/adapters/:id/disable` → adapter stopped
@@ -752,7 +801,11 @@ export function createMockAdapter(overrides?: Partial<RelayAdapter>): RelayAdapt
 }
 
 // test-utils: signPayload() for webhook tests
-export function signPayload(body: string, secret: string, timestamp?: number): {
+export function signPayload(
+  body: string,
+  secret: string,
+  timestamp?: number
+): {
   signature: string;
   timestamp: string;
   nonce: string;
@@ -790,6 +843,7 @@ export function signPayload(body: string, secret: string, timestamp?: number): {
 ## Implementation Phases
 
 ### Phase 1: Core Infrastructure
+
 1. Add `RelayAdapter` interface and `AdapterConfig` types to `packages/relay/src/types.ts`
 2. Create `AdapterRegistry` class in `packages/relay/src/adapter-registry.ts`
 3. Integrate `AdapterRegistry` into `RelayCore` publish pipeline
@@ -798,6 +852,7 @@ export function signPayload(body: string, secret: string, timestamp?: number): {
 6. Tests for AdapterRegistry
 
 ### Phase 2: Server Service Restructuring
+
 7. Create domain folders under `apps/server/src/services/` (core/, session/, pulse/, relay/)
 8. Move services into appropriate domain folders
 9. Update all import paths across `apps/server/`
@@ -805,12 +860,14 @@ export function signPayload(body: string, secret: string, timestamp?: number): {
 11. Verify all existing tests still pass
 
 ### Phase 3: Adapter Implementations
+
 12. Install `grammy` and `@grammyjs/auto-retry` in `packages/relay/`
 13. Implement Telegram adapter in `packages/relay/src/adapters/telegram-adapter.ts`
 14. Implement webhook adapter in `packages/relay/src/adapters/webhook-adapter.ts`
 15. Tests for both adapters (mocked external APIs)
 
 ### Phase 4: Server Integration
+
 16. Create `AdapterManager` in `apps/server/src/services/relay/adapter-manager.ts`
 17. Add adapter routes to `apps/server/src/routes/relay.ts`
 18. Add adapter MCP tools to `apps/server/src/services/core/mcp-tool-server.ts`
@@ -818,6 +875,7 @@ export function signPayload(body: string, secret: string, timestamp?: number): {
 20. Tests for AdapterManager, routes, MCP tools
 
 ### Phase 5: Client UI
+
 21. Add `useRelayAdapters` and `useToggleAdapter` hooks to `apps/client/src/layers/entities/relay/`
 22. Add Adapters tab to `RelayPanel.tsx`
 23. Create adapter status card component
@@ -825,6 +883,7 @@ export function signPayload(body: string, secret: string, timestamp?: number): {
 25. Tests for new hooks and components
 
 ### Phase 6: Polish
+
 26. Update `ActivityFeedHero.tsx` simulated data to match Relay envelope format
 27. Add `contributing/relay-adapters.md` developer guide
 28. Update `contributing/architecture.md` with adapter registry docs
@@ -832,7 +891,7 @@ export function signPayload(body: string, secret: string, timestamp?: number): {
 
 ## Open Questions
 
-*No open questions — all decisions resolved during ideation.*
+_No open questions — all decisions resolved during ideation._
 
 ## Related ADRs
 

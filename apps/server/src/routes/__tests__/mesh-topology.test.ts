@@ -78,7 +78,7 @@ describe('Mesh topology routes', () => {
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
-      },
+      }
     );
   });
 
@@ -132,7 +132,11 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ sourceNamespace: 'ns-a', targetNamespace: 'ns-b', action: 'allow' });
+      expect(res.body).toEqual({
+        sourceNamespace: 'ns-a',
+        targetNamespace: 'ns-b',
+        action: 'allow',
+      });
       expect(meshCore.allowCrossNamespace).toHaveBeenCalledWith('ns-a', 'ns-b');
       expect(meshCore.denyCrossNamespace).not.toHaveBeenCalled();
     });
@@ -145,7 +149,11 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ sourceNamespace: 'ns-a', targetNamespace: 'ns-b', action: 'deny' });
+      expect(res.body).toEqual({
+        sourceNamespace: 'ns-a',
+        targetNamespace: 'ns-b',
+        action: 'deny',
+      });
       expect(meshCore.denyCrossNamespace).toHaveBeenCalledWith('ns-a', 'ns-b');
       expect(meshCore.allowCrossNamespace).not.toHaveBeenCalled();
     });
@@ -227,7 +235,7 @@ describe('Mesh topology routes', () => {
 
       expect(res.status).toBe(200);
       expect(meshCore.list).toHaveBeenCalledWith(
-        expect.objectContaining({ callerNamespace: 'ns-a' }),
+        expect.objectContaining({ callerNamespace: 'ns-a' })
       );
       // listWithHealth should NOT be called when callerNamespace is provided
       expect(meshCore.listWithHealth).not.toHaveBeenCalled();
@@ -263,11 +271,13 @@ describe('Topology enrichment — Pulse path matching', () => {
     meshCore.getProjectPath.mockReturnValue('/home/user/project');
 
     const pulseStore = {
-      getSchedules: vi.fn().mockReturnValue([
-        { cwd: '/home/user/project' },
-        { cwd: '/home/user/project' },
-        { cwd: '/home/user/other' },
-      ]),
+      getSchedules: vi
+        .fn()
+        .mockReturnValue([
+          { cwd: '/home/user/project' },
+          { cwd: '/home/user/project' },
+          { cwd: '/home/user/other' },
+        ]),
     };
 
     const deps: MeshRouterDeps = {
@@ -296,9 +306,7 @@ describe('Topology enrichment — Pulse path matching', () => {
     meshCore.getProjectPath.mockReturnValue('/home/user/project');
 
     const pulseStore = {
-      getSchedules: vi.fn().mockReturnValue([
-        { cwd: '/home/user/other-project' },
-      ]),
+      getSchedules: vi.fn().mockReturnValue([{ cwd: '/home/user/other-project' }]),
     };
 
     const deps: MeshRouterDeps = {
@@ -363,9 +371,7 @@ describe('Topology enrichment — Pulse path matching', () => {
     meshCore.getProjectPath.mockReturnValue(undefined);
 
     const pulseStore = {
-      getSchedules: vi.fn().mockReturnValue([
-        { cwd: '/home/user/project' },
-      ]),
+      getSchedules: vi.fn().mockReturnValue([{ cwd: '/home/user/project' }]),
     };
 
     const deps: MeshRouterDeps = {

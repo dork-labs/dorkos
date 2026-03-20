@@ -90,8 +90,9 @@ function rotateIfNeeded(): void {
       fs.renameSync(LOG_FILE, path.join(LOG_DIR, rotatedName));
 
       // Clean old rotated files beyond MAX_LOG_FILES
-      const files = fs.readdirSync(LOG_DIR)
-        .filter(f => f.startsWith('dorkos-') && f.endsWith('.log'))
+      const files = fs
+        .readdirSync(LOG_DIR)
+        .filter((f) => f.startsWith('dorkos-') && f.endsWith('.log'))
         .sort()
         .reverse();
       for (const old of files.slice(MAX_LOG_FILES)) {
@@ -135,6 +136,7 @@ export function initLogger(options?: { level?: number }): void {
 ```
 
 **Key design decisions:**
+
 - `logger` is a mutable module-level export so services can import it at module load time. `initLogger()` replaces it with a configured instance at startup.
 - `fs.appendFileSync` is used for simplicity — DorkOS is single-user, not high-throughput.
 - Rotation happens at startup only (not mid-session), keeping the file reporter stateless.
@@ -144,14 +146,14 @@ export function initLogger(options?: { level?: number }): void {
 
 Consola's numeric levels and their DorkOS usage:
 
-| Level | Consola | DorkOS Usage |
-|-------|---------|-------------|
-| 0 | `fatal` | Server crash, unrecoverable |
-| 1 | `error` | Request failures, service errors |
-| 2 | `warn` | Degraded state, config warnings |
-| 3 | `info` | Startup/shutdown, session lifecycle (default) |
-| 4 | `debug` | Per-request details, tool routing, HTTP requests |
-| 5 | `trace` | SDK events, SSE internals (deep debugging) |
+| Level | Consola | DorkOS Usage                                     |
+| ----- | ------- | ------------------------------------------------ |
+| 0     | `fatal` | Server crash, unrecoverable                      |
+| 1     | `error` | Request failures, service errors                 |
+| 2     | `warn`  | Degraded state, config warnings                  |
+| 3     | `info`  | Startup/shutdown, session lifecycle (default)    |
+| 4     | `debug` | Per-request details, tool routing, HTTP requests |
+| 5     | `trace` | SDK events, SSE internals (deep debugging)       |
 
 ### 3. Config Schema Update (`packages/shared/src/config-schema.ts`)
 
@@ -170,7 +172,12 @@ Level name to consola numeric mapping:
 
 ```typescript
 const LOG_LEVEL_MAP: Record<string, number> = {
-  fatal: 0, error: 1, warn: 2, info: 3, debug: 4, trace: 5,
+  fatal: 0,
+  error: 1,
+  warn: 2,
+  info: 3,
+  debug: 4,
+  trace: 5,
 };
 ```
 
@@ -180,59 +187,59 @@ Replace `console.*` calls in 7 server files. CLI files (`cli.ts`, `config-comman
 
 #### `apps/server/src/index.ts` (17 calls)
 
-| Line | Current | Replacement |
-|------|---------|-------------|
-| 22 | `console.log('[Boundary] ...')` | `logger.info({ boundary: resolvedBoundary }, 'Directory boundary configured')` |
-| 32 | `console.log('DorkOS server running...')` | `logger.info({ port: PORT, host }, 'Server started')` |
-| 58-77 | Tunnel ASCII box (11 calls) | `logger.info({ url, port: tunnelPort, auth: hasAuth }, 'ngrok tunnel active')` |
-| 79-83 | `console.warn('[Tunnel] Failed...')` | `logger.warn({ error: err.message }, 'Tunnel failed to start, continuing without tunnel')` |
-| 90 | `console.log('Shutting down...')` | `logger.info('Shutting down')` |
+| Line  | Current                                   | Replacement                                                                                |
+| ----- | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 22    | `console.log('[Boundary] ...')`           | `logger.info({ boundary: resolvedBoundary }, 'Directory boundary configured')`             |
+| 32    | `console.log('DorkOS server running...')` | `logger.info({ port: PORT, host }, 'Server started')`                                      |
+| 58-77 | Tunnel ASCII box (11 calls)               | `logger.info({ url, port: tunnelPort, auth: hasAuth }, 'ngrok tunnel active')`             |
+| 79-83 | `console.warn('[Tunnel] Failed...')`      | `logger.warn({ error: err.message }, 'Tunnel failed to start, continuing without tunnel')` |
+| 90    | `console.log('Shutting down...')`         | `logger.info('Shutting down')`                                                             |
 
 **Note:** The tunnel ASCII box is replaced with a single structured log line. The box art was cosmetic — the CLI banner in `cli.ts` already shows the startup URL.
 
 #### `apps/server/src/services/agent-manager.ts` (9 calls)
 
-| Line | Current | Replacement |
-|------|---------|-------------|
-| 151-153 | `console.log('[sendMessage] session=...')` | `logger.debug({ sessionId, permissionMode, hasStarted, resume: sdkSessionId }, 'sendMessage')` |
-| 185-187 | `console.log('[canUseTool] AskUserQuestion...')` | `logger.debug({ toolName, toolUseID: context.toolUseID }, 'Routing to question handler')` |
-| 192-194 | `console.log('[canUseTool] requesting approval...')` | `logger.debug({ toolName, toolUseID: context.toolUseID }, 'Requesting tool approval')` |
-| 198-200 | `console.log('[canUseTool] auto-allow...')` | `logger.debug({ toolName, permissionMode, toolUseID: context.toolUseID }, 'Auto-allowing tool')` |
-| 439-441 | `console.log('[updateSession] permissionMode...')` | `logger.debug({ sessionId, from: old, to: new }, 'Permission mode changed')` |
-| 444-446 | `console.log('[updateSession] setPermissionMode...')` | `logger.debug({ sessionId, permissionMode }, 'Setting permission mode on active query')` |
-| 448 | `console.error('[updateSession] setPermissionMode failed')` | `logger.error({ sessionId, error: err }, 'setPermissionMode failed')` |
-| 462-464 | `console.log('[approveTool] NOT FOUND...')` | `logger.debug({ sessionId, toolCallId, approved }, 'Tool approval target not found')` |
-| 467-469 | `console.log('[approveTool] resolving...')` | `logger.debug({ sessionId, toolCallId, approved }, 'Resolving tool approval')` |
+| Line    | Current                                                     | Replacement                                                                                      |
+| ------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 151-153 | `console.log('[sendMessage] session=...')`                  | `logger.debug({ sessionId, permissionMode, hasStarted, resume: sdkSessionId }, 'sendMessage')`   |
+| 185-187 | `console.log('[canUseTool] AskUserQuestion...')`            | `logger.debug({ toolName, toolUseID: context.toolUseID }, 'Routing to question handler')`        |
+| 192-194 | `console.log('[canUseTool] requesting approval...')`        | `logger.debug({ toolName, toolUseID: context.toolUseID }, 'Requesting tool approval')`           |
+| 198-200 | `console.log('[canUseTool] auto-allow...')`                 | `logger.debug({ toolName, permissionMode, toolUseID: context.toolUseID }, 'Auto-allowing tool')` |
+| 439-441 | `console.log('[updateSession] permissionMode...')`          | `logger.debug({ sessionId, from: old, to: new }, 'Permission mode changed')`                     |
+| 444-446 | `console.log('[updateSession] setPermissionMode...')`       | `logger.debug({ sessionId, permissionMode }, 'Setting permission mode on active query')`         |
+| 448     | `console.error('[updateSession] setPermissionMode failed')` | `logger.error({ sessionId, error: err }, 'setPermissionMode failed')`                            |
+| 462-464 | `console.log('[approveTool] NOT FOUND...')`                 | `logger.debug({ sessionId, toolCallId, approved }, 'Tool approval target not found')`            |
+| 467-469 | `console.log('[approveTool] resolving...')`                 | `logger.debug({ sessionId, toolCallId, approved }, 'Resolving tool approval')`                   |
 
 All agent-manager calls become `logger.debug` (invisible at default info level) except the error call.
 
 #### `apps/server/src/services/session-broadcaster.ts` (3 calls)
 
-| Line | Current | Replacement |
-|------|---------|-------------|
-| 143-145 | `console.error('[SessionBroadcaster] Failed to broadcast...')` | `logger.error({ sessionId, error: err }, 'Failed to broadcast update')` |
-| 218-220 | `console.error('[SessionBroadcaster] Failed to write...')` | `logger.error({ sessionId, error: err }, 'Failed to write to client')` |
-| 225 | `console.error('[SessionBroadcaster] Failed to read offset...')` | `logger.error({ sessionId, error: err }, 'Failed to read offset')` |
+| Line    | Current                                                          | Replacement                                                             |
+| ------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 143-145 | `console.error('[SessionBroadcaster] Failed to broadcast...')`   | `logger.error({ sessionId, error: err }, 'Failed to broadcast update')` |
+| 218-220 | `console.error('[SessionBroadcaster] Failed to write...')`       | `logger.error({ sessionId, error: err }, 'Failed to write to client')`  |
+| 225     | `console.error('[SessionBroadcaster] Failed to read offset...')` | `logger.error({ sessionId, error: err }, 'Failed to read offset')`      |
 
 #### `apps/server/src/services/config-manager.ts` (2 calls)
 
-| Line | Current | Replacement |
-|------|---------|-------------|
-| 56 | `console.warn('Warning: Corrupt config...')` | `logger.warn({ backupPath }, 'Corrupt config backed up')` |
-| 57 | `console.warn('Creating fresh config...')` | `logger.warn('Creating fresh config with defaults')` |
+| Line | Current                                      | Replacement                                               |
+| ---- | -------------------------------------------- | --------------------------------------------------------- |
+| 56   | `console.warn('Warning: Corrupt config...')` | `logger.warn({ backupPath }, 'Corrupt config backed up')` |
+| 57   | `console.warn('Creating fresh config...')`   | `logger.warn('Creating fresh config with defaults')`      |
 
 #### `apps/server/src/services/command-registry.ts` (2 calls)
 
-| Line | Current | Replacement |
-|------|---------|-------------|
-| 87 | `console.warn('[CommandRegistry] Skipping...')` | `logger.warn({ file, error: fileErr.message }, 'Skipping command file')` |
-| 95 | `console.warn('[CommandRegistry] Could not read...')` | `logger.warn({ error: err.message }, 'Could not read commands directory')` |
+| Line | Current                                               | Replacement                                                                |
+| ---- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| 87   | `console.warn('[CommandRegistry] Skipping...')`       | `logger.warn({ file, error: fileErr.message }, 'Skipping command file')`   |
+| 95   | `console.warn('[CommandRegistry] Could not read...')` | `logger.warn({ error: err.message }, 'Could not read commands directory')` |
 
 #### `apps/server/src/middleware/error-handler.ts` (1 call)
 
-| Line | Current | Replacement |
-|------|---------|-------------|
-| 4 | `console.error('[DorkOS Error]', err.message, err.stack)` | `logger.error({ error: err.message, stack: err.stack }, 'Unhandled server error')` |
+| Line | Current                                                   | Replacement                                                                        |
+| ---- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 4    | `console.error('[DorkOS Error]', err.message, err.stack)` | `logger.error({ error: err.message, stack: err.stack }, 'Unhandled server error')` |
 
 ### 5. Tagged Loggers
 
@@ -263,7 +270,9 @@ import { logger } from '../lib/logger.js';
 logger.debug({ tag: 'agent-manager', sessionId }, 'sendMessage');
 
 // OR use a getter pattern
-function getLog() { return logger.withTag('agent-manager'); }
+function getLog() {
+  return logger.withTag('agent-manager');
+}
 ```
 
 ### 6. HTTP Request Logging Middleware
@@ -282,12 +291,15 @@ import { logger } from '../lib/logger.js';
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const start = Date.now();
   res.on('finish', () => {
-    logger.debug({
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      ms: Date.now() - start,
-    }, 'request');
+    logger.debug(
+      {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        ms: Date.now() - start,
+      },
+      'request'
+    );
   });
   next();
 }
@@ -302,7 +314,7 @@ export function createApp() {
   const app = express();
   app.use(cors());
   app.use(express.json());
-  app.use(requestLogger);  // <-- Add here, before routes
+  app.use(requestLogger); // <-- Add here, before routes
   // ... route registration
 }
 ```
@@ -316,6 +328,7 @@ Add `--log-level` flag to the existing `parseArgs` call:
 ```
 
 Log level precedence (highest to lowest):
+
 1. `--log-level` CLI flag
 2. `LOG_LEVEL` env var
 3. `~/.dork/config.json` → `logging.level`
@@ -323,10 +336,11 @@ Log level precedence (highest to lowest):
 
 ```typescript
 // After config manager init, before server import:
-const logLevelName = values['log-level']
-  || process.env.LOG_LEVEL
-  || cfgMgr.get('logging.level')
-  || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+const logLevelName =
+  values['log-level'] ||
+  process.env.LOG_LEVEL ||
+  cfgMgr.get('logging.level') ||
+  (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
 
 const LOG_LEVEL_MAP = { fatal: 0, error: 1, warn: 2, info: 3, debug: 4, trace: 5 };
 process.env.DORKOS_LOG_LEVEL = String(LOG_LEVEL_MAP[logLevelName] ?? 3);
@@ -357,18 +371,21 @@ export async function start() {
 ## User Experience
 
 **For users running `dorkos` CLI:**
+
 - Startup banner unchanged (still `console.log`)
 - Operational logs now persist to `~/.dork/logs/dorkos.log`
 - Can set log verbosity: `dorkos --log-level debug` or `dorkos config set logging.level debug`
 - Logs have pretty colored output in terminal via consola fancy reporter
 
 **For developers running `npm run dev`:**
+
 - Pretty console output with service tags (e.g., `[agent-manager]`)
 - Debug-level messages visible by default in dev
 - HTTP requests logged to console at debug level
 - Logs also persist to `~/.dork/logs/` for post-mortem debugging
 
 **For debugging:**
+
 - `tail -f ~/.dork/logs/dorkos.log` — watch live NDJSON
 - `grep '"sessionId":"abc"' ~/.dork/logs/dorkos.log` — filter by session
 - `jq 'select(.level == "error")' ~/.dork/logs/dorkos.log` — filter by level
@@ -378,6 +395,7 @@ export async function start() {
 ### Unit Tests
 
 **`apps/server/src/lib/__tests__/logger.test.ts`:**
+
 - `initLogger()` creates log directory if missing
 - `initLogger()` sets log level from options
 - File reporter writes NDJSON to disk
@@ -387,6 +405,7 @@ export async function start() {
 - `logger.withTag()` produces tagged output
 
 **`apps/server/src/middleware/__tests__/request-logger.test.ts`:**
+
 - Logs method, path, status, duration for completed requests
 - Does NOT log req.body or headers
 - Uses debug level (verify with mock logger)
@@ -394,10 +413,12 @@ export async function start() {
 ### Existing Test Updates
 
 **`apps/server/src/middleware/__tests__/error-handler.test.ts`:**
+
 - Currently mocks `console.error` — update to mock `logger.error` instead
 - Verify error handler calls `logger.error` with structured fields
 
 **Other service tests:**
+
 - Tests that suppress `console.warn/error` via `vi.spyOn(console, ...)` should be updated to mock `logger` instead
 - Import `{ logger }` from `../lib/logger.js` and use `vi.mock('../lib/logger.js')` with a mock object
 
@@ -421,6 +442,7 @@ vi.mock('../lib/logger.js', () => ({
 ### Config Schema Tests
 
 **`packages/shared/src/__tests__/config-schema.test.ts`:**
+
 - `logging.level` defaults to `'info'`
 - `logging.level` accepts valid values (`fatal`, `error`, `warn`, `info`, `debug`, `trace`)
 - `logging.level` rejects invalid values

@@ -8,7 +8,7 @@ import { reconcileTaggedMessages } from '../stream-history-helpers';
 // ---------------------------------------------------------------------------
 function applySetMessages(
   state: ChatMessage[],
-  calls: Array<(prev: ChatMessage[]) => ChatMessage[]>,
+  calls: Array<(prev: ChatMessage[]) => ChatMessage[]>
 ): ChatMessage[] {
   return calls.reduce((acc, fn) => fn(acc), state);
 }

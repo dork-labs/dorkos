@@ -49,9 +49,7 @@ interface MockServer {
 }
 
 /** Create a mock McpToolDeps with a stubbed transcript reader */
-function makeMockDeps(
-  overrides: { listSessions?: ReturnType<typeof vi.fn> } = {}
-): McpToolDeps {
+function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {}): McpToolDeps {
   return {
     transcriptReader: {
       listSessions: overrides.listSessions ?? vi.fn().mockResolvedValue([]),
@@ -126,7 +124,8 @@ describe('MCP Tool Handlers', () => {
     it('uses DORKOS_PORT env var when set', async () => {
       vi.stubEnv('DORKOS_PORT', '9999');
       vi.resetModules();
-      const { handleGetServerInfo: handler } = await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
+      const { handleGetServerInfo: handler } =
+        await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
       const result = await handler({});
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.port).toBe(9999);
@@ -142,7 +141,8 @@ describe('MCP Tool Handlers', () => {
     it('defaults port to 4242 when env var unset', async () => {
       vi.stubEnv('DORKOS_PORT', undefined as unknown as string);
       vi.resetModules();
-      const { handleGetServerInfo: handler } = await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
+      const { handleGetServerInfo: handler } =
+        await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
       const result = await handler({});
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.port).toBe(4242);
@@ -482,12 +482,14 @@ describe('MCP Tool Handlers', () => {
 });
 
 /** Create a mock RelayCore with configurable return values */
-function makeRelayCoreMock(overrides: {
-  deliveredTo?: number;
-  messageId?: string;
-  rejected?: Array<{ subject: string; reason: string }>;
-  unregisterResult?: boolean;
-} = {}) {
+function makeRelayCoreMock(
+  overrides: {
+    deliveredTo?: number;
+    messageId?: string;
+    rejected?: Array<{ subject: string; reason: string }>;
+    unregisterResult?: boolean;
+  } = {}
+) {
   return {
     registerEndpoint: vi.fn().mockResolvedValue({ subject: 'relay.inbox.dispatch.test' }),
     unregisterEndpoint: vi.fn().mockResolvedValue(overrides.unregisterResult ?? true),
@@ -537,7 +539,10 @@ describe('createRelayUnregisterEndpointHandler', () => {
   it('returns success when endpoint exists', async () => {
     // Purpose: basic happy path for cleanup tool.
     const relayCore = makeRelayCoreMock({ unregisterResult: true });
-    const handler = createRelayUnregisterEndpointHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
+    const handler = createRelayUnregisterEndpointHandler({
+      ...makeMockDeps(),
+      relayCore,
+    } as McpToolDeps);
     const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.success).toBe(true);
@@ -547,7 +552,10 @@ describe('createRelayUnregisterEndpointHandler', () => {
   it('returns ENDPOINT_NOT_FOUND when endpoint does not exist', async () => {
     // Purpose: caller can detect cleanup of non-existent inbox (idempotent cleanup).
     const relayCore = makeRelayCoreMock({ unregisterResult: false });
-    const handler = createRelayUnregisterEndpointHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
+    const handler = createRelayUnregisterEndpointHandler({
+      ...makeMockDeps(),
+      relayCore,
+    } as McpToolDeps);
     const result = await handler({ subject: 'relay.inbox.dispatch.gone' });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).code).toBe('ENDPOINT_NOT_FOUND');

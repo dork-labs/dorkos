@@ -120,7 +120,7 @@ export async function handleInboundMessage(
   ctx: GrammyContext,
   relay: RelayPublisher,
   callbacks: AdapterInboundCallbacks,
-  logger: RelayLogger = noopLogger,
+  logger: RelayLogger = noopLogger
 ): Promise<void> {
   if (!ctx.message) {
     logger.debug('inbound skipped: no message in context');
@@ -146,9 +146,7 @@ export async function handleInboundMessage(
   const text = rawText.slice(0, MAX_CONTENT_LENGTH);
 
   const senderName = from
-    ? [from.first_name, from.last_name].filter(Boolean).join(' ') ||
-      from.username ||
-      UNKNOWN_SENDER
+    ? [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || UNKNOWN_SENDER
     : UNKNOWN_SENDER;
 
   const payload: StandardPayload = {
@@ -187,9 +185,14 @@ export async function handleInboundMessage(
     }
 
     callbacks.trackInbound();
-    logger.debug(`inbound from ${senderName} in chat ${chat.id}: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}" (${text.length} chars) → ${subject}`);
+    logger.debug(
+      `inbound from ${senderName} in chat ${chat.id}: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}" (${text.length} chars) → ${subject}`
+    );
   } catch (err) {
     callbacks.recordError(err);
-    logger.warn(`inbound publish failed for chat ${chat.id}:`, err instanceof Error ? err.message : String(err));
+    logger.warn(
+      `inbound publish failed for chat ${chat.id}:`,
+      err instanceof Error ? err.message : String(err)
+    );
   }
 }

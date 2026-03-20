@@ -64,11 +64,7 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
     errorCount: 0,
   };
 
-  constructor(
-    id: string,
-    subjectPrefix: string | readonly string[],
-    displayName: string,
-  ) {
+  constructor(id: string, subjectPrefix: string | readonly string[], displayName: string) {
     this.id = id;
     this.subjectPrefix = subjectPrefix;
     this.displayName = displayName;
@@ -266,6 +262,6 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
   abstract deliver(
     subject: string,
     envelope: RelayEnvelope,
-    context?: AdapterContext,
+    context?: AdapterContext
   ): Promise<DeliveryResult>;
 }

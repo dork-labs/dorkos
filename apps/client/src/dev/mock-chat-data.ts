@@ -1,4 +1,8 @@
-import type { ChatMessage, ToolCallState, HookState } from '@/layers/features/chat/model/chat-types';
+import type {
+  ChatMessage,
+  ToolCallState,
+  HookState,
+} from '@/layers/features/chat/model/chat-types';
 import type { PendingFile } from '@/layers/features/chat/model/use-file-upload';
 import type { QueueItem } from '@/layers/features/chat/model/use-message-queue';
 import type { TaskItem, QuestionItem, SubagentPart, ErrorPart } from '@dorkos/shared/types';
@@ -16,9 +20,7 @@ function nextId(prefix = 'mock') {
 }
 
 /** Create a user message with sensible defaults. */
-export function createUserMessage(
-  overrides: Partial<ChatMessage> = {}
-): ChatMessage {
+export function createUserMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   const id = nextId('user');
   const content = overrides.content ?? 'Hello, can you help me?';
   return {
@@ -32,9 +34,7 @@ export function createUserMessage(
 }
 
 /** Create an assistant message with sensible defaults. */
-export function createAssistantMessage(
-  overrides: Partial<ChatMessage> = {}
-): ChatMessage {
+export function createAssistantMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   const id = nextId('asst');
   const content = overrides.content ?? 'Sure, I can help with that.';
   return {
@@ -48,9 +48,7 @@ export function createAssistantMessage(
 }
 
 /** Create a tool call with sensible defaults. */
-export function createToolCall(
-  overrides: Partial<ToolCallState> = {}
-): ToolCallState {
+export function createToolCall(overrides: Partial<ToolCallState> = {}): ToolCallState {
   return {
     toolCallId: nextId('tc'),
     toolName: 'Read',
@@ -61,9 +59,7 @@ export function createToolCall(
 }
 
 /** Create a task item with sensible defaults. */
-export function createTaskItem(
-  overrides: Partial<TaskItem> = {}
-): TaskItem {
+export function createTaskItem(overrides: Partial<TaskItem> = {}): TaskItem {
   return {
     id: nextId('task'),
     subject: 'Implement feature',
@@ -73,9 +69,7 @@ export function createTaskItem(
 }
 
 /** Create a pending file with sensible defaults. */
-export function createPendingFile(
-  overrides: Partial<PendingFile> = {}
-): PendingFile {
+export function createPendingFile(overrides: Partial<PendingFile> = {}): PendingFile {
   const id = nextId('file');
   return {
     id,
@@ -89,9 +83,7 @@ export function createPendingFile(
 }
 
 /** Create a queue item with sensible defaults. */
-export function createQueueItem(
-  overrides: Partial<QueueItem> = {}
-): QueueItem {
+export function createQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
   return {
     id: nextId('q'),
     content: 'Follow-up message',
@@ -147,9 +139,15 @@ export const TOOL_CALLS: Record<string, ToolCallState> = {
   }),
   complete_long_result: createToolCall({
     toolName: 'Bash',
-    input: JSON.stringify({ command: 'cat apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts' }),
+    input: JSON.stringify({
+      command: 'cat apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts',
+    }),
     status: 'complete',
-    result: Array.from({ length: 200 }, (_, i) => `${String(i + 1).padStart(4, ' ')}│ ${'import { foo } from "bar";  // line content here that makes this realistic output'.slice(0, 60 + (i % 20))}`).join('\n'),
+    result: Array.from(
+      { length: 200 },
+      (_, i) =>
+        `${String(i + 1).padStart(4, ' ')}│ ${'import { foo } from "bar";  // line content here that makes this realistic output'.slice(0, 60 + (i % 20))}`
+    ).join('\n'),
   }),
 };
 
@@ -162,7 +160,10 @@ export const TOOL_CALLS_EXTENDED: Record<string, ToolCallState> = {
   }),
   notebook_edit: createToolCall({
     toolName: 'NotebookEdit',
-    input: JSON.stringify({ notebook_path: '/notebooks/analysis.ipynb', new_source: 'df.describe()' }),
+    input: JSON.stringify({
+      notebook_path: '/notebooks/analysis.ipynb',
+      new_source: 'df.describe()',
+    }),
     status: 'complete',
     result: 'Cell updated.',
   }),
@@ -180,7 +181,8 @@ export const TOOL_CALLS_EXTENDED: Record<string, ToolCallState> = {
     toolName: 'ToolSearch',
     input: JSON.stringify({ query: 'slack message send' }),
     status: 'complete',
-    result: 'Found 3 tools: mcp__slack__send_message, mcp__slack__read_channel, mcp__slack__list_channels',
+    result:
+      'Found 3 tools: mcp__slack__send_message, mcp__slack__read_channel, mcp__slack__list_channels',
   }),
   list_mcp_resources: createToolCall({
     toolName: 'ListMcpResourcesTool',
@@ -197,9 +199,7 @@ export const TOOL_CALLS_EXTENDED: Record<string, ToolCallState> = {
 };
 
 /** Create a hook state with sensible defaults. */
-export function createHookState(
-  overrides: Partial<HookState> = {}
-): HookState {
+export function createHookState(overrides: Partial<HookState> = {}): HookState {
   return {
     hookId: nextId('hook'),
     hookName: 'pre-commit-lint',
@@ -248,7 +248,8 @@ export const TOOL_CALLS_WITH_HOOKS: Record<string, ToolCallState> = {
         hookName: 'pre-push-tests',
         hookEvent: 'PreToolUse',
         status: 'error',
-        stderr: 'FAIL src/auth.test.ts\n  ✗ should validate JWT token (12ms)\n    Expected: 200\n    Received: 401',
+        stderr:
+          'FAIL src/auth.test.ts\n  ✗ should validate JWT token (12ms)\n    Expected: 200\n    Received: 401',
         exitCode: 1,
       }),
     ],
@@ -454,8 +455,7 @@ Let me start by updating the auth service.`,
 
   // Message with file attachments (encoded in content)
   createUserMessage({
-    content:
-      'Here is the config file I mentioned.\n\n[File: config.json (uploaded)]',
+    content: 'Here is the config file I mentioned.\n\n[File: config.json (uploaded)]',
   }),
 
   // Assistant with tool calls
@@ -509,7 +509,6 @@ Let me start by updating the auth service.`,
       },
     ],
   }),
-
 ];
 
 export const SAMPLE_QUESTIONS: QuestionItem[] = [
@@ -625,7 +624,13 @@ export const SAMPLE_FILES: PendingFile[] = [
     file: new File(['done'], 'config.json', { type: 'application/json' }),
     status: 'uploaded',
     progress: 100,
-    result: { savedPath: '/uploads/config.json', originalName: 'config.json', filename: 'config.json', size: 4, mimeType: 'application/json' },
+    result: {
+      savedPath: '/uploads/config.json',
+      originalName: 'config.json',
+      filename: 'config.json',
+      size: 4,
+      mimeType: 'application/json',
+    },
   }),
   createPendingFile({
     file: new File(['err'], 'huge.bin', { type: 'application/octet-stream' }),

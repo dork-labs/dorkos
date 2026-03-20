@@ -37,19 +37,19 @@ The current implementation uses warning-level amber coloring for conversational 
 
 These decisions were made during ideation review and are final:
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Card style | Left border accent: `bg-muted/50` + `border-l-2 border-status-info` | Matches ThinkingBlock pattern. Questions are conversational, not warnings. |
-| 2 | Custom indicators | Install shadcn RadioGroup + Checkbox into `shared/ui/` | Reusable across the app. Consistent with design system. |
-| 3 | Stale question styling | `opacity-60` on non-active pending questions | Visual distinction without layout change. |
-| 4 | Pending state color | Neutral with `status-info` accent (not amber) | Questions are informational, not warnings. |
-| 5 | Header row (single-question) | Remove entirely | Question text is self-explanatory. |
-| 6 | Header row (multi-question) | Remove from content (tab label is sufficient) | Eliminates duplication. |
-| 7 | Option description placement | Inline after label, lighter weight | Halves per-option height. |
-| 8 | Submit button | Shared `Button` component, size `"sm"` | Consistency with design system. |
-| 9 | Navigate hint | Remove | Trust discoverability over permanent clutter. |
-| 10 | Kbd number badges | Keep but subtler: `text-2xs text-muted-foreground` | Useful for keyboard users, less visually dominant. |
-| 11 | Submitted state | `status-success` design tokens | Consistent with ToolApproval approved state. |
+| #   | Decision                     | Choice                                                              | Rationale                                                                  |
+| --- | ---------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | Card style                   | Left border accent: `bg-muted/50` + `border-l-2 border-status-info` | Matches ThinkingBlock pattern. Questions are conversational, not warnings. |
+| 2   | Custom indicators            | Install shadcn RadioGroup + Checkbox into `shared/ui/`              | Reusable across the app. Consistent with design system.                    |
+| 3   | Stale question styling       | `opacity-60` on non-active pending questions                        | Visual distinction without layout change.                                  |
+| 4   | Pending state color          | Neutral with `status-info` accent (not amber)                       | Questions are informational, not warnings.                                 |
+| 5   | Header row (single-question) | Remove entirely                                                     | Question text is self-explanatory.                                         |
+| 6   | Header row (multi-question)  | Remove from content (tab label is sufficient)                       | Eliminates duplication.                                                    |
+| 7   | Option description placement | Inline after label, lighter weight                                  | Halves per-option height.                                                  |
+| 8   | Submit button                | Shared `Button` component, size `"sm"`                              | Consistency with design system.                                            |
+| 9   | Navigate hint                | Remove                                                              | Trust discoverability over permanent clutter.                              |
+| 10  | Kbd number badges            | Keep but subtler: `text-2xs text-muted-foreground`                  | Useful for keyboard users, less visually dominant.                         |
+| 11  | Submitted state              | `status-success` design tokens                                      | Consistent with ToolApproval approved state.                               |
 
 ---
 
@@ -107,10 +107,12 @@ The `navigateOption` method is currently a no-op (focus handled externally via `
 Install shadcn RadioGroup and Checkbox into `apps/client/src/layers/shared/ui/`:
 
 **Files to create:**
+
 - `apps/client/src/layers/shared/ui/radio-group.tsx` — RadioGroup, RadioGroupItem
 - `apps/client/src/layers/shared/ui/checkbox.tsx` — Checkbox
 
 **Exports to add to `apps/client/src/layers/shared/ui/index.ts`:**
+
 ```typescript
 export { RadioGroup, RadioGroupItem } from './radio-group';
 export { Checkbox } from './checkbox';
@@ -142,6 +144,7 @@ This mirrors the `approvalState` pattern but uses `status-info` for pending (inf
 ### 4.3 Container Styling
 
 **Pending state (active question):**
+
 ```
 rounded-msg-tool p-3 text-sm transition-all duration-200
 + questionState({ state: 'pending' })
@@ -151,6 +154,7 @@ rounded-msg-tool p-3 text-sm transition-all duration-200
 This produces: `bg-muted/50 rounded-msg-tool border-l-2 border-status-info p-3` — matching the ThinkingBlock pattern (`bg-muted/50 rounded-msg-tool border-l-2 border-muted-foreground/20`), but with the info-colored left border to signal interactivity.
 
 **Pending state (non-active / stale question):**
+
 ```
 Same as above + 'opacity-60'
 ```
@@ -158,6 +162,7 @@ Same as above + 'opacity-60'
 Applied when `isActive === false` and the component is not in submitted state. This visually dims older unanswered questions.
 
 **Submitted state:**
+
 ```
 my-1 rounded-msg-tool border px-3 py-2 text-sm transition-colors duration-200
 + questionState({ state: 'answered' })
@@ -182,25 +187,31 @@ The `MessageSquare` icon import can be removed from the file.
 ### 4.5 Option Layout (Compact)
 
 **Current per-option layout (single-select):**
+
 ```tsx
 <label className="flex items-start gap-2 px-2 py-1.5">
   <input type="radio" className="accent-amber-500" />
   <div>
-    <span className="font-medium">{label} <Kbd>{n}</Kbd></span>
+    <span className="font-medium">
+      {label} <Kbd>{n}</Kbd>
+    </span>
     <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>
   </div>
 </label>
 ```
 
 **New per-option layout (single-select with RadioGroup):**
+
 ```tsx
-<div className="flex items-center gap-2 rounded px-2 py-1 transition-all duration-150"
-     data-selected={isSelected}>
+<div
+  className="flex items-center gap-2 rounded px-2 py-1 transition-all duration-150"
+  data-selected={isSelected}
+>
   <RadioGroupItem value={opt.label} id={optionId} />
   <label htmlFor={optionId} className="flex-1 cursor-pointer">
     <span className="text-sm font-medium">{opt.label}</span>
     {isActive && oIdx < 9 && (
-      <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+      <Kbd className="text-2xs text-muted-foreground ml-1.5">{oIdx + 1}</Kbd>
     )}
     {opt.description && (
       <span className="text-muted-foreground ml-1.5 text-xs"> — {opt.description}</span>
@@ -210,15 +221,21 @@ The `MessageSquare` icon import can be removed from the file.
 ```
 
 **New per-option layout (multi-select with Checkbox):**
+
 ```tsx
-<div className="flex items-center gap-2 rounded px-2 py-1 transition-all duration-150"
-     data-selected={isSelected}>
-  <Checkbox checked={isSelected} id={optionId}
-            onCheckedChange={(checked) => handleMultiSelect(qIdx, opt.label, !!checked)} />
+<div
+  className="flex items-center gap-2 rounded px-2 py-1 transition-all duration-150"
+  data-selected={isSelected}
+>
+  <Checkbox
+    checked={isSelected}
+    id={optionId}
+    onCheckedChange={(checked) => handleMultiSelect(qIdx, opt.label, !!checked)}
+  />
   <label htmlFor={optionId} className="flex-1 cursor-pointer">
     <span className="text-sm font-medium">{opt.label}</span>
     {isActive && oIdx < 9 && (
-      <Kbd className="ml-1.5 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
+      <Kbd className="text-2xs text-muted-foreground ml-1.5">{oIdx + 1}</Kbd>
     )}
     {opt.description && (
       <span className="text-muted-foreground ml-1.5 text-xs"> — {opt.description}</span>
@@ -228,9 +245,10 @@ The `MessageSquare` icon import can be removed from the file.
 ```
 
 **Key changes:**
+
 - `py-1` instead of `py-1.5` (saves 4px per option)
 - `space-y-0.5` instead of `space-y-1.5` on the container (saves 4px per gap)
-- Description inline after label with ` — ` separator instead of below on a separate line (saves ~20px per option with description)
+- Description inline after label with `—` separator instead of below on a separate line (saves ~20px per option with description)
 - Kbd badges use `text-2xs text-muted-foreground` for subtlety
 - Selected state highlight: `bg-muted` instead of `bg-amber-500/15`
 - Focused state ring: `ring-1 ring-status-info/50` instead of `ring-1 ring-amber-500/50`
@@ -247,11 +265,13 @@ The "Other" free-text option retains the same functionality but adopts the new s
 ### 4.7 Submit Button
 
 **Current:**
+
 ```tsx
 <button className="mt-3 flex items-center gap-1 rounded bg-amber-600 px-3 py-1.5 text-xs text-white ...">
 ```
 
 **New:**
+
 ```tsx
 <Button size="sm" onClick={handleSubmit} disabled={!isComplete() || submitting} className="mt-2">
   {submitting ? (
@@ -270,18 +290,22 @@ Uses the shared `Button` component from `@/layers/shared/ui`. The `size="sm"` va
 ### 4.8 Tab Bar (Multi-Question)
 
 **Remove the "navigate questions" hint:**
+
 ```tsx
 // DELETE this block entirely:
-{isActive && questions.length > 1 && (
-  <div className="text-2xs text-muted-foreground mb-2 flex items-center gap-1">
-    <Kbd>&larr;</Kbd>
-    <Kbd>&rarr;</Kbd>
-    <span>navigate questions</span>
-  </div>
-)}
+{
+  isActive && questions.length > 1 && (
+    <div className="text-2xs text-muted-foreground mb-2 flex items-center gap-1">
+      <Kbd>&larr;</Kbd>
+      <Kbd>&rarr;</Kbd>
+      <span>navigate questions</span>
+    </div>
+  );
+}
 ```
 
 **Update tab trigger styling** — replace amber active state with neutral:
+
 ```tsx
 <TabsTrigger
   className="data-[state=inactive]:bg-muted/50 h-auto rounded-full px-2.5 py-1 text-xs font-medium data-[state=active]:bg-foreground/10 data-[state=active]:shadow-none"
@@ -293,6 +317,7 @@ Removes `data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-700 
 ### 4.9 Submitted State
 
 **Current:**
+
 ```tsx
 <div className="my-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm">
   <Check className="text-emerald-500" />
@@ -302,11 +327,14 @@ Removes `data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-700 
 ```
 
 **New:**
+
 ```tsx
-<div className={cn(
-  'my-1 rounded-msg-tool border px-3 py-2 text-sm transition-colors duration-200',
-  questionState({ state: 'answered' })
-)}>
+<div
+  className={cn(
+    'rounded-msg-tool my-1 border px-3 py-2 text-sm transition-colors duration-200',
+    questionState({ state: 'answered' })
+  )}
+>
   <Check className="text-status-success" />
   <span className="text-xs font-semibold">{q.header}</span>
   <p className="text-sm break-words">{displayValue}</p>
@@ -320,6 +348,7 @@ Also uses `rounded-msg-tool` for consistency with other inline chat cards.
 ### 4.10 Accessibility Enhancements
 
 **Options container — single-select:**
+
 ```tsx
 <RadioGroup
   value={selections[qIdx] as string ?? ''}
@@ -332,6 +361,7 @@ Also uses `rounded-msg-tool` for consistency with other inline chat cards.
 The shadcn `RadioGroup` renders with `role="radiogroup"` automatically via Radix.
 
 **Options container — multi-select:**
+
 ```tsx
 <div
   role="group"
@@ -341,6 +371,7 @@ The shadcn `RadioGroup` renders with `role="radiogroup"` automatically via Radix
 ```
 
 **Keyboard navigation (existing behavior, now with proper ARIA):**
+
 - Arrow up/down: Handled externally via `focusedOptionIndex` prop (unchanged)
 - Number keys 1-9: Toggle option via imperative `toggleOption` (unchanged)
 - Enter: Submit via imperative `submit` (unchanged)
@@ -352,16 +383,16 @@ The RadioGroup component from Radix provides built-in roving tabindex for arrow 
 
 ## 5. Space Budget
 
-| Element | Current | New | Savings |
-|---|---|---|---|
-| Header row (icon + text) | ~28px | Removed (0px) | 28px |
-| Question text margin | `mb-2` (8px) | `mb-1.5` (6px) | 2px |
-| Option vertical padding | `py-1.5` per option (6px each side) | `py-1` per option (4px each side) | 4px/option |
-| Option spacing | `space-y-1.5` (6px/gap) | `space-y-0.5` (2px/gap) | 4px/gap |
-| Description placement | Below label (+20px each) | Inline after label | 20px/option with desc |
-| Navigate hint | ~24px | Removed | 24px |
-| Submit button margin | `mt-3` (12px) | `mt-2` (8px) | 4px |
-| **Total (4 options, 2 with descriptions)** | **~300px** | **~160px** | **~47% reduction** |
+| Element                                    | Current                             | New                               | Savings               |
+| ------------------------------------------ | ----------------------------------- | --------------------------------- | --------------------- |
+| Header row (icon + text)                   | ~28px                               | Removed (0px)                     | 28px                  |
+| Question text margin                       | `mb-2` (8px)                        | `mb-1.5` (6px)                    | 2px                   |
+| Option vertical padding                    | `py-1.5` per option (6px each side) | `py-1` per option (4px each side) | 4px/option            |
+| Option spacing                             | `space-y-1.5` (6px/gap)             | `space-y-0.5` (2px/gap)           | 4px/gap               |
+| Description placement                      | Below label (+20px each)            | Inline after label                | 20px/option with desc |
+| Navigate hint                              | ~24px                               | Removed                           | 24px                  |
+| Submit button margin                       | `mt-3` (12px)                       | `mt-2` (8px)                      | 4px                   |
+| **Total (4 options, 2 with descriptions)** | **~300px**                          | **~160px**                        | **~47% reduction**    |
 
 ---
 
@@ -369,26 +400,26 @@ The RadioGroup component from Radix provides built-in roving tabindex for arrow 
 
 ### New Files
 
-| File | Purpose |
-|---|---|
+| File                                               | Purpose                            |
+| -------------------------------------------------- | ---------------------------------- |
 | `apps/client/src/layers/shared/ui/radio-group.tsx` | Shadcn RadioGroup + RadioGroupItem |
-| `apps/client/src/layers/shared/ui/checkbox.tsx` | Shadcn Checkbox |
+| `apps/client/src/layers/shared/ui/checkbox.tsx`    | Shadcn Checkbox                    |
 
 ### Modified Files
 
-| File | Changes |
-|---|---|
-| `apps/client/src/layers/shared/ui/index.ts` | Add RadioGroup, RadioGroupItem, Checkbox exports |
-| `apps/client/src/layers/features/chat/ui/message/message-variants.ts` | Add `questionState` TV variant |
-| `apps/client/src/layers/features/chat/ui/QuestionPrompt.tsx` | Full visual redesign (see section 4) |
-| `apps/client/src/layers/features/chat/__tests__/QuestionPrompt.test.tsx` | Update assertions for new markup |
+| File                                                                     | Changes                                          |
+| ------------------------------------------------------------------------ | ------------------------------------------------ |
+| `apps/client/src/layers/shared/ui/index.ts`                              | Add RadioGroup, RadioGroupItem, Checkbox exports |
+| `apps/client/src/layers/features/chat/ui/message/message-variants.ts`    | Add `questionState` TV variant                   |
+| `apps/client/src/layers/features/chat/ui/QuestionPrompt.tsx`             | Full visual redesign (see section 4)             |
+| `apps/client/src/layers/features/chat/__tests__/QuestionPrompt.test.tsx` | Update assertions for new markup                 |
 
 ### Potentially Modified Files
 
-| File | Condition |
-|---|---|
+| File                                                 | Condition                                      |
+| ---------------------------------------------------- | ---------------------------------------------- |
 | `apps/client/src/dev/showcases/MessageShowcases.tsx` | If showcase markup references removed elements |
-| `apps/client/src/dev/mock-chat-data.ts` | Only if data shape changes (unlikely) |
+| `apps/client/src/dev/mock-chat-data.ts`              | Only if data shape changes (unlikely)          |
 
 ---
 
@@ -413,6 +444,7 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 6. **Kbd mock** — If the Radix Tabs mock needs updating due to RadioGroup being from the same package family, the mock setup may need adjustment.
 
 **Tests that should pass without changes:**
+
 - Imperative handle tests (toggleOption, navigateQuestion, submit, getOptionCount, getActiveTab) — these test behavior, not markup
 - Transport.submitAnswers call format tests — data format unchanged
 - Multi-question tab switching tests — Tabs component unchanged
@@ -433,7 +465,7 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 1. QuestionPrompt uses neutral styling with `status-info` left border accent; no amber color values remain in the component
 2. Header row (MessageSquare icon + bold text) is removed in both single and multi-question modes
 3. Options use shadcn `RadioGroup`/`RadioGroupItem` (single-select) and `Checkbox` (multi-select) instead of native inputs
-4. Option descriptions are inline with labels using ` — ` separator, not on separate lines
+4. Option descriptions are inline with labels using `—` separator, not on separate lines
 5. Vertical height is reduced by ~40-50% compared to current implementation (measurable via the space budget)
 6. Submit button uses shared `Button` component with `size="sm"`
 7. "Navigate questions" hint line is removed
@@ -447,7 +479,7 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 15. `RadioGroup` and `Checkbox` are exported from `layers/shared/ui/index.ts`
 16. `questionState` TV variant exists in `message-variants.ts` with `pending` and `answered` states
 17. Showcases render correctly with the new design
-18. No raw color values (amber-*, emerald-*) remain in QuestionPrompt.tsx
+18. No raw color values (amber-_, emerald-_) remain in QuestionPrompt.tsx
 
 ---
 
@@ -456,24 +488,27 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 ### Phase 1: Foundation (~30 min)
 
 **Install shared primitives:**
+
 1. Run `npx shadcn@latest add radio-group checkbox` to install into `layers/shared/ui/`
 2. Verify files created: `radio-group.tsx`, `checkbox.tsx`
 3. Add exports to `layers/shared/ui/index.ts`
 4. Verify TypeScript compilation
 
 **Add TV variant:**
+
 1. Add `questionState` to `message-variants.ts`
 2. Verify import works from QuestionPrompt
 
 ### Phase 2: Core Redesign (~90 min)
 
 **Rewrite QuestionPrompt.tsx:**
+
 1. Replace container styling with `questionState` variant + `rounded-msg-tool`
 2. Remove header row (`MessageSquare` icon + bold header) from `renderQuestionContent`
 3. Remove `MessageSquare` import from lucide-react
 4. Replace native `<input type="radio">` with `RadioGroup` + `RadioGroupItem`
 5. Replace native `<input type="checkbox">` with `Checkbox`
-6. Make option descriptions inline (same line as label, ` — ` separator)
+6. Make option descriptions inline (same line as label, `—` separator)
 7. Reduce option padding to `py-1`, container spacing to `space-y-0.5`
 8. Update Kbd badge styling to `text-2xs text-muted-foreground`
 9. Replace raw `<button>` submit with `<Button size="sm">`
@@ -488,6 +523,7 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 ### Phase 3: Testing & Polish (~60 min)
 
 **Update tests:**
+
 1. Update class name assertions (amber -> status-info, emerald -> status-success)
 2. Update RadioGroupItem element queries (Radix `<button role="radio">` vs native `<input type="radio">`)
 3. Remove navigation hints test case
@@ -496,10 +532,12 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 6. Run full test suite: `pnpm vitest run apps/client/src/layers/features/chat/__tests__/QuestionPrompt.test.tsx`
 
 **Verify showcases:**
+
 1. Check `MessageShowcases.tsx` renders correctly
 2. Visual check in dev playground for all states: pending, active, stale, submitted, multi-question, error
 
 **Dark mode verification:**
+
 1. Confirm design tokens render correctly in both light and dark themes
 2. Verify `status-info` and `status-success` token contrast ratios meet AA standards
 
@@ -507,13 +545,13 @@ The existing test suite at `QuestionPrompt.test.tsx` (697 lines, 30+ test cases)
 
 ## 10. Risk Assessment
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Radix RadioGroup API differs from native `<input>` in tests | High | Medium | Update test queries early; Radix uses `role="radio"` on `<button>`, so role queries still work |
-| Shadcn RadioGroup/Checkbox installation conflicts | Low | Low | Standard shadcn install; check `components.json` config |
-| Stale question opacity breaks readability | Low | Low | `opacity-60` is visually distinct but still readable; test in both themes |
-| Multi-select Checkbox doesn't integrate with existing selection state | Medium | Medium | Checkbox `onCheckedChange` maps directly to `handleMultiSelect`; test thoroughly |
-| Existing downstream consumers of QuestionPrompt break | Low | Low | Only consumed by `AssistantMessageContent`; props unchanged |
+| Risk                                                                  | Likelihood | Impact | Mitigation                                                                                     |
+| --------------------------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------------- |
+| Radix RadioGroup API differs from native `<input>` in tests           | High       | Medium | Update test queries early; Radix uses `role="radio"` on `<button>`, so role queries still work |
+| Shadcn RadioGroup/Checkbox installation conflicts                     | Low        | Low    | Standard shadcn install; check `components.json` config                                        |
+| Stale question opacity breaks readability                             | Low        | Low    | `opacity-60` is visually distinct but still readable; test in both themes                      |
+| Multi-select Checkbox doesn't integrate with existing selection state | Medium     | Medium | Checkbox `onCheckedChange` maps directly to `handleMultiSelect`; test thoroughly               |
+| Existing downstream consumers of QuestionPrompt break                 | Low        | Low    | Only consumed by `AssistantMessageContent`; props unchanged                                    |
 
 ---
 
@@ -541,15 +579,15 @@ ToolApproval uses full border + wash because it signals security-relevant decisi
 
 ### Token Reference
 
-| Token | Light Mode | Dark Mode | Usage |
-|---|---|---|---|
-| `status-info` | Blue | Blue | Pending question left border |
-| `status-info/30` | Blue 30% opacity | Blue 30% opacity | Active question ring |
-| `status-success-border` | Green border | Green border | Answered question border |
-| `status-success-bg` | Green background | Green background | Answered question background |
-| `status-success-fg` | Green text | Green text | Answered question text |
-| `bg-muted/50` | Gray 50% opacity | Gray 50% opacity | Pending question background |
-| `text-muted-foreground` | Gray | Gray | Descriptions, Kbd badges |
+| Token                   | Light Mode       | Dark Mode        | Usage                        |
+| ----------------------- | ---------------- | ---------------- | ---------------------------- |
+| `status-info`           | Blue             | Blue             | Pending question left border |
+| `status-info/30`        | Blue 30% opacity | Blue 30% opacity | Active question ring         |
+| `status-success-border` | Green border     | Green border     | Answered question border     |
+| `status-success-bg`     | Green background | Green background | Answered question background |
+| `status-success-fg`     | Green text       | Green text       | Answered question text       |
+| `bg-muted/50`           | Gray 50% opacity | Gray 50% opacity | Pending question background  |
+| `text-muted-foreground` | Gray             | Gray             | Descriptions, Kbd badges     |
 
 ---
 

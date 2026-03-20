@@ -100,25 +100,20 @@ export interface AgentRuntime {
   // --- Session lifecycle ---
   ensureSession(sessionId: string, opts: SessionOpts): void;
   hasSession(sessionId: string): boolean;
-  updateSession(sessionId: string, opts: {
-    permissionMode?: PermissionMode;
-    model?: string;
-  }): boolean;
+  updateSession(
+    sessionId: string,
+    opts: {
+      permissionMode?: PermissionMode;
+      model?: string;
+    }
+  ): boolean;
 
   // --- Messaging ---
-  sendMessage(
-    sessionId: string,
-    content: string,
-    opts?: MessageOpts
-  ): AsyncGenerator<StreamEvent>;
+  sendMessage(sessionId: string, content: string, opts?: MessageOpts): AsyncGenerator<StreamEvent>;
 
   // --- Interactive flows ---
   approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean;
-  submitAnswers(
-    sessionId: string,
-    toolCallId: string,
-    answers: Record<string, string>
-  ): boolean;
+  submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
 
   // --- Session queries (storage) ---
   listSessions(projectDir: string): Promise<Session[]>;
@@ -248,7 +243,12 @@ Rename `AgentManager` → `ClaudeCodeRuntime implements AgentRuntime`. Encapsula
 ```typescript
 // apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts
 
-import type { AgentRuntime, RuntimeCapabilities, SessionOpts, MessageOpts } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  RuntimeCapabilities,
+  SessionOpts,
+  MessageOpts,
+} from '@dorkos/shared/agent-runtime';
 
 export class ClaudeCodeRuntime implements AgentRuntime {
   readonly type = 'claude-code' as const;
@@ -340,6 +340,7 @@ apps/server/src/services/runtimes/
 All routes switch from importing `agentManager` singleton to `runtimeRegistry`:
 
 **Before:**
+
 ```typescript
 import { agentManager } from '../services/core/agent-manager';
 
@@ -352,6 +353,7 @@ router.post('/:id/messages', async (req, res) => {
 ```
 
 **After:**
+
 ```typescript
 import { runtimeRegistry } from '../services/core/runtime-registry';
 
@@ -366,11 +368,11 @@ router.post('/:id/messages', async (req, res) => {
 
 **Routes affected:**
 
-| Route | Changes |
-|-------|---------|
-| `sessions.ts` | Replace 9 `agentManager.*` calls with `runtime.*` |
-| `models.ts` | Replace `agentManager.getSupportedModels()` with `runtime.getSupportedModels()` |
-| `config.ts` | Replace `resolveClaudeCliPath()` — move to runtime-specific utility |
+| Route         | Changes                                                                         |
+| ------------- | ------------------------------------------------------------------------------- |
+| `sessions.ts` | Replace 9 `agentManager.*` calls with `runtime.*`                               |
+| `models.ts`   | Replace `agentManager.getSupportedModels()` with `runtime.getSupportedModels()` |
+| `config.ts`   | Replace `resolveClaudeCliPath()` — move to runtime-specific utility             |
 
 | `commands.ts` | Replace `commandRegistryService.getCommands()` with `runtime.getCommands()` |
 
@@ -381,6 +383,7 @@ router.post('/:id/messages', async (req, res) => {
 The Relay adapter switches from `AgentManagerLike` to `AgentRuntime`:
 
 **Before:**
+
 ```typescript
 interface AgentManagerLike {
   ensureSession(sessionId, opts): void;
@@ -390,6 +393,7 @@ interface AgentManagerLike {
 ```
 
 **After:**
+
 ```typescript
 // ClaudeCodeAdapter constructor takes AgentRuntime instead of AgentManagerLike
 constructor(deps: {
@@ -438,6 +442,7 @@ router.get('/capabilities', (req, res) => {
 ```
 
 Transport interface addition:
+
 ```typescript
 // packages/shared/src/transport.ts
 export interface Transport {
@@ -483,15 +488,15 @@ function SessionItem({ session }: { session: Session }) {
 
 **Client files affected:**
 
-| File | Change |
-|------|--------|
-| `use-session-status.ts` | Replace hardcoded `MODEL_CONTEXT_WINDOWS` with models from `getModels()` |
-| `SessionItem.tsx` | Gate permission mode display on `supportsPermissionModes` |
-| `ToolApproval.tsx` | Gate on `supportsToolApproval` |
-| `QuestionPrompt.tsx` | Gate on `supportsQuestionPrompt` |
-| `http-transport.ts` | Add `getCapabilities()` method |
-| `direct-transport.ts` | Add `getCapabilities()` method (returns ClaudeCode capabilities directly) |
-| `constants.ts` | Remove hardcoded model context windows (now server-driven) |
+| File                    | Change                                                                    |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `use-session-status.ts` | Replace hardcoded `MODEL_CONTEXT_WINDOWS` with models from `getModels()`  |
+| `SessionItem.tsx`       | Gate permission mode display on `supportsPermissionModes`                 |
+| `ToolApproval.tsx`      | Gate on `supportsToolApproval`                                            |
+| `QuestionPrompt.tsx`    | Gate on `supportsQuestionPrompt`                                          |
+| `http-transport.ts`     | Add `getCapabilities()` method                                            |
+| `direct-transport.ts`   | Add `getCapabilities()` method (returns ClaudeCode capabilities directly) |
+| `constants.ts`          | Remove hardcoded model context windows (now server-driven)                |
 
 ### 8. Shared Schema Updates
 
@@ -593,20 +598,20 @@ The only observable difference is a new `GET /api/capabilities` endpoint that re
 
 **New tests:**
 
-| Test | Purpose |
-|------|---------|
-| `runtime-registry.test.ts` | Registry CRUD, default resolution, `resolveForAgent()` |
+| Test                          | Purpose                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `runtime-registry.test.ts`    | Registry CRUD, default resolution, `resolveForAgent()`                                          |
 | `claude-code-runtime.test.ts` | Verify `ClaudeCodeRuntime` implements `AgentRuntime` correctly — delegates to internal services |
 
 **Updated tests:**
 
-| Test | Change |
-|------|--------|
-| `sessions.test.ts` | Mock `runtimeRegistry.getDefault()` instead of `agentManager` |
-| `agent-manager.test.ts` | Rename to `claude-code-runtime.test.ts`, update imports |
-| `session-broadcaster.test.ts` | Update import paths |
-| `transcript-reader.test.ts` | Update import paths |
-| `use-chat-session-relay.test.ts` | No change (tests client hook, not server) |
+| Test                             | Change                                                        |
+| -------------------------------- | ------------------------------------------------------------- |
+| `sessions.test.ts`               | Mock `runtimeRegistry.getDefault()` instead of `agentManager` |
+| `agent-manager.test.ts`          | Rename to `claude-code-runtime.test.ts`, update imports       |
+| `session-broadcaster.test.ts`    | Update import paths                                           |
+| `transcript-reader.test.ts`      | Update import paths                                           |
+| `use-chat-session-relay.test.ts` | No change (tests client hook, not server)                     |
 
 ### Integration Tests
 
@@ -633,11 +638,11 @@ The only observable difference is a new `GET /api/capabilities` endpoint that re
 
 ## Documentation Updates
 
-| Document | Change |
-|----------|--------|
-| `CLAUDE.md` | Update service descriptions to reference `ClaudeCodeRuntime` and `RuntimeRegistry` |
-| `contributing/architecture.md` | Add RuntimeRegistry section, update data flow diagrams |
-| `contributing/api-reference.md` | Document `GET /api/capabilities` endpoint |
+| Document                        | Change                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------------- |
+| `CLAUDE.md`                     | Update service descriptions to reference `ClaudeCodeRuntime` and `RuntimeRegistry` |
+| `contributing/architecture.md`  | Add RuntimeRegistry section, update data flow diagrams                             |
+| `contributing/api-reference.md` | Document `GET /api/capabilities` endpoint                                          |
 
 ## Implementation Phases
 

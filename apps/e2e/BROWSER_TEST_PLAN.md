@@ -26,6 +26,7 @@ Validate the app boots and core layout renders after pnpm migration and App.tsx 
 **Existing spec:** `tests/smoke/app-loads.spec.ts` (3 tests) — 6/6 smoke tests PASS.
 
 **Bugs found:**
+
 - **LAYOUT BUG**: Main content area intercepts pointer events on sidebar footer buttons (Settings, Relay, Mesh, Pulse, Theme). JS `dispatchEvent` works but normal clicks fail in Playwright MCP. The e2e test runner handles this correctly (different viewport config).
 - **Selector change**: Chat input is `combobox` role (not `textbox`), name is "Message Claude..." (not "message"). Fixed in ChatPage POM.
 
@@ -36,6 +37,7 @@ Validate the app boots and core layout renders after pnpm migration and App.tsx 
 The Pulse UI was completely redesigned with new components, cron builder, directory picker, and toast notifications.
 
 ### Schedule CRUD
+
 - [ ] Create a new schedule via the Create Schedule dialog
 - [ ] Visual cron builder generates valid cron expressions
 - [x] Cron presets (every hour, daily, weekly) populate correctly (automated: preset populates schedule field)
@@ -51,6 +53,7 @@ The Pulse UI was completely redesigned with new components, cron builder, direct
 - [x] Pulse dialog opens and closes (automated)
 
 ### Run History
+
 - [ ] Run history panel shows past runs
 - [ ] Filtering runs by status works
 - [ ] Navigation between schedule list and run history works
@@ -58,10 +61,12 @@ The Pulse UI was completely redesigned with new components, cron builder, direct
 - [ ] Cancel a running schedule
 
 ### Notifications
+
 - [ ] Toast notifications appear for schedule actions (create, delete, trigger)
 - [ ] "Calm tech" favicon-based notifications work when tab is backgrounded
 
 ### Accessibility
+
 - [ ] Keyboard navigation through schedule list
 - [ ] Screen reader labels on interactive elements
 - [ ] Skeleton loading states display during data fetch
@@ -73,6 +78,7 @@ The Pulse UI was completely redesigned with new components, cron builder, direct
 Brand new feature: agent discovery, registration, topology graph, health monitoring.
 
 ### Agent Discovery & Registration
+
 - [x] Mesh panel loads and displays status header (shows "Mesh is not enabled" when feature-flagged off)
 - [x] Mesh dialog opens and closes correctly (automated)
 - [x] Shows not-enabled state with enable instructions (automated)
@@ -84,12 +90,14 @@ Brand new feature: agent discovery, registration, topology graph, health monitor
 - [ ] Unregister (remove) a registered agent
 
 ### Topology Graph
+
 - [ ] D3-based topology graph renders registered agents
 - [ ] Agent nodes are interactive (click for details)
 - [ ] Graph updates when agents are added/removed
 - [ ] Graph handles empty state (no agents)
 
 ### Health & Observability
+
 - [ ] Agent health detail view shows heartbeat status
 - [ ] Mesh stats header shows aggregate counts
 - [ ] Health indicators update after heartbeat
@@ -101,6 +109,7 @@ Brand new feature: agent discovery, registration, topology graph, health monitor
 Brand new feature: inter-agent messaging, delivery tracing, dead-letter handling.
 
 ### Messaging
+
 - [x] Relay panel loads and displays activity feed (shows "Relay is not enabled" when feature-flagged off)
 - [x] Relay dialog opens and closes correctly (automated)
 - [x] Shows not-enabled state with enable instructions (automated)
@@ -110,16 +119,19 @@ Brand new feature: inter-agent messaging, delivery tracing, dead-letter handling
 - [ ] Inbox view filters messages for current agent
 
 ### Endpoints
+
 - [ ] Endpoint list shows registered endpoints
 - [ ] Create a new relay endpoint
 - [ ] Delete a relay endpoint
 
 ### Delivery Tracking
+
 - [ ] Message trace view shows delivery spans
 - [ ] Delivery metrics dashboard renders charts/stats
 - [ ] Dead-letter messages appear when delivery fails
 
 ### Relay Transport (Chat Integration)
+
 - [ ] When relay is enabled, chat messages route through relay transport
 - [ ] `relay_message` SSE events render in chat panel
 - [ ] `relay_receipt` confirmation appears after sending
@@ -193,17 +205,20 @@ Verify settings still work after layout changes.
 ## 9. Cross-Cutting Concerns
 
 ### Navigation & Layout
+
 - [x] Sidebar collapse/expand toggle works (Open sidebar / Close sidebar buttons)
 - [x] Panel switching between Chat, Pulse, Relay, Mesh (all dialogs open/close correctly)
 - [ ] URL `?dir=` parameter persists working directory
 - [ ] Mobile responsive layout (if applicable)
 
 ### Dark Mode / Theming
+
 - [x] Light mode renders correctly (theme cycle: system → light)
 - [x] Dark mode renders correctly (verified via screenshot — proper contrast)
 - [ ] Theme toggle persists across page reload
 
 ### Error States
+
 - [ ] App handles server disconnection gracefully (Express stops)
 - [ ] SSE reconnection works after network interruption
 - [ ] 409 session lock error displays user-friendly message
@@ -222,16 +237,21 @@ Verify settings still work after layout changes.
 ## Execution Plan
 
 ### Phase 1: Run Existing Tests
+
 ```bash
 cd apps/e2e && npx playwright test
 ```
+
 Verify all 4 existing spec files pass. Fix any regressions before manual testing.
 
 ### Phase 2: Manual Smoke Test
+
 Walk through Section 1 checklist in the browser.
 
 ### Phase 3: Feature Testing (Sections 2-8)
+
 Work through each feature section. Prioritize by risk:
+
 1. Pulse (complete redesign — highest regression risk)
 2. Mesh (new feature — needs full validation)
 3. Relay (new feature — needs full validation)
@@ -239,7 +259,9 @@ Work through each feature section. Prioritize by risk:
 5. Settings, Command Palette, Cross-cutting
 
 ### Phase 4: Write New Automated Tests
+
 Use `/browsertest create` for high-value test cases discovered during manual testing. Priority candidates:
+
 - Pulse schedule CRUD
 - Mesh agent discovery flow
 - Relay message send/receive
@@ -249,16 +271,16 @@ Use `/browsertest create` for high-value test cases discovered during manual tes
 
 ## Progress Summary
 
-| Section | Items | Completed | Status |
-|---------|-------|-----------|--------|
-| 1. Smoke Tests | 6 | 6 | DONE |
-| 2. Pulse Scheduler | 16 | 8 | In progress |
-| 3. Mesh Discovery | 11 | 3 | In progress |
-| 4. Relay Messaging | 12 | 3 | In progress |
-| 5. Chat | 6 | 0 | Not started |
-| 6. Session Management | 6 | 1 | In progress |
-| 7. Settings Dialog | 8 | 8 | DONE |
-| 8. Command Palette | 5 | 0 | Not started |
-| 9. Cross-Cutting | 9 | 4 | In progress |
-| 10. Marketing Site | 4 | 0 | Not started |
-| **Total** | **83** | **33** | **40% complete** |
+| Section               | Items  | Completed | Status           |
+| --------------------- | ------ | --------- | ---------------- |
+| 1. Smoke Tests        | 6      | 6         | DONE             |
+| 2. Pulse Scheduler    | 16     | 8         | In progress      |
+| 3. Mesh Discovery     | 11     | 3         | In progress      |
+| 4. Relay Messaging    | 12     | 3         | In progress      |
+| 5. Chat               | 6      | 0         | Not started      |
+| 6. Session Management | 6      | 1         | In progress      |
+| 7. Settings Dialog    | 8      | 8         | DONE             |
+| 8. Command Palette    | 5      | 0         | Not started      |
+| 9. Cross-Cutting      | 9      | 4         | In progress      |
+| 10. Marketing Site    | 4      | 0         | Not started      |
+| **Total**             | **83** | **33**    | **40% complete** |

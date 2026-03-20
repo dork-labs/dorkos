@@ -283,7 +283,9 @@ describe('ToolApproval', () => {
       expect(screen.getByText(/Auto-denied/)).toBeDefined();
       expect(screen.getByText(/timed out after 10 minutes/)).toBeDefined();
       expect(screen.getByTestId('tool-approval-decided')).toBeDefined();
-      expect(screen.getByTestId('tool-approval-decided').getAttribute('data-decision')).toBe('denied');
+      expect(screen.getByTestId('tool-approval-decided').getAttribute('data-decision')).toBe(
+        'denied'
+      );
     });
 
     it('does not show timeout message on manual deny', async () => {

@@ -22,7 +22,7 @@ What follows is the recommended homepage copy, pulling the strongest version of 
 DorkOS is starting.
 ```
 
-*Design direction: A single monospaced line, center-screen, on black. Holds for 1.2 seconds, then fades as the hero section activates beneath it. Character-by-character at terminal speed (fast, not typewriter-slow). No logo. No navigation. Just the statement. Navigation fades in after this line completes.*
+_Design direction: A single monospaced line, center-screen, on black. Holds for 1.2 seconds, then fades as the hero section activates beneath it. Character-by-character at terminal speed (fast, not typewriter-slow). No logo. No navigation. Just the statement. Navigation fades in after this line completes._
 
 **Why this works:** It sets the tone for the entire hybrid approach — the user's first impression is not of a website but of something turning on. Brief enough to not feel like a loading screen. Strong enough to prime the boot-sequence aesthetic.
 
@@ -35,6 +35,7 @@ DorkOS is starting.
 **Source: Jobs**
 
 > # Your agents are brilliant.
+>
 > # They just can't do anything when you leave.
 
 `the operating system for autonomous AI agents`
@@ -63,7 +64,7 @@ The operating system for autonomous AI agents.
 
 ---
 
-*Design direction (from Ive): The page opens dark — not decoratively, dark the way a screen is dark before power reaches it. Headline in geometric sans-serif, 48-56px. Tagline in monospaced type, muted amber or warm white at 70% opacity — treated like a system output, not a marketing slogan. Position line at 50% opacity below. No images. No illustrations. The words are the hero. 160-200px of negative space below.*
+_Design direction (from Ive): The page opens dark — not decoratively, dark the way a screen is dark before power reaches it. Headline in geometric sans-serif, 48-56px. Tagline in monospaced type, muted amber or warm white at 70% opacity — treated like a system output, not a marketing slogan. Position line at 50% opacity below. No images. No illustrations. The words are the hero. 160-200px of negative space below._
 
 ---
 
@@ -75,7 +76,7 @@ The operating system for autonomous AI agents.
 >
 > Nothing.
 
-*Design direction: Four cards, each activating on scroll — opacity from 0 to 1, 8px vertical translation, staggered by 100ms. Monospaced labels in muted amber. Body in sans-serif at 90% opacity. 64px between cards. The feel: a diagnostic readout. The system is scanning before it proposes.*
+_Design direction: Four cards, each activating on scroll — opacity from 0 to 1, 8px vertical translation, staggered by 100ms. Monospaced labels in muted amber. Body in sans-serif at 90% opacity. 64px between cards. The feel: a diagnostic readout. The system is scanning before it proposes._
 
 **Card 1: The Dead Terminal** — Source: Ogilvy
 
@@ -97,7 +98,7 @@ The operating system for autonomous AI agents.
 
 > CI went red at 2:47am. The fix was three lines of code. Your agent knew exactly what to do. Your terminal was closed. The build stayed red until morning.
 
-*Note: Wieden's "3am Build" replaces the "Flow Killer" card. It's more emotionally aligned with the tagline and the timeline that follows. The flow-killer pain point can surface elsewhere (docs, secondary pages).*
+_Note: Wieden's "3am Build" replaces the "Flow Killer" card. It's more emotionally aligned with the tagline and the timeline that follows. The flow-killer pain point can surface elsewhere (docs, secondary pages)._
 
 **Below the cards — Source: Ogilvy (modified)**
 
@@ -121,7 +122,7 @@ The operating system for autonomous AI agents.
 >
 > Your agents need the same thing.
 
-*Design direction (Ive): Centered. Geometric sans-serif, 32-36px for the main lines. The build-up (cron, IPC, registries, filesystems) at smaller size, 60% opacity — it's the structural argument that makes the OS metaphor feel earned, not claimed. "Your agents need the same thing." at 50% opacity, 16px. The background lightens almost imperceptibly — from #0A0A0A to #0D0D0D. The page is waking up.*
+_Design direction (Ive): Centered. Geometric sans-serif, 32-36px for the main lines. The build-up (cron, IPC, registries, filesystems) at smaller size, 60% opacity — it's the structural argument that makes the OS metaphor feel earned, not claimed. "Your agents need the same thing." at 50% opacity, 16px. The background lightens almost imperceptibly — from #0A0A0A to #0D0D0D. The page is waking up._
 
 **Why Jobs' expanded version wins:** The four-line build-up (cron → IPC → registries → filesystems) does the work of turning "operating system" from a metaphor into an inevitability. The reader doesn't need to be told it's an OS. They discover it.
 
@@ -135,7 +136,7 @@ The operating system for autonomous AI agents.
 A NIGHT WITH DORKOS
 ```
 
-*Design direction (Ive): Vertical timeline. Timestamps in monospaced type at 40% opacity, left-aligned. Narrative offset to the right. A thin 1px vertical line connects timestamps. Module names appear inline in monospaced amber — they surface as actors in the story, never introduced as a list. Each moment activates on scroll.*
+_Design direction (Ive): Vertical timeline. Timestamps in monospaced type at 40% opacity, left-aligned. Narrative offset to the right. A thin 1px vertical line connects timestamps. Module names appear inline in monospaced amber — they surface as actors in the story, never introduced as a list. Each moment activates on scroll._
 
 ---
 
@@ -189,7 +190,7 @@ The system you designed has been productive for eight hours. You've been awake f
 
 ---
 
-*Note: Ive's $4.20 cost detail is the synthesis MVP. It grounds the entire narrative in reality — this isn't aspirational, it's a Tuesday night that costs less than a latte. Wieden's "four minutes" close is the emotional payoff.*
+_Note: Ive's $4.20 cost detail is the synthesis MVP. It grounds the entire narrative in reality — this isn't aspirational, it's a Tuesday night that costs less than a latte. Wieden's "four minutes" close is the emotional payoff._
 
 ---
 
@@ -201,16 +202,16 @@ The system you designed has been productive for eight hours. You've been awake f
 SUBSYSTEMS
 ```
 
-*Design direction (Ive): Compact two-column layout, max-width 720px. Each row activates with a subtle 6px status indicator transitioning from dark to amber. No borders — rows separated by 1px lines at 4% opacity.*
+_Design direction (Ive): Compact two-column layout, max-width 720px. Each row activates with a subtle 6px status indicator transitioning from dark to amber. No borders — rows separated by 1px lines at 4% opacity._
 
-| | |
-|---|---|
-| **No schedule** | **Pulse** — Cron-based autonomous execution. Your ideas keep moving forward. |
+|                      |                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| **No schedule**      | **Pulse** — Cron-based autonomous execution. Your ideas keep moving forward.                     |
 | **No communication** | **Relay** — Built-in messaging. Telegram, webhooks, inter-agent channels. Your agents reach you. |
-| **No coordination** | **Mesh** — Agent discovery and network. Your agents find each other and collaborate. |
-| **No memory** | **Wing** — Persistent context across sessions. Your agents remember. `Coming soon` |
-| **No oversight** | **Console** — Browser-based command center. You see everything, from anywhere. |
-| **No feedback loop** | **Loop** — Signal, hypothesis, dispatch, measure. Your agents improve. |
+| **No coordination**  | **Mesh** — Agent discovery and network. Your agents find each other and collaborate.             |
+| **No memory**        | **Wing** — Persistent context across sessions. Your agents remember. `Coming soon`               |
+| **No oversight**     | **Console** — Browser-based command center. You see everything, from anywhere.                   |
+| **No feedback loop** | **Loop** — Signal, hypothesis, dispatch, measure. Your agents improve.                           |
 
 ---
 
@@ -218,7 +219,7 @@ SUBSYSTEMS
 
 **Source: Ive's design + Ogilvy's copy**
 
-*Design direction (Ive): The gravitational center of the page. Background shifts to #111111 — the faintest warmth. 160px of space above. The command sits alone: JetBrains Mono, 24-28px, full contrast. Dollar sign at 30% opacity. A blinking amber cursor follows the last character. No button. No box. 80px negative space on every side.*
+_Design direction (Ive): The gravitational center of the page. Background shifts to #111111 — the faintest warmth. 160px of space above. The command sits alone: JetBrains Mono, 24-28px, full contrast. Dollar sign at 30% opacity. A blinking amber cursor follows the last character. No button. No box. 80px negative space on every side._
 
 ```
 $ npm install -g dorkos
@@ -254,9 +255,9 @@ One person. Ten agents. Ship around the clock.
 > That ratio just changed.
 > The builders who coordinate their agents will ship what they've always imagined.
 
-*Original copy: "The developers building agent teams will outship everyone. / Not because they are better. / Because they never stop." Updated to align with pro-human positioning — empowerment over competitive framing. See `decisions.md` Decision 16.*
+_Original copy: "The developers building agent teams will outship everyone. / Not because they are better. / Because they never stop." Updated to align with pro-human positioning — empowerment over competitive framing. See `decisions.md` Decision 16._
 
-*Design direction (Ive): Background returns to #0A0A0A. The dot grid reappears faintly. The tribal line at 28-32px, full contrast. The origin at 15px, 45% opacity — provenance, not biography. The boldness invitation at 18px, 70% opacity — trajectory, not taunt.*
+_Design direction (Ive): Background returns to #0A0A0A. The dot grid reappears faintly. The tribal line at 28-32px, full contrast. The origin at 15px, 45% opacity — provenance, not biography. The boldness invitation at 18px, 70% opacity — trajectory, not taunt._
 
 ---
 
@@ -266,7 +267,7 @@ One person. Ten agents. Ship around the clock.
 
 > Your agents are ready. Your ideas keep moving forward.
 
-*Editorial note (2026-03-02): Original was "Your agents are ready. Leave the rest to them." — reframed because "leave the rest to them" implies the human's role is done or lesser. The new framing centers the human's vision continuing through the system they built.*
+_Editorial note (2026-03-02): Original was "Your agents are ready. Leave the rest to them." — reframed because "leave the rest to them" implies the human's role is done or lesser. The new framing centers the human's vision continuing through the system they built._
 
 Then, after 80px of space, centered, monospaced:
 
@@ -274,7 +275,7 @@ Then, after 80px of space, centered, monospaced:
 Ready.
 ```
 
-*Design direction (Ive): "Ready." in monospaced amber, 16px. A period. The boot sequence is complete. The system is running and waiting for input. This is the last thing the user sees before the footer.*
+_Design direction (Ive): "Ready." in monospaced amber, 16px. A period. The boot sequence is complete. The system is running and waiting for input. This is the last thing the user sees before the footer._
 
 ---
 
@@ -296,13 +297,13 @@ No email signup. No newsletter. No social icons beyond what's functional.
 
 All five agents delivered strong new lines. Here's the full set, ranked by utility:
 
-| Line | Source | Use | Why |
-|---|---|---|---|
-| **"Close the laptop."** | Wieden | CTA. Second sticker. Final site line. | Inverts every CTA in technology. Two words. Permission and dare. |
-| **"The quiet part is the architecture."** | Ive | README. Brand motto. Internal compass. | Names what an OS actually is — the invisible structure. For the people who stay long enough to understand. |
-| **"Your agents don't need more intelligence. They need an address."** | Jobs | Pivot section alt. Social. README. | Nine words. Reframes the product as: we gave your agents a place to exist. |
-| **"Your agents don't have a performance problem. They have an infrastructure problem."** | Godin | Pivot subhead. PR. Blog posts. | Reframes the conversation from model quality to missing infrastructure. |
-| **"The gap is not intelligence. The gap is everything around the intelligence."** | Ogilvy | Position statement. Launch announcement. | Redirects the word "intelligence" away from what competitors sell. |
+| Line                                                                                     | Source | Use                                      | Why                                                                                                        |
+| ---------------------------------------------------------------------------------------- | ------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **"Close the laptop."**                                                                  | Wieden | CTA. Second sticker. Final site line.    | Inverts every CTA in technology. Two words. Permission and dare.                                           |
+| **"The quiet part is the architecture."**                                                | Ive    | README. Brand motto. Internal compass.   | Names what an OS actually is — the invisible structure. For the people who stay long enough to understand. |
+| **"Your agents don't need more intelligence. They need an address."**                    | Jobs   | Pivot section alt. Social. README.       | Nine words. Reframes the product as: we gave your agents a place to exist.                                 |
+| **"Your agents don't have a performance problem. They have an infrastructure problem."** | Godin  | Pivot subhead. PR. Blog posts.           | Reframes the conversation from model quality to missing infrastructure.                                    |
+| **"The gap is not intelligence. The gap is everything around the intelligence."**        | Ogilvy | Position statement. Launch announcement. | Redirects the word "intelligence" away from what competitors sell.                                         |
 
 ---
 
@@ -321,16 +322,16 @@ All five agents delivered strong new lines. Here's the full set, ranked by utili
 
 ## Design System Summary (from Ive)
 
-| Element | Specification |
-|---|---|
-| **Background** | #0A0A0A (primary) → #0D0D0D (post-pivot) → #111111 (install) → #0A0A0A (close) |
-| **Primary text** | #F5F5F0, warm white |
-| **Accent** | #D4A843, muted amber — status indicators, module names, cursor, tagline |
-| **Monospaced** | JetBrains Mono (or Berkeley Mono) — system names, code, timestamps, install |
-| **Sans-serif** | Inter (or Neue Haas Grotesk) — human explanation, body copy |
-| **Grid** | 8px base. Section spacing: 160-200px. Card spacing: 64px. |
-| **Animation** | Opacity + 8-12px vertical translate. 400-600ms ease-out. No springs, no bounce. |
-| **Background texture** | Faint dot grid on darkest sections — structural, not decorative |
+| Element                | Specification                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| **Background**         | #0A0A0A (primary) → #0D0D0D (post-pivot) → #111111 (install) → #0A0A0A (close)  |
+| **Primary text**       | #F5F5F0, warm white                                                             |
+| **Accent**             | #D4A843, muted amber — status indicators, module names, cursor, tagline         |
+| **Monospaced**         | JetBrains Mono (or Berkeley Mono) — system names, code, timestamps, install     |
+| **Sans-serif**         | Inter (or Neue Haas Grotesk) — human explanation, body copy                     |
+| **Grid**               | 8px base. Section spacing: 160-200px. Card spacing: 64px.                       |
+| **Animation**          | Opacity + 8-12px vertical translate. 400-600ms ease-out. No springs, no bounce. |
+| **Background texture** | Faint dot grid on darkest sections — structural, not decorative                 |
 
 ---
 

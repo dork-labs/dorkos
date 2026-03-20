@@ -14,7 +14,7 @@
 ### Session 1 - 2026-03-03
 
 - Task #1: [P1] Install Shadcn Sidebar and resolve use-mobile.tsx conflict
-- Task #2: [P1] Add --sidebar-* CSS variables to index.css
+- Task #2: [P1] Add --sidebar-\* CSS variables to index.css
 - Task #3: [P1] Add agentDialogOpen and onboardingStep to Zustand store
 - Task #4: [P2] Create DialogHost component
 - Task #5: [P2] Refactor standalone path in App.tsx with SidebarProvider layout
@@ -38,7 +38,7 @@
 - `apps/client/src/layers/shared/ui/index.ts` — Updated barrel exports for Sidebar + Sheet
 - `apps/client/src/layers/shared/ui/button.tsx` — Restored after shadcn overwrite
 - `apps/client/src/layers/shared/ui/input.tsx` — Restored after shadcn overwrite
-- `apps/client/src/index.css` — Added 8 --sidebar-* CSS variables (light + dark)
+- `apps/client/src/index.css` — Added 8 --sidebar-\* CSS variables (light + dark)
 - `apps/client/src/layers/shared/model/app-store.ts` — Added agentDialogOpen + onboardingStep state
 - `apps/client/src/layers/widgets/app-layout/ui/DialogHost.tsx` — New root-level dialog host (7 dialogs)
 - `apps/client/src/layers/widgets/app-layout/index.ts` — Added DialogHost export

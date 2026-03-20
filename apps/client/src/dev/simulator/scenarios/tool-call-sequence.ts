@@ -13,7 +13,8 @@ const ASST_MSG = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const INTRO_TEXT = "I'll read the auth service first, then update the JWT expiry. Let me start by locating the relevant file and understanding the current configuration.\n\n";
+const INTRO_TEXT =
+  "I'll read the auth service first, then update the JWT expiry. Let me start by locating the relevant file and understanding the current configuration.\n\n";
 
 const GREP_TOOL = createToolCall({
   toolCallId: 'sim-tc-grep',
@@ -29,7 +30,8 @@ const READ_TOOL = createToolCall({
   status: 'pending',
 });
 
-const MIDDLE_TEXT = "\n\nI can see the JWT token is currently configured with a 15-minute expiry. I'll update that to 30 minutes now.\n\n";
+const MIDDLE_TEXT =
+  "\n\nI can see the JWT token is currently configured with a 15-minute expiry. I'll update that to 30 minutes now.\n\n";
 
 const EDIT_TOOL = createToolCall({
   toolCallId: 'sim-tc-edit',
@@ -42,7 +44,8 @@ const EDIT_TOOL = createToolCall({
   status: 'pending',
 });
 
-const VERIFY_TEXT = "\n\nThe edit is done. Let me verify this doesn't break any existing tests by running the auth test suite.\n\n";
+const VERIFY_TEXT =
+  "\n\nThe edit is done. Let me verify this doesn't break any existing tests by running the auth test suite.\n\n";
 
 const BASH_TOOL = createToolCall({
   toolCallId: 'sim-tc-bash',
@@ -69,23 +72,43 @@ export const toolCallSequence: SimScenario = {
 
     // Tool 1: Grep
     { type: 'append_tool_call', messageId: 'sim-tc-asst', toolCall: GREP_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-tc-asst', toolCallId: 'sim-tc-grep', patch: { status: 'running' }, delayMs: 1000 },
     {
       type: 'update_tool_call',
       messageId: 'sim-tc-asst',
       toolCallId: 'sim-tc-grep',
-      patch: { status: 'complete', result: 'src/services/auth.ts:14: expiresIn: "15m"\nsrc/services/auth.test.ts:8: expect(decoded.exp)' },
+      patch: { status: 'running' },
+      delayMs: 1000,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-tc-asst',
+      toolCallId: 'sim-tc-grep',
+      patch: {
+        status: 'complete',
+        result:
+          'src/services/auth.ts:14: expiresIn: "15m"\nsrc/services/auth.test.ts:8: expect(decoded.exp)',
+      },
       delayMs: 400,
     },
 
     // Tool 2: Read
     { type: 'append_tool_call', messageId: 'sim-tc-asst', toolCall: READ_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-tc-asst', toolCallId: 'sim-tc-read', patch: { status: 'running' }, delayMs: 1600 },
     {
       type: 'update_tool_call',
       messageId: 'sim-tc-asst',
       toolCallId: 'sim-tc-read',
-      patch: { status: 'complete', result: 'import jwt from "jsonwebtoken";\n\nexport function generateToken(userId: string) {\n  return jwt.sign({ sub: userId }, process.env.JWT_SECRET!, {\n    expiresIn: "15m",\n  });\n}\n\nexport function verifyToken(token: string) {\n  return jwt.verify(token, process.env.JWT_SECRET!);\n}' },
+      patch: { status: 'running' },
+      delayMs: 1600,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-tc-asst',
+      toolCallId: 'sim-tc-read',
+      patch: {
+        status: 'complete',
+        result:
+          'import jwt from "jsonwebtoken";\n\nexport function generateToken(userId: string) {\n  return jwt.sign({ sub: userId }, process.env.JWT_SECRET!, {\n    expiresIn: "15m",\n  });\n}\n\nexport function verifyToken(token: string) {\n  return jwt.verify(token, process.env.JWT_SECRET!);\n}',
+      },
       delayMs: 400,
     },
 
@@ -96,7 +119,13 @@ export const toolCallSequence: SimScenario = {
 
     // Tool 3: Edit
     { type: 'append_tool_call', messageId: 'sim-tc-asst', toolCall: EDIT_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-tc-asst', toolCallId: 'sim-tc-edit', patch: { status: 'running' }, delayMs: 1000 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-tc-asst',
+      toolCallId: 'sim-tc-edit',
+      patch: { status: 'running' },
+      delayMs: 1000,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-tc-asst',
@@ -112,14 +141,21 @@ export const toolCallSequence: SimScenario = {
 
     // Tool 4: Bash
     { type: 'append_tool_call', messageId: 'sim-tc-asst', toolCall: BASH_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-tc-asst', toolCallId: 'sim-tc-bash', patch: { status: 'running' }, delayMs: 2400 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-tc-asst',
+      toolCallId: 'sim-tc-bash',
+      patch: { status: 'running' },
+      delayMs: 2400,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-tc-asst',
       toolCallId: 'sim-tc-bash',
       patch: {
         status: 'complete',
-        result: '✓ src/services/auth.test.ts (5 tests) 45ms\n\nTest Files  1 passed (1)\nTests       5 passed (5)',
+        result:
+          '✓ src/services/auth.test.ts (5 tests) 45ms\n\nTest Files  1 passed (1)\nTests       5 passed (5)',
       },
       delayMs: 600,
     },

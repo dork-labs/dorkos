@@ -61,31 +61,35 @@ Remove `projectPath` from the binding schema:
 
 ```typescript
 // BEFORE
-export const AdapterBindingSchema = z.object({
-  id: z.string().uuid(),
-  adapterId: z.string(),
-  agentId: z.string(),
-  projectPath: z.string(),        // ← REMOVE
-  chatId: z.string().optional(),
-  channelType: ChannelTypeSchema.optional(),
-  sessionStrategy: SessionStrategySchema.default('per-chat'),
-  label: z.string().default(''),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-}).openapi('AdapterBinding');
+export const AdapterBindingSchema = z
+  .object({
+    id: z.string().uuid(),
+    adapterId: z.string(),
+    agentId: z.string(),
+    projectPath: z.string(), // ← REMOVE
+    chatId: z.string().optional(),
+    channelType: ChannelTypeSchema.optional(),
+    sessionStrategy: SessionStrategySchema.default('per-chat'),
+    label: z.string().default(''),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi('AdapterBinding');
 
 // AFTER
-export const AdapterBindingSchema = z.object({
-  id: z.string().uuid(),
-  adapterId: z.string(),
-  agentId: z.string(),
-  chatId: z.string().optional(),
-  channelType: ChannelTypeSchema.optional(),
-  sessionStrategy: SessionStrategySchema.default('per-chat'),
-  label: z.string().default(''),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-}).openapi('AdapterBinding');
+export const AdapterBindingSchema = z
+  .object({
+    id: z.string().uuid(),
+    adapterId: z.string(),
+    agentId: z.string(),
+    chatId: z.string().optional(),
+    channelType: ChannelTypeSchema.optional(),
+    sessionStrategy: SessionStrategySchema.default('per-chat'),
+    label: z.string().default(''),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi('AdapterBinding');
 ```
 
 `CreateBindingRequestSchema` derives via `.omit()` and auto-updates. `AdapterBinding` and `CreateBindingRequest` types are auto-inferred.
@@ -104,7 +108,7 @@ export interface BindingRouterDeps {
   relayCore: RelayCoreLike;
   agentManager: AgentSessionCreator;
   relayDir: string;
-  meshCore: AdapterMeshCoreLike;  // ← ADD (required)
+  meshCore: AdapterMeshCoreLike; // ← ADD (required)
   resolveAdapterInstanceId?: (platformType: string) => string | undefined;
 }
 ```
@@ -121,9 +125,7 @@ const enrichedPayload =
 // AFTER
 const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
 if (!projectPath) {
-  logger.warn(
-    `BindingRouter: agent '${binding.agentId}' not found in mesh registry, skipping`,
-  );
+  logger.warn(`BindingRouter: agent '${binding.agentId}' not found in mesh registry, skipping`);
   return;
 }
 const enrichedPayload =
@@ -176,7 +178,7 @@ this.bindingRouter = new BindingRouter({
   relayCore: this.deps.relayCore,
   agentManager: sessionCreator,
   relayDir,
-  meshCore: this.deps.meshCore,  // ← ADD
+  meshCore: this.deps.meshCore, // ← ADD
   resolveAdapterInstanceId: (platformType: string) => {
     const match = this.configs.find((c) => c.type === platformType && c.enabled);
     return match?.id;
@@ -262,31 +264,38 @@ Same removal — drop `projectPath` from the `binding_create` tool schema.
 ### 6. Client UI Changes
 
 **BindingDialog** (`apps/client/src/layers/features/mesh/ui/BindingDialog.tsx`):
+
 - Remove `projectPath: string` from `BindingFormValues` interface
 - Remove `projectPath` state, setter, sync effect, and reset
 - Remove the "Project Path" `<Input>` field (lines 254-262)
 - Remove `projectPath` from `handleConfirm()` output
 
 **BindingList** (`apps/client/src/layers/features/relay/ui/BindingList.tsx`):
+
 - Remove `projectPathName()` utility function
 - Change agent name fallback: `agent?.name ?? binding.agentId` (was `agent?.name ?? projectPathName(binding.projectPath)`)
 - Remove `projectPath` from create/duplicate binding calls
 
 **use-topology-handlers** (`apps/client/src/layers/features/mesh/ui/use-topology-handlers.ts`):
+
 - Remove `targetProjectPath` from `PendingConnection` interface
 - Remove `projectPath` from the `createBindingMutate` call
 
 **ConversationRow** (`apps/client/src/layers/features/relay/ui/ConversationRow.tsx`):
+
 - Remove `projectPath: ''` from quick-route binding creation
 - Remove `projectPath: values.projectPath` from dialog binding creation
 
 **AdapterSetupWizard** (`apps/client/src/layers/features/relay/ui/AdapterSetupWizard.tsx`):
+
 - Remove `projectPath: ''` from wizard binding creation
 
 **ToolsTab** (`apps/client/src/layers/features/settings/ui/ToolsTab.tsx`):
+
 - Update tool description: `binding_create(adapterId, agentId)` (remove `projectPath`)
 
 **ContextTab** (`apps/client/src/layers/features/agent-settings/ui/ContextTab.tsx`):
+
 - Update tool description: `binding_create(adapterId, agentId)` (remove `projectPath`)
 
 ## Data Flow (After Change)
@@ -325,6 +334,7 @@ ClaudeCodeAdapter → ensureSession(id, { cwd: projectPath })
 ### Server Tests
 
 **binding-router.test.ts** — Core changes:
+
 - Add `meshCore` mock to `BindingRouterDeps` with `getProjectPath: vi.fn()`
 - Mock `getProjectPath` to return appropriate paths per test case
 - Add test: "skips routing when meshCore returns undefined for agentId"
@@ -332,21 +342,25 @@ ClaudeCodeAdapter → ensureSession(id, { cwd: projectPath })
 - Update assertions that verify CWD enrichment (use meshCore return value)
 
 **binding-store.test.ts:**
+
 - Remove `projectPath` from all mock binding objects
 - Add test: "strips projectPath from legacy bindings.json on load"
 - Add test: "strips agentDir from legacy bindings.json on load"
 
 **relay-bindings-integration.test.ts:**
+
 - Remove `projectPath` from mock data and request bodies
 - Update assertions
 
 **MCP tool tests:**
+
 - Remove `projectPath` from `binding_create` tool call args
 - Verify binding is created without `projectPath`
 
 ### Client Tests
 
 All binding-related test files need `projectPath` removed from mock data:
+
 - `BindingDialog.test.tsx` — Remove projectPath from form assertions
 - `BindingList.test.tsx` — Remove `projectPathName` assertions, update agent fallback test
 - `ConversationRow.test.tsx` — Remove `projectPath: ''` from assertions

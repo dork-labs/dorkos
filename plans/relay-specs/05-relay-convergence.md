@@ -1,17 +1,17 @@
 ---
-title: "Relay Convergence"
+title: 'Relay Convergence'
 spec: 5
 order: 4
 status: done
 blockedBy: [3, 4, 6]
 blocks: []
 parallelWith: []
-litepaperPhase: "Phase 5 — Convergence"
+litepaperPhase: 'Phase 5 — Convergence'
 complexity: high
 risk: high
 estimatedFiles: 15-25
 newPackages: []
-primaryWorkspaces: ["apps/server", "apps/client", "packages/relay", "packages/shared"]
+primaryWorkspaces: ['apps/server', 'apps/client', 'packages/relay', 'packages/shared']
 touchesServer: true
 touchesClient: true
 migrationRisk: >
@@ -21,13 +21,13 @@ migrationRisk: >
   AND the fallback path thoroughly. Consider a feature flag for each migration
   (RELAY_PULSE_DISPATCH, RELAY_CONSOLE_ENDPOINT) so they can be enabled independently.
 verification:
-  - "Pulse dispatches via Relay — messages appear in Relay inbox, agent sessions start via runtime adapter"
-  - "Pulse still works if Relay is disabled (fallback to direct AgentManager call)"
-  - "Console sends messages through Relay endpoint — chat still works end-to-end"
-  - "Console still works if Relay console endpoint is disabled (fallback to HTTP POST)"
-  - "Message trace shows full journey: sender → budget check → delivery → runtime adapter → response"
-  - "All existing tests still pass (no regressions)"
-  - "CLAUDE.md and contributing docs reflect the converged architecture"
+  - 'Pulse dispatches via Relay — messages appear in Relay inbox, agent sessions start via runtime adapter'
+  - 'Pulse still works if Relay is disabled (fallback to direct AgentManager call)'
+  - 'Console sends messages through Relay endpoint — chat still works end-to-end'
+  - 'Console still works if Relay console endpoint is disabled (fallback to HTTP POST)'
+  - 'Message trace shows full journey: sender → budget check → delivery → runtime adapter → response'
+  - 'All existing tests still pass (no regressions)'
+  - 'CLAUDE.md and contributing docs reflect the converged architecture'
 notes: >
   This is the highest-risk spec — it touches the primary user interaction path
   (Console) and the autonomous execution path (Pulse). Plan for feature flags
@@ -95,6 +95,7 @@ OUT OF SCOPE:
 ## Context for Review
 
 This is the most architecturally impactful spec — it changes how Pulse and Console work. The /ideate session should focus on:
+
 - The backwards-compatibility strategy for Console migration (how do both paths coexist?)
 - How the Claude Code runtime adapter (Spec 6) handles Pulse dispatch messages
 - Message tracing data model — what do you store, where, and how do you query it?

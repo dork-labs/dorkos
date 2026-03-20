@@ -1,31 +1,31 @@
 ---
-title: "Relay External Adapters"
+title: 'Relay External Adapters'
 spec: 4
 order: 3
 status: done
 blockedBy: [2]
 blocks: [5]
 parallelWith: [3]
-litepaperPhase: "Phase 3 — External Adapters"
+litepaperPhase: 'Phase 3 — External Adapters'
 complexity: high
 risk: medium
 estimatedFiles: 12-18
 newPackages: []
-primaryWorkspaces: ["packages/relay", "apps/server", "apps/client", "apps/web"]
+primaryWorkspaces: ['packages/relay', 'apps/server', 'apps/client', 'apps/web']
 touchesServer: true
 touchesClient: true
 externalDependencies:
-  - "Telegram Bot API token (user must create a bot via @BotFather)"
-  - "Network access for Telegram long polling or webhook delivery"
+  - 'Telegram Bot API token (user must create a bot via @BotFather)'
+  - 'Network access for Telegram long polling or webhook delivery'
 verification:
-  - "Telegram adapter receives inbound messages and publishes to Relay"
-  - "Telegram adapter delivers outbound Relay messages to Telegram chats"
-  - "Webhook adapter accepts inbound HTTP POST and publishes to Relay"
-  - "Webhook adapter delivers outbound messages via HTTP POST"
-  - "Adapter config at ~/.dork/relay/adapters.json is hot-reloadable"
-  - "Adapters normalize messages into StandardPayload format"
-  - "Console activity feed shows live Relay events (replaces simulated feed)"
-  - "Typing signals flow through Telegram adapter"
+  - 'Telegram adapter receives inbound messages and publishes to Relay'
+  - 'Telegram adapter delivers outbound Relay messages to Telegram chats'
+  - 'Webhook adapter accepts inbound HTTP POST and publishes to Relay'
+  - 'Webhook adapter delivers outbound messages via HTTP POST'
+  - 'Adapter config at ~/.dork/relay/adapters.json is hot-reloadable'
+  - 'Adapters normalize messages into StandardPayload format'
+  - 'Console activity feed shows live Relay events (replaces simulated feed)'
+  - 'Typing signals flow through Telegram adapter'
 notes: >
   Can run in PARALLEL with Spec 3 (Advanced Reliability) — they're independent
   additions to the Spec 2 foundation. Both must complete before Spec 5.
@@ -100,6 +100,7 @@ OUT OF SCOPE:
 ## Context for Review
 
 This is the first spec where Relay reaches outside the process. The /ideate session should focus on:
+
 - Telegram Bot API integration patterns (long polling vs webhooks, message formatting)
 - Webhook security (HMAC signature verification, replay protection)
 - How to test adapters (mock external APIs, integration test patterns)

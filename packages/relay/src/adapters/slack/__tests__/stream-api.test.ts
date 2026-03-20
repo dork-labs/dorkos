@@ -51,7 +51,10 @@ describe('appendStream', () => {
     await appendStream(client, 'stream-abc', 'Hello world');
 
     const chat = (client as unknown as { chat: Record<string, ReturnType<typeof vi.fn>> }).chat;
-    expect(chat.appendStream).toHaveBeenCalledWith({ stream_id: 'stream-abc', text: 'Hello world' });
+    expect(chat.appendStream).toHaveBeenCalledWith({
+      stream_id: 'stream-abc',
+      text: 'Hello world',
+    });
   });
 
   it('propagates errors from the underlying API call', async () => {

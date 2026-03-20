@@ -81,7 +81,10 @@ export class TraceStore {
     };
     const rawStatus = String(span.status ?? 'sent');
     const status = (statusMap[rawStatus] ?? rawStatus) as
-      'sent' | 'delivered' | 'failed' | 'timeout';
+      | 'sent'
+      | 'delivered'
+      | 'failed'
+      | 'timeout';
 
     this.db
       .insert(relayTraces)
@@ -124,11 +127,7 @@ export class TraceStore {
 
     if (Object.keys(setValues).length === 0) return;
 
-    this.db
-      .update(relayTraces)
-      .set(setValues)
-      .where(eq(relayTraces.messageId, messageId))
-      .run();
+    this.db.update(relayTraces).set(setValues).where(eq(relayTraces.messageId, messageId)).run();
   }
 
   /**
@@ -151,11 +150,7 @@ export class TraceStore {
    * @param traceId - Trace ID to look up
    */
   getTrace(traceId: string): TraceSpanRow[] {
-    return this.db
-      .select()
-      .from(relayTraces)
-      .where(eq(relayTraces.traceId, traceId))
-      .all();
+    return this.db.select().from(relayTraces).where(eq(relayTraces.traceId, traceId)).all();
   }
 
   /**
@@ -276,9 +271,7 @@ export class TraceStore {
         sentAt: relayTraces.sentAt,
       })
       .from(relayTraces)
-      .where(
-        sql`json_extract(${relayTraces.metadata}, '$.adapterId') = ${adapterId}`,
-      )
+      .where(sql`json_extract(${relayTraces.metadata}, '$.adapterId') = ${adapterId}`)
       .all();
 
     const VALID_CHANNEL_TYPES = new Set<ChannelType>(['dm', 'group', 'channel', 'thread']);
@@ -301,9 +294,10 @@ export class TraceStore {
           }
         } else {
           const rawChannel = meta.channelType as string | undefined;
-          const channelType = rawChannel && VALID_CHANNEL_TYPES.has(rawChannel as ChannelType)
-            ? (rawChannel as ChannelType)
-            : undefined;
+          const channelType =
+            rawChannel && VALID_CHANNEL_TYPES.has(rawChannel as ChannelType)
+              ? (rawChannel as ChannelType)
+              : undefined;
           chatMap.set(chatId, {
             chatId,
             displayName: meta.displayName as string | undefined,

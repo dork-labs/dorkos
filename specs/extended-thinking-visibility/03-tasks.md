@@ -1,4 +1,5 @@
 # Task Breakdown: Extended Thinking Visibility
+
 Generated: 2026-03-16
 Source: specs/extended-thinking-visibility/02-specification.md
 Last Decompose: 2026-03-16
@@ -10,12 +11,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ## Phase 1: Foundation
 
 ### Task 1.1: Add ThinkingPartSchema and thinking_delta to shared schemas
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 1.2
 
 **Technical Requirements**:
+
 - Add `thinking_delta` to `StreamEventTypeSchema` enum
 - Create `ThinkingDeltaSchema` with `{ text: z.string() }` shape
 - Create `ThinkingPartSchema` with `{ type: 'thinking', text, isStreaming?, elapsedMs? }`
@@ -24,6 +27,7 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 - Ensure types are re-exported from `@dorkos/shared/types`
 
 **Implementation Steps**:
+
 1. Add `'thinking_delta'` to the `StreamEventTypeSchema` enum before `'text_delta'`
 2. Add `ThinkingDeltaSchema` after `TextDeltaSchema`
 3. Add `ThinkingPartSchema` after `SubagentPartSchema`
@@ -32,6 +36,7 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 6. Verify type re-exports
 
 **Acceptance Criteria**:
+
 - [ ] `StreamEventTypeSchema` includes `'thinking_delta'`
 - [ ] `ThinkingDeltaSchema` exists with correct shape
 - [ ] `ThinkingPartSchema` exists with correct shape
@@ -43,21 +48,25 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 1.2: Add thinking tracking fields to ToolState in agent-types.ts
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 1.1
 
 **Technical Requirements**:
+
 - Add `inThinking: boolean` and `thinkingStartMs: number` to `ToolState` interface
 - Update `createToolState()` factory with getter/setter closures for new fields
 - Initialize `inThinking = false` and `thinkingStartMs = 0`
 
 **Implementation Steps**:
+
 1. Add fields to `ToolState` interface
 2. Add closure variables and getter/setter pairs to `createToolState()`
 
 **Acceptance Criteria**:
+
 - [ ] `ToolState` interface includes new fields
 - [ ] `createToolState()` initializes both fields
 - [ ] Fields are readable and writable
@@ -69,23 +78,27 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ## Phase 2: Server Pipeline
 
 ### Task 2.1: Add thinking block handling to sdk-event-mapper.ts
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.1, Task 1.2
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Handle `content_block_start(thinking)` -> set `toolState.inThinking = true`, no event emitted
 - Handle `content_block_delta(thinking_delta)` -> yield `{ type: 'thinking_delta', data: { text } }` when `inThinking`
 - Handle `content_block_stop` during thinking -> reset `inThinking`, no event emitted
 - SDK uses `delta.thinking` (not `delta.text`) for thinking content
 
 **Implementation Steps**:
+
 1. Add thinking check in `content_block_start` before `tool_use` check
 2. Add `thinking_delta` branch in `content_block_delta` before `text_delta` check
 3. Add `inThinking` check in `content_block_stop` before `inTool` check
 
 **Acceptance Criteria**:
+
 - [ ] Thinking start sets flag, emits nothing
 - [ ] Thinking delta yields event when flag is set
 - [ ] Thinking delta ignored when flag is not set
@@ -96,23 +109,27 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 2.2: Add thinking block parsing to transcript-parser.ts
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: Task 1.1
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add `thinking?: string` field to `ContentBlock` interface
 - Add thinking branch to assistant content block loop BEFORE text check
 - SDK JSONL uses `thinking` field (not `text`) for thinking content
 - Thinking parts have `isStreaming: false` (history is always collapsed)
 
 **Implementation Steps**:
+
 1. Add `thinking` field to `ContentBlock` interface
 2. Add thinking branch in content block loop
 3. Handle edge cases: empty thinking, missing field
 
 **Acceptance Criteria**:
+
 - [ ] Thinking content blocks produce `ThinkingPart` entries
 - [ ] Parts have `isStreaming: false`
 - [ ] Thinking parts appear before text parts
@@ -125,12 +142,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ## Phase 3: Client Stream Handler
 
 ### Task 3.1: Add thinking_delta handling to stream-event-handler.ts
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.1
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add `thinkingStartRef` to `StreamEventDeps` interface
 - Add `thinking_delta` case to switch statement
 - Modify `text_delta` case to finalize in-progress thinking parts (set `isStreaming: false`, compute `elapsedMs`)
@@ -138,6 +157,7 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 - Update calling site to provide `thinkingStartRef`
 
 **Implementation Steps**:
+
 1. Add `thinkingStartRef` to interface and destructuring
 2. Import `ThinkingDelta` type
 3. Add `thinking_delta` case before `text_delta`
@@ -146,6 +166,7 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 6. Update hook that creates deps to provide the new ref
 
 **Acceptance Criteria**:
+
 - [ ] First thinking_delta creates ThinkingPart with `isStreaming: true`
 - [ ] Subsequent thinking_deltas append to existing part
 - [ ] First text_delta after thinking finalizes part with `elapsedMs`
@@ -159,12 +180,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ## Phase 4: UI Components
 
 ### Task 4.1: Create ThinkingBlock.tsx component
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.1
 **Can run parallel with**: Task 4.2
 
 **Technical Requirements**:
+
 - Four visual states: streaming, collapsing, collapsed, expanded
 - Breathing "Thinking..." label with `animate-pulse` during streaming
 - "Thought for Xs" chip after completion
@@ -177,12 +200,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 - ARIA: `aria-expanded`, `aria-label`, disabled state
 
 **Implementation Steps**:
+
 1. Create file at `apps/client/src/layers/features/chat/ui/ThinkingBlock.tsx`
 2. Implement `formatThinkingDuration()` helper
 3. Implement component with auto-collapse useEffect
 4. Style following SubagentBlock precedent
 
 **Acceptance Criteria**:
+
 - [ ] Renders streaming state with pulse animation
 - [ ] Renders collapsed chip with duration
 - [ ] Auto-collapses on streaming completion
@@ -194,22 +219,26 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 4.2: Add thinking branch to AssistantMessageContent.tsx parts dispatcher
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: Task 1.1, Task 4.1
 **Can run parallel with**: Task 4.1
 
 **Technical Requirements**:
+
 - Import `ThinkingBlock` from `../ThinkingBlock`
 - Add `thinking` type check before `text` check in `parts.map()`
 - Pass `text`, `isStreaming`, `elapsedMs` props
 - Use `_partId` for React key when available, fallback to `thinking-${i}`
 
 **Implementation Steps**:
+
 1. Add import for ThinkingBlock
 2. Add thinking branch in parts.map() before text branch
 
 **Acceptance Criteria**:
+
 - [ ] Messages with thinking part render ThinkingBlock
 - [ ] Correct order (thinking above text)
 - [ ] No regression without thinking parts
@@ -220,12 +249,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ## Phase 5: Tests
 
 ### Task 5.1: Add sdk-event-mapper unit tests for thinking blocks
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 2.1
 **Can run parallel with**: Task 5.2, Task 5.3
 
 6 test cases covering:
+
 - content_block_start(thinking) sets inThinking
 - thinking_delta yields event when inThinking
 - thinking_delta ignored when not inThinking
@@ -236,12 +267,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 5.2: Add transcript-parser unit tests for thinking blocks
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: Task 2.2
 **Can run parallel with**: Task 5.1, Task 5.3
 
 5 test cases covering:
+
 - Thinking + text block parsing
 - Empty thinking blocks skipped
 - Missing thinking field handled
@@ -251,12 +284,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 5.3: Add ThinkingBlock component tests
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 4.1
 **Can run parallel with**: Task 5.1, Task 5.2
 
 12 test cases covering:
+
 - Streaming label, content visibility
 - Collapsed chip text with duration
 - Expand/collapse toggle
@@ -268,12 +303,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 5.4: Add stream-event-handler tests for thinking_delta
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 3.1
 **Can run parallel with**: Task 5.1, Task 5.2, Task 5.3
 
 6 test cases covering:
+
 - First thinking_delta creates ThinkingPart
 - Append behavior on subsequent deltas
 - thinkingStartRef tracking
@@ -284,12 +321,14 @@ Surface Claude's extended thinking blocks in the DorkOS chat UI. The SDK emits t
 ---
 
 ### Task 5.5: Add AssistantMessageContent integration test for thinking parts
+
 **Size**: Small
 **Priority**: Medium
 **Dependencies**: Task 4.1, Task 4.2
 **Can run parallel with**: Task 5.1, Task 5.2, Task 5.3, Task 5.4
 
 3 test cases covering:
+
 - ThinkingBlock renders for thinking parts
 - Correct DOM order (thinking before text)
 - No regression without thinking parts

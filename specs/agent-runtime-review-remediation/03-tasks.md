@@ -20,6 +20,7 @@ Address 12 issues identified in the code review of the agent-runtime-abstraction
 Foundation changes that other phases depend on.
 
 ### Task 1.1: Narrow SseResponse interface to only accept 'close' event
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: None
@@ -28,11 +29,13 @@ Foundation changes that other phases depend on.
 Narrow the `SseResponse` interface from accepting any `string` event to only the `'close'` literal. Update `SessionLockManager` to use `SseResponse` instead of Express `Response`, and remove the `as Response` cast in `ClaudeCodeRuntime`.
 
 **Files:**
+
 - `packages/shared/src/agent-runtime.ts` — narrow `on(event: string, ...)` to `on(event: 'close', ...)`
 - `apps/server/src/services/runtimes/claude-code/session-lock.ts` — replace `Response` import with `SseResponse`
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` — remove `as Response` cast
 
 **Acceptance Criteria:**
+
 - [ ] `SseResponse` only accepts `'close'` event literal
 - [ ] No `import type { Response } from 'express'` in `session-lock.ts`
 - [ ] No `as Response` cast in runtime
@@ -42,6 +45,7 @@ Narrow the `SseResponse` interface from accepting any `string` event to only the
 ---
 
 ### Task 1.2: Define narrow DI port interfaces for AgentRegistryPort and RelayPort
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: None
@@ -50,6 +54,7 @@ Narrow the `SseResponse` interface from accepting any `string` event to only the
 Replace `unknown` types in `setMeshCore()` and `setRelay()` with narrow, structurally-typed port interfaces.
 
 **Files:**
+
 - `packages/shared/src/agent-runtime.ts` — add `AgentRegistryPort` (getByPath, updateLastSeen, listWithPaths) and `RelayPort` (publish, isEnabled)
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` — use `AgentRegistryPort` instead of `MeshCore`
 - `apps/server/src/services/runtimes/claude-code/context-builder.ts` — use `AgentRegistryPort` instead of `MeshCore`
@@ -57,6 +62,7 @@ Replace `unknown` types in `setMeshCore()` and `setRelay()` with narrow, structu
 **Key discovery:** `context-builder.ts` calls `meshCore.listWithPaths()` which was not in the spec's ideation. The port must include this method.
 
 **Acceptance Criteria:**
+
 - [ ] `AgentRegistryPort` and `RelayPort` exported from `@dorkos/shared/agent-runtime`
 - [ ] No `unknown` types in DI methods
 - [ ] No `import type { MeshCore }` in runtime or context-builder
@@ -65,6 +71,7 @@ Replace `unknown` types in `setMeshCore()` and `setRelay()` with narrow, structu
 ---
 
 ### Task 1.3: Make watchSession() functional via registerCallback on SessionBroadcaster
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: None
@@ -73,11 +80,13 @@ Replace `unknown` types in `setMeshCore()` and `setRelay()` with narrow, structu
 The current `watchSession()` is a no-op stub. Add `registerCallback()` to `SessionBroadcaster` and wire it through the runtime.
 
 **Files:**
+
 - `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` — add `registerCallback()` method, update `broadcastUpdate()` to invoke callbacks, update `deregisterClient()` to check callbacks before stopping watchers
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` — implement `watchSession()` via `broadcaster.registerCallback()`
 - New test: `apps/server/src/services/session/__tests__/session-broadcaster-callback.test.ts`
 
 **Acceptance Criteria:**
+
 - [ ] `registerCallback()` returns unsubscribe function
 - [ ] `broadcastUpdate()` invokes callbacks alongside SSE clients
 - [ ] Watcher lifecycle respects both SSE clients and callbacks
@@ -90,17 +99,20 @@ The current `watchSession()` is a no-op stub. Add `registerCallback()` to `Sessi
 Migrate routes to use `RuntimeRegistry` instead of direct Claude Code service imports.
 
 ### Task 2.1: Migrate commands.ts route to use RuntimeRegistry
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 2.2
 
 **Files:**
+
 - `packages/shared/src/agent-runtime.ts` — add `cwd` parameter to `getCommands()`
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` — implement per-CWD command registry cache (max 50)
 - `apps/server/src/routes/commands.ts` — replace direct `CommandRegistryService` with `runtimeRegistry.getDefault().getCommands()`
 
 **Acceptance Criteria:**
+
 - [ ] Route uses RuntimeRegistry, no direct `CommandRegistryService` import
 - [ ] Per-CWD caching preserved in runtime (max 50 entries)
 - [ ] Existing command route tests pass
@@ -108,17 +120,20 @@ Migrate routes to use `RuntimeRegistry` instead of direct Claude Code service im
 ---
 
 ### Task 2.2: Migrate relay.ts route to use RuntimeRegistry and remove TranscriptReader singleton
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 2.1
 
 **Files:**
+
 - `apps/server/src/routes/relay.ts` — replace `transcriptReader.getSession()` with `runtimeRegistry.getDefault().getSession()`
 - `apps/server/src/services/runtimes/claude-code/transcript-reader.ts` — remove singleton export
 - `apps/server/src/services/session/index.ts` — remove singleton re-export
 
 **Acceptance Criteria:**
+
 - [ ] No `transcriptReader` singleton import in any route
 - [ ] Singleton export removed (class export kept)
 - [ ] All relay route tests pass
@@ -126,12 +141,14 @@ Migrate routes to use `RuntimeRegistry` instead of direct Claude Code service im
 ---
 
 ### Task 2.3: Migrate sessions.ts SSE stream to runtime.watchSession() and remove app.locals.sessionBroadcaster
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 1.3
 **Can run parallel with**: None
 
 **Files:**
+
 - `apps/server/src/routes/sessions.ts` — replace `req.app.locals.sessionBroadcaster` with `runtime.watchSession()`
 - `apps/server/src/index.ts` — remove `app.locals.sessionBroadcaster` assignment
 - Test files: `sessions.test.ts`, `sessions-boundary.test.ts`, `sessions-relay.test.ts` — update mocks
@@ -139,6 +156,7 @@ Migrate routes to use `RuntimeRegistry` instead of direct Claude Code service im
 **Design consideration:** Relay subscription fan-in needs to be handled through `registerCallback()` in the broadcaster (extend Task 1.3's implementation to support relay subscriptions when clientId is provided).
 
 **Acceptance Criteria:**
+
 - [ ] No `app.locals.sessionBroadcaster` anywhere
 - [ ] SSE stream route uses `runtime.watchSession()`
 - [ ] Relay fan-in works through callback
@@ -151,17 +169,20 @@ Migrate routes to use `RuntimeRegistry` instead of direct Claude Code service im
 Remove stale compatibility shims and naming.
 
 ### Task 3.1: Update Obsidian plugin imports and remove old package.json export shims
+
 **Size**: Small
 **Priority**: Medium
 **Dependencies**: None
 **Can run parallel with**: Tasks 3.2, 3.3, 3.4
 
 **Files:**
+
 - `apps/server/src/services/runtimes/claude-code/index.ts` — add `TranscriptReader` and `CommandRegistryService` exports
 - `apps/obsidian-plugin/src/views/CopilotView.tsx` — update import path
 - `apps/server/package.json` — remove 3 old export shims
 
 **Acceptance Criteria:**
+
 - [ ] Obsidian plugin imports from canonical path
 - [ ] Old export shims removed
 - [ ] Plugin builds successfully
@@ -169,6 +190,7 @@ Remove stale compatibility shims and naming.
 ---
 
 ### Task 3.2: Clean up core/index.ts barrel to only export core infrastructure
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: None
@@ -177,6 +199,7 @@ Remove stale compatibility shims and naming.
 Remove all Claude Code-specific re-exports from `core/index.ts` (AgentManager alias, agent types, SDK mapper, MCP tools, interactive handlers). Update consumers to import from canonical claude-code paths.
 
 **Acceptance Criteria:**
+
 - [ ] `core/index.ts` only exports core infrastructure
 - [ ] No `AgentManager` alias exists
 - [ ] All broken imports fixed
@@ -184,12 +207,14 @@ Remove all Claude Code-specific re-exports from `core/index.ts` (AgentManager al
 ---
 
 ### Task 3.3: Rename AgentManagerLike to AgentRuntimeLike in relay package
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: None
 **Can run parallel with**: Tasks 3.1, 3.2, 3.4
 
 **Files:**
+
 - `packages/relay/src/adapters/claude-code-adapter.ts` — rename interface
 - `packages/relay/src/index.ts` — update re-export
 - `apps/server/src/services/relay/adapter-factory.ts` and `adapter-manager.ts` — update imports
@@ -197,12 +222,14 @@ Remove all Claude Code-specific re-exports from `core/index.ts` (AgentManager al
 - `contributing/adapter-catalog.md` — update documentation
 
 **Acceptance Criteria:**
+
 - [ ] No `AgentManagerLike` references in source code
 - [ ] All relay tests pass
 
 ---
 
 ### Task 3.4: Rename and relocate agent-manager test files to claude-code-runtime
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: None
@@ -211,6 +238,7 @@ Remove all Claude Code-specific re-exports from `core/index.ts` (AgentManager al
 Move 4 test files from `core/__tests__/` to `runtimes/claude-code/__tests__/`, rename from `agent-manager-*` to `claude-code-runtime-*`, update describe blocks and import paths. No test logic changes.
 
 **Acceptance Criteria:**
+
 - [ ] All 4 files moved and renamed
 - [ ] Describe blocks say `ClaudeCodeRuntime`
 - [ ] All 4 tests pass from new locations
@@ -221,6 +249,7 @@ Move 4 test files from `core/__tests__/` to `runtimes/claude-code/__tests__/`, r
 ## Phase 4: File Size Reduction
 
 ### Task 4.1: Extract sendMessage() body into message-sender.ts
+
 **Size**: Large
 **Priority**: Medium
 **Dependencies**: Tasks 1.1, 1.2
@@ -229,10 +258,12 @@ Move 4 test files from `core/__tests__/` to `runtimes/claude-code/__tests__/`, r
 Extract the 224-line `sendMessage()` body into `executeSdkQuery()` in a new `message-sender.ts` file. The runtime's `sendMessage()` becomes a thin wrapper.
 
 **Files:**
+
 - New: `apps/server/src/services/runtimes/claude-code/message-sender.ts`
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` — thin wrapper + cleanup
 
 **Acceptance Criteria:**
+
 - [ ] `message-sender.ts` contains `executeSdkQuery()` async generator
 - [ ] `claude-code-runtime.ts` under 500 lines (target ~470)
 - [ ] All tests pass (no behavioral changes)
@@ -242,6 +273,7 @@ Extract the 224-line `sendMessage()` body into `executeSdkQuery()` in a new `mes
 ## Phase 5: Verification and Documentation
 
 ### Task 5.1: Run full verification suite and update CLAUDE.md documentation
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: All previous tasks
@@ -250,6 +282,7 @@ Extract the 224-line `sendMessage()` body into `executeSdkQuery()` in a new `mes
 Run full test suite, typecheck, lint, and Obsidian plugin build. Verify all 12 code review issues are resolved. Update CLAUDE.md with 7 documentation changes.
 
 **Acceptance Criteria:**
+
 - [ ] All 1168+ tests pass
 - [ ] `pnpm typecheck` clean
 - [ ] `pnpm lint` no new errors

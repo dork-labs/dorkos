@@ -13,14 +13,14 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 1.1 — Fix double lock release race condition in sessions.ts
 
-| Field | Value |
-|-------|-------|
-| **ID** | 1.1 |
-| **Size** | Small |
-| **Priority** | High |
-| **File** | `apps/server/src/routes/sessions.ts` |
-| **Dependencies** | None |
-| **Parallel with** | 1.2, 1.3, 1.4 |
+| Field             | Value                                |
+| ----------------- | ------------------------------------ |
+| **ID**            | 1.1                                  |
+| **Size**          | Small                                |
+| **Priority**      | High                                 |
+| **File**          | `apps/server/src/routes/sessions.ts` |
+| **Dependencies**  | None                                 |
+| **Parallel with** | 1.2, 1.3, 1.4                        |
 
 **Issue (S1):** The POST `/api/sessions/:id/messages` handler has `res.on('close')` AND a `finally` block that both call `agentManager.releaseLock()`. Both fire on normal completion. If a new client acquires the lock between the two calls, the second release deletes the wrong client's lock.
 
@@ -30,14 +30,14 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 1.2 — Fix inFlight promise permanently poisoned on failure in binding-router.ts
 
-| Field | Value |
-|-------|-------|
-| **ID** | 1.2 |
-| **Size** | Small |
-| **Priority** | High |
-| **File** | `apps/server/src/services/relay/binding-router.ts` |
-| **Dependencies** | None |
-| **Parallel with** | 1.1, 1.3, 1.4 |
+| Field             | Value                                              |
+| ----------------- | -------------------------------------------------- |
+| **ID**            | 1.2                                                |
+| **Size**          | Small                                              |
+| **Priority**      | High                                               |
+| **File**          | `apps/server/src/services/relay/binding-router.ts` |
+| **Dependencies**  | None                                               |
+| **Parallel with** | 1.1, 1.3, 1.4                                      |
 
 **Issue (S2):** In `getOrCreateSession`, the `inFlight.delete(key)` call is inside the success path. If `createNewSession()` throws, the rejected promise remains in `inFlight` permanently, blocking all future session creation for that key.
 
@@ -47,14 +47,14 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 1.3 — Restrict CORS from wildcard to localhost origins in app.ts
 
-| Field | Value |
-|-------|-------|
-| **ID** | 1.3 |
-| **Size** | Medium |
-| **Priority** | High |
-| **Files** | `apps/server/src/app.ts`, `turbo.json` |
-| **Dependencies** | None |
-| **Parallel with** | 1.1, 1.2, 1.4 |
+| Field             | Value                                  |
+| ----------------- | -------------------------------------- |
+| **ID**            | 1.3                                    |
+| **Size**          | Medium                                 |
+| **Priority**      | High                                   |
+| **Files**         | `apps/server/src/app.ts`, `turbo.json` |
+| **Dependencies**  | None                                   |
+| **Parallel with** | 1.1, 1.2, 1.4                          |
 
 **Issue (S3):** `app.use(cors())` defaults to `Access-Control-Allow-Origin: *`, allowing any website to read session data.
 
@@ -64,14 +64,14 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 1.4 — Validate relay SSE subscription patterns in relay.ts
 
-| Field | Value |
-|-------|-------|
-| **ID** | 1.4 |
-| **Size** | Small |
-| **Priority** | High |
-| **File** | `apps/server/src/routes/relay.ts` |
-| **Dependencies** | None |
-| **Parallel with** | 1.1, 1.2, 1.3 |
+| Field             | Value                             |
+| ----------------- | --------------------------------- |
+| **ID**            | 1.4                               |
+| **Size**          | Small                             |
+| **Priority**      | High                              |
+| **File**          | `apps/server/src/routes/relay.ts` |
+| **Dependencies**  | None                              |
+| **Parallel with** | 1.1, 1.2, 1.3                     |
 
 **Issue (S4):** The GET `/stream` handler accepts arbitrary `subject` query param with default `'>'` (global wildcard). No validation prevents clients from subscribing to all relay traffic.
 
@@ -83,22 +83,24 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 2.1 — Fix EventSource reconnection cascade in useChatSession and stream-event-handler
 
-| Field | Value |
-|-------|-------|
-| **ID** | 2.1 |
-| **Size** | Large |
-| **Priority** | High |
-| **Files** | `ChatPanel.tsx`, `use-chat-session.ts`, `stream-event-handler.ts`, `chat-types.ts` |
-| **Dependencies** | None |
-| **Parallel with** | None |
+| Field             | Value                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| **ID**            | 2.1                                                                                |
+| **Size**          | Large                                                                              |
+| **Priority**      | High                                                                               |
+| **Files**         | `ChatPanel.tsx`, `use-chat-session.ts`, `stream-event-handler.ts`, `chat-types.ts` |
+| **Dependencies**  | None                                                                               |
+| **Parallel with** | None                                                                               |
 
 **Issue (C1+C2):** Three compounding issues create a cascade:
+
 1. `handleTaskEventWithCelebrations` depends on `taskState`/`celebrations` objects (new every render)
 2. `onStreamingDone` is inline `useCallback` inside the options literal
 3. `options` is always new reference, making `streamEventHandler` `useMemo` recreate every render
 4. EventSource `useEffect` depends on `streamEventHandler`, so it reconnects every render
 
 **Fix (4 parts):**
+
 - **Part A:** Ref-stabilize callbacks in `useChatSession` — store option callbacks via refs, remove `options` from `useMemo` deps
 - **Part B:** Update `createStreamEventHandler` to accept refs instead of options bag — change `StreamEventDeps` interface
 - **Part C:** Fix `handleTaskEventWithCelebrations` — destructure stable refs from `taskState`/`celebrations`
@@ -108,14 +110,14 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 2.2 — Fix FSD layer violation by moving FileEntry type to shared
 
-| Field | Value |
-|-------|-------|
-| **ID** | 2.2 |
-| **Size** | Small |
-| **Priority** | Medium |
-| **Files** | `use-file-autocomplete.ts`, `FilePalette.tsx`, `files/index.ts`, new `shared/lib/file-types.ts`, `shared/lib/index.ts`, `ChatPanel.tsx` |
-| **Dependencies** | None |
-| **Parallel with** | 2.3 |
+| Field             | Value                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**            | 2.2                                                                                                                                     |
+| **Size**          | Small                                                                                                                                   |
+| **Priority**      | Medium                                                                                                                                  |
+| **Files**         | `use-file-autocomplete.ts`, `FilePalette.tsx`, `files/index.ts`, new `shared/lib/file-types.ts`, `shared/lib/index.ts`, `ChatPanel.tsx` |
+| **Dependencies**  | None                                                                                                                                    |
+| **Parallel with** | 2.3                                                                                                                                     |
 
 **Issue (C3):** `use-file-autocomplete.ts` (chat feature) imports `FileEntry` from `features/files` — a cross-feature model import violating FSD rules.
 
@@ -125,14 +127,14 @@ All Phase 1 tasks can run in parallel since they touch different files.
 
 ### Task 2.3 — Make streaming text_delta updates immutable in stream-event-handler.ts
 
-| Field | Value |
-|-------|-------|
-| **ID** | 2.3 |
-| **Size** | Small |
-| **Priority** | Medium |
-| **File** | `apps/client/src/layers/features/chat/model/stream-event-handler.ts` |
-| **Dependencies** | 2.1 (modifies same file) |
-| **Parallel with** | 2.2 |
+| Field             | Value                                                                |
+| ----------------- | -------------------------------------------------------------------- |
+| **ID**            | 2.3                                                                  |
+| **Size**          | Small                                                                |
+| **Priority**      | Medium                                                               |
+| **File**          | `apps/client/src/layers/features/chat/model/stream-event-handler.ts` |
+| **Dependencies**  | 2.1 (modifies same file)                                             |
+| **Parallel with** | 2.2                                                                  |
 
 **Issue (C4):** `lastPart.text += text` mutates in place; `parts.push()` mutates the array. React may not detect changes correctly.
 
@@ -146,14 +148,14 @@ All Phase 3 tasks can run in parallel since they touch different files.
 
 ### Task 3.1 — Fix ARIA roles on LinkSafetyModal in StreamingText.tsx
 
-| Field | Value |
-|-------|-------|
-| **ID** | 3.1 |
-| **Size** | Small |
-| **Priority** | Low |
-| **File** | `apps/client/src/layers/features/chat/ui/StreamingText.tsx` |
-| **Dependencies** | None |
-| **Parallel with** | 3.2, 3.3 |
+| Field             | Value                                                       |
+| ----------------- | ----------------------------------------------------------- |
+| **ID**            | 3.1                                                         |
+| **Size**          | Small                                                       |
+| **Priority**      | Low                                                         |
+| **File**          | `apps/client/src/layers/features/chat/ui/StreamingText.tsx` |
+| **Dependencies**  | None                                                        |
+| **Parallel with** | 3.2, 3.3                                                    |
 
 **Issue (C5):** Backdrop uses `role="button"` and `tabIndex={0}` (wrong — it's not a button). Dialog content uses `role="presentation"` (provides no semantic meaning).
 
@@ -163,14 +165,14 @@ All Phase 3 tasks can run in parallel since they touch different files.
 
 ### Task 3.2 — Deduplicate sessions query in SessionSidebar.tsx
 
-| Field | Value |
-|-------|-------|
-| **ID** | 3.2 |
-| **Size** | Small |
-| **Priority** | Low |
-| **File** | `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` |
-| **Dependencies** | None |
-| **Parallel with** | 3.1, 3.3 |
+| Field             | Value                                                                |
+| ----------------- | -------------------------------------------------------------------- |
+| **ID**            | 3.2                                                                  |
+| **Size**          | Small                                                                |
+| **Priority**      | Low                                                                  |
+| **File**          | `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` |
+| **Dependencies**  | None                                                                 |
+| **Parallel with** | 3.1, 3.3                                                             |
 
 **Issue (C6):** Inline `useQuery` with `queryKey: ['sessions', selectedCwd]` duplicates the canonical `useSessions()` entity hook. Different configs (missing `refetchInterval`).
 
@@ -180,14 +182,14 @@ All Phase 3 tasks can run in parallel since they touch different files.
 
 ### Task 3.3 — Add error handling to relay SSE JSON.parse in use-relay-event-stream.ts
 
-| Field | Value |
-|-------|-------|
-| **ID** | 3.3 |
-| **Size** | Small |
-| **Priority** | Low |
-| **File** | `apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts` |
-| **Dependencies** | None |
-| **Parallel with** | 3.1, 3.2 |
+| Field             | Value                                                                   |
+| ----------------- | ----------------------------------------------------------------------- |
+| **ID**            | 3.3                                                                     |
+| **Size**          | Small                                                                   |
+| **Priority**      | Low                                                                     |
+| **File**          | `apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts` |
+| **Dependencies**  | None                                                                    |
+| **Parallel with** | 3.1, 3.2                                                                |
 
 **Issue (C7):** Both `relay_message` and `relay_delivery` listeners call `JSON.parse(e.data)` without try/catch. Malformed JSON crashes the React component tree.
 
@@ -199,13 +201,13 @@ All Phase 3 tasks can run in parallel since they touch different files.
 
 ### Task 4.1 — Validate all fixes with lint, typecheck, and test suite
 
-| Field | Value |
-|-------|-------|
-| **ID** | 4.1 |
-| **Size** | Medium |
-| **Priority** | High |
-| **Dependencies** | All previous tasks (1.1-3.3) |
-| **Parallel with** | None |
+| Field             | Value                        |
+| ----------------- | ---------------------------- |
+| **ID**            | 4.1                          |
+| **Size**          | Medium                       |
+| **Priority**      | High                         |
+| **Dependencies**  | All previous tasks (1.1-3.3) |
+| **Parallel with** | None                         |
 
 Run `pnpm typecheck`, `pnpm lint`, and `pnpm test -- --run` to verify all fixes. Fix any type errors from the `StreamEventDeps` interface change. Update tests that depend on the old `options` parameter shape.
 

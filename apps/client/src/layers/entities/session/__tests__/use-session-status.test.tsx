@@ -46,10 +46,9 @@ describe('useSessionStatus', () => {
       }),
     });
 
-    const { result } = renderHook(
-      () => useSessionStatus('s1', null, false),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useSessionStatus('s1', null, false), {
+      wrapper: createWrapper(transport),
+    });
 
     // Wait for initial session query
     await waitFor(() => {
@@ -80,10 +79,9 @@ describe('useSessionStatus', () => {
       updateSession: vi.fn().mockRejectedValue(new Error('Network error')),
     });
 
-    const { result } = renderHook(
-      () => useSessionStatus('s1', null, false),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useSessionStatus('s1', null, false), {
+      wrapper: createWrapper(transport),
+    });
 
     await waitFor(() => {
       expect(result.current.model).toBe('claude-sonnet-4-5-20250929');
@@ -112,10 +110,9 @@ describe('useSessionStatus', () => {
       }),
     });
 
-    const { result } = renderHook(
-      () => useSessionStatus('s1', null, false),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useSessionStatus('s1', null, false), {
+      wrapper: createWrapper(transport),
+    });
 
     await waitFor(() => {
       expect(result.current.permissionMode).toBe('default');
@@ -148,10 +145,9 @@ describe('useSessionStatus', () => {
 
     const streamingStatus = { model: 'claude-sonnet-4-6' } as SessionStatusEvent;
 
-    const { result } = renderHook(
-      () => useSessionStatus('s1', streamingStatus, false),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useSessionStatus('s1', streamingStatus, false), {
+      wrapper: createWrapper(transport),
+    });
 
     await waitFor(() => {
       // session?.model should win; streamingStatus.model must NOT override it
@@ -171,10 +167,9 @@ describe('useSessionStatus', () => {
 
     const streamingStatus = { model: 'claude-opus-4-6' } as SessionStatusEvent;
 
-    const { result } = renderHook(
-      () => useSessionStatus('s1', streamingStatus, true),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useSessionStatus('s1', streamingStatus, true), {
+      wrapper: createWrapper(transport),
+    });
 
     // streamingStatus.model should be used during streaming (synchronous — no await needed)
     expect(result.current.model).toBe('claude-opus-4-6');
@@ -187,10 +182,9 @@ describe('useSessionStatus', () => {
       updateSession: vi.fn(),
     });
 
-    const { result } = renderHook(
-      () => useSessionStatus(null, null, false),
-      { wrapper: createWrapper(transport) }
-    );
+    const { result } = renderHook(() => useSessionStatus(null, null, false), {
+      wrapper: createWrapper(transport),
+    });
 
     await act(async () => {
       await result.current.updateSession({ model: 'claude-haiku-4-5-20251001' });

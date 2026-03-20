@@ -24,22 +24,22 @@ Beyond message sending, Claude Code coupling runs deep: session storage (JSONL f
 
 ## Checklist
 
-| # | Area | Verdict | Severity |
-|---|------|---------|----------|
-| 1 | Claude Code Adapter scope | Covers Relay path only, not direct API | HIGH |
-| 2 | AgentManager SDK coupling | Monolithic, no abstraction layer | CRITICAL |
-| 3 | Server routes | `sessions.ts` and `models.ts` directly import AgentManager | HIGH |
-| 4 | Session storage (transcripts) | Hardcoded to `~/.claude/projects/` JSONL files | CRITICAL |
-| 5 | Relay message flow | Well-abstracted via adapter pattern | OK |
-| 6 | Client-side assumptions | Hardcoded Claude models, permission modes, cost tracking | MEDIUM |
-| 7 | MCP tool server | Uses SDK's `createSdkMcpServer()` directly | HIGH |
-| 8 | Context builder | XML blocks are DorkOS convention, reusable | LOW |
-| 9 | Interactive handlers | Returns SDK `PermissionResult` type | MEDIUM |
-| 10 | Command registry | Scans `.claude/commands/` — Claude convention | LOW |
-| 11 | Permission modes | `bypassPermissions`, `plan`, etc. are SDK concepts | MEDIUM |
-| 12 | Session sync/broadcaster | chokidar watches JSONL files — file-based coupling | HIGH |
-| 13 | Shared schemas/types | `StreamEvent`, `PermissionMode` embed Claude assumptions | MEDIUM |
-| 14 | CLI package | Hard-requires `claude` CLI binary | HIGH |
+| #   | Area                          | Verdict                                                    | Severity |
+| --- | ----------------------------- | ---------------------------------------------------------- | -------- |
+| 1   | Claude Code Adapter scope     | Covers Relay path only, not direct API                     | HIGH     |
+| 2   | AgentManager SDK coupling     | Monolithic, no abstraction layer                           | CRITICAL |
+| 3   | Server routes                 | `sessions.ts` and `models.ts` directly import AgentManager | HIGH     |
+| 4   | Session storage (transcripts) | Hardcoded to `~/.claude/projects/` JSONL files             | CRITICAL |
+| 5   | Relay message flow            | Well-abstracted via adapter pattern                        | OK       |
+| 6   | Client-side assumptions       | Hardcoded Claude models, permission modes, cost tracking   | MEDIUM   |
+| 7   | MCP tool server               | Uses SDK's `createSdkMcpServer()` directly                 | HIGH     |
+| 8   | Context builder               | XML blocks are DorkOS convention, reusable                 | LOW      |
+| 9   | Interactive handlers          | Returns SDK `PermissionResult` type                        | MEDIUM   |
+| 10  | Command registry              | Scans `.claude/commands/` — Claude convention              | LOW      |
+| 11  | Permission modes              | `bypassPermissions`, `plan`, etc. are SDK concepts         | MEDIUM   |
+| 12  | Session sync/broadcaster      | chokidar watches JSONL files — file-based coupling         | HIGH     |
+| 13  | Shared schemas/types          | `StreamEvent`, `PermissionMode` embed Claude assumptions   | MEDIUM   |
+| 14  | CLI package                   | Hard-requires `claude` CLI binary                          | HIGH     |
 
 ---
 
@@ -48,6 +48,7 @@ Beyond message sending, Claude Code coupling runs deep: session storage (JSONL f
 ### 1. Claude Code Adapter — Current Scope
 
 **What it handles:**
+
 - Relay `relay.agent.>` messages → routes to AgentManager
 - Relay `relay.system.pulse.>` messages → Pulse scheduler dispatch
 - Per-agent concurrency (semaphore + serial queues)
@@ -57,6 +58,7 @@ Beyond message sending, Claude Code coupling runs deep: session storage (JSONL f
 - Trace recording for delivery observability
 
 **What it does NOT handle:**
+
 - Direct API chat messages (POST `/api/sessions/:id/messages` when Relay disabled)
 - Session creation (POST `/api/sessions`)
 - Session listing and metadata (GET `/api/sessions`)
@@ -92,20 +94,20 @@ This is the composition root for all agent execution and is **entirely Claude SD
 
 **Critical coupling (directly imports AgentManager):**
 
-| Route | Coupling | Details |
-|-------|----------|---------|
-| `sessions.ts` | 9 AgentManager calls | ensureSession, sendMessage, approveTool, submitAnswers, getSdkSessionId, updateSession |
-| `models.ts` | 1 AgentManager call | getSupportedModels() |
-| `config.ts` | resolveClaudeCliPath() | Returns Claude CLI binary location |
+| Route         | Coupling               | Details                                                                                |
+| ------------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| `sessions.ts` | 9 AgentManager calls   | ensureSession, sendMessage, approveTool, submitAnswers, getSdkSessionId, updateSession |
+| `models.ts`   | 1 AgentManager call    | getSupportedModels()                                                                   |
+| `config.ts`   | resolveClaudeCliPath() | Returns Claude CLI binary location                                                     |
 
 **Moderate coupling (SDK concepts):**
 
-| Route | Coupling |
-|-------|----------|
-| `agents.ts` | Defaults `runtime: 'claude-code'`, `personaEnabled: true` |
-| `commands.ts` | Scans `.claude/commands/` directory |
-| `pulse.ts` | Scheduler dispatches to AgentManager (indirect) |
-| `relay.ts` | Uses `transcriptReader.getSession()` for label resolution |
+| Route         | Coupling                                                  |
+| ------------- | --------------------------------------------------------- |
+| `agents.ts`   | Defaults `runtime: 'claude-code'`, `personaEnabled: true` |
+| `commands.ts` | Scans `.claude/commands/` directory                       |
+| `pulse.ts`    | Scheduler dispatches to AgentManager (indirect)           |
+| `relay.ts`    | Uses `transcriptReader.getSession()` for label resolution |
 
 **No coupling:** `health.ts`, `directory.ts`, `files.ts`, `git.ts`, `tunnel.ts`, `discovery.ts`
 
@@ -121,6 +123,7 @@ This is the composition root for all agent execution and is **entirely Claude SD
 - **Metadata extraction:** Title from first user message, timestamps from file stats, model from assistant messages, permission mode from system/init message, token counts from usage blocks
 
 **Specific SDK assumptions in `transcript-parser.ts`:**
+
 - JSONL line types: `user`, `assistant`, `system` (with `subtype: 'init'`), `file-history-snapshot`
 - Content blocks: `text`, `tool_use` (with `id`, `name`, `input`), `tool_result` (with `tool_use_id`)
 - Usage fields: `input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`
@@ -129,6 +132,7 @@ This is the composition root for all agent execution and is **entirely Claude SD
 - Metadata wrappers: `<relay_context>`, `<command-message>`, `<system-reminder>`, `<task-notification>`
 
 **In `session-broadcaster.ts`:**
+
 - chokidar file watcher on JSONL files with debounce (100ms)
 - Byte-offset-based incremental reading for SSE sync
 - Head buffer (8KB) and tail buffer (16KB) for metadata extraction
@@ -140,6 +144,7 @@ This is the composition root for all agent execution and is **entirely Claude SD
 **This is the best-abstracted part of the codebase.**
 
 The Relay path is properly layered:
+
 ```
 Client → POST /messages → relayCore.publish() → AdapterRegistry → ClaudeCodeAdapter → AgentManager → SDK
 ```
@@ -155,6 +160,7 @@ interface AgentManagerLike {
 ```
 
 **One issue:** The direct API path completely bypasses this:
+
 ```
 Client → POST /messages → AgentManager.sendMessage() → SDK
 ```
@@ -166,6 +172,7 @@ Both paths produce the same `StreamEvent` objects but with different delivery se
 ### 6. Client-Side Assumptions
 
 **Hardcoded Claude models** (`use-session-status.ts`):
+
 ```typescript
 const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
 const MODEL_CONTEXT_WINDOWS = {
@@ -176,16 +183,19 @@ const MODEL_CONTEXT_WINDOWS = {
 ```
 
 **Permission modes in UI:**
+
 - `SessionItem.tsx` checks `session.permissionMode === 'bypassPermissions'`
 - Session creation defaults to `permissionMode: 'default'`
 - Status bar shows permission mode indicator
 
 **Tool approval UI:**
+
 - `ToolApproval.tsx` — approve/deny buttons with keyboard shortcuts (Cmd+Enter/Esc)
 - `QuestionPrompt.tsx` — handles `AskUserQuestion` tool (Claude SDK-specific)
 - These assume Claude Code's interactive approval model
 
 **Transport interface** (`transport.ts`) embeds Claude assumptions:
+
 - `createSession()` takes `permissionMode`
 - `approveTool()` and `submitAnswers()` are Claude-specific methods
 - `getModels()` returns Claude models
@@ -200,6 +210,7 @@ const MODEL_CONTEXT_WINDOWS = {
 **File:** `apps/server/src/services/core/mcp-tools/index.ts`
 
 All 7 tool modules use SDK's `createSdkMcpServer()` and `tool()` functions directly:
+
 - `core-tools.ts`, `pulse-tools.ts`, `relay-tools.ts`, `mesh-tools.ts`, `adapter-tools.ts`, `binding-tools.ts`, `trace-tools.ts`
 
 Tool naming follows SDK convention: `mcp__dorkos__{tool-name}`. The `tool-filter.ts` hardcodes these names for allowlisting.
@@ -228,13 +239,13 @@ The pattern (event queue → promise → UI resolve) is generic and reusable. On
 
 ### 10–14. Other Areas (Summary)
 
-| Area | Finding |
-|------|---------|
-| **Command Registry** | Scans `.claude/commands/` — convention-specific but not deeply coupled |
-| **Permission Modes** | 4 values (`default`, `plan`, `acceptEdits`, `bypassPermissions`) used in session creation, filtering, UI display, and context building |
-| **Session Broadcaster** | File watcher + byte offsets on JSONL — tightly coupled to file-based storage |
-| **Shared Schemas** | `StreamEvent`, `PermissionMode`, `ModelOption`, `SDK_TOOL_NAMES` all embed Claude assumptions |
-| **CLI Package** | `check-claude.ts` hard-requires `claude` CLI binary; `resolveClaudeCliPath()` resolves SDK CLI path |
+| Area                    | Finding                                                                                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Command Registry**    | Scans `.claude/commands/` — convention-specific but not deeply coupled                                                                 |
+| **Permission Modes**    | 4 values (`default`, `plan`, `acceptEdits`, `bypassPermissions`) used in session creation, filtering, UI display, and context building |
+| **Session Broadcaster** | File watcher + byte offsets on JSONL — tightly coupled to file-based storage                                                           |
+| **Shared Schemas**      | `StreamEvent`, `PermissionMode`, `ModelOption`, `SDK_TOOL_NAMES` all embed Claude assumptions                                          |
+| **CLI Package**         | `check-claude.ts` hard-requires `claude` CLI binary; `resolveClaudeCliPath()` resolves SDK CLI path                                    |
 
 ---
 
@@ -331,7 +342,11 @@ interface AgentRuntime {
   getCapabilities(): RuntimeCapabilities;
 
   // Sync
-  watchSession(sessionId: string, projectDir: string, callback: (event: SyncEvent) => void): Unsubscribe;
+  watchSession(
+    sessionId: string,
+    projectDir: string,
+    callback: (event: SyncEvent) => void
+  ): Unsubscribe;
 }
 
 interface RuntimeCapabilities {

@@ -41,11 +41,11 @@ Currently, the ngrok tunnel can only be enabled at boot time via the `TUNNEL_ENA
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `react-qr-code` | latest | SVG QR code generation (13.8 kB unpacked) |
-| `@ngrok/ngrok` | existing | Already installed, used by TunnelManager |
-| `supertest` | 7.2.2 | Already installed, for route testing |
+| Dependency      | Version  | Purpose                                   |
+| --------------- | -------- | ----------------------------------------- |
+| `react-qr-code` | latest   | SVG QR code generation (13.8 kB unpacked) |
+| `@ngrok/ngrok`  | existing | Already installed, used by TunnelManager  |
+| `supertest`     | 7.2.2    | Already installed, for route testing      |
 
 No new server-side dependencies. The `react-qr-code` library is added to `apps/client/package.json` only.
 
@@ -269,6 +269,7 @@ Mocking: Mock `tunnelManager` (start/stop/status) and `configManager` (get/set).
 ### Client Component Tests
 
 **TunnelDialog**:
+
 - Renders toggle switch reflecting current tunnel state
 - Shows auth token input when `tokenConfigured` is false
 - Shows QR code and URL when connected
@@ -276,6 +277,7 @@ Mocking: Mock `tunnelManager` (start/stop/status) and `configManager` (get/set).
 - Displays error message on failure
 
 **TunnelItem**:
+
 - Renders green dot and hostname when connected
 - Renders gray dot when disconnected
 - Opens dialog on click

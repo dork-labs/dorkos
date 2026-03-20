@@ -29,7 +29,7 @@ export function useTocScrollspy(sectionIds: string[]): string | null {
         // Bottom 60% exclusion prevents rapid flickering as sections scroll through.
         rootMargin: '-48px 0px -60% 0px',
         threshold: 0,
-      },
+      }
     );
 
     for (const id of sectionIds) {

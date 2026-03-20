@@ -15,6 +15,7 @@ Four trust-destroying data bugs that must ship before or alongside the UI restru
 **Size:** Small | **Priority:** High | **Dependencies:** None | **Parallel:** 1.2, 1.3, 1.4
 
 **Files:**
+
 - `apps/server/src/services/relay/trace-store.ts` (modify)
 - `apps/server/src/services/relay/__tests__/trace-store.test.ts` (modify)
 
@@ -29,6 +30,7 @@ Add optional `since` parameter to `getMetrics()` defaulting to 24 hours ago. App
 **Size:** Small | **Priority:** High | **Dependencies:** None | **Parallel:** 1.1, 1.3, 1.4
 
 **Files:**
+
 - `apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts` (modify)
 
 Replace `queryClient.setQueryData(['relay', 'messages', undefined], ...)` with `queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] })` in both `relay_message` and `relay_delivery` event handlers. Keeps JSON.parse validation. Removes the polling-only behavior.
@@ -40,6 +42,7 @@ Replace `queryClient.setQueryData(['relay', 'messages', undefined], ...)` with `
 **Size:** Small | **Priority:** High | **Dependencies:** None | **Parallel:** 1.1, 1.2, 1.4
 
 **Files:**
+
 - `apps/client/src/layers/entities/relay/model/use-adapter-catalog.ts` (modify)
 - `apps/client/src/layers/features/relay/ui/ConversationRow.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/__tests__/ConversationRow.test.tsx` (modify)
@@ -55,6 +58,7 @@ Remove `toast.success('Adapter added')` from `useAddAdapter` (wizard handles it)
 **Size:** Small | **Priority:** High | **Dependencies:** None | **Parallel:** 1.1, 1.2, 1.3
 
 **Files:**
+
 - `packages/shared/src/relay-adapter-schemas.ts` (modify)
 
 Add `canInitiate: z.boolean().default(false)`, `canReply: z.boolean().default(true)`, `canReceive: z.boolean().default(true)` to `AdapterBindingSchema`. Backward-compatible — all defaults.
@@ -68,6 +72,7 @@ Add `canInitiate: z.boolean().default(false)`, `canReply: z.boolean().default(tr
 **Size:** Medium | **Priority:** High | **Dependencies:** None
 
 **Files:**
+
 - `apps/client/src/layers/features/relay/ui/RelayPanel.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/ConnectionsTab.tsx` (create)
 - `apps/client/src/layers/features/relay/index.ts` (modify)
@@ -88,6 +93,7 @@ Extract `AdaptersTab` to standalone `ConnectionsTab`. Remove imports for deleted
 **Size:** Medium | **Priority:** Medium | **Dependencies:** 1.1
 
 **Files:**
+
 - `apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/__tests__/RelayHealthBar.test.tsx` (modify)
 
@@ -104,6 +110,7 @@ Replace four raw-number stats with `computeHealthState()` function returning hea
 **Size:** Medium | **Priority:** Medium | **Dependencies:** None | **Parallel:** 4.2
 
 **Files:**
+
 - `apps/server/src/routes/relay.ts` (modify)
 
 Add `GET /api/relay/dead-letters/aggregated` — groups dead letters by source + reason with count, firstSeen, lastSeen, sample. Add `DELETE /api/relay/dead-letters` — clears dead letters matching source + reason.
@@ -115,6 +122,7 @@ Add `GET /api/relay/dead-letters/aggregated` — groups dead letters by source +
 **Size:** Large | **Priority:** Medium | **Dependencies:** 4.1
 
 **Files:**
+
 - `apps/client/src/layers/entities/relay/model/use-dead-letters.ts` (modify)
 - `apps/client/src/layers/features/relay/ui/DeadLetterSection.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx` (modify)
@@ -131,6 +139,7 @@ Add `useAggregatedDeadLetters` hook. Redesign DeadLetterSection as aggregated ca
 **Size:** Medium | **Priority:** Medium | **Dependencies:** 2.1
 
 **Files:**
+
 - `apps/client/src/layers/features/relay/ui/RelayPanel.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/RelayEmptyState.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx` (modify)
@@ -146,6 +155,7 @@ Mode A (no adapters): hide tabs/health bar, show full-bleed `RelayEmptyState`. M
 **Size:** Medium | **Priority:** Medium | **Dependencies:** None
 
 **Files:**
+
 - `apps/client/src/layers/features/relay/ui/wizard/ConfigureStep.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/AdapterSetupWizard.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/wizard/StepIndicator.tsx` (modify)
@@ -161,6 +171,7 @@ Auto-generate adapter IDs via `generateAdapterId()`. Redesign step indicator wit
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.4 | **Parallel:** 7.2
 
 **Files:**
+
 - `apps/server/src/services/relay/binding-router.ts` (modify)
 - `apps/server/src/services/relay/__tests__/binding-router.test.ts` (modify)
 
@@ -173,6 +184,7 @@ Add `canReceive` check after binding resolution (drop inbound if false). Add `ca
 **Size:** Medium | **Priority:** Medium | **Dependencies:** 1.4 | **Parallel:** 7.1
 
 **Files:**
+
 - `apps/client/src/layers/features/mesh/ui/BindingDialog.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/AdapterCard.tsx` (modify)
 - `apps/client/src/layers/features/relay/ui/AdapterBindingRow.tsx` (modify)
@@ -189,6 +201,7 @@ Collapsible "Advanced" section in BindingDialog with permission toggles and sess
 **Size:** Medium | **Priority:** Low | **Dependencies:** 2.1, 7.1
 
 **Files:**
+
 - `apps/server/src/services/relay/adapter-manager.ts` (modify)
 - `apps/server/src/services/relay/binding-store.ts` (modify)
 - `apps/server/src/services/relay/__tests__/adapter-manager.test.ts` (modify)
@@ -229,14 +242,14 @@ Phase 6:
 
 ## Summary
 
-| Metric | Count |
-|--------|-------|
-| Total tasks | 12 |
-| Phases | 8 |
-| High priority | 6 |
-| Medium priority | 5 |
-| Low priority | 1 |
-| Small tasks | 4 |
-| Medium tasks | 7 |
-| Large tasks | 1 |
+| Metric             | Count       |
+| ------------------ | ----------- |
+| Total tasks        | 12          |
+| Phases             | 8           |
+| High priority      | 6           |
+| Medium priority    | 5           |
+| Low priority       | 1           |
+| Small tasks        | 4           |
+| Medium tasks       | 7           |
+| Large tasks        | 1           |
 | Max parallel width | 4 (Phase 1) |

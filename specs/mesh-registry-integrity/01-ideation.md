@@ -52,15 +52,15 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role | Key Issue |
-|------|------|-----------|
-| `packages/mesh/src/mesh-core.ts` | Main lifecycle orchestrator | Non-atomic 3-step registration, silent auto-import skip |
-| `packages/mesh/src/agent-registry.ts` | Drizzle DB layer | Bare insert (crashes on conflict), incomplete update(), hardcoded defaults |
-| `packages/mesh/src/manifest.ts` | File I/O (read/write `.dork/agent.json`) | No version tracking |
-| `packages/mesh/src/relay-bridge.ts` | Relay endpoint + ACL management | No compensation on failure |
-| `packages/mesh/src/discovery-engine.ts` | BFS directory scanner | Per-call visited set (multi-call dedup failure) |
-| `packages/mesh/src/namespace-resolver.ts` | Pure namespace derivation | No issues (pure function) |
-| `packages/db/src/schema/mesh.ts` | Drizzle schema definition | Missing scan_root, behavior_json, budget_json columns |
+| File                                      | Role                                     | Key Issue                                                                  |
+| ----------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------- |
+| `packages/mesh/src/mesh-core.ts`          | Main lifecycle orchestrator              | Non-atomic 3-step registration, silent auto-import skip                    |
+| `packages/mesh/src/agent-registry.ts`     | Drizzle DB layer                         | Bare insert (crashes on conflict), incomplete update(), hardcoded defaults |
+| `packages/mesh/src/manifest.ts`           | File I/O (read/write `.dork/agent.json`) | No version tracking                                                        |
+| `packages/mesh/src/relay-bridge.ts`       | Relay endpoint + ACL management          | No compensation on failure                                                 |
+| `packages/mesh/src/discovery-engine.ts`   | BFS directory scanner                    | Per-call visited set (multi-call dedup failure)                            |
+| `packages/mesh/src/namespace-resolver.ts` | Pure namespace derivation                | No issues (pure function)                                                  |
+| `packages/db/src/schema/mesh.ts`          | Drizzle schema definition                | Missing scan_root, behavior_json, budget_json columns                      |
 
 **Shared Dependencies:**
 
@@ -128,30 +128,35 @@ Research agent consulted 13 sources including SQLite UPSERT docs, Consul health 
 ### Potential Solutions
 
 **1. File-First Write Ordering with Compensating Cleanup (Selected)**
+
 - Description: Disk write first (atomic tmp+rename), then DB upsert with `ON CONFLICT(id) DO UPDATE`, then Relay registration. On failure at any step, compensate by undoing prior steps.
 - Pros: Clear source-of-truth hierarchy, simple mental model, no saga framework needed at this scale
 - Cons: Compensation logic adds code to register/unregister paths
 - Complexity: Medium | Maintenance: Low
 
 **2. Startup + Periodic Reconciliation Sweep (Selected)**
+
 - Description: Full file-vs-DB reconciliation on server startup. Configurable periodic sweep (default 5 min) as safety net. No file watchers.
 - Pros: Catches all drift including external edits/deletions/moves, simple lifecycle (no watcher management), matches Consul anti-entropy model
 - Cons: Changes not detected until next sweep interval
 - Complexity: Medium | Maintenance: Low
 
 **3. Idempotent Upsert via `ON CONFLICT(id) DO UPDATE` (Selected)**
+
 - Description: Replace bare `INSERT` with Drizzle's `.onConflictDoUpdate()`. Handle path-conflict separately with application-level check-then-act.
 - Pros: No crash on ID collision, handles moved agents gracefully, matches Drizzle patterns already used in DenialList
 - Cons: Path conflict requires two queries (check + insert/update)
 - Complexity: Low | Maintenance: Low
 
 **4. Auto-Remove Orphans After Grace Period (Selected)**
+
 - Description: Reconcile marks missing-path agents as status='unreachable'. After 24h still unreachable, auto-remove from DB + Relay. Mirrors Consul's `deregister_critical_service_after`.
 - Pros: Prevents ghost agent accumulation without being too aggressive (USB unmount safe)
 - Cons: Ghosts visible for up to 24h
 - Complexity: Low | Maintenance: Low
 
 **5. Full Saga Pattern with Write-Ahead Log**
+
 - Description: Write all intended operations to a WAL before executing. Replay/compensate on crash recovery.
 - Pros: Full crash recovery, provably consistent
 - Cons: Massive overkill for 5-50 agents on a single machine
@@ -176,10 +181,9 @@ Combine solutions 1-4. File-first writes with compensating cleanup, idempotent u
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Source of truth hierarchy | File wins always | File is canonical. DB is a derived index. API updates write-through to the file. Matches Consul/systemd/Docker patterns. Simple mental model. On conflict, file data overwrites DB. |
-| 2 | Reconciliation trigger | Startup sweep + configurable periodic | Full reconcile on server startup. Configurable periodic sweep (default 5 min, user can change interval or disable). No file watchers. Catches all drift including external edits, deletions, moves. Matches Consul's anti-entropy model. |
-| 3 | Orphan handling | Auto-remove after 24h grace period | Mark as status='unreachable' immediately when path missing. Auto-remove from DB + Relay after 24h if path still missing. Prevents ghost agents without being too aggressive (USB drive temporarily unmounted won't lose agents). Mirrors Consul's `deregister_critical_service_after`. |
-| 4 | DB schema completeness | Add all missing columns now | Add `behavior_json`, `budget_json`, `scan_root` columns to the `agents` table. Makes DB a complete representation of the manifest. Enables proper round-tripping and reconciliation. Natural part of an integrity fix. Requires a new Drizzle migration. |
-
+| #   | Decision                  | Choice                                | Rationale                                                                                                                                                                                                                                                                              |
+| --- | ------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Source of truth hierarchy | File wins always                      | File is canonical. DB is a derived index. API updates write-through to the file. Matches Consul/systemd/Docker patterns. Simple mental model. On conflict, file data overwrites DB.                                                                                                    |
+| 2   | Reconciliation trigger    | Startup sweep + configurable periodic | Full reconcile on server startup. Configurable periodic sweep (default 5 min, user can change interval or disable). No file watchers. Catches all drift including external edits, deletions, moves. Matches Consul's anti-entropy model.                                               |
+| 3   | Orphan handling           | Auto-remove after 24h grace period    | Mark as status='unreachable' immediately when path missing. Auto-remove from DB + Relay after 24h if path still missing. Prevents ghost agents without being too aggressive (USB drive temporarily unmounted won't lose agents). Mirrors Consul's `deregister_critical_service_after`. |
+| 4   | DB schema completeness    | Add all missing columns now           | Add `behavior_json`, `budget_json`, `scan_root` columns to the `agents` table. Makes DB a complete representation of the manifest. Enables proper round-tripping and reconciliation. Natural part of an integrity fix. Requires a new Drizzle migration.                               |

@@ -106,7 +106,7 @@ describe('FileListService', () => {
 
     mockReaddir(
       [makeDirent('index.ts', false), makeDirent('lib', true)],
-      [makeDirent('utils.ts', false)],
+      [makeDirent('utils.ts', false)]
     );
 
     const result = await fileLister.listFiles('/project');
@@ -145,8 +145,13 @@ describe('FileListService', () => {
     mockGitFailure();
 
     mockReaddir(
-      [makeDirent('src', true), makeDirent('node_modules', true), makeDirent('.git', true), makeDirent('index.ts', false)],
-      [makeDirent('app.ts', false)],
+      [
+        makeDirent('src', true),
+        makeDirent('node_modules', true),
+        makeDirent('.git', true),
+        makeDirent('index.ts', false),
+      ],
+      [makeDirent('app.ts', false)]
     );
 
     const result = await fileLister.listFiles('/project2');
@@ -158,8 +163,12 @@ describe('FileListService', () => {
     mockGitFailure();
 
     mockReaddir(
-      [makeDirent('accessible', true), makeDirent('restricted', true), makeDirent('index.ts', false)],
-      [makeDirent('app.ts', false)],
+      [
+        makeDirent('accessible', true),
+        makeDirent('restricted', true),
+        makeDirent('index.ts', false),
+      ],
+      [makeDirent('app.ts', false)]
     );
 
     // restricted/ throws EACCES

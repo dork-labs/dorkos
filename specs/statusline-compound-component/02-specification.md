@@ -78,15 +78,15 @@ Convert `StatusLine` to a compound component following the `sidebar.tsx` precede
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Usage |
-|---|---|---|
-| `motion/react` | 12.x | `AnimatePresence`, `motion.div` — unchanged |
-| `react` | 19 | `createContext`, `useContext`, `useCallback`, `useMemo`, `useEffect`, `useRef`, `useState` |
-| `@tanstack/react-query` | 5.x | `useQuery`, `useQueryClient` — moves to `ChatStatusSection` |
-| `useAppStore` | — | Zustand store — moves to `ChatStatusSection` |
-| `useSessionStatus` | — | Session entity hook — moves to `ChatStatusSection` |
-| `useGitStatus` | — | Feature model hook — moves to `ChatStatusSection` |
-| `useTransport` | — | Shared transport hook — moves to `ChatStatusSection` |
+| Dependency              | Version | Usage                                                                                      |
+| ----------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `motion/react`          | 12.x    | `AnimatePresence`, `motion.div` — unchanged                                                |
+| `react`                 | 19      | `createContext`, `useContext`, `useCallback`, `useMemo`, `useEffect`, `useRef`, `useState` |
+| `@tanstack/react-query` | 5.x     | `useQuery`, `useQueryClient` — moves to `ChatStatusSection`                                |
+| `useAppStore`           | —       | Zustand store — moves to `ChatStatusSection`                                               |
+| `useSessionStatus`      | —       | Session entity hook — moves to `ChatStatusSection`                                         |
+| `useGitStatus`          | —       | Feature model hook — moves to `ChatStatusSection`                                          |
+| `useTransport`          | —       | Shared transport hook — moves to `ChatStatusSection`                                       |
 
 No new dependencies are introduced. No `package.json` changes.
 
@@ -273,8 +273,7 @@ interface StatusLineItemProps {
 }
 
 function StatusLineItem({ itemKey, visible, children }: StatusLineItemProps) {
-  const { itemTransition, firstVisibleKey, registerItem, unregisterItem } =
-    useStatusLineContext();
+  const { itemTransition, firstVisibleKey, registerItem, unregisterItem } = useStatusLineContext();
 
   /*
    * Register with root context when visible; deregister on unmount or when visibility
@@ -325,7 +324,7 @@ Note: The `Separator` function is renamed to `StatusLineSeparator` to avoid coll
 
 The compound is assembled with `Object.assign` and exported as a single named export. This is the same pattern used throughout the codebase and means the barrel in `index.ts` requires no changes.
 
-```tsx
+````tsx
 /**
  * StatusLine compound component — animated session status bar.
  *
@@ -352,7 +351,7 @@ The compound is assembled with `Object.assign` and exported as a single named ex
 export const StatusLine = Object.assign(StatusLineRoot, {
   Item: StatusLineItem,
 });
-```
+````
 
 ### 6.7 ChatStatusSection Migration
 
@@ -415,10 +414,7 @@ const handleDismissVersion = useCallback(
     />
   </StatusLine.Item>
   <StatusLine.Item itemKey="model" visible={showStatusBarModel}>
-    <ModelItem
-      model={status.model}
-      onChangeModel={(model) => status.updateSession({ model })}
-    />
+    <ModelItem model={status.model} onChangeModel={(model) => status.updateSession({ model })} />
   </StatusLine.Item>
   <StatusLine.Item itemKey="cost" visible={showStatusBarCost && status.costUsd !== null}>
     <CostItem costUsd={status.costUsd!} />
@@ -535,19 +531,19 @@ The rendered DOM, CSS classes, ARIA attributes (`role="toolbar"`, `aria-label="S
 
 **Animation contract — preserved exactly:**
 
-| Property | Value | Component |
-|---|---|---|
-| Container enter: height | `0 -> auto` | `motion.div` outer |
-| Container enter: opacity | `0 -> 1` | `motion.div` outer |
-| Container exit: height | `auto -> 0` | `motion.div` outer |
-| Container transition | `duration: 0.2, ease: [0.4, 0, 0.2, 1]` | outer |
-| Item enter: opacity | `0 -> 1` | `motion.div` inner |
-| Item enter: scale | `0.8 -> 1` | `motion.div` inner |
-| Item enter: filter | `blur(4px) -> blur(0px)` | `motion.div` inner |
-| Item exit: reverse of enter | — | `motion.div` inner |
-| Item transition | `duration: 0.2, ease: [0.4, 0, 0.2, 1]` | inner |
-| Inner `AnimatePresence` mode | `popLayout` | — |
-| Item `layout` prop | present | each item `motion.div` |
+| Property                     | Value                                   | Component              |
+| ---------------------------- | --------------------------------------- | ---------------------- |
+| Container enter: height      | `0 -> auto`                             | `motion.div` outer     |
+| Container enter: opacity     | `0 -> 1`                                | `motion.div` outer     |
+| Container exit: height       | `auto -> 0`                             | `motion.div` outer     |
+| Container transition         | `duration: 0.2, ease: [0.4, 0, 0.2, 1]` | outer                  |
+| Item enter: opacity          | `0 -> 1`                                | `motion.div` inner     |
+| Item enter: scale            | `0.8 -> 1`                              | `motion.div` inner     |
+| Item enter: filter           | `blur(4px) -> blur(0px)`                | `motion.div` inner     |
+| Item exit: reverse of enter  | —                                       | `motion.div` inner     |
+| Item transition              | `duration: 0.2, ease: [0.4, 0, 0.2, 1]` | inner                  |
+| Inner `AnimatePresence` mode | `popLayout`                             | —                      |
+| Item `layout` prop           | present                                 | each item `motion.div` |
 
 Interactive items (dropdowns, toggles, dialogs, popovers) are fully functional. The compound pattern changes which component declares the item tree, not how items render or respond to interaction. `PermissionModeItem`, `ModelItem`, `NotificationSoundItem`, `TunnelItem`, and `VersionItem` with their internal state remain identical.
 
@@ -561,14 +557,14 @@ Mobile gestures (`DragHandle`, swipe-to-collapse in `ChatStatusSection`) are una
 
 Six test files cover individual item components. Because no item component files change, these tests require zero modification and must continue passing:
 
-| File | Tests | Status |
-|---|---|---|
-| `__tests__/GitStatusItem.test.tsx` | 10 | Unchanged, must pass |
-| `__tests__/NotificationSoundItem.test.tsx` | 3 | Unchanged, must pass |
-| `__tests__/ModelItem.test.tsx` | ~6 | Unchanged, must pass |
-| `__tests__/TunnelItem.test.tsx` | ~8 | Unchanged, must pass |
-| `__tests__/VersionItem.test.tsx` | ~28 | Unchanged, must pass |
-| `__tests__/use-git-status.test.tsx` | ~4 | Unchanged, must pass |
+| File                                       | Tests | Status               |
+| ------------------------------------------ | ----- | -------------------- |
+| `__tests__/GitStatusItem.test.tsx`         | 10    | Unchanged, must pass |
+| `__tests__/NotificationSoundItem.test.tsx` | 3     | Unchanged, must pass |
+| `__tests__/ModelItem.test.tsx`             | ~6    | Unchanged, must pass |
+| `__tests__/TunnelItem.test.tsx`            | ~8    | Unchanged, must pass |
+| `__tests__/VersionItem.test.tsx`           | ~28   | Unchanged, must pass |
+| `__tests__/use-git-status.test.tsx`        | ~4    | Unchanged, must pass |
 
 ### 8.2 New Tests: StatusLine.test.tsx
 
@@ -593,7 +589,10 @@ vi.mock('motion/react', () => ({
     {
       get:
         (_, tag: string) =>
-        ({ children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) =>
+        ({
+          children,
+          ...props
+        }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) =>
           React.createElement(tag as keyof JSX.IntrinsicElements, props, children),
     }
   ),
@@ -789,21 +788,21 @@ describe('StatusLine', () => {
 
 ### 8.3 Coverage Summary
 
-| Concern | Tests |
-|---|---|
-| Container hidden when no items visible | 1 |
-| Container renders when item visible | 1 |
-| ARIA attributes on toolbar | 1 |
-| Item renders when visible | 1 |
-| Item hidden when not visible | 1 |
-| Multiple items all render | 1 |
-| No separator for single item | 1 |
-| One separator for two items | 1 |
-| N-1 separators for N items | 1 |
-| First visible is first even when earlier items hidden | 1 |
-| Separator content is middot | 1 |
-| Provider guard throws | 1 |
-| **Total new tests** | **12** |
+| Concern                                               | Tests  |
+| ----------------------------------------------------- | ------ |
+| Container hidden when no items visible                | 1      |
+| Container renders when item visible                   | 1      |
+| ARIA attributes on toolbar                            | 1      |
+| Item renders when visible                             | 1      |
+| Item hidden when not visible                          | 1      |
+| Multiple items all render                             | 1      |
+| No separator for single item                          | 1      |
+| One separator for two items                           | 1      |
+| N-1 separators for N items                            | 1      |
+| First visible is first even when earlier items hidden | 1      |
+| Separator content is middot                           | 1      |
+| Provider guard throws                                 | 1      |
+| **Total new tests**                                   | **12** |
 
 ---
 
@@ -896,14 +895,14 @@ Three inline comments are warranted in `StatusLine.tsx`:
 
 None. All design decisions were resolved during ideation:
 
-| Decision | Resolution |
-|---|---|
-| Separator strategy | Inline in `motion.div` — exits with its item, no orphaned separators |
-| API shape | Generic `StatusLine.Item` only — no named sub-components |
-| Registration mechanism | `useEffect` + ordered `string[]` state in root |
-| `firstVisibleKey` derivation | `registeredKeys[0]` — insertion order equals JSX declaration order |
-| File organization | All co-located in `StatusLine.tsx` — context is too small to extract |
-| Data migration target | `ChatStatusSection` is the sole consumer and the correct data owner |
+| Decision                     | Resolution                                                           |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Separator strategy           | Inline in `motion.div` — exits with its item, no orphaned separators |
+| API shape                    | Generic `StatusLine.Item` only — no named sub-components             |
+| Registration mechanism       | `useEffect` + ordered `string[]` state in root                       |
+| `firstVisibleKey` derivation | `registeredKeys[0]` — insertion order equals JSX declaration order   |
+| File organization            | All co-located in `StatusLine.tsx` — context is too small to extract |
+| Data migration target        | `ChatStatusSection` is the sole consumer and the correct data owner  |
 
 ---
 
@@ -915,14 +914,14 @@ No ADR is required. This refactor applies an existing established pattern (compo
 
 ## 15. References
 
-| Resource | Path |
-|---|---|
-| Current `StatusLine` implementation | `apps/client/src/layers/features/status/ui/StatusLine.tsx` |
-| Sole consumer | `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx` |
-| Compound component prior art | `apps/client/src/layers/shared/ui/sidebar.tsx` |
-| Status feature barrel | `apps/client/src/layers/features/status/index.ts` |
-| Animation conventions | `contributing/animations.md` |
-| Design system | `contributing/design-system.md` |
-| Component conventions | `.claude/rules/components.md` |
-| FSD layer rules | `.claude/rules/fsd-layers.md` |
-| Ideation document | `specs/statusline-compound-component/01-ideation.md` |
+| Resource                            | Path                                                            |
+| ----------------------------------- | --------------------------------------------------------------- |
+| Current `StatusLine` implementation | `apps/client/src/layers/features/status/ui/StatusLine.tsx`      |
+| Sole consumer                       | `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx` |
+| Compound component prior art        | `apps/client/src/layers/shared/ui/sidebar.tsx`                  |
+| Status feature barrel               | `apps/client/src/layers/features/status/index.ts`               |
+| Animation conventions               | `contributing/animations.md`                                    |
+| Design system                       | `contributing/design-system.md`                                 |
+| Component conventions               | `.claude/rules/components.md`                                   |
+| FSD layer rules                     | `.claude/rules/fsd-layers.md`                                   |
+| Ideation document                   | `specs/statusline-compound-component/01-ideation.md`            |

@@ -167,7 +167,7 @@ function matchTokens(
   subject: readonly string[],
   pattern: readonly string[],
   si: number,
-  pi: number,
+  pi: number
 ): boolean {
   // Both exhausted simultaneously → full match
   if (si === subject.length && pi === pattern.length) {

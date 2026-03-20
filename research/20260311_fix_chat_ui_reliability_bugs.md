@@ -1,9 +1,20 @@
 ---
-title: "Fix Chat UI Reliability Bugs — Stable Keys, Empty Session Guard, Optimistic Duplicate Bubble"
+title: 'Fix Chat UI Reliability Bugs — Stable Keys, Empty Session Guard, Optimistic Duplicate Bubble'
 date: 2026-03-11
 type: implementation
 status: active
-tags: [chat, streaming, react-keys, tanstack-query, optimistic-ui, session-id, enabled-guard, deduplication, sse]
+tags:
+  [
+    chat,
+    streaming,
+    react-keys,
+    tanstack-query,
+    optimistic-ui,
+    session-id,
+    enabled-guard,
+    deduplication,
+    sse,
+  ]
 feature_slug: fix-chat-ui-reliability-bugs
 searches_performed: 10
 sources_count: 22
@@ -57,7 +68,7 @@ fragment (`<> ... </>`), the `key="text-0"` within one fragment does not collide
 in another fragment. HOWEVER — the MessageList renders a flat array of elements where both user and
 assistant `MessageItem` components are siblings. Inside `MessageItem`, it renders `AssistantMessageContent`
 which returns a fragment. The `key` on the outer `MessageItem` is the `message.id` (stable). The
-children *inside* the fragment are scoped to that fragment. So the warning is actually triggered by
+children _inside_ the fragment are scoped to that fragment. So the warning is actually triggered by
 the key `"text-0"` being unstable **within a single message's parts** — specifically when a new text
 part is pushed after a tool call, the previously-indexed text at `i=0` keeps the key `"text-0"` while
 the new part that would also be `"text-2"` (for example) creates a discontinuity that React notices
@@ -66,7 +77,7 @@ as a reconciliation mismatch.
 **Confirmed root cause:** `TextPart` in `packages/shared/src/schemas.ts` has no `id` field — only
 `type: 'text'` and `text: string`. The streaming handler creates text parts without IDs. On each
 `text_delta`, the text content of an existing part grows — the part object is replaced (immutable
-update) but the position `i` remains the same. This is actually the *correct* behavior for text
+update) but the position `i` remains the same. This is actually the _correct_ behavior for text
 accumulation. The warning storm comes from a different pattern: when the parts array is `[text, tool_call,
 text]`, both text parts have keys `"text-0"` and `"text-2"`. React internally reconciles by key — if
 the keys are stable within the render, no warning. But if parts are re-ordered or the array grows
@@ -76,7 +87,7 @@ at index 0 is now at index 0 still, but a second text block at index 2 collides 
 2 before (a tool_call part whose key was `part.toolCallId`).**
 
 **Simplified correct diagnosis:** The index key `text-${i}` is not stable across renders when new
-parts are inserted *before* existing text parts (e.g., a tool call completes and a new text block
+parts are inserted _before_ existing text parts (e.g., a tool call completes and a new text block
 begins at a higher index). This is the same class of bug as the React docs describe for list items
 that can be reordered. The solution is a stable ID on each text part.
 
@@ -94,10 +105,7 @@ const parts = currentPartsRef.current;
 const lastPart = parts[parts.length - 1];
 if (lastPart && lastPart.type === 'text') {
   // Append to existing text part — keep same ID
-  currentPartsRef.current = [
-    ...parts.slice(0, -1),
-    { ...lastPart, text: lastPart.text + text },
-  ];
+  currentPartsRef.current = [...parts.slice(0, -1), { ...lastPart, text: lastPart.text + text }];
 } else {
   // New text part — assign stable positional ID
   const partId = `text-part-${parts.length}`;
@@ -117,12 +125,14 @@ to the schema, or use a parallel `WeakMap<MessagePart, string>` / separate ID ar
 approach is to use a separate type extension at the client layer rather than modifying the shared schema.
 
 **Pros:**
+
 - IDs are assigned exactly once (at part creation) — always stable across re-renders
 - Part ID never changes as text grows — the same part object gets its ID once
 - No UUID generation cost during render
 - Works correctly for multi-block messages (`[text0, tool_call, text1]`)
 
 **Cons:**
+
 - Requires adding a client-side-only field `_partId` to the text part OR a parallel map
 - Adding to the schema changes the `TextPart` contract; adding outside the schema adds indirection
 - The `_partId` needs to survive the `parts.map((p) => ({ ...p }))` snapshot in `updateAssistantMessage`
@@ -141,10 +151,12 @@ currentPartsRef.current = [...parts, { type: 'text', text, _partId: crypto.rando
 ```
 
 **Pros:**
+
 - Globally unique — no risk of collision even if parts array is restructured
 - Familiar pattern (already used for `message.id` and `assistantId`)
 
 **Cons:**
+
 - `crypto.randomUUID()` is slightly more expensive than a counter string concat — negligible in
   practice since it fires once per new text block, not per delta
 - Provides no additional correctness benefit over positional ID for this use case, since text parts
@@ -194,8 +206,8 @@ index still has the same problem if the order of tool calls vs text changes duri
 Assign `_partId: \`text-part-${parts.length}\`` when a new text part is created in `createStreamEventHandler`
 (the `text_delta` else branch, line 139 of `stream-event-handler.ts`). Add `_partId?: string` to the
 client-side `TextPart` extension (either via the schema or a discriminated wrapper type at the features
-layer). Use `part._partId ?? \`text-${i}\`` as the key in `AssistantMessageContent.tsx` to maintain
-backward compatibility for history-loaded messages which won't have `_partId`.
+layer). Use `part._partId ?? \`text-${i}\``as the key in`AssistantMessageContent.tsx`to maintain
+backward compatibility for history-loaded messages which won't have`\_partId`.
 
 The ID only needs to be assigned for streaming parts (history messages have one text part per message
 and don't generate warnings). `_partId` must be preserved through the `parts.map((p) => ({ ...p }))`
@@ -249,7 +261,7 @@ const { data: session } = useQuery({
 const historyQuery = useQuery({
   queryKey: ['messages', sessionId, selectedCwd],
   queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined),
-  enabled: sessionId !== null,   // ← correct guard, operates on null, not ''
+  enabled: sessionId !== null, // ← correct guard, operates on null, not ''
   // ...
 });
 ```
@@ -260,6 +272,7 @@ and `GET /api/sessions//status` — malformed URLs that return 400 or 404 errors
 these by default, generating multiple failed requests per second until the real session ID arrives.
 
 **Why null vs undefined vs '' matters for TanStack Query:**
+
 - `enabled: !!sessionId` — works for `null`, `undefined`, and `''` (all falsy). Simplest.
 - `enabled: sessionId !== null` — only guards against `null`. Won't guard `''`.
 - `enabled: sessionId !== null && sessionId !== ''` — explicit, maximum clarity.
@@ -277,6 +290,7 @@ Change `useTaskState` and `useSessionStatus` to accept `string | null` as their 
 Add `enabled: !!sessionId` to each hook's `useQuery`. Remove the `?? ''` coercions in `ChatPanel.tsx`.
 
 **`use-task-state.ts` change:**
+
 ```typescript
 export function useTaskState(sessionId: string | null): TaskState {
   const { data: initialTasks } = useQuery({
@@ -289,6 +303,7 @@ export function useTaskState(sessionId: string | null): TaskState {
 ```
 
 **`use-session-status.ts` change:**
+
 ```typescript
 export function useSessionStatus(
   sessionId: string | null,
@@ -304,6 +319,7 @@ export function useSessionStatus(
 ```
 
 **`ChatPanel.tsx` change:**
+
 ```typescript
 // Remove ?? '' coercions:
 const taskState = useTaskState(sessionId);
@@ -311,6 +327,7 @@ const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status ===
 ```
 
 **Pros:**
+
 - Eliminates 400/404 storms completely
 - Matches the existing pattern in `use-chat-session.ts` (`enabled: sessionId !== null`)
 - `string | null` accurately represents the semantic: "session ID is available or not yet known"
@@ -318,6 +335,7 @@ const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status ===
 - No behavior change when `sessionId` is a real UUID
 
 **Cons:**
+
 - `queryFn` uses `!` (non-null assertion) — acceptable here because `enabled: !!sessionId`
   guarantees `sessionId` is truthy when `queryFn` runs; no runtime risk
 - Changes the type signature of two hooks — callers must be updated (only `ChatPanel.tsx` calls both)
@@ -340,11 +358,13 @@ const { data: initialTasks } = useQuery({
 ```
 
 **Pros:**
+
 - TypeScript-safe: no `!` assertion needed — `sessionId` is narrowed to `string` inside the ternary
 - Official TanStack Query v5 pattern for conditional queries
 - The `enabled` flag is implicitly false when `queryFn` is `skipToken`
 
 **Cons:**
+
 - Slightly more verbose than the `enabled: !!sessionId` pattern
 - The `queryKey` still includes `null` as the session ID, which may produce confusing cache entries
   (`['tasks', null, '/projects/foo']`)
@@ -376,6 +396,7 @@ is also valid and slightly more type-safe, but the added verbosity is not worth 
 the existing codebase pattern.
 
 **Key implementation notes:**
+
 - The `enabled: !!sessionId` guard on `useTaskState` is particularly important: `useTaskState` also
   has a `useEffect` that calls `setTaskMap(new Map())` on every `initialTasks` change. If the query
   fires with `''` and returns an error, TanStack Query's error retry can cause this effect to re-run
@@ -390,6 +411,7 @@ the existing codebase pattern.
 ## Root Cause — Source-Confirmed
 
 The DorkOS chat uses a two-layer message model:
+
 1. **Local optimistic state:** `messages` array in `useState` in `useChatSession`, managed by
    `setMessages`. User messages are added optimistically (`executeSubmission`, line 379).
 2. **Server-authoritative state:** `historyQuery` (TanStack Query) reads JSONL transcripts via
@@ -407,7 +429,7 @@ const userMessage: ChatMessage = {
   timestamp: new Date().toISOString(),
 };
 
-setMessages((prev) => [...prev, userMessage]);  // ← shown immediately
+setMessages((prev) => [...prev, userMessage]); // ← shown immediately
 setStatus('streaming');
 ```
 
@@ -469,6 +491,7 @@ final history.
 ```
 
 **Pros:**
+
 - Eliminates Part A (consistency risk with 202 ACK) and Part B (duplicate) in one change
 - Perfect consistency: what the UI shows is always what the JSONL contains
 - No deduplication logic needed
@@ -476,6 +499,7 @@ final history.
 - Aligns with the JSONL-as-source-of-truth principle from ADR-0043
 
 **Cons:**
+
 - The user sees no feedback between submit and the first streaming `text_delta` — on typical
   latency (200-800ms), the input clears but nothing appears for the duration of the first
   assistant message generation latency
@@ -520,11 +544,13 @@ if (historySeededRef.current && !isStreaming) {
 ```
 
 **Pros:**
+
 - Preserves good UX (user sees their message immediately)
 - Eliminates the duplicate bubble
 - Content matching is reliable for exact message text
 
 **Cons:**
+
 - Does NOT fix Part A (consistency risk with delivery failure after 202)
 - Content-matching is fragile when `transformContent` modifies the message (e.g., file prefix
   gets prepended, making `finalContent !== content`). The optimistic message is updated with
@@ -551,12 +577,14 @@ the JSONL user message has the same `id` as the optimistic message. The existing
 deduplication (line 221-227) then works correctly.
 
 **Pros:**
+
 - Fixes both Part A and Part B in the most principled way
 - No heuristic content-matching
 - The server knows which client initiated the turn (useful for debugging)
 - Consistent with the `correlationId` pattern already used in the relay path
 
 **Cons:**
+
 - Requires server-side changes to the POST /api/sessions/:id/send route to accept and persist
   `clientMessageId` in the JSONL
 - Requires SDK-level support or a wrapper that injects the ID into the transcript turn
@@ -581,6 +609,7 @@ addOptimisticMessage(userMessage);
 ```
 
 **Pros:**
+
 - `useOptimistic` automatically reverts the optimistic state when the enclosing async transition
   settles (either successfully or with an error)
 - If the POST fails, the bubble disappears automatically — no manual rollback needed
@@ -588,6 +617,7 @@ addOptimisticMessage(userMessage);
 - Project already uses React 19
 
 **Cons:**
+
 - Requires wrapping `executeSubmission` in `startTransition`, which may conflict with the
   current non-transition call pattern in `handleSubmit` and `submitContent`
 - `useOptimistic` reverts when the transition settles — for the relay path, the transition
@@ -656,6 +686,7 @@ optimistic message because it is removed unconditionally when `done` fires (or o
 participates in history seeding, and does not create duplication.
 
 **Implementation outline:**
+
 - In `useChatSession`, add `const [pendingUserContent, setPendingUserContent] = useState<string | null>(null)`.
 - In `executeSubmission`, set `setPendingUserContent(content)` and remove `setMessages((prev) => [...prev, userMessage])`.
 - On `done`, set `setPendingUserContent(null)`.
@@ -665,6 +696,7 @@ participates in history seeding, and does not create duplication.
 - The placeholder never has a stable ID and is not subject to deduplication — it is ephemeral UI state.
 
 This approach:
+
 - Eliminates the Part A consistency risk entirely (no optimistic message in `messages` = no stale data)
 - Eliminates the Part B duplicate bubble (the placeholder is not in `messages` = doesn't conflict with history)
 - Preserves the perceived-latency UX benefit (user sees immediate feedback)
@@ -695,18 +727,21 @@ performance impact. Adds `setPendingUserContent` (1 extra setState) — also neg
 ## Test Coverage Needed
 
 **Bug 1:**
+
 - Add a test to `MessageItem.test.tsx` or `AssistantMessageContent.test.tsx` that renders a message
   with two text parts and asserts both render correctly with distinct keys.
 - Add a test that simulates streaming text_delta events on a message that already has a tool_call
   part and verifies no duplicate key warning (can use React Testing Library's `console.error` spy).
 
 **Bug 2:**
+
 - Add a test to `use-task-state` and `use-session-status` tests asserting that the query does NOT
   fire when `sessionId` is `null` (use `vi.mocked(transport.getTasks).toHaveBeenCalledTimes(0)`).
 - Add a test to `ChatPanel.test.tsx` asserting that mounting with `sessionId={null}` generates no
   network calls to task-state or session-status endpoints.
 
 **Bug 3:**
+
 - Add a test to `use-chat-session.test.tsx` asserting that `messages` does NOT include a user message
   immediately after `handleSubmit` is called (if eliminating optimistic).
 - Or assert that a `pendingUserContent` value IS set (if implementing the placeholder approach).
@@ -734,7 +769,7 @@ test with relay mode enabled on a simulated 500ms+ POST latency.
 # Sources & Evidence
 
 - Source read: `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` —
-  confirmed `key={\`text-${i}\`}` on line 121; `tool_call` uses `key={part.toolCallId}` (stable)
+  confirmed `key={\`text-${i}\`}`on line 121;`tool_call`uses`key={part.toolCallId}` (stable)
 - Source read: `apps/client/src/layers/features/chat/model/stream-event-handler.ts` — confirmed
   `TextPart` is created without an ID field; parts array is immutably replaced on each `text_delta`
 - Source read: `packages/shared/src/schemas.ts` — confirmed `TextPartSchema` has no `id` field;
@@ -746,7 +781,7 @@ test with relay mode enabled on a simulated 500ms+ POST latency.
 - Source read: `apps/client/src/layers/entities/session/model/use-session-status.ts` — confirmed no
   `enabled` guard; convergence effect for localModel already in place (this bug is separate)
 - Source read: `apps/client/src/layers/features/chat/model/use-chat-session.ts` — confirmed `enabled:
-  sessionId !== null` already exists (line 186); optimistic user message at line 379; ID deduplication
+sessionId !== null` already exists (line 186); optimistic user message at line 379; ID deduplication
   in seed effect at lines 221-227; `statusRef` guard on `sync_update` at line 297
 - Prior research: [20260307_relay_streaming_bugs_tanstack_query.md](./20260307_relay_streaming_bugs_tanstack_query.md)
   — `isStreamingRef` guard pattern; ID-based deduplication; TanStack Query `enabled: false` behavior

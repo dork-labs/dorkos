@@ -33,8 +33,8 @@
 - `apps/server/src/lib/logger.ts` — New: logger singleton with consola, NDJSON file reporter, rotation
 - `apps/server/src/middleware/request-logger.ts` — New: Express middleware for debug-level HTTP request logging
 - `apps/server/src/app.ts` — Registered requestLogger middleware
-- `apps/server/src/index.ts` — initLogger() with DORKOS_LOG_LEVEL from env, replaced console.* calls
-- `apps/server/src/services/agent-manager.ts` — Replaced console.* with structured logger calls
+- `apps/server/src/index.ts` — initLogger() with DORKOS_LOG_LEVEL from env, replaced console.\* calls
+- `apps/server/src/services/agent-manager.ts` — Replaced console.\* with structured logger calls
 - `apps/server/src/services/config-manager.ts` — Replaced console.warn with logger.warn
 - `apps/server/src/services/command-registry.ts` — Replaced console.warn with logger.warn
 - `apps/server/src/services/file-lister.ts` — Replaced console.warn with logger.warn

@@ -38,7 +38,9 @@ describe('useFileUpload', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
     mockTransport = createMockTransport();
   });
 

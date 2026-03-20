@@ -1,10 +1,10 @@
 ---
 slug: command-palette-10x
 number: 87
-title: "10x Command Palette UX"
+title: '10x Command Palette UX'
 status: draft
 created: 2026-03-03
-authors: ["Claude Code"]
+authors: ['Claude Code']
 spec: command-palette-10x
 ---
 
@@ -25,7 +25,7 @@ The existing palette (ADR-0063, spec #85) is stable. This is a UX enhancement, n
 The current command palette is functional but flat. It lists agents and features without visual hierarchy, has no match highlighting, uses a simple linear frecency formula that doesn't decay naturally, and lacks the polish that separates a "good enough" tool from one users enjoy using. Specifically:
 
 1. **No preview context** — Users must switch to an agent to learn about it. No way to see session count, health, or persona before committing.
-2. **No match highlighting** — cmdk's built-in filter returns a score but no match indices. Users can't see *why* a result matched their query.
+2. **No match highlighting** — cmdk's built-in filter returns a score but no match indices. Users can't see _why_ a result matched their query.
 3. **Linear frecency decay** — The current `useCount / (1 + hours * 0.1)` formula keeps old high-frequency items ranked too long.
 4. **No drill-down** — Selecting an agent immediately switches CWD. No opportunity to choose "open here", "open in new tab", or view recent sessions.
 5. **No micro-interactions** — Selection snaps between items rather than sliding. No entrance animation, no hover feedback, no keyboard hint footer.
@@ -52,12 +52,12 @@ The current command palette is functional but flat. It lists agents and features
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `fuse.js` | `^7.0.0` | Fuzzy search with `includeMatches` for character-level highlighting |
-| `cmdk` | `^1.1.1` | Already installed — `shouldFilter={false}` mode, `pages` pattern |
-| `motion` | `^12.x` | Already installed — `layoutId`, `AnimatePresence`, stagger variants |
-| `@dorkos/shared` | workspace | Mesh schemas (`AgentPathEntry`), session types |
+| Dependency       | Version   | Purpose                                                             |
+| ---------------- | --------- | ------------------------------------------------------------------- |
+| `fuse.js`        | `^7.0.0`  | Fuzzy search with `includeMatches` for character-level highlighting |
+| `cmdk`           | `^1.1.1`  | Already installed — `shouldFilter={false}` mode, `pages` pattern    |
+| `motion`         | `^12.x`   | Already installed — `layoutId`, `AnimatePresence`, stagger variants |
+| `@dorkos/shared` | workspace | Mesh schemas (`AgentPathEntry`), session types                      |
 
 **New dependency**: `fuse.js` (24kb, MIT license, zero sub-dependencies). Install in `apps/client/`.
 
@@ -114,6 +114,7 @@ features/command-palette/
 ```
 
 **Preview content** (for agent items):
+
 - Agent name + color chip + emoji
 - CWD path (shortened via `shortenHomePath`)
 - Persona description (from `useCurrentAgent` or mesh data)
@@ -141,7 +142,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       animate={{ opacity: 1, width: '60%' }}
       exit={{ opacity: 0, width: 0 }}
       transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-      className="border-l overflow-hidden"
+      className="overflow-hidden border-l"
     >
       {/* Agent identity header */}
       {/* Persona description */}
@@ -160,15 +161,12 @@ export function usePreviewData(agentId: string, agentCwd: string) {
   const { data: sessions } = useSessions();
   const { data: health } = useMeshAgentHealth(deferredAgentId);
 
-  const agentSessions = useMemo(() =>
-    sessions?.filter(s => s.cwd === agentCwd) ?? [],
+  const agentSessions = useMemo(
+    () => sessions?.filter((s) => s.cwd === agentCwd) ?? [],
     [sessions, agentCwd]
   );
 
-  const recentSessions = useMemo(() =>
-    agentSessions.slice(0, 3),
-    [agentSessions]
-  );
+  const recentSessions = useMemo(() => agentSessions.slice(0, 3), [agentSessions]);
 
   return {
     sessionCount: agentSessions.length,
@@ -185,6 +183,7 @@ export function usePreviewData(agentId: string, agentCwd: string) {
 **Integration**: Set `shouldFilter={false}` on cmdk's `<Command>` to disable built-in filtering. All filtering, scoring, and sorting is managed externally by `use-palette-search.ts`.
 
 **Category prefixes**:
+
 - `@` — filters agents only (existing behavior, enhanced)
 - `>` — filters commands only (new)
 - No prefix — searches all categories
@@ -211,7 +210,7 @@ interface SearchResult {
 const FUSE_OPTIONS: Fuse.IFuseOptions<SearchableItem> = {
   keys: ['name', 'keywords'],
   includeMatches: true,
-  threshold: 0.3,       // Tight matching — agent names/paths are precise terms
+  threshold: 0.3, // Tight matching — agent names/paths are precise terms
   distance: 100,
   minMatchCharLength: 1,
 };
@@ -220,19 +219,16 @@ export function usePaletteSearch(items: SearchableItem[], search: string) {
   const { prefix, term } = useMemo(() => parsePrefix(search), [search]);
 
   const filteredByPrefix = useMemo(() => {
-    if (prefix === '@') return items.filter(i => i.type === 'agent');
-    if (prefix === '>') return items.filter(i => i.type === 'command');
+    if (prefix === '@') return items.filter((i) => i.type === 'agent');
+    if (prefix === '>') return items.filter((i) => i.type === 'command');
     return items;
   }, [items, prefix]);
 
-  const fuse = useMemo(
-    () => new Fuse(filteredByPrefix, FUSE_OPTIONS),
-    [filteredByPrefix]
-  );
+  const fuse = useMemo(() => new Fuse(filteredByPrefix, FUSE_OPTIONS), [filteredByPrefix]);
 
   const results: SearchResult[] = useMemo(() => {
     if (!term) {
-      return filteredByPrefix.map(item => ({ item, matches: undefined }));
+      return filteredByPrefix.map((item) => ({ item, matches: undefined }));
     }
     return fuse.search(term);
   }, [fuse, term, filteredByPrefix]);
@@ -275,7 +271,7 @@ export function HighlightedText({ text, indices, className }: HighlightedTextPro
       parts.push(<span key={`p-${i}`}>{text.slice(lastIdx, start)}</span>);
     }
     parts.push(
-      <mark key={`m-${i}`} className="bg-transparent text-foreground font-semibold">
+      <mark key={`m-${i}`} className="text-foreground bg-transparent font-semibold">
         {text.slice(start, matchEnd)}
       </mark>
     );
@@ -298,15 +294,15 @@ Upgrade `use-agent-frecency.ts` from the current linear formula to Slack's battl
 
 **Bucket scoring**:
 
-| Time Window | Points |
-|---|---|
-| Past 4 hours | 100 |
-| Past 24 hours | 80 |
-| Past 3 days | 60 |
-| Past week | 40 |
-| Past month | 20 |
-| Past 90 days | 10 |
-| Beyond 90 days | 0 |
+| Time Window    | Points |
+| -------------- | ------ |
+| Past 4 hours   | 100    |
+| Past 24 hours  | 80     |
+| Past 3 days    | 60     |
+| Past week      | 40     |
+| Past month     | 20     |
+| Past 90 days   | 10     |
+| Beyond 90 days | 0      |
 
 **Formula**: `totalCount * bucketSum / min(timestamps.length, MAX_TIMESTAMPS)`
 
@@ -325,7 +321,7 @@ interface FrecencyEntry {
 // New
 interface FrecencyRecord {
   agentId: string;
-  timestamps: number[];  // epoch ms, most recent first, max 10
+  timestamps: number[]; // epoch ms, most recent first, max 10
   totalCount: number;
 }
 ```
@@ -345,6 +341,7 @@ const page = pages[pages.length - 1];
 ```
 
 **Navigation**:
+
 - **Enter** on an agent item — pushes `'agent-actions'` page, stores selected agent
 - **Cmd+Enter** on an agent item — fast path: opens agent in new tab directly (skips sub-menu)
 - **Backspace** when input is empty — pops last page (`goBack()`)
@@ -352,11 +349,13 @@ const page = pages[pages.length - 1];
 - **Escape** when `pages.length === 0` — closes dialog (default behavior)
 
 **Breadcrumb**: When `pages.length > 0`, a compact breadcrumb displays below the input:
+
 ```
 All / Agent: my-api-agent
 ```
 
 **Height animation**: The `--cmdk-list-height` CSS variable (provided by cmdk) drives a CSS transition on the list container:
+
 ```css
 [cmdk-list] {
   height: var(--cmdk-list-height);
@@ -377,7 +376,11 @@ interface AgentSubMenuProps {
 }
 
 export function AgentSubMenu({
-  agent, onOpenHere, onOpenNewTab, onNewSession, recentSessions,
+  agent,
+  onOpenHere,
+  onOpenNewTab,
+  onNewSession,
+  recentSessions,
 }: AgentSubMenuProps) {
   return (
     <>
@@ -399,7 +402,7 @@ export function AgentSubMenu({
       </CommandGroup>
       {recentSessions.length > 0 && (
         <CommandGroup heading="Recent Sessions">
-          {recentSessions.map(session => (
+          {recentSessions.map((session) => (
             <CommandItem key={session.id} onSelect={() => navigateToSession(session.id)}>
               <MessageSquare className="size-4" />
               <span className="truncate">{session.title ?? 'Untitled'}</span>
@@ -439,7 +442,7 @@ The highest-impact single animation. A `motion.div` with `layoutId="cmd-palette-
 </CommandItem>
 ```
 
-**cmdk compatibility note**: The `data-selected` attribute is managed by cmdk internally. To detect selection, observe the `[data-selected=true]` attribute via a wrapper or use cmdk's value tracking. The selection indicator wraps the *content* inside `CommandItem`, not the `CommandItem` itself, to avoid interfering with cmdk's keyboard navigation.
+**cmdk compatibility note**: The `data-selected` attribute is managed by cmdk internally. To detect selection, observe the `[data-selected=true]` attribute via a wrapper or use cmdk's value tracking. The selection indicator wraps the _content_ inside `CommandItem`, not the `CommandItem` itself, to avoid interfering with cmdk's keyboard navigation.
 
 #### 5b. Dialog Entrance
 
@@ -449,11 +452,15 @@ Spring scale + fade on open. Applied to the dialog's inner content container.
 const dialogVariants = {
   hidden: { opacity: 0, scale: 0.96, y: -8 },
   visible: {
-    opacity: 1, scale: 1, y: 0,
+    opacity: 1,
+    scale: 1,
+    y: 0,
     transition: { type: 'spring', stiffness: 500, damping: 35 },
   },
   exit: {
-    opacity: 0, scale: 0.96, y: -8,
+    opacity: 0,
+    scale: 0.96,
+    y: -8,
     transition: { duration: 0.12 },
   },
 };
@@ -474,7 +481,8 @@ const listVariants = {
 const itemVariants = {
   hidden: { opacity: 0, y: -4 },
   visible: {
-    opacity: 1, y: 0,
+    opacity: 1,
+    y: 0,
     transition: { type: 'spring', stiffness: 400, damping: 30 },
   },
 };
@@ -505,10 +513,7 @@ Directional x-axis slide when navigating between pages.
 Subtle 2px rightward nudge on hover (Linear pattern).
 
 ```tsx
-<motion.div
-  whileHover={{ x: 2 }}
-  transition={{ type: 'spring', stiffness: 600, damping: 40 }}
->
+<motion.div whileHover={{ x: 2 }} transition={{ type: 'spring', stiffness: 600, damping: 40 }}>
   {/* CommandItem content */}
 </motion.div>
 ```
@@ -520,12 +525,28 @@ Dynamic keyboard hint bar at the bottom of the palette. Shows context-appropriat
 ```tsx
 export function PaletteFooter({ page, hasSelection }: PaletteFooterProps) {
   return (
-    <div className="border-t px-3 py-1.5 flex items-center gap-4 text-xs text-muted-foreground">
-      <span><kbd>up/down</kbd> Navigate</span>
-      {!page && hasSelection && <span><kbd>Enter</kbd> Open</span>}
-      {!page && <span><kbd>Cmd+Enter</kbd> New Tab</span>}
-      {page && <span><kbd>Backspace</kbd> Back</span>}
-      <span className="ml-auto"><kbd>esc</kbd> Close</span>
+    <div className="text-muted-foreground flex items-center gap-4 border-t px-3 py-1.5 text-xs">
+      <span>
+        <kbd>up/down</kbd> Navigate
+      </span>
+      {!page && hasSelection && (
+        <span>
+          <kbd>Enter</kbd> Open
+        </span>
+      )}
+      {!page && (
+        <span>
+          <kbd>Cmd+Enter</kbd> New Tab
+        </span>
+      )}
+      {page && (
+        <span>
+          <kbd>Backspace</kbd> Back
+        </span>
+      )}
+      <span className="ml-auto">
+        <kbd>esc</kbd> Close
+      </span>
     </div>
   );
 }
@@ -615,21 +636,22 @@ User presses Cmd+K
 
 ### Keyboard Shortcuts (shown in PaletteFooter)
 
-| Key | Context | Action |
-|---|---|---|
-| Up / Down | Always | Navigate items |
-| Enter | Agent selected | Open sub-menu |
-| Enter | Sub-menu action | Execute action |
-| Cmd+Enter | Agent selected | Open in new tab (fast path) |
-| Backspace | Empty input, in sub-menu | Go back one level |
-| Escape | In sub-menu | Go back one level |
-| Escape | Root level | Close palette |
+| Key       | Context                  | Action                      |
+| --------- | ------------------------ | --------------------------- |
+| Up / Down | Always                   | Navigate items              |
+| Enter     | Agent selected           | Open sub-menu               |
+| Enter     | Sub-menu action          | Execute action              |
+| Cmd+Enter | Agent selected           | Open in new tab (fast path) |
+| Backspace | Empty input, in sub-menu | Go back one level           |
+| Escape    | In sub-menu              | Go back one level           |
+| Escape    | Root level               | Close palette               |
 
 ## Testing Strategy
 
 ### Unit Tests
 
 **use-palette-search.test.ts** — Tests Fuse.js integration:
+
 - Returns all items when search is empty
 - Filters by `@` prefix (agents only)
 - Filters by `>` prefix (commands only)
@@ -639,6 +661,7 @@ User presses Cmd+K
 - Scores exact matches higher than partial matches
 
 **use-agent-frecency.test.ts** — Tests bucket algorithm:
+
 - Bucket score calculation for each time window (4h, 24h, 72h, 1w, 1mo, 3mo)
 - Score formula: `totalCount * bucketSum / min(timestamps.length, 10)`
 - Recording a visit adds timestamp and increments totalCount
@@ -648,12 +671,14 @@ User presses Cmd+K
 - Graceful degradation when localStorage unavailable
 
 **use-preview-data.test.ts** — Tests data aggregation:
+
 - Returns session count and recent sessions for agent CWD
 - Returns health data when available
 - Returns null health when agent has no health data
 - Filters sessions by agent CWD correctly
 
 **HighlightedText** — Tests rendering:
+
 - Renders plain text when no indices
 - Renders `<mark>` elements for matched ranges
 - Handles adjacent/overlapping ranges
@@ -663,6 +688,7 @@ User presses Cmd+K
 ### Integration Tests
 
 **CommandPaletteDialog.test.tsx** — Update existing tests + add:
+
 - Preview panel appears when agent is selected (via arrow key simulation)
 - Preview panel hidden on mobile
 - Sub-menu opens on Enter for agent items

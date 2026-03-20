@@ -20,7 +20,7 @@ export function PulseEmptyState({ onCreateWithPreset, onCreateBlank }: PulseEmpt
   return (
     <div className="flex flex-col items-center justify-center px-6 py-8 md:py-12">
       <h3 className="mb-2 text-lg font-medium">No schedules yet.</h3>
-      <p className="mb-6 max-w-sm text-center text-sm text-muted-foreground">
+      <p className="text-muted-foreground mb-6 max-w-sm text-center text-sm">
         Automate your workflows with Pulse.
       </p>
 
@@ -28,11 +28,7 @@ export function PulseEmptyState({ onCreateWithPreset, onCreateBlank }: PulseEmpt
         <PresetGallery onSelect={onCreateWithPreset} />
       </div>
 
-      <Button
-        variant="ghost"
-        className="mt-4"
-        onClick={onCreateBlank}
-      >
+      <Button variant="ghost" className="mt-4" onClick={onCreateBlank}>
         New custom schedule
       </Button>
     </div>

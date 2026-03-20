@@ -1,29 +1,29 @@
 ---
-title: "Relay Core Library"
+title: 'Relay Core Library'
 spec: 1
 order: 1
 status: done
 blockedBy: []
 blocks: [2]
 parallelWith: []
-litepaperPhase: "Phase 1 — Core Transport and Safety"
+litepaperPhase: 'Phase 1 — Core Transport and Safety'
 complexity: high
 risk: high
 estimatedFiles: 15-20
-newPackages: ["packages/relay"]
-primaryWorkspaces: ["packages/relay", "packages/shared"]
+newPackages: ['packages/relay']
+primaryWorkspaces: ['packages/relay', 'packages/shared']
 touchesServer: false
 touchesClient: false
 verification:
-  - "npm test passes for packages/relay"
-  - "npm run typecheck passes"
-  - "RelayCore can be instantiated and send/receive messages in a test"
-  - "Subject matching handles *, >, and literal subjects correctly"
-  - "Budget enforcement rejects over-limit messages and detects cycles"
-  - "Maildir atomic delivery works (tmp → new rename)"
-  - "Dead letter queue captures rejected messages with reasons"
-  - "Signals fire via EventEmitter without touching disk"
-  - "SQLite index is rebuildable from Maildir files"
+  - 'npm test passes for packages/relay'
+  - 'npm run typecheck passes'
+  - 'RelayCore can be instantiated and send/receive messages in a test'
+  - 'Subject matching handles *, >, and literal subjects correctly'
+  - 'Budget enforcement rejects over-limit messages and detects cycles'
+  - 'Maildir atomic delivery works (tmp → new rename)'
+  - 'Dead letter queue captures rejected messages with reasons'
+  - 'Signals fire via EventEmitter without touching disk'
+  - 'SQLite index is rebuildable from Maildir files'
 notes: >
   This is the foundation — everything else depends on it. Take extra care
   with subject matching edge cases and budget enforcement logic. The design
@@ -96,12 +96,14 @@ OUT OF SCOPE for this spec:
 ## Context for Review
 
 This is the foundation spec — everything else builds on it. The /ideate exploration agent should focus heavily on:
+
 - How `packages/shared/` is structured (package.json exports, tsconfig, build)
 - How `pulse-store.ts` uses better-sqlite3 (migration pattern, WAL mode, query patterns)
 - The TypeScript interfaces in the design doc (RelayEnvelope, RelayBudget, StandardPayload, RelayAccessRule, RelayAdapter)
 - The research docs in `research/mesh/` for communication patterns
 
 The /ideate research agent should investigate:
+
 - Maildir implementations in Node.js (atomic rename, directory conventions)
 - NATS subject matching algorithm details (wildcard semantics, edge cases)
 - ULID vs UUID for message IDs (ordered, sortable, collision-resistant)

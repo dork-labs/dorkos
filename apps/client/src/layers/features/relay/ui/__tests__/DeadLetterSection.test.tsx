@@ -145,7 +145,10 @@ describe('DeadLetterSection', () => {
     });
 
     it('shows "Unknown" badge for unrecognized reason codes', () => {
-      mockUseAggregatedDeadLetters.mockReturnValue({ data: [unknownReasonGroup], isLoading: false });
+      mockUseAggregatedDeadLetters.mockReturnValue({
+        data: [unknownReasonGroup],
+        isLoading: false,
+      });
       render(<DeadLetterSection />);
       expect(screen.getByText('Unknown')).toBeInTheDocument();
     });
@@ -192,17 +195,24 @@ describe('DeadLetterSection', () => {
       fireEvent.click(screen.getByText('Mark Resolved'));
       // The description text is split across multiple DOM nodes due to JSX interpolation
       const _description = screen.getByRole('alertdialog').querySelector('[id^="radix-"]');
-      const descText = screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')?.textContent ?? '';
+      const descText =
+        screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
+          ?.textContent ?? '';
       expect(descText).toMatch(/15044/);
       expect(descText).toMatch(/slack-adapter/);
       expect(descText).toMatch(/Hop Limit/);
     });
 
     it('uses singular "dead letter" when count is 1', () => {
-      mockUseAggregatedDeadLetters.mockReturnValue({ data: [unknownReasonGroup], isLoading: false });
+      mockUseAggregatedDeadLetters.mockReturnValue({
+        data: [unknownReasonGroup],
+        isLoading: false,
+      });
       render(<DeadLetterSection />);
       fireEvent.click(screen.getByText('Mark Resolved'));
-      const descText = screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')?.textContent ?? '';
+      const descText =
+        screen.getByText('Mark dead letters as resolved?').closest('[role="alertdialog"]')
+          ?.textContent ?? '';
       // count=1 should not append 's'
       expect(descText).toMatch(/1 dead letter[^s]/);
     });

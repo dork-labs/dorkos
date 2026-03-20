@@ -50,7 +50,7 @@ All animations use the already-installed `motion` library (motion.dev v12.x), re
 Create `apps/web/src/layers/features/marketing/lib/motion-variants.ts`:
 
 ```typescript
-import type { Variants, Transition } from 'motion/react'
+import type { Variants, Transition } from 'motion/react';
 
 /** Overdamped spring — physics-based, no bounce. */
 export const SPRING: Transition = {
@@ -58,10 +58,10 @@ export const SPRING: Transition = {
   stiffness: 100,
   damping: 20,
   mass: 1,
-}
+};
 
 /** Standard viewport trigger config — fires once at 20% visible. */
-export const VIEWPORT = { once: true, amount: 0.2 } as const
+export const VIEWPORT = { once: true, amount: 0.2 } as const;
 
 /** Fade + slide up reveal for individual elements. */
 export const REVEAL: Variants = {
@@ -71,7 +71,7 @@ export const REVEAL: Variants = {
     y: 0,
     transition: SPRING,
   },
-}
+};
 
 /** Container variant that staggers children at 80ms intervals. */
 export const STAGGER: Variants = {
@@ -81,7 +81,7 @@ export const STAGGER: Variants = {
       staggerChildren: 0.08,
     },
   },
-}
+};
 
 /** Scale-in variant for SVG nodes. */
 export const SCALE_IN: Variants = {
@@ -91,7 +91,7 @@ export const SCALE_IN: Variants = {
     scale: 1,
     transition: SPRING,
   },
-}
+};
 
 /** Path drawing variant using pathLength. */
 export const DRAW_PATH: Variants = {
@@ -101,7 +101,7 @@ export const DRAW_PATH: Variants = {
     opacity: 1,
     transition: { duration: 1.2, ease: 'easeInOut' },
   },
-}
+};
 ```
 
 #### 3.1.2 MotionConfig in Marketing Layout
@@ -138,6 +138,7 @@ This is the flagship enhancement. The current `SystemArchitecture.tsx` has stati
 #### Layer 1: Scroll-Triggered Reveal (Framer Motion)
 
 When the section enters the viewport (20% visible, once):
+
 - Connection paths draw in using `motion.path` with `pathLength: 0 → 1` over 1.2s
 - Nodes scale in from `scale: 0 → 1` with stagger (80ms between nodes)
 - The entire reveal orchestrates: paths draw first (0-1.2s), then nodes appear (staggered, starting at 0.8s)
@@ -179,6 +180,7 @@ After the reveal completes, connection paths show ambient "data flowing" animati
 ```
 
 Each path gets:
+
 - `stroke-dasharray="6 4"` (visible dash pattern)
 - `animation: dash-flow 1.5s linear infinite` (continuous flow)
 - Different delays per edge for visual variety
@@ -239,26 +241,21 @@ Add `whileInView` reveals to 5 major sections. Each section wraps its content in
 **Pattern for each section:**
 
 ```tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 // Wrap section content:
-<motion.div
-  initial="hidden"
-  whileInView="visible"
-  viewport={VIEWPORT}
-  variants={STAGGER}
->
+<motion.div initial="hidden" whileInView="visible" viewport={VIEWPORT} variants={STAGGER}>
   <motion.span variants={REVEAL}>Section Label</motion.span>
   <motion.p variants={REVEAL}>Heading</motion.p>
-  {items.map(item => (
+  {items.map((item) => (
     <motion.div key={item.id} variants={REVEAL}>
       {/* Card content */}
     </motion.div>
   ))}
-</motion.div>
+</motion.div>;
 ```
 
 **Hero section:** Uses `initial` + `animate` (not `whileInView`) since it's above the fold. Stagger the label → headline → subhead → CTA → pulse → screenshot with 100ms stagger.
@@ -274,6 +271,7 @@ Module cards in the SystemArchitecture section get two hover effects:
 A cursor-tracking radial gradient overlay. Desktop-only (hidden on touch devices).
 
 Implementation:
+
 - Track mouse position relative to card via `onMouseMove`
 - Set CSS custom properties `--mouse-x` and `--mouse-y` on the card element
 - Render a `::before` pseudo-element (or absolute-positioned div) with:
@@ -374,38 +372,40 @@ import { AnimatePresence, motion } from 'motion/react'
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
+| File                                                            | Purpose                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `apps/web/src/layers/features/marketing/lib/motion-variants.ts` | Shared REVEAL, STAGGER, SCALE_IN, DRAW_PATH variants + SPRING transition + VIEWPORT config |
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `apps/web/src/app/(marketing)/layout.tsx` | Add `'use client'`, wrap in `<MotionConfig reducedMotion="user">`, extract metadata to separate file |
-| `apps/web/src/app/(marketing)/metadata.ts` | NEW: Extracted metadata + JSON-LD from layout (Next.js requires metadata in server components) |
+| File                                                               | Changes                                                                                                                                                              |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/app/(marketing)/layout.tsx`                          | Add `'use client'`, wrap in `<MotionConfig reducedMotion="user">`, extract metadata to separate file                                                                 |
+| `apps/web/src/app/(marketing)/metadata.ts`                         | NEW: Extracted metadata + JSON-LD from layout (Next.js requires metadata in server components)                                                                       |
 | `apps/web/src/layers/features/marketing/ui/SystemArchitecture.tsx` | Add `'use client'`, replace `<line>` with `motion.path`, add SMIL particles, add dash-flow CSS animation, add whileInView reveal, add spotlight+lift to module cards |
-| `apps/web/src/layers/features/marketing/ui/Hero.tsx` | Add `'use client'`, wrap content elements in `motion.div` with stagger entrance animation |
-| `apps/web/src/layers/features/marketing/ui/UseCasesGrid.tsx` | Add `'use client'`, wrap grid in motion stagger with whileInView |
-| `apps/web/src/layers/features/marketing/ui/HonestySection.tsx` | Add `'use client'`, sequential paragraph reveal, corner bracket scale animation |
-| `apps/web/src/layers/features/marketing/ui/AboutSection.tsx` | Add `'use client'`, philosophy card stagger with whileInView |
-| `apps/web/src/layers/features/marketing/ui/HowItWorksSection.tsx` | Replace IntersectionObserver with motion whileInView, add step card stagger |
-| `apps/web/src/layers/features/marketing/ui/ContactSection.tsx` | Add AnimatePresence for email reveal transition |
-| `apps/web/src/layers/features/marketing/ui/PulseAnimation.tsx` | Add ghost path, glow layer with SVG blur filter, move keyframes to CSS |
-| `apps/web/src/layers/features/marketing/index.ts` | Export motion-variants |
-| `apps/web/src/app/globals.css` (or equivalent) | Add `@keyframes dash-flow` and `@keyframes draw-pulse`, add `prefers-reduced-motion` overrides for SMIL |
+| `apps/web/src/layers/features/marketing/ui/Hero.tsx`               | Add `'use client'`, wrap content elements in `motion.div` with stagger entrance animation                                                                            |
+| `apps/web/src/layers/features/marketing/ui/UseCasesGrid.tsx`       | Add `'use client'`, wrap grid in motion stagger with whileInView                                                                                                     |
+| `apps/web/src/layers/features/marketing/ui/HonestySection.tsx`     | Add `'use client'`, sequential paragraph reveal, corner bracket scale animation                                                                                      |
+| `apps/web/src/layers/features/marketing/ui/AboutSection.tsx`       | Add `'use client'`, philosophy card stagger with whileInView                                                                                                         |
+| `apps/web/src/layers/features/marketing/ui/HowItWorksSection.tsx`  | Replace IntersectionObserver with motion whileInView, add step card stagger                                                                                          |
+| `apps/web/src/layers/features/marketing/ui/ContactSection.tsx`     | Add AnimatePresence for email reveal transition                                                                                                                      |
+| `apps/web/src/layers/features/marketing/ui/PulseAnimation.tsx`     | Add ghost path, glow layer with SVG blur filter, move keyframes to CSS                                                                                               |
+| `apps/web/src/layers/features/marketing/index.ts`                  | Export motion-variants                                                                                                                                               |
+| `apps/web/src/app/globals.css` (or equivalent)                     | Add `@keyframes dash-flow` and `@keyframes draw-pulse`, add `prefers-reduced-motion` overrides for SMIL                                                              |
 
 ---
 
 ## 5. Implementation Phases
 
 ### Phase 1: Foundation (motion-variants + MotionConfig)
+
 1. Create `motion-variants.ts` with all shared variants
 2. Add `MotionConfig` to marketing layout (extract metadata to separate file)
 3. Add global CSS keyframes (`dash-flow`, `draw-pulse`)
 4. Export from barrel
 
 ### Phase 2: Architecture Diagram (flagship)
+
 1. Convert SystemArchitecture to `'use client'`
 2. Replace `<line>` elements with `<path>` elements
 3. Add Layer 1: Framer Motion scroll-triggered path drawing + node scale-in
@@ -415,6 +415,7 @@ import { AnimatePresence, motion } from 'motion/react'
 7. Add `prefers-reduced-motion` CSS overrides
 
 ### Phase 3: Scroll Reveals (5 sections)
+
 1. Hero — stagger entrance on mount
 2. UseCasesGrid — whileInView stagger
 3. HowItWorksSection — replace IntersectionObserver with whileInView
@@ -422,6 +423,7 @@ import { AnimatePresence, motion } from 'motion/react'
 5. AboutSection — philosophy card stagger
 
 ### Phase 4: Polish
+
 1. Enhanced PulseAnimation (ghost path + glow + CSS keyframes migration)
 2. ContactSection AnimatePresence email reveal
 
@@ -464,13 +466,13 @@ import { AnimatePresence, motion } from 'motion/react'
 
 ## 8. Risks & Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| SMIL particles not visible in some browsers | Low | Low | Particles are enhancement-only; page works without them |
-| `'use client'` conversion breaks metadata | Medium | High | Extract metadata to separate `metadata.ts` server file before converting layout |
-| Spotlight effect causes jank on slow devices | Low | Medium | RAF throttling on `onMouseMove`; desktop-only via `@media (hover: hover)` |
-| Animation overload feels "too much" | Medium | Medium | Design system constraints (small y offset, fast timing, overdamped spring) keep motion subtle |
-| CSS `dash-flow` animation and SMIL conflict with `prefers-reduced-motion` | Medium | Medium | Explicit CSS media query to disable both; tested in reduced-motion mode |
+| Risk                                                                      | Likelihood | Impact | Mitigation                                                                                    |
+| ------------------------------------------------------------------------- | ---------- | ------ | --------------------------------------------------------------------------------------------- |
+| SMIL particles not visible in some browsers                               | Low        | Low    | Particles are enhancement-only; page works without them                                       |
+| `'use client'` conversion breaks metadata                                 | Medium     | High   | Extract metadata to separate `metadata.ts` server file before converting layout               |
+| Spotlight effect causes jank on slow devices                              | Low        | Medium | RAF throttling on `onMouseMove`; desktop-only via `@media (hover: hover)`                     |
+| Animation overload feels "too much"                                       | Medium     | Medium | Design system constraints (small y offset, fast timing, overdamped spring) keep motion subtle |
+| CSS `dash-flow` animation and SMIL conflict with `prefers-reduced-motion` | Medium     | Medium | Explicit CSS media query to disable both; tested in reduced-motion mode                       |
 
 ---
 
@@ -489,4 +491,4 @@ This is a visual/interaction enhancement. Testing approach:
 
 ## 10. Changelog
 
-*Initial specification — no changes yet.*
+_Initial specification — no changes yet._

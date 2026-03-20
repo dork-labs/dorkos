@@ -8,12 +8,12 @@
 
 ## Summary
 
-| Phase | Name | Tasks | Critical |
-|---|---|---|---|
-| 1 | Infrastructure Promotion | 4 | Yes |
-| 2 | CreateScheduleDialog Two-Step Flow | 2 | Yes |
-| 3 | Empty State Surfaces | 3 | Yes |
-| **Total** | | **9** | |
+| Phase     | Name                               | Tasks | Critical |
+| --------- | ---------------------------------- | ----- | -------- |
+| 1         | Infrastructure Promotion           | 4     | Yes      |
+| 2         | CreateScheduleDialog Two-Step Flow | 2     | Yes      |
+| 3         | Empty State Surfaces               | 3     | Yes      |
+| **Total** |                                    | **9** |          |
 
 **Critical path:** 1.1 → 1.2 → 1.3 → 1.4 → 2.1 → 2.2 → 3.1 / 3.2 → 3.3
 
@@ -318,9 +318,9 @@ Tasks 3.1 and 3.2 can run in parallel after 2.2 and their respective Phase 1 dep
 
 ## Risk Register
 
-| Risk | Mitigation |
-|---|---|
-| `PresetCard` API change breaks `PulsePresetsStep` | Use re-export shim in task 1.2, fix imports in task 1.3 before deleting shim |
-| `usePulsePresetDialog.clear()` not called | Both `CreateScheduleDialog` (external trigger `useEffect`) and `PulsePanel` (after opening) call `clear()`; covered by test |
-| FSD cross-feature import in `SchedulesView` | Only imports from `entities/pulse`; `formatCron` is a lib utility moved to `features/pulse/lib` — if needed, move to `shared/lib` instead |
-| `externalTrigger` becomes stale after navigation | `PulsePanel` calls `clear()` after consuming the trigger; dialog's `open` state resets on close |
+| Risk                                              | Mitigation                                                                                                                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `PresetCard` API change breaks `PulsePresetsStep` | Use re-export shim in task 1.2, fix imports in task 1.3 before deleting shim                                                              |
+| `usePulsePresetDialog.clear()` not called         | Both `CreateScheduleDialog` (external trigger `useEffect`) and `PulsePanel` (after opening) call `clear()`; covered by test               |
+| FSD cross-feature import in `SchedulesView`       | Only imports from `entities/pulse`; `formatCron` is a lib utility moved to `features/pulse/lib` — if needed, move to `shared/lib` instead |
+| `externalTrigger` becomes stale after navigation  | `PulsePanel` calls `clear()` after consuming the trigger; dialog's `open` state resets on close                                           |

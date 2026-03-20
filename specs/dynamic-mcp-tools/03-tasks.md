@@ -21,6 +21,7 @@ last_decompose: 2026-02-17
 **Objective:** Add the `AsyncIterable<SDKUserMessage>` prompt wrapper to `agent-manager.ts` and update the `query()` call site to always use it.
 
 **Files Modified:**
+
 - `apps/server/src/services/agent-manager.ts`
 
 **Implementation:**
@@ -54,6 +55,7 @@ const agentQuery = query({ prompt: makeUserPrompt(content), options: sdkOptions 
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `makeUserPrompt` is a module-level `async function*` in `agent-manager.ts`
 - [ ] It yields a single `{ type: 'user', message: { role: 'user', content } }` object
 - [ ] The `query()` call uses `makeUserPrompt(content)` instead of plain `content`
@@ -68,6 +70,7 @@ const agentQuery = query({ prompt: makeUserPrompt(content), options: sdkOptions 
 **Objective:** Add the `mcpServers` private field and `setMcpServers()` public method to `AgentManager`, then inject `mcpServers` into `sdkOptions` before the `query()` call.
 
 **Files Modified:**
+
 - `apps/server/src/services/agent-manager.ts`
 
 **Implementation:**
@@ -102,6 +105,7 @@ if (Object.keys(this.mcpServers).length > 0) {
 **Note:** The `Record<string, unknown>` cast follows the same pattern already used on line 175 for `model`.
 
 **Acceptance Criteria:**
+
 - [ ] `mcpServers` is a private field initialized to `{}`
 - [ ] `setMcpServers()` is a public method that sets the field
 - [ ] MCP servers are injected into `sdkOptions` only when non-empty
@@ -117,6 +121,7 @@ if (Object.keys(this.mcpServers).length > 0) {
 **Objective:** Create the new MCP tool server module with the `McpToolDeps` dependency injection interface, 3 tool handler functions (`handlePing`, `handleGetServerInfo`, `createGetSessionCountHandler`), and the `createDorkOsToolServer` factory function.
 
 **Files Created:**
+
 - `apps/server/src/services/mcp-tool-server.ts`
 
 **Implementation:**
@@ -144,14 +149,16 @@ export interface McpToolDeps {
  */
 export async function handlePing() {
   return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify({
-        status: 'pong',
-        timestamp: new Date().toISOString(),
-        server: 'dorkos',
-      }),
-    }],
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          status: 'pong',
+          timestamp: new Date().toISOString(),
+          server: 'dorkos',
+        }),
+      },
+    ],
   };
 }
 
@@ -159,9 +166,7 @@ export async function handlePing() {
  * Server info handler — returns DorkOS server metadata.
  * Validates Zod optional fields and env var access from tool handlers.
  */
-export async function handleGetServerInfo(
-  args: { include_uptime?: boolean }
-) {
+export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
   const info: Record<string, unknown> = {
     product: 'DorkOS',
     port: process.env.DORKOS_PORT ?? '4242',
@@ -171,10 +176,12 @@ export async function handleGetServerInfo(
     info.uptime_seconds = Math.floor(process.uptime());
   }
   return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify(info, null, 2),
-    }],
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(info, null, 2),
+      },
+    ],
   };
 }
 
@@ -187,22 +194,26 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
     try {
       const sessions = await deps.transcriptReader.listSessions(deps.defaultCwd);
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            count: sessions.length,
-            cwd: deps.defaultCwd,
-          }),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              count: sessions.length,
+              cwd: deps.defaultCwd,
+            }),
+          },
+        ],
       };
     } catch (err) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            error: err instanceof Error ? err.message : 'Failed to list sessions',
-          }),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : 'Failed to list sessions',
+            }),
+          },
+        ],
         isError: true,
       };
     }
@@ -247,6 +258,7 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
 **Error handling pattern:** All tool handlers that call external services wrap logic in try/catch and return `{ isError: true }` on failure rather than throwing. `ping` and `get_server_info` are simple enough to skip try/catch. `get_session_count` demonstrates the error wrapping pattern.
 
 **Acceptance Criteria:**
+
 - [ ] File exists at `apps/server/src/services/mcp-tool-server.ts`
 - [ ] `McpToolDeps` interface exports `transcriptReader` and `defaultCwd` fields
 - [ ] `handlePing` is exported, takes no args, returns `{ content: [{ type: 'text', text }] }`
@@ -263,6 +275,7 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
 **Objective:** Import and initialize the MCP tool server in the server startup function, then inject it into the `agentManager` singleton.
 
 **Files Modified:**
+
 - `apps/server/src/index.ts`
 
 **Implementation:**
@@ -321,6 +334,7 @@ async function start() {
 ```
 
 **Acceptance Criteria:**
+
 - [ ] `createDorkOsToolServer` is imported from `./services/mcp-tool-server.js`
 - [ ] MCP server is created with `transcriptReader` and `defaultCwd` deps
 - [ ] `agentManager.setMcpServers({ dorkos: mcpToolServer })` is called before `createApp()`
@@ -335,6 +349,7 @@ async function start() {
 **Objective:** Create comprehensive unit tests for `handlePing`, `handleGetServerInfo`, `createGetSessionCountHandler`, and `createDorkOsToolServer` in a new test file.
 
 **Files Created:**
+
 - `apps/server/src/services/__tests__/mcp-tool-server.test.ts`
 
 **Implementation:**
@@ -449,9 +464,7 @@ describe('MCP Tool Handlers', () => {
   describe('createGetSessionCountHandler', () => {
     it('returns session count from transcript reader', async () => {
       const mockReader = {
-        listSessions: vi.fn().mockResolvedValue([
-          { id: 's1' }, { id: 's2' }, { id: 's3' }
-        ]),
+        listSessions: vi.fn().mockResolvedValue([{ id: 's1' }, { id: 's2' }, { id: 's3' }]),
       };
       const handler = createGetSessionCountHandler({
         transcriptReader: mockReader as any,
@@ -540,12 +553,14 @@ describe('MCP Tool Handlers', () => {
 ```
 
 **Mocking Strategy:**
+
 - SDK `createSdkMcpServer` and `tool` are mocked to return passthrough objects — avoids needing SDK subprocess
 - `TranscriptReader` is mocked via partial interface matching: `{ listSessions: vi.fn() }`
 - `process.env` is set/restored in try/finally blocks per test
 - `process.uptime()` is not mocked — testing `>= 0` is sufficient
 
 **Acceptance Criteria:**
+
 - [ ] Test file exists at `apps/server/src/services/__tests__/mcp-tool-server.test.ts`
 - [ ] All `handlePing` tests pass (pong status, ISO timestamp, content block structure)
 - [ ] All `handleGetServerInfo` tests pass (default values, optional uptime, env var overrides)
@@ -577,6 +592,7 @@ npx vitest run apps/server/src/services/__tests__/mcp-tool-server.test.ts
 ```
 
 **What to Check:**
+
 - TypeScript compilation succeeds across all packages
 - Server build produces output without errors
 - Client build is unaffected (no changes to client)
@@ -585,6 +601,7 @@ npx vitest run apps/server/src/services/__tests__/mcp-tool-server.test.ts
 - Service count in `services/` is 17 (within advisory range, no restructuring needed)
 
 **Acceptance Criteria:**
+
 - [ ] `npm run typecheck` succeeds
 - [ ] `npm run build` succeeds
 - [ ] `npm test -- --run` passes all tests
@@ -598,6 +615,7 @@ npx vitest run apps/server/src/services/__tests__/mcp-tool-server.test.ts
 **Objective:** Update the project documentation to reflect the new MCP tool server service.
 
 **Files Modified:**
+
 - `CLAUDE.md` (root)
 
 **Implementation:**
@@ -613,6 +631,7 @@ npx vitest run apps/server/src/services/__tests__/mcp-tool-server.test.ts
 3. In the **File Organization** or architecture section, mention that MCP tool calls flow through the existing `canUseTool` callback and `mapSdkMessage()` pipeline with no changes — they appear as standard `tool_call_start/delta/end` events.
 
 **Acceptance Criteria:**
+
 - [ ] Service count updated from 16 to 17 in CLAUDE.md
 - [ ] New service description added to the services list
 - [ ] No documentation files created (updates only)

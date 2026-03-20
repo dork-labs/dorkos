@@ -8,6 +8,7 @@
 You are implementing a task from a specification.
 
 ## Cross-Session Context
+
 [CROSS_SESSION_CONTEXT]
 
 ## Current Task
@@ -15,6 +16,7 @@ You are implementing a task from a specification.
 Use `TaskGet({ taskId: "[TASK_ID]" })` to get the full task details.
 
 The task description contains ALL implementation details including:
+
 - Technical requirements
 - Code examples to implement
 - Acceptance criteria
@@ -23,22 +25,26 @@ The task description contains ALL implementation details including:
 ## Your Workflow
 
 ### Step 1: Understand the Task
+
 - Read the full task description from TaskGet
 - Identify files to create/modify
 - Note any dependencies on other components
 
 ### Step 2: Implement
+
 - Write the code following project conventions
 - Follow FSD architecture — place code in the correct layer (see `organizing-fsd-architecture` skill and `contributing/project-structure.md`)
 - Add proper error handling
 - Include TypeScript types
 
 ### Step 3: Write Tests
+
 - Write tests for the implementation
 - Cover happy path and edge cases
 - Ensure tests pass
 
 ### Step 4: Self-Review
+
 - Check implementation against ALL acceptance criteria
 - Verify no TypeScript errors
 - Ensure code follows project style

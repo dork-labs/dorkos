@@ -1,5 +1,5 @@
 ---
-title: "Agent-to-Agent Request/Reply Patterns for DorkOS Relay"
+title: 'Agent-to-Agent Request/Reply Patterns for DorkOS Relay'
 date: 2026-03-04
 type: internal-architecture
 status: final
@@ -51,6 +51,7 @@ The CCA's existing `agentQueues` Map (introduced in ADR-0075) prevents the "Alre
 The `Task` tool supports background subagent spawning with `run_in_background: true`. When a subagent completes, it automatically "wakes up the main agent with results." The `AgentOutputTool` surfaces results automatically. This is the mechanism behind Option D.
 
 Subagents:
+
 - Cannot spawn their own subagents (`Task` is not in subagent `tools`)
 - Run in isolated context (separate JSONL file)
 - Can be resumed via `resume: sessionId` in a subsequent `query()` call
@@ -107,6 +108,7 @@ Microsoft's "Can You Build Agent2Agent Communication on MCP?" demonstrates that 
 
 **General Industry Consensus:**
 The industry has moved strongly toward push-based / event-driven architectures (SSE, webhooks, EventEmitter callbacks) over polling for agent-to-agent communication. Polling is acceptable only for:
+
 - Disconnected/unreliable clients (webhooks → poll for full state)
 - Very long-running background tasks (minutes to hours)
 - Environments where persistent connections are unavailable
@@ -121,16 +123,16 @@ For in-process or same-server communication (DorkOS's primary use case), an Even
 
 The status vocabulary bug is already fixed. The current flow works but is ergonomically poor.
 
-| Dimension | Assessment |
-|---|---|
-| **Latency** | Depends on poll interval. With a 2-second sleep between polls, worst case is 2 seconds extra. 3-5 polls = 4-10 seconds overhead. |
-| **Turn cost** | High. Each `relay_inbox` call consumes one MCP tool use turn. 3-5 polls = 3-5 extra turns. With typical 10-turn budgets, this is significant. |
-| **Complexity** | Lowest — no new infrastructure required. |
-| **Reliability** | Good. Messages persist in SQLite. If the agent session restarts, it can still find the reply. |
-| **Concurrency safety** | Good. The inbox is a passive maildir — no session conflicts. |
-| **Context window impact** | Moderate. Each `relay_inbox` response adds tool result blocks to the context. |
-| **Agent autonomy** | Poor. The agent must explicitly structure its reasoning around a wait loop. Agents often mishandle this (forget to sleep, poll immediately, hit turn budget). |
-| **Verdict** | Acceptable baseline, but not a long-term solution. Guides agents to poll without a status filter (`relay_inbox(endpoint_subject="...", limit=1)`) and add a Bash sleep. |
+| Dimension                 | Assessment                                                                                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latency**               | Depends on poll interval. With a 2-second sleep between polls, worst case is 2 seconds extra. 3-5 polls = 4-10 seconds overhead.                                        |
+| **Turn cost**             | High. Each `relay_inbox` call consumes one MCP tool use turn. 3-5 polls = 3-5 extra turns. With typical 10-turn budgets, this is significant.                           |
+| **Complexity**            | Lowest — no new infrastructure required.                                                                                                                                |
+| **Reliability**           | Good. Messages persist in SQLite. If the agent session restarts, it can still find the reply.                                                                           |
+| **Concurrency safety**    | Good. The inbox is a passive maildir — no session conflicts.                                                                                                            |
+| **Context window impact** | Moderate. Each `relay_inbox` response adds tool result blocks to the context.                                                                                           |
+| **Agent autonomy**        | Poor. The agent must explicitly structure its reasoning around a wait loop. Agents often mishandle this (forget to sleep, poll immediately, hit turn budget).           |
+| **Verdict**               | Acceptable baseline, but not a long-term solution. Guides agents to poll without a status filter (`relay_inbox(endpoint_subject="...", limit=1)`) and add a Bash sleep. |
 
 ### Option B: `relay_query` Blocking MCP Tool
 
@@ -178,18 +180,19 @@ tool(
 )
 ```
 
-| Dimension | Assessment |
-|---|---|
-| **Latency** | Excellent. Resolves within milliseconds of CCA publishing the reply. No polling interval. |
-| **Turn cost** | Minimal. One tool call (`relay_query`) instead of 3+ (`relay_register_endpoint` + `relay_send` + N × `relay_inbox`). |
-| **Complexity** | Moderate. Requires: (1) new `relay_query` tool, (2) RelayCore `subscribe()` hookup in tool context, (3) optional `deregisterEndpoint()` for cleanup. |
-| **Reliability** | Good for timeouts ≤ 120 seconds. If the receiving agent's session exceeds the TTL, the tool returns a timeout error and the caller can fall back to polling. |
-| **Concurrency safety** | Excellent. Ephemeral inbox is unique per call (randomUUID). No shared state. |
-| **Context window impact** | Minimal. One clean tool result instead of multiple inbox poll results. |
-| **Agent autonomy** | Excellent. The agent makes one call and gets the answer — identical to calling any other synchronous tool. |
-| **Verdict** | **Recommended primary solution.** Transparent, low-turn-cost, implementable quickly. The key dependency is that RelayCore's `subscribe()` must be accessible from the MCP tool context — which it is, since DorkOS's MCP tools receive `deps.relayCore` via the `McpToolDeps` injection. |
+| Dimension                 | Assessment                                                                                                                                                                                                                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latency**               | Excellent. Resolves within milliseconds of CCA publishing the reply. No polling interval.                                                                                                                                                                                                |
+| **Turn cost**             | Minimal. One tool call (`relay_query`) instead of 3+ (`relay_register_endpoint` + `relay_send` + N × `relay_inbox`).                                                                                                                                                                     |
+| **Complexity**            | Moderate. Requires: (1) new `relay_query` tool, (2) RelayCore `subscribe()` hookup in tool context, (3) optional `deregisterEndpoint()` for cleanup.                                                                                                                                     |
+| **Reliability**           | Good for timeouts ≤ 120 seconds. If the receiving agent's session exceeds the TTL, the tool returns a timeout error and the caller can fall back to polling.                                                                                                                             |
+| **Concurrency safety**    | Excellent. Ephemeral inbox is unique per call (randomUUID). No shared state.                                                                                                                                                                                                             |
+| **Context window impact** | Minimal. One clean tool result instead of multiple inbox poll results.                                                                                                                                                                                                                   |
+| **Agent autonomy**        | Excellent. The agent makes one call and gets the answer — identical to calling any other synchronous tool.                                                                                                                                                                               |
+| **Verdict**               | **Recommended primary solution.** Transparent, low-turn-cost, implementable quickly. The key dependency is that RelayCore's `subscribe()` must be accessible from the MCP tool context — which it is, since DorkOS's MCP tools receive `deps.relayCore` via the `McpToolDeps` injection. |
 
 **Critical implementation note:** The ephemeral inbox must be cleaned up after use. Two approaches:
+
 1. Add `deregisterEndpoint(subject)` to RelayCore API.
 2. Register with a short TTL so the SQLite row auto-expires. The watcher for that endpoint should also be removed.
 
@@ -201,46 +204,46 @@ Option 2 is lower risk if `deregisterEndpoint` does not exist; Option 1 is clean
 
 Change CCA to publish replies to `relay.agent.{senderId}` instead of `relay.inbox.{senderId}`. CCA would pick up this message and deliver it as a new turn to Agent A's session.
 
-| Dimension | Assessment |
-|---|---|
-| **Latency** | Excellent — no polling delay. |
-| **Turn cost** | Zero extra turns — the reply arrives as the next conversation turn. |
-| **Complexity** | High. Requires careful loop prevention (CCA already detects and skips StreamEvent payloads, but an `agent_result` envelope would need similar handling). |
-| **Reliability** | Moderate. If Agent A's session is busy with CCA (processing a different message in the queue), the reply must queue behind it. The per-agent queue handles this, but ordering becomes subtle. |
-| **Concurrency safety** | Risky. If Agent A also has an active CLI session or web console, a third entity tries to write to the same conversation. CCA's queue prevents SDK transport conflicts, but it cannot prevent interleaving from CLI. |
-| **Context window impact** | None — the reply arrives naturally as a message in the conversation thread. |
-| **Agent autonomy** | Excellent in principle, but the agent must be designed to "stop and wait" before the reply arrives, which is non-trivial. |
-| **Verdict** | Architecturally appealing but introduces loop risk and session conflict scenarios that Option B avoids. Defer until concurrency model is better understood. |
+| Dimension                 | Assessment                                                                                                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latency**               | Excellent — no polling delay.                                                                                                                                                                                       |
+| **Turn cost**             | Zero extra turns — the reply arrives as the next conversation turn.                                                                                                                                                 |
+| **Complexity**            | High. Requires careful loop prevention (CCA already detects and skips StreamEvent payloads, but an `agent_result` envelope would need similar handling).                                                            |
+| **Reliability**           | Moderate. If Agent A's session is busy with CCA (processing a different message in the queue), the reply must queue behind it. The per-agent queue handles this, but ordering becomes subtle.                       |
+| **Concurrency safety**    | Risky. If Agent A also has an active CLI session or web console, a third entity tries to write to the same conversation. CCA's queue prevents SDK transport conflicts, but it cannot prevent interleaving from CLI. |
+| **Context window impact** | None — the reply arrives naturally as a message in the conversation thread.                                                                                                                                         |
+| **Agent autonomy**        | Excellent in principle, but the agent must be designed to "stop and wait" before the reply arrives, which is non-trivial.                                                                                           |
+| **Verdict**               | Architecturally appealing but introduces loop risk and session conflict scenarios that Option B avoids. Defer until concurrency model is better understood.                                                         |
 
 ### Option D: Background Subagent Polling
 
 Agent A spawns a background subagent (via the `Task` tool with `run_in_background: true`) to poll the inbox. The subagent returns the result when the reply arrives, waking up Agent A.
 
-| Dimension | Assessment |
-|---|---|
-| **Latency** | Poor. The subagent still polls `relay_inbox`, adding polling latency plus subagent startup overhead (200–500ms for a new SDK subprocess). |
-| **Turn cost** | High. The subagent consumes its own turns for polling. These are from a separate context/budget, which is an advantage, but the total compute cost is higher. |
-| **Complexity** | Very high. Subagents cannot use custom MCP tools defined in the parent session (they inherit the parent's allowed tools but not SDK MCP server instances). This means the subagent cannot call `relay_inbox` unless relay tools are in its `tools` array. |
-| **Reliability** | Moderate. The subagent runs in a separate transcript. If it times out or fails, Agent A may not be notified reliably. |
-| **Concurrency safety** | The subagent uses a different SDK session ID, so no transport conflicts. But two SDK sessions may share the same CWD. |
-| **Context window impact** | The subagent's polling loop does not pollute Agent A's context — this is the main advantage. |
-| **Agent autonomy** | Low. Agent A must explicitly invoke the Task tool with careful parameterization. The agent needs sophisticated prompting to use this correctly. |
-| **Verdict** | Not recommended. Adds complexity without meaningfully improving latency. The background subagent feature is useful for truly long-running background work (code analysis, log monitoring), not for short synchronous queries. |
+| Dimension                 | Assessment                                                                                                                                                                                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latency**               | Poor. The subagent still polls `relay_inbox`, adding polling latency plus subagent startup overhead (200–500ms for a new SDK subprocess).                                                                                                                 |
+| **Turn cost**             | High. The subagent consumes its own turns for polling. These are from a separate context/budget, which is an advantage, but the total compute cost is higher.                                                                                             |
+| **Complexity**            | Very high. Subagents cannot use custom MCP tools defined in the parent session (they inherit the parent's allowed tools but not SDK MCP server instances). This means the subagent cannot call `relay_inbox` unless relay tools are in its `tools` array. |
+| **Reliability**           | Moderate. The subagent runs in a separate transcript. If it times out or fails, Agent A may not be notified reliably.                                                                                                                                     |
+| **Concurrency safety**    | The subagent uses a different SDK session ID, so no transport conflicts. But two SDK sessions may share the same CWD.                                                                                                                                     |
+| **Context window impact** | The subagent's polling loop does not pollute Agent A's context — this is the main advantage.                                                                                                                                                              |
+| **Agent autonomy**        | Low. Agent A must explicitly invoke the Task tool with careful parameterization. The agent needs sophisticated prompting to use this correctly.                                                                                                           |
+| **Verdict**               | Not recommended. Adds complexity without meaningfully improving latency. The background subagent feature is useful for truly long-running background work (code analysis, log monitoring), not for short synchronous queries.                             |
 
 ### Option E: SSE/WebSocket Subscription
 
 Expose a relay SSE stream endpoint (`GET /api/relay/stream?subject=relay.inbox.{agentId}`) that agents can subscribe to via the Bash tool (`curl --no-buffer`).
 
-| Dimension | Assessment |
-|---|---|
-| **Latency** | Near-zero once connected. SSE events arrive within milliseconds. |
-| **Turn cost** | Low. One Bash tool call to start the subscription, which blocks until the reply arrives. No polling loop. |
-| **Complexity** | Moderate for server side (DorkOS already has relay SSE endpoints via `routes/relay.ts`). The client side requires agents to know how to consume SSE via curl. |
-| **Reliability** | Moderate. Bash tool calls have timeouts. If the curl command times out (typically 30 seconds for the SDK's Bash tool), the agent must retry. |
-| **Concurrency safety** | Excellent. SSE is a read-only operation against an HTTP endpoint. No session conflicts. |
-| **Context window impact** | Low. One Bash tool result with the reply content. |
-| **Agent autonomy** | Moderate. The agent must construct the correct curl command with proper SSE parsing. This is docable but not transparent. |
-| **Verdict** | Viable as an intermediate option while `relay_query` is being built. Could be documented in RELAY_TOOLS_CONTEXT as an alternative pattern. However, it requires agents to parse raw SSE format (the `data:` prefix, event types), which adds fragility. |
+| Dimension                 | Assessment                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latency**               | Near-zero once connected. SSE events arrive within milliseconds.                                                                                                                                                                                        |
+| **Turn cost**             | Low. One Bash tool call to start the subscription, which blocks until the reply arrives. No polling loop.                                                                                                                                               |
+| **Complexity**            | Moderate for server side (DorkOS already has relay SSE endpoints via `routes/relay.ts`). The client side requires agents to know how to consume SSE via curl.                                                                                           |
+| **Reliability**           | Moderate. Bash tool calls have timeouts. If the curl command times out (typically 30 seconds for the SDK's Bash tool), the agent must retry.                                                                                                            |
+| **Concurrency safety**    | Excellent. SSE is a read-only operation against an HTTP endpoint. No session conflicts.                                                                                                                                                                 |
+| **Context window impact** | Low. One Bash tool result with the reply content.                                                                                                                                                                                                       |
+| **Agent autonomy**        | Moderate. The agent must construct the correct curl command with proper SSE parsing. This is docable but not transparent.                                                                                                                               |
+| **Verdict**               | Viable as an intermediate option while `relay_query` is being built. Could be documented in RELAY_TOOLS_CONTEXT as an alternative pattern. However, it requires agents to parse raw SSE format (the `data:` prefix, event types), which adds fragility. |
 
 **Existing infrastructure check:** `routes/relay.ts` has a `GET /api/relay/stream` endpoint that streams relay events as SSE. Its authentication model (X-Client-Id) and subject filtering capabilities need verification. If it supports `?subject=relay.inbox.{id}` filtering, this option requires zero server changes.
 
@@ -249,6 +252,7 @@ Expose a relay SSE stream endpoint (`GET /api/relay/stream?subject=relay.inbox.{
 This is the implementation-level approach for Option B. The difference from "Option B" as a user-visible feature is nil — this describes how to build it internally.
 
 The `relay_query` tool handler:
+
 1. Generates a unique ephemeral inbox subject
 2. Calls `relayCore.subscribe(inboxSubject, handler)` — an in-process EventEmitter2 subscription
 3. Calls `relayCore.publish(...)` with `replyTo: inboxSubject`
@@ -257,16 +261,16 @@ The `relay_query` tool handler:
 
 This is purely an EventEmitter pattern — no polling, no disk I/O, no HTTP round-trips. The subscribe handler fires immediately when CCA calls `publishAgentResult()`, which itself fires the `relayCore.publish()` → subscription dispatch path.
 
-| Dimension | Assessment |
-|---|---|
-| **Latency** | Sub-millisecond from when CCA publishes to when relay_query resolves. |
-| **Turn cost** | One tool call. |
-| **Complexity** | Low. The RelayCore already exposes `subscribe()`. The MCP tool handler is ~30 lines. |
-| **Reliability** | Bounded by timeout parameter. If CCA's agent session exceeds the timeout, the tool returns an error. Messages persist in SQLite and can be retrieved via `relay_inbox` as a fallback. |
-| **Concurrency safety** | Each call gets a unique inbox subject (UUID). Multiple concurrent `relay_query` calls are fully safe. |
-| **Context window impact** | Minimal. |
-| **Agent autonomy** | Maximum. |
-| **Verdict** | **This is the implementation strategy for Option B.** Not a separate option — same recommendation. |
+| Dimension                 | Assessment                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Latency**               | Sub-millisecond from when CCA publishes to when relay_query resolves.                                                                                                                 |
+| **Turn cost**             | One tool call.                                                                                                                                                                        |
+| **Complexity**            | Low. The RelayCore already exposes `subscribe()`. The MCP tool handler is ~30 lines.                                                                                                  |
+| **Reliability**           | Bounded by timeout parameter. If CCA's agent session exceeds the timeout, the tool returns an error. Messages persist in SQLite and can be retrieved via `relay_inbox` as a fallback. |
+| **Concurrency safety**    | Each call gets a unique inbox subject (UUID). Multiple concurrent `relay_query` calls are fully safe.                                                                                 |
+| **Context window impact** | Minimal.                                                                                                                                                                              |
+| **Agent autonomy**        | Maximum.                                                                                                                                                                              |
+| **Verdict**               | **This is the implementation strategy for Option B.** Not a separate option — same recommendation.                                                                                    |
 
 ---
 
@@ -275,6 +279,7 @@ This is purely an EventEmitter pattern — no polling, no disk I/O, no HTTP roun
 ### Primary Recommendation: Option B implemented as Option F (relay_query + EventEmitter)
 
 **Rationale:**
+
 - Eliminates polling from the agent's perspective entirely
 - Works within existing DorkOS infrastructure (RelayCore subscribe, CCA publishAgentResult)
 - No SDK changes required
@@ -372,6 +377,7 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
 **Step 2: Register the tool in `getRelayTools()`**
 
 Add to the tools array in `relay-tools.ts`:
+
 ```typescript
 tool(
   'relay_query',
@@ -380,16 +386,24 @@ tool(
     to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
     payload: z.unknown().describe('Message payload'),
     from: z.string().describe('Sender identifier'),
-    timeout_ms: z.number().int().min(1000).max(120000).optional()
+    timeout_ms: z
+      .number()
+      .int()
+      .min(1000)
+      .max(120000)
+      .optional()
       .describe('Max wait time in ms. Default 60000 (60 seconds). Increase for slow agents.'),
-    budget: z.object({
-      maxHops: z.number().int().min(1).optional(),
-      ttl: z.number().int().optional(),
-      callBudgetRemaining: z.number().int().min(0).optional(),
-    }).optional().describe('Optional budget constraints'),
+    budget: z
+      .object({
+        maxHops: z.number().int().min(1).optional(),
+        ttl: z.number().int().optional(),
+        callBudgetRemaining: z.number().int().min(0).optional(),
+      })
+      .optional()
+      .describe('Optional budget constraints'),
   },
   createRelayQueryHandler(deps)
-)
+);
 ```
 
 **Step 3: Update `context-builder.ts` relay_tools block**
@@ -399,6 +413,7 @@ Add `relay_query` to the documented tools and recommend it as the default for ag
 **Step 4: Consider adding `deregisterEndpoint()` to RelayCore**
 
 The ephemeral inbox endpoint should be cleaned up after use to avoid accumulating dead endpoints in the SQLite index and watcher filesystem. This requires:
+
 - `RelayCore.deregisterEndpoint(subject: string): void` — removes the endpoint from EndpointRegistry, closes its chokidar watcher, removes the maildir directory
 - Or: register endpoints with a short TTL (e.g., 5 minutes) and rely on the existing expiry mechanism
 
@@ -430,28 +445,28 @@ The TTL approach is lower risk and requires no new RelayCore API. The `registerE
 
 ## Sources
 
-| Source | URL |
-|---|---|
-| Claude Agent SDK — Sessions | https://platform.claude.com/docs/en/agent-sdk/sessions |
-| Claude Agent SDK — Subagents | https://platform.claude.com/docs/en/agent-sdk/subagents |
-| MCP Specification (2025-06-18) — Lifecycle | https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle |
-| MCP Async Tasks (WorkOS) | https://workos.com/blog/mcp-async-tasks-ai-agent-workflows |
-| MCP Long-Running Tasks (Agnost) | https://agnost.ai/blog/long-running-tasks-mcp/ |
-| MCP SEP-1686: Tasks | https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1686 |
-| A2A Protocol Specification | https://a2a-protocol.org/latest/specification/ |
-| A2A Streaming & Async Operations | https://a2a-protocol.org/latest/topics/streaming-and-async/ |
-| Agent2Agent Protocol Announcement | https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/ |
-| Can You Build A2A on MCP? (Microsoft) | https://developer.microsoft.com/blog/can-you-build-agent2agent-communication-on-mcp-yes |
-| LangGraph Multi-Agent Workflows | https://blog.langchain.com/langgraph-multi-agent-workflows/ |
-| AutoGen Asynchronous Conversations | https://www.blocksimplified.com/blog/autogen-asynchronous-multi-agent-conversations |
-| Beyond Request-Response (Google ADK) | https://developers.googleblog.com/en/beyond-request-response-architecting-real-time-bidirectional-streaming-multi-agent-system/ |
-| Claude Code Async Subagents (Anthropic Threads) | https://www.threads.com/@claudeai/post/DSGA1yGkdTN |
-| SDK MCP Server Stream Closed Issue | https://github.com/anthropics/claude-agent-sdk-typescript/issues/41 |
-| DorkOS claude-code-adapter.ts | packages/relay/src/adapters/claude-code-adapter.ts |
-| DorkOS relay-tools.ts | apps/server/src/services/core/mcp-tools/relay-tools.ts |
-| DorkOS relay-core.ts | packages/relay/src/relay-core.ts |
-| Prior research: Agent SDK capabilities | research/claude-code-sdk-agent-capabilities.md |
-| Prior research: Agent messaging transport | research/20260224_agent_messaging_transport_libraries.md |
+| Source                                          | URL                                                                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Agent SDK — Sessions                     | https://platform.claude.com/docs/en/agent-sdk/sessions                                                                          |
+| Claude Agent SDK — Subagents                    | https://platform.claude.com/docs/en/agent-sdk/subagents                                                                         |
+| MCP Specification (2025-06-18) — Lifecycle      | https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle                                                        |
+| MCP Async Tasks (WorkOS)                        | https://workos.com/blog/mcp-async-tasks-ai-agent-workflows                                                                      |
+| MCP Long-Running Tasks (Agnost)                 | https://agnost.ai/blog/long-running-tasks-mcp/                                                                                  |
+| MCP SEP-1686: Tasks                             | https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1686                                                        |
+| A2A Protocol Specification                      | https://a2a-protocol.org/latest/specification/                                                                                  |
+| A2A Streaming & Async Operations                | https://a2a-protocol.org/latest/topics/streaming-and-async/                                                                     |
+| Agent2Agent Protocol Announcement               | https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/                                                   |
+| Can You Build A2A on MCP? (Microsoft)           | https://developer.microsoft.com/blog/can-you-build-agent2agent-communication-on-mcp-yes                                         |
+| LangGraph Multi-Agent Workflows                 | https://blog.langchain.com/langgraph-multi-agent-workflows/                                                                     |
+| AutoGen Asynchronous Conversations              | https://www.blocksimplified.com/blog/autogen-asynchronous-multi-agent-conversations                                             |
+| Beyond Request-Response (Google ADK)            | https://developers.googleblog.com/en/beyond-request-response-architecting-real-time-bidirectional-streaming-multi-agent-system/ |
+| Claude Code Async Subagents (Anthropic Threads) | https://www.threads.com/@claudeai/post/DSGA1yGkdTN                                                                              |
+| SDK MCP Server Stream Closed Issue              | https://github.com/anthropics/claude-agent-sdk-typescript/issues/41                                                             |
+| DorkOS claude-code-adapter.ts                   | packages/relay/src/adapters/claude-code-adapter.ts                                                                              |
+| DorkOS relay-tools.ts                           | apps/server/src/services/core/mcp-tools/relay-tools.ts                                                                          |
+| DorkOS relay-core.ts                            | packages/relay/src/relay-core.ts                                                                                                |
+| Prior research: Agent SDK capabilities          | research/claude-code-sdk-agent-capabilities.md                                                                                  |
+| Prior research: Agent messaging transport       | research/20260224_agent_messaging_transport_libraries.md                                                                        |
 
 ## Search Methodology
 

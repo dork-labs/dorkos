@@ -1,5 +1,5 @@
 ---
-title: "Prompt Suggestion Chips UX — Patterns, Placement, and DorkOS Recommendation"
+title: 'Prompt Suggestion Chips UX — Patterns, Placement, and DorkOS Recommendation'
 date: 2026-03-16
 type: external-best-practices
 status: active
@@ -43,7 +43,7 @@ The `SDKPromptSuggestionMessage` type, from the official TypeScript SDK referenc
 
 ```typescript
 type SDKPromptSuggestionMessage = {
-  type: "prompt_suggestion";
+  type: 'prompt_suggestion';
   suggestion: string;
   uuid: UUID;
   session_id: string;
@@ -61,6 +61,7 @@ The DorkOS server currently pipes SDK messages through the SSE stream. Adding `"
 Chips are rendered as a small horizontal row of pill buttons directly below the final assistant message bubble, scrolling with the conversation.
 
 **Pros:**
+
 - Industry consensus location (ChatGPT, Perplexity, Gemini all use this)
 - Contextually associated with the message that generated them
 - Keyboard navigation follows natural DOM order (Tab to first chip after the message)
@@ -69,6 +70,7 @@ Chips are rendered as a small horizontal row of pill buttons directly below the 
 - In conversation replay / history, suggestions simply don't exist (they were never persisted) — clean separation
 
 **Cons:**
+
 - Requires scroll to see if user is far up in history (mitigated by auto-scroll on `done` event which already exists)
 - Three-chip rows can be wide on small viewports — needs wrapping
 
@@ -83,9 +85,11 @@ Chips are rendered as a small horizontal row of pill buttons directly below the 
 A fixed-position (or sticky) element sits above the chat input, always visible regardless of scroll.
 
 **Pros:**
+
 - Always reachable without scrolling
 
 **Cons:**
+
 - Visually heavy — occupies permanent screen real estate
 - Creates layout shift between states (visible vs. hidden)
 - Accessibility challenges: floating elements break natural tab order
@@ -102,9 +106,11 @@ A fixed-position (or sticky) element sits above the chat input, always visible r
 Suggestions appear as ghost/placeholder text or as tab-completable chips inside the textarea.
 
 **Pros:**
+
 - No additional layout real estate
 
 **Cons:**
+
 - Ghost text conflicts with actual cursor position and typed text
 - Multiple suggestions require a scrollable list inside the input — unusual and confusing
 - The SDK emits 1-3 separate `prompt_suggestion` events (one per suggestion), so multiple chips do not map to a single "ghost" input string
@@ -120,9 +126,11 @@ Suggestions appear as ghost/placeholder text or as tab-completable chips inside 
 Same as Approach A but with an explicit scroll-to behavior when suggestions appear.
 
 **Pros:**
+
 - Guarantees visibility without floating overlay
 
 **Cons:**
+
 - Auto-scrolling on every suggestion appearance is jarring if the user has scrolled up to reference earlier output
 - DorkOS already auto-scrolls on `done` event when at the bottom — combining these carefully avoids double-scroll
 
@@ -136,13 +144,13 @@ Same as Approach A but with an explicit scroll-to behavior when suggestions appe
 
 **Recommended: Ephemeral, cleared on any user submission.**
 
-| Option | Verdict |
-|--------|---------|
-| One-shot (disappear on click) | Acceptable but suboptimal — user may want to click a different chip |
-| Clear on any send (own text OR chip) | Best. Suggestions are tied to one agent turn. |
-| Persist until manual dismiss | Unnecessary friction, stale suggestions become noise |
-| Fade after timeout | Bad for keyboard-only users; creates race conditions |
-| Persist in message history | Wrong. Suggestions are UI affordances, not conversation content. They would be confusing in replayed sessions. |
+| Option                               | Verdict                                                                                                        |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| One-shot (disappear on click)        | Acceptable but suboptimal — user may want to click a different chip                                            |
+| Clear on any send (own text OR chip) | Best. Suggestions are tied to one agent turn.                                                                  |
+| Persist until manual dismiss         | Unnecessary friction, stale suggestions become noise                                                           |
+| Fade after timeout                   | Bad for keyboard-only users; creates race conditions                                                           |
+| Persist in message history           | Wrong. Suggestions are UI affordances, not conversation content. They would be confusing in replayed sessions. |
 
 Implementation: Store `string[]` in the chat feature model as `promptSuggestions`. Set on `prompt_suggestion` event (accumulate). Clear on `done` event when the next message starts streaming (i.e., on `setStatus('streaming')`). Or simpler: clear when the user submits any message, including when a chip is clicked.
 
@@ -153,12 +161,14 @@ Implementation: Store `string[]` in the chat feature model as `promptSuggestions
 **Recommended: Populate the input with the suggestion text, without auto-submitting.**
 
 Rationale:
+
 - Developer users (`Kai`, `Priya`) want to review and optionally modify before running
 - NN/G research confirms this is the preferred pattern for AI tool suggestions
 - Auto-submit is appropriate only for simple acknowledgment responses — agent task suggestions like "Run the tests" may need contextual amendments ("Run the tests for the auth module")
 - If the user wants immediate execution, they can press Enter immediately after the chip populates the input
 
 **When input already has content:**
+
 - **Hide chips entirely** (not disable). The UX pattern from Smashing Magazine: hide = irrelevant, disable = blocked. Chips are irrelevant when the user is actively composing.
 - Use `inputValue.length > 0` as the condition to render `null` for the chips container.
 - This also solves the "replace vs. append" debate by eliminating the scenario.
@@ -219,20 +229,21 @@ If suggestion text is ever passed to a `sendMessage` call, it flows through the 
 ```tsx
 // Conceptual structure only — not production code
 <AnimatePresence>
-  {showChips && promptSuggestions.map((suggestion) => (
-    <motion.button
-      key={suggestion}
-      layout
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.15 }}
-      onClick={() => onSuggestionClick(suggestion)}
-      className="..."
-    >
-      {suggestion}
-    </motion.button>
-  ))}
+  {showChips &&
+    promptSuggestions.map((suggestion) => (
+      <motion.button
+        key={suggestion}
+        layout
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.15 }}
+        onClick={() => onSuggestionClick(suggestion)}
+        className="..."
+      >
+        {suggestion}
+      </motion.button>
+    ))}
 </AnimatePresence>
 ```
 
@@ -287,6 +298,7 @@ If suggestion text is ever passed to a `sendMessage` call, it flows through the 
 **Recommended Approach: Approach A (inline chips below last assistant message), with Approach D refinements.**
 
 **Rationale:**
+
 1. Matches industry consensus for post-response follow-up suggestions
 2. Contextually associated with the message that generated them
 3. Natural keyboard navigation without floating layer complexity
@@ -305,6 +317,7 @@ If suggestion text is ever passed to a `sendMessage` call, it flows through the 
 **Security:** Render suggestion text as plain text nodes via JSX. No `dangerouslySetInnerHTML`.
 
 **Caveats:**
+
 - Requires server-side forwarding of the `prompt_suggestion` SDK event type through the SSE pipeline — this is the only backend change
 - The `StreamEventDeps` interface in `stream-event-handler.ts` will need a `setPromptSuggestions` setter added — follow the same pattern as `setSystemStatus`
 - Empirically verify how many `prompt_suggestion` events fire per agent turn before finalizing the accumulation strategy (cap at 3-4 to prevent UI overflow)

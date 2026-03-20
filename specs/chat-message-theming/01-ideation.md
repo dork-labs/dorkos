@@ -50,6 +50,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary Components/Modules:**
+
 - `features/chat/ui/MessageItem.tsx` — Main refactoring target (272 lines, mixed concerns)
 - `features/chat/ui/ToolCallCard.tsx` — Tool call display (hardcoded status colors)
 - `features/chat/ui/ToolApproval.tsx` — Interactive approval UI (hardcoded state colors)
@@ -59,6 +60,7 @@ status: ideation
 - `apps/client/src/index.css` — Design token definitions (needs new tokens)
 
 **Shared Dependencies:**
+
 - `shared/lib/cn` — Class merging utility
 - `shared/lib/TIMING` — Animation timing constants
 - `shared/model/app-store` — Zustand store (showTimestamps, expandToolCalls, autoHideToolCalls)
@@ -69,11 +71,13 @@ status: ideation
 `useChatSession` → `MessageList` (virtual scroll) → `MessageItem` (render per message) → role-based content branching → `StreamingText` | `ToolCallCard` | `ToolApproval` | `QuestionPrompt`
 
 **Feature Flags/Config:**
+
 - `showTimestamps` (app store) — controls timestamp visibility
 - `expandToolCalls` (app store) — controls tool card default expand state
 - `autoHideToolCalls` (app store) — controls auto-hide of completed tool calls
 
 **Potential Blast Radius:**
+
 - Direct: MessageItem.tsx, ToolCallCard.tsx, ToolApproval.tsx, index.css (4 files modified + new sub-component files)
 - Indirect: None — MessageList passes props unchanged, useChatSession is unaffected
 - Tests: MessageItem tests need updates for new component structure
@@ -83,6 +87,7 @@ status: ideation
 ### Potential Solutions
 
 **1. Semantic Tokens + tailwind-variants + Sub-component Decomposition (Full approach)**
+
 - Description: Add 7 categories of semantic tokens (color, typography, spacing, shape, motion, interactive, elevation) to index.css. Use tailwind-variants for multi-slot message styling with `role` and `position` variant axes. Decompose MessageItem into focused sub-components.
 - Pros:
   - Complete theming surface — any visual aspect changeable via CSS variables
@@ -98,6 +103,7 @@ status: ideation
 - Maintenance: Low (token changes don't touch components)
 
 **2. CVA-only with decomposition**
+
 - Description: Use CVA for per-element variant definitions. No multi-slot support — separate CVA call for root, content, timestamp, etc.
 - Pros: No new dependency, consistent with shadcn primitives
 - Cons: Verbose — must coordinate multiple CVA calls for one component. Can't express "when role is user, style root AND content AND timestamp" in one definition.
@@ -105,6 +111,7 @@ status: ideation
 - Maintenance: Medium
 
 **3. Tokens + clean cn() (no variant library for messages)**
+
 - Description: Keep current approach but reorganize cn() calls and add semantic tokens.
 - Pros: Minimal change, no learning curve
 - Cons: Doesn't solve the core DX problem. Nested ternaries remain. New variants require new conditionals.
@@ -125,14 +132,15 @@ status: ideation
 **Rationale:** The DorkOS chat interface is the core product surface. The current architecture (one file, inline ternaries, hardcoded colors) creates friction for every styling change. tailwind-variants' slot system is purpose-built for this exact problem — a multi-part component where multiple elements need to respond to the same variant axis. The sub-component decomposition is driven by readability (the user's primary goal), not by line count reduction. Each sub-component has a single, obvious purpose.
 
 **Caveats:**
+
 - tailwind-variants is a new dependency. It's tiny (~4KB) and well-maintained, but it's another thing in the bundle.
 - The decomposition should be **internal** (not a public compound component API). MessageList should keep rendering `<MessageItem>` — the sub-components are implementation detail.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Variant library for messages | Add tailwind-variants | CVA can only style one element per call. TV's slot system was built for multi-part components like MessageItem. Keep CVA for shadcn primitives. |
-| 2 | Decomposition depth | Readability-driven | Goal is ultra-intuitive code, not shorter files. Decompose wherever it makes the code easier to understand. Extract where a sub-component has a single obvious purpose. |
-| 3 | Density support | Design tokens only (no UI toggle) | Define CSS variables for spacing/padding so a future density toggle requires zero component changes. Keeps this spec focused on theming infrastructure, not new features. |
-| 4 | Status tokens | Full semantic token set | Add --status-success, --status-error, --status-warning, --status-info, --status-pending with bg/fg/border variants. Replaces all hardcoded emerald/red/blue colors in ToolApproval and ToolCallCard. |
+| #   | Decision                     | Choice                            | Rationale                                                                                                                                                                                            |
+| --- | ---------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Variant library for messages | Add tailwind-variants             | CVA can only style one element per call. TV's slot system was built for multi-part components like MessageItem. Keep CVA for shadcn primitives.                                                      |
+| 2   | Decomposition depth          | Readability-driven                | Goal is ultra-intuitive code, not shorter files. Decompose wherever it makes the code easier to understand. Extract where a sub-component has a single obvious purpose.                              |
+| 3   | Density support              | Design tokens only (no UI toggle) | Define CSS variables for spacing/padding so a future density toggle requires zero component changes. Keeps this spec focused on theming infrastructure, not new features.                            |
+| 4   | Status tokens                | Full semantic token set           | Add --status-success, --status-error, --status-warning, --status-info, --status-pending with bg/fg/border variants. Replaces all hardcoded emerald/red/blue colors in ToolApproval and ToolCallCard. |

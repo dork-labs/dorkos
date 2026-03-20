@@ -83,6 +83,7 @@ Full report at `research/20260310_top_nav_header_design.md`.
 ### Potential Solutions
 
 **1. Agent Identity Chip (Color dot + name + chevron)**
+
 - Description: A compact clickable chip showing `[●] Agent Name ▾` with the agent's color dot, truncated name, and a chevron-down affordance. Opens AgentDialog on click.
 - Pros: Visual identity via color system, obvious click affordance, compact (~180px), follows Linear/Warp patterns
 - Cons: Takes horizontal header space, new component to maintain
@@ -90,6 +91,7 @@ Full report at `research/20260310_top_nav_header_design.md`.
 - Industry precedent: Linear (workspace identity chip), Warp (clickable session name), GitHub Desktop (repository dropdown)
 
 **2. Command Palette Trigger (Search icon + tooltip)**
+
 - Description: A right-aligned magnifying glass icon button. Tooltip shows "Search ⌘K" with `Kbd` component. Opens command palette on click.
 - Pros: Minimal footprint, keyboard-first users learn from one tooltip hover, universally recognized icon
 - Cons: Less discoverable than a search bar for new users (mitigated by tooltip + onboarding)
@@ -97,11 +99,13 @@ Full report at `research/20260310_top_nav_header_design.md`.
 - Industry precedent: VS Code (magnifying glass), GitHub (search icon in header), Linear (Cmd+K everywhere)
 
 **3. Header Layout: `[≡] [● Agent Name ▾] ——— [🔍]`**
+
 - Description: Left-to-right: sidebar trigger, agent chip, flex spacer, search icon. Clean, minimal, information hierarchy follows reading direction.
 - Pros: Matches GitHub Desktop pattern (where > state > actions), extremely simple layout
 - Cons: None identified — this is the consensus pattern
 
 **4. 10x Enhancements**
+
 - **Color dot pulse during streaming**: Subtle opacity breathing (1 → 0.4 → 1, 1.5s) on the agent color dot when `isStreaming`. Borrowed from Linear's status indicators.
 - **Agent name slide animation**: `AnimatePresence mode="wait"` with `y: -3 → 0 → 3` transition (120ms) when agent changes. Confirms switch visually.
 - **Streaming scan line**: A thin colored line (`h-px`) sweeps across the header bottom border during streaming via `scaleX: 0 → 1` with opacity fade. Radar/sonar metaphor — the agent is scanning. Purely decorative, `aria-hidden`.
@@ -113,9 +117,9 @@ Implement all four enhancements. They are low-cost, respect `prefers-reduced-mot
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Component structure | New `features/top-nav/` FSD module | Cleaner separation, follows FSD conventions, easier to test and extend. App.tsx is already 230 lines. |
-| 2 | AgentHeader fate | Simplify to directory/path display only | Agent identity moves to header. Keep path breadcrumb, "+Agent" CTA, and "K Switch" palette shortcut in sidebar. |
-| 3 | 10x enhancements | All four (dot pulse, name slide, scan line, color-tinted border) | Maximum craft, all low-cost, all respect prefers-reduced-motion. |
-| 4 | Agent chip tooltip | "Agent settings" (no keyboard shortcut) | No shortcut for agent settings exists yet — don't suggest one we haven't built. Clean and clear. |
+| #   | Decision            | Choice                                                           | Rationale                                                                                                       |
+| --- | ------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1   | Component structure | New `features/top-nav/` FSD module                               | Cleaner separation, follows FSD conventions, easier to test and extend. App.tsx is already 230 lines.           |
+| 2   | AgentHeader fate    | Simplify to directory/path display only                          | Agent identity moves to header. Keep path breadcrumb, "+Agent" CTA, and "K Switch" palette shortcut in sidebar. |
+| 3   | 10x enhancements    | All four (dot pulse, name slide, scan line, color-tinted border) | Maximum craft, all low-cost, all respect prefers-reduced-motion.                                                |
+| 4   | Agent chip tooltip  | "Agent settings" (no keyboard shortcut)                          | No shortcut for agent settings exists yet — don't suggest one we haven't built. Clean and clear.                |

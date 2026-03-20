@@ -40,7 +40,7 @@ export class WatcherManager {
     private readonly maildirStore: MaildirStore,
     private readonly subscriptionRegistry: SubscriptionRegistry,
     private readonly sqliteIndex: SqliteIndex,
-    private readonly circuitBreaker: CircuitBreakerManager,
+    private readonly circuitBreaker: CircuitBreakerManager
   ) {}
 
   /**

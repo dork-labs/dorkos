@@ -73,8 +73,7 @@ export function MessageShowcases() {
         <ShowcaseDemo>
           <UserMessageContent
             message={createUserMessage({
-              content:
-                'Here is the config file.\n\n[File: config.json (uploaded)]',
+              content: 'Here is the config file.\n\n[File: config.json (uploaded)]',
             })}
           />
         </ShowcaseDemo>

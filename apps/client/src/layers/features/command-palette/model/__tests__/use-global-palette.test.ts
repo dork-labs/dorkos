@@ -29,7 +29,7 @@ function fireKeydown(key: string, modifiers: { metaKey?: boolean; ctrlKey?: bool
         metaKey: modifiers.metaKey ?? false,
         ctrlKey: modifiers.ctrlKey ?? false,
         bubbles: true,
-      }),
+      })
     );
   });
 }

@@ -45,28 +45,31 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role |
-|------|------|
-| `apps/server/src/services/scheduler-service.ts` | Cron engine, `executeRun()`, `buildPulseAppend()` |
-| `apps/server/src/services/agent-manager.ts` | SDK session orchestration, `sendMessage()` |
-| `apps/server/src/services/context-builder.ts` | Runtime context XML builder |
-| `apps/server/src/services/mcp-tool-server.ts` | MCP tool registration + 5 Pulse handler factories |
-| `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx` | Schedule list, actions, expand/collapse |
-| `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx` | Create/edit form dialog |
-| `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx` | Per-schedule run history |
-| `apps/client/src/layers/entities/pulse/model/use-schedules.ts` | 5 TanStack Query hooks for schedules |
-| `apps/client/src/layers/entities/pulse/model/use-runs.ts` | 3 TanStack Query hooks for runs |
+| File                                                                | Role                                              |
+| ------------------------------------------------------------------- | ------------------------------------------------- |
+| `apps/server/src/services/scheduler-service.ts`                     | Cron engine, `executeRun()`, `buildPulseAppend()` |
+| `apps/server/src/services/agent-manager.ts`                         | SDK session orchestration, `sendMessage()`        |
+| `apps/server/src/services/context-builder.ts`                       | Runtime context XML builder                       |
+| `apps/server/src/services/mcp-tool-server.ts`                       | MCP tool registration + 5 Pulse handler factories |
+| `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx`           | Schedule list, actions, expand/collapse           |
+| `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx` | Create/edit form dialog                           |
+| `apps/client/src/layers/features/pulse/ui/RunHistoryPanel.tsx`      | Per-schedule run history                          |
+| `apps/client/src/layers/entities/pulse/model/use-schedules.ts`      | 5 TanStack Query hooks for schedules              |
+| `apps/client/src/layers/entities/pulse/model/use-runs.ts`           | 3 TanStack Query hooks for runs                   |
 
 **Shared dependencies:**
+
 - `@dorkos/shared/types` — `PulseSchedule`, `PulseRun`, `CreateScheduleInput`, `UpdateScheduleRequest`
 - `@dorkos/shared/transport` — `Transport` interface with 8 Pulse methods
 - `packages/test-utils` — Mock factories and React test helpers
 
 **Data flow:**
+
 - Scheduled run: `croner` tick → `SchedulerService.executeRun()` → `AgentManager.sendMessage()` → SDK `query()` → streaming events
 - Client edit: Edit button → `setEditSchedule(schedule)` → `CreateScheduleDialog` → `useUpdateSchedule().mutate()` → `Transport.updateSchedule()` → `PATCH /api/pulse/schedules/:id`
 
 **Potential blast radius:**
+
 - Gap 1: `agent-manager.ts` `sendMessage()` signature + `SchedulerAgentManager` interface + scheduler-service test mock
 - Gap 2: `PulsePanel.tsx` only (one button addition)
 - Gap 3: New test files only (no production code changes)
@@ -79,11 +82,13 @@ status: ideation
 **Recommended approach:** Add optional `systemPromptAppend?: string` to `sendMessage()` opts. In `agent-manager.ts`, merge it after the base `buildSystemPromptAppend()` output with `\n\n` separator. In `scheduler-service.ts`, call `buildPulseAppend()` in `executeRun()` and pass result via the new opt.
 
 **Key patterns:**
+
 - SDK `systemPrompt.append` is session-scoped (applies to one `query()` call), which is correct since each Pulse run is a fresh session
 - Keep `buildSystemPromptAppend()` generic — Pulse logic stays in `executeRun()`
 - Separator: `\n\n` between XML blocks and Pulse plain-text context
 
 **Pitfalls:**
+
 - Don't modify `buildSystemPromptAppend()` directly — it's shared by all sessions
 - Don't set `resume` for Pulse runs (already correctly avoided)
 - Must also update `SchedulerAgentManager` interface to include the new opt
@@ -93,12 +98,14 @@ status: ideation
 **Recommended approach:** Add a `Pencil` icon button inline alongside "Run Now" and the toggle switch. Three actions = inline buttons (not a dropdown menu).
 
 **Key patterns:**
+
 - Button: `onClick={(e) => { e.stopPropagation(); setEditSchedule(schedule); setDialogOpen(true); }}`
 - `aria-label={`Edit ${schedule.name}`}` for accessibility
 - Only in the non-`pending_approval` branch
 - Dialog already fully supports edit mode — zero dialog changes needed
 
 **Pitfalls:**
+
 - Must `e.stopPropagation()` to prevent row expand toggle
 - Don't reset `editSchedule` on dialog close (causes title flicker during close animation)
 - "New Schedule" button already clears `editSchedule` — pattern is correct as-is
@@ -108,6 +115,7 @@ status: ideation
 **Recommended approach:** Test entity hooks via `renderHook` with mock Transport + isolated QueryClient. Test UI components at integration level (real hooks, mock Transport) rather than mocking TanStack Query internals.
 
 **Key patterns:**
+
 - Each test creates its own `QueryClient` with `retry: false`
 - Wrapper provides both `QueryClientProvider` and `TransportProvider`
 - Hook tests: verify `isSuccess`/`isError` states and that correct Transport methods are called
@@ -115,6 +123,7 @@ status: ideation
 - Component tests: render with mock Transport returning fixtures, assert rendered content
 
 **Pitfalls:**
+
 - Never share `QueryClient` across tests (cache contamination → flaky tests)
 - Always `retry: false` (default retries cause 14s timeouts)
 - Never mock `@tanstack/react-query` itself — mock the Transport
@@ -125,12 +134,14 @@ status: ideation
 **Recommended approach:** Call handler factories directly (same pattern as existing `createGetSessionCountHandler` tests). Create `makeMockPulseStore()` helper with vi.fn() stubs. Add to existing `mcp-tool-server.test.ts`.
 
 **Key patterns:**
+
 - `makePulseDeps()` factory extends `makeMockDeps()` with a mock `PulseStore`
 - Each handler factory returns an async function — invoke directly, parse JSON response
 - Test `requirePulse()` guard for every handler (deps without `pulseStore`)
 - Test error paths (not-found for update/delete, empty results)
 
 **Pitfalls:**
+
 - Don't instantiate real `PulseStore` (SQLite dependency) — mock it
 - Don't import `createSdkMcpServer`/`tool` in handler tests — those are wiring tests
 - Always test `pulseStore === undefined` path per handler

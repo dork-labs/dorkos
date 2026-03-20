@@ -103,6 +103,7 @@ Every major chat app renders file attachments as structured visual components â€
 ### Potential Solutions
 
 **1. Client-Side Text Parser (Recommended)**
+
 - Detect the existing "Please read the following uploaded file(s):" prefix in `UserMessageContent.tsx`, extract paths, render as chips/thumbnails above message text
 - Pros: Zero server changes, retroactive for existing history, purely a display concern, low complexity
 - Cons: Fragile to prefix format changes (but prefix is defined in one place)
@@ -110,6 +111,7 @@ Every major chat app renders file attachments as structured visual components â€
 - Maintenance: Low
 
 **2. Extend Message Metadata**
+
 - Add `attachments` array to JSONL message format; store original filename, size, MIME type alongside the path
 - Pros: Clean data model, stores original filename without derivation
 - Cons: JSONL format change, server/transport/type changes, does not improve existing transcripts
@@ -117,6 +119,7 @@ Every major chat app renders file attachments as structured visual components â€
 - Maintenance: Medium
 
 **3. Structured Sentinel Format**
+
 - Replace the human-readable prefix with a machine-readable sentinel: `<dork:files paths="..."/>`
 - Pros: Unambiguous parser, extensible
 - Cons: Changes what the agent reads (needs verification), medium work
@@ -131,8 +134,8 @@ Render attachments above the message text following the Claude.ai/ChatGPT conven
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Attachment placement relative to message text | Above message text | Follows Claude.ai and ChatGPT convention â€” attachments are visually prominent and seen first. This is what users of AI chat tools expect. |
-| 2 | Image file treatment | Inline thumbnails for images | Universal convention across all major chat apps. Thumbnails (~120px tall) let users see what they attached at a glance. Non-image files get file chips. |
-| 3 | Scope of file detection | User messages only | Only user messages contain the "Please read the following uploaded file(s):" prefix. Assistant messages reference files differently (tool calls, code blocks). Keeps scope tight and implementation clean. |
+| #   | Decision                                      | Choice                       | Rationale                                                                                                                                                                                                  |
+| --- | --------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Attachment placement relative to message text | Above message text           | Follows Claude.ai and ChatGPT convention â€” attachments are visually prominent and seen first. This is what users of AI chat tools expect.                                                                  |
+| 2   | Image file treatment                          | Inline thumbnails for images | Universal convention across all major chat apps. Thumbnails (~120px tall) let users see what they attached at a glance. Non-image files get file chips.                                                    |
+| 3   | Scope of file detection                       | User messages only           | Only user messages contain the "Please read the following uploaded file(s):" prefix. Assistant messages reference files differently (tool calls, code blocks). Keeps scope tight and implementation clean. |

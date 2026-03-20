@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import path from 'path';
-import {
-  normalizeNamespace,
-  validateNamespace,
-  resolveNamespace,
-} from '../namespace-resolver.js';
+import { normalizeNamespace, validateNamespace, resolveNamespace } from '../namespace-resolver.js';
 
 // ---------------------------------------------------------------------------
 // normalizeNamespace
@@ -95,14 +91,14 @@ describe('resolveNamespace — manifest override', () => {
 
   it('throws for manifestNamespace that normalizes to empty string', () => {
     expect(() => resolveNamespace('/any/path', '/any', '---')).toThrow(
-      /Invalid manifest namespace/,
+      /Invalid manifest namespace/
     );
   });
 
   it('throws for manifestNamespace that exceeds 64 chars after normalization', () => {
     const longNs = 'a'.repeat(65);
     expect(() => resolveNamespace('/any/path', '/any', longNs)).toThrow(
-      /Invalid manifest namespace/,
+      /Invalid manifest namespace/
     );
   });
 });
@@ -137,7 +133,7 @@ describe('resolveNamespace — path derivation', () => {
 
   it('throws when projectPath equals scanRoot (empty relative path)', () => {
     expect(() => resolveNamespace(`${home}/projects`, `${home}/projects`)).toThrow(
-      /Cannot derive namespace/,
+      /Cannot derive namespace/
     );
   });
 

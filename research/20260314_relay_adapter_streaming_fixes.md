@@ -1,9 +1,10 @@
 ---
-title: "Relay Adapter Streaming Fixes — Slack Bugs, Typing Indicators, Streaming Toggle"
+title: 'Relay Adapter Streaming Fixes — Slack Bugs, Typing Indicators, Streaming Toggle'
 date: 2026-03-14
 type: implementation
 status: active
-tags: [slack, telegram, streaming, typing-indicator, mrkdwn, chat-update, stream-state, relay, adapter]
+tags:
+  [slack, telegram, streaming, typing-indicator, mrkdwn, chat-update, stream-state, relay, adapter]
 feature_slug: relay-adapter-streaming-fixes
 searches_performed: 8
 sources_count: 22
@@ -14,6 +15,7 @@ sources_count: 22
 ## Context
 
 This research was conducted with the existing DorkOS adapter codebase fully read:
+
 - `packages/relay/src/adapters/slack/outbound.ts` — streaming via `chat.update`, throttle, TTL reap
 - `packages/relay/src/adapters/slack/inbound.ts` — subject routing, TTL/size-bounded caches
 - `packages/relay/src/adapters/slack/slack-adapter.ts` — Bolt lifecycle
@@ -83,8 +85,7 @@ breaks mid-stream. Apply only during active streaming; allow full mrkdwn on the 
 
 ```typescript
 // In handleTextDelta, at chat.update time only (not done):
-const streamingText = formatForPlatform(existing.accumulatedText, 'slack')
-  .replace(/\n{2,}/g, '\n');  // collapse paragraph breaks during streaming
+const streamingText = formatForPlatform(existing.accumulatedText, 'slack').replace(/\n{2,}/g, '\n'); // collapse paragraph breaks during streaming
 ```
 
 The final `handleDone` sends `formatForPlatform(existing.accumulatedText, 'slack')`
@@ -106,7 +107,7 @@ When `threadTs` is `undefined` (a top-level channel message, not in a thread),
 the key is just `channelId`. Two separate conversations in the same channel that
 are NOT in a thread both resolve to the same key — so the second conversation
 will find and reuse the stream state (`messageTs`) from the first conversation.
-Result: the second conversation's responses are appended to and edit the *first*
+Result: the second conversation's responses are appended to and edit the _first_
 conversation's message.
 
 This is not a theoretical edge case. Any user who sends two messages to the same
@@ -133,9 +134,10 @@ function resolveThreadTs(envelope: RelayEnvelope): string | undefined {
   const pd = obj.platformData as Record<string, unknown> | undefined;
   if (!pd) return undefined;
   // Prefer thread_ts (already in a thread); fall back to ts (start a new thread)
-  const ts = (typeof pd.threadTs === 'string' && pd.threadTs)
-    || (typeof pd.ts === 'string' && pd.ts)
-    || undefined;
+  const ts =
+    (typeof pd.threadTs === 'string' && pd.threadTs) ||
+    (typeof pd.ts === 'string' && pd.ts) ||
+    undefined;
   return ts;
 }
 ```
@@ -169,7 +171,7 @@ async function handleDone(...): Promise<DeliveryResult> {
 }
 ```
 
-If a new stream starts for the same key *before* the async `chat.update` in `handleDone`
+If a new stream starts for the same key _before_ the async `chat.update` in `handleDone`
 completes (i.e., a race between `done` finalization and a new `text_delta` arriving), the
 new stream's `postMessage` runs, creates a new entry, and then the stale `chat.update`
 from `handleDone` may overwrite the new message's content. This is an async race.
@@ -188,14 +190,18 @@ async function handleDone(channelId, threadTs, client, streamState, callbacks, s
   if (!existing) return { success: true, durationMs: Date.now() - startTime };
 
   const result = await wrapSlackCall(
-    () => client.chat.update({
-      channel: channelId,
-      ts: existing.messageTs,
-      text: truncateText(formatForPlatform(existing.accumulatedText, 'slack'), MAX_MESSAGE_LENGTH),
-    }),
+    () =>
+      client.chat.update({
+        channel: channelId,
+        ts: existing.messageTs,
+        text: truncateText(
+          formatForPlatform(existing.accumulatedText, 'slack'),
+          MAX_MESSAGE_LENGTH
+        ),
+      }),
     callbacks,
     startTime,
-    true,
+    true
   );
 
   // After the async update, if a NEW stream started for this key during the await,
@@ -209,7 +215,7 @@ The more robust fix is a **stream ID (correlation ID)** inside `ActiveStream`:
 
 ```typescript
 export interface ActiveStream {
-  streamId: string;        // unique per stream, e.g. crypto.randomUUID() or nanoid
+  streamId: string; // unique per stream, e.g. crypto.randomUUID() or nanoid
   channelId: string;
   threadTs: string;
   messageTs: string;
@@ -221,7 +227,7 @@ export interface ActiveStream {
 
 `handleDone` captures `existing.streamId` before deleting, then after the
 `chat.update` verifies the current stream state for that key (if any) has a
-*different* `streamId` before doing anything further. If the IDs match, the
+_different_ `streamId` before doing anything further. If the IDs match, the
 finalization is safe. If they differ, the key was taken by a new stream — the
 stale update already went through but to the correct (old) `messageTs`, so
 no corruption occurred.
@@ -235,6 +241,7 @@ no corruption occurred.
 **Recommended placement:** Per-adapter config field, not per-binding.
 
 **Rationale:**
+
 - Bindings connect a specific agent to a specific channel. Streaming is a behavior
   of the adapter delivery mechanism, not of the binding relationship.
 - Different Slack workspaces have different latency characteristics. A user may
@@ -254,9 +261,10 @@ export const SlackAdapterConfigSchema = AdapterConfigBaseSchema.extend({
   botToken: z.string(),
   appToken: z.string(),
   signingSecret: z.string(),
-  streaming: z.boolean().default(true).describe(
-    'When false, buffer all text_delta events and send as a single message on done.',
-  ),
+  streaming: z
+    .boolean()
+    .default(true)
+    .describe('When false, buffer all text_delta events and send as a single message on done.'),
 });
 ```
 
@@ -278,7 +286,14 @@ if (!config.streaming) {
   if (existing) {
     existing.accumulatedText += textChunk;
   } else {
-    streamState.set(key, { channelId, threadTs: threadTs ?? '', messageTs: '', accumulatedText: textChunk, lastUpdateAt: 0, startedAt: Date.now() });
+    streamState.set(key, {
+      channelId,
+      threadTs: threadTs ?? '',
+      messageTs: '',
+      accumulatedText: textChunk,
+      lastUpdateAt: 0,
+      startedAt: Date.now(),
+    });
   }
   return { success: true, durationMs: Date.now() - startTime };
 }
@@ -290,12 +305,18 @@ In `handleDone`, when `streaming === false`, use `chat.postMessage` instead of
 ```typescript
 if (!config.streaming) {
   return wrapSlackCall(
-    () => client.chat.postMessage({
-      channel: channelId,
-      text: truncateText(formatForPlatform(existing.accumulatedText, 'slack'), MAX_MESSAGE_LENGTH),
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-    }),
-    callbacks, startTime, true,
+    () =>
+      client.chat.postMessage({
+        channel: channelId,
+        text: truncateText(
+          formatForPlatform(existing.accumulatedText, 'slack'),
+          MAX_MESSAGE_LENGTH
+        ),
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      }),
+    callbacks,
+    startTime,
+    true
   );
 }
 ```
@@ -316,6 +337,7 @@ is off — accumulate all deltas, send one message on `done`.
 ```
 
 **UX rationale for "when would a user want streaming off":**
+
 - The user's Slack workspace is heavily monitored and they don't want partially-formed
   agent messages visible to colleagues mid-stream.
 - The agent produces very short responses where streaming adds no perceptible UX value.
@@ -332,8 +354,8 @@ is off — accumulate all deltas, send one message on `done`.
 **Confirmed conclusion:** Slack does not expose a typing indicator API for bots via
 modern APIs (Events API or Web API). The `user_typing` event existed only in the
 deprecated RTM API. A Slack team member confirmed in the official `bolt-js` GitHub
-issue #885: *"The `user_typing` event is a feature of the RTM API, but unfortunately
-it's not available in the Events API or Web API."* As of 2026, RTM is discontinued.
+issue #885: _"The `user_typing` event is a feature of the RTM API, but unfortunately
+it's not available in the Events API or Web API."_ As of 2026, RTM is discontinued.
 
 **Available workarounds (ranked by UX quality):**
 
@@ -349,10 +371,19 @@ it's not available in the Events API or Web API."* As of 2026, RTM is discontinu
 
    ```typescript
    // On text_delta (first chunk only):
-   await client.reactions.add({ channel: channelId, name: 'hourglass_flowing_sand', timestamp: threadTs });
+   await client.reactions.add({
+     channel: channelId,
+     name: 'hourglass_flowing_sand',
+     timestamp: threadTs,
+   });
    // On done:
-   await client.reactions.remove({ channel: channelId, name: 'hourglass_flowing_sand', timestamp: threadTs });
+   await client.reactions.remove({
+     channel: channelId,
+     name: 'hourglass_flowing_sand',
+     timestamp: threadTs,
+   });
    ```
+
    Requires `reactions:write` scope to be added to the manifest.
 
 3. **Placeholder "thinking" message** — Post `_Agent is working..._` immediately on
@@ -374,20 +405,24 @@ placeholder message approach (current behavior) is already providing basic feedb
 ```typescript
 // In handleTextDelta, when starting a new stream (the `!existing` branch):
 if (channelConfig.typingIndicator === 'reaction' && threadTs) {
-  void client.reactions.add({
-    channel: channelId,
-    name: 'hourglass_flowing_sand',
-    timestamp: threadTs,  // add reaction to the user's original message
-  }).catch(() => {}); // fire-and-forget, best-effort
+  void client.reactions
+    .add({
+      channel: channelId,
+      name: 'hourglass_flowing_sand',
+      timestamp: threadTs, // add reaction to the user's original message
+    })
+    .catch(() => {}); // fire-and-forget, best-effort
 }
 
 // In handleDone:
 if (channelConfig.typingIndicator === 'reaction' && existing.threadTs) {
-  void client.reactions.remove({
-    channel: channelId,
-    name: 'hourglass_flowing_sand',
-    timestamp: existing.threadTs,
-  }).catch(() => {}); // fire-and-forget
+  void client.reactions
+    .remove({
+      channel: channelId,
+      name: 'hourglass_flowing_sand',
+      timestamp: existing.threadTs,
+    })
+    .catch(() => {}); // fire-and-forget
 }
 ```
 
@@ -397,6 +432,7 @@ backward compatibility). Add to `SlackAdapterConfig`.
 #### Telegram — Typing Indicator Already Works, Needs Interval Refresh
 
 **Confirmed behavior:**
+
 - `sendChatAction(chatId, 'typing')` makes the "User is typing..." indicator appear
   for exactly 5 seconds or until the bot sends a message.
 - For operations longer than 5 seconds, the action must be refreshed every ~4 seconds.
@@ -414,6 +450,7 @@ interval refresh.
 **Fix — Interval refresh in `handleTypingSignal`:**
 
 The `handleTypingSignal` function should:
+
 1. On `state === 'active'`: start a `setInterval` that calls `sendChatAction` every 4
    seconds, store it keyed by `chatId`.
 2. On `state !== 'active'` (i.e., `'stopped'`): clear the interval.
@@ -425,7 +462,7 @@ const typingIntervals = new Map<number, ReturnType<typeof setInterval>>();
 export async function handleTypingSignal(
   bot: Bot | null,
   subject: string,
-  state: string,
+  state: string
 ): Promise<void> {
   if (!bot) return;
   const chatId = extractChatId(subject);
@@ -436,11 +473,17 @@ export async function handleTypingSignal(
     clearTypingInterval(chatId);
 
     // Send immediately
-    try { await bot.api.sendChatAction(chatId, 'typing'); } catch { /* best-effort */ }
+    try {
+      await bot.api.sendChatAction(chatId, 'typing');
+    } catch {
+      /* best-effort */
+    }
 
     // Refresh every 4 seconds
     const intervalId = setInterval(async () => {
-      try { await bot.api.sendChatAction(chatId, 'typing'); } catch {
+      try {
+        await bot.api.sendChatAction(chatId, 'typing');
+      } catch {
         clearTypingInterval(chatId); // stop on error
       }
     }, 4_000);
@@ -484,10 +527,10 @@ To prevent leaks, the `TelegramAdapter._stop()` method should call `clearAllTypi
 
 The current adapter architecture has two streaming modes:
 
-| Adapter | Streaming Mode | How It Works |
-|---|---|---|
-| Slack | **Live edit** | `postMessage` (first delta) → `chat.update` on each throttled delta → final `chat.update` on `done` |
-| Telegram | **Buffer + flush** | Accumulate all deltas in `responseBuffers` → `sendMessage` single message on `done` |
+| Adapter  | Streaming Mode     | How It Works                                                                                        |
+| -------- | ------------------ | --------------------------------------------------------------------------------------------------- |
+| Slack    | **Live edit**      | `postMessage` (first delta) → `chat.update` on each throttled delta → final `chat.update` on `done` |
+| Telegram | **Buffer + flush** | Accumulate all deltas in `responseBuffers` → `sendMessage` single message on `done`                 |
 
 The streaming toggle feature will add a **buffer + flush** mode to Slack, making it
 functionally equivalent to Telegram's delivery model.
@@ -495,6 +538,7 @@ functionally equivalent to Telegram's delivery model.
 ### Stream State Key Architecture
 
 **Current:** `streamKey(channelId, threadTs?)`
+
 - If `threadTs` is undefined: key = `channelId` (BUGGY — shared across conversations)
 - If `threadTs` is defined: key = `channelId:threadTs` (correct)
 
@@ -559,62 +603,62 @@ to `blocks`, which requires the `text` field as accessibility fallback.
 
 ### Bug 1: Text on New Lines
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| Collapse `\n\n` → `\n` on intermediate `chat.update` | Surgical, no library changes | Loses paragraph structure mid-stream (acceptable) | Trivial (1 line) |
-| Switch to Slack's native `markdown` block | Slack handles formatting | Requires `blocks` API, `text` fallback needed | Low-medium |
-| Strip headings/paragraphs from `slackify-markdown` output | Clean output | Lossy — may strip intentional structure | Low |
-| Replace `slackify-markdown` with custom converter | Full control | High maintenance, risky regression | High |
+| Approach                                                  | Pros                         | Cons                                              | Complexity       |
+| --------------------------------------------------------- | ---------------------------- | ------------------------------------------------- | ---------------- |
+| Collapse `\n\n` → `\n` on intermediate `chat.update`      | Surgical, no library changes | Loses paragraph structure mid-stream (acceptable) | Trivial (1 line) |
+| Switch to Slack's native `markdown` block                 | Slack handles formatting     | Requires `blocks` API, `text` fallback needed     | Low-medium       |
+| Strip headings/paragraphs from `slackify-markdown` output | Clean output                 | Lossy — may strip intentional structure           | Low              |
+| Replace `slackify-markdown` with custom converter         | Full control                 | High maintenance, risky regression                | High             |
 
 **Recommended: Approach 1 (collapse during streaming, full formatting on `done`).**
 
 ### Bug 2: Wrong Message Routing
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| Always include `threadTs` in stream key (fix `resolveThreadTs`) | Correct semantics, uses existing data | Requires `platformData.ts` always present | Trivial |
-| Add synthetic correlation ID fallback for undefined `threadTs` | Handles programmatic messages | Slightly more code | Low |
-| Per-deliver correlation ID only (no `threadTs` in key) | Simplest | Breaks thread isolation | Wrong |
+| Approach                                                        | Pros                                  | Cons                                      | Complexity |
+| --------------------------------------------------------------- | ------------------------------------- | ----------------------------------------- | ---------- |
+| Always include `threadTs` in stream key (fix `resolveThreadTs`) | Correct semantics, uses existing data | Requires `platformData.ts` always present | Trivial    |
+| Add synthetic correlation ID fallback for undefined `threadTs`  | Handles programmatic messages         | Slightly more code                        | Low        |
+| Per-deliver correlation ID only (no `threadTs` in key)          | Simplest                              | Breaks thread isolation                   | Wrong      |
 
 **Recommended: Fix `resolveThreadTs` + synthetic fallback for no-context messages.**
 
 ### Bug 3: Stale Edits
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| Add `streamId` field to `ActiveStream` | Eliminates race completely | Minor API surface expansion | Low |
-| Check if key re-populated post-delete in `handleDone` | No field change needed | Slightly harder to reason about | Low |
-| Delete key only after `chat.update` completes | Prevents the race | Wider race window if `chat.update` is slow | Low |
+| Approach                                              | Pros                       | Cons                                       | Complexity |
+| ----------------------------------------------------- | -------------------------- | ------------------------------------------ | ---------- |
+| Add `streamId` field to `ActiveStream`                | Eliminates race completely | Minor API surface expansion                | Low        |
+| Check if key re-populated post-delete in `handleDone` | No field change needed     | Slightly harder to reason about            | Low        |
+| Delete key only after `chat.update` completes         | Prevents the race          | Wider race window if `chat.update` is slow | Low        |
 
 **Recommended: Add `streamId` correlation field.**
 
 ### Feature: Streaming Toggle
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| Per-adapter config `streaming: boolean` | Clean, per-workspace control | No per-channel granularity | Low |
-| Per-binding config | Per-channel control | Bloats binding schema | Medium |
-| `streaming: 'on' | 'off' | 'auto'` with auto-detection | Future-proof | Auto rules are complex | Medium |
+| Approach                                | Pros                         | Cons                        | Complexity   |
+| --------------------------------------- | ---------------------------- | --------------------------- | ------------ | ---------------------- | ------ |
+| Per-adapter config `streaming: boolean` | Clean, per-workspace control | No per-channel granularity  | Low          |
+| Per-binding config                      | Per-channel control          | Bloats binding schema       | Medium       |
+| `streaming: 'on'                        | 'off'                        | 'auto'` with auto-detection | Future-proof | Auto rules are complex | Medium |
 
 **Recommended: Per-adapter `streaming: boolean` (default `true`).**
 
 ### Feature: Slack Typing Indicator
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| Emoji reaction (`:hourglass:` on user msg) | Visible, low noise, safe scope | Requires `reactions:write` scope | Low |
-| Placeholder "working..." message | Already implicitly done by current streaming | No clear visual affordance until first delta | None (existing) |
-| ASCII spinner on each `chat.update` | Animated | Wastes rate limit | Low |
-| Native `chatStream` API | Best UX, native Slack indicator | Major refactor of streaming approach | High |
+| Approach                                   | Pros                                         | Cons                                         | Complexity      |
+| ------------------------------------------ | -------------------------------------------- | -------------------------------------------- | --------------- |
+| Emoji reaction (`:hourglass:` on user msg) | Visible, low noise, safe scope               | Requires `reactions:write` scope             | Low             |
+| Placeholder "working..." message           | Already implicitly done by current streaming | No clear visual affordance until first delta | None (existing) |
+| ASCII spinner on each `chat.update`        | Animated                                     | Wastes rate limit                            | Low             |
+| Native `chatStream` API                    | Best UX, native Slack indicator              | Major refactor of streaming approach         | High            |
 
 **Recommended: Emoji reaction as opt-in config (`typingIndicator: 'none' | 'reaction'`).**
 
 ### Feature: Telegram Typing Interval Refresh
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| 4-second `setInterval` in `handleTypingSignal` | Correct, Telegram-native | Needs cleanup on adapter stop | Low |
-| One-shot `sendChatAction` per signal (current) | Simple | Disappears after 5s | None (existing bug) |
+| Approach                                       | Pros                     | Cons                          | Complexity          |
+| ---------------------------------------------- | ------------------------ | ----------------------------- | ------------------- |
+| 4-second `setInterval` in `handleTypingSignal` | Correct, Telegram-native | Needs cleanup on adapter stop | Low                 |
+| One-shot `sendChatAction` per signal (current) | Simple                   | Disappears after 5s           | None (existing bug) |
 
 **Recommended: Interval refresh with cleanup on `_stop()`.**
 

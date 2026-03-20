@@ -1,6 +1,12 @@
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
-import type { Session, StreamEvent, CommandEntry, PulseSchedule, PulseRun } from '@dorkos/shared/types';
+import type {
+  Session,
+  StreamEvent,
+  CommandEntry,
+  PulseSchedule,
+  PulseRun,
+} from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
@@ -219,8 +225,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getMeshAgentHealth: vi.fn().mockResolvedValue(undefined),
     sendMeshHeartbeat: vi.fn().mockResolvedValue({ success: true }),
     // Mesh Topology
-    getMeshTopology: vi.fn().mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
-    updateMeshAccessRule: vi.fn().mockResolvedValue({ sourceNamespace: '', targetNamespace: '', action: 'allow' }),
+    getMeshTopology: vi
+      .fn()
+      .mockResolvedValue({ callerNamespace: '*', namespaces: [], accessRules: [] }),
+    updateMeshAccessRule: vi
+      .fn()
+      .mockResolvedValue({ sourceNamespace: '', targetNamespace: '', action: 'allow' }),
     getMeshAgentAccess: vi.fn().mockResolvedValue({ agents: [] }),
     // Agent Identity
     getAgentByPath: vi.fn().mockResolvedValue(null),
@@ -242,16 +252,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       updatedAt: new Date().toISOString(),
     }),
     deleteBinding: vi.fn().mockResolvedValue(undefined),
-    updateBinding: vi.fn().mockImplementation(async (id: string, updates: Partial<AdapterBinding>) => ({
-      id,
-      adapterId: 'mock-adapter',
-      agentId: 'mock-agent',
-      sessionStrategy: 'per-chat' as const,
-      label: '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      ...updates,
-    })),
+    updateBinding: vi
+      .fn()
+      .mockImplementation(async (id: string, updates: Partial<AdapterBinding>) => ({
+        id,
+        adapterId: 'mock-adapter',
+        agentId: 'mock-agent',
+        sessionStrategy: 'per-chat' as const,
+        label: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...updates,
+      })),
     updateConfig: vi.fn().mockResolvedValue(undefined),
     // Discovery
     scan: vi.fn().mockResolvedValue(undefined),
@@ -279,7 +291,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
 export function signPayload(
   body: string,
   secret: string,
-  timestamp?: number,
+  timestamp?: number
 ): { signature: string; timestamp: string; nonce: string } {
   const ts = String(timestamp ?? Math.floor(Date.now() / 1000));
   const nonce = crypto.randomUUID();

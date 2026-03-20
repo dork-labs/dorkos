@@ -269,7 +269,6 @@ Add two test cases to the existing relay test suite:
 it('does not call invalidateQueries on sync_update while streaming', async () => {
   // Purpose: Verifies the statusRef guard prevents premature history invalidation
   // that causes message duplication. This test CAN fail if the guard is removed.
-
   // Setup: render hook in relay mode, submit a message (status → 'streaming')
   // Fire sync_update event on the EventSource
   // Assert: queryClient.invalidateQueries was NOT called
@@ -282,7 +281,6 @@ it('does not call invalidateQueries on sync_update while streaming', async () =>
 it('calls invalidateQueries on sync_update when status is idle', async () => {
   // Purpose: Verifies history sync still works post-stream. Guards against
   // overly aggressive fixes that skip all invalidation.
-
   // Setup: render hook in relay mode with status = 'idle'
   // Fire sync_update event on the EventSource
   // Assert: queryClient.invalidateQueries WAS called with messages queryKey
@@ -299,7 +297,6 @@ Add one test case:
 it('returns 500 when getMessageHistory throws', async () => {
   // Purpose: Verifies Express route propagates runtime errors instead of hanging.
   // This test CAN fail if the try/catch is removed.
-
   // Setup: mock runtime.getMessageHistory to throw new Error('I/O error')
   // GET /api/sessions/test-id/messages
   // Assert: response status is 500 (not hanging → 503)

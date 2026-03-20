@@ -8,11 +8,7 @@
  * @param url - Target URL
  */
 export function link(text: string, url: string): string {
-  if (
-    !process.stdout.isTTY ||
-    process.env.NO_COLOR !== undefined ||
-    process.env.TERM === 'dumb'
-  ) {
+  if (!process.stdout.isTTY || process.env.NO_COLOR !== undefined || process.env.TERM === 'dumb') {
     return text;
   }
 

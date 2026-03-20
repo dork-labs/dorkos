@@ -1,5 +1,5 @@
 ---
-title: "Relay Runtime Adapters — Plugin System Design (v1)"
+title: 'Relay Runtime Adapters — Plugin System Design (v1)'
 date: 2026-02-24
 type: internal-architecture
 status: superseded
@@ -51,12 +51,14 @@ This is structurally identical to Moleculer's transporter interface (`connect`, 
 Node.js ESM dynamic `import()` is the only correct primitive for loading third-party adapter packages at runtime in a modern TypeScript/ESM codebase like DorkOS. The project already uses `NodeNext` module resolution and ESM throughout the server.
 
 Key behaviors:
+
 - `await import('some-npm-package')` resolves via node_modules, enabling the standard npm install workflow
 - `await import('/abs/path/to/plugin.js')` resolves file-system plugins
 - The TypeScript compiler does NOT transform `await import()` calls in `NodeNext` mode — they remain native ESM imports
 - The approach using `new Function` to bypass TypeScript's static import analysis is only needed for CommonJS projects loading ESM; DorkOS is already ESM and does not require this workaround
 
 The pattern used by ESLint plugins (keyword-based npm discovery) and Vite plugins (factory function returning named object) provides the right conventions:
+
 - Package name: `dorkos-relay-adapter-*` or `@scope/dorkos-relay-adapter-*`
 - Package keywords: `["dorkos", "relay-adapter"]` in package.json
 - Default export: factory function `(config: unknown) => RelayAdapter`
@@ -66,6 +68,7 @@ The pattern used by ESLint plugins (keyword-based npm discovery) and Vite plugin
 External adapters (Telegram, webhook) operate as **persistent bridges** — they hold a long-lived connection and push/pull messages continuously. The Claude Code runtime adapter is different: it **processes one message per session**, spawning an Agent SDK `query()` call per `deliver()` invocation.
 
 This means:
+
 - `start()` initializes a concurrency semaphore and optionally a queue, not a persistent connection
 - `stop()` drains in-flight sessions and rejects new ones
 - `deliver()` acquires a semaphore slot, creates an SDK session, streams the result, publishes back via `relay.publish()`, then releases the slot
@@ -75,6 +78,7 @@ The correlation pattern (reply-to subject) already exists in `RelayEnvelope.repl
 ### 4. Concurrency Model: Semaphore over Pool
 
 For the Claude Code adapter, a semaphore is the correct concurrency primitive — not a pre-warmed session pool. Agent SDK sessions are cheap to create (they are just `query()` calls) and long-lived sessions have memory/token cost. The semaphore approach:
+
 - Initialize with `maxConcurrent` (default: 3, configurable)
 - Each `deliver()` acquires a permit before calling `query()`
 - Permits are released in `finally` blocks whether the session succeeds or fails
@@ -116,13 +120,13 @@ This is exactly how ESLint, Vite, and Fastify handle plugins: declared in config
 
 #### Dynamic `import()` vs `require()`
 
-| Aspect | `dynamic import()` | `require()` |
-|--------|-------------------|-------------|
-| ESM support | Native | Requires `createRequire()` workaround |
-| TypeScript compatibility | Full (NodeNext) | Full (CommonJS) |
-| Returns | Promise for module | Synchronous module |
-| Error handling | `catch` on Promise | try/catch |
-| Node.js version | 12+ stable | Always |
+| Aspect                   | `dynamic import()` | `require()`                           |
+| ------------------------ | ------------------ | ------------------------------------- |
+| ESM support              | Native             | Requires `createRequire()` workaround |
+| TypeScript compatibility | Full (NodeNext)    | Full (CommonJS)                       |
+| Returns                  | Promise for module | Synchronous module                    |
+| Error handling           | `catch` on Promise | try/catch                             |
+| Node.js version          | 12+ stable         | Always                                |
 
 DorkOS uses NodeNext module mode throughout. `await import()` is the natural choice. The only subtlety is that `import()` of a path string must be an absolute path or a bare specifier (package name). For config-driven paths from `~/.dork/relay/plugins.json`, normalize to absolute with `path.resolve()` before importing.
 
@@ -143,6 +147,7 @@ Convention-based discovery (scanning node_modules for packages matching `dorkos-
 #### Hot-Reloading
 
 The existing `AdapterManager` uses chokidar to watch `~/.dork/relay/adapters.json` for changes and calls `reload()`. The same pattern extends naturally to cover plugin-type adapter entries. One important constraint: once a module is loaded via `import()`, Node.js caches it in the module registry. Hot-reloading a plugin therefore requires either:
+
 - Restarting the server (simplest, acceptable for plugins)
 - Using a sub-process with `worker_threads` or `child_process` to isolate the module cache (complex, not worth it for this use case)
 
@@ -154,12 +159,12 @@ Recommendation: hot-reload plugin config changes to add/remove adapters, but do 
 
 The existing `RelayAdapter` interface is well-designed. Comparing against Moleculer's transporter interface:
 
-| Moleculer Transporter | DorkOS RelayAdapter | Notes |
-|----------------------|---------------------|-------|
-| `connect()` | `start(relay)` | DorkOS passes the relay publisher — cleaner DI |
-| `disconnect()` | `stop()` | Identical semantics |
-| `subscribe()` | Implicit in `start()` | DorkOS adapters subscribe during start |
-| `send()` / `publish()` | `deliver()` | Same concept, DorkOS receives envelope |
+| Moleculer Transporter  | DorkOS RelayAdapter   | Notes                                          |
+| ---------------------- | --------------------- | ---------------------------------------------- |
+| `connect()`            | `start(relay)`        | DorkOS passes the relay publisher — cleaner DI |
+| `disconnect()`         | `stop()`              | Identical semantics                            |
+| `subscribe()`          | Implicit in `start()` | DorkOS adapters subscribe during start         |
+| `send()` / `publish()` | `deliver()`           | Same concept, DorkOS receives envelope         |
 
 The key difference for runtime adapters: `deliver()` must be **async and potentially long-running** (seconds to minutes for an agent session). The interface already allows this — `deliver` returns `Promise<void>`. The caller (`AdapterRegistry.deliver()`) awaits it, but RelayCore calls this after endpoint delivery without blocking the publish pipeline.
 
@@ -170,27 +175,44 @@ The key difference for runtime adapters: `deliver()` must be **async and potenti
 Keep `RelayAdapter` as-is. External adapters implement `deliver` by forwarding to external channels. Runtime adapters implement `deliver` by spawning agent sessions. The interface makes no assumption about what `deliver` does. This is the Liskov Substitution Principle in practice — the registry only needs to know that adapters have the four lifecycle methods.
 
 Pros:
+
 - No additional types to export or version
 - Existing `AdapterRegistry`, `AdapterManager`, and tests need no changes
 - Third-party plugin authors only need to know one interface
 
 Cons:
+
 - No TypeScript hint that a runtime adapter is expected to reply via `relay.publish()`
 - `subjectPrefix` semantics differ slightly: external adapters use it for routing outbound messages; runtime adapters use it as a subscription filter for inbound messages
 
 **Option B: Interface Hierarchy**
 
 ```typescript
-interface BaseAdapter { id, displayName, start, stop, getStatus }
-interface ExternalAdapter extends BaseAdapter { subjectPrefix, deliver }
-interface RuntimeAdapter extends BaseAdapter { subjectPrefix, deliver, maxConcurrent? }
+interface BaseAdapter {
+  id;
+  displayName;
+  start;
+  stop;
+  getStatus;
+}
+interface ExternalAdapter extends BaseAdapter {
+  subjectPrefix;
+  deliver;
+}
+interface RuntimeAdapter extends BaseAdapter {
+  subjectPrefix;
+  deliver;
+  maxConcurrent?;
+}
 ```
 
 Pros:
+
 - Explicit typing for the runtime case
 - Can add runtime-specific fields (concurrency config, queue depth)
 
 Cons:
+
 - `AdapterRegistry` needs to understand two types
 - Breaking change to existing interface exports
 - The difference is not structural enough to justify separate interfaces — both have the same four methods
@@ -225,6 +247,7 @@ The current design is **push** — RelayCore calls `adapter.deliver()` when a me
 The `ClaudeCodeAdapter` wraps the Agent SDK's `query()` function. Key design decisions:
 
 **Session isolation**: Each `deliver()` call spawns a new, isolated SDK session. This is important because:
+
 - Messages from different senders must not share context
 - Agent SDK sessions are tied to JSONL files — reusing sessions means the agent sees prior conversation history, which may be desirable for conversation threads but not for one-shot task requests
 - The `envelope.from` field or a `conversationId` in the payload can be used to optionally resume a prior session via `resume: sessionId`
@@ -357,12 +380,12 @@ This extends `AdapterType` from `'telegram' | 'webhook'` to `'telegram' | 'webho
 
 **Use dynamic `import()` with explicit config-driven paths. Validate with Zod duck-typing.**
 
-| Approach | Complexity | Security | Maintainability |
-|----------|-----------|----------|----------------|
-| Dynamic `import()` + config list | Low | Good (explicit opt-in) | High |
-| Convention-based auto-discovery | Medium | Poor (implicit) | Medium |
-| `require()` with `createRequire` | Medium | Good | Low (legacy, breaks ESM) |
-| Sub-process isolation | High | Excellent | Low |
+| Approach                         | Complexity | Security               | Maintainability          |
+| -------------------------------- | ---------- | ---------------------- | ------------------------ |
+| Dynamic `import()` + config list | Low        | Good (explicit opt-in) | High                     |
+| Convention-based auto-discovery  | Medium     | Poor (implicit)        | Medium                   |
+| `require()` with `createRequire` | Medium     | Good                   | Low (legacy, breaks ESM) |
+| Sub-process isolation            | High       | Excellent              | Low                      |
 
 The config-driven approach matches the existing `adapters.json` pattern, requires minimal new infrastructure, and puts the security decision in the user's hands (they must explicitly add the plugin to config).
 
@@ -373,6 +396,7 @@ The config-driven approach matches the existing `adapters.json` pattern, require
 The existing interface handles all required cases. Adding a separate `RuntimeAdapter` interface would create unnecessary complexity in `AdapterRegistry` and break the clean single-interface contract that makes the registry generic.
 
 Changes needed:
+
 1. Add `readonly adapterKind?: 'external' | 'runtime'` to `RelayAdapter`
 2. Add `'plugin' | 'claude-code'` to `AdapterType` in both `types.ts` and `relay-schemas.ts`
 3. Add optional `plugin` field to `AdapterConfig` for plugin package name
@@ -381,13 +405,14 @@ Changes needed:
 
 **Direct `query()` wrapping with semaphore-based concurrency control and rejection (not queuing) when capacity is exceeded.**
 
-| Approach | Complexity | Latency | Memory |
-|----------|-----------|---------|--------|
-| Direct `query()` + semaphore | Low | Minimal overhead | Low |
-| Pre-warmed session pool | High | Lower first-message latency | High |
-| Queue + worker pool | Medium | Adds queue latency | Medium |
+| Approach                     | Complexity | Latency                     | Memory |
+| ---------------------------- | ---------- | --------------------------- | ------ |
+| Direct `query()` + semaphore | Low        | Minimal overhead            | Low    |
+| Pre-warmed session pool      | High       | Lower first-message latency | High   |
+| Queue + worker pool          | Medium     | Adds queue latency          | Medium |
 
 Direct wrapping is the right call because:
+
 - Agent SDK sessions have no meaningful "warm-up" — the latency is in the API call, not session creation
 - Pool management (keepalive, invalidation, size management) would add significant complexity
 - The semaphore approach correctly integrates with RelayCore's existing backpressure system
@@ -435,6 +460,7 @@ Do not attempt to stream incremental text deltas back through Relay — Relay's 
    - Caches loaded modules
 
 2. Extend `AdapterManager.createAdapter()` with:
+
    ```typescript
    case 'plugin': {
      const plugin = await this.pluginLoader.loadPlugin(config.plugin!);

@@ -71,7 +71,17 @@ export function MessageItem({
 
   return (
     <MessageProvider
-      value={{ sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId, textEffect }}
+      value={{
+        sessionId,
+        isStreaming,
+        activeToolCallId,
+        onToolRef,
+        focusedOptionIndex,
+        onToolDecided,
+        onRetry,
+        inputZoneToolCallId,
+        textEffect,
+      }}
     >
       <motion.div
         initial={isNew ? { opacity: 0, y: 8, x: isUser ? 12 : 0, scale: isUser ? 0.97 : 1 } : false}
@@ -88,7 +98,7 @@ export function MessageItem({
               styles.timestamp(),
               showTimestamps
                 ? 'text-msg-timestamp'
-                : 'text-transparent group-hover:text-msg-timestamp'
+                : 'group-hover:text-msg-timestamp text-transparent'
             )}
           >
             {formatTime(message.timestamp)}

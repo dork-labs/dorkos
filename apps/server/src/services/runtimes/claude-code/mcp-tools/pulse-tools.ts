@@ -48,7 +48,10 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     // Agent-created schedules always require user approval
     deps.pulseStore!.updateSchedule(schedule.id, { status: 'pending_approval' });
     const updated = deps.pulseStore!.getSchedule(schedule.id);
-    return jsonContent({ schedule: updated, note: 'Schedule created with pending_approval status. User must approve before it runs.' });
+    return jsonContent({
+      schedule: updated,
+      note: 'Schedule created with pending_approval status. User must approve before it runs.',
+    });
   };
 }
 
@@ -121,7 +124,10 @@ export function getPulseTools(deps: McpToolDeps) {
         cwd: z.string().optional().describe('Working directory for the agent'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: z.number().optional().describe('Maximum run time in milliseconds'),
-        permissionMode: z.string().optional().describe('Permission mode: acceptEdits or bypassPermissions'),
+        permissionMode: z
+          .string()
+          .optional()
+          .describe('Permission mode: acceptEdits or bypassPermissions'),
       },
       createCreateScheduleHandler(deps)
     ),

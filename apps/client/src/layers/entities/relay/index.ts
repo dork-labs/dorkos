@@ -19,7 +19,11 @@ export {
 } from './model/use-adapter-catalog';
 export { useMessageTrace } from './model/use-message-trace';
 export { useDeliveryMetrics } from './model/use-delivery-metrics';
-export { useDeadLetters, useAggregatedDeadLetters, useDismissDeadLetterGroup } from './model/use-dead-letters';
+export {
+  useDeadLetters,
+  useAggregatedDeadLetters,
+  useDismissDeadLetterGroup,
+} from './model/use-dead-letters';
 export type { DeadLetter, AggregatedDeadLetter } from './model/use-dead-letters';
 export { useRelayConversations } from './model/use-relay-conversations';
 export { useAdapterEvents } from './model/use-adapter-events';

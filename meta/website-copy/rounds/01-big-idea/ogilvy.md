@@ -69,14 +69,14 @@ This section works because it does not attack the competition. It attacks the **
 
 Each module is presented not as a feature but as an element of infrastructure that any employer provides:
 
-| What every worker gets | What your AI agent gets | DorkOS module |
-|---|---|---|
-| A schedule | Cron-based autonomous execution | **Pulse** |
-| A mailbox | Inter-agent message bus | **Relay** |
-| An org chart | Agent discovery and registry | **Mesh** |
-| Institutional memory | Persistent context across sessions | **Wing** |
-| A desk | Browser-based command center | **Console** |
-| A performance review | Self-improvement engine | **Loop** |
+| What every worker gets | What your AI agent gets            | DorkOS module |
+| ---------------------- | ---------------------------------- | ------------- |
+| A schedule             | Cron-based autonomous execution    | **Pulse**     |
+| A mailbox              | Inter-agent message bus            | **Relay**     |
+| An org chart           | Agent discovery and registry       | **Mesh**      |
+| Institutional memory   | Persistent context across sessions | **Wing**      |
+| A desk                 | Browser-based command center       | **Console**   |
+| A performance review   | Self-improvement engine            | **Loop**      |
 
 This table does more selling than a paragraph of prose. It makes the abstract concrete. It connects each feature to something the developer already understands. And it reveals the scope of the product without requiring the developer to read seven feature descriptions.
 
@@ -144,5 +144,5 @@ Give them the truth. Give them specifics. Give them a command they can paste int
 
 ---
 
-*David Ogilvy*
-*February 27, 2026*
+_David Ogilvy_
+_February 27, 2026_

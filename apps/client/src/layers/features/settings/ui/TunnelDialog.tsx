@@ -211,7 +211,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
         }
       }
     },
-    [transport, queryClient],
+    [transport, queryClient]
   );
 
   const handleSaveToken = useCallback(async () => {
@@ -274,7 +274,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
               className={cn(
                 'inline-block size-2 rounded-full',
                 dotColor,
-                (state === 'starting' || state === 'stopping') && 'animate-pulse',
+                (state === 'starting' || state === 'stopping') && 'animate-pulse'
               )}
             />
             Remote Access
@@ -305,7 +305,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
             <>
               {!tunnel.tokenConfigured || showTokenInput ? (
                 <div className="space-y-2">
-                  <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                  <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                     Auth Token
                   </span>
                   <div className="flex gap-2">
@@ -360,7 +360,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
           {/* Custom domain field — visible when token is configured */}
           {tunnel?.tokenConfigured && state !== 'connected' && state !== 'stopping' && (
             <div className="space-y-2">
-              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+              <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                 Custom Domain
               </span>
               <input
@@ -400,7 +400,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
                       <span
                         className={cn(
                           'inline-block size-2 shrink-0 rounded-full',
-                          latencyColor(latencyMs),
+                          latencyColor(latencyMs)
                         )}
                       />
                     </TooltipTrigger>

@@ -4,21 +4,21 @@
  *
  * @module icons/logos
  */
-import { LOGO_COLORS, type LogoVariant } from './brand'
+import { LOGO_COLORS, type LogoVariant } from './brand';
 
 interface DorkLogoProps {
   /** Color variant — 'default' (charcoal), 'white', or 'orange' (red). */
-  variant?: LogoVariant
+  variant?: LogoVariant;
   /** Width in pixels. Height scales proportionally (viewBox is 2325x799). */
-  size?: number
-  className?: string
-  style?: React.CSSProperties
+  size?: number;
+  className?: string;
+  style?: React.CSSProperties;
 }
 
 /** Inline SVG logo for DorkOS. Renders identically to the static dork-logo*.svg files. */
 export function DorkLogo({ variant = 'default', size = 40, className, style }: DorkLogoProps) {
-  const color = LOGO_COLORS[variant]
-  const height = size * (799 / 2325)
+  const color = LOGO_COLORS[variant];
+  const height = size * (799 / 2325);
 
   return (
     <svg
@@ -50,5 +50,5 @@ export function DorkLogo({ variant = 'default', size = 40, className, style }: D
         stroke={color}
       />
     </svg>
-  )
+  );
 }

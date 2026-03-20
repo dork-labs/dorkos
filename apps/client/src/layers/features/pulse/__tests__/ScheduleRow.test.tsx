@@ -98,7 +98,7 @@ function createWrapper(transport: Transport) {
 function renderScheduleRow(
   schedule: PulseSchedule,
   opts: { expanded?: boolean; onEdit?: () => void; onToggleExpand?: () => void } = {},
-  transport?: Transport,
+  transport?: Transport
 ) {
   const { expanded = false, onEdit = vi.fn(), onToggleExpand = vi.fn() } = opts;
   const t = transport ?? createMockTransport();

@@ -1,5 +1,5 @@
 ---
-title: "Tunnel Toggle Feature — Research Findings"
+title: 'Tunnel Toggle Feature — Research Findings'
 date: 2026-02-17
 type: external-best-practices
 status: active
@@ -29,13 +29,13 @@ This report covers four research areas needed to implement a tunnel toggle featu
 
 **Winner: `react-qr-code` v2.0.18** (SVG-only, 13.8 kB unpacked, ~4 kB gzipped estimate)
 
-| Library | Unpacked | Weekly Downloads | Stars | Last Updated | Verdict |
-|---|---|---|---|---|---|
-| `react-qr-code` | 13.8 kB | ~1.09M | 848 | 5 months ago | **Recommended** |
-| `qrcode.react` | 115 kB | ~2.35M | 4,214 | ~1 year ago | Heavier, more popular |
-| `qr-code-styling` | 516 kB | ~229K | 2,620 | 8 months ago | Way too heavy for this use case |
-| `qr.js` | N/A | ~1.44M | N/A | 13 years ago | Unmaintained |
-| `qrious` | N/A | ~67K | 1,619 | 9 years ago | Abandoned |
+| Library           | Unpacked | Weekly Downloads | Stars | Last Updated | Verdict                         |
+| ----------------- | -------- | ---------------- | ----- | ------------ | ------------------------------- |
+| `react-qr-code`   | 13.8 kB  | ~1.09M           | 848   | 5 months ago | **Recommended**                 |
+| `qrcode.react`    | 115 kB   | ~2.35M           | 4,214 | ~1 year ago  | Heavier, more popular           |
+| `qr-code-styling` | 516 kB   | ~229K            | 2,620 | 8 months ago | Way too heavy for this use case |
+| `qr.js`           | N/A      | ~1.44M           | N/A   | 13 years ago | Unmaintained                    |
+| `qrious`          | N/A      | ~67K             | 1,619 | 9 years ago  | Abandoned                       |
 
 **Why `react-qr-code` wins for this use case:**
 
@@ -50,12 +50,12 @@ import QRCode from 'react-qr-code';
 
 <QRCode
   value="https://abc123.ngrok-free.app"
-  size={200}           // pixels, default 256
-  bgColor="#ffffff"    // hex string
-  fgColor="#000000"    // hex string
-  level="M"           // 'L' | 'M' | 'Q' | 'H' (error correction)
+  size={200} // pixels, default 256
+  bgColor="#ffffff" // hex string
+  fgColor="#000000" // hex string
+  level="M" // 'L' | 'M' | 'Q' | 'H' (error correction)
   title="Scan to open on mobile"
-/>
+/>;
 ```
 
 **Caveat on `qrcode.react`:** It has higher weekly downloads (2.35M vs 1.09M) and more GitHub stars, but its 115 kB footprint and less recent maintenance make it a poor fit for a lightweight settings dialog widget. If canvas rendering were ever needed (e.g., PNG download), `qrcode.react` would be the right choice.
@@ -70,11 +70,11 @@ import QRCode from 'react-qr-code';
 
 Tunnel status maps to exactly three operational states, each needing distinct visual treatment:
 
-| State | Meaning | Visual Pattern |
-|---|---|---|
-| **Disconnected** (off) | Tunnel not running | Neutral/muted, no animation |
-| **Connecting** (pending) | `start()` called, waiting for ngrok response | Amber + pulse animation |
-| **Connected** (on) | URL available, traffic flowing | Green + steady dot |
+| State                    | Meaning                                      | Visual Pattern              |
+| ------------------------ | -------------------------------------------- | --------------------------- |
+| **Disconnected** (off)   | Tunnel not running                           | Neutral/muted, no animation |
+| **Connecting** (pending) | `start()` called, waiting for ngrok response | Amber + pulse animation     |
+| **Connected** (on)       | URL available, traffic flowing               | Green + steady dot          |
 
 The current `TunnelStatus` interface (`{ enabled, connected, url }`) does not have an explicit `connecting` state. Implementation will need a local UI state to track the async gap between "toggle flipped" and "URL received."
 
@@ -102,12 +102,12 @@ The existing `InferenceIndicator` in this codebase uses a similar pattern (anima
 
 #### Label Copy Recommendations
 
-| State | Dot Color | Label |
-|---|---|---|
-| Off / disabled | `bg-muted-foreground/40` | "Disabled" |
-| Connecting | `bg-amber-400` + `animate-pulse` | "Starting…" |
-| Connected | `bg-emerald-500` | "Connected" |
-| Error | `bg-destructive` | "Failed — retry?" |
+| State          | Dot Color                        | Label             |
+| -------------- | -------------------------------- | ----------------- |
+| Off / disabled | `bg-muted-foreground/40`         | "Disabled"        |
+| Connecting     | `bg-amber-400` + `animate-pulse` | "Starting…"       |
+| Connected      | `bg-emerald-500`                 | "Connected"       |
+| Error          | `bg-destructive`                 | "Failed — retry?" |
 
 ---
 
@@ -173,10 +173,10 @@ const handleToggle = async (checked: boolean) => {
   setLocalState(checked ? 'starting' : 'stopping');
   try {
     if (checked) {
-      await transport.startTunnel();  // POST /api/tunnel/start (new endpoint)
+      await transport.startTunnel(); // POST /api/tunnel/start (new endpoint)
       setLocalState('connected');
     } else {
-      await transport.stopTunnel();   // POST /api/tunnel/stop (new endpoint)
+      await transport.stopTunnel(); // POST /api/tunnel/stop (new endpoint)
       setLocalState('off');
     }
   } catch {
@@ -189,7 +189,7 @@ const handleToggle = async (checked: boolean) => {
   checked={localState === 'connected' || localState === 'starting'}
   disabled={localState === 'starting' || localState === 'stopping'}
   onCheckedChange={handleToggle}
-/>
+/>;
 ```
 
 #### Key UX Decisions
@@ -219,15 +219,18 @@ The current `ServerTab.tsx` in the Settings dialog is read-only. The tunnel togg
 
 **Option A — In-place row toggle (Minimal)**
 Replace the "Tunnel" `ConfigBadgeRow` with a row that has a `<Switch>` on the right:
+
 ```
 Tunnel        [●———] Connected
               [QR icon] [Copy URL button]
 ```
+
 Pros: No layout change, feels native to the existing settings panel.
 Cons: The QR code popover competes with the dense settings list.
 
 **Option B — Dedicated Tunnel Card (Recommended)**
 Add a distinct card/section within `ServerTab` when the tunnel is enabled, showing:
+
 - Toggle switch with status dot
 - URL in a monospace truncated display (copy on click, matching existing `ConfigRow`)
 - QR code icon button that opens a popover
@@ -237,6 +240,7 @@ This gives the tunnel feature room to breathe and makes the QR code discoverable
 ### FSD Placement
 
 Per the project's FSD rules:
+
 - The toggle + QR code UI lives in `features/settings/ui/TunnelCard.tsx` (or inline in `ServerTab.tsx` if small enough to keep under 300 lines)
 - A new `useTunnelControl` hook in `features/settings/model/` handles the async state machine and transport calls
 - Transport methods `startTunnel()` and `stopTunnel()` get added to the `Transport` interface in `packages/shared/src/transport.ts` and implemented in `HttpTransport` and `DirectTransport`
@@ -244,6 +248,7 @@ Per the project's FSD rules:
 ### Server-Side Requirements
 
 New endpoints needed:
+
 - `POST /api/tunnel/start` — calls `tunnelManager.start(config)`, returns `{ url }` on success
 - `POST /api/tunnel/stop` — calls `tunnelManager.stop()`, returns `{ ok: true }`
 
@@ -256,29 +261,35 @@ The existing `GET /api/config` response already includes `tunnel.connected` and 
 ## Recommended Implementation Plan
 
 ### Step 1: Install `react-qr-code`
+
 ```bash
 npm install react-qr-code -w apps/client
 ```
 
 ### Step 2: Add server endpoints
+
 - `POST /api/tunnel/start` in a new `apps/server/src/routes/tunnel.ts`
 - `POST /api/tunnel/stop` in the same file
 - Register in `apps/server/src/index.ts`
 
 ### Step 3: Update Transport interface
+
 Add `startTunnel(): Promise<{ url: string }>` and `stopTunnel(): Promise<void>` to the `Transport` interface and both adapter implementations.
 
 ### Step 4: Build `useTunnelControl` hook
+
 State machine: `'off' | 'starting' | 'connected' | 'stopping' | 'error'`
 Handles optimistic/pessimistic logic per section 4 above.
 
 ### Step 5: Build `TunnelCard` component
+
 - Status dot with semantic color + optional pulse
 - Toggle switch (disabled during transitions)
 - URL display with copy-on-click (reuse `useCopy` from `ServerTab.tsx`)
 - QR code button — opens a `<Popover>` containing `<QRCode value={url} size={200} />`
 
 ### Step 6: Replace read-only tunnel rows in `ServerTab.tsx`
+
 Swap the static `ConfigBadgeRow` blocks for the new `TunnelCard`.
 
 ---
@@ -293,10 +304,10 @@ function TunnelStatusDot({ state }: { state: TunnelToggleState }) {
       className={cn(
         'inline-block size-2 rounded-full',
         state === 'connected' && 'bg-emerald-500',
-        state === 'starting' && 'bg-amber-400 animate-pulse',
-        state === 'stopping' && 'bg-amber-400 animate-pulse',
+        state === 'starting' && 'animate-pulse bg-amber-400',
+        state === 'stopping' && 'animate-pulse bg-amber-400',
         state === 'error' && 'bg-destructive',
-        state === 'off' && 'bg-muted-foreground/40',
+        state === 'off' && 'bg-muted-foreground/40'
       )}
     />
   );
@@ -320,9 +331,7 @@ function QRCodeButton({ url }: { url: string }) {
           <p className="text-muted-foreground max-w-[232px] truncate text-center font-mono text-xs">
             {url}
           </p>
-          <p className="text-muted-foreground text-center text-xs">
-            Scan to open on mobile
-          </p>
+          <p className="text-muted-foreground text-center text-xs">Scan to open on mobile</p>
         </div>
       </PopoverContent>
     </Popover>

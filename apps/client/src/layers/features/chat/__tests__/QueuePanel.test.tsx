@@ -44,9 +44,7 @@ describe('QueuePanel', () => {
       makeItem('Second message', 1),
       makeItem('Third message', 2),
     ];
-    render(
-      <QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />);
     expect(screen.getByText('First message')).toBeDefined();
     expect(screen.getByText('Second message')).toBeDefined();
     expect(screen.getByText('Third message')).toBeDefined();
@@ -54,18 +52,14 @@ describe('QueuePanel', () => {
 
   it('renders "Queued (N)" header with correct count', () => {
     const queue = [makeItem('A', 0), makeItem('B', 1)];
-    render(
-      <QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />);
     expect(screen.getByText('Queued (2)')).toBeDefined();
   });
 
   it('clicking card calls onEdit with correct index', () => {
     const onEdit = vi.fn();
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
-    render(
-      <QueuePanel queue={queue} editingIndex={null} onEdit={onEdit} onRemove={vi.fn()} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={null} onEdit={onEdit} onRemove={vi.fn()} />);
     fireEvent.click(screen.getByText('Second'));
     expect(onEdit).toHaveBeenCalledWith(1);
   });
@@ -74,9 +68,7 @@ describe('QueuePanel', () => {
     const onEdit = vi.fn();
     const onRemove = vi.fn();
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
-    render(
-      <QueuePanel queue={queue} editingIndex={null} onEdit={onEdit} onRemove={onRemove} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={null} onEdit={onEdit} onRemove={onRemove} />);
     fireEvent.click(screen.getByLabelText('Remove queued message 1'));
     expect(onRemove).toHaveBeenCalledWith(0);
     expect(onEdit).not.toHaveBeenCalled();
@@ -84,36 +76,26 @@ describe('QueuePanel', () => {
 
   it('editing item shows selected state with border-l-2', () => {
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
-    render(
-      <QueuePanel queue={queue} editingIndex={1} onEdit={vi.fn()} onRemove={vi.fn()} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={1} onEdit={vi.fn()} onRemove={vi.fn()} />);
     // The second card button should have border-l-2 class
     screen.getAllByRole('button', { name: /\d+\./ });
     // Find the second card button (index 1)
     const allButtons = document.querySelectorAll('button[type="button"]');
-    const cardButtons = Array.from(allButtons).filter((b) =>
-      b.className.includes('rounded-md')
-    );
+    const cardButtons = Array.from(allButtons).filter((b) => b.className.includes('rounded-md'));
     expect(cardButtons[1].className).toContain('border-l-2');
   });
 
   it('non-editing items do not have selected state', () => {
     const queue = [makeItem('First', 0), makeItem('Second', 1)];
-    render(
-      <QueuePanel queue={queue} editingIndex={0} onEdit={vi.fn()} onRemove={vi.fn()} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={0} onEdit={vi.fn()} onRemove={vi.fn()} />);
     const allButtons = document.querySelectorAll('button[type="button"]');
-    const cardButtons = Array.from(allButtons).filter((b) =>
-      b.className.includes('rounded-md')
-    );
+    const cardButtons = Array.from(allButtons).filter((b) => b.className.includes('rounded-md'));
     expect(cardButtons[1].className).not.toContain('border-l-2');
   });
 
   it('remove button is always visible (opacity-100 base class, not standalone opacity-0)', () => {
     const queue = [makeItem('Test', 0)];
-    render(
-      <QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />
-    );
+    render(<QueuePanel queue={queue} editingIndex={null} onEdit={vi.fn()} onRemove={vi.fn()} />);
     const removeBtn = screen.getByLabelText('Remove queued message 1');
     // Base class is opacity-100 (always visible on mobile); md:opacity-0 is desktop hover-gated
     const classes = removeBtn.className.split(' ');

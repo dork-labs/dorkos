@@ -35,8 +35,10 @@ dorkos/
 
 ```
 src/
-├── App.tsx              # App entry — composes widgets, provides context
-├── main.tsx             # Vite entry point
+├── App.tsx              # App entry — embedded vs standalone mode switch
+├── AppShell.tsx         # Standalone shell (sidebar, header, Outlet) — layout route component
+├── router.tsx           # TanStack Router route tree (/, /session, _shell layout)
+├── main.tsx             # Vite entry point — RouterProvider
 ├── index.css            # Global styles
 ├── layers/              # FSD architecture layers
 │   ├── shared/          # Reusable utilities, UI primitives, hooks & stores
@@ -79,7 +81,13 @@ src/
 │   │   ├── onboarding/  # OnboardingFlow, AgentDiscoveryStep, PulsePresetsStep
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
 │   └── widgets/         # Large UI compositions
-│       └── app-layout/  # Header, Layout, main workspace
+│       ├── app-layout/  # Header, Layout, main workspace
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── dashboard/   # DashboardPage — status overview at /
+│       │   ├── ui/
+│       │   └── index.ts
+│       └── session/     # SessionPage — agent chat wrapper at /session
 │           ├── ui/
 │           └── index.ts
 └── contexts/            # React Context (TransportProvider)
@@ -95,7 +103,7 @@ app → widgets → features → entities → shared
 
 | Layer       | Purpose                                      | Can Import From            |
 | ----------- | -------------------------------------------- | -------------------------- |
-| `app/`      | App.tsx, main.tsx, providers                 | All lower layers           |
+| `app/`      | App.tsx, AppShell.tsx, router.tsx, main.tsx  | All lower layers           |
 | `widgets/`  | Large compositions (layout, workspace)       | features, entities, shared |
 | `features/` | Complete user functionality (chat, commands) | entities, shared           |
 | `entities/` | Business domain objects (Session, Command)   | shared only                |

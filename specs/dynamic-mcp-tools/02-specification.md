@@ -51,11 +51,11 @@ The `AgentManager.sendMessage()` method currently passes `prompt` as a plain str
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@anthropic-ai/claude-agent-sdk` | latest | `createSdkMcpServer`, `tool`, `query`, `Options` types |
-| `zod` | ^4.3.6 | Tool input schema validation |
-| `@dorkos/shared` | * | `StreamEvent`, `PermissionMode` types (unchanged) |
+| Dependency                       | Version | Purpose                                                |
+| -------------------------------- | ------- | ------------------------------------------------------ |
+| `@anthropic-ai/claude-agent-sdk` | latest  | `createSdkMcpServer`, `tool`, `query`, `Options` types |
+| `zod`                            | ^4.3.6  | Tool input schema validation                           |
+| `@dorkos/shared`                 | \*      | `StreamEvent`, `PermissionMode` types (unchanged)      |
 
 All dependencies are already present in `apps/server/package.json`. No new packages are introduced.
 
@@ -167,14 +167,16 @@ Validates basic MCP injection plumbing with zero-input schema and synchronous ha
  */
 export async function handlePing() {
   return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify({
-        status: 'pong',
-        timestamp: new Date().toISOString(),
-        server: 'dorkos',
-      }),
-    }],
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          status: 'pong',
+          timestamp: new Date().toISOString(),
+          server: 'dorkos',
+        }),
+      },
+    ],
   };
 }
 ```
@@ -193,9 +195,7 @@ Validates Zod schema with optional fields, environment variable access, and type
  * Server info handler — returns DorkOS server metadata.
  * Validates Zod optional fields and env var access from tool handlers.
  */
-export async function handleGetServerInfo(
-  args: { include_uptime?: boolean }
-) {
+export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
   const info: Record<string, unknown> = {
     product: 'DorkOS',
     port: process.env.DORKOS_PORT ?? '4242',
@@ -205,10 +205,12 @@ export async function handleGetServerInfo(
     info.uptime_seconds = Math.floor(process.uptime());
   }
   return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify(info, null, 2),
-    }],
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(info, null, 2),
+      },
+    ],
   };
 }
 ```
@@ -232,22 +234,26 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
     try {
       const sessions = await deps.transcriptReader.listSessions(deps.defaultCwd);
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            count: sessions.length,
-            cwd: deps.defaultCwd,
-          }),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              count: sessions.length,
+              cwd: deps.defaultCwd,
+            }),
+          },
+        ],
       };
     } catch (err) {
       return {
-        content: [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            error: err instanceof Error ? err.message : 'Failed to list sessions',
-          }),
-        }],
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : 'Failed to list sessions',
+            }),
+          },
+        ],
         isError: true,
       };
     }
@@ -344,13 +350,14 @@ User types message in DorkOS UI
 
 Tools appear as `mcp__{server-name}__{tool-name}`:
 
-| Server | Tool | Full Name |
-|---|---|---|
-| `dorkos` | `ping` | `mcp__dorkos__ping` |
-| `dorkos` | `get_server_info` | `mcp__dorkos__get_server_info` |
+| Server   | Tool                | Full Name                        |
+| -------- | ------------------- | -------------------------------- |
+| `dorkos` | `ping`              | `mcp__dorkos__ping`              |
+| `dorkos` | `get_server_info`   | `mcp__dorkos__get_server_info`   |
 | `dorkos` | `get_session_count` | `mcp__dorkos__get_session_count` |
 
 These names flow through:
+
 - `canUseTool` callback — hit the `default` mode approval path or auto-allow path
 - `content_block_start` → `tool_call_start` event mapping in `mapSdkMessage()`
 - `content_block_delta` → `tool_call_delta` event mapping
@@ -461,9 +468,7 @@ describe('MCP Tool Handlers', () => {
     it('returns session count from transcript reader', async () => {
       // Purpose: Validates dependency injection pattern works correctly
       const mockReader = {
-        listSessions: vi.fn().mockResolvedValue([
-          { id: 's1' }, { id: 's2' }, { id: 's3' }
-        ]),
+        listSessions: vi.fn().mockResolvedValue([{ id: 's1' }, { id: 's2' }, { id: 's3' }]),
       };
       const handler = createGetSessionCountHandler({
         transcriptReader: mockReader as any,
@@ -540,13 +545,13 @@ describe('createDorkOsToolServer', () => {
 
 ## Performance Considerations
 
-| Consideration | Impact | Mitigation |
-|---|---|---|
-| `createSdkMcpServer()` called per-request | Would create MCP infrastructure every message | Called **once at startup**, stored as instance field |
-| `AsyncIterable` prompt overhead | Extra generator wrapper per message | Negligible — single-item generator yields immediately |
-| MCP tool search (`ENABLE_TOOL_SEARCH`) | Large tool sets consume context window | 3 tools is far below the 10% context threshold |
-| Tool handler execution time | Blocks agent turn while handler runs | `ping` is instant; `get_server_info` reads env vars; `get_session_count` does filesystem I/O (fast) |
-| MCP server in `mcpServers` record | Serialized in init message metadata | Minimal overhead — server name + tool count |
+| Consideration                             | Impact                                        | Mitigation                                                                                          |
+| ----------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `createSdkMcpServer()` called per-request | Would create MCP infrastructure every message | Called **once at startup**, stored as instance field                                                |
+| `AsyncIterable` prompt overhead           | Extra generator wrapper per message           | Negligible — single-item generator yields immediately                                               |
+| MCP tool search (`ENABLE_TOOL_SEARCH`)    | Large tool sets consume context window        | 3 tools is far below the 10% context threshold                                                      |
+| Tool handler execution time               | Blocks agent turn while handler runs          | `ping` is instant; `get_server_info` reads env vars; `get_session_count` does filesystem I/O (fast) |
+| MCP server in `mcpServers` record         | Serialized in init message metadata           | Minimal overhead — server name + tool count                                                         |
 
 ## Security Considerations
 
@@ -564,11 +569,11 @@ describe('createDorkOsToolServer', () => {
 
 ### Updates Required
 
-| Document | Change |
-|---|---|
-| `CLAUDE.md` | Add `mcp-tool-server.ts` to server services list (17th service) |
-| `contributing/architecture.md` | Add MCP tool injection section under "Server Architecture" |
-| `contributing/api-reference.md` | Note that MCP tool calls appear as standard tool events in SSE |
+| Document                        | Change                                                          |
+| ------------------------------- | --------------------------------------------------------------- |
+| `CLAUDE.md`                     | Add `mcp-tool-server.ts` to server services list (17th service) |
+| `contributing/architecture.md`  | Add MCP tool injection section under "Server Architecture"      |
+| `contributing/api-reference.md` | Note that MCP tool calls appear as standard tool events in SSE  |
 
 ### No New Documentation Files
 
@@ -601,9 +606,9 @@ All questions have been resolved during ideation. No open questions remain.
 
 ## Related ADRs
 
-| ADR | Relevance |
-|---|---|
-| [0001 — Use Hexagonal Architecture](../../decisions/0001-use-hexagonal-architecture.md) | MCP tool server is a new adapter in the hexagonal architecture. The `McpToolDeps` interface follows the ports/adapters pattern. |
+| ADR                                                                                                       | Relevance                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [0001 — Use Hexagonal Architecture](../../decisions/0001-use-hexagonal-architecture.md)                   | MCP tool server is a new adapter in the hexagonal architecture. The `McpToolDeps` interface follows the ports/adapters pattern.       |
 | [0003 — SDK JSONL as Single Source of Truth](../../decisions/0003-sdk-jsonl-as-single-source-of-truth.md) | The `get_session_count` tool reads from SDK transcripts via `TranscriptReader`, maintaining JSONL as the authoritative session store. |
 
 ## Acceptance Criteria

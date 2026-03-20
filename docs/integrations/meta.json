@@ -1,7 +1,4 @@
 {
   "title": "Integrations",
-  "pages": [
-    "building-integrations",
-    "sse-protocol"
-  ]
+  "pages": ["building-integrations", "sse-protocol"]
 }

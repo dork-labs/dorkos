@@ -134,20 +134,21 @@ Research report: `research/20260314_ghcr_docker_publishing_github_actions.md`
 **Rationale:** This is the canonical approach used by the Docker ecosystem. It integrates seamlessly with the existing release process (which already pushes tags) with zero changes to `/system:release`. The `docker/metadata-action` handles semver tagging automatically. Multi-platform support via QEMU adds build time but ensures native performance on Apple Silicon and ARM servers.
 
 **Caveats:**
-- npm publish must complete before Docker build pulls the package. Since the tag push triggers both npm publish (manual in release command) and the Docker workflow simultaneously, there's a potential race. Mitigation: the Docker workflow should wait for the npm package to be available, or the release command should push the tag *after* npm publish succeeds (which it already does — tag push is Phase 5.7, npm publish is Phase 5.8... actually, tag push happens BEFORE npm publish in the current flow).
+
+- npm publish must complete before Docker build pulls the package. Since the tag push triggers both npm publish (manual in release command) and the Docker workflow simultaneously, there's a potential race. Mitigation: the Docker workflow should wait for the npm package to be available, or the release command should push the tag _after_ npm publish succeeds (which it already does — tag push is Phase 5.7, npm publish is Phase 5.8... actually, tag push happens BEFORE npm publish in the current flow).
 - **Critical ordering issue:** The current release command pushes the git tag (Phase 5.7) BEFORE npm publish (Phase 5.8). This means the Docker workflow would trigger and try to `npm install -g dorkos@X.Y.Z` before the package is published. Solutions: (a) reorder release phases so npm publish happens before tag push, (b) add a retry/wait loop in the Docker workflow, or (c) build from tarball instead of npm. Option (a) is cleanest.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Docker image build mode | npm (install published package) | Verifies the published npm package works in Docker. Simpler than building from source. Image content matches what users get via `npm install`. |
-| 2 | Platform support | amd64 + arm64 via QEMU | Native ARM support for Apple Silicon Docker users and Graviton servers. Adds ~15-30 min to builds but releases are infrequent. Professional-grade from day one. |
-| 3 | Release integration | Automated workflow only | Tag push triggers the workflow automatically. No manual steps. The existing release command already pushes tags. Zero changes to `/system:release` operator flow (but Phase 6 report should mention Docker publishing). |
-| 4 | Supply chain security | GitHub Artifact Attestation | Zero extra tooling — uses `actions/attest-build-provenance`. Adds 3 lines to workflow. Users can verify with `gh attestation verify`. |
-| 5 | Image tagging strategy | semver + minor + sha + latest | `0.12.0`, `0.12`, `sha-abc1234`, `latest` (auto-managed, skipped for pre-releases). No `{{major}}` tag while pre-1.0. |
-| 6 | Layer caching | GHA cache (`type=gha,mode=max`) | Zero-cost, zero-setup, 10 GB limit is sufficient for Node.js images. |
-| 7 | Workflow trigger | `on: push: tags: ['v*']` + `workflow_dispatch` | Tag push is reliable, works with `GITHUB_TOKEN`, matches existing patterns. Manual dispatch for re-runs. |
+| #   | Decision                | Choice                                         | Rationale                                                                                                                                                                                                               |
+| --- | ----------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Docker image build mode | npm (install published package)                | Verifies the published npm package works in Docker. Simpler than building from source. Image content matches what users get via `npm install`.                                                                          |
+| 2   | Platform support        | amd64 + arm64 via QEMU                         | Native ARM support for Apple Silicon Docker users and Graviton servers. Adds ~15-30 min to builds but releases are infrequent. Professional-grade from day one.                                                         |
+| 3   | Release integration     | Automated workflow only                        | Tag push triggers the workflow automatically. No manual steps. The existing release command already pushes tags. Zero changes to `/system:release` operator flow (but Phase 6 report should mention Docker publishing). |
+| 4   | Supply chain security   | GitHub Artifact Attestation                    | Zero extra tooling — uses `actions/attest-build-provenance`. Adds 3 lines to workflow. Users can verify with `gh attestation verify`.                                                                                   |
+| 5   | Image tagging strategy  | semver + minor + sha + latest                  | `0.12.0`, `0.12`, `sha-abc1234`, `latest` (auto-managed, skipped for pre-releases). No `{{major}}` tag while pre-1.0.                                                                                                   |
+| 6   | Layer caching           | GHA cache (`type=gha,mode=max`)                | Zero-cost, zero-setup, 10 GB limit is sufficient for Node.js images.                                                                                                                                                    |
+| 7   | Workflow trigger        | `on: push: tags: ['v*']` + `workflow_dispatch` | Tag push is reliable, works with `GITHUB_TOKEN`, matches existing patterns. Manual dispatch for re-runs.                                                                                                                |
 
 ### Open Issue: Release Phase Ordering
 

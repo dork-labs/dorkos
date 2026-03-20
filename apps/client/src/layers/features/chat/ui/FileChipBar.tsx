@@ -53,13 +53,9 @@ export function FileChipBar({ files, onRemove }: FileChipBarProps) {
               {file.status === 'uploading' ? (
                 <Loader2 className="text-muted-foreground size-3 animate-spin" />
               ) : file.status === 'error' ? (
-                <AlertCircle className="size-3 text-destructive" />
+                <AlertCircle className="text-destructive size-3" />
               ) : thumbUrl ? (
-                <img
-                  src={thumbUrl}
-                  alt=""
-                  className="size-5 shrink-0 rounded object-cover"
-                />
+                <img src={thumbUrl} alt="" className="size-5 shrink-0 rounded object-cover" />
               ) : (
                 <FileIcon className="text-muted-foreground size-3" />
               )}

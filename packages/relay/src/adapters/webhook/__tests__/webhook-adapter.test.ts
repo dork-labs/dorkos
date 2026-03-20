@@ -16,7 +16,7 @@ const OUTBOUND_URL = 'https://example.com/webhook-receiver';
 function signBody(
   body: string,
   secret: string,
-  timestampSecs?: number,
+  timestampSecs?: number
 ): { signature: string; timestamp: string; nonce: string } {
   const ts = String(timestampSecs ?? Math.floor(Date.now() / 1000));
   const nonce = crypto.randomUUID();
@@ -29,7 +29,7 @@ function signBody(
 function buildHeaders(
   body: string,
   secret: string,
-  timestampSecs?: number,
+  timestampSecs?: number
 ): Record<string, string> {
   const signed = signBody(body, secret, timestampSecs);
   return {
@@ -158,7 +158,7 @@ describe('WebhookAdapter', () => {
           data: JSON.parse(body),
           metadata: expect.objectContaining({ platform: 'webhook', adapterId: 'test-webhook' }),
         }),
-        { from: 'relay.webhook.test-webhook' },
+        { from: 'relay.webhook.test-webhook' }
       );
     });
 
@@ -256,7 +256,10 @@ describe('WebhookAdapter', () => {
     it('returns error when adapter has not been started', async () => {
       const unstartedAdapter = makeAdapter();
       const body = '{"x":1}';
-      const result = await unstartedAdapter.handleInbound(Buffer.from(body), buildHeaders(body, SECRET));
+      const result = await unstartedAdapter.handleInbound(
+        Buffer.from(body),
+        buildHeaders(body, SECRET)
+      );
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Adapter not started');
@@ -334,7 +337,13 @@ describe('WebhookAdapter', () => {
         id: 'env-01',
         subject: 'relay.webhook.test',
         from: 'relay.agent.backend',
-        budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 3600000, callBudgetRemaining: 10 },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 3600000,
+          callBudgetRemaining: 10,
+        },
         createdAt: new Date().toISOString(),
         payload: { message: 'hello from relay' },
       };
@@ -342,7 +351,10 @@ describe('WebhookAdapter', () => {
       await adapter.deliver('relay.webhook.test', envelope);
 
       expect(fetchMock).toHaveBeenCalledOnce();
-      const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+      const [url, options] = fetchMock.mock.calls[0] as [
+        string,
+        RequestInit & { headers: Record<string, string> },
+      ];
       expect(url).toBe(OUTBOUND_URL);
       expect(options.method).toBe('POST');
       expect(options.headers['Content-Type']).toBe('application/json');
@@ -362,14 +374,23 @@ describe('WebhookAdapter', () => {
         id: 'env-02',
         subject: 'relay.webhook.test',
         from: 'relay.agent.sender',
-        budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 3600000, callBudgetRemaining: 10 },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 3600000,
+          callBudgetRemaining: 10,
+        },
         createdAt: new Date().toISOString(),
         payload,
       };
 
       await adapter.deliver('relay.webhook.test', envelope);
 
-      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+      const [, options] = fetchMock.mock.calls[0] as [
+        string,
+        RequestInit & { headers: Record<string, string> },
+      ];
       const { 'X-Signature': sig, 'X-Timestamp': ts } = options.headers;
       const body = JSON.stringify(payload);
       const message = `${ts}.${body}`;
@@ -383,7 +404,11 @@ describe('WebhookAdapter', () => {
     it('sends custom outbound headers from config', async () => {
       const customAdapter = new WebhookAdapter('custom', {
         inbound: { subject: 'relay.webhook.custom', secret: SECRET },
-        outbound: { url: OUTBOUND_URL, secret: SECRET, headers: { Authorization: 'Bearer token-abc' } },
+        outbound: {
+          url: OUTBOUND_URL,
+          secret: SECRET,
+          headers: { Authorization: 'Bearer token-abc' },
+        },
       });
       await customAdapter.start(createMockRelay());
 
@@ -394,12 +419,21 @@ describe('WebhookAdapter', () => {
         id: 'e1',
         subject: 'relay.webhook.custom',
         from: 'a',
-        budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 3600000, callBudgetRemaining: 10 },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 3600000,
+          callBudgetRemaining: 10,
+        },
         createdAt: new Date().toISOString(),
         payload: {},
       });
 
-      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+      const [, options] = fetchMock.mock.calls[0] as [
+        string,
+        RequestInit & { headers: Record<string, string> },
+      ];
       expect(options.headers['Authorization']).toBe('Bearer token-abc');
 
       await customAdapter.stop();
@@ -411,9 +445,18 @@ describe('WebhookAdapter', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const envelope = {
-        id: 'e1', subject: 'relay.webhook.test', from: 'a',
-        budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 3600000, callBudgetRemaining: 10 },
-        createdAt: new Date().toISOString(), payload: {},
+        id: 'e1',
+        subject: 'relay.webhook.test',
+        from: 'a',
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 3600000,
+          callBudgetRemaining: 10,
+        },
+        createdAt: new Date().toISOString(),
+        payload: {},
       };
 
       await adapter.deliver('relay.webhook.test', envelope);
@@ -427,9 +470,18 @@ describe('WebhookAdapter', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const envelope = {
-        id: 'e1', subject: 'relay.webhook.test', from: 'a',
-        budget: { hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() + 3600000, callBudgetRemaining: 10 },
-        createdAt: new Date().toISOString(), payload: {},
+        id: 'e1',
+        subject: 'relay.webhook.test',
+        from: 'a',
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 3600000,
+          callBudgetRemaining: 10,
+        },
+        createdAt: new Date().toISOString(),
+        payload: {},
       };
 
       const result = await adapter.deliver('relay.webhook.test', envelope);
@@ -472,10 +524,14 @@ describe('WebhookAdapter', () => {
     });
 
     it('uses provided displayName when given', () => {
-      const named = new WebhookAdapter('gh', {
-        inbound: { subject: 'relay.webhook.github', secret: SECRET },
-        outbound: { url: OUTBOUND_URL, secret: SECRET },
-      }, 'GitHub Webhook');
+      const named = new WebhookAdapter(
+        'gh',
+        {
+          inbound: { subject: 'relay.webhook.github', secret: SECRET },
+          outbound: { url: OUTBOUND_URL, secret: SECRET },
+        },
+        'GitHub Webhook'
+      );
       expect(named.displayName).toBe('GitHub Webhook');
     });
   });

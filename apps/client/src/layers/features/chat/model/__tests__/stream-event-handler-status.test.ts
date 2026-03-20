@@ -24,7 +24,9 @@ function createMinimalDeps() {
   const orphanHooksRef = { current: new Map() };
   const thinkingStartRef = { current: null };
   const onTaskEventRef = { current: undefined as ((event: TaskUpdateEvent) => void) | undefined };
-  const onSessionIdChangeRef = { current: undefined as ((newSessionId: string) => void) | undefined };
+  const onSessionIdChangeRef = {
+    current: undefined as ((newSessionId: string) => void) | undefined,
+  };
   const onStreamingDoneRef = { current: undefined as (() => void) | undefined };
 
   const handler = createStreamEventHandler({

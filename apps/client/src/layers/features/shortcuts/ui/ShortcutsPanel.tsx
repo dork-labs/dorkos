@@ -24,15 +24,12 @@ export function ShortcutsPanel() {
         <ResponsiveDialogBody className="space-y-6">
           {groups.map(({ group, label, shortcuts }) => (
             <div key={group}>
-              <h3 className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">
+              <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
                 {label}
               </h3>
               <div className="space-y-1">
                 {shortcuts.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between py-1.5 text-sm"
-                  >
+                  <div key={s.id} className="flex items-center justify-between py-1.5 text-sm">
                     <span>{s.label}</span>
                     <Kbd className="inline-flex">{formatShortcutKey(s)}</Kbd>
                   </div>

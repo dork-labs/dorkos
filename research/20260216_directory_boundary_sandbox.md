@@ -1,5 +1,5 @@
 ---
-title: "Configurable Directory Boundary/Sandbox Implementation"
+title: 'Configurable Directory Boundary/Sandbox Implementation'
 date: 2026-02-16
 type: implementation
 status: archived
@@ -55,26 +55,26 @@ The canonical secure path resolution function uses seven layers of defense:
 ```javascript
 export async function safeResolve(root, userInput) {
   // 1. Fully decode (handle double/triple encoding)
-  const decoded = fullyDecode(userInput)
+  const decoded = fullyDecode(userInput);
 
   // 2. Reject null bytes
-  if (decoded.includes('\0')) throw new Error('Null bytes not allowed')
+  if (decoded.includes('\0')) throw new Error('Null bytes not allowed');
 
   // 3. Reject absolute paths
-  if (path.isAbsolute(decoded)) throw new Error('Absolute paths not allowed')
+  if (path.isAbsolute(decoded)) throw new Error('Absolute paths not allowed');
 
   // 4. Resolve to canonical path
-  const safePath = path.resolve(root, decoded)
+  const safePath = path.resolve(root, decoded);
 
   // 5. Follow symlinks
-  const realPath = await fs.realpath(safePath)
+  const realPath = await fs.realpath(safePath);
 
   // 6. Verify boundary (CRITICAL: use path.sep suffix)
   if (!realPath.startsWith(root + path.sep)) {
-    throw new Error('Path traversal detected')
+    throw new Error('Path traversal detected');
   }
 
-  return realPath
+  return realPath;
 }
 ```
 
@@ -95,8 +95,8 @@ export async function safeResolve(root, userInput) {
 Minimize Time-of-Check-Time-of-Use race conditions by opening file handles immediately after validation:
 
 ```javascript
-const validatedPath = await safeResolve(root, userInput)
-const fileHandle = await fs.promises.open(validatedPath, 'r')
+const validatedPath = await safeResolve(root, userInput);
+const fileHandle = await fs.promises.open(validatedPath, 'r');
 // Use fileHandle for all operations, not the path string
 ```
 
@@ -125,63 +125,64 @@ const fileHandle = await fs.promises.open(validatedPath, 'r')
 
 **Single Root vs Whitelist**
 
-| Approach | Pros | Cons | Use Case |
-|----------|------|------|----------|
-| **Single Root Path** | Simple to configure, clear mental model, easy validation | Less flexible for multi-directory access | Most file browsers, dev servers |
-| **Path Whitelist** | Flexible, supports non-contiguous directories | Complex validation, harder to reason about, security risks if misconfigured | Multi-tenant systems, advanced use cases |
+| Approach             | Pros                                                     | Cons                                                                        | Use Case                                 |
+| -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------- |
+| **Single Root Path** | Simple to configure, clear mental model, easy validation | Less flexible for multi-directory access                                    | Most file browsers, dev servers          |
+| **Path Whitelist**   | Flexible, supports non-contiguous directories            | Complex validation, harder to reason about, security risks if misconfigured | Multi-tenant systems, advanced use cases |
 
 **Recommendation for DorkOS**: Use a **single root path** with default `os.homedir()`. This matches FileBrowser's approach and aligns with the current implementation.
 
 **Config Schema Design** (Zod)
 
 ```typescript
-import { z } from 'zod'
-import os from 'os'
-import path from 'path'
+import { z } from 'zod';
+import os from 'os';
+import path from 'path';
 
 const UserConfigSchema = z.object({
   // ... existing fields
   fileSystem: z.object({
-    boundaryRoot: z.string()
+    boundaryRoot: z
+      .string()
       .default(os.homedir())
-      .describe('Root directory for all file operations. Paths outside this directory are forbidden.'),
-    defaultWorkingDirectory: z.string()
+      .describe(
+        'Root directory for all file operations. Paths outside this directory are forbidden.'
+      ),
+    defaultWorkingDirectory: z
+      .string()
       .optional()
-      .describe('Default working directory for new sessions. Must be within boundaryRoot.')
-  })
-})
+      .describe('Default working directory for new sessions. Must be within boundaryRoot.'),
+  }),
+});
 ```
 
 **Startup Validation Pattern** ([Node.js Working with Folders](https://nodejs.org/en/learn/manipulating-files/working-with-folders-in-nodejs))
 
 ```javascript
 async function validateConfig(config) {
-  const { boundaryRoot, defaultWorkingDirectory } = config.fileSystem
+  const { boundaryRoot, defaultWorkingDirectory } = config.fileSystem;
 
   // 1. Resolve boundary root and verify it exists
   try {
-    const resolvedRoot = await fs.realpath(boundaryRoot)
-    config.fileSystem.boundaryRoot = resolvedRoot // Store resolved version
+    const resolvedRoot = await fs.realpath(boundaryRoot);
+    config.fileSystem.boundaryRoot = resolvedRoot; // Store resolved version
   } catch (err) {
-    throw new Error(`Boundary root does not exist: ${boundaryRoot}`)
+    throw new Error(`Boundary root does not exist: ${boundaryRoot}`);
   }
 
   // 2. Verify it's a directory
-  const stats = await fs.stat(config.fileSystem.boundaryRoot)
+  const stats = await fs.stat(config.fileSystem.boundaryRoot);
   if (!stats.isDirectory()) {
-    throw new Error(`Boundary root is not a directory: ${boundaryRoot}`)
+    throw new Error(`Boundary root is not a directory: ${boundaryRoot}`);
   }
 
   // 3. Validate defaultWorkingDirectory is within boundary
   if (defaultWorkingDirectory) {
-    const validatedCwd = await safeResolve(
-      config.fileSystem.boundaryRoot,
-      defaultWorkingDirectory
-    )
-    config.fileSystem.defaultWorkingDirectory = validatedCwd
+    const validatedCwd = await safeResolve(config.fileSystem.boundaryRoot, defaultWorkingDirectory);
+    config.fileSystem.defaultWorkingDirectory = validatedCwd;
   }
 
-  return config
+  return config;
 }
 ```
 
@@ -189,13 +190,13 @@ async function validateConfig(config) {
 
 **Key Trade-offs** ([ExpressJS Antipattern](https://www.coreycleary.me/expressjs-antipattern-making-everything-middleware))
 
-| Aspect | Middleware | Utility Function |
-|--------|------------|------------------|
-| **Reusability** | Coupled to Express (req, res, next) | Agnostic, reusable anywhere |
-| **Testing** | Requires Express test setup | Pure function, easy to unit test |
-| **Code Organization** | Encourages framework coupling | Promotes business logic separation |
-| **Route Application** | Auto-applies via app.use() | Must call explicitly in handlers |
-| **Error Handling** | Uses next(err) convention | Throws errors, more flexible |
+| Aspect                | Middleware                          | Utility Function                   |
+| --------------------- | ----------------------------------- | ---------------------------------- |
+| **Reusability**       | Coupled to Express (req, res, next) | Agnostic, reusable anywhere        |
+| **Testing**           | Requires Express test setup         | Pure function, easy to unit test   |
+| **Code Organization** | Encourages framework coupling       | Promotes business logic separation |
+| **Route Application** | Auto-applies via app.use()          | Must call explicitly in handlers   |
+| **Error Handling**    | Uses next(err) convention           | Throws errors, more flexible       |
 
 **Recommendation for DorkOS**: Use a **utility function** pattern because:
 
@@ -331,9 +332,9 @@ export class ConfigValidator {
 
 ```typescript
 export interface PathValidationOptions {
-  allowAbsolute?: boolean // Default: false
-  followSymlinks?: boolean // Default: true
-  maxDecodingIterations?: number // Default: 10
+  allowAbsolute?: boolean; // Default: false
+  followSymlinks?: boolean; // Default: true
+  maxDecodingIterations?: number; // Default: 10
 }
 
 export class PathValidator {
@@ -347,41 +348,35 @@ export class PathValidator {
    * @returns Resolved, validated absolute path
    * @throws PathValidationError if path is invalid or outside boundary
    */
-  async validate(
-    userPath: string,
-    options: PathValidationOptions = {}
-  ): Promise<string> {
+  async validate(userPath: string, options: PathValidationOptions = {}): Promise<string> {
     // 1. Decode (handle URL encoding)
-    const decoded = this.fullyDecode(userPath, options.maxDecodingIterations)
+    const decoded = this.fullyDecode(userPath, options.maxDecodingIterations);
 
     // 2. Reject null bytes
     if (decoded.includes('\0')) {
-      throw new PathValidationError('Null bytes not allowed', 'NULL_BYTE')
+      throw new PathValidationError('Null bytes not allowed', 'NULL_BYTE');
     }
 
     // 3. Reject absolute paths (unless explicitly allowed)
     if (!options.allowAbsolute && path.isAbsolute(decoded)) {
-      throw new PathValidationError('Absolute paths not allowed', 'ABSOLUTE_PATH')
+      throw new PathValidationError('Absolute paths not allowed', 'ABSOLUTE_PATH');
     }
 
     // 4. Resolve to canonical path
-    const resolved = path.resolve(this.boundaryRoot, decoded)
+    const resolved = path.resolve(this.boundaryRoot, decoded);
 
     // 5. Follow symlinks (if enabled)
-    const realPath = options.followSymlinks
-      ? await fs.realpath(resolved)
-      : resolved
+    const realPath = options.followSymlinks ? await fs.realpath(resolved) : resolved;
 
     // 6. Verify boundary
     if (!realPath.startsWith(this.boundaryRoot + path.sep)) {
-      throw new PathValidationError(
-        'Path outside boundary',
-        'OUTSIDE_BOUNDARY',
-        { path: userPath, boundary: this.boundaryRoot }
-      )
+      throw new PathValidationError('Path outside boundary', 'OUTSIDE_BOUNDARY', {
+        path: userPath,
+        boundary: this.boundaryRoot,
+      });
     }
 
-    return realPath
+    return realPath;
   }
 
   /**
@@ -390,29 +385,29 @@ export class PathValidator {
    */
   async isWithinBoundary(userPath: string): Promise<boolean> {
     try {
-      await this.validate(userPath)
-      return true
+      await this.validate(userPath);
+      return true;
     } catch {
-      return false
+      return false;
     }
   }
 
   private fullyDecode(input: string, maxIterations: number = 10): string {
-    let decoded = input
-    let iterations = 0
+    let decoded = input;
+    let iterations = 0;
 
     while (iterations < maxIterations) {
       try {
-        const next = decodeURIComponent(decoded)
-        if (next === decoded) break // No more decoding needed
-        decoded = next
-        iterations++
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break; // No more decoding needed
+        decoded = next;
+        iterations++;
       } catch {
-        break // Invalid encoding, stop
+        break; // Invalid encoding, stop
       }
     }
 
-    return decoded
+    return decoded;
   }
 }
 ```
@@ -422,28 +417,28 @@ export class PathValidator {
 ```typescript
 // apps/server/src/routes/sessions.ts
 app.post('/api/sessions', async (req, res) => {
-  const { cwd } = req.body
+  const { cwd } = req.body;
 
   try {
-    const config = configManager.get()
-    const validator = new PathValidator(config.fileSystem.boundaryRoot)
-    const validatedCwd = await validator.validate(cwd)
+    const config = configManager.get();
+    const validator = new PathValidator(config.fileSystem.boundaryRoot);
+    const validatedCwd = await validator.validate(cwd);
 
     // Use validatedCwd for session creation
     const sessionId = await agentManager.createSession({
       cwd: validatedCwd,
       // ...
-    })
+    });
 
-    res.json({ sessionId })
+    res.json({ sessionId });
   } catch (err) {
     if (err instanceof PathValidationError) {
-      res.status(400).json({ error: err.message, code: err.code })
+      res.status(400).json({ error: err.message, code: err.code });
     } else {
-      next(err)
+      next(err);
     }
   }
-})
+});
 ```
 
 ### Directory Browser Refactor
@@ -455,14 +450,14 @@ app.post('/api/sessions', async (req, res) => {
 const HOME_DIR = os.homedir();
 
 router.get('/', async (req, res) => {
-  const requestedPath = req.query.path as string || HOME_DIR;
+  const requestedPath = (req.query.path as string) || HOME_DIR;
 
   try {
     const realPath = await fs.realpath(requestedPath);
 
     if (!realPath.startsWith(HOME_DIR)) {
       return res.status(403).json({
-        error: 'Access denied. Path outside home directory'
+        error: 'Access denied. Path outside home directory',
       });
     }
 
@@ -487,9 +482,8 @@ router.get('/', async (req, res) => {
     const validator = new PathValidator(config.fileSystem.boundaryRoot);
 
     // Use default if no path provided
-    const pathToValidate = requestedPath ||
-      config.fileSystem.defaultWorkingDirectory ||
-      config.fileSystem.boundaryRoot;
+    const pathToValidate =
+      requestedPath || config.fileSystem.defaultWorkingDirectory || config.fileSystem.boundaryRoot;
 
     const validatedPath = await validator.validate(pathToValidate);
     const entries = await fileLister.listDirectory(validatedPath);
@@ -500,7 +494,7 @@ router.get('/', async (req, res) => {
       res.status(403).json({
         error: 'Access denied',
         code: err.code,
-        details: err.message
+        details: err.message,
       });
     } else {
       next(err);
@@ -576,62 +570,64 @@ If additional routes are added that need validation:
 describe('PathValidator', () => {
   describe('validate()', () => {
     it('allows paths within boundary', async () => {
-      const validator = new PathValidator('/home/user')
-      const result = await validator.validate('documents/file.txt')
-      expect(result).toBe('/home/user/documents/file.txt')
-    })
+      const validator = new PathValidator('/home/user');
+      const result = await validator.validate('documents/file.txt');
+      expect(result).toBe('/home/user/documents/file.txt');
+    });
 
     it('rejects path traversal with ../', async () => {
-      const validator = new PathValidator('/home/user')
-      await expect(validator.validate('../etc/passwd'))
-        .rejects.toThrow(PathValidationError)
-    })
+      const validator = new PathValidator('/home/user');
+      await expect(validator.validate('../etc/passwd')).rejects.toThrow(PathValidationError);
+    });
 
     it('rejects URL-encoded traversal', async () => {
-      const validator = new PathValidator('/home/user')
-      await expect(validator.validate('..%2F..%2Fetc%2Fpasswd'))
-        .rejects.toThrow(PathValidationError)
-    })
+      const validator = new PathValidator('/home/user');
+      await expect(validator.validate('..%2F..%2Fetc%2Fpasswd')).rejects.toThrow(
+        PathValidationError
+      );
+    });
 
     it('rejects double-encoded traversal', async () => {
-      const validator = new PathValidator('/home/user')
-      await expect(validator.validate('..%252F..%252Fetc%252Fpasswd'))
-        .rejects.toThrow(PathValidationError)
-    })
+      const validator = new PathValidator('/home/user');
+      await expect(validator.validate('..%252F..%252Fetc%252Fpasswd')).rejects.toThrow(
+        PathValidationError
+      );
+    });
 
     it('rejects null bytes', async () => {
-      const validator = new PathValidator('/home/user')
-      await expect(validator.validate('file.txt\0../../etc/passwd'))
-        .rejects.toThrow(PathValidationError)
-    })
+      const validator = new PathValidator('/home/user');
+      await expect(validator.validate('file.txt\0../../etc/passwd')).rejects.toThrow(
+        PathValidationError
+      );
+    });
 
     it('rejects absolute paths by default', async () => {
-      const validator = new PathValidator('/home/user')
-      await expect(validator.validate('/etc/passwd'))
-        .rejects.toThrow(PathValidationError)
-    })
+      const validator = new PathValidator('/home/user');
+      await expect(validator.validate('/etc/passwd')).rejects.toThrow(PathValidationError);
+    });
 
     it('allows absolute paths when configured', async () => {
-      const validator = new PathValidator('/home/user')
+      const validator = new PathValidator('/home/user');
       const result = await validator.validate('/home/user/docs', {
-        allowAbsolute: true
-      })
-      expect(result).toBe('/home/user/docs')
-    })
+        allowAbsolute: true,
+      });
+      expect(result).toBe('/home/user/docs');
+    });
 
     it('follows symlinks by default', async () => {
       // Mock fs.realpath to return different path
       // Verify boundary check uses resolved path
-    })
+    });
 
     it('prevents boundary bypass via path.sep trick', async () => {
       // Test '/uploads' boundary vs '/uploads-backup/secret.txt'
-      const validator = new PathValidator('/home/user/uploads')
-      await expect(validator.validate('../uploads-backup/secret.txt'))
-        .rejects.toThrow(PathValidationError)
-    })
-  })
-})
+      const validator = new PathValidator('/home/user/uploads');
+      await expect(validator.validate('../uploads-backup/secret.txt')).rejects.toThrow(
+        PathValidationError
+      );
+    });
+  });
+});
 ```
 
 **Integration Tests** (route tests):
@@ -639,22 +635,18 @@ describe('PathValidator', () => {
 ```typescript
 describe('POST /api/sessions', () => {
   it('creates session with valid cwd', async () => {
-    const response = await request(app)
-      .post('/api/sessions')
-      .send({ cwd: 'projects/myapp' })
+    const response = await request(app).post('/api/sessions').send({ cwd: 'projects/myapp' });
 
-    expect(response.status).toBe(200)
-  })
+    expect(response.status).toBe(200);
+  });
 
   it('rejects session with cwd outside boundary', async () => {
-    const response = await request(app)
-      .post('/api/sessions')
-      .send({ cwd: '../../../etc' })
+    const response = await request(app).post('/api/sessions').send({ cwd: '../../../etc' });
 
-    expect(response.status).toBe(400)
-    expect(response.body.code).toBe('OUTSIDE_BOUNDARY')
-  })
-})
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('OUTSIDE_BOUNDARY');
+  });
+});
 ```
 
 ### Configuration UI Considerations

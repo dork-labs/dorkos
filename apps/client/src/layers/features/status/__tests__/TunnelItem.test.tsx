@@ -24,7 +24,7 @@ vi.mock('@radix-ui/react-dialog', async () => {
   };
 });
 
-// Mock useSessionId (uses nuqs which requires adapter)
+// Mock useSessionId (uses TanStack Router search params)
 vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => [null, vi.fn()],
 }));
@@ -93,7 +93,13 @@ function makeTunnel(overrides?: Partial<ServerConfig['tunnel']>): ServerConfig['
 describe('TunnelItem', () => {
   it('renders hostname when connected', () => {
     render(
-      <TunnelItem tunnel={makeTunnel({ enabled: true, connected: true, url: 'https://abc123.ngrok-free.app' })} />,
+      <TunnelItem
+        tunnel={makeTunnel({
+          enabled: true,
+          connected: true,
+          url: 'https://abc123.ngrok-free.app',
+        })}
+      />,
       { wrapper: createWrapper() }
     );
     expect(screen.getByText('abc123.ngrok-free.app')).toBeDefined();
@@ -111,7 +117,13 @@ describe('TunnelItem', () => {
 
   it('has correct aria-label when connected', () => {
     render(
-      <TunnelItem tunnel={makeTunnel({ enabled: true, connected: true, url: 'https://abc123.ngrok-free.app' })} />,
+      <TunnelItem
+        tunnel={makeTunnel({
+          enabled: true,
+          connected: true,
+          url: 'https://abc123.ngrok-free.app',
+        })}
+      />,
       { wrapper: createWrapper() }
     );
     expect(screen.getByLabelText('Remote connected: abc123.ngrok-free.app')).toBeDefined();

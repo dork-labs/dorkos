@@ -46,6 +46,7 @@ _(None)_
 ### Session 1
 
 Executed in 2 batches:
+
 - Batch 1 (4 tasks): Tasks #1, #2, #3 via parallel agents + Task #4 in main context (avoided file conflict with #3 on release.md)
 - Batch 2 (2 tasks): Tasks #5, #6 via parallel agents (depended on Task #1)
 

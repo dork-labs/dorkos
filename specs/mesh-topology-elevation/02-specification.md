@@ -65,13 +65,13 @@ Industry topology visualizations (Grafana Node Graph, Datadog Service Map, Kiali
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
+| Dependency      | Version              | Purpose                                                                      |
+| --------------- | -------------------- | ---------------------------------------------------------------------------- |
 | `@xyflow/react` | `^12.10.1` (current) | React Flow — custom nodes, edges, Background, MiniMap, NodeToolbar, Controls |
-| `elkjs` | `^0.9.x` (NEW) | Async layered layout with compound/group node support |
-| `dagre` | `^0.8.5` (REMOVE) | Current layout engine — replaced by ELK.js |
-| `motion` | `^12.33.0` (current) | AgentHealthDetail slide animation |
-| `lucide-react` | current | Icons for indicators and toolbar actions |
+| `elkjs`         | `^0.9.x` (NEW)       | Async layered layout with compound/group node support                        |
+| `dagre`         | `^0.8.5` (REMOVE)    | Current layout engine — replaced by ELK.js                                   |
+| `motion`        | `^12.33.0` (current) | AgentHealthDetail slide animation                                            |
+| `lucide-react`  | current              | Icons for indicators and toolbar actions                                     |
 
 **Hard dependency:** Spec #66 (Agents as First-Class Entity) must be implemented before or alongside this work. The Agent Settings Dialog, color/emoji identity overrides, and persona display are required for the NodeToolbar [Settings] action and expanded node detail.
 
@@ -115,7 +115,7 @@ import { Background, MiniMap, Controls } from '@xyflow/react';
   />
   <Controls showInteractive={false} />
   <TopologyLegend namespaces={legendEntries} />
-</ReactFlow>
+</ReactFlow>;
 ```
 
 **CSS variable scoping** — Add a wrapper class for design system theming:
@@ -242,7 +242,7 @@ function NamespaceGroupNodeComponent({ data }: NodeProps) {
   const d = data as unknown as NamespaceGroupData;
   return (
     <div
-      className="rounded-xl border-2 bg-card/50"
+      className="bg-card/50 rounded-xl border-2"
       style={{
         borderColor: `${d.color}40`,
         backgroundColor: `${d.color}08`,
@@ -258,7 +258,7 @@ function NamespaceGroupNodeComponent({ data }: NodeProps) {
         <span className="text-xs font-semibold" style={{ color: d.color }}>
           {d.namespace}
         </span>
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-muted-foreground text-[10px]">
           {d.activeCount}/{d.agentCount} agents
         </span>
         {d.activeCount > 0 && (
@@ -344,21 +344,21 @@ Add a floating toolbar that appears when an agent node is selected:
 import { NodeToolbar, Position } from '@xyflow/react';
 
 <NodeToolbar position={Position.Top} isVisible={selected}>
-  <div className="flex items-center gap-1 rounded-lg border bg-card px-1.5 py-1 shadow-md">
+  <div className="bg-card flex items-center gap-1 rounded-lg border px-1.5 py-1 shadow-md">
     <ToolbarButton icon={Settings} label="Settings" onClick={onOpenSettings} />
     <ToolbarButton icon={Heart} label="Health" onClick={onViewHealth} />
     <ToolbarButton icon={Copy} label="Copy ID" onClick={onCopyId} />
   </div>
-</NodeToolbar>
+</NodeToolbar>;
 ```
 
 **Actions:**
 
-| Button | Icon | Action |
-|--------|------|--------|
+| Button   | Icon                | Action                                                |
+| -------- | ------------------- | ----------------------------------------------------- |
 | Settings | `Settings` (lucide) | Opens Agent Settings Dialog (spec #66) for this agent |
-| Health | `Heart` (lucide) | Opens/focuses AgentHealthDetail side panel |
-| Copy ID | `Copy` (lucide) | Copies agent ULID to clipboard, shows toast |
+| Health   | `Heart` (lucide)    | Opens/focuses AgentHealthDetail side panel            |
+| Copy ID  | `Copy` (lucide)     | Copies agent ULID to clipboard, shows toast           |
 
 The toolbar uses `bg-card border shadow-md rounded-lg` styling. Each action is a small icon button (24×24px) with a Tooltip on hover.
 
@@ -383,22 +383,26 @@ When [Settings] is clicked in NodeToolbar:
 **Flow particles:** Add animated SVG circle traveling along the edge path:
 
 ```tsx
-<BaseEdge id={id} path={edgePath} style={{ stroke: 'var(--color-primary)', strokeWidth: 2 }} />
+<BaseEdge id={id} path={edgePath} style={{ stroke: 'var(--color-primary)', strokeWidth: 2 }} />;
 
-{/* Flow particle — skipped when prefers-reduced-motion */}
-{!prefersReducedMotion && (
-  <circle r="3" fill="var(--color-primary)" opacity="0.7">
-    <animateMotion dur="3s" repeatCount="indefinite" path={edgePath} />
-  </circle>
-)}
+{
+  /* Flow particle — skipped when prefers-reduced-motion */
+}
+{
+  !prefersReducedMotion && (
+    <circle r="3" fill="var(--color-primary)" opacity="0.7">
+      <animateMotion dur="3s" repeatCount="indefinite" path={edgePath} />
+    </circle>
+  );
+}
 ```
 
 **Conditional labels:** Edge label only shows when `selected` or hovered:
 
 ```tsx
-{(selected || isHovered) && label && (
-  <EdgeLabelRenderer>...</EdgeLabelRenderer>
-)}
+{
+  (selected || isHovered) && label && <EdgeLabelRenderer>...</EdgeLabelRenderer>;
+}
 ```
 
 **Reduced motion detection:**
@@ -478,7 +482,7 @@ import { motion, AnimatePresence } from 'motion/react';
       <AgentHealthDetail agentId={selectedAgentId} />
     </motion.div>
   )}
-</AnimatePresence>
+</AnimatePresence>;
 ```
 
 Add an "Open Settings" button at the bottom of `AgentHealthDetail` that opens the Agent Settings Dialog (spec #66 dependency).
@@ -493,17 +497,20 @@ import { useReactFlow } from '@xyflow/react';
 // Inside an inner component wrapped in ReactFlowProvider:
 const { setCenter, getZoom } = useReactFlow();
 
-const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-  if (node.type !== 'agent') return;
-  onSelectAgent?.(node.id);
+const handleNodeClick = useCallback(
+  (_: React.MouseEvent, node: Node) => {
+    if (node.type !== 'agent') return;
+    onSelectAgent?.(node.id);
 
-  const targetZoom = Math.max(getZoom(), 1.0);
-  setCenter(
-    node.position.x + 100, // offset to center of 200px node
-    node.position.y + 36,  // offset to center of 72px node
-    { zoom: targetZoom, duration: 350 }
-  );
-}, [onSelectAgent, setCenter, getZoom]);
+    const targetZoom = Math.max(getZoom(), 1.0);
+    setCenter(
+      node.position.x + 100, // offset to center of 200px node
+      node.position.y + 36, // offset to center of 72px node
+      { zoom: targetZoom, duration: 350 }
+    );
+  },
+  [onSelectAgent, setCenter, getZoom]
+);
 ```
 
 **ReactFlowProvider requirement** — `useReactFlow()` requires the component to be inside a `<ReactFlowProvider>`. Either wrap `TopologyGraph` in MeshPanel, or create an inner `TopologyGraphInner` component.
@@ -543,29 +550,29 @@ export const NamespaceInfoSchema = z.object({
 
 For each agent in the topology response, enrich with:
 
-| Field | Source | Join Logic |
-|-------|--------|------------|
-| `relayAdapters` | RelayCore adapter list | Filter adapters by agent's CWD or relay subject |
-| `relaySubject` | Agent config or Relay endpoint registry | Lookup by agent ID |
-| `pulseScheduleCount` | PulseStore | Count schedules where `cwd` matches agent's registered CWD |
-| `lastSeenAt` | AgentHealth (SQL query-time computed) | Already available from health endpoint |
-| `lastSeenEvent` | AgentHealth | Already available from health endpoint |
-| `healthStatus` | AgentHealth | Already computed at query time per ADR-0036 |
+| Field                | Source                                  | Join Logic                                                 |
+| -------------------- | --------------------------------------- | ---------------------------------------------------------- |
+| `relayAdapters`      | RelayCore adapter list                  | Filter adapters by agent's CWD or relay subject            |
+| `relaySubject`       | Agent config or Relay endpoint registry | Lookup by agent ID                                         |
+| `pulseScheduleCount` | PulseStore                              | Count schedules where `cwd` matches agent's registered CWD |
+| `lastSeenAt`         | AgentHealth (SQL query-time computed)   | Already available from health endpoint                     |
+| `lastSeenEvent`      | AgentHealth                             | Already available from health endpoint                     |
+| `healthStatus`       | AgentHealth                             | Already computed at query time per ADR-0036                |
 
 ### 6.11 Updated TopologyLegend (`TopologyLegend.tsx`)
 
 Add entries for new visual elements:
 
-| Element | Visual | Description |
-|---------|--------|-------------|
-| Allow edge | Blue dashed line + moving dot | Cross-namespace allow rule with data flow |
-| Deny edge | Red dashed line | Cross-namespace deny rule |
-| Active agent | Green dot + pulse ring | Agent heartbeat within 5 minutes |
-| Inactive agent | Amber dot | Agent heartbeat within 30 minutes |
-| Stale agent | Gray dot | No heartbeat for 30+ minutes |
-| Relay indicator | Zap icon | Agent has active Relay adapters |
-| Pulse indicator | Clock icon | Agent has Pulse schedules |
-| Zoom hint | — | "Zoom in for more detail" |
+| Element         | Visual                        | Description                               |
+| --------------- | ----------------------------- | ----------------------------------------- |
+| Allow edge      | Blue dashed line + moving dot | Cross-namespace allow rule with data flow |
+| Deny edge       | Red dashed line               | Cross-namespace deny rule                 |
+| Active agent    | Green dot + pulse ring        | Agent heartbeat within 5 minutes          |
+| Inactive agent  | Amber dot                     | Agent heartbeat within 30 minutes         |
+| Stale agent     | Gray dot                      | No heartbeat for 30+ minutes              |
+| Relay indicator | Zap icon                      | Agent has active Relay adapters           |
+| Pulse indicator | Clock icon                    | Agent has Pulse schedules                 |
+| Zoom hint       | —                             | "Zoom in for more detail"                 |
 
 ## 7. User Experience
 
@@ -584,9 +591,11 @@ Floating action bar: [Settings] [Health] [Copy ID]
 AgentHealthDetail slides in from right. Full capabilities, budget, behavior config, last seen event. "Open Settings" button links to Agent Settings Dialog (spec #66).
 
 ### Fly-to Selection
+
 Selecting an agent smoothly pans and zooms the viewport to center on the node. The zoom level is maintained or increased to at least 1.0x to ensure the node is readable.
 
 ### Namespace Groups
+
 Multi-namespace topologies display agents inside rounded-xl group containers with namespace accent colors. Groups are collapsible via header click. Single-namespace topologies skip the group wrapper for cleaner display.
 
 ## 8. Data Model Changes
@@ -657,6 +666,7 @@ Each agent in `namespaces[].agents[]` now includes:
 ### Unit Tests
 
 **`AgentNode.test.tsx`:**
+
 - Renders compact pill at zoom < 0.6 (mock `useStore` to return low zoom)
 - Renders default card at zoom 0.6–1.2
 - Renders expanded card at zoom > 1.2 with description, budget, adapters
@@ -667,22 +677,26 @@ Each agent in `namespaces[].agents[]` now includes:
 - Prepends emoji when present
 
 **`NamespaceGroupNode.test.tsx`:**
+
 - Renders namespace name and agent count
 - Shows active/total count correctly
 - Pulse glow visible when activeCount > 0
 
 **`DenyEdge.test.tsx`:**
+
 - Renders red dashed line with correct CSS
 - 50% opacity by default
 - No animation elements present (no `<animateMotion>`)
 
 **`CrossNamespaceEdge.test.tsx`:**
+
 - Uses `var(--color-primary)` instead of hardcoded blue
 - Flow particle present when reduced motion not preferred
 - Flow particle absent when reduced motion preferred
 - Label only visible when selected
 
 **`TopologyGraph.test.tsx`:**
+
 - ELK layout produces positioned nodes
 - Background and MiniMap components rendered
 - Deny rules create `cross-namespace-deny` edge type
@@ -691,6 +705,7 @@ Each agent in `namespaces[].agents[]` now includes:
 ### Integration Tests
 
 **Server topology enrichment:**
+
 - Relay adapter names included in topology response
 - Pulse schedule count included per agent
 - Health status computed correctly
@@ -705,16 +720,16 @@ Each agent in `namespaces[].agents[]` now includes:
 
 ## 11. Performance Considerations
 
-| Concern | Mitigation |
-|---------|------------|
-| ELK.js async layout | `useState` + `useEffect` with loading skeleton; layout runs off main thread |
-| SVG `<animateMotion>` | Runs on compositor thread, no JS cost; skipped with `prefers-reduced-motion` |
-| `animate-ping` on active agents | GPU-accelerated (transform + opacity only) |
-| 20+ nodes with animations | `onlyRenderVisibleElements` skips off-screen rendering |
-| MiniMap repaints | `nodeColor` callback is pure, React.memo on nodes prevents unnecessary rerenders |
-| Auto-refresh (15s polling) | Only refetches data; `fitView` only on first load; React Flow diffs node/edge arrays |
-| ELK.js bundle size | ~150KB; lazy-loaded with `TopologyGraph` via `React.lazy()` |
-| `useStore(zoomSelector)` | Selector pattern prevents re-render on non-zoom store changes |
+| Concern                         | Mitigation                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| ELK.js async layout             | `useState` + `useEffect` with loading skeleton; layout runs off main thread          |
+| SVG `<animateMotion>`           | Runs on compositor thread, no JS cost; skipped with `prefers-reduced-motion`         |
+| `animate-ping` on active agents | GPU-accelerated (transform + opacity only)                                           |
+| 20+ nodes with animations       | `onlyRenderVisibleElements` skips off-screen rendering                               |
+| MiniMap repaints                | `nodeColor` callback is pure, React.memo on nodes prevents unnecessary rerenders     |
+| Auto-refresh (15s polling)      | Only refetches data; `fitView` only on first load; React Flow diffs node/edge arrays |
+| ELK.js bundle size              | ~150KB; lazy-loaded with `TopologyGraph` via `React.lazy()`                          |
+| `useStore(zoomSelector)`        | Selector pattern prevents re-render on non-zoom store changes                        |
 
 **Target:** 60fps at 20 agents with all Tier 1-3 features active. For 50+ agents, consider throttling animations to visible nodes only.
 
@@ -791,30 +806,30 @@ Each agent in `namespaces[].agents[]` now includes:
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx` | ELK.js migration, Background, MiniMap, CSS vars, fly-to, auto-refresh, ReactFlowProvider |
-| `apps/client/src/layers/features/mesh/ui/AgentNode.tsx` | 3-level zoom LOD, health pulse, indicator row, NodeToolbar, emoji/color |
-| `apps/client/src/layers/features/mesh/ui/CrossNamespaceEdge.tsx` | Flow particles, theme colors, conditional labels, reduced-motion |
-| `apps/client/src/layers/features/mesh/ui/AgentHealthDetail.tsx` | Slide animation wrapper, "Open Settings" button |
-| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | ReactFlowProvider wrap, AnimatePresence, Agent Dialog state |
-| `apps/client/src/layers/features/mesh/ui/TopologyLegend.tsx` | New legend entries for deny, particles, indicators |
-| `apps/server/src/routes/mesh.ts` | Topology endpoint enrichment (Relay/Pulse/health joins) |
-| `packages/shared/src/mesh-schemas.ts` | TopologyAgentSchema, updated NamespaceInfoSchema |
+| File                                                             | Changes                                                                                  |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx`      | ELK.js migration, Background, MiniMap, CSS vars, fly-to, auto-refresh, ReactFlowProvider |
+| `apps/client/src/layers/features/mesh/ui/AgentNode.tsx`          | 3-level zoom LOD, health pulse, indicator row, NodeToolbar, emoji/color                  |
+| `apps/client/src/layers/features/mesh/ui/CrossNamespaceEdge.tsx` | Flow particles, theme colors, conditional labels, reduced-motion                         |
+| `apps/client/src/layers/features/mesh/ui/AgentHealthDetail.tsx`  | Slide animation wrapper, "Open Settings" button                                          |
+| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx`          | ReactFlowProvider wrap, AnimatePresence, Agent Dialog state                              |
+| `apps/client/src/layers/features/mesh/ui/TopologyLegend.tsx`     | New legend entries for deny, particles, indicators                                       |
+| `apps/server/src/routes/mesh.ts`                                 | Topology endpoint enrichment (Relay/Pulse/health joins)                                  |
+| `packages/shared/src/mesh-schemas.ts`                            | TopologyAgentSchema, updated NamespaceInfoSchema                                         |
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `apps/client/src/layers/features/mesh/ui/DenyEdge.tsx` | Deny rule edge component |
+| File                                                             | Purpose                        |
+| ---------------------------------------------------------------- | ------------------------------ |
+| `apps/client/src/layers/features/mesh/ui/DenyEdge.tsx`           | Deny rule edge component       |
 | `apps/client/src/layers/features/mesh/ui/NamespaceGroupNode.tsx` | Namespace group container node |
 
 ### Removed Files
 
-| File | Reason |
-|------|--------|
-| `apps/client/src/layers/features/mesh/ui/NamespaceHubNode.tsx` | Replaced by NamespaceGroupNode |
-| `apps/client/src/layers/features/mesh/ui/NamespaceEdge.tsx` | Spoke edges no longer needed with group containers |
+| File                                                           | Reason                                             |
+| -------------------------------------------------------------- | -------------------------------------------------- |
+| `apps/client/src/layers/features/mesh/ui/NamespaceHubNode.tsx` | Replaced by NamespaceGroupNode                     |
+| `apps/client/src/layers/features/mesh/ui/NamespaceEdge.tsx`    | Spoke edges no longer needed with group containers |
 
 ## 17. Acceptance Criteria
 

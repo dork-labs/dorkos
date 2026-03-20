@@ -85,7 +85,9 @@ useEffect(() => {
     });
   }
 
-  return () => { eventSource.close(); };
+  return () => {
+    eventSource.close();
+  };
   // relayEnabled path: only sessionId triggers reconnect
   // legacy path: isStreaming still triggers close/reopen
 }, [sessionId, relayEnabled ? null : isStreaming, relayEnabled, streamEventHandler]);
@@ -136,13 +138,21 @@ if (relayEnabled) {
 The `waitForStreamReady` helper polls the ref with a timeout:
 
 ```typescript
-function waitForStreamReady(ref: React.MutableRefObject<boolean>, timeoutMs: number): Promise<void> {
+function waitForStreamReady(
+  ref: React.MutableRefObject<boolean>,
+  timeoutMs: number
+): Promise<void> {
   return new Promise((resolve, reject) => {
     if (ref.current) return resolve();
     const start = Date.now();
     const interval = setInterval(() => {
-      if (ref.current) { clearInterval(interval); resolve(); }
-      else if (Date.now() - start > timeoutMs) { clearInterval(interval); resolve(); } // Proceed anyway after timeout
+      if (ref.current) {
+        clearInterval(interval);
+        resolve();
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(interval);
+        resolve();
+      } // Proceed anyway after timeout
     }, 50);
   });
 }
@@ -185,7 +195,7 @@ class SubscriptionRegistry {
     const pending = this.pendingBuffers.get(subject);
     if (pending?.length) {
       const now = Date.now();
-      const valid = pending.filter(p => now - p.timestamp < this.PENDING_TTL_MS);
+      const valid = pending.filter((p) => now - p.timestamp < this.PENDING_TTL_MS);
       this.pendingBuffers.delete(subject);
       // Drain async in next microtask to avoid blocking registration
       queueMicrotask(() => {
@@ -295,6 +305,7 @@ const flush = async () => {
 ## User Experience
 
 No visible changes. Users will experience:
+
 - Messages stream reliably (no more freezes)
 - No more need to click Stop and resend
 - History loads correctly after page refresh
@@ -304,26 +315,18 @@ No visible changes. Users will experience:
 ### Unit Tests
 
 **`session-broadcaster.test.ts`:**
+
 1. `subscribeToRelay flush serialization` — Verify that rapid sequential relay publishes are flushed in order, even when `res.write()` triggers backpressure (returns false, then drains).
 2. `subscribeToRelay write error cleanup` — Verify that when `res.write()` throws, the relay subscription is cancelled and the response is cleaned up.
 3. `stream_ready event sent after relay subscribe` — Verify `registerClient()` sends `stream_ready` SSE event when relay is enabled and clientId is provided.
 
-**`relay-core.test.ts` / `subscription-registry.test.ts`:**
-4. `pending buffer captures messages with no subscriber` — Publish to a subject with no subscriber, verify message is buffered.
-5. `pending buffer drains on subscriber registration` — Buffer messages, then register a subscriber, verify subscriber receives buffered messages in order.
-6. `pending buffer expires after TTL` — Buffer a message, wait >5s, register subscriber, verify message is NOT delivered.
-7. `pending buffer cleanup removes expired entries` — Verify periodic cleanup purges stale buffers.
+**`relay-core.test.ts` / `subscription-registry.test.ts`:** 4. `pending buffer captures messages with no subscriber` — Publish to a subject with no subscriber, verify message is buffered. 5. `pending buffer drains on subscriber registration` — Buffer messages, then register a subscriber, verify subscriber receives buffered messages in order. 6. `pending buffer expires after TTL` — Buffer a message, wait >5s, register subscriber, verify message is NOT delivered. 7. `pending buffer cleanup removes expired entries` — Verify periodic cleanup purges stale buffers.
 
-**`claude-code-adapter.test.ts`:**
-8. `done event sent on generator error` — Mock SDK generator to throw mid-stream, verify `done` event is published via relay.
-9. `done event sent on publishResponse error` — Mock `relay.publish()` to throw, verify `done` event is still sent in the finally block.
-10. `deliveredTo=0 logged as warning` — Verify warning log when publish returns `deliveredTo: 0`.
+**`claude-code-adapter.test.ts`:** 8. `done event sent on generator error` — Mock SDK generator to throw mid-stream, verify `done` event is published via relay. 9. `done event sent on publishResponse error` — Mock `relay.publish()` to throw, verify `done` event is still sent in the finally block. 10. `deliveredTo=0 logged as warning` — Verify warning log when publish returns `deliveredTo: 0`.
 
 ### Integration Tests
 
-**`use-chat-session` hook test:**
-11. `relay path waits for stream_ready before POST` — Mock EventSource to fire `stream_ready` after 100ms delay, verify POST is not sent until after the event.
-12. `relay path EventSource stable during streaming` — Verify EventSource is NOT torn down when `isStreaming` changes on the relay path.
+**`use-chat-session` hook test:** 11. `relay path waits for stream_ready before POST` — Mock EventSource to fire `stream_ready` after 100ms delay, verify POST is not sent until after the event. 12. `relay path EventSource stable during streaming` — Verify EventSource is NOT torn down when `isStreaming` changes on the relay path.
 
 ### Manual Testing (via `/chat:self-test`)
 
@@ -368,7 +371,7 @@ No new security surface. All changes are within existing authenticated/authorize
 
 ## Open Questions
 
-*None — all decisions resolved during ideation.*
+_None — all decisions resolved during ideation._
 
 ## Related ADRs
 

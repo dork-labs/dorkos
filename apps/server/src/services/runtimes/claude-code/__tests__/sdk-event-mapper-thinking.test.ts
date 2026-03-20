@@ -4,9 +4,7 @@ import type { AgentSession, ToolState } from '../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /** Collect all events yielded by the mapper for a single message. */
-async function collectEvents(
-  ...args: Parameters<typeof mapSdkMessage>
-): Promise<StreamEvent[]> {
+async function collectEvents(...args: Parameters<typeof mapSdkMessage>): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
   for await (const event of mapSdkMessage(...args)) {
     events.push(event);
@@ -30,10 +28,18 @@ function makeToolState(): ToolState {
     currentToolId: '',
     taskToolInput: '',
     toolNameById: new Map(),
-    get inThinking() { return inThinking; },
-    set inThinking(v: boolean) { inThinking = v; },
-    get thinkingStartMs() { return thinkingStartMs; },
-    set thinkingStartMs(v: number) { thinkingStartMs = v; },
+    get inThinking() {
+      return inThinking;
+    },
+    set inThinking(v: boolean) {
+      inThinking = v;
+    },
+    get thinkingStartMs() {
+      return thinkingStartMs;
+    },
+    set thinkingStartMs(v: number) {
+      thinkingStartMs = v;
+    },
     setToolState(inTool: boolean, name: string, id: string) {
       this.inTool = inTool;
       this.currentToolName = name;

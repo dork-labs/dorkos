@@ -124,8 +124,15 @@ export function CommandPaletteDialog() {
     selectedCwd,
   } = usePaletteActions(closePalette);
 
-  const { recentAgents, allAgents, features, commands, quickActions, searchableItems, suggestions } =
-    usePaletteItems(selectedCwd);
+  const {
+    recentAgents,
+    allAgents,
+    features,
+    commands,
+    quickActions,
+    searchableItems,
+    suggestions,
+  } = usePaletteItems(selectedCwd);
 
   const { results, prefix } = usePaletteSearch(searchableItems, search);
 
@@ -143,31 +150,23 @@ export function CommandPaletteDialog() {
   // Determine which agents/features/commands are visible based on search results
   const visibleAgentIds = useMemo(() => {
     if (!search) return null; // null means "use group defaults"
-    return new Set(
-      results.filter((r) => r.item.type === 'agent').map((r) => r.item.id),
-    );
+    return new Set(results.filter((r) => r.item.type === 'agent').map((r) => r.item.id));
   }, [results, search]);
 
   const visibleFeatureIds = useMemo(() => {
     if (!search || prefix === '@' || prefix === '>') return null;
-    return new Set(
-      results.filter((r) => r.item.type === 'feature').map((r) => r.item.id),
-    );
+    return new Set(results.filter((r) => r.item.type === 'feature').map((r) => r.item.id));
   }, [results, search, prefix]);
 
   // Use item IDs (format: "cmd-{name}") for command visibility — matches searchableItems
   const visibleCommandIds = useMemo(() => {
     if (!search || prefix === '@') return null;
-    return new Set(
-      results.filter((r) => r.item.type === 'command').map((r) => r.item.id),
-    );
+    return new Set(results.filter((r) => r.item.type === 'command').map((r) => r.item.id));
   }, [results, search, prefix]);
 
   const visibleQuickActionIds = useMemo(() => {
     if (!search || prefix === '@' || prefix === '>') return null;
-    return new Set(
-      results.filter((r) => r.item.type === 'quick-action').map((r) => r.item.id),
-    );
+    return new Set(results.filter((r) => r.item.type === 'quick-action').map((r) => r.item.id));
   }, [results, search, prefix]);
 
   const isAtMode = prefix === '@';
@@ -184,10 +183,7 @@ export function CommandPaletteDialog() {
   const hasAgentSelected = !isMobile && selectedAgent !== null;
 
   // Preview data for the sub-menu (agent-actions page); always call hook but use subMenuAgent
-  const previewData = usePreviewData(
-    subMenuAgent?.id ?? '',
-    subMenuAgent?.projectPath ?? '',
-  );
+  const previewData = usePreviewData(subMenuAgent?.id ?? '', subMenuAgent?.projectPath ?? '');
 
   // Navigate back one page in the pages stack
   const goBack = useCallback(() => {
@@ -239,7 +235,7 @@ export function CommandPaletteDialog() {
         setSubMenuAgent(null);
       }
     },
-    [setGlobalPaletteOpen],
+    [setGlobalPaletteOpen]
   );
 
   // Zero-query state: show Recent Agents, Features, Quick Actions (default layout)
@@ -273,11 +269,11 @@ export function CommandPaletteDialog() {
     <ResponsiveDialog open={globalPaletteOpen} onOpenChange={handleOpenChange}>
       <ResponsiveDialogContent
         className={cn(
-          'overflow-hidden p-0 !min-h-0 transition-[max-width] duration-200',
+          '!min-h-0 overflow-hidden p-0 transition-[max-width] duration-200',
           // Align the DialogContent close button with the CommandInput row (h-9 / px-3)
           '[&>button:last-child]:top-2 [&>button:last-child]:right-2.5',
           hasAgentSelected ? 'max-w-[640px]' : 'max-w-[480px]',
-          isMobile && 'h-[85vh]',
+          isMobile && 'h-[85vh]'
         )}
       >
         {/* Dialog entrance animation — scale + fade + y slide */}
@@ -286,7 +282,7 @@ export function CommandPaletteDialog() {
           initial="hidden"
           animate="visible"
           exit="exit"
-          className={cn('flex overflow-hidden', isMobile && 'flex-col h-full')}
+          className={cn('flex overflow-hidden', isMobile && 'h-full flex-col')}
         >
           {/* Command list — takes remaining width when preview panel is absent */}
           <Command
@@ -294,7 +290,11 @@ export function CommandPaletteDialog() {
             shouldFilter={false}
             value={selectedValue}
             onValueChange={setSelectedValue}
-            className={cn('flex-1 min-w-0', isMobile && 'flex flex-col [&_[cmdk-list]]:flex-1 [&_[cmdk-list]]:max-h-none [&_[cmdk-list]]:overflow-y-auto')}
+            className={cn(
+              'min-w-0 flex-1',
+              isMobile &&
+                'flex flex-col [&_[cmdk-list]]:max-h-none [&_[cmdk-list]]:flex-1 [&_[cmdk-list]]:overflow-y-auto'
+            )}
             onKeyDown={(e) => {
               // Cmd+Enter (or Ctrl+Enter) on root page opens selected agent in new tab
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !page && selectedAgent) {
@@ -307,7 +307,12 @@ export function CommandPaletteDialog() {
                 return;
               }
               // Cmd+Enter (or Ctrl+Enter) on agent sub-menu opens in new tab
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && page === 'agent-actions' && subMenuAgent) {
+              if (
+                e.key === 'Enter' &&
+                (e.metaKey || e.ctrlKey) &&
+                page === 'agent-actions' &&
+                subMenuAgent
+              ) {
                 e.preventDefault();
                 const url = new URL(window.location.href);
                 url.searchParams.set('dir', subMenuAgent.projectPath);
@@ -331,9 +336,13 @@ export function CommandPaletteDialog() {
           >
             {/* Breadcrumb — shown when inside a sub-menu page */}
             {pages.length > 0 && (
-              <div className="border-b px-3 py-1.5 text-xs text-muted-foreground flex items-center gap-1">
+              <div className="text-muted-foreground flex items-center gap-1 border-b px-3 py-1.5 text-xs">
                 <button
-                  onClick={() => { setPages([]); setSubMenuAgent(null); setStaggerKey((k) => k + 1); }}
+                  onClick={() => {
+                    setPages([]);
+                    setSubMenuAgent(null);
+                    setStaggerKey((k) => k + 1);
+                  }}
                   className="hover:text-foreground transition-colors"
                 >
                   All
@@ -344,231 +353,255 @@ export function CommandPaletteDialog() {
             )}
             <CommandInput
               ref={inputRef}
-              placeholder={page === 'agent-actions' ? `${subMenuAgent?.name ?? 'Agent'} actions...` : 'Search agents, features, commands...'}
+              placeholder={
+                page === 'agent-actions'
+                  ? `${subMenuAgent?.name ?? 'Agent'} actions...`
+                  : 'Search agents, features, commands...'
+              }
               value={search}
               onValueChange={setSearch}
             />
             <CommandList>
               <ScrollArea className="h-full">
-              <CommandEmpty>No results found.</CommandEmpty>
+                <CommandEmpty>No results found.</CommandEmpty>
 
-              {/*
-               * Directional page transition:
-               * - Navigating forward (into sub-menu): slides from right (+16px → 0)
-               * - Navigating back (to root): slides from left (-16px → 0)
-               * AnimatePresence mode="wait" ensures old page exits before new one enters.
-               */}
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={page ?? 'root'}
-                  initial={{ opacity: 0, x: page ? 16 : -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: page ? -16 : 16 }}
-                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                >
-                  {/* Root page content — stagger entrance re-triggers on staggerKey change */}
-                  {!page && (
-                    <motion.div
-                      key={staggerKey}
-                      variants={listVariants}
-                      initial="hidden"
-                      animate="visible"
-                    >
-                      {/* Contextual suggestions — shown at top of zero-query state */}
-                      {isZeroQuery && suggestions.length > 0 && (
-                        <CommandGroup heading="Suggestions">
-                          {suggestions.map((s, index) => {
-                            const Icon = ICON_MAP[s.icon];
-                            return (
-                              <motion.div key={s.id} variants={index < 8 ? itemVariants : undefined}>
-                                <CommandItem
-                                  value={s.id}
-                                  onSelect={() => {
-                                    if (s.action === 'openPulse') {
-                                      handleFeatureAction('openPulse');
-                                    } else if (s.action.startsWith('switchAgent:')) {
-                                      const agentId = s.action.split(':')[1];
-                                      const agent = allAgents.find((a) => a.id === agentId);
-                                      if (agent) handleAgentSelect(agent);
-                                    } else if (s.action.startsWith('continueSession:')) {
-                                      closePalette();
-                                    }
-                                  }}
+                {/*
+                 * Directional page transition:
+                 * - Navigating forward (into sub-menu): slides from right (+16px → 0)
+                 * - Navigating back (to root): slides from left (-16px → 0)
+                 * AnimatePresence mode="wait" ensures old page exits before new one enters.
+                 */}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={page ?? 'root'}
+                    initial={{ opacity: 0, x: page ? 16 : -16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: page ? -16 : 16 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                  >
+                    {/* Root page content — stagger entrance re-triggers on staggerKey change */}
+                    {!page && (
+                      <motion.div
+                        key={staggerKey}
+                        variants={listVariants}
+                        initial="hidden"
+                        animate="visible"
+                      >
+                        {/* Contextual suggestions — shown at top of zero-query state */}
+                        {isZeroQuery && suggestions.length > 0 && (
+                          <CommandGroup heading="Suggestions">
+                            {suggestions.map((s, index) => {
+                              const Icon = ICON_MAP[s.icon];
+                              return (
+                                <motion.div
+                                  key={s.id}
+                                  variants={index < 8 ? itemVariants : undefined}
                                 >
-                                  <motion.div
-                                    whileHover={{ x: 2 }}
-                                    transition={{ duration: 0.1, ease: EASE_OUT }}
-                                    className="flex items-center gap-2 w-full"
-                                  >
-                                    {Icon && <Icon className="size-4" />}
-                                    <div className="min-w-0 flex-1">
-                                      <span className="text-sm">{s.label}</span>
-                                      <span className="text-muted-foreground ml-2 text-xs">{s.description}</span>
-                                    </div>
-                                  </motion.div>
-                                </CommandItem>
-                              </motion.div>
-                            );
-                          })}
-                        </CommandGroup>
-                      )}
-
-                      {/* Zero-query state: Recent Agents group */}
-                      {isZeroQuery && recentAgents.length > 0 && (
-                        <CommandGroup heading="Recent Agents">
-                          <LayoutGroup id="cmd-palette-recent">
-                            {recentAgents.map((agent, index) => (
-                              <motion.div key={agent.id} variants={index < 8 ? itemVariants : undefined}>
-                                <AgentCommandItem
-                                  agent={agent}
-                                  isActive={agent.projectPath === selectedCwd}
-                                  isSelected={selectedValue === agent.name}
-                                  onSelect={() => goToAgentActions(agent)}
-                                />
-                              </motion.div>
-                            ))}
-                          </LayoutGroup>
-                        </CommandGroup>
-                      )}
-
-                      {/* Search state: All Agents — always shown in @ mode or when searching */}
-                      {!isZeroQuery && searchAgents.length > 0 && (
-                        <CommandGroup heading="All Agents">
-                          <LayoutGroup id="cmd-palette-all">
-                            {searchAgents.map((agent, index) => (
-                              <motion.div key={agent.id} variants={index < 8 ? itemVariants : undefined}>
-                                <AgentCommandItem
-                                  agent={agent}
-                                  isActive={agent.projectPath === selectedCwd}
-                                  isSelected={selectedValue === agent.name}
-                                  onSelect={() => goToAgentActions(agent)}
-                                  nameIndices={
-                                    agentMatchMap
-                                      .get(agent.id)
-                                      ?.find((m) => m.key === 'name')
-                                      ?.indices as readonly [number, number][] | undefined
-                                  }
-                                />
-                              </motion.div>
-                            ))}
-                          </LayoutGroup>
-                        </CommandGroup>
-                      )}
-
-                      {/* Features — hidden in @ and > mode; shown in zero-query and non-prefix search */}
-                      {!isAtMode && !isCommandMode && searchFeatures.length > 0 && (
-                        <>
-                          <CommandSeparator />
-                          <CommandGroup heading="Features">
-                            {searchFeatures.map((f, index) => {
-                              const Icon = ICON_MAP[f.icon];
-                              return (
-                                <motion.div key={f.id} variants={index < 8 ? itemVariants : undefined}>
                                   <CommandItem
-                                    value={f.label}
-                                    onSelect={() => handleFeatureAction(f.action)}
+                                    value={s.id}
+                                    onSelect={() => {
+                                      if (s.action === 'openPulse') {
+                                        handleFeatureAction('openPulse');
+                                      } else if (s.action.startsWith('switchAgent:')) {
+                                        const agentId = s.action.split(':')[1];
+                                        const agent = allAgents.find((a) => a.id === agentId);
+                                        if (agent) handleAgentSelect(agent);
+                                      } else if (s.action.startsWith('continueSession:')) {
+                                        closePalette();
+                                      }
+                                    }}
                                   >
                                     <motion.div
                                       whileHover={{ x: 2 }}
                                       transition={{ duration: 0.1, ease: EASE_OUT }}
-                                      className="flex items-center gap-2 w-full"
+                                      className="flex w-full items-center gap-2"
                                     >
                                       {Icon && <Icon className="size-4" />}
-                                      <span>{f.label}</span>
-                                      {f.shortcut && (
-                                        <span className="text-muted-foreground ml-auto text-xs">
-                                          {f.shortcut}
+                                      <div className="min-w-0 flex-1">
+                                        <span className="text-sm">{s.label}</span>
+                                        <span className="text-muted-foreground ml-2 text-xs">
+                                          {s.description}
                                         </span>
-                                      )}
+                                      </div>
                                     </motion.div>
                                   </CommandItem>
                                 </motion.div>
                               );
                             })}
                           </CommandGroup>
-                        </>
-                      )}
+                        )}
 
-                      {/* Commands — hidden in @ mode; shown in > mode or when searching */}
-                      {!isAtMode && (isCommandMode || search.length > 0) && searchCommands.length > 0 && (
-                        <>
-                          <CommandSeparator />
-                          <CommandGroup heading="Commands">
-                            {searchCommands.map((cmd, index) => (
-                              <motion.div key={cmd.name} variants={index < 8 ? itemVariants : undefined}>
-                                <CommandItem value={cmd.name}>
+                        {/* Zero-query state: Recent Agents group */}
+                        {isZeroQuery && recentAgents.length > 0 && (
+                          <CommandGroup heading="Recent Agents">
+                            <LayoutGroup id="cmd-palette-recent">
+                              {recentAgents.map((agent, index) => (
+                                <motion.div
+                                  key={agent.id}
+                                  variants={index < 8 ? itemVariants : undefined}
+                                >
+                                  <AgentCommandItem
+                                    agent={agent}
+                                    isActive={agent.projectPath === selectedCwd}
+                                    isSelected={selectedValue === agent.name}
+                                    onSelect={() => goToAgentActions(agent)}
+                                  />
+                                </motion.div>
+                              ))}
+                            </LayoutGroup>
+                          </CommandGroup>
+                        )}
+
+                        {/* Search state: All Agents — always shown in @ mode or when searching */}
+                        {!isZeroQuery && searchAgents.length > 0 && (
+                          <CommandGroup heading="All Agents">
+                            <LayoutGroup id="cmd-palette-all">
+                              {searchAgents.map((agent, index) => (
+                                <motion.div
+                                  key={agent.id}
+                                  variants={index < 8 ? itemVariants : undefined}
+                                >
+                                  <AgentCommandItem
+                                    agent={agent}
+                                    isActive={agent.projectPath === selectedCwd}
+                                    isSelected={selectedValue === agent.name}
+                                    onSelect={() => goToAgentActions(agent)}
+                                    nameIndices={
+                                      agentMatchMap.get(agent.id)?.find((m) => m.key === 'name')
+                                        ?.indices as readonly [number, number][] | undefined
+                                    }
+                                  />
+                                </motion.div>
+                              ))}
+                            </LayoutGroup>
+                          </CommandGroup>
+                        )}
+
+                        {/* Features — hidden in @ and > mode; shown in zero-query and non-prefix search */}
+                        {!isAtMode && !isCommandMode && searchFeatures.length > 0 && (
+                          <>
+                            <CommandSeparator />
+                            <CommandGroup heading="Features">
+                              {searchFeatures.map((f, index) => {
+                                const Icon = ICON_MAP[f.icon];
+                                return (
                                   <motion.div
-                                    whileHover={{ x: 2 }}
-                                    transition={{ duration: 0.1, ease: EASE_OUT }}
-                                    className="flex items-center gap-2 w-full"
+                                    key={f.id}
+                                    variants={index < 8 ? itemVariants : undefined}
                                   >
-                                    <span className="font-mono text-xs">{cmd.name}</span>
-                                    {cmd.description && (
-                                      <span className="text-muted-foreground ml-2 text-xs">
-                                        {cmd.description}
-                                      </span>
-                                    )}
-                                  </motion.div>
-                                </CommandItem>
-                              </motion.div>
-                            ))}
-                          </CommandGroup>
-                        </>
-                      )}
-
-                      {/* Quick Actions — hidden in @ and > mode; shown in zero-query and non-prefix search */}
-                      {!isAtMode && !isCommandMode && searchQuickActions.length > 0 && (
-                        <>
-                          <CommandSeparator />
-                          <CommandGroup heading="Quick Actions">
-                            {searchQuickActions.map((qa, index) => {
-                              const Icon = ICON_MAP[qa.icon];
-                              return (
-                                <motion.div key={qa.id} variants={index < 8 ? itemVariants : undefined}>
-                                  <CommandItem
-                                    value={qa.label}
-                                    onSelect={() => handleQuickAction(qa.action)}
-                                  >
-                                    <motion.div
-                                      whileHover={{ x: 2 }}
-                                      transition={{ duration: 0.1, ease: EASE_OUT }}
-                                      className="flex items-center gap-2 w-full"
+                                    <CommandItem
+                                      value={f.label}
+                                      onSelect={() => handleFeatureAction(f.action)}
                                     >
-                                      {Icon && <Icon className="size-4" />}
-                                      <span>{qa.label}</span>
-                                    </motion.div>
-                                  </CommandItem>
-                                </motion.div>
-                              );
-                            })}
-                          </CommandGroup>
-                        </>
-                      )}
-                    </motion.div>
-                  )}
+                                      <motion.div
+                                        whileHover={{ x: 2 }}
+                                        transition={{ duration: 0.1, ease: EASE_OUT }}
+                                        className="flex w-full items-center gap-2"
+                                      >
+                                        {Icon && <Icon className="size-4" />}
+                                        <span>{f.label}</span>
+                                        {f.shortcut && (
+                                          <span className="text-muted-foreground ml-auto text-xs">
+                                            {f.shortcut}
+                                          </span>
+                                        )}
+                                      </motion.div>
+                                    </CommandItem>
+                                  </motion.div>
+                                );
+                              })}
+                            </CommandGroup>
+                          </>
+                        )}
 
-                  {/* Agent actions sub-menu page */}
-                  {page === 'agent-actions' && subMenuAgent && (
-                    <AgentSubMenu
-                      agent={subMenuAgent}
-                      onOpenHere={() => handleAgentSelect(subMenuAgent)}
-                      onOpenNewTab={() => {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('dir', subMenuAgent.projectPath);
-                        window.open(url.toString(), '_blank');
-                        recordUsage(subMenuAgent.id);
-                        closePalette();
-                      }}
-                      onNewSession={() => {
-                        setDir(subMenuAgent.projectPath);
-                        recordUsage(subMenuAgent.id);
-                        closePalette();
-                      }}
-                      recentSessions={previewData.recentSessions}
-                    />
-                  )}
-                </motion.div>
-              </AnimatePresence>
+                        {/* Commands — hidden in @ mode; shown in > mode or when searching */}
+                        {!isAtMode &&
+                          (isCommandMode || search.length > 0) &&
+                          searchCommands.length > 0 && (
+                            <>
+                              <CommandSeparator />
+                              <CommandGroup heading="Commands">
+                                {searchCommands.map((cmd, index) => (
+                                  <motion.div
+                                    key={cmd.name}
+                                    variants={index < 8 ? itemVariants : undefined}
+                                  >
+                                    <CommandItem value={cmd.name}>
+                                      <motion.div
+                                        whileHover={{ x: 2 }}
+                                        transition={{ duration: 0.1, ease: EASE_OUT }}
+                                        className="flex w-full items-center gap-2"
+                                      >
+                                        <span className="font-mono text-xs">{cmd.name}</span>
+                                        {cmd.description && (
+                                          <span className="text-muted-foreground ml-2 text-xs">
+                                            {cmd.description}
+                                          </span>
+                                        )}
+                                      </motion.div>
+                                    </CommandItem>
+                                  </motion.div>
+                                ))}
+                              </CommandGroup>
+                            </>
+                          )}
+
+                        {/* Quick Actions — hidden in @ and > mode; shown in zero-query and non-prefix search */}
+                        {!isAtMode && !isCommandMode && searchQuickActions.length > 0 && (
+                          <>
+                            <CommandSeparator />
+                            <CommandGroup heading="Quick Actions">
+                              {searchQuickActions.map((qa, index) => {
+                                const Icon = ICON_MAP[qa.icon];
+                                return (
+                                  <motion.div
+                                    key={qa.id}
+                                    variants={index < 8 ? itemVariants : undefined}
+                                  >
+                                    <CommandItem
+                                      value={qa.label}
+                                      onSelect={() => handleQuickAction(qa.action)}
+                                    >
+                                      <motion.div
+                                        whileHover={{ x: 2 }}
+                                        transition={{ duration: 0.1, ease: EASE_OUT }}
+                                        className="flex w-full items-center gap-2"
+                                      >
+                                        {Icon && <Icon className="size-4" />}
+                                        <span>{qa.label}</span>
+                                      </motion.div>
+                                    </CommandItem>
+                                  </motion.div>
+                                );
+                              })}
+                            </CommandGroup>
+                          </>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {/* Agent actions sub-menu page */}
+                    {page === 'agent-actions' && subMenuAgent && (
+                      <AgentSubMenu
+                        agent={subMenuAgent}
+                        onOpenHere={() => handleAgentSelect(subMenuAgent)}
+                        onOpenNewTab={() => {
+                          const url = new URL(window.location.href);
+                          url.searchParams.set('dir', subMenuAgent.projectPath);
+                          window.open(url.toString(), '_blank');
+                          recordUsage(subMenuAgent.id);
+                          closePalette();
+                        }}
+                        onNewSession={() => {
+                          setDir(subMenuAgent.projectPath);
+                          recordUsage(subMenuAgent.id);
+                          closePalette();
+                        }}
+                        recentSessions={previewData.recentSessions}
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </ScrollArea>
             </CommandList>
             <PaletteFooter page={page} hasAgentSelected={hasAgentSelected} />

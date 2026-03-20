@@ -17,9 +17,7 @@ describe('AgentSessionStore', () => {
   let store: AgentSessionStore;
 
   beforeEach(async () => {
-    vi.mocked(readFile).mockRejectedValue(
-      Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
-    );
+    vi.mocked(readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
     vi.mocked(mkdir).mockResolvedValue(undefined);
     vi.mocked(writeFile).mockResolvedValue(undefined);
     vi.mocked(rename).mockResolvedValue(undefined);
@@ -157,10 +155,9 @@ describe('AgentSessionStore', () => {
       store.set('agent-c', 'sdk-uuid-c');
 
       await vi.waitFor(() => {
-        expect(vi.mocked(mkdir)).toHaveBeenCalledWith(
-          expect.stringContaining('relay'),
-          { recursive: true },
-        );
+        expect(vi.mocked(mkdir)).toHaveBeenCalledWith(expect.stringContaining('relay'), {
+          recursive: true,
+        });
       });
     });
 
@@ -251,7 +248,10 @@ describe('AgentSessionStore', () => {
   describe('AgentSessionStoreLike interface', () => {
     it('satisfies the get/set interface consumed by ClaudeCodeAdapter', () => {
       // Verify the store conforms to the minimal interface
-      const storeLike: { get: (id: string) => string | undefined; set: (id: string, sessionId: string) => void } = store;
+      const storeLike: {
+        get: (id: string) => string | undefined;
+        set: (id: string, sessionId: string) => void;
+      } = store;
       storeLike.set('iface-agent', 'iface-sdk-uuid');
       expect(storeLike.get('iface-agent')).toBe('iface-sdk-uuid');
     });

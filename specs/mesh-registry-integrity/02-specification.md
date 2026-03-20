@@ -64,13 +64,13 @@ User deletes project directory → DB entry persists forever with stale health s
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `drizzle-orm` | ^0.39 | ORM for SQLite queries, `.onConflictDoUpdate()` |
-| `drizzle-kit` | ^0.30 | Migration generation |
-| `@dorkos/db` | workspace | Shared DB instance, schema, migrations |
-| `@dorkos/shared` | workspace | Zod schemas for manifest validation |
-| Node.js `fs/promises` | built-in | `access()` for path existence checks |
+| Dependency            | Version   | Purpose                                         |
+| --------------------- | --------- | ----------------------------------------------- |
+| `drizzle-orm`         | ^0.39     | ORM for SQLite queries, `.onConflictDoUpdate()` |
+| `drizzle-kit`         | ^0.30     | Migration generation                            |
+| `@dorkos/db`          | workspace | Shared DB instance, schema, migrations          |
+| `@dorkos/shared`      | workspace | Zod schemas for manifest validation             |
+| Node.js `fs/promises` | built-in  | `access()` for path existence checks            |
 
 No new external dependencies required.
 
@@ -87,11 +87,15 @@ export const agents = sqliteTable('agents', {
   // ... existing columns unchanged ...
   status: text('status', {
     enum: ['active', 'inactive', 'unreachable'],
-  }).notNull().default('active'),
+  })
+    .notNull()
+    .default('active'),
   // New columns:
   scanRoot: text('scan_root').notNull().default(''),
   behaviorJson: text('behavior_json').notNull().default('{"responseMode":"always"}'),
-  budgetJson: text('budget_json').notNull().default('{"maxHopsPerMessage":5,"maxCallsPerHour":100}'),
+  budgetJson: text('budget_json')
+    .notNull()
+    .default('{"maxHopsPerMessage":5,"maxCallsPerHour":100}'),
 });
 ```
 
@@ -321,10 +325,10 @@ import { resolveNamespace } from './namespace-resolver.js';
 const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface ReconcileResult {
-  synced: number;       // DB entries updated from file
-  unreachable: number;  // Newly marked unreachable
-  removed: number;      // Auto-removed after grace period
-  discovered: number;   // New agents found on disk
+  synced: number; // DB entries updated from file
+  unreachable: number; // Newly marked unreachable
+  removed: number; // Auto-removed after grace period
+  discovered: number; // New agents found on disk
 }
 
 /**
@@ -338,10 +342,13 @@ export interface ReconcileResult {
 export async function reconcile(
   registry: AgentRegistry,
   relayBridge: RelayBridge,
-  defaultScanRoot: string,
+  defaultScanRoot: string
 ): Promise<ReconcileResult> {
   const result: ReconcileResult = {
-    synced: 0, unreachable: 0, removed: 0, discovered: 0,
+    synced: 0,
+    unreachable: 0,
+    removed: 0,
+    discovered: 0,
   };
   const entries = registry.list();
 
@@ -369,7 +376,9 @@ export async function reconcile(
     // Compare and sync if file data differs
     if (manifestDiffersFromEntry(manifest, entry)) {
       const namespace = resolveNamespace(
-        entry.projectPath, entry.scanRoot || defaultScanRoot, manifest.namespace,
+        entry.projectPath,
+        entry.scanRoot || defaultScanRoot,
+        manifest.namespace
       );
       registry.update(entry.id, {
         name: manifest.name,
@@ -407,10 +416,7 @@ async function pathAccessible(p: string): Promise<boolean> {
 }
 
 /** Compare manifest fields against registry entry. */
-function manifestDiffersFromEntry(
-  manifest: AgentManifest,
-  entry: AgentRegistryEntry,
-): boolean {
+function manifestDiffersFromEntry(manifest: AgentManifest, entry: AgentRegistryEntry): boolean {
   return (
     manifest.name !== entry.name ||
     manifest.description !== entry.description ||
@@ -646,12 +652,12 @@ None — all decisions resolved during ideation.
 
 ## 14. Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| #25 | Use Simple JSON Columns for Agent Registry SQLite Schema | Original schema design — this spec extends it |
-| #36 | Compute Agent Health Status at Query Time via SQL | Health status is computed, not stored — `unreachable` is a separate DB status |
-| #39 | Use Drizzle ORM for Database Layer | Drizzle patterns used for upsert and migrations |
-| #40 | Consolidate All DorkOS Databases to Single dork.db | Foundation — single DB enables this work |
+| ADR | Title                                                    | Relevance                                                                     |
+| --- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| #25 | Use Simple JSON Columns for Agent Registry SQLite Schema | Original schema design — this spec extends it                                 |
+| #36 | Compute Agent Health Status at Query Time via SQL        | Health status is computed, not stored — `unreachable` is a separate DB status |
+| #39 | Use Drizzle ORM for Database Layer                       | Drizzle patterns used for upsert and migrations                               |
+| #40 | Consolidate All DorkOS Databases to Single dork.db       | Foundation — single DB enables this work                                      |
 
 ## 15. References
 

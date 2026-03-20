@@ -81,9 +81,7 @@ describe('SessionBroadcaster', () => {
       expect(mockRes.write).toHaveBeenCalledWith(
         `event: sync_connected\ndata: ${JSON.stringify({ sessionId })}\n\n`
       );
-      expect(mockRes.write).toHaveBeenCalledWith(
-        expect.stringContaining('presence_update')
-      );
+      expect(mockRes.write).toHaveBeenCalledWith(expect.stringContaining('presence_update'));
       expect(mockRes.on).toHaveBeenCalledWith('close', expect.any(Function));
     });
 
@@ -574,14 +572,14 @@ describe('SessionBroadcaster', () => {
 
       // Should have written sync_connected AND presence_update
       expect(mockRes.write).toHaveBeenCalledTimes(2);
-      expect(mockRes.write).toHaveBeenNthCalledWith(1,
-        expect.stringContaining('sync_connected'));
-      expect(mockRes.write).toHaveBeenNthCalledWith(2,
-        expect.stringContaining('presence_update'));
+      expect(mockRes.write).toHaveBeenNthCalledWith(1, expect.stringContaining('sync_connected'));
+      expect(mockRes.write).toHaveBeenNthCalledWith(2, expect.stringContaining('presence_update'));
 
       // Parse the presence event
       const presenceCall = vi.mocked(mockRes.write).mock.calls[1][0].toString();
-      const data = JSON.parse(presenceCall.replace('event: presence_update\ndata: ', '').replace('\n\n', ''));
+      const data = JSON.parse(
+        presenceCall.replace('event: presence_update\ndata: ', '').replace('\n\n', '')
+      );
       expect(data.clientCount).toBe(1);
       expect(data.clients).toHaveLength(1);
       expect(data.clients[0].type).toBe('web');
@@ -636,9 +634,7 @@ describe('SessionBroadcaster', () => {
       broadcaster.deregisterClient(sessionId, mockRes);
 
       // Remaining client should get updated presence
-      expect(mockRes2.write).toHaveBeenCalledWith(
-        expect.stringContaining('presence_update')
-      );
+      expect(mockRes2.write).toHaveBeenCalledWith(expect.stringContaining('presence_update'));
       const presenceCall = vi.mocked(mockRes2.write).mock.calls[0][0].toString();
       const data = JSON.parse(
         presenceCall.replace('event: presence_update\ndata: ', '').replace('\n\n', '')

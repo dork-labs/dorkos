@@ -16,17 +16,17 @@ We pursue world-class UI/UX **and** world-class DX. Neither is negotiable. Neith
 
 **DX excellence** means clean API surfaces, precise TypeScript types, helpful error messages, predictable conventions, and architecture that a staff engineer would admire. Priya reads source code before adopting tools. If our internals wouldn't survive her scrutiny, we haven't shipped.
 
-**Codebase excellence** is non-negotiable. Before writing new code, study existing patterns in the codebase and follow them — consistency is a feature, and diverging from established conventions requires justification, not just preference. We never leave things incomplete — no TODOs that linger, no half-finished migrations, no dead code. We never tolerate deprecated or legacy patterns; when something is superseded, we remove it. We have the courage to refactor even when it's hard and would be easier to leave alone. If something is weird or unintuitive but *must* stay, we comment *why*. If it doesn't need to stay, we refactor it. Simplicity is an active pursuit — we continuously simplify the application, the UI/UX, and the code. The codebase should get cleaner over time, not accumulate cruft.
+**Codebase excellence** is non-negotiable. Before writing new code, study existing patterns in the codebase and follow them — consistency is a feature, and diverging from established conventions requires justification, not just preference. We never leave things incomplete — no TODOs that linger, no half-finished migrations, no dead code. We never tolerate deprecated or legacy patterns; when something is superseded, we remove it. We have the courage to refactor even when it's hard and would be easier to leave alone. If something is weird or unintuitive but _must_ stay, we comment _why_. If it doesn't need to stay, we refactor it. Simplicity is an active pursuit — we continuously simplify the application, the UI/UX, and the code. The codebase should get cleaner over time, not accumulate cruft.
 
 ### Design Mentors
 
 When making decisions, ask what these people would think of your work:
 
-**Steve Jobs** — *Taste and focus.* Say no to a thousand things. Design is how it works, not how it looks. Care about the back of the fence even if nobody sees it. The intersection of technology and the humanities.
+**Steve Jobs** — _Taste and focus._ Say no to a thousand things. Design is how it works, not how it looks. Care about the back of the fence even if nobody sees it. The intersection of technology and the humanities.
 
-**Jony Ive** — *Simplicity through rigor.* "True simplicity is derived from so much more than just the absence of clutter." Doing something genuinely better is very hard. Obsessive refinement of materials and craft.
+**Jony Ive** — _Simplicity through rigor._ "True simplicity is derived from so much more than just the absence of clutter." Doing something genuinely better is very hard. Obsessive refinement of materials and craft.
 
-**Dieter Rams** — *Less, but better.* Good design is honest. Good design is unobtrusive. Good design is thorough down to the last detail. Good design is as little design as possible.
+**Dieter Rams** — _Less, but better._ Good design is honest. Good design is unobtrusive. Good design is thorough down to the last detail. Good design is as little design as possible.
 
 ### Decision-Making Filters
 
@@ -39,7 +39,7 @@ When making decisions, ask what these people would think of your work:
 
 ### Brand Voice in the Product
 
-Confident. Minimal. Technical. Sharp. Honest. Not corporate. Use language like *autonomous*, *engine*, *orchestration*, *agents*, *control*, *operator*, *builder*. Never use hype language. The product itself should feel like a control panel, not a consumer app.
+Confident. Minimal. Technical. Sharp. Honest. Not corporate. Use language like _autonomous_, _engine_, _orchestration_, _agents_, _control_, _operator_, _builder_. Never use hype language. The product itself should feel like a control panel, not a consumer app.
 
 ## Who We Build For
 
@@ -110,6 +110,7 @@ Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obta
 **Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/pulse/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management). API docs at `/api/docs`.
 
 **Key conventions:**
+
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` in production, `apps/server/.temp/.dork/` in dev). See `.claude/rules/dork-home.md`
 - `lib/resolve-root.ts` resolves the default working directory (`DORKOS_DEFAULT_CWD` env var or repo root)
 - Each app has its own `env.ts` with Zod-validated env vars
@@ -127,11 +128,17 @@ Sessions derive entirely from SDK JSONL files (`~/.claude/projects/{slug}/*.json
 
 React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). Uses **Feature-Sliced Design (FSD)** with strict unidirectional layer imports.
 
-**FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. The app shell (`App.tsx`, `main.tsx`) lives at the `src/` root and can import from any layer. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
+**FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. The app shell (`App.tsx`, `AppShell.tsx`, `main.tsx`, `router.tsx`) lives at the `src/` root and can import from any layer. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
+
+**Routing**: TanStack Router with code-based route definitions in `router.tsx`. Route structure:
+- `/` → `DashboardPage` (widgets/dashboard) — status overview
+- `/session` → `SessionPage` (widgets/session) — agent chat, with `?session=` and `?dir=` search params
+- `/dev/*` → Dev playground (outside router, conditional on dev mode)
+- Embedded mode (Obsidian plugin) bypasses the router entirely — `App.tsx` renders `<ChatPanel>` directly
 
 **State**: Zustand for UI state, TanStack Query for server state. See `contributing/state-management.md`.
 
-**Client conventions**: `motion` for animations (see `contributing/animations.md`), `streamdown` for markdown rendering, `nuqs` for URL parameters (`?session=`, `?dir=`). Design system documented in `contributing/design-system.md`.
+**Client conventions**: `motion` for animations (see `contributing/animations.md`), `streamdown` for markdown rendering, TanStack Router for client-side routing and URL search params (`?session=`, `?dir=`). Design system documented in `contributing/design-system.md`.
 
 ### Shared Package (`packages/shared/src/`)
 
@@ -148,25 +155,25 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 ## Guides
 
-| Guide | Contents |
-|---|---|
-| [`contributing/architecture.md`](contributing/architecture.md) | Hexagonal architecture, Transport, DI, data flows, testing |
-| [`contributing/design-system.md`](contributing/design-system.md) | Color palette, typography, spacing (8pt grid), motion specs |
-| [`contributing/api-reference.md`](contributing/api-reference.md) | OpenAPI spec, Zod schemas, SSE streaming |
-| [`contributing/configuration.md`](contributing/configuration.md) | Config system, CLI commands, precedence |
-| [`contributing/data-fetching.md`](contributing/data-fetching.md) | TanStack Query patterns, mutations |
-| [`contributing/state-management.md`](contributing/state-management.md) | Zustand vs TanStack Query decision guide |
-| [`contributing/animations.md`](contributing/animations.md) | Motion library patterns |
-| [`contributing/styling-theming.md`](contributing/styling-theming.md) | Tailwind v4, dark mode, Shadcn |
-| [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md) | Plugin lifecycle, Electron quirks |
-| [`contributing/interactive-tools.md`](contributing/interactive-tools.md) | Tool approval, AskUserQuestion flows |
-| [`contributing/parallel-execution.md`](contributing/parallel-execution.md) | Parallel agent patterns |
-| [`contributing/browser-testing.md`](contributing/browser-testing.md) | Playwright E2E test patterns |
-| [`contributing/environment-variables.md`](contributing/environment-variables.md) | Env var conventions, turbo.json |
-| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md) | Keybinding system, customization |
-| [`contributing/project-structure.md`](contributing/project-structure.md) | FSD layers, file organization |
-| [`contributing/relay-adapters.md`](contributing/relay-adapters.md) | Adapter development guide |
-| [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md) | Adapter catalog system |
+| Guide                                                                                        | Contents                                                    |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| [`contributing/architecture.md`](contributing/architecture.md)                               | Hexagonal architecture, Transport, DI, data flows, testing  |
+| [`contributing/design-system.md`](contributing/design-system.md)                             | Color palette, typography, spacing (8pt grid), motion specs |
+| [`contributing/api-reference.md`](contributing/api-reference.md)                             | OpenAPI spec, Zod schemas, SSE streaming                    |
+| [`contributing/configuration.md`](contributing/configuration.md)                             | Config system, CLI commands, precedence                     |
+| [`contributing/data-fetching.md`](contributing/data-fetching.md)                             | TanStack Query patterns, mutations                          |
+| [`contributing/state-management.md`](contributing/state-management.md)                       | Zustand vs TanStack Query decision guide                    |
+| [`contributing/animations.md`](contributing/animations.md)                                   | Motion library patterns                                     |
+| [`contributing/styling-theming.md`](contributing/styling-theming.md)                         | Tailwind v4, dark mode, Shadcn                              |
+| [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md) | Plugin lifecycle, Electron quirks                           |
+| [`contributing/interactive-tools.md`](contributing/interactive-tools.md)                     | Tool approval, AskUserQuestion flows                        |
+| [`contributing/parallel-execution.md`](contributing/parallel-execution.md)                   | Parallel agent patterns                                     |
+| [`contributing/browser-testing.md`](contributing/browser-testing.md)                         | Playwright E2E test patterns                                |
+| [`contributing/environment-variables.md`](contributing/environment-variables.md)             | Env var conventions, turbo.json                             |
+| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md)                   | Keybinding system, customization                            |
+| [`contributing/project-structure.md`](contributing/project-structure.md)                     | FSD layers, file organization                               |
+| [`contributing/relay-adapters.md`](contributing/relay-adapters.md)                           | Adapter development guide                                   |
+| [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md)                         | Adapter catalog system                                      |
 
 `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 

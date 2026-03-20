@@ -1,5 +1,5 @@
 ---
-title: "Slack Bolt + Socket Mode: Implementation Best Practices"
+title: 'Slack Bolt + Socket Mode: Implementation Best Practices'
 date: 2026-03-14
 type: implementation
 status: active
@@ -104,6 +104,7 @@ sustained. At peak token rates, the adapter will saturate this limit quickly.
 **Recommended fix — debounce/throttle updates:**
 
 Accumulate text in `streamState` but only call `chat.update` when:
+
 - A minimum interval has elapsed since the last update (e.g., 1,000ms), OR
 - The `done` event fires (always do a final update)
 
@@ -207,6 +208,7 @@ for LLM-generated content. Slack itself handles the translation:
 ```
 
 **Tradeoff:**
+
 - `slackify-markdown` (current): converts to `mrkdwn` in a plain text field, works
   everywhere including older clients, simpler API call.
 - Markdown Block: lets Slack do the rendering, may handle edge cases better
@@ -226,7 +228,7 @@ The current outbound implementation posts directly to a channel ID. For DMs, the
 inbound `SlackMessageEvent.channel` already provides the DM channel ID (`D...`
 prefix) — no need for a `conversations.open` call. This is correct.
 
-The `conversations.open` pattern is only needed when the bot wants to *initiate*
+The `conversations.open` pattern is only needed when the bot wants to _initiate_
 a DM to a user that has not yet messaged the bot. The relay adapter only responds
 to inbound messages, so this complexity is correctly avoided.
 
@@ -253,6 +255,7 @@ For architectural reference:
 ### Socket Mode Reconnection Behavior
 
 Bolt handles WebSocket reconnection automatically. Known behaviors:
+
 - Slack sends a `hello` message on connect that includes `approximate_connection_time`
   (the expected connection duration before Slack forces a refresh).
 - Bolt prepares a second connection before the first is terminated for seamless
@@ -267,13 +270,13 @@ Bolt handles WebSocket reconnection automatically. Known behaviors:
 
 ### Rate Limit Tiers Relevant to This Adapter
 
-| API Method | Tier | Limit | Notes |
-|---|---|---|---|
-| `chat.postMessage` | Special | 1 msg/sec/channel | Core send method |
-| `chat.update` | Special | 1 msg/sec/channel | Streaming update |
-| `users.info` | Tier 3 | ~50 req/min | User name resolution |
-| `conversations.info` | Tier 3 | ~50 req/min | Channel name resolution |
-| `auth.test` | Tier 4 | ~100 req/min | Credential validation |
+| API Method              | Tier                  | Limit              | Notes                    |
+| ----------------------- | --------------------- | ------------------ | ------------------------ |
+| `chat.postMessage`      | Special               | 1 msg/sec/channel  | Core send method         |
+| `chat.update`           | Special               | 1 msg/sec/channel  | Streaming update         |
+| `users.info`            | Tier 3                | ~50 req/min        | User name resolution     |
+| `conversations.info`    | Tier 3                | ~50 req/min        | Channel name resolution  |
+| `auth.test`             | Tier 4                | ~100 req/min       | Credential validation    |
 | `conversations.history` | Tier 1 (non-Mktplace) | 1 req/min, 15 msgs | NOT used by this adapter |
 
 The adapter does not call `conversations.history` — it only reacts to incoming
@@ -285,17 +288,17 @@ risk. See Finding #4 for the debounce solution.
 
 ### mrkdwn Syntax Reference (Differences from Standard Markdown)
 
-| Feature | Standard Markdown | Slack mrkdwn |
-|---|---|---|
-| Bold | `**bold**` | `*bold*` |
-| Italic | `*italic*` | `_italic_` |
-| Strikethrough | `~~text~~` | `~text~` |
-| Code (inline) | `` `code` `` | `` `code` `` (same) |
-| Code block | ` ``` ``` ` | ` ``` ``` ` (same) |
-| Link | `[text](url)` | `<url\|text>` |
-| Unordered list | `- item` | No native syntax; use `•` or `-` manually |
-| Blockquote | `> text` | `> text` (same) |
-| Heading | `## Heading` | Not supported — renders as literal `##` |
+| Feature        | Standard Markdown | Slack mrkdwn                              |
+| -------------- | ----------------- | ----------------------------------------- |
+| Bold           | `**bold**`        | `*bold*`                                  |
+| Italic         | `*italic*`        | `_italic_`                                |
+| Strikethrough  | `~~text~~`        | `~text~`                                  |
+| Code (inline)  | `` `code` ``      | `` `code` `` (same)                       |
+| Code block     | ` ``` ``` `       | ` ``` ``` ` (same)                        |
+| Link           | `[text](url)`     | `<url\|text>`                             |
+| Unordered list | `- item`          | No native syntax; use `•` or `-` manually |
+| Blockquote     | `> text`          | `> text` (same)                           |
+| Heading        | `## Heading`      | Not supported — renders as literal `##`   |
 
 `slackify-markdown` handles bold, italic, links, and code blocks correctly.
 It does not convert headings (they render as `*Heading*` bold in mrkdwn, which

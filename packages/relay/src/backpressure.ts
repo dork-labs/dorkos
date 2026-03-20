@@ -33,15 +33,14 @@ const DEFAULT_BP_CONFIG: BackpressureConfig = {
  */
 export function checkBackpressure(
   currentSize: number,
-  config: BackpressureConfig = DEFAULT_BP_CONFIG,
+  config: BackpressureConfig = DEFAULT_BP_CONFIG
 ): BackpressureResult {
   if (!config.enabled) {
     return { allowed: true, currentSize, pressure: 0 };
   }
 
-  const pressure = config.maxMailboxSize > 0
-    ? Math.min(currentSize / config.maxMailboxSize, 1.0)
-    : 0;
+  const pressure =
+    config.maxMailboxSize > 0 ? Math.min(currentSize / config.maxMailboxSize, 1.0) : 0;
 
   if (currentSize >= config.maxMailboxSize) {
     return {

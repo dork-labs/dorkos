@@ -1,5 +1,5 @@
 ---
-title: "Filesystem Agent Discovery: Progressive vs Batch, Transport Abstraction, and Unification Patterns"
+title: 'Filesystem Agent Discovery: Progressive vs Batch, Transport Abstraction, and Unification Patterns'
 date: 2026-03-06
 type: internal-architecture
 status: active
@@ -30,18 +30,21 @@ The two discovery systems (SSE-streamed onboarding scan and batch mesh panel sca
 **Progressive streaming is almost always correct for filesystem scans.** The core insight from VS Code's Project Manager extension ecosystem and JetBrains Toolbox is that project discovery is inherently unpredictable in duration -- scanning `$HOME` could take 2 seconds or 30 seconds depending on directory depth and disk speed.
 
 **Use progressive (streaming) when:**
+
 - First-time scan (onboarding) -- user has no expectation of how many results exist
 - Scanning a new/unconfigured root directory
 - Any scan that could exceed ~2 seconds
 - The UI benefits from showing results as they appear (which is always)
 
 **Use batch (wait-for-all) only when:**
+
 - Re-scanning a known, small set of previously cached roots (< 1 second expected)
 - Background refresh where the UI already has stale-but-present data
 
 **The recommendation:** Always stream. The batch case is just "stream but don't show a progress indicator because the data arrives fast enough." The scanner is the same; the UI presentation differs.
 
 **Prior art:**
+
 - **VS Code Git Project Manager** caches repositories between sessions (`storeRepositoriesBetweenSessions`) to avoid wait time, but still scans progressively on first use. Subsequent opens show cached data instantly with a background refresh.
 - **JetBrains Toolbox** detects projects from IDE config directories (`.idea/`) and shows them immediately. The project list "is now updated more often, and more efficiently too, meaning it always stays up to date while consuming fewer resources."
 - **Chrome DevTools Automatic Workspace Folders** lets devservers inform DevTools about project folders, which DevTools picks up automatically -- zero-scan, push-based discovery.
@@ -54,7 +57,7 @@ The two discovery systems (SSE-streamed onboarding scan and batch mesh panel sca
 
 ```typescript
 const COMMON_DEV_DIRS = [
-  '~/Developer',    // macOS special folder (gets custom icon)
+  '~/Developer', // macOS special folder (gets custom icon)
   '~/Projects',
   '~/projects',
   '~/dev',
@@ -70,6 +73,7 @@ const COMMON_DEV_DIRS = [
 ```
 
 **Algorithm:**
+
 1. Check which of `COMMON_DEV_DIRS` exist (parallel `stat()` calls -- fast)
 2. If exactly one exists, use it as default
 3. If multiple exist, show them as suggestions and let the user pick
@@ -77,6 +81,7 @@ const COMMON_DEV_DIRS = [
 5. After first scan, persist the chosen roots in config (`mesh.scanRoots`)
 
 **Prior art:**
+
 - **VS Code Project Manager** uses `projectManager.git.baseFolders` -- an explicit list of folders or glob patterns. No auto-detection; user configures.
 - **Git Project Manager** uses `gitProjectManager.baseProjectsFolders` with `maxDepthRecursion: 2` (default). User must configure base folders.
 - macOS gives `~/Developer` a special Xcode folder icon, signaling it as the canonical dev directory.
@@ -86,6 +91,7 @@ const COMMON_DEV_DIRS = [
 The existing `scanForAgents` async generator is already transport-agnostic. The unification pattern:
 
 **Server side (HTTP transport):**
+
 ```typescript
 // Single route handler for both onboarding and mesh panel
 app.post('/api/discovery/scan', async (req, res) => {
@@ -98,6 +104,7 @@ app.post('/api/discovery/scan', async (req, res) => {
 ```
 
 **In-process (DirectTransport for Obsidian):**
+
 ```typescript
 class DirectTransport implements Transport {
   async *scanForAgents(options: ScanOptions): AsyncGenerator<ScanEvent> {
@@ -107,28 +114,32 @@ class DirectTransport implements Transport {
 ```
 
 **React consumption pattern -- single hook for both transports:**
+
 ```typescript
 function useDiscoveryScan() {
   const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
-  const scan = useCallback(async (options: ScanOptions) => {
-    setIsScanning(true);
-    setCandidates([]);
+  const scan = useCallback(
+    async (options: ScanOptions) => {
+      setIsScanning(true);
+      setCandidates([]);
 
-    // transport.scan() returns AsyncIterable<ScanEvent> in both modes
-    for await (const event of transport.scan(options)) {
-      if (event.type === 'candidate') {
-        setCandidates(prev => [...prev, event.data]);
-      } else if (event.type === 'progress') {
-        setProgress(event.data);
-      } else if (event.type === 'complete') {
-        setProgress(event.data);
+      // transport.scan() returns AsyncIterable<ScanEvent> in both modes
+      for await (const event of transport.scan(options)) {
+        if (event.type === 'candidate') {
+          setCandidates((prev) => [...prev, event.data]);
+        } else if (event.type === 'progress') {
+          setProgress(event.data);
+        } else if (event.type === 'complete') {
+          setProgress(event.data);
+        }
       }
-    }
-    setIsScanning(false);
-  }, [transport]);
+      setIsScanning(false);
+    },
+    [transport]
+  );
 
   return { candidates, progress, isScanning, scan };
 }
@@ -145,7 +156,7 @@ function onCandidate(candidate: DiscoveryCandidate) {
   bufferRef.current.push(candidate);
   if (!rafRef.current) {
     rafRef.current = requestAnimationFrame(() => {
-      setCandidates(prev => [...prev, ...bufferRef.current]);
+      setCandidates((prev) => [...prev, ...bufferRef.current]);
       bufferRef.current = [];
       rafRef.current = undefined;
     });
@@ -198,6 +209,7 @@ interface DiscoveryStore {
 Both the onboarding step and the mesh panel read from the same store. If the user scans during onboarding, the mesh panel already has the results when they navigate to it. No duplicate scan needed.
 
 **Cache strategy:**
+
 - Cache scan results in the store with a `lastScanAt` timestamp
 - Show cached results immediately on mount
 - Offer "Re-scan" button that clears and re-runs
@@ -208,22 +220,26 @@ Both the onboarding step and the mesh panel read from the same store. If the use
 **Three-tier approach: auto-detect, then suggest, then configure.**
 
 **Tier 1 -- Zero-config (first run):**
+
 - Probe `COMMON_DEV_DIRS` (see section 2)
 - If found, scan those automatically
 - Show a subtle "Scanning ~/Developer..." indicator
 
 **Tier 2 -- Guided configuration (onboarding):**
+
 - After first scan completes, show: "We found N projects in ~/Developer. Want to add more directories?"
 - Provide a directory picker for adding additional roots
 - Persist to `mesh.scanRoots` in config
 
 **Tier 3 -- Manual configuration (settings):**
+
 - Settings panel shows configured scan roots as an editable list
 - Add/remove roots with directory picker
 - Each root shows last scan time and project count
 - "Scan now" button per root
 
 **Prior art alignment:**
+
 - VS Code Project Manager: explicit `baseFolders` config (Tier 3 only)
 - Git Project Manager: `baseProjectsFolders` + `maxDepthRecursion` + `ignoredFolders` (Tier 3 with depth control)
 - JetBrains Toolbox: auto-detects from IDE configs (Tier 1), no manual scan root config needed

@@ -11,13 +11,20 @@ interface TestStepProps {
 }
 
 /** Connection test step showing pending/success/error state. */
-export function TestStep({ isPending, isSuccess, isError, errorMessage, botUsername, onRetry }: TestStepProps) {
+export function TestStep({
+  isPending,
+  isSuccess,
+  isError,
+  errorMessage,
+  botUsername,
+  onRetry,
+}: TestStepProps) {
   return (
     <div className="flex flex-col items-center gap-3 py-6">
       {isPending && (
         <>
-          <Loader2 className="size-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Testing connection...</p>
+          <Loader2 className="text-muted-foreground size-8 animate-spin" />
+          <p className="text-muted-foreground text-sm">Testing connection...</p>
         </>
       )}
       {isSuccess && (

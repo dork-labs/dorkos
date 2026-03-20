@@ -70,35 +70,34 @@ status: ideation
 
 ### Package Boundary Analysis
 
-| Package | Shared Config | Package-Local Rules |
-|---------|--------------|-------------------|
-| `apps/client` | `react.js` | FSD layer enforcement (3 `no-restricted-imports` blocks) |
-| `apps/server` | `node.js` | `os.homedir()` ban, SDK confinement (`@anthropic-ai/claude-agent-sdk`), `process.env` carve-outs for server-specific files |
-| `apps/obsidian-plugin` | `react.js` | None currently |
-| `apps/site` | Keep existing `eslint-config-next` | Already has own config |
-| `apps/e2e` | `base.js` | Playwright-specific if needed |
-| `packages/shared` | `base.js` | None |
-| `packages/relay` | `base.js` | None |
-| `packages/mesh` | `base.js` | None |
-| `packages/cli` | `node.js` | `process.env` carve-outs for CLI bootstrap |
-| `packages/db` | `base.js` | None |
-| `packages/test-utils` | `base.js` + `test.js` | None |
-| `packages/icons` | `base.js` | Minimal (asset package) |
+| Package                | Shared Config                      | Package-Local Rules                                                                                                        |
+| ---------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `apps/client`          | `react.js`                         | FSD layer enforcement (3 `no-restricted-imports` blocks)                                                                   |
+| `apps/server`          | `node.js`                          | `os.homedir()` ban, SDK confinement (`@anthropic-ai/claude-agent-sdk`), `process.env` carve-outs for server-specific files |
+| `apps/obsidian-plugin` | `react.js`                         | None currently                                                                                                             |
+| `apps/site`            | Keep existing `eslint-config-next` | Already has own config                                                                                                     |
+| `apps/e2e`             | `base.js`                          | Playwright-specific if needed                                                                                              |
+| `packages/shared`      | `base.js`                          | None                                                                                                                       |
+| `packages/relay`       | `base.js`                          | None                                                                                                                       |
+| `packages/mesh`        | `base.js`                          | None                                                                                                                       |
+| `packages/cli`         | `node.js`                          | `process.env` carve-outs for CLI bootstrap                                                                                 |
+| `packages/db`          | `base.js`                          | None                                                                                                                       |
+| `packages/test-utils`  | `base.js` + `test.js`              | None                                                                                                                       |
+| `packages/icons`       | `base.js`                          | Minimal (asset package)                                                                                                    |
 
 ### SDK Import Locations (Current State)
 
-| Location | Count | Type | After Refactor |
-|----------|-------|------|---------------|
-| `services/runtimes/claude-code/` | 26 | Production code | Allowed (inside boundary) |
-| `services/core/__tests__/` | 31+ | Test mocks | Carve-out (tests may mock SDK) |
-| `services/core/*.ts` shims | 8 | Re-export shims | Deleted (spec #97 removes these) |
-| `lib/sdk-utils.ts` | 1 | CLI path resolution | Moved into `runtimes/claude-code/` |
-| `packages/cli/scripts/build.ts` | 1 | Build config | Carve-out (string reference in externals) |
+| Location                         | Count | Type                | After Refactor                            |
+| -------------------------------- | ----- | ------------------- | ----------------------------------------- |
+| `services/runtimes/claude-code/` | 26    | Production code     | Allowed (inside boundary)                 |
+| `services/core/__tests__/`       | 31+   | Test mocks          | Carve-out (tests may mock SDK)            |
+| `services/core/*.ts` shims       | 8     | Re-export shims     | Deleted (spec #97 removes these)          |
+| `lib/sdk-utils.ts`               | 1     | CLI path resolution | Moved into `runtimes/claude-code/`        |
+| `packages/cli/scripts/build.ts`  | 1     | Build config        | Carve-out (string reference in externals) |
 
 ## 5) Research
 
 - **Potential solutions:**
-
   1. **Per-package configs with shared config package (Approach A)**
      - Turborepo's official recommendation; mirrors existing `@dorkos/typescript-config` pattern
      - Each package owns its `eslint.config.js`, imports shared presets
@@ -128,11 +127,11 @@ status: ideation
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Add lint to packages without it? | Yes, add to all packages | Consistent coverage across monorepo. Catches issues that currently slip through. Aligns with "every package owns its config" philosophy. |
-| 2 | Root `eslint.config.js` fate? | Keep thin root config | Retain minimal config for root-level files (`turbo.json`, `vitest.workspace.ts`, etc.) and as fallback. Turborepo default — some root files need linting too. |
-| 3 | `sdk-utils.ts` location? | Move into `runtimes/claude-code/` | `require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')` is a Claude-specific concern. Moving it keeps the SDK boundary clean with zero carve-outs in the confinement rule. |
+| #   | Decision                         | Choice                            | Rationale                                                                                                                                                                     |
+| --- | -------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Add lint to packages without it? | Yes, add to all packages          | Consistent coverage across monorepo. Catches issues that currently slip through. Aligns with "every package owns its config" philosophy.                                      |
+| 2   | Root `eslint.config.js` fate?    | Keep thin root config             | Retain minimal config for root-level files (`turbo.json`, `vitest.workspace.ts`, etc.) and as fallback. Turborepo default — some root files need linting too.                 |
+| 3   | `sdk-utils.ts` location?         | Move into `runtimes/claude-code/` | `require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')` is a Claude-specific concern. Moving it keeps the SDK boundary clean with zero carve-outs in the confinement rule. |
 
 ### Shared Config Package Structure
 

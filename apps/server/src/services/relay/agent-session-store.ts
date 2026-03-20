@@ -135,7 +135,10 @@ export class AgentSessionStore implements AgentSessionStoreLike {
 
   /** Enqueue an atomic persist, serialized to prevent concurrent tmp+rename races. */
   private persist(): Promise<void> {
-    this.writeLock = this.writeLock.then(() => this.doPersist(), () => this.doPersist());
+    this.writeLock = this.writeLock.then(
+      () => this.doPersist(),
+      () => this.doPersist()
+    );
     return this.writeLock;
   }
 

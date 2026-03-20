@@ -17,6 +17,7 @@ Two client-side rendering bugs cause the live streaming chat view to diverge vis
 All fixes are confined to `apps/client/`. No new dependencies are introduced. No server-side, relay, or SSE protocol changes are needed.
 
 **Files changed:**
+
 - `apps/client/src/layers/features/chat/model/stream-event-handler.ts` (Bug 1 fix — 1 line)
 - `apps/client/src/layers/features/chat/ui/MessageList.tsx` (Bug 2 fix — ~25 lines across 4 locations)
 - `apps/client/src/layers/features/chat/__tests__/MessageList.test.tsx` (3 new tests)
@@ -196,12 +197,12 @@ useEffect(() => {
 Replace the existing `handleScroll` useCallback (lines 104–115):
 
 **Before:**
+
 ```typescript
 const handleScroll = useCallback(() => {
   const container = parentRef.current;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
   const isAtBottom = distanceFromBottom < 200;
   const changed = isAtBottomRef.current !== isAtBottom;
   isAtBottomRef.current = isAtBottom;
@@ -212,12 +213,12 @@ const handleScroll = useCallback(() => {
 ```
 
 **After:**
+
 ```typescript
 const handleScroll = useCallback(() => {
   const container = parentRef.current;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
   const isAtBottom = distanceFromBottom < 200;
 
   // Only disengage auto-scroll when the user has explicitly scrolled up.
@@ -240,6 +241,7 @@ Logic: `isAtBottomRef` is only set to `false` when `isUserScrollingRef.current =
 Replace the ResizeObserver `useEffect` (lines 167–188):
 
 **Before:**
+
 ```typescript
 const observer = new ResizeObserver(() => {
   if (isAtBottomRef.current && !isTouchActiveRef.current) {
@@ -255,6 +257,7 @@ const observer = new ResizeObserver(() => {
 ```
 
 **After:**
+
 ```typescript
 const observer = new ResizeObserver(() => {
   if (isAtBottomRef.current && !isTouchActiveRef.current) {
@@ -548,6 +551,7 @@ it('renders text parts adjacent to tool call without orphaned standalone renderi
 #### Why This Test Validates the Fix
 
 The orphan bug caused the 'Done' text to render as a floating element visually disconnected from the tool card. This test validates:
+
 1. 'Done' is present in the DOM (not dropped)
 2. It renders inside a `data-testid='streamdown'` element — the standard `StreamingText` rendering path — not as an ad-hoc text node at a different DOM level
 3. Multiple text parts after a tool call all render as expected siblings
@@ -637,13 +641,13 @@ Re-run `pnpm test -- --run` — tests should still pass since they test behavior
 
 ## Summary
 
-| Task | File(s) | Size | Parallel With |
-|------|---------|------|---------------|
-| 1.1 — queueMicrotask in tool_result handler | `stream-event-handler.ts` | Small | 1.2 |
-| 1.2 — User scroll intent tracking in MessageList | `MessageList.tsx` | Medium | 1.1 |
-| 1.3 — Scroll intent tests | `MessageList.test.tsx` | Medium | 1.4 |
-| 1.4 — Tool result text isolation test | `MessageItem.test.tsx` | Small | 1.3 |
-| 1.5 — Full test run + live browser verification | — | Small | None |
+| Task                                             | File(s)                   | Size   | Parallel With |
+| ------------------------------------------------ | ------------------------- | ------ | ------------- |
+| 1.1 — queueMicrotask in tool_result handler      | `stream-event-handler.ts` | Small  | 1.2           |
+| 1.2 — User scroll intent tracking in MessageList | `MessageList.tsx`         | Medium | 1.1           |
+| 1.3 — Scroll intent tests                        | `MessageList.test.tsx`    | Medium | 1.4           |
+| 1.4 — Tool result text isolation test            | `MessageItem.test.tsx`    | Small  | 1.3           |
+| 1.5 — Full test run + live browser verification  | —                         | Small  | None          |
 
 **Total tasks:** 5
 **Parallelisation opportunities:** Tasks 1.1+1.2 can run simultaneously; Tasks 1.3+1.4 can run simultaneously after their respective dependencies.

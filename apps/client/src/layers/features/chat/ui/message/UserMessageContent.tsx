@@ -14,9 +14,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   const parsed = useMemo(() => parseFilePrefix(message.content), [message.content]);
 
   if (message.messageType === 'command') {
-    return (
-      <div className="text-msg-command-fg truncate font-mono text-sm">{message.content}</div>
-    );
+    return <div className="text-msg-command-fg truncate font-mono text-sm">{message.content}</div>;
   }
 
   if (message.messageType === 'compaction') {
@@ -28,7 +26,10 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
         >
           <div className="bg-border/40 h-px flex-1" />
           <ChevronRight
-            className={cn('size-3 transition-transform duration-200', compactionExpanded && 'rotate-90')}
+            className={cn(
+              'size-3 transition-transform duration-200',
+              compactionExpanded && 'rotate-90'
+            )}
           />
           <span>Context compacted</span>
           <div className="bg-border/40 h-px flex-1" />

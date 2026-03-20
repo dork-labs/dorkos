@@ -6,9 +6,9 @@ This project uses [Motion](https://motion.dev/) (version 12.x, formerly Framer M
 
 ## Key Files
 
-| Concept                      | Location                                              |
-| ---------------------------- | ----------------------------------------------------- |
-| Motion library import        | `motion/react` package                                |
+| Concept                      | Location                                                    |
+| ---------------------------- | ----------------------------------------------------------- |
+| Motion library import        | `motion/react` package                                      |
 | Animation utilities (CSS)    | `apps/client/src/index.css` (transition classes, keyframes) |
 | Tailwind animation utilities | `tw-animate-css` (imported in index.css)                    |
 | Accordion animations         | CSS keyframes in `index.css`                                |
@@ -227,12 +227,12 @@ Choose the right transition type for the animation feel.
 
 DorkOS uses a small set of named spring presets for chat interactions. Prefer these over ad-hoc values for consistency:
 
-| Use case | Preset | Character |
-|---|---|---|
-| Message entry (new messages) | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce, settles ~250ms |
-| Sidebar active indicator slide | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth, deliberate navigation feel |
+| Use case                             | Preset                                            | Character                                            |
+| ------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- |
+| Message entry (new messages)         | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce, settles ~250ms                    |
+| Sidebar active indicator slide       | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth, deliberate navigation feel                   |
 | Tap feedback (buttons, session rows) | `{ type: 'spring', stiffness: 400, damping: 30 }` | Quick response, already used in ToolCallCard chevron |
-| Session crossfade | `{ duration: 0.15, ease: 'easeInOut' }` | Linear opacity — intentional, not spring |
+| Session crossfade                    | `{ duration: 0.15, ease: 'easeInOut' }`           | Linear opacity — intentional, not spring             |
 
 Session crossfade uses duration-based easing rather than spring physics because opacity fades are perceptually linear and a spring would add unnecessary overshoot to a simple visibility transition.
 
@@ -274,6 +274,7 @@ Key details:
 - Spring config: `stiffness: 500`, `damping: 40` for a snappy feel
 
 **Session sidebar usage**: The `SessionItem` component uses `layoutId="active-session-bg"` for the active session background. The `SidebarContent` ancestor carries the `layout` prop to enable correct position measurement during list scroll. The spring preset for this indicator is `{ type: 'spring', stiffness: 280, damping: 32 }` (smooth slide, not the snappier button preset).
+
 - Respects `prefers-reduced-motion` via the existing `<MotionConfig reducedMotion="user">` wrapper in `App.tsx`
 
 ### Stagger on Open (Not on Every Keystroke)
@@ -484,12 +485,12 @@ The chat uses `streamdown`'s built-in animation system for per-word text animati
 
 ### TextEffectMode
 
-| Mode | Animation | Description |
-|---|---|---|
-| `none` | Disabled | Text appears instantly (default for `prefers-reduced-motion`) |
-| `fade` | `fadeIn` | Words fade in from transparent |
-| `blur-in` | `blurIn` | Words blur-in from defocused (default) |
-| `slide-up` | `slideUp` | Words slide up from below |
+| Mode       | Animation | Description                                                   |
+| ---------- | --------- | ------------------------------------------------------------- |
+| `none`     | Disabled  | Text appears instantly (default for `prefers-reduced-motion`) |
+| `fade`     | `fadeIn`  | Words fade in from transparent                                |
+| `blur-in`  | `blurIn`  | Words blur-in from defocused (default)                        |
+| `slide-up` | `slideUp` | Words slide up from below                                     |
 
 ### Configuration
 
@@ -626,10 +627,10 @@ const fadeIn = {
 // You do not need to call useReducedMotion() in individual components.
 
 // If you need to conditionally adjust non-motion behavior based on the setting:
-import { useReducedMotion } from 'motion/react'
+import { useReducedMotion } from 'motion/react';
 
 export function AnimatedCard() {
-  const shouldReduceMotion = useReducedMotion()
+  const shouldReduceMotion = useReducedMotion();
   // Use only when you need to customize non-Motion behavior (e.g., skip a delay)
 }
 ```
@@ -769,12 +770,12 @@ No per-component `useReducedMotion` calls are needed unless you need to gate non
 
 Follow the Calm Tech design system:
 
-| Animation Type          | Duration  | Example                                   |
-| ----------------------- | --------- | ----------------------------------------- |
-| Micro-interactions      | 100-150ms | Button hover, checkbox toggle             |
-| Component entrance      | 200-300ms | Modal open, card fade in                  |
-| In-page page transitions | 150ms    | Command palette sub-menu x-axis slide     |
-| Drawer/overlay slide    | 200ms     | Embedded sidebar, floating toggle button  |
+| Animation Type           | Duration  | Example                                  |
+| ------------------------ | --------- | ---------------------------------------- |
+| Micro-interactions       | 100-150ms | Button hover, checkbox toggle            |
+| Component entrance       | 200-300ms | Modal open, card fade in                 |
+| In-page page transitions | 150ms     | Command palette sub-menu x-axis slide    |
+| Drawer/overlay slide     | 200ms     | Embedded sidebar, floating toggle button |
 
 Faster animations feel more responsive; slower animations can feel laggy. Prefer spring physics (`type: 'spring'`) over duration-based easing for interactive elements — the spring self-terminates based on stiffness/damping rather than a fixed time.
 

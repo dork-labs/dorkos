@@ -16,8 +16,13 @@ export function useDiscoveryScan() {
   const transport = useTransport();
   const abortRef = useRef<AbortController | null>(null);
 
-  const { startScan: storeStartScan, addCandidate, setProgress, completeScan, setError } =
-    useDiscoveryStore();
+  const {
+    startScan: storeStartScan,
+    addCandidate,
+    setProgress,
+    completeScan,
+    setError,
+  } = useDiscoveryStore();
 
   const startScan = useCallback(
     (options: TransportScanOptions = { roots: [] }) => {
@@ -48,7 +53,7 @@ export function useDiscoveryScan() {
                 break;
             }
           },
-          controller.signal,
+          controller.signal
         )
         .catch((err: unknown) => {
           if (err instanceof Error && err.name !== 'AbortError') {
@@ -56,7 +61,7 @@ export function useDiscoveryScan() {
           }
         });
     },
-    [transport, storeStartScan, addCandidate, setProgress, completeScan, setError],
+    [transport, storeStartScan, addCandidate, setProgress, completeScan, setError]
   );
 
   const stopScan = useCallback(() => {

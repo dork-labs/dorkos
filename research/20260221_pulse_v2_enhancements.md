@@ -1,5 +1,5 @@
 ---
-title: "Pulse Scheduler V2 — Research Report"
+title: 'Pulse Scheduler V2 — Research Report'
 date: 2026-02-21
 type: implementation
 status: active
@@ -27,7 +27,7 @@ All three V2 enhancements have clear, implementable solutions. The best path for
 
 **Finding**: No available open-source library is a good fit. All have at least one disqualifying issue (antd dependency, stale maintenance, or requires Tailwind v3 while this project is on Tailwind v4). The correct approach is a custom component — the implementation surface is small and fully within the capabilities of existing `Select` primitives already in the shadcn/ui inventory.
 
-**Finding**: The existing CronPresets + raw input architecture should be *augmented*, not replaced. The preset pills handle ~80% of real-world scheduling needs. The visual builder should be a third mode, accessible via a "Custom..." expansion panel, not the default entry point.
+**Finding**: The existing CronPresets + raw input architecture should be _augmented_, not replaced. The preset pills handle ~80% of real-world scheduling needs. The visual builder should be a third mode, accessible via a "Custom..." expansion panel, not the default entry point.
 
 **Finding**: `cronstrue` is already imported in `CreateScheduleDialog.tsx` and produces human-readable previews. This covers the feedback loop for any expression the builder produces.
 
@@ -41,7 +41,7 @@ All three V2 enhancements have clear, implementable solutions. The best path for
 
 ### 3. Calm Tech Notifications
 
-**Finding**: The existing green dot on the HeartPulse button (`activeRunCount > 0`) is already a correct ambient indicator for *in-progress* runs. The gap is a completed-run signal that persists until the user acknowledges it, without interrupting them.
+**Finding**: The existing green dot on the HeartPulse button (`activeRunCount > 0`) is already a correct ambient indicator for _in-progress_ runs. The gap is a completed-run signal that persists until the user acknowledges it, without interrupting them.
 
 **Finding**: The Sonner library is already installed in this project (`apps/client/src/layers/shared/ui/sonner.tsx` present per git status). A low-priority Sonner toast on run completion is the lowest-friction notification — it auto-dismisses, is non-modal, and integrates with the existing design system.
 
@@ -57,13 +57,13 @@ All three V2 enhancements have clear, implementable solutions. The best path for
 
 #### Library Landscape Assessment
 
-| Library | Stars | Last Release | Deps | Verdict |
-|---|---|---|---|---|
-| `cron-builder-ui` (vpfaiz) | 1 | Aug 2025 | Radix + Tailwind | 2 commits, effectively unmaintained |
-| `react-js-cron` | ~250 | >12mo ago | **antd** | Disqualified — antd is a huge dep tree incompatible with this project's design system |
-| `neocron` | ~30 | Nov 2023 | Radix + Tailwind v3 | Tailwind v3 only; peer dep mismatch with Tailwind v4 |
-| `react-cron-generator` | modest | unclear | jQuery-era patterns | Legacy API; incompatible with React 19 |
-| `@sbzen/re-cron` | small | older | Angular-first | Not React-native |
+| Library                    | Stars  | Last Release | Deps                | Verdict                                                                               |
+| -------------------------- | ------ | ------------ | ------------------- | ------------------------------------------------------------------------------------- |
+| `cron-builder-ui` (vpfaiz) | 1      | Aug 2025     | Radix + Tailwind    | 2 commits, effectively unmaintained                                                   |
+| `react-js-cron`            | ~250   | >12mo ago    | **antd**            | Disqualified — antd is a huge dep tree incompatible with this project's design system |
+| `neocron`                  | ~30    | Nov 2023     | Radix + Tailwind v3 | Tailwind v3 only; peer dep mismatch with Tailwind v4                                  |
+| `react-cron-generator`     | modest | unclear      | jQuery-era patterns | Legacy API; incompatible with React 19                                                |
+| `@sbzen/re-cron`           | small  | older        | Angular-first       | Not React-native                                                                      |
 
 **Conclusion**: Build custom. The implementation is not large.
 
@@ -96,13 +96,13 @@ features/pulse/ui/
 
 #### Field Spec (V2 scope)
 
-| Field | Options in Select | Wildcard label |
-|---|---|---|
-| Minute | `*` (any), 0, 5, 10, 15, 20, 30, 45 | "Every minute" |
-| Hour | `*` (any), 0–23 | "Every hour" |
-| Day of Month | `*` (any), 1–31 | "Every day" |
-| Month | `*` (any), Jan–Dec | "Every month" |
-| Day of Week | `*` (any), Sun–Sat | "Every day of week" |
+| Field        | Options in Select                   | Wildcard label      |
+| ------------ | ----------------------------------- | ------------------- |
+| Minute       | `*` (any), 0, 5, 10, 15, 20, 30, 45 | "Every minute"      |
+| Hour         | `*` (any), 0–23                     | "Every hour"        |
+| Day of Month | `*` (any), 1–31                     | "Every day"         |
+| Month        | `*` (any), Jan–Dec                  | "Every month"       |
+| Day of Week  | `*` (any), Sun–Sat                  | "Every day of week" |
 
 Expression assembly: concatenate the five select values with spaces. When all are `*`, the string is `* * * * *`.
 
@@ -120,10 +120,10 @@ The DirectoryPicker writes directly to global state in two places:
 
 ```typescript
 // handleSelect (browse mode)
-setSelectedCwd(data.path);  // line 56
+setSelectedCwd(data.path); // line 56
 
 // handleRecentSelect (recent mode)
-setSelectedCwd(dirPath);    // line 78
+setSelectedCwd(dirPath); // line 78
 ```
 
 It also calls `onClose()` immediately after both writes. Both of these behaviours need to be overridable for form-field use.
@@ -134,7 +134,7 @@ It also calls `onClose()` immediately after both writes. Both of these behaviour
 interface DirectoryPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelect?: (path: string) => void;   // NEW: when provided, overrides global state write
+  onSelect?: (path: string) => void; // NEW: when provided, overrides global state write
 }
 ```
 
@@ -144,21 +144,24 @@ interface DirectoryPickerProps {
 const handleSelect = useCallback(() => {
   if (!data?.path) return;
   if (onSelect) {
-    onSelect(data.path);   // caller manages state
+    onSelect(data.path); // caller manages state
   } else {
-    setSelectedCwd(data.path);   // existing global behaviour
+    setSelectedCwd(data.path); // existing global behaviour
   }
   onClose();
 }, [data?.path, onSelect, setSelectedCwd, onClose]);
 
-const handleRecentSelect = useCallback((dirPath: string) => {
-  if (onSelect) {
-    onSelect(dirPath);
-  } else {
-    setSelectedCwd(dirPath);
-  }
-  onClose();
-}, [onSelect, setSelectedCwd, onClose]);
+const handleRecentSelect = useCallback(
+  (dirPath: string) => {
+    if (onSelect) {
+      onSelect(dirPath);
+    } else {
+      setSelectedCwd(dirPath);
+    }
+    onClose();
+  },
+  [onSelect, setSelectedCwd, onClose]
+);
 ```
 
 The `setSelectedCwd` import and call remain unconditionally present in the non-`onSelect` branch, so the existing `SessionSidebar` usage requires zero changes.
@@ -199,7 +202,7 @@ Amber Case's calm technology principles, ordered by attention demand:
 2. **Center only when necessary** — escalate to focus only if urgent
 3. **Inform, don't interrupt** — communicate without taking the user out of their task
 
-A completed Pulse run is never urgent. The user schedules it; they expect it to run. The notification goal is: *when the user naturally glances at the UI, they can see something completed*. Not: *alert the user right now*.
+A completed Pulse run is never urgent. The user schedules it; they expect it to run. The notification goal is: _when the user naturally glances at the UI, they can see something completed_. Not: _alert the user right now_.
 
 #### Notification System Design
 
@@ -218,6 +221,7 @@ States of the HeartPulse icon:
 ```
 
 Implementation: a `useCompletedRunBadge()` hook in `entities/pulse` that:
+
 - Polls `useRuns()` (already at 10s interval)
 - Tracks the set of run IDs that were `running` in the previous poll and are now `success` or `failed`
 - Persists "last viewed at" timestamp to `localStorage`
@@ -228,6 +232,7 @@ The `SessionSidebar` calls `clearBadge()` when `pulseOpen` transitions from fals
 **Layer 2 — Sonner toast (opt-in, low interruption)**
 
 When a run completes, fire a Sonner toast. Sonner is already installed. The toast should be:
+
 - `duration: 6000` (6 seconds, longer than default 4s since the user may not be looking)
 - `position: 'bottom-right'`
 - Variant: default (not destructive) for success, destructive for failure
@@ -267,17 +272,17 @@ The `navigator.setAppBadge()` API (Badging API) places a dot on the browser tab 
 
 #### Implementation Plan (sequenced by calm tech alignment)
 
-| Priority | Feature | Calm score | Effort |
-|---|---|---|---|
-| 1 | Sidebar amber dot badge | 10/10 | Low |
-| 2 | Sonner toast on completion | 8/10 | Low |
-| 3 | Tab title `(N) DorkOS` | 9/10 | Low |
-| Later | Favicon badging API | 10/10 | Medium |
-| Never | Browser Notification API | 2/10 | — |
+| Priority | Feature                    | Calm score | Effort |
+| -------- | -------------------------- | ---------- | ------ |
+| 1        | Sidebar amber dot badge    | 10/10      | Low    |
+| 2        | Sonner toast on completion | 8/10       | Low    |
+| 3        | Tab title `(N) DorkOS`     | 9/10       | Low    |
+| Later    | Favicon badging API        | 10/10      | Medium |
+| Never    | Browser Notification API   | 2/10       | —      |
 
 **Data plumbing**: All three tiers can be driven from a single `useCompletedRunBadge()` hook that compares consecutive `useRuns()` snapshots. The hook lives at `entities/pulse/model/use-completed-run-badge.ts`. The toast fires as a side effect inside the hook (or in a dedicated `useRunCompletionToasts.ts` if keeping the hook pure).
 
-**Key design decision**: The toast and badge should *not* fire for runs that were already complete when the app first loads. They should only fire for runs that transition from `running` → terminal during the current browser session. This prevents spamming users who open the app after a batch of overnight runs.
+**Key design decision**: The toast and badge should _not_ fire for runs that were already complete when the app first loads. They should only fire for runs that transition from `running` → terminal during the current browser session. This prevents spamming users who open the app after a batch of overnight runs.
 
 ---
 

@@ -3,11 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  useUpdateSchedule,
-  useTriggerSchedule,
-  useDeleteSchedule,
-} from '@/layers/entities/pulse';
+import { useUpdateSchedule, useTriggerSchedule, useDeleteSchedule } from '@/layers/entities/pulse';
 import {
   Switch,
   DropdownMenu,
@@ -63,7 +59,13 @@ interface ScheduleRowProps {
  * A single schedule row with status dot, cron description, action controls,
  * and an animated run history panel that expands on click.
  */
-export function ScheduleRow({ schedule, agent, expanded, onToggleExpand, onEdit }: ScheduleRowProps) {
+export function ScheduleRow({
+  schedule,
+  agent,
+  expanded,
+  onToggleExpand,
+  onEdit,
+}: ScheduleRowProps) {
   const updateSchedule = useUpdateSchedule();
   const triggerSchedule = useTriggerSchedule();
   const deleteSchedule = useDeleteSchedule();
@@ -121,7 +123,9 @@ export function ScheduleRow({ schedule, agent, expanded, onToggleExpand, onEdit 
                     className="inline-block size-2 shrink-0 rounded-full"
                     style={{ backgroundColor: agent.color ?? hashToHslColor(agent.id) }}
                   />
-                  <span className="text-xs leading-none">{agent.icon ?? hashToEmoji(agent.id)}</span>
+                  <span className="text-xs leading-none">
+                    {agent.icon ?? hashToEmoji(agent.id)}
+                  </span>
                   <span className="text-sm font-medium">{agent.name}</span>
                   <span className="text-muted-foreground text-xs">&middot;</span>
                 </>
@@ -136,15 +140,23 @@ export function ScheduleRow({ schedule, agent, expanded, onToggleExpand, onEdit 
                 // No agentId, show folder icon + CWD
                 <>
                   <FolderOpen className="text-muted-foreground size-3.5 shrink-0" />
-                  <span className="text-muted-foreground font-mono text-xs">{shortenHomePath(schedule.cwd)}</span>
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {shortenHomePath(schedule.cwd)}
+                  </span>
                   <span className="text-muted-foreground text-xs">&middot;</span>
                 </>
               ) : null}
-              <span className={agent || schedule.agentId || schedule.cwd ? 'text-muted-foreground text-xs' : 'text-sm font-medium'}>
+              <span
+                className={
+                  agent || schedule.agentId || schedule.cwd
+                    ? 'text-muted-foreground text-xs'
+                    : 'text-sm font-medium'
+                }
+              >
                 {schedule.name}
               </span>
             </div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-muted-foreground text-xs">
               {formatCron(schedule.cron)}
               {schedule.nextRun && (
                 <> &middot; Next: {new Date(schedule.nextRun).toLocaleString()}</>
@@ -222,7 +234,7 @@ export function ScheduleRow({ schedule, agent, expanded, onToggleExpand, onEdit 
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
               className="overflow-hidden"
             >
-              <div className="border-t px-3 pb-3 pt-2">
+              <div className="border-t px-3 pt-2 pb-3">
                 <RunHistoryPanel scheduleId={schedule.id} scheduleCwd={schedule.cwd} />
               </div>
             </motion.div>

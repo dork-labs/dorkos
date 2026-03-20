@@ -1,9 +1,18 @@
 ---
-title: "Hook Lifecycle Events UI Patterns — Surfacing hook_started / hook_progress / hook_response in Chat"
+title: 'Hook Lifecycle Events UI Patterns — Surfacing hook_started / hook_progress / hook_response in Chat'
 date: 2026-03-16
 type: external-best-practices
 status: active
-tags: [hook-lifecycle, chat-ui, tool-call-card, system-status, agent-sdk, subprocess-visibility, ux-patterns]
+tags:
+  [
+    hook-lifecycle,
+    chat-ui,
+    tool-call-card,
+    system-status,
+    agent-sdk,
+    subprocess-visibility,
+    ux-patterns,
+  ]
 feature_slug: hook-lifecycle-events
 searches_performed: 0
 sources_count: 8
@@ -28,9 +37,9 @@ The three hook message types from `@anthropic-ai/claude-agent-sdk`:
 type SDKHookStartedMessage = {
   type: 'system';
   subtype: 'hook_started';
-  hook_id: string;       // Unique ID for this hook execution instance
-  hook_name: string;     // Name of the hook (e.g., "pre-commit", "my-validator")
-  hook_event: string;    // Which lifecycle event triggered it (e.g., "PreToolUse", "PostToolUse")
+  hook_id: string; // Unique ID for this hook execution instance
+  hook_name: string; // Name of the hook (e.g., "pre-commit", "my-validator")
+  hook_event: string; // Which lifecycle event triggered it (e.g., "PreToolUse", "PostToolUse")
   uuid: string;
   session_id: string;
 };
@@ -42,9 +51,9 @@ type SDKHookProgressMessage = {
   hook_id: string;
   hook_name: string;
   hook_event: string;
-  stdout: string;        // Stdout output accumulated so far
-  stderr: string;        // Stderr output accumulated so far
-  output: string;        // Combined output
+  stdout: string; // Stdout output accumulated so far
+  stderr: string; // Stderr output accumulated so far
+  output: string; // Combined output
   uuid: string;
   session_id: string;
 };
@@ -59,7 +68,7 @@ type SDKHookResponseMessage = {
   output: string;
   stdout: string;
   stderr: string;
-  exit_code?: number;              // 0 = success, non-zero = failure
+  exit_code?: number; // 0 = success, non-zero = failure
   outcome: 'success' | 'error' | 'cancelled';
   uuid: string;
   session_id: string;
@@ -78,18 +87,18 @@ From the SDK's `HookEvent` type:
 
 ```typescript
 type HookEvent =
-  | "PreToolUse"         // Before tool execution — the most common case for DorkOS users
-  | "PostToolUse"        // After tool execution — also very common
-  | "PostToolUseFailure" // After failed tool execution
-  | "Notification"       // Notification events
-  | "UserPromptSubmit"   // When user prompt is submitted
-  | "SessionStart"       // Session beginning
-  | "SessionEnd"         // Session ending
-  | "Stop"               // Agent stop
-  | "SubagentStart"      // Subagent starting
-  | "SubagentStop"       // Subagent stopping
-  | "PreCompact"         // Before context compaction
-  | "PermissionRequest"  // Permission requests
+  | 'PreToolUse' // Before tool execution — the most common case for DorkOS users
+  | 'PostToolUse' // After tool execution — also very common
+  | 'PostToolUseFailure' // After failed tool execution
+  | 'Notification' // Notification events
+  | 'UserPromptSubmit' // When user prompt is submitted
+  | 'SessionStart' // Session beginning
+  | 'SessionEnd' // Session ending
+  | 'Stop' // Agent stop
+  | 'SubagentStart' // Subagent starting
+  | 'SubagentStop' // Subagent stopping
+  | 'PreCompact' // Before context compaction
+  | 'PermissionRequest'; // Permission requests
 ```
 
 **Tool-contextual hooks** (associated with a specific tool call): `PreToolUse`, `PostToolUse`, `PostToolUseFailure`
@@ -108,19 +117,24 @@ The codebase already has:
 ### 4. Visual Precedents for Subprocess/Hook Visibility
 
 #### GitHub Actions — Log Groups
+
 GitHub Actions shows nested subprocess execution as collapsible log groups inside the parent step. Each step has a header line showing status (running/pass/fail) and elapsed time. Subprocess output is shown inside a scrollable log area, collapsed by default when passed, expanded on failure or by user click.
 
 Key UX rules from GA:
+
 - Failures are never auto-hidden — they remain visible until dismissed
 - Passing steps collapse automatically after a brief hold
 - Stderr output gets orange/red background treatment inside the log area
 - Exit codes are shown numerically alongside the outcome
 
 #### VS Code Tasks Panel — Terminal Sub-processes
+
 The VS Code Tasks panel shows sub-task execution inline with the parent task's terminal output. Each spawned process gets a collapsible panel inside the terminal showing its exit code, stderr, and stdout. Failed sub-processes display a red badge with the exit code.
 
 #### Terminal Tools (git hooks, pre-commit)
+
 CLI tools like `pre-commit` display hook execution as:
+
 ```
 pre-commit.............................(no files to check)Skipped
 check yaml.....................................Passed
@@ -129,6 +143,7 @@ check for added large files..................Failed
   - stdout:
     filename.yaml
 ```
+
 This is the "hook as a step in a list" pattern — immediately familiar to developers.
 
 ---
@@ -140,6 +155,7 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 **Description**: When a hook fires around `PreToolUse` or `PostToolUse`, render the hook as an expandable sub-section inside the relevant `ToolCallCard`. The card already has a structure for progress output — hooks extend this naturally.
 
 **Visual design**:
+
 ```
 ┌────────────────────────────────────────────────┐
 │  ✓  Edit  src/auth/session.ts           [done] │  ← ToolCallCard header
@@ -158,6 +174,7 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 ```
 
 **State machine**:
+
 - `hook_started` arrives → add a hook row to the tool card, show spinner + hook name + event type
 - `hook_progress` arrives → update the stdout/stderr in the hook row (live-streaming)
 - `hook_response` arrives → mark success/failure, show exit code, auto-collapse if `outcome === 'success'`, stay expanded if `outcome === 'error'`
@@ -165,6 +182,7 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 **How to correlate**: The mapper tracks `toolState.currentToolId`. When `hook_started` arrives, capture `currentToolId` as the associated tool. Emit a new `hook_started` stream event with `toolCallId` attached. Same for `hook_progress` and `hook_response`.
 
 **Pros**:
+
 - Hooks are contextually anchored to the tool they wrap — causality is clear
 - No new top-level component required — extends existing `ToolCallCard`
 - Tool card already auto-expands on activity (`hasProgress` logic)
@@ -172,6 +190,7 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 - Failure visibility is guaranteed since tool cards stay expanded on error
 
 **Cons**:
+
 - Requires `ToolCallCard` to accept and render a new `hooks` state array
 - Correlating `hook_id` to `tool_use_id` requires temporal proximity heuristic in mapper (no direct link in `hook_started`/`hook_progress`/`hook_response`)
 - Session-level hooks (not tied to a tool) need a separate path
@@ -185,17 +204,20 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 **Description**: Render hook events as standalone `HookCard` components in the message stream, at the same visual level as `ToolCallCard` components. Each hook is an independent card.
 
 **Visual design**:
+
 ```
 [ToolCallCard: Edit src/auth/session.ts]
 [HookCard: pre-commit · PostToolUse · passed · 0.3s]
 ```
 
 **Pros**:
+
 - Simple data model — no correlation problem (no need to link to tool call)
 - Hook cards can be independently expanded/collapsed
 - Works for both tool-contextual and session-level hooks
 
 **Cons**:
+
 - Loses the contextual relationship between hook and triggering tool — the user has to mentally connect them
 - Adds visual noise at the top level when there are many small hooks
 - Pre-tool hooks appear before the tool card, post-tool hooks after — the ordering creates a confusing "sandwich" pattern
@@ -210,11 +232,13 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 **Description**: Treat all hook events as system status messages — they flow through the existing `system_status` path and appear in the ephemeral status zone between the message list and chat input.
 
 **Pros**:
+
 - Zero new components
 - Zero new stream event types (reuse `system_status`)
 - Immediately implementable
 
 **Cons**:
+
 - Status zone is ephemeral — failures auto-fade after 4 seconds, making debugging impossible
 - No persistent record of hook failures in the chat history
 - Completely loses correlation to tool calls
@@ -230,12 +254,14 @@ This is the "hook as a step in a list" pattern — immediately familiar to devel
 **Description**: Route based on `hook_event` field. `PreToolUse`/`PostToolUse`/`PostToolUseFailure` hooks → sub-items in `ToolCallCard` (Solution 1). All other hook events (`SessionStart`, `UserPromptSubmit`, etc.) → route through `system_status` path to `SystemStatusZone`.
 
 **Pros**:
+
 - Correct semantic routing — tool hooks live near tools, session hooks live in the status area
 - Session-level hooks are truly ephemeral (they happen at session start/end — not something users need to audit in history)
 - Reuses both existing surfaces without new top-level components
 - Failure handling: tool hook failures are persistent (inside ToolCallCard), session hook failures... could be made persistent via a separate treatment
 
 **Cons**:
+
 - Two code paths needed in the mapper
 - Session-level hook failures (e.g., `SessionStart` hook that fails) would auto-fade from the status zone — this is a problem if the failure is actionable
 
@@ -329,11 +355,13 @@ if (message.subtype === 'hook_response') {
 ### New Stream Event Types
 
 Add to `StreamEventTypeSchema` in `packages/shared/src/schemas.ts`:
+
 ```
 'hook_started', 'hook_progress', 'hook_response'
 ```
 
 Add corresponding Zod schemas:
+
 ```typescript
 export const HookStartedEventSchema = z.object({
   type: z.literal('hook_started'),
@@ -384,35 +412,38 @@ interface HookState {
 
 interface ToolCallState {
   // ... existing fields ...
-  hooks?: HookState[];  // hooks associated with this tool call
+  hooks?: HookState[]; // hooks associated with this tool call
 }
 ```
 
 In `ToolCallCard.tsx`, render hook rows below the tool header:
 
 ```tsx
-{toolCall.hooks && toolCall.hooks.length > 0 && (
-  <div className="border-t px-3 py-1 space-y-0.5">
-    {toolCall.hooks.map(hook => (
-      <HookRow key={hook.hookId} hook={hook} />
-    ))}
-  </div>
-)}
+{
+  toolCall.hooks && toolCall.hooks.length > 0 && (
+    <div className="space-y-0.5 border-t px-3 py-1">
+      {toolCall.hooks.map((hook) => (
+        <HookRow key={hook.hookId} hook={hook} />
+      ))}
+    </div>
+  );
+}
 ```
 
 `HookRow` component (inline in `ToolCallCard.tsx` or extracted):
-- Running: `🔧 {hookName}  ···  running`  — spinner + hook name + event type label
+
+- Running: `🔧 {hookName}  ···  running` — spinner + hook name + event type label
 - Success: `🔧 {hookName}  ✓  passed  {elapsed}s` — success icon, auto-collapses
 - Error (collapsed): `🔧 {hookName}  ✗  failed  {elapsed}s` — clickable to expand output
 - Error (expanded): shows `stdout`, `stderr`, `exit code: N`
 
 ### Auto-Hide Behavior
 
-| Hook outcome | Auto-hide? | Timing |
-|---|---|---|
-| `success` | Yes | Immediately (same as tool card auto-collapse behavior) |
-| `error` | No | Stays expanded until user collapses |
-| `cancelled` | Yes | After 2 seconds |
+| Hook outcome | Auto-hide? | Timing                                                 |
+| ------------ | ---------- | ------------------------------------------------------ |
+| `success`    | Yes        | Immediately (same as tool card auto-collapse behavior) |
+| `error`      | No         | Stays expanded until user collapses                    |
+| `cancelled`  | Yes        | After 2 seconds                                        |
 
 This matches GitHub Actions convention: passing steps collapse, failing steps stay visible.
 
@@ -439,6 +470,7 @@ Error (expanded):
 ```
 
 Tailwind classes:
+
 - Row wrapper: `flex items-center gap-2 py-0.5 text-xs`
 - Running state: `text-muted-foreground`
 - Success state: `text-muted-foreground` (de-emphasized)

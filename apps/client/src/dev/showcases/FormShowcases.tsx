@@ -36,10 +36,7 @@ export function FormShowcases() {
 
   return (
     <>
-      <PlaygroundSection
-        title="Input"
-        description="Text input field variants."
-      >
+      <PlaygroundSection title="Input" description="Text input field variants.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
           <Input placeholder="Type something..." />
@@ -59,10 +56,7 @@ export function FormShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Textarea"
-        description="Multi-line text input."
-      >
+      <PlaygroundSection title="Textarea" description="Multi-line text input.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
           <Textarea placeholder="Write a message..." />
@@ -79,21 +73,12 @@ export function FormShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Switch"
-        description="Toggle switch for binary settings."
-      >
+      <PlaygroundSection title="Switch" description="Toggle switch for binary settings.">
         <ShowcaseDemo>
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <Switch
-                id="demo-switch-on"
-                checked={switchOn}
-                onCheckedChange={setSwitchOn}
-              />
-              <Label htmlFor="demo-switch-on">
-                {switchOn ? 'Enabled' : 'Disabled'}
-              </Label>
+              <Switch id="demo-switch-on" checked={switchOn} onCheckedChange={setSwitchOn} />
+              <Label htmlFor="demo-switch-on">{switchOn ? 'Enabled' : 'Disabled'}</Label>
             </div>
             <div className="flex items-center gap-3">
               <Switch id="demo-switch-disabled" disabled />
@@ -103,10 +88,7 @@ export function FormShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Select"
-        description="Dropdown select component."
-      >
+      <PlaygroundSection title="Select" description="Dropdown select component.">
         <ShowcaseDemo>
           <Select>
             <SelectTrigger className="w-48">
@@ -121,10 +103,7 @@ export function FormShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Tabs"
-        description="Tabbed content navigation."
-      >
+      <PlaygroundSection title="Tabs" description="Tabbed content navigation.">
         <ShowcaseDemo>
           <Tabs defaultValue="overview">
             <TabsList>
@@ -133,36 +112,23 @@ export function FormShowcases() {
               <TabsTrigger value="logs">Logs</TabsTrigger>
             </TabsList>
             <TabsContent value="overview">
-              <p className="text-muted-foreground text-sm">
-                Overview content goes here.
-              </p>
+              <p className="text-muted-foreground text-sm">Overview content goes here.</p>
             </TabsContent>
             <TabsContent value="settings">
-              <p className="text-muted-foreground text-sm">
-                Settings content goes here.
-              </p>
+              <p className="text-muted-foreground text-sm">Settings content goes here.</p>
             </TabsContent>
             <TabsContent value="logs">
-              <p className="text-muted-foreground text-sm">
-                Logs content goes here.
-              </p>
+              <p className="text-muted-foreground text-sm">Logs content goes here.</p>
             </TabsContent>
           </Tabs>
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Checkbox"
-        description="Checkboxes for multi-select form fields."
-      >
+      <PlaygroundSection title="Checkbox" description="Checkboxes for multi-select form fields.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex items-center gap-2">
-            <Checkbox
-              id="demo-check-a"
-              checked={checkA}
-              onCheckedChange={(v) => setCheckA(!!v)}
-            />
+            <Checkbox id="demo-check-a" checked={checkA} onCheckedChange={(v) => setCheckA(!!v)} />
             <Label htmlFor="demo-check-a">Enable notifications</Label>
           </div>
         </ShowcaseDemo>
@@ -170,11 +136,7 @@ export function FormShowcases() {
         <ShowcaseLabel>Unchecked</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex items-center gap-2">
-            <Checkbox
-              id="demo-check-b"
-              checked={checkB}
-              onCheckedChange={(v) => setCheckB(!!v)}
-            />
+            <Checkbox id="demo-check-b" checked={checkB} onCheckedChange={(v) => setCheckB(!!v)} />
             <Label htmlFor="demo-check-b">Auto-approve tool calls</Label>
           </div>
         </ShowcaseDemo>
@@ -223,14 +185,18 @@ export function FormShowcases() {
               <RadioGroupItem value="fast" id="demo-radio-fast" className="mt-0.5" />
               <div>
                 <Label htmlFor="demo-radio-fast">Fast mode</Label>
-                <p className="text-muted-foreground text-xs">Lower latency, reduced context window</p>
+                <p className="text-muted-foreground text-xs">
+                  Lower latency, reduced context window
+                </p>
               </div>
             </div>
             <div className="flex items-start gap-2">
               <RadioGroupItem value="thorough" id="demo-radio-thorough" className="mt-0.5" />
               <div>
                 <Label htmlFor="demo-radio-thorough">Thorough mode</Label>
-                <p className="text-muted-foreground text-xs">Full context, extended thinking enabled</p>
+                <p className="text-muted-foreground text-xs">
+                  Full context, extended thinking enabled
+                </p>
               </div>
             </div>
           </RadioGroup>

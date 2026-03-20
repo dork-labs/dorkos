@@ -33,13 +33,13 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
     >
       <button
         onClick={onDismiss}
-        className="text-muted-foreground/50 hover:text-muted-foreground absolute right-1.5 top-1.5 rounded-md p-0.5 transition-colors duration-150"
+        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-1.5 right-1.5 rounded-md p-0.5 transition-colors duration-150"
         aria-label="Dismiss getting started"
       >
         <X className="size-3.5" />
       </button>
 
-      <h3 className="text-xs font-medium mb-2">Getting Started</h3>
+      <h3 className="mb-2 text-xs font-medium">Getting Started</h3>
 
       <ul className="space-y-1">
         {VISIBLE_STEPS.map((step, index) => {
@@ -50,9 +50,7 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
             return (
               <li key={step} className="flex items-center gap-2 py-0.5">
                 <Check className="text-primary size-3.5 shrink-0" />
-                <span className="text-muted-foreground text-xs">
-                  {STEP_LABELS[step]}
-                </span>
+                <span className="text-muted-foreground text-xs">{STEP_LABELS[step]}</span>
               </li>
             );
           }
@@ -64,7 +62,7 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
                 <button
                   onClick={() => onStepClick(index)}
                   className={cn(
-                    'text-muted-foreground/40 text-xs text-left transition-colors duration-150',
+                    'text-muted-foreground/40 text-left text-xs transition-colors duration-150',
                     'hover:text-muted-foreground'
                   )}
                 >
@@ -79,7 +77,7 @@ export function ProgressCard({ onStepClick, onDismiss }: ProgressCardProps) {
               <Circle className="text-muted-foreground size-3.5 shrink-0" />
               <button
                 onClick={() => onStepClick(index)}
-                className="text-foreground text-xs text-left transition-colors duration-150 hover:underline"
+                className="text-foreground text-left text-xs transition-colors duration-150 hover:underline"
               >
                 {STEP_LABELS[step]}
               </button>

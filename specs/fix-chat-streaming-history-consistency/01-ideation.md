@@ -44,20 +44,22 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| Path | Role |
-|------|------|
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Pure SSE event handler — root of Bug 1 |
-| `apps/client/src/layers/features/chat/ui/MessageList.tsx` | Virtual list + scroll state — root of Bug 2 |
-| `apps/client/src/layers/features/chat/ui/MessageItem.tsx` | Individual message renderer (parts map) |
-| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` | Collapsible tool call card; result gated behind expanded state |
-| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` | Chat coordinator; receives scroll state, shows ↓ button |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Session state machine; wires streamEventHandler to SSE and relay paths |
-| `packages/shared/src/schemas.ts` | Defines `MessagePart` discriminated union with `ToolCallPart.result?: string` |
+| Path                                                                 | Role                                                                          |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Pure SSE event handler — root of Bug 1                                        |
+| `apps/client/src/layers/features/chat/ui/MessageList.tsx`            | Virtual list + scroll state — root of Bug 2                                   |
+| `apps/client/src/layers/features/chat/ui/MessageItem.tsx`            | Individual message renderer (parts map)                                       |
+| `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx`           | Collapsible tool call card; result gated behind expanded state                |
+| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`              | Chat coordinator; receives scroll state, shows ↓ button                       |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`     | Session state machine; wires streamEventHandler to SSE and relay paths        |
+| `packages/shared/src/schemas.ts`                                     | Defines `MessagePart` discriminated union with `ToolCallPart.result?: string` |
 
 **Shared Dependencies:**
+
 - TanStack Virtual (virtualizer) — used by MessageList for item virtualization; its internal ResizeObserver measurement interacts with the scroll threshold race
 
 **Data Flow (Bug 1 — streaming path):**
+
 ```
 SSE: tool_call_end → updateAssistantMessage() → re-render (card shows ✓)
 SSE: tool_result   → existing.result = ...; updateAssistantMessage() → re-render (intermediate state)
@@ -65,6 +67,7 @@ SSE: text_delta("Done") → new text part created; updateAssistantMessage() → 
 ```
 
 **Data Flow (Bug 1 — history path):**
+
 ```
 GET /api/sessions/:id/messages → transcript-parser maps HistoryToolCall → ToolCallPart with result
 → MessageItem renders same as above but without intermediate re-render states
@@ -72,6 +75,7 @@ GET /api/sessions/:id/messages → transcript-parser maps HistoryToolCall → To
 ```
 
 **Data Flow (Bug 2):**
+
 ```
 Long message streams in → ResizeObserver fires → scrollTop = scrollHeight (scroll to bottom)
 Virtualizer internal measurement changes getTotalSize() temporarily
@@ -83,10 +87,12 @@ Virtualizer internal measurement changes getTotalSize() temporarily
 ```
 
 **Feature Flags/Config:**
+
 - `expandToolCalls` setting in app-store controls default card expansion state (default: false/collapsed)
 - No relay feature flag interaction
 
 **Potential Blast Radius:**
+
 - **Direct:** `stream-event-handler.ts` (1-line change), `MessageList.tsx` (3 additions: ref + 2 listeners)
 - **Indirect:** `ChatPanel.tsx` may need no changes; `MessageItem.tsx` no changes needed
 - **Tests:** `MessageList.test.tsx` (new test for scroll intent flag), `MessageItem.test.tsx` (new test verifying tool_result text doesn't render standalone)
@@ -98,6 +104,7 @@ Virtualizer internal measurement changes getTotalSize() temporarily
 ### Bug 1: Orphaned "Done" Text During Streaming
 
 **Repro steps:**
+
 1. Start a new session
 2. Send a message that triggers a tool call (e.g., "Create a todo list")
 3. During streaming, observe the area between the collapsed tool card and assistant response text
@@ -105,16 +112,19 @@ Virtualizer internal measurement changes getTotalSize() temporarily
 5. Open the same session from history — "Done" is absent
 
 **Observed vs Expected:**
+
 - Observed: "Done" renders as an isolated text element during streaming, disappears in history view
 - Expected: Streaming view and history view are visually identical; no standalone text between collapsed tool cards and assistant responses
 
 **Evidence:**
+
 - `stream-event-handler.ts` `tool_result` case (line ~196): calls `updateAssistantMessage(assistantId)` synchronously after setting `existing.result`
 - The SDK emits `text_delta("Done")` as the very next SSE event after `tool_result` in at least some sequences
 - `MessageItem`'s `parts.map()` creates a new `text` part from the `text_delta`, rendering it between the tool card and the next block
 - History view uses `transcript-parser.ts` which collapses all content — the ephemeral "Done" text_delta is absent or merged
 
 **Root-cause hypotheses:**
+
 - **H1 (selected, high confidence):** The synchronous `updateAssistantMessage` call in the `tool_result` handler causes a React render before the next `text_delta("Done")` arrives. This intermediate render already has the tool card in its final state but the text part unfilled. The next `text_delta` fires synchronously, creating a visible "Done" text block with no attachment to the tool card. Deferring the `tool_result` re-render with `queueMicrotask` allows the `text_delta` to batch, eliminating the orphan.
 - H2 (low confidence): `tool_result` content is rendered as a separate text element somewhere in MessageItem. Ruled out — MessageItem's `parts.map()` only renders `tool_call` parts through ToolCallCard, which gates result behind `expanded`.
 
@@ -125,16 +135,19 @@ Virtualizer internal measurement changes getTotalSize() temporarily
 ### Bug 2: Auto-Scroll Disengagement After Long Messages
 
 **Repro steps:**
+
 1. Send a message that produces a long response with multiple tool calls (Messages 4→5 in self-test)
 2. Watch the auto-scroll stop during or after Message 4's streaming
 3. Send another message (Message 5)
 4. Response arrives but is not scrolled into view; ↓ button appears
 
 **Observed vs Expected:**
+
 - Observed: Auto-scroll stops working after long messages; manual ↓ required
 - Expected: New AI responses always scroll into view unless user has explicitly scrolled up
 
 **Evidence:**
+
 - `MessageList.tsx` line ~109: `const isAtBottom = distanceFromBottom < 200;`
 - During long message streaming, TanStack Virtual's `measureElement` ResizeObserver callback fires frequently, causing `getTotalSize()` to fluctuate
 - `scrollHeight` changes mid-render → `distanceFromBottom` temporarily exceeds 200px → `isAtBottomRef.current = false`
@@ -142,6 +155,7 @@ Virtualizer internal measurement changes getTotalSize() temporarily
 - Manual ↓ button calls `scrollToBottom()` directly (no `isAtBottomRef` check), which recovers the flag
 
 **Root-cause hypotheses:**
+
 - **H1 (selected, high confidence):** The `handleScroll` callback cannot distinguish user-initiated scrolls from layout-reflow-driven scroll position changes. Any `scroll` event where `distanceFromBottom > 200` flips `isAtBottomRef` to false, including events caused by programmatic scrollTop assignment during measurement reflow.
 - H2 (low confidence): The 200px threshold is simply too small. Partially true, but increasing the threshold alone doesn't eliminate the race — it only makes it less likely.
 
@@ -208,8 +222,8 @@ Virtualizer internal measurement changes getTotalSize() temporarily
 
 No ambiguities identified — task brief was precise, and exploration + research findings converged strongly on the same two targeted fixes. Both bugs have clear, non-overlapping root causes and well-defined minimal changes.
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How to fix the tool_result orphan (Bug 1) | `queueMicrotask` deferral in `stream-event-handler.ts` `tool_result` case | Surgical one-line change. Exploration confirmed `tool_result` handler fires synchronous re-render. Research confirmed this matches Vercel AI SDK "transient parts" pattern. Eliminates intermediate render without touching MessageItem or ToolCallCard. |
-| 2 | How to fix auto-scroll disengagement (Bug 2) | `isUserScrollingRef` + `wheel`/`touchstart` listeners in `MessageList.tsx` | Precisely distinguishes user intent from layout-reflow-driven scroll events. Exploration confirmed all three auto-scroll paths gate on `isAtBottomRef`. Research confirmed this is the community-standard fix for this class of race condition. |
-| 3 | Scope of test updates | Add tests to existing `MessageList.test.tsx` and `MessageItem.test.tsx` | Existing tests already mock ResizeObserver and IntersectionObserver — adding scroll intent and tool_result isolation tests is straightforward |
+| #   | Decision                                     | Choice                                                                     | Rationale                                                                                                                                                                                                                                                |
+| --- | -------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | How to fix the tool_result orphan (Bug 1)    | `queueMicrotask` deferral in `stream-event-handler.ts` `tool_result` case  | Surgical one-line change. Exploration confirmed `tool_result` handler fires synchronous re-render. Research confirmed this matches Vercel AI SDK "transient parts" pattern. Eliminates intermediate render without touching MessageItem or ToolCallCard. |
+| 2   | How to fix auto-scroll disengagement (Bug 2) | `isUserScrollingRef` + `wheel`/`touchstart` listeners in `MessageList.tsx` | Precisely distinguishes user intent from layout-reflow-driven scroll events. Exploration confirmed all three auto-scroll paths gate on `isAtBottomRef`. Research confirmed this is the community-standard fix for this class of race condition.          |
+| 3   | Scope of test updates                        | Add tests to existing `MessageList.test.tsx` and `MessageItem.test.tsx`    | Existing tests already mock ResizeObserver and IntersectionObserver — adding scroll intent and tool_result isolation tests is straightforward                                                                                                            |

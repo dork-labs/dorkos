@@ -279,35 +279,50 @@ describe('agent-aware block gating', () => {
 
   it('omits relay block when toolConfig.relay=false', async () => {
     const result = await buildSystemPromptAppend('/tmp/test', null, {
-      pulse: true, relay: false, mesh: true, adapter: true,
+      pulse: true,
+      relay: false,
+      mesh: true,
+      adapter: true,
     });
     expect(result).not.toContain('<relay_tools>');
   });
 
   it('omits mesh block when toolConfig.mesh=false', async () => {
     const result = await buildSystemPromptAppend('/tmp/test', null, {
-      pulse: true, relay: true, mesh: false, adapter: true,
+      pulse: true,
+      relay: true,
+      mesh: false,
+      adapter: true,
     });
     expect(result).not.toContain('<mesh_tools>');
   });
 
   it('omits pulse block when toolConfig.pulse=false', async () => {
     const result = await buildSystemPromptAppend('/tmp/test', null, {
-      pulse: false, relay: true, mesh: true, adapter: true,
+      pulse: false,
+      relay: true,
+      mesh: true,
+      adapter: true,
     });
     expect(result).not.toContain('<pulse_tools>');
   });
 
   it('omits adapter block when toolConfig.adapter=false', async () => {
     const result = await buildSystemPromptAppend('/tmp/test', null, {
-      pulse: true, relay: true, mesh: true, adapter: false,
+      pulse: true,
+      relay: true,
+      mesh: true,
+      adapter: false,
     });
     expect(result).not.toContain('<adapter_tools>');
   });
 
   it('includes pulse block when toolConfig.pulse=true', async () => {
     const result = await buildSystemPromptAppend('/tmp/test', null, {
-      pulse: true, relay: true, mesh: true, adapter: true,
+      pulse: true,
+      relay: true,
+      mesh: true,
+      adapter: true,
     });
     expect(result).toContain('<pulse_tools>');
   });
@@ -326,7 +341,10 @@ describe('agent-aware block gating', () => {
       pulseTools: false,
     });
     const result = await buildSystemPromptAppend('/tmp/test', null, {
-      pulse: true, relay: true, mesh: true, adapter: true,
+      pulse: true,
+      relay: true,
+      mesh: true,
+      adapter: true,
     });
     expect(result).toContain('<relay_tools>');
     expect(result).toContain('<mesh_tools>');
@@ -402,7 +420,9 @@ describe('buildAgentBlock', () => {
   });
 
   it('excludes <agent_persona> when persona is undefined', async () => {
-    mockedReadManifest.mockResolvedValue(makeManifest({ personaEnabled: true, persona: undefined }));
+    mockedReadManifest.mockResolvedValue(
+      makeManifest({ personaEnabled: true, persona: undefined })
+    );
     const result = await _buildAgentBlock('/test/dir');
     expect(result).not.toContain('<agent_persona>');
   });
@@ -572,7 +592,12 @@ describe('buildAdapterToolsBlock', () => {
   });
 
   it('uses toolConfig when provided (adapter=false)', () => {
-    const result = _buildAdapterToolsBlock({ pulse: true, relay: true, mesh: true, adapter: false });
+    const result = _buildAdapterToolsBlock({
+      pulse: true,
+      relay: true,
+      mesh: true,
+      adapter: false,
+    });
     expect(result).toBe('');
   });
 });
@@ -638,7 +663,13 @@ describe('buildPeerAgentsBlock', () => {
   type MockMeshCore = Parameters<typeof _buildPeerAgentsBlock>[0];
 
   function makeMockMesh(
-    listWithPaths: () => Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }>,
+    listWithPaths: () => Array<{
+      id: string;
+      name: string;
+      projectPath: string;
+      icon?: string;
+      color?: string;
+    }>
   ): MockMeshCore {
     return { listWithPaths } as MockMeshCore;
   }
@@ -687,7 +718,9 @@ describe('buildPeerAgentsBlock', () => {
   });
 
   it('returns empty string when listWithPaths throws', async () => {
-    const mockMesh = makeMockMesh(() => { throw new Error('fail'); });
+    const mockMesh = makeMockMesh(() => {
+      throw new Error('fail');
+    });
     const result = await _buildPeerAgentsBlock(mockMesh);
     expect(result).toBe('');
   });

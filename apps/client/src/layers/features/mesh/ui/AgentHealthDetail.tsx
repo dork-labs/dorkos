@@ -65,7 +65,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
   if (isLoading) {
     return (
       <div className="flex w-64 items-center justify-center border-l p-4">
-        <span className="text-sm text-muted-foreground">Loading...</span>
+        <span className="text-muted-foreground text-sm">Loading...</span>
       </div>
     );
   }
@@ -76,7 +76,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
         <div className="flex justify-end">
           <CloseButton onClick={onClose} />
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">Agent not found</p>
+        <p className="text-muted-foreground mt-2 text-sm">Agent not found</p>
       </div>
     );
   }
@@ -123,7 +123,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
 
         {Array.isArray(health.capabilities) && health.capabilities.length > 0 && (
           <div>
-            <span className="mb-1 block text-muted-foreground">Capabilities:</span>
+            <span className="text-muted-foreground mb-1 block">Capabilities:</span>
             <div className="flex flex-wrap gap-1">
               {health.capabilities.map((cap: string) => (
                 <Badge key={cap} variant="outline" className="text-[0.625rem]">
@@ -140,7 +140,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
           <button
             type="button"
             onClick={onOpenSettings}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            className="hover:bg-muted inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium"
           >
             <Settings className="size-3.5" />
             Open Settings

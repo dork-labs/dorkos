@@ -48,6 +48,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components to modify:**
+
 - `apps/web/src/layers/features/marketing/ui/SystemArchitecture.tsx` — Interactive architecture diagram
 - `apps/web/src/layers/features/marketing/ui/Hero.tsx` — Staggered hero entrance
 - `apps/web/src/layers/features/marketing/ui/UseCasesGrid.tsx` — Card stagger reveal
@@ -58,9 +59,11 @@ status: ideation
 - `apps/web/src/layers/features/marketing/ui/PulseAnimation.tsx` — Add glow layer + delay
 
 **New files needed:**
+
 - `apps/web/src/layers/features/marketing/lib/motion-variants.ts` — Shared animation variants (REVEAL, STAGGER)
 
 **Config/Provider files:**
+
 - `apps/web/src/app/(marketing)/layout.tsx` — Add `<MotionConfig reducedMotion="user">`
 
 **Data flow:** Static data (modules.ts, use-cases.ts, philosophy.ts) → UI components → motion wraps around existing JSX

@@ -7,13 +7,13 @@ totalSpecs: 6
 parallelizable: [[3, 4]]
 estimatedPhases:
   - specs: [1, 2]
-    description: "Core library + server/client integration — minimum viable Relay"
+    description: 'Core library + server/client integration — minimum viable Relay'
   - specs: [3, 4]
-    description: "Reliability + external adapters — can run in parallel"
+    description: 'Reliability + external adapters — can run in parallel'
   - specs: [6]
-    description: "Unified adapter system + Claude Code runtime adapter"
+    description: 'Unified adapter system + Claude Code runtime adapter'
   - specs: [5]
-    description: "Convergence — Pulse/Console migration, full unification"
+    description: 'Convergence — Pulse/Console migration, full unification'
 ---
 
 # Relay Spec Sequence — Overview
@@ -40,37 +40,37 @@ Relay is the universal message bus for DorkOS. It's being built across 6 specs, 
   Spec 5: Convergence           (blocked by 3 AND 6)
 ```
 
-| Spec | Title | Prompt File | Blocked By | Parallel With | Risk | Complexity |
-|---|---|---|---|---|---|---|
-| 1 | Relay Core Library | `01-relay-core-library.md` | — | — | High | High |
-| 2 | Server & Client Integration | `02-relay-server-client-integration.md` | Spec 1 | — | Medium | Medium |
-| 3 | Advanced Reliability | `03-relay-advanced-reliability.md` | Spec 2 | **Spec 4** | Low | Medium |
-| 4 | External Adapters | `04-relay-external-adapters.md` | Spec 2 | **Spec 3** | Medium | High |
-| 5 | Convergence | `05-relay-convergence.md` | Specs 3 & 6 | — | High | High |
-| 6 | Unified Adapters + Claude Code | `06-relay-runtime-adapters.md` | Spec 4 | **Spec 3** | High | High |
+| Spec | Title                          | Prompt File                             | Blocked By  | Parallel With | Risk   | Complexity |
+| ---- | ------------------------------ | --------------------------------------- | ----------- | ------------- | ------ | ---------- |
+| 1    | Relay Core Library             | `01-relay-core-library.md`              | —           | —             | High   | High       |
+| 2    | Server & Client Integration    | `02-relay-server-client-integration.md` | Spec 1      | —             | Medium | Medium     |
+| 3    | Advanced Reliability           | `03-relay-advanced-reliability.md`      | Spec 2      | **Spec 4**    | Low    | Medium     |
+| 4    | External Adapters              | `04-relay-external-adapters.md`         | Spec 2      | **Spec 3**    | Medium | High       |
+| 5    | Convergence                    | `05-relay-convergence.md`               | Specs 3 & 6 | —             | High   | High       |
+| 6    | Unified Adapters + Claude Code | `06-relay-runtime-adapters.md`          | Spec 4      | **Spec 3**    | High   | High       |
 
 ## Frontmatter Reference
 
 Each spec file includes YAML frontmatter with these fields:
 
-| Field | Purpose |
-|---|---|
-| `spec` | Spec number (1-6) |
-| `order` | Execution order |
-| `status` | `not-started` / `ideating` / `specified` / `in-progress` / `complete` |
-| `blockedBy` | Spec numbers that must be complete before starting |
-| `blocks` | Spec numbers that this spec blocks |
-| `parallelWith` | Spec numbers that can run simultaneously with this one |
-| `litepaperPhase` | Which litepaper roadmap phase this implements |
-| `complexity` | `low` / `medium` / `high` |
-| `risk` | `low` / `medium` / `high` — architectural risk level |
-| `estimatedFiles` | Approximate number of files created/modified |
-| `newPackages` | New workspace packages created (if any) |
-| `primaryWorkspaces` | Which monorepo workspaces are affected |
-| `touchesServer` | Whether `apps/server` is modified |
-| `touchesClient` | Whether `apps/client` is modified |
-| `verification` | Checklist of conditions that prove the spec is complete |
-| `notes` | Key things to know before starting |
+| Field               | Purpose                                                               |
+| ------------------- | --------------------------------------------------------------------- |
+| `spec`              | Spec number (1-6)                                                     |
+| `order`             | Execution order                                                       |
+| `status`            | `not-started` / `ideating` / `specified` / `in-progress` / `complete` |
+| `blockedBy`         | Spec numbers that must be complete before starting                    |
+| `blocks`            | Spec numbers that this spec blocks                                    |
+| `parallelWith`      | Spec numbers that can run simultaneously with this one                |
+| `litepaperPhase`    | Which litepaper roadmap phase this implements                         |
+| `complexity`        | `low` / `medium` / `high`                                             |
+| `risk`              | `low` / `medium` / `high` — architectural risk level                  |
+| `estimatedFiles`    | Approximate number of files created/modified                          |
+| `newPackages`       | New workspace packages created (if any)                               |
+| `primaryWorkspaces` | Which monorepo workspaces are affected                                |
+| `touchesServer`     | Whether `apps/server` is modified                                     |
+| `touchesClient`     | Whether `apps/client` is modified                                     |
+| `verification`      | Checklist of conditions that prove the spec is complete               |
+| `notes`             | Key things to know before starting                                    |
 
 ## How to Use
 

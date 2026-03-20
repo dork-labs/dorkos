@@ -188,7 +188,7 @@ Define thresholds as constants:
 
 ```typescript
 const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
-const URGENT_THRESHOLD_S = 60;   // 1 minute — red
+const URGENT_THRESHOLD_S = 60; // 1 minute — red
 ```
 
 Derive the current phase:
@@ -210,31 +210,33 @@ const phase: ApprovalPhase = useMemo(() => {
 A 4px tall div draining via CSS animation. The animation duration is set to `timeoutMs`:
 
 ```tsx
-{timeoutMs && !decided && (
-  <div
-    role="progressbar"
-    aria-valuemin={0}
-    aria-valuemax={Math.ceil(timeoutMs / 1000)}
-    aria-valuenow={secondsRemaining ?? 0}
-    aria-valuetext={formatAriaTimeRemaining(secondsRemaining)}
-    className="h-1 w-full overflow-hidden rounded-full bg-muted"
-  >
+{
+  timeoutMs && !decided && (
     <div
-      className={cn(
-        'h-full rounded-full transition-colors duration-500',
-        phase === 'normal' && 'bg-muted-foreground/30',
-        phase === 'warning' && 'bg-status-warning',
-        phase === 'urgent' && 'bg-status-error',
-        'motion-safe:animate-drain'
-      )}
-      style={{
-        animationDuration: `${timeoutMs}ms`,
-        animationTimingFunction: 'linear',
-        animationFillMode: 'forwards',
-      }}
-    />
-  </div>
-)}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={Math.ceil(timeoutMs / 1000)}
+      aria-valuenow={secondsRemaining ?? 0}
+      aria-valuetext={formatAriaTimeRemaining(secondsRemaining)}
+      className="bg-muted h-1 w-full overflow-hidden rounded-full"
+    >
+      <div
+        className={cn(
+          'h-full rounded-full transition-colors duration-500',
+          phase === 'normal' && 'bg-muted-foreground/30',
+          phase === 'warning' && 'bg-status-warning',
+          phase === 'urgent' && 'bg-status-error',
+          'motion-safe:animate-drain'
+        )}
+        style={{
+          animationDuration: `${timeoutMs}ms`,
+          animationTimingFunction: 'linear',
+          animationFillMode: 'forwards',
+        }}
+      />
+    </div>
+  );
+}
 ```
 
 The `animate-drain` keyframe:
@@ -242,8 +244,12 @@ The `animate-drain` keyframe:
 ```css
 /* In Tailwind config or a CSS file */
 @keyframes drain {
-  from { width: 100%; }
-  to { width: 0%; }
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
 }
 ```
 
@@ -254,15 +260,19 @@ With `motion-safe:` prefix, the animation only runs when `prefers-reduced-motion
 Only appears when `phase` is `warning` or `urgent` (final 2 minutes):
 
 ```tsx
-{(phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
-  <span className={cn(
-    'text-2xs tabular-nums',
-    phase === 'warning' && 'text-status-warning',
-    phase === 'urgent' && 'text-status-error',
-  )}>
-    {formatCountdown(secondsRemaining)} remaining
-  </span>
-)}
+{
+  (phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
+    <span
+      className={cn(
+        'text-2xs tabular-nums',
+        phase === 'warning' && 'text-status-warning',
+        phase === 'urgent' && 'text-status-error'
+      )}
+    >
+      {formatCountdown(secondsRemaining)} remaining
+    </span>
+  );
+}
 ```
 
 Helper:
@@ -292,12 +302,14 @@ if (secondsRemaining === 0 && !decided) {
 In the denied state render:
 
 ```tsx
-{decided === 'denied' && timedOut.current && (
-  <p className="text-2xs text-muted-foreground mt-1">
-    Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes.
-    The agent continued without this tool.
-  </p>
-)}
+{
+  decided === 'denied' && timedOut.current && (
+    <p className="text-2xs text-muted-foreground mt-1">
+      Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes. The
+      agent continued without this tool.
+    </p>
+  );
+}
 ```
 
 #### 4.8 Accessibility — Screen Reader Announcements
@@ -320,7 +332,7 @@ useEffect(() => {
 // In JSX:
 <span role="status" aria-live="assertive" aria-atomic="true" className="sr-only">
   {announcement}
-</span>
+</span>;
 ```
 
 ### 5. Tailwind Keyframe
@@ -331,8 +343,12 @@ Add the drain animation keyframe:
 
 ```css
 @keyframes drain {
-  from { width: 100%; }
-  to { width: 0%; }
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
 }
 ```
 

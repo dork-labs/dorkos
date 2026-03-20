@@ -65,11 +65,11 @@ Additionally:
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `vitest` | ^4.0.18 | Test runner for compliance suite |
-| `@dorkos/shared` | workspace:* | AdapterManifest schema (add `apiVersion` field) |
-| `@dorkos/test-utils` | workspace:* | Mock factories (add `createMockRelayPublisher`, `createMockRelayEnvelope`) |
+| Dependency           | Version      | Purpose                                                                    |
+| -------------------- | ------------ | -------------------------------------------------------------------------- |
+| `vitest`             | ^4.0.18      | Test runner for compliance suite                                           |
+| `@dorkos/shared`     | workspace:\* | AdapterManifest schema (add `apiVersion` field)                            |
+| `@dorkos/test-utils` | workspace:\* | Mock factories (add `createMockRelayPublisher`, `createMockRelayEnvelope`) |
 
 No new external dependencies. API version comparison uses a simple manual `major.minor` check rather than adding `semver` as a dependency (the monorepo does not use `semver` anywhere).
 
@@ -86,7 +86,7 @@ No new external dependencies. API version comparison uses a simple manual `major
 
 An optional abstract class that handles status tracking, idempotency guards, error recording, and relay ref lifecycle. Subclasses implement three protected methods.
 
-```typescript
+````typescript
 import type {
   RelayAdapter,
   RelayPublisher,
@@ -141,11 +141,7 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
     errorCount: 0,
   };
 
-  constructor(
-    id: string,
-    subjectPrefix: string | readonly string[],
-    displayName: string,
-  ) {
+  constructor(id: string, subjectPrefix: string | readonly string[], displayName: string) {
     this.id = id;
     this.subjectPrefix = subjectPrefix;
     this.displayName = displayName;
@@ -250,10 +246,10 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
   abstract deliver(
     subject: string,
     envelope: RelayEnvelope,
-    context?: AdapterContext,
+    context?: AdapterContext
   ): Promise<DeliveryResult>;
 }
-```
+````
 
 **Design decisions:**
 
@@ -274,6 +270,7 @@ Each built-in adapter can optionally extend `BaseRelayAdapter`. This is a refact
 ### Improvement 2: Fix Plugin Factory Signature
 
 **Files:**
+
 - `packages/relay/src/adapter-plugin-loader.ts` (fix)
 - `contributing/relay-adapters.md` (update docs)
 
@@ -330,6 +327,7 @@ adapter = factory(entry.id, entry.config);
 ### Improvement 3: API Versioning
 
 **Files:**
+
 - `packages/relay/src/version.ts` (new)
 - `packages/relay/src/index.ts` (add export)
 - `packages/relay/src/adapter-plugin-loader.ts` (add version check)
@@ -373,12 +371,12 @@ function checkApiVersion(manifest: AdapterManifest, adapterId: string, logger: L
   if (hostMajor !== adapterMajor) {
     logger.warn(
       `[PluginLoader] Adapter '${adapterId}' targets API v${manifest.apiVersion} ` +
-      `but host is v${RELAY_ADAPTER_API_VERSION} (major version mismatch)`,
+        `but host is v${RELAY_ADAPTER_API_VERSION} (major version mismatch)`
     );
   } else if (adapterMinor > hostMinor) {
     logger.warn(
       `[PluginLoader] Adapter '${adapterId}' targets API v${manifest.apiVersion} ` +
-      `but host is v${RELAY_ADAPTER_API_VERSION} (adapter expects newer features)`,
+        `but host is v${RELAY_ADAPTER_API_VERSION} (adapter expects newer features)`
     );
   }
 }
@@ -392,6 +390,7 @@ function checkApiVersion(manifest: AdapterManifest, adapterId: string, logger: L
 ### Improvement 4: Compliance Test Suite
 
 **Files:**
+
 - `packages/relay/src/testing/index.ts` (new)
 - `packages/relay/src/testing/compliance-suite.ts` (new)
 - `packages/relay/src/testing/mock-relay-publisher.ts` (new)
@@ -445,9 +444,7 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
  *
  * Provides sensible defaults that can be overridden.
  */
-export function createMockRelayEnvelope(
-  overrides: Partial<RelayEnvelope> = {},
-): RelayEnvelope {
+export function createMockRelayEnvelope(overrides: Partial<RelayEnvelope> = {}): RelayEnvelope {
   return {
     id: 'test-envelope-001',
     from: 'relay.test.sender',
@@ -462,7 +459,7 @@ export function createMockRelayEnvelope(
 
 **Compliance suite:**
 
-```typescript
+````typescript
 // packages/relay/src/testing/compliance-suite.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { RelayAdapter, AdapterStatus } from '../types.js';
@@ -619,7 +616,7 @@ export function runAdapterComplianceSuite(options: ComplianceSuiteOptions): void
     });
   });
 }
-```
+````
 
 **Barrel export:**
 
@@ -724,12 +721,7 @@ templates/relay-adapter/
 
 ```typescript
 import { BaseRelayAdapter } from '@dorkos/relay';
-import type {
-  RelayPublisher,
-  RelayEnvelope,
-  AdapterContext,
-  DeliveryResult,
-} from '@dorkos/relay';
+import type { RelayPublisher, RelayEnvelope, AdapterContext, DeliveryResult } from '@dorkos/relay';
 
 /**
  * Example relay adapter.
@@ -738,7 +730,7 @@ import type {
  */
 export class MyAdapter extends BaseRelayAdapter {
   constructor(id: string, config: Record<string, unknown>) {
-    super(id, 'relay.custom.mine', config.displayName as string ?? 'My Adapter');
+    super(id, 'relay.custom.mine', (config.displayName as string) ?? 'My Adapter');
   }
 
   protected async _start(relay: RelayPublisher): Promise<void> {
@@ -754,7 +746,7 @@ export class MyAdapter extends BaseRelayAdapter {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    _context?: AdapterContext,
+    _context?: AdapterContext
   ): Promise<DeliveryResult> {
     // TODO: Send the message to your external channel
     this.trackOutbound();
@@ -772,10 +764,7 @@ import { RELAY_ADAPTER_API_VERSION } from '@dorkos/relay';
 import { MyAdapter } from './my-adapter.js';
 
 /** Factory function — called by the DorkOS plugin loader. */
-export default function createAdapter(
-  id: string,
-  config: Record<string, unknown>,
-): RelayAdapter {
+export default function createAdapter(id: string, config: Record<string, unknown>): RelayAdapter {
   return new MyAdapter(id, config);
 }
 
@@ -816,6 +805,7 @@ runAdapterComplianceSuite({
 ```
 
 **`README.md`:** Step-by-step guide covering:
+
 1. Clone the template
 2. Rename `MyAdapter` → your adapter name
 3. Update `subjectPrefix` and manifest
@@ -868,6 +858,7 @@ class TestAdapter extends BaseRelayAdapter {
 ```
 
 Test cases:
+
 - Initial status is `{ state: 'disconnected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 }`
 - After `start()`, status state is `'connected'` and `startedAt` is set
 - After `stop()`, status state is `'disconnected'`
@@ -882,6 +873,7 @@ Test cases:
 - `relay` ref is set on start and cleared on stop
 
 **`adapter-plugin-loader.test.ts`** — Update existing tests:
+
 - Test that factory receives `(id, config)` — not just `(config)`
 - Test version warning log for mismatched `apiVersion`
 - Test no warning when `apiVersion` matches or is absent

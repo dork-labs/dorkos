@@ -58,7 +58,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
   // Sort candidates after scan completes for stable display
   const displayCandidates = useMemo(
     () => (isScanning ? candidates : sortCandidates(candidates)),
-    [candidates, isScanning],
+    [candidates, isScanning]
   );
 
   const markActed = useCallback((path: string) => {
@@ -81,14 +81,14 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
         },
       });
     },
-    [registerAgent, markActed],
+    [registerAgent, markActed]
   );
 
   const handleSkip = useCallback(
     (candidate: DiscoveryCandidate) => {
       markActed(candidate.path);
     },
-    [markActed],
+    [markActed]
   );
 
   const handleRescan = useCallback(() => {
@@ -117,7 +117,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           {isScanning && !hasResults ? 'Searching your projects...' : 'Discovered Agents'}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-2 text-sm">
           We&rsquo;ll find AI-configured projects on your machine.
         </p>
       </div>
@@ -129,10 +129,10 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
             animate={reducedMotion ? {} : { scale: [1, 1.15, 1] }}
             transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <Search className="size-8 text-muted-foreground" />
+            <Search className="text-muted-foreground size-8" />
           </motion.div>
           {progress && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Scanned {progress.scannedDirs} directories
             </p>
           )}
@@ -141,7 +141,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
 
       {/* Progress indicator during scan with results */}
       {isScanning && hasResults && progress && (
-        <div className="mt-4 shrink-0 text-center text-sm text-muted-foreground">
+        <div className="text-muted-foreground mt-4 shrink-0 text-center text-sm">
           Scanning... {progress.scannedDirs} directories &middot; Found {progress.foundAgents} agent
           {progress.foundAgents === 1 ? '' : 's'}
         </div>
@@ -149,7 +149,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
 
       {/* Summary after scan */}
       {scanComplete && hasResults && (
-        <p className="mt-4 shrink-0 text-center text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-4 shrink-0 text-center text-sm">
           Found {candidates.length} project{candidates.length === 1 ? '' : 's'}. Approve or skip
           each one.
         </p>
@@ -157,7 +157,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
 
       {/* Error state */}
       {error && (
-        <div className="mt-6 shrink-0 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="border-destructive/30 bg-destructive/5 text-destructive mt-6 shrink-0 rounded-lg border px-4 py-3 text-sm">
           {error}
         </div>
       )}
@@ -195,11 +195,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
       {/* Continue button — always visible once scan completes with results */}
       {scanComplete && hasResults && (
         <div className="mt-4 flex shrink-0 flex-col items-center gap-2 border-t pt-4">
-          <Button
-            size="lg"
-            onClick={onStepComplete}
-            variant={allActed ? 'default' : 'outline'}
-          >
+          <Button size="lg" onClick={onStepComplete} variant={allActed ? 'default' : 'outline'}>
             Continue
           </Button>
         </div>

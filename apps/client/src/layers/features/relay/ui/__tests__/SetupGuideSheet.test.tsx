@@ -11,7 +11,7 @@ describe('SetupGuideSheet', () => {
         onOpenChange={vi.fn()}
         title="Slack"
         content="Follow these steps."
-      />,
+      />
     );
     expect(screen.getByText('Slack Setup Guide')).toBeTruthy();
     expect(screen.getByText(/Follow these steps/)).toBeTruthy();
@@ -19,12 +19,7 @@ describe('SetupGuideSheet', () => {
 
   it('is not visible when open is false', () => {
     const { container } = render(
-      <SetupGuideSheet
-        open={false}
-        onOpenChange={vi.fn()}
-        title="Slack"
-        content="# Guide"
-      />,
+      <SetupGuideSheet open={false} onOpenChange={vi.fn()} title="Slack" content="# Guide" />
     );
     expect(container.querySelector('[data-slot="sheet-content"]')).toBeNull();
   });
@@ -36,7 +31,7 @@ describe('SetupGuideSheet', () => {
         onOpenChange={vi.fn()}
         title="Telegram"
         content="Setup content here."
-      />,
+      />
     );
     expect(screen.getByText(/Setup content here/)).toBeTruthy();
   });

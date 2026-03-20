@@ -1,9 +1,23 @@
 ---
-title: "Competitor Install Experience Analysis & DorkOS Install Strategy"
+title: 'Competitor Install Experience Analysis & DorkOS Install Strategy'
 date: 2026-03-01
 type: external-best-practices
 status: active
-tags: [installation, cli, onboarding, install-script, curl, npm, homebrew, claude-code, opencode, openclaw, codex, competitor-analysis]
+tags:
+  [
+    installation,
+    cli,
+    onboarding,
+    install-script,
+    curl,
+    npm,
+    homebrew,
+    claude-code,
+    opencode,
+    openclaw,
+    codex,
+    competitor-analysis,
+  ]
 feature_slug: installation-experience
 searches_performed: 14
 sources_count: 22
@@ -35,12 +49,12 @@ All competitors (OpenCode, Claude Code) use tabbed interfaces on their documenta
 
 ### 3. Every Competitor Offers at Least 3 Install Methods
 
-| Tool | Methods |
-|------|---------|
+| Tool        | Methods                                                                  |
+| ----------- | ------------------------------------------------------------------------ |
 | Claude Code | curl/bash (recommended), Homebrew, WinGet, Desktop app, npm (deprecated) |
-| OpenCode | curl/bash, npm, bun, Homebrew, AUR, Go |
-| OpenClaw | curl/bash, npm, git clone |
-| Codex | npm, Homebrew, binary download, web app |
+| OpenCode    | curl/bash, npm, bun, Homebrew, AUR, Go                                   |
+| OpenClaw    | curl/bash, npm, git clone                                                |
+| Codex       | npm, Homebrew, binary download, web app                                  |
 
 DorkOS currently offers 1 method: `npm install -g dorkos`.
 
@@ -51,6 +65,7 @@ Every curl-based installer detects `uname -s` (OS) and `uname -m` (architecture)
 ### 5. Claude Code's Script Is the Gold Standard for Security
 
 Claude Code's bootstrap.sh is the only script in this competitive set that:
+
 - Downloads a manifest.json with platform-specific SHA256 checksums
 - Verifies the downloaded binary against the checksum before executing
 - Signs binaries (notarized by Apple on macOS, signed by "Anthropic, PBC" on Windows)
@@ -69,6 +84,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 ### Claude Code
 
 **Install methods (in order of recommendation):**
+
 1. `curl -fsSL https://claude.ai/install.sh | bash` (macOS/Linux/WSL) — "Native Install (Recommended)"
 2. `irm https://claude.ai/install.ps1 | iex` (Windows PowerShell)
 3. `curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd` (Windows CMD)
@@ -78,6 +94,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 7. Desktop app for macOS and Windows (dmg/exe download)
 
 **Website install UX:**
+
 - Tabbed interface, "Native Install" pre-selected
 - Each tab has a copy-ready code block
 - Info box in each tab explains the update behavior difference
@@ -85,6 +102,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 - Link to Desktop quickstart for non-terminal users
 
 **Install script behavior (bootstrap.sh at https://claude.ai/install.sh):**
+
 - Checks for `curl` or `wget`; exits with clear message if neither found
 - OS detection via `uname -s`: Darwin → macOS, Linux → Linux; Windows exits with error directing to install.cmd
 - Arch detection via `uname -m`: supports x64 and arm64
@@ -97,6 +115,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 - Auto-update: built into the binary itself, runs on startup and periodically in background
 
 **Post-install UX:**
+
 - 3-step quickstart: Install → Log in (`claude` prompts browser auth) → Start (`cd myproject && claude`)
 - `claude doctor` command for installation diagnostics
 - Version pinning support: `curl ... | bash -s 1.0.58`
@@ -110,6 +129,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 ### OpenCode
 
 **Install methods:**
+
 1. `curl -fsSL https://opencode.ai/install | bash` (primary)
 2. `npm i -g opencode-ai`
 3. `bun add -g opencode-ai`
@@ -121,6 +141,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 9. GitHub and GitLab integrations
 
 **Website install UX:**
+
 - Download page at opencode.ai/download
 - 4 numbered sections: Terminal, Desktop, Extensions, Integrations
 - Terminal section shows all 5 methods simultaneously (curl, npm, bun, brew, paru)
@@ -129,6 +150,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 - Home page shows `curl -fsSL https://opencode.ai/install | bash` as the hero install command
 
 **Install script behavior:**
+
 - `set -euo pipefail` for strict error handling
 - OS detection: Darwin → darwin, Linux → linux, MINGW/MSYS/CYGWIN → windows
 - Arch detection: normalizes aarch64 → arm64, x86_64 → x64; checks Rosetta 2
@@ -141,6 +163,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 - `--help`, `--version`, `--binary` (local binary path), `--dry-run`, `--verbose` flags
 
 **Post-install UX:**
+
 - Not well documented on the install page; defers to docs site
 
 **Strengths:** Comprehensive method coverage, Go install option is unique (targets existing Go users). Desktop app and IDE extensions provide non-terminal entry points.
@@ -152,16 +175,19 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 ### OpenClaw
 
 **Install methods:**
+
 1. `curl -fsSL https://openclaw.ai/install.sh | bash` (primary)
 2. `npm i -g openclaw && openclaw onboard`
 3. `curl -fsSL https://openclaw.ai/install.sh | bash -s -- --install-method git` (hackable method)
 
 **Website install UX:**
+
 - Home page has a "Quick Start" section showing the 3 methods
 - Clean, minimal presentation — matches the overall site aesthetic
 - The `openclaw onboard` step after npm is notable: install and onboard are separate but chained
 
 **Install script behavior (most complex of the competitors):**
+
 - OS detection: Darwin (macOS), Linux (including WSL detection via `WSL_DISTRO_NAME`)
 - Arch detection: x86_64, arm64, i386, armv7, armv6
 - Downloads `gum` (Charmbracelet TUI library) for an interactive spinner UI during install — verified with `sha256sum/shasum` against checksums.txt
@@ -171,11 +197,12 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 - Fallback to non-spinner mode if gum fails
 - PATH management: npm global bin dir + `~/.local/bin` for git method
 - `--dry-run`, `--verbose`, `NO_PROMPT=1` flags
-- Legacy env var compatibility (CLAWDBOT_* → OPENCLAW_*)
+- Legacy env var compatibility (CLAWDBOT*\* → OPENCLAW*\*)
 - Holiday taglines appended based on current date (genuinely charming)
 - Runs `openclaw onboard` interactive setup at end (skippable with `--no-onboard`)
 
 **Post-install UX:**
+
 - `openclaw onboard` is the primary onboarding mechanism — an interactive CLI setup wizard that configures API keys, connections, and preferences
 
 **Strengths:** The most feature-complete install script. Interactive TUI via `gum` is genuinely impressive UX. The `onboard` step being built into the install flow is the right design pattern. Holiday taglines show personality.
@@ -187,6 +214,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 ### Codex (OpenAI)
 
 **Install methods:**
+
 1. `npm install -g @openai/codex` (terminal CLI)
 2. `brew install codex` (Homebrew)
 3. GitHub release binary downloads
@@ -194,6 +222,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 5. VS Code, Cursor, Windsurf IDE extensions
 
 **Website install UX:**
+
 - Developer docs at developers.openai.com/codex
 - Quickstart shows npm and Homebrew as the two primary methods
 - No curl script
@@ -202,6 +231,7 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 **Install script behavior:** None — Codex does not offer a curl-based installer. Relies entirely on npm and Homebrew.
 
 **Post-install UX:**
+
 - Run `codex` → prompted to sign in with ChatGPT account or API key
 - Recommends creating Git checkpoints before and after each task
 
@@ -213,39 +243,39 @@ DorkOS is a Node.js application (Express server + React SPA + Claude Agent SDK).
 
 ## Install Script Comparison Matrix
 
-| Capability | Claude Code | OpenCode | OpenClaw | Codex |
-|-----------|-------------|----------|----------|-------|
-| curl install | Yes (recommended) | Yes (primary) | Yes (primary) | No |
-| npm install | Deprecated | Yes | Yes | Yes (primary) |
-| Homebrew | Yes (cask) | Yes | No | Yes |
-| Desktop app | Yes | Yes (beta) | No | Web app |
-| IDE extensions | Yes | Yes | No | Yes |
-| OS detection | Yes | Yes | Yes | N/A |
-| Arch detection | Yes | Yes + AVX2 | Yes | N/A |
-| Rosetta 2 detection | Yes | Yes | No | N/A |
-| Checksum verification | Yes (SHA256) | No | Yes (gum only) | N/A |
-| Code signing | Yes (Apple + MSFT) | No | No | N/A |
-| Auto-updates | Yes | No | No | No |
-| PATH management | Via binary installer | Yes | Yes | N/A |
-| Interactive onboarding | Via `claude` REPL | No | `openclaw onboard` | Via `codex` REPL |
-| Windows support | Yes (native + WSL) | Yes (MINGW) | No | Yes (web + npm) |
-| Version pinning | Yes | Yes (`--version`) | No | No |
-| Dry-run mode | No | Yes (`--dry-run`) | Yes (`--dry-run`) | No |
+| Capability             | Claude Code          | OpenCode          | OpenClaw           | Codex            |
+| ---------------------- | -------------------- | ----------------- | ------------------ | ---------------- |
+| curl install           | Yes (recommended)    | Yes (primary)     | Yes (primary)      | No               |
+| npm install            | Deprecated           | Yes               | Yes                | Yes (primary)    |
+| Homebrew               | Yes (cask)           | Yes               | No                 | Yes              |
+| Desktop app            | Yes                  | Yes (beta)        | No                 | Web app          |
+| IDE extensions         | Yes                  | Yes               | No                 | Yes              |
+| OS detection           | Yes                  | Yes               | Yes                | N/A              |
+| Arch detection         | Yes                  | Yes + AVX2        | Yes                | N/A              |
+| Rosetta 2 detection    | Yes                  | Yes               | No                 | N/A              |
+| Checksum verification  | Yes (SHA256)         | No                | Yes (gum only)     | N/A              |
+| Code signing           | Yes (Apple + MSFT)   | No                | No                 | N/A              |
+| Auto-updates           | Yes                  | No                | No                 | No               |
+| PATH management        | Via binary installer | Yes               | Yes                | N/A              |
+| Interactive onboarding | Via `claude` REPL    | No                | `openclaw onboard` | Via `codex` REPL |
+| Windows support        | Yes (native + WSL)   | Yes (MINGW)       | No                 | Yes (web + npm)  |
+| Version pinning        | Yes                  | Yes (`--version`) | No                 | No               |
+| Dry-run mode           | No                   | Yes (`--dry-run`) | Yes (`--dry-run`)  | No               |
 
 ---
 
 ## Install Method Comparison Matrix (Pros/Cons)
 
-| Method | Pros | Cons | Used By |
-|--------|------|------|---------|
-| `curl \| bash` (native binary) | Single command, no dependencies, auto-update capable, OS/arch detection, fastest | Security concerns (curl-to-bash), requires compiled binary | Claude Code, OpenCode, OpenClaw, rustup, Bun, Deno |
-| `npm install -g` | Familiar to JS devs, existing infrastructure | Requires Node.js, no auto-update, slow (npm resolution), version conflicts, no OS detection | Codex, legacy Claude Code |
-| `brew install` | Trusted by macOS devs, easy to audit, managed updates | macOS/Linux only, no auto-update (need `brew upgrade`), lag before new versions appear | Claude Code, OpenCode, Codex |
-| `bun add -g` | Faster than npm, modern | Requires Bun runtime, less universal | OpenCode |
-| `winget` | Windows-native, trusted store | Windows only, no auto-update, version lag | Claude Code |
-| Desktop app | No terminal required, broadest audience | Larger download, separate update mechanism | Claude Code, OpenCode |
-| Web app | Zero install | Cloud-only, no local execution | Codex |
-| IDE extension | Contextual, no terminal | IDE-specific, not standalone | Claude Code, OpenCode, Codex |
+| Method                         | Pros                                                                             | Cons                                                                                        | Used By                                            |
+| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `curl \| bash` (native binary) | Single command, no dependencies, auto-update capable, OS/arch detection, fastest | Security concerns (curl-to-bash), requires compiled binary                                  | Claude Code, OpenCode, OpenClaw, rustup, Bun, Deno |
+| `npm install -g`               | Familiar to JS devs, existing infrastructure                                     | Requires Node.js, no auto-update, slow (npm resolution), version conflicts, no OS detection | Codex, legacy Claude Code                          |
+| `brew install`                 | Trusted by macOS devs, easy to audit, managed updates                            | macOS/Linux only, no auto-update (need `brew upgrade`), lag before new versions appear      | Claude Code, OpenCode, Codex                       |
+| `bun add -g`                   | Faster than npm, modern                                                          | Requires Bun runtime, less universal                                                        | OpenCode                                           |
+| `winget`                       | Windows-native, trusted store                                                    | Windows only, no auto-update, version lag                                                   | Claude Code                                        |
+| Desktop app                    | No terminal required, broadest audience                                          | Larger download, separate update mechanism                                                  | Claude Code, OpenCode                              |
+| Web app                        | Zero install                                                                     | Cloud-only, no local execution                                                              | Codex                                              |
+| IDE extension                  | Contextual, no terminal                                                          | IDE-specific, not standalone                                                                | Claude Code, OpenCode, Codex                       |
 
 ---
 
@@ -261,6 +291,7 @@ The `curl | bash` pattern has legitimate security concerns (MITM, partial execut
 4. For DorkOS's target audience (developers who use Claude Code), `curl | bash` is already in their daily workflow
 
 **The mitigation pattern (from Claude Code):**
+
 - Serve bootstrap.sh over HTTPS only
 - Download a manifest.json with SHA256 checksums from the same server
 - Verify the downloaded binary/archive against the checksum before execution
@@ -269,6 +300,7 @@ The `curl | bash` pattern has legitimate security concerns (MITM, partial execut
 ### PATH Management
 
 The universally adopted pattern:
+
 1. Detect active shell (bash/zsh/fish) from `$SHELL`
 2. Find the shell's RC file (`~/.zshrc`, `~/.bashrc`, `~/.config/fish/config.fish`)
 3. Check if install dir is already in PATH via `":$PATH:" != *":$INSTALL_DIR:"*`
@@ -279,6 +311,7 @@ The universally adopted pattern:
 ### Version Pinning
 
 Every mature install script accepts a version argument:
+
 - `curl -fsSL https://tool.ai/install.sh | bash -s 1.2.3`
 - `curl -fsSL https://tool.ai/install.sh | bash -s stable`
 
@@ -287,6 +320,7 @@ This is critical for reproducible deployments and CI/CD.
 ### Auto-Update Architecture
 
 Two patterns observed:
+
 1. **Binary self-replace** (Claude Code): The installed binary contains its own update logic. On startup, it checks a version endpoint, downloads a new binary to a temp location, verifies checksum, and replaces itself. Zero external dependencies.
 2. **Script-driven** (rustup): The install script itself is idempotent; re-running it upgrades. `rustup self update` downloads a new rustup binary and replaces the current one.
 
@@ -299,11 +333,13 @@ For Node.js CLIs installed via npm, neither pattern is clean — the npm-install
 ### Current State
 
 DorkOS installs via `npm install -g dorkos`. The CLI package (`packages/cli`) bundles:
+
 - Vite-built React SPA → `dist/client/`
 - esbuild-bundled Express server → `dist/server/index.js`
 - esbuild CLI entry point → `dist/bin/cli.js`
 
 The build pipeline produces pure JavaScript artifacts that require a Node.js runtime. This is the key constraint: DorkOS cannot be distributed as a self-contained binary without either:
+
 1. Shipping Node.js as part of the distribution (adds ~50MB)
 2. Using Bun's `bun build --compile` to produce a standalone executable
 3. Wrapping the npm install in a curl script (hybrid approach)
@@ -318,6 +354,7 @@ Bun's `bun build --compile` produces a single executable that embeds the Bun run
 
 **Option C: Hybrid curl script wrapping npm**
 A `curl -fsSL https://dorkos.ai/install.sh | bash` script that:
+
 1. Checks Node.js 18+ is installed; installs via nvm if not
 2. Runs `npm install -g dorkos`
 3. Runs `dorkos --post-install-check` to verify the installation worked
@@ -334,6 +371,7 @@ This is what OpenClaw does. Provides the `curl` UX without requiring binary comp
 **1. Add a shell install script at dorkos.ai/install**
 
 Even wrapping npm, this script provides meaningful value:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -367,6 +405,7 @@ Create `dorkos-ai/homebrew-tap` GitHub repository with a formula that wraps `npm
 **3. Update the docs site install UX**
 
 Add a tabbed install section to `dorkos.ai/docs` (and ideally the homepage) with:
+
 - Tab 1: `curl -fsSL https://dorkos.ai/install | bash` (recommended)
 - Tab 2: `npm install -g dorkos`
 - Tab 3: `brew install dorkos-ai/tap/dorkos`
@@ -378,6 +417,7 @@ Pre-select Tab 1. Each tab shows only its command.
 **4. Evaluate Bun compile for DorkOS**
 
 The strategic move is producing a standalone binary via `bun build --compile`. This would:
+
 - Enable the same bootstrap.sh pattern as Claude Code (no Node.js requirement)
 - Enable background auto-updates (the binary replaces itself)
 - Eliminate npm as a runtime dependency
@@ -388,6 +428,7 @@ The blocker is `better-sqlite3` (native module). Bun has SQLite built-in (`bun:s
 **5. Add auto-update capability**
 
 Once on a binary distribution model, implement Claude Code's pattern:
+
 - On startup: async check of a version endpoint (no blocking)
 - If newer version: download to temp, verify SHA256, replace binary on next exit
 - `dorkos update` command for explicit manual update
@@ -404,6 +445,7 @@ Submit to the Microsoft WinGet Community Repository: `winget install DorkOS.Dork
 **7. Desktop app consideration**
 
 Claude Code and OpenCode both offer desktop apps for non-terminal users. For DorkOS, this is particularly interesting because DorkOS is already a web app served by a local server. A desktop wrapper (Electron or Tauri) would:
+
 - Eliminate the "open browser at localhost" step
 - Provide system tray integration
 - Enable macOS/Windows installation without a terminal
@@ -425,6 +467,7 @@ When building the DorkOS install script, apply these principles from the researc
 4. **PATH management is the most error-prone step.** Test on bash, zsh, and fish. Handle `$GITHUB_PATH` for CI. Print explicit instructions to reload the shell.
 
 5. **Print a clean completion message.** After successful install:
+
    ```
    DorkOS v1.x.x installed.
 
@@ -467,6 +510,7 @@ Claude Code's move from npm to native binary was not just technical optimization
 OpenClaw's `openclaw onboard` step — run automatically at the end of the install script — is the most sophisticated onboarding integration observed. Rather than relying on users to discover a setup wizard, the installer delivers them directly to it. This is Fogg's Behavior Model applied correctly: maximum motivation (they just installed), maximum ability (one more command runs automatically), instant prompt (the installer triggers it).
 
 For DorkOS, the equivalent would be:
+
 ```
 DorkOS installed successfully.
 

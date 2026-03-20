@@ -21,9 +21,7 @@ export function SyncItem({ enabled, onToggle }: SyncItemProps) {
         </button>
       </HoverCardTrigger>
       <HoverCardContent side="top" align="center" className="w-64 p-3">
-        <p className="text-sm font-medium">
-          Multi-window sync {enabled ? 'on' : 'off'}
-        </p>
+        <p className="text-sm font-medium">Multi-window sync {enabled ? 'on' : 'off'}</p>
         <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
           {enabled
             ? 'Changes you make in other DorkOS windows or the Obsidian plugin appear here instantly. Turn off if you only use one window.'

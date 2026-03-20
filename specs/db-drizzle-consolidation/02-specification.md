@@ -25,11 +25,11 @@ Replace three hand-rolled SQLite databases and their bespoke migration systems w
 
 DorkOS currently maintains three separate SQLite databases:
 
-| Database | Location | Owner |
-|----------|----------|-------|
-| `pulse.db` | `~/.dork/pulse.db` | `PulseStore` (9 prepared statements + `schedules.json` sidecar) |
+| Database         | Location                 | Owner                                                                                                                          |
+| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `pulse.db`       | `~/.dork/pulse.db`       | `PulseStore` (9 prepared statements + `schedules.json` sidecar)                                                                |
 | `relay/index.db` | `~/.dork/relay/index.db` | `SqliteIndex` (13 prepared statements) + `TraceStore` (3 prepared statements) — shared file, incompatible migration strategies |
-| `mesh/mesh.db` | `~/.dork/mesh/mesh.db` | `AgentRegistry` (11 prepared statements) + `DenialList` + `BudgetMapper` — shared connection via raw `.database` getter |
+| `mesh/mesh.db`   | `~/.dork/mesh/mesh.db`   | `AgentRegistry` (11 prepared statements) + `DenialList` + `BudgetMapper` — shared connection via raw `.database` getter        |
 
 **Problems this creates:**
 
@@ -72,14 +72,14 @@ DorkOS currently maintains three separate SQLite databases:
 
 ## 5. Technical Dependencies
 
-| Package | Version | Role |
-|---------|---------|------|
-| `drizzle-orm` | `^0.39.0` | Query builder and type inference |
-| `drizzle-kit` | `^0.30.0` | Schema diffing, SQL generation, `drizzle-kit generate` |
-| `better-sqlite3` | `^11.0.0` | SQLite driver (unchanged, sync API) |
-| `@types/better-sqlite3` | `^7.6.0` | TypeScript declarations |
-| `lefthook` | `^1.10.0` | Git hooks manager for migration enforcement |
-| `ulidx` | `^2.4.0` | ULID generation (already in relay + mesh) |
+| Package                 | Version   | Role                                                   |
+| ----------------------- | --------- | ------------------------------------------------------ |
+| `drizzle-orm`           | `^0.39.0` | Query builder and type inference                       |
+| `drizzle-kit`           | `^0.30.0` | Schema diffing, SQL generation, `drizzle-kit generate` |
+| `better-sqlite3`        | `^11.0.0` | SQLite driver (unchanged, sync API)                    |
+| `@types/better-sqlite3` | `^7.6.0`  | TypeScript declarations                                |
+| `lefthook`              | `^1.10.0` | Git hooks manager for migration enforcement            |
+| `ulidx`                 | `^2.4.0`  | ULID generation (already in relay + mesh)              |
 
 **Drizzle documentation**: https://orm.drizzle.team/docs/overview
 **better-sqlite3 Drizzle adapter**: https://orm.drizzle.team/docs/connect-better-sqlite3
@@ -109,6 +109,7 @@ packages/db/
 ```
 
 **`packages/db/package.json`:**
+
 ```json
 {
   "name": "@dorkos/db",
@@ -143,6 +144,7 @@ packages/db/
 JIT exports follow the `packages/shared` pattern — the `.ts` source is the export target, no build step required.
 
 **`packages/db/drizzle.config.ts`:**
+
 ```typescript
 import { defineConfig } from 'drizzle-kit';
 
@@ -163,7 +165,7 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 /** Schedule definitions for the Pulse scheduler. Replaces schedules.json. */
 export const pulseSchedules = sqliteTable('pulse_schedules', {
-  id: text('id').primaryKey(),                    // ULID
+  id: text('id').primaryKey(), // ULID
   name: text('name').notNull(),
   description: text('description'),
   cron: text('cron').notNull(),
@@ -172,29 +174,33 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   cwd: text('cwd'),
   status: text('status', {
     enum: ['active', 'paused', 'pending_approval'],
-  }).notNull().default('active'),
+  })
+    .notNull()
+    .default('active'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
 
 /** Execution history for Pulse scheduler runs. Replaces pulse.db 'runs' table. */
 export const pulseRuns = sqliteTable('pulse_runs', {
-  id: text('id').primaryKey(),                    // ULID
+  id: text('id').primaryKey(), // ULID
   scheduleId: text('schedule_id')
     .notNull()
     .references(() => pulseSchedules.id),
   status: text('status', {
     enum: ['running', 'completed', 'failed', 'cancelled', 'timeout'],
   }).notNull(),
-  startedAt: text('started_at').notNull(),        // ISO 8601 TEXT
+  startedAt: text('started_at').notNull(), // ISO 8601 TEXT
   finishedAt: text('finished_at'),
   durationMs: integer('duration_ms'),
-  output: text('output'),                         // was: output_summary
+  output: text('output'), // was: output_summary
   error: text('error'),
   sessionId: text('session_id'),
   trigger: text('trigger', {
     enum: ['scheduled', 'manual', 'agent'],
-  }).notNull().default('scheduled'),
+  })
+    .notNull()
+    .default('scheduled'),
   createdAt: text('created_at').notNull(),
 });
 ```
@@ -210,13 +216,15 @@ import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * Replaces relay/index.db 'messages' table.
  */
 export const relayIndex = sqliteTable('relay_index', {
-  id: text('id').primaryKey(),                    // ULID (message ID)
+  id: text('id').primaryKey(), // ULID (message ID)
   subject: text('subject').notNull(),
   endpointHash: text('endpoint_hash').notNull(),
   status: text('status', {
-    enum: ['pending', 'delivered', 'failed'],     // was: 'new'/'cur' (Maildir terms)
-  }).notNull().default('pending'),
-  expiresAt: text('expires_at'),                  // was: ttl INTEGER (Unix ms)
+    enum: ['pending', 'delivered', 'failed'], // was: 'new'/'cur' (Maildir terms)
+  })
+    .notNull()
+    .default('pending'),
+  expiresAt: text('expires_at'), // was: ttl INTEGER (Unix ms)
   payload: text('payload'),
   metadata: text('metadata'),
   createdAt: text('created_at').notNull(),
@@ -224,14 +232,14 @@ export const relayIndex = sqliteTable('relay_index', {
 
 /** Delivery telemetry for Relay messages. Replaces relay/index.db 'message_traces' table. */
 export const relayTraces = sqliteTable('relay_traces', {
-  id: text('id').primaryKey(),                    // ULID
+  id: text('id').primaryKey(), // ULID
   messageId: text('message_id').notNull().unique(),
   traceId: text('trace_id').notNull(),
   subject: text('subject').notNull(),
   status: text('status', {
     enum: ['sent', 'delivered', 'failed', 'timeout'],
   }).notNull(),
-  sentAt: text('sent_at').notNull(),              // ISO 8601 TEXT (was: INTEGER Unix ms)
+  sentAt: text('sent_at').notNull(), // ISO 8601 TEXT (was: INTEGER Unix ms)
   deliveredAt: text('delivered_at'),
   processedAt: text('processed_at'),
   errorMessage: text('error_message'),
@@ -246,7 +254,7 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 /** Registered mesh agents. Replaces mesh/mesh.db 'agents' table. */
 export const agents = sqliteTable('agents', {
-  id: text('id').primaryKey(),                    // ULID
+  id: text('id').primaryKey(), // ULID
   name: text('name').notNull(),
   runtime: text('runtime').notNull(),
   projectPath: text('project_path').notNull().unique(),
@@ -258,8 +266,10 @@ export const agents = sqliteTable('agents', {
   approver: text('approver'),
   status: text('status', {
     enum: ['active', 'inactive'],
-  }).notNull().default('active'),
-  lastSeenAt: text('last_seen_at'),               // ISO 8601 TEXT
+  })
+    .notNull()
+    .default('active'),
+  lastSeenAt: text('last_seen_at'), // ISO 8601 TEXT
   lastSeenEvent: text('last_seen_event'),
   registeredAt: text('registered_at').notNull(),
   updatedAt: text('updated_at').notNull(),
@@ -422,8 +432,8 @@ const rows = await this.db
     and(
       eq(relayIndex.endpointHash, hash),
       eq(relayIndex.status, 'pending'),
-      cursor ? gt(relayIndex.id, cursor) : undefined,
-    ),
+      cursor ? gt(relayIndex.id, cursor) : undefined
+    )
   )
   .orderBy(asc(relayIndex.id))
   .limit(pageSize);
@@ -471,9 +481,7 @@ await this.db
 
 ```typescript
 /** Compute agent health status from last_seen_at timestamp. */
-export function computeHealthStatus(
-  lastSeenAt: string | null,
-): 'active' | 'inactive' | 'stale' {
+export function computeHealthStatus(lastSeenAt: string | null): 'active' | 'inactive' | 'stale' {
   if (!lastSeenAt) return 'stale';
   const diffMs = Date.now() - new Date(lastSeenAt).getTime();
   const diffMinutes = diffMs / 60_000;
@@ -556,12 +564,7 @@ const cutoff = Math.floor(Date.now() / 60_000) - windowMinutes;
 const [result] = await this.db
   .select({ total: sum(rateLimitBuckets.count) })
   .from(rateLimitBuckets)
-  .where(
-    and(
-      eq(rateLimitBuckets.agentId, agentId),
-      gte(rateLimitBuckets.bucketMinute, cutoff),
-    ),
-  );
+  .where(and(eq(rateLimitBuckets.agentId, agentId), gte(rateLimitBuckets.bucketMinute, cutoff)));
 return Number(result?.total ?? 0);
 ```
 
@@ -570,11 +573,13 @@ return Number(result?.total ?? 0);
 Lefthook is not currently installed. This spec adds it:
 
 **1. Install lefthook:**
+
 ```bash
 pnpm add -D lefthook -w
 ```
 
 **2. Add `prepare` script to root `package.json`:**
+
 ```json
 {
   "scripts": {
@@ -584,15 +589,16 @@ pnpm add -D lefthook -w
 ```
 
 **3. Create `lefthook.yml` at repo root:**
+
 ```yaml
 pre-commit:
   commands:
     db-migrations:
-      glob: "packages/db/src/schema/*.ts"
+      glob: 'packages/db/src/schema/*.ts'
       run: |
         npx drizzle-kit generate --config packages/db/drizzle.config.ts
         git add packages/db/drizzle/
-      fail_text: "DB schema changed — migrations generated and staged. Review and re-commit."
+      fail_text: 'DB schema changed — migrations generated and staged. Review and re-commit.'
 ```
 
 **How it works**: The `glob` filter means the hook only runs when schema files change. When triggered, `drizzle-kit generate` computes the diff between the current schema and the last snapshot, generates a new SQL file in `drizzle/`, and stages it automatically. The commit proceeds with both the schema change and the migration file together. Developers don't manually run `drizzle-kit`.
@@ -609,18 +615,12 @@ Add to `turbo.json`:
 {
   "tasks": {
     "db:generate": {
-      "inputs": [
-        "packages/db/src/schema/**/*.ts",
-        "packages/db/drizzle.config.ts"
-      ],
+      "inputs": ["packages/db/src/schema/**/*.ts", "packages/db/drizzle.config.ts"],
       "outputs": ["packages/db/drizzle/**"],
       "cache": true
     },
     "db:check": {
-      "inputs": [
-        "packages/db/src/schema/**/*.ts",
-        "packages/db/drizzle.config.ts"
-      ],
+      "inputs": ["packages/db/src/schema/**/*.ts", "packages/db/drizzle.config.ts"],
       "cache": false
     }
   }
@@ -628,6 +628,7 @@ Add to `turbo.json`:
 ```
 
 Usage:
+
 ```bash
 # Generate migrations manually (also run by lefthook hook):
 turbo run db:generate --filter=@dorkos/db
@@ -644,20 +645,20 @@ esbuild does not copy static assets. Add to `packages/cli/scripts/build.ts` afte
 import { cpSync } from 'fs';
 
 // Step 2.5: Copy Drizzle migration SQL files alongside bundled server
-cpSync(
-  path.join(rootDir, 'packages/db/drizzle'),
-  path.join(outDir, 'drizzle'),
-  { recursive: true }
-);
+cpSync(path.join(rootDir, 'packages/db/drizzle'), path.join(outDir, 'drizzle'), {
+  recursive: true,
+});
 ```
 
 At runtime in the bundled CLI:
+
 - `__dirname` in `packages/db/src/index.ts` resolves to the directory containing the bundled server
 - `path.join(__dirname, '../../drizzle')` resolves to `dist/drizzle/` — the copied folder
 
 ### 6.9 Dependency Changes
 
 **Add to `packages/db/package.json` (new package):**
+
 - `better-sqlite3: ^11.0.0`
 - `drizzle-orm: ^0.39.0`
 - `ulidx: ^2.4.0`
@@ -665,17 +666,21 @@ At runtime in the bundled CLI:
 - devDep: `@types/better-sqlite3: ^7.6.0`
 
 **Add to root `package.json` (monorepo-level deduplication):**
+
 - `drizzle-orm: ^0.39.0` — prevents `instanceof` check failures when `drizzle-orm` is instantiated from multiple locations
 
 **Remove from `packages/relay/package.json`:**
+
 - `better-sqlite3` (moves to `packages/db`)
 - `@types/better-sqlite3` (moves to `packages/db`)
 
 **Remove from `packages/mesh/package.json`:**
+
 - `better-sqlite3` (moves to `packages/db`)
 - `@types/better-sqlite3` (moves to `packages/db`)
 
 **Add `@dorkos/db: workspace:*` to:**
+
 - `apps/server/package.json`
 - `packages/relay/package.json`
 - `packages/mesh/package.json`
@@ -684,20 +689,22 @@ At runtime in the bundled CLI:
 
 Old database files are **left intact** — never deleted:
 
-| Old file | Status after upgrade |
-|----------|---------------------|
-| `~/.dork/pulse.db` | Preserved, ignored |
-| `~/.dork/relay/index.db` | Preserved, ignored |
-| `~/.dork/mesh/mesh.db` | Preserved, ignored |
-| `~/.dork/schedules.json` | Preserved, ignored |
+| Old file                 | Status after upgrade |
+| ------------------------ | -------------------- |
+| `~/.dork/pulse.db`       | Preserved, ignored   |
+| `~/.dork/relay/index.db` | Preserved, ignored   |
+| `~/.dork/mesh/mesh.db`   | Preserved, ignored   |
+| `~/.dork/schedules.json` | Preserved, ignored   |
 
 Log message emitted at startup:
+
 ```
 [db] Migrations applied to ~/.dork/dork.db
 [db] Legacy databases preserved at previous paths
 ```
 
 All data is ephemeral or rebuildable:
+
 - **Pulse run history**: Nice-to-have, not critical; schedules are re-created on first run
 - **Relay index**: Fully derivable from the Maildir filesystem via `SqliteIndex.rebuild()`
 - **Relay traces**: Delivery telemetry; safe to lose
@@ -709,29 +716,29 @@ All data is ephemeral or rebuildable:
 
 ### Table Renames
 
-| Old Name | New Name | Old DB | New DB |
-|----------|----------|--------|--------|
-| `runs` | `pulse_runs` | `pulse.db` | `dork.db` |
-| *(JSON file)* | `pulse_schedules` | `schedules.json` | `dork.db` |
-| `messages` | `relay_index` | `relay/index.db` | `dork.db` |
-| `message_traces` | `relay_traces` | `relay/index.db` | `dork.db` |
-| `denials` | `agent_denials` | `mesh/mesh.db` | `dork.db` |
-| `budget_counters` | `rate_limit_buckets` | `mesh/mesh.db` | `dork.db` |
-| `agents` | `agents` | `mesh/mesh.db` | `dork.db` |
+| Old Name          | New Name             | Old DB           | New DB    |
+| ----------------- | -------------------- | ---------------- | --------- |
+| `runs`            | `pulse_runs`         | `pulse.db`       | `dork.db` |
+| _(JSON file)_     | `pulse_schedules`    | `schedules.json` | `dork.db` |
+| `messages`        | `relay_index`        | `relay/index.db` | `dork.db` |
+| `message_traces`  | `relay_traces`       | `relay/index.db` | `dork.db` |
+| `denials`         | `agent_denials`      | `mesh/mesh.db`   | `dork.db` |
+| `budget_counters` | `rate_limit_buckets` | `mesh/mesh.db`   | `dork.db` |
+| `agents`          | `agents`             | `mesh/mesh.db`   | `dork.db` |
 
 ### Column Changes
 
-| Table | Old Column | New Column | Change |
-|-------|-----------|------------|--------|
-| `relay_index` | `ttl INTEGER` | `expires_at TEXT` | Duration→timestamp, INT→ISO TEXT |
-| `relay_index` | `status 'new'/'cur'` | `status 'pending'/'delivered'` | Maildir terms removed |
-| `pulse_runs` | `output_summary TEXT` | `output TEXT` | Rename ("summary" implies truncation) |
-| `agents` | `manifest_json TEXT` | *(dropped)* | Redundant with individual columns |
-| `relay_traces` | `sent_at INTEGER` | `sent_at TEXT` | INT Unix ms → ISO 8601 TEXT |
-| `relay_traces` | `delivered_at INTEGER` | `delivered_at TEXT` | INT Unix ms → ISO 8601 TEXT |
-| `relay_traces` | `processed_at INTEGER` | `processed_at TEXT` | INT Unix ms → ISO 8601 TEXT |
-| `pulse_schedules` | `id UUID` | `id ULID` | Standardize to ULID |
-| `pulse_runs` | `id UUID` | `id ULID` | Standardize to ULID |
+| Table             | Old Column             | New Column                     | Change                                |
+| ----------------- | ---------------------- | ------------------------------ | ------------------------------------- |
+| `relay_index`     | `ttl INTEGER`          | `expires_at TEXT`              | Duration→timestamp, INT→ISO TEXT      |
+| `relay_index`     | `status 'new'/'cur'`   | `status 'pending'/'delivered'` | Maildir terms removed                 |
+| `pulse_runs`      | `output_summary TEXT`  | `output TEXT`                  | Rename ("summary" implies truncation) |
+| `agents`          | `manifest_json TEXT`   | _(dropped)_                    | Redundant with individual columns     |
+| `relay_traces`    | `sent_at INTEGER`      | `sent_at TEXT`                 | INT Unix ms → ISO 8601 TEXT           |
+| `relay_traces`    | `delivered_at INTEGER` | `delivered_at TEXT`            | INT Unix ms → ISO 8601 TEXT           |
+| `relay_traces`    | `processed_at INTEGER` | `processed_at TEXT`            | INT Unix ms → ISO 8601 TEXT           |
+| `pulse_schedules` | `id UUID`              | `id ULID`                      | Standardize to ULID                   |
+| `pulse_runs`      | `id UUID`              | `id ULID`                      | Standardize to ULID                   |
 
 ---
 
@@ -796,6 +803,7 @@ it('createRun generates ULID id, not UUID', async () => {
 ```
 
 Tests that need to change due to this refactor:
+
 - `apps/server/src/services/__tests__/pulse-store.test.ts` — replace `tmpdir` SQLite path with `createDb(':memory:')`
 - `packages/relay/src/__tests__/sqlite-index.test.ts` — same
 - `packages/mesh/src/__tests__/agent-registry.test.ts` — same, remove raw DB assertions
@@ -961,12 +969,12 @@ None. All architectural decisions were resolved during ideation. See [Section 6 
 
 ## 16. Related ADRs
 
-| ADR | Title | Relationship |
-|-----|-------|-------------|
-| [ADR #12](../../decisions/0012-use-ulid-for-relay-message-ids.md) | Use ULID for Relay Message IDs | Extended: this spec standardizes ULIDs to Pulse tables as well |
-| [ADR #13](../../decisions/0013-hybrid-maildir-sqlite-storage.md) | Use Hybrid Maildir + SQLite for Relay Storage | Refactored: the SQLite portion moves to `dork.db` under Drizzle |
-| [ADR #25](../../decisions/0025-simple-json-columns-for-agent-registry.md) | Use Simple JSON Columns for Agent Registry SQLite Schema | Extended: schema moves to `dork.db`; `manifest_json` redundant column is dropped |
-| [ADR #28](../../decisions/0028-sqlite-trace-storage-in-relay-index.md) | Store Message Traces in Existing Relay SQLite Index | Superseded: traces now live in `dork.db` (`relay_traces` table), not alongside `relay/index.db` |
+| ADR                                                                       | Title                                                    | Relationship                                                                                    |
+| ------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [ADR #12](../../decisions/0012-use-ulid-for-relay-message-ids.md)         | Use ULID for Relay Message IDs                           | Extended: this spec standardizes ULIDs to Pulse tables as well                                  |
+| [ADR #13](../../decisions/0013-hybrid-maildir-sqlite-storage.md)          | Use Hybrid Maildir + SQLite for Relay Storage            | Refactored: the SQLite portion moves to `dork.db` under Drizzle                                 |
+| [ADR #25](../../decisions/0025-simple-json-columns-for-agent-registry.md) | Use Simple JSON Columns for Agent Registry SQLite Schema | Extended: schema moves to `dork.db`; `manifest_json` redundant column is dropped                |
+| [ADR #28](../../decisions/0028-sqlite-trace-storage-in-relay-index.md)    | Store Message Traces in Existing Relay SQLite Index      | Superseded: traces now live in `dork.db` (`relay_traces` table), not alongside `relay/index.db` |
 
 ---
 

@@ -7,8 +7,14 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
     on: vi.fn(),
     off: vi.fn(),
     status: {
-      enabled: false, connected: false, url: null, port: null, startedAt: null,
-      authEnabled: false, tokenConfigured: false, domain: null,
+      enabled: false,
+      connected: false,
+      url: null,
+      port: null,
+      startedAt: null,
+      authEnabled: false,
+      tokenConfigured: false,
+      domain: null,
     },
   },
 }));
@@ -85,7 +91,7 @@ describe('Tunnel Route', () => {
       expect(res.body.url).toBe('https://test.ngrok.io');
       // In dev (NODE_ENV !== 'production'), defaults to Vite's port (4241)
       expect(tunnelManager.start).toHaveBeenCalledWith(
-        expect.objectContaining({ authtoken: 'test-token-123', port: 4241 }),
+        expect.objectContaining({ authtoken: 'test-token-123', port: 4241 })
       );
     });
 
@@ -108,7 +114,7 @@ describe('Tunnel Route', () => {
 
       expect(res.status).toBe(200);
       expect(tunnelManager.start).toHaveBeenCalledWith(
-        expect.objectContaining({ authtoken: 'test-token-123', port: 4242 }),
+        expect.objectContaining({ authtoken: 'test-token-123', port: 4242 })
       );
     });
 
@@ -171,7 +177,7 @@ describe('Tunnel Route', () => {
 
       expect(configManager.set).toHaveBeenCalledWith(
         'tunnel',
-        expect.objectContaining({ enabled: true }),
+        expect.objectContaining({ enabled: true })
       );
     });
   });
@@ -232,7 +238,7 @@ describe('Tunnel Route', () => {
 
       expect(configManager.set).toHaveBeenCalledWith(
         'tunnel',
-        expect.objectContaining({ enabled: false, domain: 'my.domain.io' }),
+        expect.objectContaining({ enabled: false, domain: 'my.domain.io' })
       );
     });
 

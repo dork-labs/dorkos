@@ -95,7 +95,6 @@ Client: handleSubmit()
 - **Evidence:** Self-test report `test-results/chat-self-test/20260308-152646.md`, Message 5 section. JSONL stayed at 32 lines. Cost unchanged at $0.03.
 
 - **Root-cause hypotheses:**
-
   1. **`streamReadyRef` never resets between messages (HIGH confidence):**
      `streamReadyRef.current` is set to `true` on the first `stream_ready` event (line ~260) and only reset in the `onerror` handler (line 279) or effect cleanup (line 286). A graceful server close (`res.end()`) does NOT fire `onerror` — only network errors do. So after Message 1's `stream_ready`, the ref stays `true` forever. The `waitForStreamReady()` check at line 356-360 passes immediately for all subsequent messages, skipping the subscribe-first handshake entirely.
 
@@ -112,6 +111,7 @@ Client: handleSubmit()
 **Potential Solutions:**
 
 **1. Synchronous `statusRef` update + per-message `streamReadyRef` reset (Quick fix)**
+
 - Description: Set `statusRef.current = 'streaming'` synchronously alongside `setStatus('streaming')` in `handleSubmit()`. Reset `streamReadyRef.current = false` before each message send so the subscribe-first handshake is enforced per-message.
 - Pros: 1-2 line changes, fixes root causes 1 and 3 directly, no protocol changes
 - Cons: Doesn't address root cause 2 (late event bleed). Relies on EventSource auto-reconnect to trigger a fresh `stream_ready`.
@@ -119,6 +119,7 @@ Client: handleSubmit()
 - Maintenance: Low
 
 **2. Per-message correlation ID (Comprehensive fix)**
+
 - Description: Generate a `correlationId` (UUID) for each message send. Thread it through: POST body → relay envelope metadata → adapter response chunks → `relay_message` events. Client filters incoming events — discards any whose `correlationId` doesn't match the current message's ID.
 - Pros: Eliminates root cause 2 completely. Events from Message N cannot leak into Message N+1 regardless of timing. Industry standard pattern (Slack, Discord use similar approaches).
 - Cons: Requires changes across client, server route, and adapter. More surface area.
@@ -126,6 +127,7 @@ Client: handleSubmit()
 - Maintenance: Low (correlation IDs are self-documenting)
 
 **3. `stream_ready_ack` from adapter (Hardening)**
+
 - Description: ClaudeCodeAdapter publishes a synthetic `stream_ready_ack` event as the first chunk of each response. Client resets `streamReadyRef.current = false` before each send and waits for the ack — restoring per-message subscribe-first semantics.
 - Pros: Guarantees the full relay pipeline (client → server → adapter → relay → back to client) is confirmed before the first real event. Most robust.
 - Cons: Adds latency (~50-100ms per message). Requires adapter protocol change.
@@ -133,6 +135,7 @@ Client: handleSubmit()
 - Maintenance: Medium
 
 **4. Request queue/serialization**
+
 - Description: Queue messages client-side and process them serially — only send Message N+1 after Message N's `done` event AND a cooldown period.
 - Pros: Simple to implement. Eliminates the rapid-succession scenario.
 - Cons: Artificially limits throughput. Doesn't fix the root cause — just avoids triggering it. Bad UX for users who type fast.

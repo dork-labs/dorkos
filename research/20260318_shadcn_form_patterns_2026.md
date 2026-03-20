@@ -1,9 +1,10 @@
 ---
-title: "Shadcn UI Form Patterns in 2026: react-hook-form vs TanStack Form, Settings Page Standards"
+title: 'Shadcn UI Form Patterns in 2026: react-hook-form vs TanStack Form, Settings Page Standards'
 date: 2026-03-18
 type: external-best-practices
 status: active
-tags: [shadcn, forms, react-hook-form, tanstack-form, settings, wizard, react-19, compound-components]
+tags:
+  [shadcn, forms, react-hook-form, tanstack-form, settings, wizard, react-19, compound-components]
 searches_performed: 10
 sources_count: 22
 ---
@@ -22,6 +23,7 @@ Shadcn now has two distinct tiers of form support:
 
 **Tier 1 — `Field` component family (October 2025)**
 A low-level, library-agnostic primitive system for composing individual form fields. Sub-components:
+
 - `Field` — wrapper with `orientation="vertical|horizontal|responsive"`
 - `FieldSet` / `FieldLegend` — semantic grouping via HTML `<fieldset>/<legend>`
 - `FieldGroup` — stacks multiple `Field` elements with container queries
@@ -39,24 +41,25 @@ The older `<Form>`, `<FormField>`, `<FormItem>`, `<FormLabel>`, `<FormControl>`,
 
 ### 2. React Hook Form vs TanStack Form: 2026 State
 
-| Dimension | React Hook Form | TanStack Form |
-|---|---|---|
-| NPM downloads (weekly) | ~11 million | ~650K |
-| Stable version | v7.71.x (v8 in beta) | v1.x (stable March 2025) |
-| React 19 support | Yes, with caveats | Yes, first-class |
-| React Compiler support | Broken in current stable; fixed in v8 beta | Works natively |
-| Bundle size (gzip) | 10.7 KB | 9.6 KB |
-| TypeScript type safety | Good | Excellent (inferred paths) |
-| Framework agnostic | No (React-only) | Yes (React, Vue, Angular, Solid, Lit) |
-| Server Actions integration | Requires workarounds | Native SSR support |
-| Zod / Standard Schema | Via `@hookform/resolvers` | Native (`validators` API) |
-| Learning curve | Low | Medium |
-| Ecosystem maturity | High (3+ years) | Medium (stable 1 year) |
-| Multi-step wizard support | Manual | Excellent (modular field state) |
+| Dimension                  | React Hook Form                            | TanStack Form                         |
+| -------------------------- | ------------------------------------------ | ------------------------------------- |
+| NPM downloads (weekly)     | ~11 million                                | ~650K                                 |
+| Stable version             | v7.71.x (v8 in beta)                       | v1.x (stable March 2025)              |
+| React 19 support           | Yes, with caveats                          | Yes, first-class                      |
+| React Compiler support     | Broken in current stable; fixed in v8 beta | Works natively                        |
+| Bundle size (gzip)         | 10.7 KB                                    | 9.6 KB                                |
+| TypeScript type safety     | Good                                       | Excellent (inferred paths)            |
+| Framework agnostic         | No (React-only)                            | Yes (React, Vue, Angular, Solid, Lit) |
+| Server Actions integration | Requires workarounds                       | Native SSR support                    |
+| Zod / Standard Schema      | Via `@hookform/resolvers`                  | Native (`validators` API)             |
+| Learning curve             | Low                                        | Medium                                |
+| Ecosystem maturity         | High (3+ years)                            | Medium (stable 1 year)                |
+| Multi-step wizard support  | Manual                                     | Excellent (modular field state)       |
 
 **React Compiler Compatibility Issue (Critical)**
 
 React Hook Form v7 has a documented incompatibility with the React Compiler (the auto-memoization pass that ships with React 19+). The following APIs are broken under the compiler:
+
 - `form.watch()` — use `useWatch()` instead
 - `<Controller>` component — behaves incorrectly under auto-memoization
 - `useFormContext()` watch functionality
@@ -78,11 +81,13 @@ Workaround: Add `"use no memo"` directive to form hook files. The proper fix is 
 ```
 
 Three layout variants appear in the wild:
+
 1. **Horizontal** (`justify-between`) — label+description left, control right — best for switches and select dropdowns
 2. **Vertical** — label above, control below, description below control — best for text inputs and textareas
 3. **Responsive** — horizontal on wider containers, vertical on narrow — Shadcn's `Field` handles this automatically via container queries with `orientation="responsive"`
 
 **Section grouping pattern** follows this hierarchy:
+
 ```
 <section>
   <h3>Section Title</h3>
@@ -111,11 +116,13 @@ Three layout variants appear in the wild:
 ```
 
 The compound API is preferred when:
+
 - The label or description needs to contain interactive elements (links, badges, tooltips)
 - You need to swap orientation per row
 - You're building a design-system-first component
 
 The props API is preferred when:
+
 - All rows are visually uniform
 - The label and description are always plain strings
 - You want to avoid verbosity in high-density settings UIs (like DorkOS currently has)
@@ -142,6 +149,7 @@ Settings in DorkOS persist immediately on change (no "Submit" button). The `Fiel
 **Option B — Adopt TanStack Form for wizard forms (recommended for AdapterSetupWizard and future wizards)**
 
 The AdapterSetupWizard already has the structure of a form library: it tracks field values, errors, and validation manually. Moving to TanStack Form would provide:
+
 - Type-safe field paths (no more `Record<string, unknown>`)
 - Built-in per-field validation with `validators.onChange`
 - Native Zod integration (uses `@tanstack/zod-form-adapter`)
@@ -159,6 +167,7 @@ Works fine today on React 19 if the React Compiler is not enabled. Since DorkOS 
 ### Current DorkOS Form Patterns: Inventory
 
 **Settings (`SettingsDialog.tsx`):**
+
 - Uses a local `SettingRow` component (defined at file bottom, not exported)
 - Props-driven: `{ label, description, children }`
 - `justify-between` horizontal layout — correct for switch rows
@@ -166,6 +175,7 @@ Works fine today on React 19 if the React Compiler is not enabled. Since DorkOS 
 - Issue: `SettingRow` is private to `SettingsDialog.tsx`. Other settings panels (ServerTab, AdvancedTab, ToolsTab) likely replicate or work around this pattern
 
 **Wizard forms (`ConfigFieldInput.tsx` / `ConfigureStep.tsx`):**
+
 - Schema-driven: renders the correct control based on `ConfigField.type`
 - Manual `useState` for errors: `errors: Record<string, string>` passed as prop
 - Manual validation: regex patterns evaluated in `onBlur` handlers

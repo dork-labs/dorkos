@@ -49,6 +49,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/server/src/index.ts` — Server startup, port binding, tunnel init (17 console calls)
 - `apps/server/src/app.ts` — Express app factory, route registration, error handler middleware
 - `apps/server/src/services/agent-manager.ts` — SDK session management (9 console calls, heaviest logging)
@@ -58,6 +59,7 @@ status: ideation
 - `packages/cli/src/cli.ts` — CLI entry point, startup banner (16 console calls)
 
 **Shared dependencies:**
+
 - `packages/shared/src/config-schema.ts` — Would need `logLevel` field added to UserConfigSchema
 - `apps/server/src/lib/boundary.ts` — Existing lib/ directory pattern for shared server utilities
 - `packages/cli/src/cli.ts` — Sets env vars and creates `~/.dork/` directory at startup
@@ -66,12 +68,14 @@ status: ideation
 CLI startup → sets env vars → creates `~/.dork/` → imports server → Express binds → services start logging
 
 **Feature flags/config:**
+
 - `LOG_LEVEL` env var (proposed, not yet implemented)
 - `~/.dork/config.json` — would add `logLevel` field
 - No existing logging config
 
 **Potential blast radius:**
-- Direct: 7 server files (replace console.* with logger.*)
+
+- Direct: 7 server files (replace console._ with logger._)
 - Indirect: 4 CLI files (keep console.log for user output, but route errors through logger)
 - New files: 1 (`apps/server/src/lib/logger.ts`)
 - Config: 1 schema change (`packages/shared/src/config-schema.ts`)
@@ -88,6 +92,7 @@ Full research document: `research/20260216_logging_strategy.md`
 **Potential solutions:**
 
 **1. Consola + Custom File Reporter (Recommended)**
+
 - Description: Use consola (UnJS ecosystem) for structured logging with pretty dev output, add a ~20-line custom file reporter for NDJSON persistence to `~/.dork/logs/`
 - Pros:
   - Bundles cleanly with esbuild (no worker thread complexity like pino)
@@ -104,6 +109,7 @@ Full research document: `research/20260216_logging_strategy.md`
 - Maintenance: Low
 
 **2. Winston**
+
 - Description: Use winston with built-in Console + DailyRotateFile transports for a batteries-included solution
 - Pros:
   - Built-in file transport with `winston-daily-rotate-file`
@@ -119,6 +125,7 @@ Full research document: `research/20260216_logging_strategy.md`
 - Maintenance: Low
 
 **3. Pino**
+
 - Description: Use pino for high-performance structured JSON logging
 - Pros:
   - Industry-standard, 20M+ weekly downloads
@@ -137,6 +144,7 @@ Full research document: `research/20260216_logging_strategy.md`
 Consola is purpose-built for developer tools: clean esbuild bundling, beautiful dev output out of the box, and the custom file reporter pattern is trivial (~20 lines). The only gap (no built-in log rotation) is easily solved with a startup check that rotates files >10MB and retains the last 7 days.
 
 **Key architectural decisions:**
+
 - **Storage**: `~/.dork/logs/dorkos.log` (co-located with config)
 - **Rotation**: Daily, 10MB max, 7-day retention
 - **Log levels**: `fatal/error/warn/info/debug/trace` — default `info` in prod, `debug` in dev

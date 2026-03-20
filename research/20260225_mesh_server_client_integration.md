@@ -1,5 +1,5 @@
 ---
-title: "Mesh Server/Client Integration Best Practices"
+title: 'Mesh Server/Client Integration Best Practices'
 date: 2026-02-25
 type: internal-architecture
 status: archived
@@ -30,6 +30,7 @@ This report covers six topic areas for integrating an agent discovery/registry l
 **Finding**: The approval workflow is the most novel UI challenge — no existing DorkOS panel handles a `discovered -> pending -> registered | denied` state machine.
 
 **Option A: Card-based review (Recommended)**
+
 - Each discovered agent renders as a `CandidateCard` with metadata (name, capabilities, runtime, cwd, discoveredAt)
 - Per-row approve/deny buttons with confirmation for deny (destructive)
 - Status badge on each card (dot + label: "Discovered", "Registered", "Denied")
@@ -39,12 +40,14 @@ This report covers six topic areas for integrating an agent discovery/registry l
 - Complexity: Low — follows existing `AdapterCard.tsx` shape exactly
 
 **Option B: Table-based review**
+
 - TanStack Table with checkbox column for multi-select and a bulk-action toolbar
 - Pros: Maximum density for large lists, better for power users with 20+ candidates
 - Cons: Adds TanStack Table dependency to this feature (Roadmap app uses it, client does not currently), overkill for typical discovery result sets (<10 agents per scan)
 - Complexity: Medium
 
 **Option C: Inline approval in main registry table**
+
 - Discovered candidates appear in the main registry with pending status badges and inline action buttons
 - Pros: Single unified view, no separate "review" step
 - Cons: Blurs the distinction between the approval workflow and the ongoing registry, makes it harder to do batch operations
@@ -53,6 +56,7 @@ This report covers six topic areas for integrating an agent discovery/registry l
 **Recommendation**: Option A. The card approach matches the AdapterCard precedent perfectly and handles the reality that discovery usually returns <10 candidates at a time.
 
 **Batch Operation Design**:
+
 - Show batch toolbar only when there are items in `discovered` or `pending` states
 - "Approve All" → optimistic updates, single API call `POST /api/mesh/candidates/batch-approve`
 - "Deny All" → requires a confirmation dialog (destructive, bulk)
@@ -60,6 +64,7 @@ This report covers six topic areas for integrating an agent discovery/registry l
 - Reference: [SaaS Bulk Actions UI examples](https://saasinterface.com/components/bulk-actions/)
 
 **Status Badge Design** (matching AdapterCard dot pattern):
+
 ```
 discovered  → yellow dot + "Discovered" badge (outline)
 pending     → blue pulsing dot + "Pending" badge (outline)
@@ -69,6 +74,7 @@ error       → red dot + "Error" badge (destructive)
 ```
 
 **Filtering/Sorting**:
+
 - Filter by status (tabs: All | Pending Review | Registered | Denied)
 - Sort by: discoveredAt (default, newest first), name, runtime
 - Use tab-based filtering over a dropdown — matches the RelayPanel `Tabs` pattern
@@ -80,6 +86,7 @@ error       → red dot + "Error" badge (destructive)
 **Finding**: The registry view (registered agents) is a straightforward list-with-detail pattern. DorkOS already has the right primitives.
 
 **Option A: Expandable row cards (Recommended)**
+
 - Each registered agent renders as an `AgentCard` (similar to `ScheduleRow` expand/collapse pattern in PulsePanel)
 - Collapsed: name, runtime badge, capability count badge, health dot, enable/disable toggle
 - Expanded: full capability list as badge chips, cwd path, description, last-seen timestamp, edit/remove actions
@@ -88,12 +95,14 @@ error       → red dot + "Error" badge (destructive)
 - Complexity: Low
 
 **Option B: Edit modal**
+
 - Clicking an agent opens a modal form for editing metadata
 - Pros: More space for complex forms (many capabilities, long descriptions)
 - Cons: Extra interaction step, adds another modal to manage; better reserved for the registration flow
 - Complexity: Medium
 
 **Option C: Dedicated detail route**
+
 - Each agent has its own URL (`/mesh/agents/:id`)
 - Pros: Deep-linkable, unlimited space
 - Cons: DorkOS is a SPA panel, not a multi-page app; route-based navigation is heavy for a side panel
@@ -102,12 +111,14 @@ error       → red dot + "Error" badge (destructive)
 **Recommendation**: Option A for the list view. Use a modal (CreateAgentDialog equivalent) for the initial registration form, and expandable rows for quick edits.
 
 **Capability Badges Display**:
+
 - Render capabilities as `Badge` chips in a flex-wrap container
 - Max 3 visible in collapsed view, "+ N more" overflow indicator
 - In expanded view: full list, grouped by capability category if categories exist
 - Runtime environment: colored badge (e.g., "node" = green, "python" = blue, "deno" = purple)
 
 **Health/Status Monitoring**:
+
 - Health dot (colored circle, same STATUS_COLORS pattern as AdapterCard)
 - Last-seen timestamp ("2 minutes ago" via relative formatting)
 - Do NOT poll health in real-time unless `@dorkos/mesh` provides a health check API; use the registry's `updatedAt` field
@@ -119,6 +130,7 @@ error       → red dot + "Error" badge (destructive)
 **Finding**: The `CreateScheduleDialog.tsx` is the closest precedent for a registration form. Agent registration has more fields but follows the same patterns.
 
 **Tag/Chip Input for Capabilities**:
+
 - shadcn/ui does not ship a chip input natively (open issue #3647)
 - Recommended approach: Controlled input with `onKeyDown` that fires on Enter/comma, adds to a Set, renders as Badge chips with an X button
 - Alternatively: `cmdk`-based combobox with freeform input — already in the project as the Command primitive
@@ -130,28 +142,38 @@ error       → red dot + "Error" badge (destructive)
     {capabilities.map((cap) => (
       <Badge key={cap} variant="secondary" className="gap-1">
         {cap}
-        <button onClick={() => removeCapability(cap)}><X className="size-3" /></button>
+        <button onClick={() => removeCapability(cap)}>
+          <X className="size-3" />
+        </button>
       </Badge>
     ))}
-    <input placeholder="Add capability..." onKeyDown={handleCapabilityInput} className="flex-1 outline-none text-sm" />
+    <input
+      placeholder="Add capability..."
+      onKeyDown={handleCapabilityInput}
+      className="flex-1 text-sm outline-none"
+    />
   </div>
   ```
 
 **Directory/Path Picker**:
+
 - The project already has `DirectoryPicker` in `shared/ui/` — use it directly
 - This is a first-class pattern; do not reinvent
 
 **Runtime Selector**:
+
 - Use shadcn `Select` with a list of known runtimes + descriptions
 - Include "custom" option that reveals a text input field (progressive disclosure)
 - Example options: node, python, deno, bun, custom
 
 **Progressive Disclosure for Advanced Fields**:
+
 - Required fields: name, cwd, runtime
 - Advanced (behind "Advanced options" disclosure): description, capabilities, tags, maxConcurrentRuns, healthCheckUrl
 - Use `<details>/<summary>` or a shadcn `Collapsible` — the project uses `Collapsible` in the sidebar already
 
 **Form Validation**:
+
 - Use `react-hook-form` + zod resolver — consistent with the rest of the project (CreateScheduleDialog)
 - Real-time validation on blur (not on every keystroke) to avoid distracting errors
 - Show inline error messages below each field
@@ -163,6 +185,7 @@ error       → red dot + "Error" badge (destructive)
 **Finding**: The Relay router (`routes/relay.ts`) is the direct template. Mesh routes follow identical structure.
 
 **Discovery Endpoints**:
+
 ```
 POST /api/mesh/scan          — Trigger a scan (async, returns jobId or immediate results)
 GET  /api/mesh/candidates    — List discovered candidates (status: discovered | pending | denied)
@@ -173,6 +196,7 @@ POST /api/mesh/candidates/batch-deny    — Deny all pending candidates
 ```
 
 **Registry Endpoints**:
+
 ```
 GET    /api/mesh/agents          — List registered agents (?status=&runtime=&cursor=&limit=)
 POST   /api/mesh/agents          — Manually register an agent
@@ -185,18 +209,21 @@ GET    /api/mesh/metrics         — Registry metrics
 ```
 
 **Filtering and Pagination**:
+
 - Query params: `?status=registered&runtime=node&cursor=abc123&limit=20`
 - Cursor-based pagination (consistent with Relay's pattern): `{ agents: [...], nextCursor: string | null }`
 - Filter by status (comma-separated for multi-select): `?status=registered,denied`
 - Default sort: `registeredAt` descending
 
 **Idempotency**:
+
 - `POST /api/mesh/agents` should upsert by `(name + cwd)` composite key — re-registering the same agent is a no-op that returns the existing record
 - `POST /api/mesh/candidates/:id/approve` is idempotent: approving an already-registered candidate returns the existing registration
 - `POST /api/mesh/candidates/:id/deny` is idempotent: re-denying returns the existing deny record
 - Trigger scan (`POST /api/mesh/scan`) is NOT idempotent — prevents running concurrent scans by returning 409 if a scan is in progress
 
 **Discovery Trigger Design** (POST /api/mesh/scan):
+
 - Option A (Synchronous): Scan completes in-request, returns `{ candidates: [...] }` directly
   - Simple, no polling needed, but blocks the request for the scan duration
   - Good for local filesystem scans (<1s typical)
@@ -205,15 +232,16 @@ GET    /api/mesh/metrics         — Registry metrics
 - Recommendation: Start with Option A (synchronous). Add async + SSE only if scan latency becomes a problem.
 
 **Error Responses** (consistent with existing routes):
+
 ```typescript
 // Scan in progress
-res.status(409).json({ error: 'Scan already in progress', code: 'SCAN_IN_PROGRESS' })
+res.status(409).json({ error: 'Scan already in progress', code: 'SCAN_IN_PROGRESS' });
 // Agent not found
-res.status(404).json({ error: 'Agent not found' })
+res.status(404).json({ error: 'Agent not found' });
 // Validation failed
-res.status(400).json({ error: 'Validation failed', details: result.error.flatten() })
+res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
 // Discovery error
-res.status(422).json({ error: message, code: 'DISCOVERY_FAILED' })
+res.status(422).json({ error: message, code: 'DISCOVERY_FAILED' });
 ```
 
 ---
@@ -223,22 +251,25 @@ res.status(422).json({ error: message, code: 'DISCOVERY_FAILED' })
 **Finding**: The existing MCP tools in `mcp-tool-server.ts` define exactly the right patterns. Mesh tools follow identical structure.
 
 **Tool Naming Conventions** (from existing codebase + MCP official docs):
+
 - Prefix: `mesh_` (analogous to `relay_`, consistent with no-collision requirement)
 - snake_case, verb-first: `mesh_scan`, `mesh_list_agents`, `mesh_register_agent`, `mesh_approve_candidate`, `mesh_deny_candidate`, `mesh_get_metrics`
 
 **Proposed Mesh MCP Tools**:
+
 ```typescript
-mesh_scan           // Trigger discovery scan, return candidates
-mesh_list_agents    // List registered agents (optional: status filter)
-mesh_register_agent // Manually register an agent
-mesh_approve_candidate  // Approve a discovered candidate
-mesh_deny_candidate     // Deny a discovered candidate
-mesh_get_agent      // Get single agent by ID
-mesh_update_agent   // Update agent metadata
-mesh_remove_agent   // Remove agent from registry
+mesh_scan; // Trigger discovery scan, return candidates
+mesh_list_agents; // List registered agents (optional: status filter)
+mesh_register_agent; // Manually register an agent
+mesh_approve_candidate; // Approve a discovered candidate
+mesh_deny_candidate; // Deny a discovered candidate
+mesh_get_agent; // Get single agent by ID
+mesh_update_agent; // Update agent metadata
+mesh_remove_agent; // Remove agent from registry
 ```
 
 **Argument Schema Pattern** (from `mcp-tool-server.ts` style):
+
 ```typescript
 tool(
   'mesh_approve_candidate',
@@ -248,10 +279,11 @@ tool(
     note: z.string().optional().describe('Optional approval note recorded in the audit log'),
   },
   createMeshApproveCandidateHandler(deps)
-)
+);
 ```
 
 **Feature Guard Pattern** (from `requirePulse`/`requireRelay`):
+
 ```typescript
 function requireMesh(deps: McpToolDeps) {
   if (!deps.meshCore) {
@@ -262,12 +294,14 @@ function requireMesh(deps: McpToolDeps) {
 ```
 
 **Return Value Design**:
+
 - Always use `jsonContent()` helper (already in `mcp-tool-server.ts`)
 - Success: `{ agent: AgentRecord }` or `{ candidates: [...], count: N }`
 - Error: `{ error: string, code: 'MESH_SPECIFIC_CODE' }` with `isError: true`
 - List operations: always include `count` alongside array
 
 **Error Handling**:
+
 - Use `isError: true` in content block — never throw (LLMs can handle and retry)
 - Include machine-readable `code` strings for common errors: `MESH_DISABLED`, `CANDIDATE_NOT_FOUND`, `AGENT_NOT_FOUND`, `SCAN_IN_PROGRESS`, `ALREADY_REGISTERED`
 
@@ -278,6 +312,7 @@ function requireMesh(deps: McpToolDeps) {
 **Finding**: DorkOS has a battle-tested, minimal feature flag pattern in `relay-state.ts` and `pulse-state.ts`. Mesh should follow it exactly — no additional dependencies needed.
 
 **Option A: DorkOS native state module (Recommended)**
+
 - Create `services/mesh/mesh-state.ts` with `setMeshEnabled()`/`isMeshEnabled()` — 15 lines, zero dependencies
 - Conditional router mounting in `index.ts`: `if (meshEnabled && meshCore) { app.use('/api/mesh', createMeshRouter(meshCore)); setMeshEnabled(true); }`
 - MCP tools: conditional tool registration using `deps.meshCore ? [tool(...), ...] : []` — same as `adapterTools` pattern
@@ -286,17 +321,20 @@ function requireMesh(deps: McpToolDeps) {
 - Cons: No runtime toggling (requires restart to enable/disable) — acceptable for an optional subsystem
 
 **Option B: Third-party feature flag service (Flagsmith, PostHog, Statsig)**
+
 - Pros: Dynamic toggling without restart, A/B testing, user-level flags
 - Cons: External dependency, network call on every request, massive overkill for a server-side optional subsystem, adds secrets management
 - Recommendation: Reject for this use case
 
 **Option C: Config-driven with runtime hot-reload**
+
 - Watch `~/.dork/config.json` and toggle Mesh dynamically without restart
 - Pros: Better operator experience
 - Cons: Significant complexity — route mounting/unmounting in Express at runtime is tricky; need to handle in-flight requests during toggle; not how Pulse or Relay work
 - Recommendation: Reject for v1
 
 **Server-Side Conditional Route Mounting** (from `index.ts` precedent):
+
 ```typescript
 // In index.ts start()
 const meshEnabled = process.env.DORKOS_MESH_ENABLED === 'true' || meshConfig?.enabled;
@@ -317,6 +355,7 @@ if (meshEnabled && meshCore) {
 ```
 
 **Client-Side Feature Detection**:
+
 ```typescript
 // entities/mesh/model/use-mesh-enabled.ts
 export function useMeshEnabled(): boolean {
@@ -330,18 +369,19 @@ export function useMeshEnabled(): boolean {
 ```
 
 **Graceful Degradation** (from RelayPanel precedent):
+
 ```tsx
 if (!meshEnabled) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-      <Network className="size-8 text-muted-foreground/50" />
+      <Network className="text-muted-foreground/50 size-8" />
       <div>
         <p className="font-medium">Mesh is not enabled</p>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-muted-foreground mt-1 text-sm">
           Mesh provides agent discovery and registry. Start DorkOS with mesh enabled.
         </p>
       </div>
-      <code className="mt-2 rounded-md bg-muted px-3 py-1.5 font-mono text-sm">
+      <code className="bg-muted mt-2 rounded-md px-3 py-1.5 font-mono text-sm">
         DORKOS_MESH_ENABLED=true dorkos
       </code>
     </div>
@@ -361,6 +401,7 @@ The DorkOS codebase has a clear three-subsystem pattern (core, Pulse, Relay) and
 - `features/mesh/` — UI: `MeshPanel`, `AgentCard`, `CandidateCard`, `RegisterAgentDialog`, `CandidateReviewPanel`
 
 The `MeshPanel` follows `RelayPanel`'s `Tabs` structure:
+
 - Tab 1: "Registry" — list of registered agents (`AgentCard` list)
 - Tab 2: "Candidates" — discovery review panel (`CandidateCard` list + batch toolbar)
 - Tab 3: "Metrics" — optional metrics display
@@ -372,6 +413,7 @@ All Mesh entity hooks must live in `entities/mesh/model/`. The `MeshPanel` and s
 ### Service Count Impact
 
 The server currently has 23+ services. Adding Mesh would add:
+
 - `services/mesh/mesh-state.ts` (15 lines, trivial)
 - `services/mesh/mesh-service.ts` (if @dorkos/mesh needs a wrapper)
 
@@ -412,6 +454,7 @@ The `server-structure.md` rule suggests domain grouping at 20+ services. The ser
 ### Overall Architecture: Mirror Relay Exactly
 
 Relay is the most complete and modern subsystem in DorkOS. It covers every pattern needed for Mesh:
+
 - State flag module (`relay-state.ts` → `mesh-state.ts`)
 - Router factory (`createRelayRouter` → `createMeshRouter`)
 - MCP tool handlers with `requireGuard` pattern
@@ -430,6 +473,7 @@ The `CreateScheduleDialog.tsx` is the direct template for `RegisterAgentDialog`.
 ### No Third-Party Dependencies Needed
 
 The entire integration can be built with:
+
 - Existing shadcn primitives (Badge, Switch, Tabs, Select, Dialog, Collapsible, Input)
 - Existing shared utilities (cn, TransportContext, DirectoryPicker)
 - react-hook-form + zod (already used in CreateScheduleDialog)

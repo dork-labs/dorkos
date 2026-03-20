@@ -13,6 +13,7 @@ created: 2026-02-21
 **Status:** pending
 **Blocked by:** none
 **Files:**
+
 - `apps/client/src/layers/features/session-list/ui/DirectoryPicker.tsx` (move from)
 - `apps/client/src/layers/shared/ui/DirectoryPicker.tsx` (move to)
 - `apps/client/src/layers/shared/ui/index.ts` (update barrel)
@@ -51,6 +52,7 @@ Note: The DirectoryPicker can also be added to the existing multi-import from `@
 **Status:** pending
 **Blocked by:** Task 1
 **Files:**
+
 - `apps/client/src/layers/shared/ui/DirectoryPicker.tsx`
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`
 
@@ -125,6 +127,7 @@ The `useDirectoryState()` hook import and `setSelectedCwd` call remain in Direct
 **Status:** pending
 **Blocked by:** none
 **Files:**
+
 - `apps/client/src/layers/shared/model/app-store.ts`
 
 **Description:**
@@ -175,6 +178,7 @@ The `resetPreferences` function will automatically clear this key because it ite
 **Status:** pending
 **Blocked by:** none
 **Files:**
+
 - `apps/client/src/layers/shared/lib/favicon-utils.ts`
 
 **Description:**
@@ -203,6 +207,7 @@ Also verify that `updateTabBadge` is re-exported from `apps/client/src/layers/sh
 **Status:** pending
 **Blocked by:** none
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/CronVisualBuilder.tsx` (new file)
 
 **Description:**
@@ -336,6 +341,7 @@ function CronFieldSelect({ label, value, options, onChange }: {
 **Status:** pending
 **Blocked by:** Task 5
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`
 
 **Description:**
@@ -408,6 +414,7 @@ The `AnimatePresence` + `motion.div` pattern provides smooth expand/collapse. `i
 **Status:** pending
 **Blocked by:** Task 1, Task 2
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/CreateScheduleDialog.tsx`
 
 **Description:**
@@ -470,6 +477,7 @@ const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
 **Status:** pending
 **Blocked by:** none
 **Files:**
+
 - `apps/client/src/layers/entities/pulse/model/use-completed-run-badge.ts` (new file)
 - `apps/client/src/layers/entities/pulse/index.ts` (update barrel)
 
@@ -508,9 +516,7 @@ export function useCompletedRunBadge(enabled = true): CompletedRunBadge {
   useEffect(() => {
     if (!runs) return;
 
-    const currentRunning = new Set(
-      runs.filter((r) => r.status === 'running').map((r) => r.id)
-    );
+    const currentRunning = new Set(runs.filter((r) => r.status === 'running').map((r) => r.id));
     const prevRunning = prevRunningIdsRef.current;
 
     // Detect transitions: was running, now terminal
@@ -550,6 +556,7 @@ export { useCompletedRunBadge } from './model/use-completed-run-badge';
 ```
 
 Key design decisions:
+
 - Only fires for runs that transition from `running` to terminal during the current session (not retroactive)
 - Uses `useRef` for `prevRunningIds` to avoid re-render loops
 - `clearBadge()` resets count and persists timestamp to localStorage
@@ -563,6 +570,7 @@ Key design decisions:
 **Status:** pending
 **Blocked by:** Task 3, Task 8
 **Files:**
+
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`
 
 **Description:**
@@ -651,6 +659,7 @@ useEffect(() => {
 ```
 
 Badge states:
+
 - No dot: Pulse disabled or no activity
 - Green pulsing: Run(s) currently active (existing behavior)
 - Amber static: Completed run(s) not yet viewed (new)
@@ -665,6 +674,7 @@ Also add `useRef` to the imports from 'react' at the top of the file.
 **Status:** pending
 **Blocked by:** Task 3
 **Files:**
+
 - `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx`
 
 **Description:**
@@ -704,6 +714,7 @@ const {
 **Status:** pending
 **Blocked by:** Task 5
 **Files:**
+
 - `apps/client/src/layers/features/pulse/__tests__/CronVisualBuilder.test.tsx` (new file)
 
 **Description:**
@@ -816,6 +827,7 @@ describe('CronVisualBuilder', () => {
 **Status:** pending
 **Blocked by:** Task 1, Task 2
 **Files:**
+
 - `apps/client/src/layers/shared/__tests__/DirectoryPicker.test.tsx` (new file)
 
 **Description:**
@@ -901,6 +913,7 @@ describe('DirectoryPicker with onSelect', () => {
 ```
 
 Note: The exact mock setup may need adjustment based on the existing test infrastructure. The key assertions are:
+
 - When `onSelect` is provided, it fires with the selected path and `setSelectedCwd` is NOT called
 - When `onSelect` is absent, `setSelectedCwd` fires (backward compatibility)
 
@@ -911,6 +924,7 @@ Note: The exact mock setup may need adjustment based on the existing test infras
 **Status:** pending
 **Blocked by:** Task 8
 **Files:**
+
 - `apps/client/src/layers/entities/pulse/__tests__/use-completed-run-badge.test.ts` (new file)
 
 **Description:**
@@ -1011,6 +1025,7 @@ describe('useCompletedRunBadge', () => {
 **Status:** pending
 **Blocked by:** Task 6, Task 7
 **Files:**
+
 - `apps/client/src/layers/features/pulse/__tests__/CreateScheduleDialog.test.tsx`
 
 **Description:**
@@ -1074,6 +1089,7 @@ it('opens DirectoryPicker and updates cwd field on selection', async () => {
 **Status:** pending
 **Blocked by:** Task 9
 **Files:**
+
 - `apps/client/src/layers/features/session-list/__tests__/SessionSidebar.test.tsx`
 
 **Description:**
@@ -1144,6 +1160,7 @@ describe('Pulse badge states', () => {
 **Status:** pending
 **Blocked by:** Task 1, Task 5, Task 8
 **Files:**
+
 - `CLAUDE.md`
 
 **Description:**
@@ -1198,15 +1215,18 @@ Task 16 (CLAUDE.md docs) - blocked by Tasks 1, 5, 8
 The following tasks have no dependencies on each other and can run in parallel:
 
 **Parallel Group A (Phase 1 - all independent):**
+
 - Task 1 (Move DirectoryPicker)
 - Task 3 (enablePulseNotifications store)
 - Task 4 (updateTabBadge utility)
 
 **Parallel Group B (Phase 2 - independent of each other):**
+
 - Task 5 (CronVisualBuilder) - no dependencies
 - Task 8 (useCompletedRunBadge) - no dependencies
 
 **Parallel Group C (after their respective dependencies):**
+
 - Task 6 (CronVisualBuilder integration) - after Task 5
 - Task 7 (DirectoryPicker integration) - after Tasks 1, 2
 - Task 10 (Settings toggle) - after Task 3

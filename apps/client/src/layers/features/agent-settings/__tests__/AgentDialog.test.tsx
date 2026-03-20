@@ -119,8 +119,12 @@ describe('AgentDialog', () => {
     // Dialog element has aria-hidden in portaled context, use hidden: true to access roles
     expect(within(dialog).getByRole('tab', { name: 'Identity', hidden: true })).toBeInTheDocument();
     expect(within(dialog).getByRole('tab', { name: 'Persona', hidden: true })).toBeInTheDocument();
-    expect(within(dialog).getByRole('tab', { name: 'Capabilities', hidden: true })).toBeInTheDocument();
-    expect(within(dialog).getByRole('tab', { name: 'Connections', hidden: true })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('tab', { name: 'Capabilities', hidden: true })
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('tab', { name: 'Connections', hidden: true })
+    ).toBeInTheDocument();
   });
 
   it('shows name input in Identity tab', async () => {

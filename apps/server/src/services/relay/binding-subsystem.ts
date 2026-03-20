@@ -46,10 +46,7 @@ export class BindingSubsystem {
   private bindingRouter: BindingRouter | undefined;
   private isShutdown = false;
 
-  private constructor(
-    bindingStore: BindingStore,
-    agentSessionStore: AgentSessionStore,
-  ) {
+  private constructor(bindingStore: BindingStore, agentSessionStore: AgentSessionStore) {
     this.bindingStore = bindingStore;
     this.agentSessionStore = agentSessionStore;
   }

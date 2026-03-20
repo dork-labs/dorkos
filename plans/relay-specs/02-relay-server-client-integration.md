@@ -1,29 +1,29 @@
 ---
-title: "Relay Server & Client Integration"
+title: 'Relay Server & Client Integration'
 spec: 2
 order: 2
 status: done
 blockedBy: [1]
 blocks: [3, 4]
 parallelWith: []
-litepaperPhase: "Phase 1 — Core Transport and Safety"
+litepaperPhase: 'Phase 1 — Core Transport and Safety'
 complexity: medium
 risk: medium
 estimatedFiles: 12-18
 newPackages: []
-primaryWorkspaces: ["apps/server", "apps/client", "packages/shared"]
+primaryWorkspaces: ['apps/server', 'apps/client', 'packages/shared']
 touchesServer: true
 touchesClient: true
 verification:
   - "POST /api/relay/send delivers a message to an endpoint's inbox"
-  - "GET /api/relay/inbox/:endpoint returns messages for that endpoint"
-  - "GET /api/relay/events streams SSE events for message delivery/failure"
-  - "MCP tools relay_send and relay_inbox work from an agent session"
-  - "Relay is disabled by default — server starts without it"
-  - "DORKOS_RELAY_ENABLED=true enables Relay routes and MCP tools"
-  - "Client Relay panel renders activity feed with live updates"
-  - "npm run build passes (all workspaces)"
-  - "CLAUDE.md and API docs are updated"
+  - 'GET /api/relay/inbox/:endpoint returns messages for that endpoint'
+  - 'GET /api/relay/events streams SSE events for message delivery/failure'
+  - 'MCP tools relay_send and relay_inbox work from an agent session'
+  - 'Relay is disabled by default — server starts without it'
+  - 'DORKOS_RELAY_ENABLED=true enables Relay routes and MCP tools'
+  - 'Client Relay panel renders activity feed with live updates'
+  - 'npm run build passes (all workspaces)'
+  - 'CLAUDE.md and API docs are updated'
 notes: >
   This is integration work — lower conceptual risk than Spec 1, but wider
   blast radius (server + client + shared + docs + turbo.json). Follow the
@@ -103,12 +103,14 @@ OUT OF SCOPE:
 ## Context for Review
 
 This is the integration spec. The /ideate exploration agent should focus on:
+
 - The exact patterns used by Pulse for routes, MCP tools, feature flags, and client UI
 - The FSD layer structure in `apps/client/` — where does a Relay feature module fit?
 - How the existing SSE streaming works for session sync
 - The TanStack Query patterns for data fetching
 
 The /ideate research agent should investigate:
+
 - SSE best practices for real-time activity feeds
 - REST API design for message bus systems (inbox patterns, filtering, pagination)
 - Activity feed UI patterns (real-time updates, infinite scroll, filtering by type)

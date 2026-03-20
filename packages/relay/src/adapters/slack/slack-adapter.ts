@@ -12,16 +12,17 @@ import type { AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schema
 import type { SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
-  RelayPublisher, AdapterContext, DeliveryResult, PublishOptions,
+  RelayPublisher,
+  AdapterContext,
+  DeliveryResult,
+  PublishOptions,
 } from '../../types.js';
+import { SUBJECT_PREFIX, handleInboundMessage, clearCaches } from './inbound.js';
 import {
-  SUBJECT_PREFIX,
-  handleInboundMessage,
-  clearCaches,
-} from './inbound.js';
-import {
-  deliverMessage, clearApprovalTimeout,
-  createSlackOutboundState, clearAllApprovalTimeouts,
+  deliverMessage,
+  clearApprovalTimeout,
+  createSlackOutboundState,
+  clearAllApprovalTimeouts,
 } from './outbound.js';
 import type { ActiveStream, SlackOutboundState } from './outbound.js';
 
@@ -103,7 +104,14 @@ export const SLACK_MANIFEST: AdapterManifest = {
         '3. **OAuth & Permissions** \u2014 Add bot token scopes: app_mentions:read, channels:history, channels:read, chat:write, groups:history, groups:read, im:history, im:read, im:write, mpim:history, reactions:read, reactions:write, users:read. Then install the app to your workspace.\n' +
         '4. **App-Level Token** \u2014 In Basic Information \u2192 App-Level Tokens, generate a token with the connections:write scope.\n\n' +
         '\u26a0\ufe0f Do NOT enable "Agents & AI Apps" \u2014 it adds user scopes that cause install failures on most workspaces.',
-      fields: ['botToken', 'appToken', 'signingSecret', 'streaming', 'nativeStreaming', 'typingIndicator'],
+      fields: [
+        'botToken',
+        'appToken',
+        'signingSecret',
+        'streaming',
+        'nativeStreaming',
+        'typingIndicator',
+      ],
     },
   ],
   configFields: [
@@ -175,7 +183,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
         "Use Slack's native streaming API (chat.startStream/appendStream/stopStream). Requires messages in threads.",
       visibleByDefault: true,
       helpMarkdown:
-        'When enabled, uses Slack\'s purpose-built streaming API for smoother, flicker-free responses. ' +
+        "When enabled, uses Slack's purpose-built streaming API for smoother, flicker-free responses. " +
         'When disabled, uses the legacy chat.update approach. Only applies when Stream Responses is enabled.',
     },
     {
@@ -270,7 +278,7 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.makeInboundCallbacks(),
         this.logger,
         this.config.typingIndicator ?? 'none',
-        this.pendingReactions,
+        this.pendingReactions
       );
     });
 
@@ -283,7 +291,7 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.makeInboundCallbacks(),
         this.logger,
         this.config.typingIndicator ?? 'none',
-        this.pendingReactions,
+        this.pendingReactions
       );
     });
 
@@ -336,7 +344,7 @@ export class SlackAdapter extends BaseRelayAdapter {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    _context?: AdapterContext,
+    _context?: AdapterContext
   ): Promise<DeliveryResult> {
     return deliverMessage({
       adapterId: this.id,
@@ -372,7 +380,7 @@ export class SlackAdapter extends BaseRelayAdapter {
     action: unknown,
     body: unknown,
     client: import('@slack/web-api').WebClient,
-    relay: RelayPublisher,
+    relay: RelayPublisher
   ): Promise<void> {
     try {
       const btnAction = action as { value?: string };
@@ -388,7 +396,9 @@ export class SlackAdapter extends BaseRelayAdapter {
       }
 
       const { toolCallId, sessionId, agentId } = JSON.parse(btnAction.value) as {
-        toolCallId: string; sessionId: string; agentId: string;
+        toolCallId: string;
+        sessionId: string;
+        agentId: string;
       };
 
       // Clear any pending timeout for this approval
@@ -396,14 +406,18 @@ export class SlackAdapter extends BaseRelayAdapter {
 
       // Publish approval response to relay bus
       const opts: PublishOptions = { from: `slack:${btnBody.user?.id ?? 'unknown'}` };
-      await relay.publish(`relay.system.approval.${agentId}`, {
-        type: 'approval_response',
-        toolCallId,
-        sessionId,
-        approved,
-        respondedBy: btnBody.user?.id,
-        platform: 'slack',
-      }, opts);
+      await relay.publish(
+        `relay.system.approval.${agentId}`,
+        {
+          type: 'approval_response',
+          toolCallId,
+          sessionId,
+          approved,
+          respondedBy: btnBody.user?.id,
+          platform: 'slack',
+        },
+        opts
+      );
 
       // Update original message to show decision result
       const channelId = btnBody.channel?.id;
@@ -427,7 +441,9 @@ export class SlackAdapter extends BaseRelayAdapter {
         });
       }
 
-      this.logger.debug?.(`[Slack] tool ${approved ? 'approved' : 'denied'}: toolCallId=${toolCallId}`);
+      this.logger.debug?.(
+        `[Slack] tool ${approved ? 'approved' : 'denied'}: toolCallId=${toolCallId}`
+      );
     } catch (err) {
       this.logger.error('[Slack] tool action handler error:', err);
       this.recordError(err);

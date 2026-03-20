@@ -1,9 +1,26 @@
 ---
-title: "Form Field UI/UX Best Practices: Spacing, Switches, Errors, Password Toggles, Help Text, Rhythm & Cards"
+title: 'Form Field UI/UX Best Practices: Spacing, Switches, Errors, Password Toggles, Help Text, Rhythm & Cards'
 date: 2026-03-18
 type: external-best-practices
 status: active
-tags: [forms, settings, design-system, spacing, switch, error-state, password-input, help-text, visual-rhythm, cards, linear, vercel, stripe, apple, shadcn]
+tags:
+  [
+    forms,
+    settings,
+    design-system,
+    spacing,
+    switch,
+    error-state,
+    password-input,
+    help-text,
+    visual-rhythm,
+    cards,
+    linear,
+    vercel,
+    stripe,
+    apple,
+    shadcn,
+  ]
 searches_performed: 18
 sources_count: 32
 ---
@@ -20,16 +37,17 @@ This report synthesizes form field UI/UX best practices from S-tier design syste
 
 **Industry consensus spacing for form fields:**
 
-| Gap | Use Case | Tailwind Class |
-|-----|----------|----------------|
-| 4px (`gap-1`) | Icon-to-label micro spacing | `gap-1` |
-| 8px (`gap-2`) | Label → input within a single field | `space-y-2` |
-| 16px (`gap-4`) | Between adjacent fields in the same section | `space-y-4` |
-| 20px (`gap-5`) | Between fields when descriptions are present | `space-y-5` |
-| 24px (`gap-6`) | Between field sections / groups | `space-y-6` |
-| 32px (`gap-8`) | Between major form sections (with heading) | `space-y-8` |
+| Gap            | Use Case                                     | Tailwind Class |
+| -------------- | -------------------------------------------- | -------------- |
+| 4px (`gap-1`)  | Icon-to-label micro spacing                  | `gap-1`        |
+| 8px (`gap-2`)  | Label → input within a single field          | `space-y-2`    |
+| 16px (`gap-4`) | Between adjacent fields in the same section  | `space-y-4`    |
+| 20px (`gap-5`) | Between fields when descriptions are present | `space-y-5`    |
+| 24px (`gap-6`) | Between field sections / groups              | `space-y-6`    |
+| 32px (`gap-8`) | Between major form sections (with heading)   | `space-y-8`    |
 
 **Shadcn new-york style defaults (source of truth for DorkOS):**
+
 - Input height: `h-9` (36px) — confirmed by [shadcn-ui/ui Discussion #9467](https://github.com/shadcn-ui/ui/discussions/9467)
 - Label typography: `text-sm font-medium leading-none`
 - Label → input gap: `space-y-2` (8px) — the standard Shadcn `FormItem` spacing
@@ -37,12 +55,14 @@ This report synthesizes form field UI/UX best practices from S-tier design syste
 - Description typography: `text-xs text-muted-foreground` (12px, ~60% opacity gray)
 
 **Stripe Elements confirmed values (from Appearance API):**
+
 - `gridRowSpacing`: 15px between form rows (configurable; this is their default)
 - `Label` marginBottom: 6px (label to input)
 - `fontSizeBase`: scales from root; minimum 16px on mobile enforced
 - `borderRadius`: 4px default on inputs
 
 **Apple HIG container frames:**
+
 - Container padding: 16pt horizontal/vertical
 - Section gap: 24pt between item groups
 - List row minimum height: 44pt (with 1pt separators)
@@ -63,6 +83,7 @@ This report synthesizes form field UI/UX best practices from S-tier design syste
 ```
 
 **Why this works:**
+
 1. Full-width switches feel ambiguous — the switch size is divorced from the label, making the association unclear
 2. Label-left/switch-right matches the cognitive scan pattern for settings: "what is this setting?" → look left; "what is the current state?" → look right
 3. The `justify-between` pattern (`flex items-start justify-between gap-4`) is universal across every design system studied
@@ -72,6 +93,7 @@ This report synthesizes form field UI/UX best practices from S-tier design syste
 **GitHub Primer's `statusLabelPosition` pattern:** their `ToggleSwitch` component supports `statusLabelPosition="end"` (On/Off label appears after the switch track, not before). This solves the disambiguation problem when the switch state label would otherwise crowd the description column.
 
 **Sizing:**
+
 - GitHub Primer: `"medium"` (default) and `"small"` for dense layouts
 - Shadcn `Switch`: `h-5 w-9` (20×36px) in new-york style; the track is 20px tall, which aligns with the `text-sm` label baseline
 - The switch should be vertically centered to the first line of the label, not the center of the label+description block — use `items-start` on the row, not `items-center`
@@ -105,12 +127,12 @@ The key insight: **the orientation is determined by the control type, not the fo
 
 **Timing — the "Reward Early, Punish Late" pattern** (Smashing Magazine, NN/g):
 
-| State | Trigger | Behavior |
-|-------|---------|----------|
-| Never-touched field | Submit | Validate only on submit. Never show errors while untouched. |
-| Field currently showing error | onChange | Remove error immediately when corrected. Validate on every keystroke. |
-| Valid field being edited | onBlur | Wait until user leaves the field to flag new errors. Never interrupt mid-typing. |
-| Async check (username taken) | onChange with 400–700ms debounce | Show "Checking..." in a `aria-live="polite"` region, not inline red text. |
+| State                         | Trigger                          | Behavior                                                                         |
+| ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
+| Never-touched field           | Submit                           | Validate only on submit. Never show errors while untouched.                      |
+| Field currently showing error | onChange                         | Remove error immediately when corrected. Validate on every keystroke.            |
+| Valid field being edited      | onBlur                           | Wait until user leaves the field to flag new errors. Never interrupt mid-typing. |
+| Async check (username taken)  | onChange with 400–700ms debounce | Show "Checking..." in a `aria-live="polite"` region, not inline red text.        |
 
 **Visual design of error states:**
 
@@ -129,17 +151,29 @@ The key insight: **the orientation is determined by the control type, not the fo
 - Placement: **below the input**, not above or to the right
 
 **Animation — when to use shake:**
+
 - Shake animation (`transform: translateX`) on the **input container** (not the error message) signals a failed submit attempt
 - Use only on form submission, never on blur
 - Duration: 0.3–0.4s, 3–4 oscillations, amplitude ±4–6px
 - CSS:
   ```css
   @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    20%       { transform: translateX(-5px); }
-    40%       { transform: translateX(5px); }
-    60%       { transform: translateX(-3px); }
-    80%       { transform: translateX(3px); }
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-5px);
+    }
+    40% {
+      transform: translateX(5px);
+    }
+    60% {
+      transform: translateX(-3px);
+    }
+    80% {
+      transform: translateX(3px);
+    }
   }
   .field-error-shake {
     animation: shake 0.35s ease-in-out;
@@ -149,13 +183,22 @@ The key insight: **the orientation is determined by the control type, not the fo
 - Error message appearance: **slide down + fade in** is more polished than instant appearance
   ```css
   @keyframes errorEnter {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
-  .field-error { animation: errorEnter 0.15s ease-out; }
+  .field-error {
+    animation: errorEnter 0.15s ease-out;
+  }
   ```
 
 **What makes error states janky:**
+
 1. Showing errors before the user has finished typing (punishment before attempt)
 2. Errors that appear without any animation — jarring spatial jump in layout height
 3. Error message text that doesn't match the Tailwind theme destructive color (check against your dark mode)
@@ -173,18 +216,18 @@ The key insight: **the orientation is determined by the control type, not the fo
 ```tsx
 <div className="relative">
   <Input
-    type={visible ? "text" : "password"}
-    className="pr-10"   // ← critical: reserve right padding for the button
+    type={visible ? 'text' : 'password'}
+    className="pr-10" // ← critical: reserve right padding for the button
     {...props}
   />
   <Button
     type="button"
     variant="ghost"
     size="icon"
-    className="absolute right-0 top-0 h-full px-3"
+    className="absolute top-0 right-0 h-full px-3"
     // ↑ h-full matches input height; px-3 = 12px each side; no py needed
-    onClick={() => setVisible(v => !v)}
-    aria-label={visible ? "Hide password" : "Show password"}
+    onClick={() => setVisible((v) => !v)}
+    aria-label={visible ? 'Hide password' : 'Show password'}
   >
     {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
   </Button>
@@ -192,6 +235,7 @@ The key insight: **the orientation is determined by the control type, not the fo
 ```
 
 **Specific values:**
+
 - Input `padding-right`: `pr-10` (40px) — gives 40px of breathing room on the right; the 16px icon + 12px padding each side = 40px total click zone
 - Button width: sized by `px-3` (12px padding) + `w-4` (16px icon) = 40px total — matches `pr-10`
 - Button height: `h-full` — matches the input height exactly, no border-radius/overflow issues
@@ -201,6 +245,7 @@ The key insight: **the orientation is determined by the control type, not the fo
 - Hover state: `ghost` provides a subtle background on hover; don't use a custom background that bleeds outside the input visual boundary
 
 **Common pitfalls:**
+
 1. **Not using `pr-10` on the input**: Text typed by the user slides under the icon button. Always reserve right padding.
 2. **Using `size="sm"` instead of `size="icon"`**: `size="sm"` has explicit width, which can be wrong. `size="icon"` is square — but overriding to `h-full` is correct here.
 3. **Absolute positioning with `right: 10px`**: Works but creates a 10px gap between button and input right edge, making the button look detached rather than embedded.
@@ -213,15 +258,16 @@ The key insight: **the orientation is determined by the control type, not the fo
 
 **Typography hierarchy (from Shadcn + industry consensus):**
 
-| Element | Size | Weight | Color | Tailwind |
-|---------|------|--------|-------|---------|
-| Label | 14px | 500 | Primary foreground | `text-sm font-medium` |
-| Input text | 14px | 400 | Primary foreground | `text-sm` |
-| Description | 12px | 400 | Muted (60–70% opacity) | `text-xs text-muted-foreground` |
-| Error | 12px | 400 | Red/destructive | `text-xs text-destructive` |
-| Section heading | 14px | 600 | Primary foreground | `text-sm font-semibold` |
+| Element         | Size | Weight | Color                  | Tailwind                        |
+| --------------- | ---- | ------ | ---------------------- | ------------------------------- |
+| Label           | 14px | 500    | Primary foreground     | `text-sm font-medium`           |
+| Input text      | 14px | 400    | Primary foreground     | `text-sm`                       |
+| Description     | 12px | 400    | Muted (60–70% opacity) | `text-xs text-muted-foreground` |
+| Error           | 12px | 400    | Red/destructive        | `text-xs text-destructive`      |
+| Section heading | 14px | 600    | Primary foreground     | `text-sm font-semibold`         |
 
 **Placement hierarchy:**
+
 - **Above the input**: Only for labels. Never for descriptions.
 - **Below the input**: Descriptions and errors. Always.
 - **Order when both present**: input → description → error (not input → error → description)
@@ -233,24 +279,25 @@ The "Where do I find this?" pattern appears in Stripe's dashboard, GitHub OAuth 
 ```tsx
 // Pattern: truncated description + expandable "Learn more" inline link
 <FieldDescription>
-  Your bot token from BotFather.{" "}
+  Your bot token from BotFather.{' '}
   <button
     type="button"
-    className="inline text-xs underline underline-offset-2 hover:text-foreground transition-colors"
-    onClick={() => setExpanded(v => !v)}
+    className="hover:text-foreground inline text-xs underline underline-offset-2 transition-colors"
+    onClick={() => setExpanded((v) => !v)}
   >
-    {expanded ? "Hide" : "Where do I find this?"}
+    {expanded ? 'Hide' : 'Where do I find this?'}
   </button>
   {expanded && (
-    <span className="block mt-1 text-xs text-muted-foreground">
-      Open Telegram, search for @BotFather, send /newbot or /mybots,
-      then copy the token that looks like 1234567890:ABCdef...
+    <span className="text-muted-foreground mt-1 block text-xs">
+      Open Telegram, search for @BotFather, send /newbot or /mybots, then copy the token that looks
+      like 1234567890:ABCdef...
     </span>
   )}
 </FieldDescription>
 ```
 
 **Rules for collapsible help text:**
+
 - The trigger link must be inline (not a separate row) — it reads as part of the description
 - Use `underline-offset-2` for subtlety over `underline` alone
 - The expanded content slides/fades in — instant appearance is jarring
@@ -258,6 +305,7 @@ The "Where do I find this?" pattern appears in Stripe's dashboard, GitHub OAuth 
 - The trigger text should complete a sentence: "Your bot token from BotFather. [Where do I find this?]" — not "Help" or "Learn more" in isolation
 
 **What to avoid:**
+
 - Tooltips for help text — they require hover, are invisible on mobile, and break keyboard navigation
 - Help text above the input — it increases distance between label and input, disrupting the label-input pairing
 - Help text inside the input (placeholder text) — placeholders disappear when typing, losing the context
@@ -270,15 +318,15 @@ The "Where do I find this?" pattern appears in Stripe's dashboard, GitHub OAuth 
 
 **Standard heights by control type (Shadcn new-york + industry):**
 
-| Control Type | Height | Tailwind |
-|-------------|--------|---------|
-| Text input | 36px | `h-9` |
-| Select | 36px | `h-9` |
-| Button (primary) | 36px | `h-9` |
-| Switch | 20px track height | `h-5` (track only) |
-| Checkbox | 16px | `h-4 w-4` |
-| Textarea | Variable (min 3 rows) | `min-h-[80px]` |
-| Radio card | Variable | min 60px recommended |
+| Control Type     | Height                | Tailwind             |
+| ---------------- | --------------------- | -------------------- |
+| Text input       | 36px                  | `h-9`                |
+| Select           | 36px                  | `h-9`                |
+| Button (primary) | 36px                  | `h-9`                |
+| Switch           | 20px track height     | `h-5` (track only)   |
+| Checkbox         | 16px                  | `h-4 w-4`            |
+| Textarea         | Variable (min 3 rows) | `min-h-[80px]`       |
+| Radio card       | Variable              | min 60px recommended |
 
 **Alignment rules for mixed controls:**
 
@@ -287,6 +335,7 @@ For **horizontal rows** (switch + label): use `items-start` — align to the top
 For **vertical rows** (label + input): use natural block flow — no flex alignment needed.
 
 When a row has both a text input AND a button inline (e.g., "Copy" or "Test Connection"):
+
 - Both must be `h-9` — if the button is `size="sm"` (h-8), it will visually float inside the row
 - Wrap in `flex gap-2 items-center`
 - Button should be `flex-shrink-0` to prevent compression
@@ -296,6 +345,7 @@ When a row has both a text input AND a button inline (e.g., "Copy" or "Test Conn
 **Radio cards:** radio card groups (where each option is a card with an icon and description) should use a consistent card height when possible. If card heights vary, left-align cards and let them expand naturally — do not force equal heights with CSS, as it leads to awkward whitespace inside short cards.
 
 **The `items-start` vs `items-center` decision for form rows:**
+
 - `items-center`: only when the label is a single line AND the control is the same height as the label
 - `items-start`: always when the label has a description, OR when either element may wrap
 
@@ -304,11 +354,13 @@ When a row has both a text input AND a button inline (e.g., "Copy" or "Test Conn
 ### 7. The Card Pattern for Grouped Settings
 
 **When cards help:**
+
 1. **Conceptual grouping**: Settings that belong to the same subsystem (e.g., "Notifications", "API Access", "Danger Zone") benefit from a card boundary because the card signals "these settings are related"
 2. **Visual noise reduction**: On dense settings pages, cards reduce the number of full-width horizontal lines by containing their own separator system (dividers between rows within a card)
 3. **Destructive sections**: The "Danger Zone" pattern (used by GitHub, Vercel, Linear) always uses a card — typically with `border-destructive/50` or `border-red-200` — to signal elevated risk
 
 **When cards hurt:**
+
 1. **Too many small cards**: If every 2–3 settings get their own card, the page becomes a wall of boxes with too much visual separation
 2. **Single-item cards**: A card containing only one setting row adds chrome without adding clarity — use a plain row with a separator instead
 3. **Cards in dialogs/modals**: Settings dialogs are already contained; cards inside them create double-containment that feels cramped
@@ -363,18 +415,21 @@ Section with card (when content is truly distinct or destructive)
 Based on all patterns above, here is a concrete checklist for reviewing any DorkOS form:
 
 **Spacing:**
+
 - [ ] Label → input gap is exactly `space-y-2` (8px) within a field
 - [ ] Field → field gap is `space-y-4` (16px) within a section
 - [ ] Section → section gap is `space-y-6` (24px) or larger
 - [ ] No field gaps are inconsistent (all use the same tier of spacing)
 
 **Switch rows:**
+
 - [ ] All boolean settings use horizontal layout (`justify-between`)
 - [ ] Switch rows use `items-start` (not `items-center`) when description is present
 - [ ] Switch is on the right, label/description on the left
 - [ ] Switch is NOT used inside a form that has a Submit button
 
 **Error states:**
+
 - [ ] Errors appear only onBlur (for untouched fields) or onChange (for fields already in error)
 - [ ] Error text uses `text-xs text-destructive` AND the input gets `border-destructive`
 - [ ] `FieldError` (or equivalent with `role="alert"`) is used — not a plain `<p>`
@@ -382,6 +437,7 @@ Based on all patterns above, here is a concrete checklist for reviewing any Dork
 - [ ] Layout shift from error message appearance is handled (reserved min-height or absolute positioning)
 
 **Password toggle:**
+
 - [ ] Input has `pr-10` (40px right padding)
 - [ ] Button is `type="button"` (not type="submit")
 - [ ] Button uses `variant="ghost"` (no conflicting border)
@@ -389,17 +445,20 @@ Based on all patterns above, here is a concrete checklist for reviewing any Dork
 - [ ] `aria-label` updates between "Hide password" and "Show password"
 
 **Help text:**
+
 - [ ] Description uses `text-xs text-muted-foreground`
 - [ ] Description appears BELOW the input, not above and not inside as placeholder
 - [ ] Long descriptions use the collapsible "Where do I find this?" pattern
 - [ ] Placeholders are NOT used as primary help text (they vanish on focus)
 
 **Visual rhythm:**
+
 - [ ] All interactive controls in the same row share the same height (`h-9`)
 - [ ] `items-start` on rows with multi-line labels/descriptions
 - [ ] Textareas have extra leading space (`space-y-6` before them)
 
 **Cards:**
+
 - [ ] Cards are used for conceptually distinct groups, not purely decorative separation
 - [ ] Single-row sections don't have card chrome
 - [ ] Danger zone / destructive actions use a card with `border-destructive/50`

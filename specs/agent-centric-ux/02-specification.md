@@ -73,6 +73,7 @@ features/command-palette/
 #### CommandPaletteDialog
 
 Wraps the Shadcn `Command` component inside a `ResponsiveDialog`:
+
 - **Desktop:** Renders as a centered Dialog (via Radix Dialog, same as Shadcn's `CommandDialog` pattern)
 - **Mobile:** Renders as a bottom Drawer (via Vaul, same as all other `ResponsiveDialog` usages)
 
@@ -92,6 +93,7 @@ Wraps the Shadcn `Command` component inside a `ResponsiveDialog`:
 ```
 
 Key props:
+
 - `loop` — wraps arrow key navigation at list edges
 - `shouldFilter` — cmdk's built-in fuzzy filtering (no custom filter needed)
 
@@ -108,28 +110,33 @@ A subtle hint is shown on agent items: "Hold `Cmd` to open in new tab" appears a
 Rendered in this order. cmdk's built-in filtering handles show/hide based on search input.
 
 **1. Recent Agents** (zero-query state)
+
 - Source: `useAgentFrecency()` cross-referenced with `useMeshAgentPaths()`
 - Shows top 5 frecency-sorted agents
 - Active agent pinned first with checkmark via `forceMount` on its `CommandItem`
 - Hidden when `@` prefix is active (All Agents group takes over)
 
 **2. All Agents** (search / `@` mode)
+
 - Source: `useMeshAgentPaths()`
 - Shows all registered agents, filtered by search term
 - When input starts with `@`, this group replaces Recent Agents and shows all agents
 - The `@` character is stripped from the search term before filtering
 
 **3. Features**
+
 - Static list: Pulse Scheduler, Relay Messaging, Mesh Network, Settings
 - Selecting a feature calls the corresponding setter from app-store (`setPulseOpen(true)`, `setRelayOpen(true)`, `setMeshOpen(true)`, `setSettingsOpen(true)`), which opens the existing `ResponsiveDialog` for that feature
 - Each shows an icon + name + optional keyboard shortcut hint
 
 **4. Commands**
+
 - Source: `useCommands()` (existing entity hook)
 - Shows `/namespace:command` + description
 - Selecting a command inserts it into the chat input (same as the inline palette)
 
 **5. Quick Actions**
+
 - Static list: New Session, Discover Agents, Browse Filesystem, Toggle Theme
 - New Session: calls `createMutation.mutate()` (same as sidebar button)
 - Discover Agents: opens Mesh panel to discovery tab (`setMeshOpen(true)`)
@@ -155,6 +162,7 @@ Custom `CommandItem` rendering for agent rows:
 #### `@` Prefix Mode
 
 When the `CommandInput` value starts with `@`:
+
 1. Strip `@` from the search term passed to cmdk's filter
 2. Hide the Recent Agents, Features, Commands, and Quick Actions groups
 3. Show only the All Agents group
@@ -169,12 +177,12 @@ Tracks agent usage in localStorage under key `dorkos-agent-frecency`.
 ```typescript
 interface FrecencyEntry {
   agentId: string;
-  lastUsed: string;  // ISO timestamp
+  lastUsed: string; // ISO timestamp
   useCount: number;
 }
 
 // Scoring formula
-score = useCount / (1 + hoursSinceUse * 0.1)
+score = useCount / (1 + hoursSinceUse * 0.1);
 ```
 
 - `recordUsage(agentId)` — called when an agent is selected from the palette
@@ -231,6 +239,7 @@ The current `AgentHeader` (105 lines) is redesigned to be a prominent, card-like
 **When no agent (unregistered directory):**
 
 Falls back to the current directory-based UX:
+
 - Shows `FolderOpen` icon + `PathBreadcrumb` (same as today's no-agent branch)
 - Sessions still work normally — no agent framing
 - "Switch" area shows `⌘K` to open the command palette
@@ -243,16 +252,19 @@ This is graceful degradation, not an error state. The user can still use DorkOS 
 The `SessionSidebar` (407 lines) structure changes:
 
 **Before:**
+
 ```
 AgentHeader (small) → [+ New Chat] → session list → onboarding → footer
 ```
 
 **After:**
+
 ```
 AgentHeader (prominent, card-like) → [+ New Session] → session list → onboarding → footer
 ```
 
 Specific changes:
+
 1. **AgentHeader receives more vertical space.** The header area gets padding and visual weight proportional to its importance.
 2. **"New Chat" → "New Session"** label change to frame sessions as agent conversations.
 3. **Session list is contextually labeled.** When an agent is active, sessions are implicitly "this agent's conversations." No explicit label change needed — the prominent agent header provides context.
@@ -319,6 +331,7 @@ The try/catch and error handling remain — MeshCore can still fail (e.g., SQLit
 
 **`apps/server/src/services/mesh/mesh-state.ts`:**
 Two options:
+
 - **Option A (minimal diff):** Keep file, hard-code `isEnabled = () => true`. Remove `setEnabled`.
 - **Option B (clean removal):** Delete file. Update all consumers to not check the flag.
 
@@ -369,24 +382,28 @@ Keep the function signature so existing imports don't break. Consumers can be up
 Remove `'mesh'` from the `Subsystem` union type:
 
 ```typescript
-type Subsystem = 'pulse' | 'relay';  // 'mesh' removed
+type Subsystem = 'pulse' | 'relay'; // 'mesh' removed
 ```
 
 **`features/session-list/ui/SessionSidebar.tsx`:**
+
 - Remove `const meshEnabled = useMeshEnabled()` line
 - Remove conditional dimming/tooltip on the Mesh footer icon
 - The Mesh icon button always opens the Mesh panel normally
 
 **`features/mesh/ui/MeshPanel.tsx`:**
+
 - Remove `useMeshEnabled()` call
 - Remove `FeatureDisabledState` gate and its "Enable with `DORKOS_MESH_ENABLED=true`" message
 - Always render the panel body
 
 **`features/mesh/ui/MeshStatsHeader.tsx`:**
+
 - Remove `useMeshEnabled()` call
 - Remove early `return null` when disabled
 
 **`features/agent-settings/ui/ConnectionsTab.tsx`:**
+
 - Remove `useMeshEnabled()` call
 - Always show health data and mesh connections
 - Remove "Enable Mesh" prompt
@@ -402,14 +419,14 @@ MeshCore initialization can still fail at runtime (SQLite errors, filesystem iss
 
 #### Test Updates
 
-| Test File | Change |
-|---|---|
-| `apps/server/src/__tests__/env.test.ts` | Remove `DORKOS_MESH_ENABLED` test case |
-| `apps/server/src/services/core/__tests__/mcp-mesh-tools.test.ts` | Remove `meshEnabled` parameter from `createMockDeps()` |
-| `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx` | Remove `mockUseMeshEnabled` mock; remove disabled state test cases; keep Mode A/B tests |
-| `apps/client/src/layers/features/mesh/ui/__tests__/MeshStatsHeader.test.tsx` | Remove `useMeshEnabled` mock; remove disabled test case |
-| `apps/client/src/layers/entities/mesh/__tests__/mesh-hooks.test.tsx` | Remove `useMeshEnabled` test; keep all other hook tests |
-| `apps/e2e/pages/MeshPage.ts` | Remove `DORKOS_MESH_ENABLED=true` text assertion |
+| Test File                                                                    | Change                                                                                  |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `apps/server/src/__tests__/env.test.ts`                                      | Remove `DORKOS_MESH_ENABLED` test case                                                  |
+| `apps/server/src/services/core/__tests__/mcp-mesh-tools.test.ts`             | Remove `meshEnabled` parameter from `createMockDeps()`                                  |
+| `apps/client/src/layers/features/mesh/__tests__/MeshPanel.test.tsx`          | Remove `mockUseMeshEnabled` mock; remove disabled state test cases; keep Mode A/B tests |
+| `apps/client/src/layers/features/mesh/ui/__tests__/MeshStatsHeader.test.tsx` | Remove `useMeshEnabled` mock; remove disabled test case                                 |
+| `apps/client/src/layers/entities/mesh/__tests__/mesh-hooks.test.tsx`         | Remove `useMeshEnabled` test; keep all other hook tests                                 |
+| `apps/e2e/pages/MeshPage.ts`                                                 | Remove `DORKOS_MESH_ENABLED=true` text assertion                                        |
 
 ## User Experience
 
@@ -425,6 +442,7 @@ MeshCore initialization can still fail at runtime (SQLite errors, filesystem iss
 ### Zero-Query State
 
 When the palette opens with no search input:
+
 - Top section shows "Recent Agents" (up to 5, frecency-sorted)
 - Active agent is pinned at the top with a checkmark
 - Below: "Features" (Pulse, Relay, Mesh, Settings)
@@ -442,6 +460,7 @@ When the palette opens with no search input:
 ### No-Agent Fallback
 
 When navigating to a directory without `.dork/agent.json`:
+
 - AgentHeader shows directory path with folder icon (current behavior)
 - Sessions work normally — no error state
 - Command palette still works — user can switch to a registered agent
@@ -452,6 +471,7 @@ When navigating to a directory without `.dork/agent.json`:
 ### Unit Tests
 
 **Command Palette:**
+
 - `CommandPaletteDialog` renders with all content groups
 - `@` prefix mode filters to agents only
 - Selecting an agent calls `setDir()` with the correct path
@@ -462,6 +482,7 @@ When navigating to a directory without `.dork/agent.json`:
 - Empty state shows "No results found"
 
 **Frecency:**
+
 - `recordUsage()` increments count and updates timestamp
 - `getSortedAgents()` returns agents in frecency order
 - Entries older than 30 days are pruned
@@ -469,6 +490,7 @@ When navigating to a directory without `.dork/agent.json`:
 - Graceful degradation when localStorage is unavailable
 
 **AgentHeader:**
+
 - Registered agent: shows name, color, path, switch button, gear icon
 - Unregistered directory: shows path with folder icon
 - Switch button calls `setGlobalPaletteOpen(true)`
@@ -476,6 +498,7 @@ When navigating to a directory without `.dork/agent.json`:
 - Mobile: tapping identity area opens palette
 
 **Mesh Always-On:**
+
 - `useMeshEnabled()` returns `true` unconditionally
 - `MeshPanel` renders without disabled state gate
 - `MeshStatsHeader` renders without enabled check

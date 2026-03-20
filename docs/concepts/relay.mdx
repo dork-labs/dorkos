@@ -3,8 +3,8 @@ title: Relay
 description: Built-in messaging between agents, humans, and external platforms like Telegram
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Relay
 
@@ -62,7 +62,8 @@ Every envelope carries a budget that constrains how far a message can travel:
 The budget also carries an **ancestor chain** — sender identifiers for every hop. If a message would be delivered to a sender that already appears in the chain, it is rejected as a cycle.
 
 <Callout type="warn">
-Budget limits are enforced per-delivery, not per-publish. A message published to three endpoints consumes one hop for each delivery.
+  Budget limits are enforced per-delivery, not per-publish. A message published to three endpoints
+  consumes one hop for each delivery.
 </Callout>
 
 ## Access Control
@@ -105,7 +106,7 @@ Three mechanisms protect endpoints under load:
 - **Backpressure** — When an endpoint's mailbox reaches capacity (default: 1000 messages), new deliveries are rejected.
 
 <Callout type="info">
-All reliability settings can be tuned in `~/.dork/relay/config.json`. Changes are hot-reloaded.
+  All reliability settings can be tuned in `~/.dork/relay/config.json`. Changes are hot-reloaded.
 </Callout>
 
 ## Integration with Sessions

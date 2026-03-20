@@ -13,6 +13,7 @@
 ### Hero Option A: Short-Form
 
 # Your agents are brilliant.
+
 # They just can't do anything when you leave.
 
 `the operating system for autonomous AI agents`
@@ -24,7 +25,9 @@
 ### Hero Option B: Long-Form
 
 # You have the most capable AI developer who ever existed.
+
 # It has no schedule. No memory. No way to reach you.
+
 # And when you close the laptop, it stops.
 
 `the operating system for autonomous AI agents`
@@ -157,14 +160,14 @@ You slept. They shipped.
 
 ---
 
-| Module | The gap | What it does |
-|---|---|---|
-| **Pulse** | Agents only run when you are watching | Cron-based autonomous scheduling. Your agents work on your schedule, not your screen time. |
-| **Relay** | Agents can't reach you or each other | Built-in messaging. Telegram, inter-agent signals, any channel. Your agents talk. |
-| **Mesh** | Agents are isolated. No coordination. | Discovery and networking. Agents find each other, coordinate work, avoid conflicts. |
-| **Console** | You are alt-tabbing between thirteen terminals | Browser-based command center. Every session, every action, one place. |
-| **Wing** | Every session starts from zero | Persistent memory across sessions. Context that survives the terminal closing. `coming soon` |
-| **Loop** | No feedback, no improvement | Signal, hypothesis, dispatch, measure. Your agents get better at what they do. |
+| Module      | The gap                                        | What it does                                                                                 |
+| ----------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Pulse**   | Agents only run when you are watching          | Cron-based autonomous scheduling. Your agents work on your schedule, not your screen time.   |
+| **Relay**   | Agents can't reach you or each other           | Built-in messaging. Telegram, inter-agent signals, any channel. Your agents talk.            |
+| **Mesh**    | Agents are isolated. No coordination.          | Discovery and networking. Agents find each other, coordinate work, avoid conflicts.          |
+| **Console** | You are alt-tabbing between thirteen terminals | Browser-based command center. Every session, every action, one place.                        |
+| **Wing**    | Every session starts from zero                 | Persistent memory across sessions. Context that survives the terminal closing. `coming soon` |
+| **Loop**    | No feedback, no improvement                    | Signal, hypothesis, dispatch, measure. Your agents get better at what they do.               |
 
 ---
 
@@ -219,6 +222,7 @@ Use: mid-page pull quote, social, or README alternative. The insight compressed 
 **Total word count:** Approximately 950 words of visible copy (excluding design notes). Lean enough to read in under 3 minutes. Dense enough that nothing is filler.
 
 **What is deliberately absent:**
+
 - No pricing section (it is free, open source — this is stated, not sold)
 - No comparison table (pre-launch, no social proof to leverage — compete on vision, not feature grids)
 - No testimonials block (design the space for it, but do not fabricate quotes)

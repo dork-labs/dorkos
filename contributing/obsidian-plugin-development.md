@@ -514,7 +514,7 @@ export function isElectronEnvironment(): boolean {
 | Feature             | Standalone (Browser)                  | Obsidian                                |
 | ------------------- | ------------------------------------- | --------------------------------------- |
 | Transport           | `HttpTransport` (HTTP/SSE to Express) | `DirectTransport` (in-process services) |
-| Session ID storage  | URL query param (nuqs)                | Zustand store                           |
+| Session ID storage  | URL query param (TanStack Router)     | Zustand store                           |
 | Layout              | Full viewport, responsive             | Fixed sidebar width (~300px)            |
 | Active file context | N/A                                   | Tracked via workspace events            |
 | File drag-drop      | N/A                                   | From Obsidian file explorer             |
@@ -537,7 +537,7 @@ const webAdapter: PlatformAdapter = {
   getApiBaseUrl: () => '/api',
   getSessionId: () => new URLSearchParams(location.search).get('session'),
   setSessionId: (id) => {
-    /* nuqs or pushState */
+    /* TanStack Router navigate */
   },
   isEmbedded: () => false,
 };
@@ -893,22 +893,22 @@ If you don't see "main.js module loaded", the error is in module evaluation (top
 
 ### Common Issues
 
-| Issue                                 | Cause                                                   | Solution                                                                 |
-| ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
-| "Failed to load plugin"               | See dev console for actual error                        | Open `Cmd+Option+I` and check Console tab                                |
-| "Cannot find module 'obsidian'"       | Not externalized in Vite config                         | Add to `external` in `apps/obsidian-plugin/vite.config.ts` rollupOptions |
-| "Cannot find module 'X'"              | Node built-in not externalized                          | Ensure `builtinModules` are in `external` array                          |
-| "The URL must be of scheme file"      | Vite `import.meta.url` polyfill uses `document.baseURI` | `fixDirnamePolyfill()` plugin replaces with `__dirname`                  |
-| "must be EventEmitter or EventTarget" | SDK passes browser AbortSignal to Node.js APIs          | `patchElectronCompat()` plugin patches spawn + setMaxListeners           |
-| "Claude Code executable not found"    | SDK resolves `cli.js` inside `Obsidian.app`             | `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk-utils.ts`) finds CLI via PATH      |
-| ENOENT for `.claude/commands/`        | Service receives vault path instead of repo root        | Pass `repoRoot = path.resolve(vaultPath, '..')` to services              |
-| Optional dep crashes on require       | `@emotion/is-prop-valid`, `ajv-*` etc                   | Add to `safeRequires()` plugin in Vite config                            |
-| Text not selectable                   | Obsidian sets `user-select: none` on views              | Override with `user-select: text` in `.copilot-view-content`             |
-| Styles not applying                   | Wrong CSS filename or missing file                      | Verify `styles.css` exists in plugin dir                                 |
-| React not re-rendering                | Obsidian events not wired to state                      | Use `registerEvent()` + React state updates                              |
-| Drag-drop not firing                  | Missing preventDefault                                  | Call `preventDefault()` on both `dragOver` and `drop`                    |
-| Memory leaks                          | React root not unmounted                                | Always `root.unmount()` in `onClose()`                                   |
-| Hot reload not working                | Missing .hotreload file                                 | Create `.hotreload` file in plugin dir                                   |
+| Issue                                 | Cause                                                   | Solution                                                                                      |
+| ------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| "Failed to load plugin"               | See dev console for actual error                        | Open `Cmd+Option+I` and check Console tab                                                     |
+| "Cannot find module 'obsidian'"       | Not externalized in Vite config                         | Add to `external` in `apps/obsidian-plugin/vite.config.ts` rollupOptions                      |
+| "Cannot find module 'X'"              | Node built-in not externalized                          | Ensure `builtinModules` are in `external` array                                               |
+| "The URL must be of scheme file"      | Vite `import.meta.url` polyfill uses `document.baseURI` | `fixDirnamePolyfill()` plugin replaces with `__dirname`                                       |
+| "must be EventEmitter or EventTarget" | SDK passes browser AbortSignal to Node.js APIs          | `patchElectronCompat()` plugin patches spawn + setMaxListeners                                |
+| "Claude Code executable not found"    | SDK resolves `cli.js` inside `Obsidian.app`             | `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk-utils.ts`) finds CLI via PATH |
+| ENOENT for `.claude/commands/`        | Service receives vault path instead of repo root        | Pass `repoRoot = path.resolve(vaultPath, '..')` to services                                   |
+| Optional dep crashes on require       | `@emotion/is-prop-valid`, `ajv-*` etc                   | Add to `safeRequires()` plugin in Vite config                                                 |
+| Text not selectable                   | Obsidian sets `user-select: none` on views              | Override with `user-select: text` in `.copilot-view-content`                                  |
+| Styles not applying                   | Wrong CSS filename or missing file                      | Verify `styles.css` exists in plugin dir                                                      |
+| React not re-rendering                | Obsidian events not wired to state                      | Use `registerEvent()` + React state updates                                                   |
+| Drag-drop not firing                  | Missing preventDefault                                  | Call `preventDefault()` on both `dragOver` and `drop`                                         |
+| Memory leaks                          | React root not unmounted                                | Always `root.unmount()` in `onClose()`                                                        |
+| Hot reload not working                | Missing .hotreload file                                 | Create `.hotreload` file in plugin dir                                                        |
 
 ### Build Quirks
 
@@ -958,15 +958,15 @@ User input → ObsidianApp → useChatSession.handleSubmit()
 
 ### Key Files
 
-| File                                                  | Purpose                                            |
-| ----------------------------------------------------- | -------------------------------------------------- |
-| `apps/obsidian-plugin/src/main.ts`                    | Plugin entry (onload/onunload)                     |
-| `apps/obsidian-plugin/src/views/CopilotView.tsx`      | ItemView — creates services, mounts React          |
-| `apps/obsidian-plugin/src/components/ObsidianApp.tsx` | Plugin-specific App (auto-session, compact layout) |
-| `packages/shared/src/transport.ts`                    | Transport interface definition                     |
-| `apps/client/src/layers/shared/lib/direct-transport.ts`     | In-process transport wrapping services             |
-| `apps/client/src/layers/shared/model/TransportContext.tsx`  | React Context for DI                               |
-| `apps/obsidian-plugin/vite.config.ts`                 | Plugin build config                                |
+| File                                                       | Purpose                                            |
+| ---------------------------------------------------------- | -------------------------------------------------- |
+| `apps/obsidian-plugin/src/main.ts`                         | Plugin entry (onload/onunload)                     |
+| `apps/obsidian-plugin/src/views/CopilotView.tsx`           | ItemView — creates services, mounts React          |
+| `apps/obsidian-plugin/src/components/ObsidianApp.tsx`      | Plugin-specific App (auto-session, compact layout) |
+| `packages/shared/src/transport.ts`                         | Transport interface definition                     |
+| `apps/client/src/layers/shared/lib/direct-transport.ts`    | In-process transport wrapping services             |
+| `apps/client/src/layers/shared/model/TransportContext.tsx` | React Context for DI                               |
+| `apps/obsidian-plugin/vite.config.ts`                      | Plugin build config                                |
 
 ### Path Resolution
 

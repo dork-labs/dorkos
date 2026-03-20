@@ -32,7 +32,14 @@ export function useGlobalPalette() {
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [toggleGlobalPalette, setSettingsOpen, setPulseOpen, setRelayOpen, setMeshOpen, globalPaletteOpen]);
+  }, [
+    toggleGlobalPalette,
+    setSettingsOpen,
+    setPulseOpen,
+    setRelayOpen,
+    setMeshOpen,
+    globalPaletteOpen,
+  ]);
 
   return {
     globalPaletteOpen,

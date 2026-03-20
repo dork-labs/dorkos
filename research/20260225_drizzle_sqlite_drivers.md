@@ -1,5 +1,5 @@
 ---
-title: "Drizzle ORM SQLite Driver Options"
+title: 'Drizzle ORM SQLite Driver Options'
 date: 2026-02-25
 type: implementation
 status: active
@@ -31,17 +31,17 @@ Drizzle ORM supports six distinct SQLite driver families as of early 2026. Two a
 
 ### 2. Supported SQLite Drivers (Full Inventory)
 
-| Driver | Import Path | Execution Model | Native Code | Target Environment |
-|--------|------------|----------------|-------------|-------------------|
-| `better-sqlite3` | `drizzle-orm/better-sqlite3` | Synchronous | C++ via node-gyp | Node.js / Electron |
-| `@libsql/client` | `drizzle-orm/libsql` | Asynchronous | Rust via N-API `.node` binaries | Node.js / Electron / Edge |
-| `@libsql/client-wasm` | `drizzle-orm/libsql` | Asynchronous | WASM (experimental) | Browser / Worker |
-| `bun:sqlite` | `drizzle-orm/bun-sqlite` | Synchronous | Native (Bun runtime) | Bun only |
-| `expo-sqlite` | `drizzle-orm/expo-sqlite` | Asynchronous | Native (JSI) | React Native (Expo) |
-| `@op-engineering/op-sqlite` | `drizzle-orm/op-sqlite` | Asynchronous | Native (JSI) | React Native |
-| Cloudflare D1 | `drizzle-orm/d1` | Asynchronous | None (remote) | Cloudflare Workers |
-| SQLite Cloud | `drizzle-orm/sqlite-proxy` | Asynchronous | None (remote) | Any |
-| `sql.js` | (legacy, see below) | Synchronous | WASM | Browser / Node.js |
+| Driver                      | Import Path                  | Execution Model | Native Code                     | Target Environment        |
+| --------------------------- | ---------------------------- | --------------- | ------------------------------- | ------------------------- |
+| `better-sqlite3`            | `drizzle-orm/better-sqlite3` | Synchronous     | C++ via node-gyp                | Node.js / Electron        |
+| `@libsql/client`            | `drizzle-orm/libsql`         | Asynchronous    | Rust via N-API `.node` binaries | Node.js / Electron / Edge |
+| `@libsql/client-wasm`       | `drizzle-orm/libsql`         | Asynchronous    | WASM (experimental)             | Browser / Worker          |
+| `bun:sqlite`                | `drizzle-orm/bun-sqlite`     | Synchronous     | Native (Bun runtime)            | Bun only                  |
+| `expo-sqlite`               | `drizzle-orm/expo-sqlite`    | Asynchronous    | Native (JSI)                    | React Native (Expo)       |
+| `@op-engineering/op-sqlite` | `drizzle-orm/op-sqlite`      | Asynchronous    | Native (JSI)                    | React Native              |
+| Cloudflare D1               | `drizzle-orm/d1`             | Asynchronous    | None (remote)                   | Cloudflare Workers        |
+| SQLite Cloud                | `drizzle-orm/sqlite-proxy`   | Asynchronous    | None (remote)                   | Any                       |
+| `sql.js`                    | (legacy, see below)          | Synchronous     | WASM                            | Browser / Node.js         |
 
 ### 3. better-sqlite3 — Native C++ Binding
 
@@ -106,6 +106,7 @@ expo-sqlite         | n/a (React Native) | No           | No      | No
 `drizzle-kit` (the migration CLI tool) runs in the system's Node.js, not Electron's embedded runtime. If `better-sqlite3` has been rebuilt for Electron, `drizzle-kit` will fail to load it due to the ABI mismatch (inverse of the usual problem).
 
 **Solution confirmed by the community:** Run drizzle-kit through Electron's own Node.js runtime:
+
 ```bash
 ELECTRON_RUN_AS_NODE=1 electron ./node_modules/drizzle-kit/bin.cjs generate
 ELECTRON_RUN_AS_NODE=1 electron ./node_modules/drizzle-kit/bin.cjs migrate

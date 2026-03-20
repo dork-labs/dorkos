@@ -12,11 +12,11 @@
 
 ### Task 1.1 — Fix reconnection bot leak and timer cancellation (C1, C2)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | High |
-| **Dependencies** | None |
+| Field             | Value    |
+| ----------------- | -------- |
+| **Size**          | Medium   |
+| **Priority**      | High     |
+| **Dependencies**  | None     |
 | **Parallel with** | 1.2, 1.3 |
 
 **File:** `packages/relay/src/adapters/telegram-adapter.ts`
@@ -26,6 +26,7 @@
 **C2:** The `setTimeout` return value is discarded. If `stop()` is called during the delay window, the timer fires and creates a zombie polling loop. The reconnect guard only checks `'disconnected'` but `stop()` transitions through `'stopping'` first.
 
 **Changes:**
+
 1. Add `private reconnectTimer: ReturnType<typeof setTimeout> | null = null` field
 2. In `handlePollingError`: assign timer to `this.reconnectTimer`, make callback `async`, add `'stopping'` state check, call `this.bot?.stop()` before creating new bot
 3. In `stop()`: call `clearTimeout(this.reconnectTimer)` and null the field before unsubscribing signals
@@ -36,11 +37,11 @@
 
 ### Task 1.2 — Fix webhook error handler leak and connection cleanup (I1, I2)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Small |
-| **Priority** | Medium |
-| **Dependencies** | None |
+| Field             | Value    |
+| ----------------- | -------- |
+| **Size**          | Small    |
+| **Priority**      | Medium   |
+| **Dependencies**  | None     |
 | **Parallel with** | 1.1, 1.3 |
 
 **File:** `packages/relay/src/adapters/telegram-adapter.ts`
@@ -55,11 +56,11 @@
 
 ### Task 1.3 — Reject float chat IDs in extractChatId (I3)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Small |
-| **Priority** | Medium |
-| **Dependencies** | None |
+| Field             | Value    |
+| ----------------- | -------- |
+| **Size**          | Small    |
+| **Priority**      | Medium   |
+| **Dependencies**  | None     |
 | **Parallel with** | 1.1, 1.2 |
 
 **File:** `packages/relay/src/adapters/telegram-adapter.ts`
@@ -74,11 +75,11 @@ Replace `Number.isFinite(id)` with `Number.isInteger(id)` in both the group form
 
 ### Task 2.1 — Fix BindingStore skipNextReload race with generation counter (C3)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | High |
-| **Dependencies** | None |
+| Field             | Value    |
+| ----------------- | -------- |
+| **Size**          | Medium   |
+| **Priority**      | High     |
+| **Dependencies**  | None     |
 | **Parallel with** | 2.2, 2.3 |
 
 **File:** `apps/server/src/services/relay/binding-store.ts`
@@ -91,14 +92,15 @@ Replace the `skipNextReload` boolean with a `saveGeneration` / `lastReloadedGene
 
 ### Task 2.2 — Prevent duplicate dispatch between DeliveryPipeline and WatcherManager (C4)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | High |
-| **Dependencies** | None |
+| Field             | Value    |
+| ----------------- | -------- |
+| **Size**          | Medium   |
+| **Priority**      | High     |
+| **Dependencies**  | None     |
 | **Parallel with** | 2.1, 2.3 |
 
 **Files:**
+
 - `packages/relay/src/delivery-pipeline.ts` — add `recentlyDispatched` set + `wasDispatched()` method
 - `packages/relay/src/watcher-manager.ts` — accept `wasDispatched` callback, skip in `handleNewMessage`
 - `packages/relay/src/relay-core.ts` — wire callback from pipeline to watcher
@@ -111,14 +113,15 @@ Set is capped at 10,000 entries to prevent unbounded growth.
 
 ### Task 2.3 — Add Zod validation, SSE write guards, and sessionMap validation (I4, I5, I6)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | Medium |
-| **Dependencies** | None |
+| Field             | Value    |
+| ----------------- | -------- |
+| **Size**          | Medium   |
+| **Priority**      | Medium   |
+| **Dependencies**  | None     |
 | **Parallel with** | 2.1, 2.2 |
 
 **Files:**
+
 - `apps/server/src/routes/relay.ts` — Zod schemas for 3 adapter routes (I4), `writableEnded` guards on SSE stream (I5)
 - `apps/server/src/services/relay/binding-router.ts` — validate `sessionMap` JSON shape in `loadSessionMap()` (I6)
 
@@ -130,14 +133,15 @@ Set is capped at 10,000 entries to prevent unbounded growth.
 
 ### Task 3.1 — Fix Transport bypass in useMeshScanRoots with updateConfig method (C5)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | High |
-| **Dependencies** | None |
+| Field             | Value         |
+| ----------------- | ------------- |
+| **Size**          | Medium        |
+| **Priority**      | High          |
+| **Dependencies**  | None          |
 | **Parallel with** | 3.2, 3.3, 3.4 |
 
 **Files:**
+
 - `packages/shared/src/transport.ts` — add `updateConfig()` to interface
 - `apps/client/src/layers/shared/lib/http-transport.ts` — implement via `fetchJSON`
 - `apps/client/src/layers/shared/lib/direct-transport.ts` — implement via `configManager.applyPatch`
@@ -150,11 +154,11 @@ Set is capped at 10,000 entries to prevent unbounded growth.
 
 ### Task 3.2 — Complete compensating transaction in MeshCore register methods (C6)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Small |
-| **Priority** | High |
-| **Dependencies** | None |
+| Field             | Value         |
+| ----------------- | ------------- |
+| **Size**          | Small         |
+| **Priority**      | High          |
+| **Dependencies**  | None          |
 | **Parallel with** | 3.1, 3.3, 3.4 |
 
 **File:** MeshCore service file (likely `apps/server/src/services/mesh/mesh-core.ts`)
@@ -167,14 +171,15 @@ Add `await removeManifest(candidate.path)` (in `register()`) and `await removeMa
 
 ### Task 3.3 — Remove dead CrossNamespaceEdge animation and fix handleNodeClick stale closure (I7, I8)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | Medium |
-| **Dependencies** | None |
+| Field             | Value         |
+| ----------------- | ------------- |
+| **Size**          | Medium        |
+| **Priority**      | Medium        |
+| **Dependencies**  | None          |
 | **Parallel with** | 3.1, 3.2, 3.4 |
 
 **Files:**
+
 - `apps/client/src/layers/features/mesh/ui/CrossNamespaceEdge.tsx` — remove dead `<animateMotion>` block (I7)
 - `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx` — use `layoutedNodesRef` in `handleNodeClick`, remove `layoutedNodes` from deps (I8)
 
@@ -184,14 +189,15 @@ Add `await removeManifest(candidate.path)` (in `register()`) and `await removeMa
 
 ### Task 3.4 — Prevent ELK layout thrashing and extract relativeTime utility (I9, I10)
 
-| Field | Value |
-|-------|-------|
-| **Size** | Medium |
-| **Priority** | Medium |
-| **Dependencies** | None |
+| Field             | Value         |
+| ----------------- | ------------- |
+| **Size**          | Medium        |
+| **Priority**      | Medium        |
+| **Dependencies**  | None          |
 | **Parallel with** | 3.1, 3.2, 3.3 |
 
 **Files:**
+
 - `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx` — add `topologyFingerprint` memo, use as ELK effect dependency (I9)
 - `apps/client/src/layers/features/mesh/lib/relative-time.ts` — new shared utility (I10)
 - `apps/client/src/layers/features/mesh/ui/AgentNode.tsx` — remove inline `relativeTime`, import from shared (I10)
@@ -215,21 +221,21 @@ Phases should be executed in order (1 -> 2 -> 3) to minimize risk, but there are
 
 ## Issue-to-Task Mapping
 
-| Issue | Severity | Task | Description |
-|-------|----------|------|-------------|
-| C1 | Critical | 1.1 | Stop old bot before reconnection |
-| C2 | Critical | 1.1 | Track reconnect timer for cancellation |
-| C3 | Critical | 2.1 | Fix BindingStore skipNextReload race |
-| C4 | Critical | 2.2 | Prevent duplicate dispatch |
-| C5 | Critical | 3.1 | Fix Transport bypass in useMeshScanRoots |
-| C6 | Critical | 3.2 | Complete compensating transaction in MeshCore |
-| I1 | Important | 1.2 | Webhook error handler leak |
-| I2 | Important | 1.2 | Destroy keep-alive connections |
-| I3 | Important | 1.3 | Reject float chat IDs |
-| I4 | Important | 2.3 | Add Zod validation to adapter routes |
-| I5 | Important | 2.3 | Check writableEnded before SSE writes |
-| I6 | Important | 2.3 | Validate sessionMap JSON shape |
-| I7 | Important | 3.3 | Remove dead CrossNamespaceEdge animation |
-| I8 | Important | 3.3 | Fix handleNodeClick stale closure |
-| I9 | Important | 3.4 | Prevent ELK layout thrashing on refetch |
-| I10 | Important | 3.4 | Extract relativeTime to shared utility |
+| Issue | Severity  | Task | Description                                   |
+| ----- | --------- | ---- | --------------------------------------------- |
+| C1    | Critical  | 1.1  | Stop old bot before reconnection              |
+| C2    | Critical  | 1.1  | Track reconnect timer for cancellation        |
+| C3    | Critical  | 2.1  | Fix BindingStore skipNextReload race          |
+| C4    | Critical  | 2.2  | Prevent duplicate dispatch                    |
+| C5    | Critical  | 3.1  | Fix Transport bypass in useMeshScanRoots      |
+| C6    | Critical  | 3.2  | Complete compensating transaction in MeshCore |
+| I1    | Important | 1.2  | Webhook error handler leak                    |
+| I2    | Important | 1.2  | Destroy keep-alive connections                |
+| I3    | Important | 1.3  | Reject float chat IDs                         |
+| I4    | Important | 2.3  | Add Zod validation to adapter routes          |
+| I5    | Important | 2.3  | Check writableEnded before SSE writes         |
+| I6    | Important | 2.3  | Validate sessionMap JSON shape                |
+| I7    | Important | 3.3  | Remove dead CrossNamespaceEdge animation      |
+| I8    | Important | 3.3  | Fix handleNodeClick stale closure             |
+| I9    | Important | 3.4  | Prevent ELK layout thrashing on refetch       |
+| I10   | Important | 3.4  | Extract relativeTime to shared utility        |

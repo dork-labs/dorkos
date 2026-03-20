@@ -80,14 +80,14 @@ describe('useChatSession — sync & indicators', () => {
           _content: string,
           _onEvent: (event: StreamEvent) => void,
           signal?: AbortSignal,
-          _cwd?: string,
+          _cwd?: string
         ) => {
           return new Promise<void>((resolve, reject) => {
             signal?.addEventListener('abort', () => {
               reject(new DOMException('The operation was aborted.', 'AbortError'));
             });
           });
-        },
+        }
       );
       const transport = createMockTransport({ sendMessage });
 
@@ -146,12 +146,12 @@ describe('useChatSession — sync & indicators', () => {
           _content: string,
           onEvent: (event: StreamEvent) => void,
           _signal?: AbortSignal,
-          _cwd?: string,
+          _cwd?: string
         ) => {
           onEvent({ type: 'text_delta', data: { text: '12345678' } } as StreamEvent);
           onEvent({ type: 'text_delta', data: { text: 'abcdefgh' } } as StreamEvent);
           onEvent({ type: 'done', data: { sessionId: 's1' } } as StreamEvent);
-        },
+        }
       );
       const transport = createMockTransport({ sendMessage });
       const { result } = renderHook(() => useChatSession('s1'), {
@@ -209,7 +209,7 @@ describe('useChatSession — sync & indicators', () => {
 
       await waitFor(() => {
         const streamInstances = MockEventSource.instances.filter((es) =>
-          es.url.includes('/api/sessions/s1/stream'),
+          es.url.includes('/api/sessions/s1/stream')
         );
         expect(streamInstances).toHaveLength(0);
       });
@@ -223,7 +223,7 @@ describe('useChatSession — sync & indicators', () => {
 
       await waitFor(() => {
         const streamInstances = MockEventSource.instances.filter((es) =>
-          es.url.includes('/api/sessions/s1/stream'),
+          es.url.includes('/api/sessions/s1/stream')
         );
         expect(streamInstances.length).toBeGreaterThan(0);
       });

@@ -1,9 +1,23 @@
 ---
-title: "Sidebar Tabbed Views — Sessions, Schedules, Connections UX Research"
+title: 'Sidebar Tabbed Views — Sessions, Schedules, Connections UX Research'
 date: 2026-03-10
 type: external-best-practices
 status: active
-tags: [sidebar, tabs, navigation, ux, react, activity, keep-alive, state-persistence, pulse, relay, mesh, sessions]
+tags:
+  [
+    sidebar,
+    tabs,
+    navigation,
+    ux,
+    react,
+    activity,
+    keep-alive,
+    state-persistence,
+    pulse,
+    relay,
+    mesh,
+    sessions,
+  ]
 feature_slug: sidebar-tabbed-views
 searches_performed: 10
 sources_count: 22
@@ -20,19 +34,22 @@ The sidebar should become a three-tab control panel — Sessions, Schedules (Pul
 ### 1. Persona Analysis: Kai and Priya's Actual Workflows
 
 **Kai (primary — The Autonomous Builder):**
+
 - Runs 10-20 agent sessions per week across 5 projects. Sessions are his active chat context.
-- Has scheduled Pulse runs running overnight — he wants to see their status *without leaving the chat view*. He'd glance at "3 active runs" badge and feel confident, not need to click in to verify.
+- Has scheduled Pulse runs running overnight — he wants to see their status _without leaving the chat view_. He'd glance at "3 active runs" badge and feel confident, not need to click in to verify.
 - Relay/Mesh connections are infrastructure-level — he set them up once, now just needs to see green/red health status at a glance. He should not need to navigate away to diagnose.
 - Critical workflow: Tab-switching mid-session should never lose his scroll position in the Sessions list. He was just looking at a session from 3 days ago — if he checks Schedules and comes back, that session must still be visible.
 - The "15-tab juggle" pain point is the Sessions view's entire reason for existing. Kai lives there. He should be able to switch to Schedules, check run status, and return to Sessions in under 3 keystrokes total.
 
 **Priya (secondary — The Knowledge Architect):**
+
 - Flow preservation is her core need. Tab-switching must have zero cognitive cost.
-- She may want to query an agent mid-architecture review and *simultaneously* check Relay health to confirm a connection she just configured. A tab switch that destroys her message draft or scroll position would break flow.
+- She may want to query an agent mid-architecture review and _simultaneously_ check Relay health to confirm a connection she just configured. A tab switch that destroys her message draft or scroll position would break flow.
 - She reads source code before adopting tools. She would notice if the tab implementation used conditional rendering that destroys state — if a scroll position resets, she loses trust.
 - Badge counts are her friends: they let her assess system state without context-switching.
 
 **Anti-persona (Jordan — The Prompt Dabbler):**
+
 - Would expect labeled tabs like "Chat", "Scheduler", "Integrations" with full text labels, big icons, and tooltips explaining everything.
 - Would want a "Setup wizard" in the Connections tab.
 - We should NOT do: tutorial text in view headers, hover-to-reveal explanations for what each view does, any onboarding UI embedded in tab content beyond the existing ProgressCard.
@@ -42,6 +59,7 @@ The sidebar should become a three-tab control panel — Sessions, Schedules (Pul
 Three viable approaches, ranked best to worst for DorkOS:
 
 **Option A: React `<Activity>` Component (React 19.2)**
+
 ```tsx
 <Activity mode={activeTab === 'sessions' ? 'visible' : 'hidden'}>
   <SessionsView />
@@ -53,6 +71,7 @@ Three viable approaches, ranked best to worst for DorkOS:
   <ConnectionsView />
 </Activity>
 ```
+
 - State preserved: scroll position, form inputs, expanded/collapsed state — all survive tab switching.
 - Effects are cleaned up when hidden (unlike display:none), so no zombie timers or subscriptions.
 - Hidden content pre-renders at lower priority, potentially making first-click faster.
@@ -60,11 +79,13 @@ Three viable approaches, ranked best to worst for DorkOS:
 - Caveat: any DOM element with side effects (e.g., auto-playing `<video>`) needs explicit cleanup in `useLayoutEffect`. Not applicable here.
 
 **Option B: CSS Hidden Toggle (display: none / visibility pattern)**
+
 ```tsx
 <div className={cn(activeTab !== 'sessions' && 'hidden')}>
   <SessionsView />
 </div>
 ```
+
 - Simpler, works with current React 19 (pre-19.2).
 - Preserves DOM state (scroll position, input values) but does NOT clean up Effects.
 - "Zombie component" risk: a hidden Schedules view might still poll for run updates.
@@ -72,6 +93,7 @@ Three viable approaches, ranked best to worst for DorkOS:
 - Fine for the current scale — three views with known, bounded TanStack Query hooks.
 
 **Option C: Zustand State Lifting + Conditional Rendering**
+
 - All state lifted to Zustand, views conditionally rendered.
 - Destroys DOM on tab switch — scroll position is lost.
 - Would require explicit serialization of scroll offset for Sessions list.
@@ -82,11 +104,13 @@ Three viable approaches, ranked best to worst for DorkOS:
 ### 3. Tab Navigation Patterns — 4 Approaches Compared
 
 **Approach 1: Icon-Only Compact Horizontal Tabs (RECOMMENDED)**
+
 ```
 [─────────────────────────────────]
 [ ≡  Sessions  |  ⏱  |  ⚡ 2  ]  ← tab row at top of SidebarContent
 [─────────────────────────────────]
 ```
+
 - Three icon buttons in a tight horizontal strip, replacing or sitting below `SidebarHeader`.
 - Active tab has a sliding indicator (layoutId animation from the existing sidebar active indicator pattern).
 - Badge count (e.g., "2 active runs") rendered as a small number overlay on the Schedules icon.
@@ -96,11 +120,13 @@ Three viable approaches, ranked best to worst for DorkOS:
 - **Persona fit:** Kai would recognize this immediately; Priya would approve of the information density. Jordan would find it "confusing" — which is correct.
 
 **Approach 2: Icon-Only Vertical Activity Bar (VS Code pattern)**
+
 ```
   [ ≡ ]
   [ ⏱ 3]
   [ ⚡ ]
 ```
+
 - Vertical column of icons on the left edge of the sidebar.
 - Classic VS Code model.
 - **Pros:** Already established mental model for developers, excellent badge support, very efficient.
@@ -108,22 +134,26 @@ Three viable approaches, ranked best to worst for DorkOS:
 - **Persona fit:** Good for Kai, neutral for Priya. But the implementation complexity outweighs the benefit vs. horizontal tabs for a 3-view sidebar.
 
 **Approach 3: Text Tabs (Horizontal, Below Header)**
+
 ```
 [─────────────────────────────────]
 [ Sessions  | Schedules | Connect ]
 [─────────────────────────────────]
 ```
+
 - Full text labels, like a standard browser tab strip.
 - **Pros:** Maximally clear. No tooltip needed. Self-labeling.
 - **Cons:** In a 320px sidebar, three text labels are tight. "Connections" alone is 11 characters. Would either overflow or require truncation. Looks like a consumer app, not a control panel. Anti-persona (Jordan) would love it — bad signal.
 - **Persona fit:** Jordan-bait. Priya would accept it but find it slightly verbose. Kai would prefer icon density.
 
 **Approach 4: Segmented Control (iOS-style compact toggle)**
+
 ```
 [─────────────────────────────────]
 [ ≡  ·  ⏱  ·  ⚡ 2 ]  ← connected pill control
 [─────────────────────────────────]
 ```
+
 - Three-item pill with connected borders (no separation between items).
 - **Pros:** Very compact, familiar from Apple HIG and modern web UIs, strong visual affordance for "mutually exclusive selection."
 - **Cons:** Tight on available space for three items. The "connected" visual implies the three items are variants of the same thing (like font size S/M/L), not three distinct views. Semantically slightly misleading for navigation between substantially different views.
@@ -131,11 +161,11 @@ Three viable approaches, ranked best to worst for DorkOS:
 
 ### 4. Which Icon Per Tab
 
-| Tab | Icon (Lucide) | Rationale |
-|---|---|---|
-| Sessions | `MessageSquare` | Direct mapping to conversations/sessions |
-| Schedules | `CalendarClock` or `Timer` | Pulse = time-based scheduling |
-| Connections | `Network` or `GitBranch` | Relay + Mesh = network topology |
+| Tab         | Icon (Lucide)              | Rationale                                |
+| ----------- | -------------------------- | ---------------------------------------- |
+| Sessions    | `MessageSquare`            | Direct mapping to conversations/sessions |
+| Schedules   | `CalendarClock` or `Timer` | Pulse = time-based scheduling            |
+| Connections | `Network` or `GitBranch`   | Relay + Mesh = network topology          |
 
 The current sidebar already uses `HeartPulse` for Pulse in AgentContextChips. For tab navigation (which is a different context — primary view nav, not status chip), using `CalendarClock` or `Timer` may be clearer as a tab label since it implies "runs that happen on a schedule" vs "health pulse."
 
@@ -143,13 +173,14 @@ The current sidebar already uses `HeartPulse` for Pulse in AgentContextChips. Fo
 
 The power of the tab design is badge counts surfaced before the user opens a view:
 
-| Tab | Badge / Indicator | Data Source |
-|---|---|---|
-| Sessions | None (or new session dot) | N/A — you're here |
-| Schedules | `activeRunCount` number badge | `useCompletedRunBadge` + active runs from Pulse |
-| Connections | Green/amber/red dot | Relay connection health + Mesh agent count |
+| Tab         | Badge / Indicator             | Data Source                                     |
+| ----------- | ----------------------------- | ----------------------------------------------- |
+| Sessions    | None (or new session dot)     | N/A — you're here                               |
+| Schedules   | `activeRunCount` number badge | `useCompletedRunBadge` + active runs from Pulse |
+| Connections | Green/amber/red dot           | Relay connection health + Mesh agent count      |
 
 **Badge design principles (from Material Design 3 + Apple HIG):**
+
 - Number badges: small rounded pill, 16px min-width, `text-2xs`, positioned top-right of icon.
 - Status dot (no number): 6px circle, semantic color (green=connected, amber=degraded, red=error/disconnected).
 - Badge visibility: Only show when count > 0 or status is non-nominal. Clear the badge when the user navigates to that tab.
@@ -158,11 +189,13 @@ The power of the tab design is badge counts surfaced before the user opens a vie
 ### 6. Animation Patterns for Tab Transitions
 
 From the existing design system:
+
 - **Tab indicator sliding:** Use `layoutId` on the active tab background/underline. Same spring preset as sidebar active indicator: `stiffness: 280, damping: 32`. This creates the deliberate, smooth slide the design system already uses.
 - **View transition:** The view content should NOT animate between tabs (would feel slow/disorienting). Simply switch the CSS display state. The tab indicator animation is sufficient affordance.
 - **Badge appearance:** Fade in + scale from 0.8, `stiffness: 400, damping: 30` (same as button tap feedback). Remove with fade out.
 
 What NOT to do:
+
 - No slide-left / slide-right page transitions between views (disorienting in a narrow sidebar).
 - No crossfade between view content (adds delay, unnecessary complexity).
 - No bounce or elastic effects.
@@ -171,13 +204,13 @@ What NOT to do:
 
 DorkOS uses `Cmd+B` for sidebar toggle. Consistent extension:
 
-| Action | Shortcut | Rationale |
-|---|---|---|
-| Focus sidebar | `Cmd+B` (existing) | Opens sidebar, focuses active tab |
-| Switch to Sessions | `Cmd+1` | First tab, standard numbering |
-| Switch to Schedules | `Cmd+2` | Second tab |
-| Switch to Connections | `Cmd+3` | Third tab |
-| Cycle tabs | `Cmd+]` / `Cmd+[` | Browser-familiar tab cycling |
+| Action                | Shortcut           | Rationale                         |
+| --------------------- | ------------------ | --------------------------------- |
+| Focus sidebar         | `Cmd+B` (existing) | Opens sidebar, focuses active tab |
+| Switch to Sessions    | `Cmd+1`            | First tab, standard numbering     |
+| Switch to Schedules   | `Cmd+2`            | Second tab                        |
+| Switch to Connections | `Cmd+3`            | Third tab                         |
+| Cycle tabs            | `Cmd+]` / `Cmd+[`  | Browser-familiar tab cycling      |
 
 VS Code uses `Ctrl+Shift+E` (Explorer), `Ctrl+Shift+G` (Git), etc. for view switching — function-named shortcuts. For DorkOS with only 3 views, numbered shortcuts are simpler and more memorable.
 
@@ -186,6 +219,7 @@ The shortcuts should be registered in `useEffect` in the sidebar component (or i
 ### 8. Accessibility — ARIA Tab Pattern
 
 WAI-ARIA requires for proper tab accessibility:
+
 ```tsx
 <div role="tablist" aria-label="Sidebar views">
   <button
@@ -211,6 +245,7 @@ WAI-ARIA requires for proper tab accessibility:
 ```
 
 Key requirements:
+
 - `role="tablist"` on the container, `role="tab"` on each button.
 - `aria-selected="true"` on the active tab.
 - `aria-controls` pointing to the panel `id`.
@@ -221,17 +256,20 @@ Key requirements:
 ### 9. What Views Should Contain
 
 **Sessions view (primary, unchanged):**
+
 - Current `SidebarContent` with temporal session grouping.
 - `+ New session` button stays in `SidebarHeader` (always visible regardless of active tab).
 - Scroll position must be preserved on tab switch.
 
 **Schedules view (Pulse in sidebar):**
+
 - Currently, Pulse is a modal dialog opened from `AgentContextChips`. The question is how much Pulse content lives in the sidebar tab vs the dialog.
 - **Recommended scope:** Show a read-only summary of upcoming/active runs, with a "Open Pulse" button that triggers the existing full Pulse dialog. Don't duplicate the full Pulse UI in the sidebar — it's complex and the sidebar is narrow.
 - Glanceable content: list of upcoming scheduled runs with next-fire time + status. Active runs with a progress indicator.
 - This replaces the Pulse chip in `AgentContextChips` as the primary entry point.
 
 **Connections view (Relay + Mesh):**
+
 - Currently, Relay and Mesh are separate modal dialogs from `AgentContextChips`.
 - **Recommended scope:** Show Relay adapter health (connected/disconnected status per adapter) + Mesh agent roster (registered agents, online/offline). Two sections within one view.
 - "Open Relay" and "Open Mesh" buttons for the full management dialogs.
@@ -242,6 +280,7 @@ Key requirements:
 The existing `AgentContextChips` in `SidebarFooter` shows Pulse/Relay/Mesh/Adapter status icons. With dedicated tabs, these chips become redundant for status — their primary remaining value is as quick-open triggers for the dialogs.
 
 **Options:**
+
 1. Keep AgentContextChips as dialog launchers only (remove status indicators, since they move to the tab badges).
 2. Remove AgentContextChips entirely — their dialog-open role moves to the "Open Pulse" / "Open Relay" / "Open Mesh" buttons inside the tab views.
 3. Keep them but simplify to icon-only without status dots (since status is now on the tab badges).
@@ -274,6 +313,7 @@ SidebarFooter
 ```
 
 The `+ New session` button stays in `SidebarHeader` above the tabs because:
+
 1. Creating a new session is the most common action in the app — it must never be behind a tab click.
 2. It doesn't belong to the Sessions tab only — it's an app-level action.
 3. It keeps the header clean and consistent regardless of which tab is active.
@@ -333,6 +373,7 @@ const SIDEBAR_TABS = [
 ### State Management
 
 The active tab should live in Zustand (`app-store.ts`) as `sidebarActiveTab: 'sessions' | 'schedules' | 'connections'`, defaulting to `'sessions'`. This allows:
+
 - Keyboard shortcuts from any component to switch tabs.
 - The tab to persist across sidebar open/close cycles.
 - Future deep-linking via URL if ever needed.
@@ -362,6 +403,7 @@ From Kai's perspective: "I can check how many Pulse runs are queued without leav
 ### What Control Panel Feel Actually Means
 
 "Control panel" vs "consumer app" manifests in these specific decisions:
+
 - **Icon-only tabs** (not labeled "Chat" / "Scheduler" / "Network") — operators know their tools.
 - **Badge counts as raw numbers**, not "You have 3 notifications!" copy.
 - **Status as color signal** (green dot = good), not status text ("Connected").
@@ -378,6 +420,7 @@ From Kai's perspective: "I can check how many Pulse runs are queued without leav
 **Implementation:** A 3-button `role="tablist"` row between `SidebarHeader` and `SidebarContent`. Views rendered simultaneously, toggled with `hidden` class. Motion `layoutId` sliding indicator on active tab. Badge counts on Schedules and Connections tabs.
 
 **Pros:**
+
 - Minimal implementation complexity (builds on existing patterns).
 - Works with current React 19 (no 19.2 dependency).
 - Matches brand direction (operator, control panel, information-dense).
@@ -386,6 +429,7 @@ From Kai's perspective: "I can check how many Pulse runs are queued without leav
 - Keyboard accessible via ARIA tablist pattern + Cmd+1/2/3 shortcuts.
 
 **Cons:**
+
 - CSS `hidden` does NOT clean up Effects — need to ensure Schedules/Connections views don't over-fetch when not visible. Mitigated by TanStack Query's built-in deduplication.
 - Three views simultaneously mounted increases initial render cost slightly (minor at this scale).
 
@@ -396,11 +440,13 @@ From Kai's perspective: "I can check how many Pulse runs are queued without leav
 **Same as Solution 1 but replaces `hidden` class with `<Activity mode="visible"|"hidden">`.**
 
 **Pros:**
+
 - Effects clean up when hidden (no zombie fetches).
 - Pre-renders inactive views at low priority (faster first navigation).
 - Semantically correct — the official React answer to keep-alive tabs.
 
 **Cons:**
+
 - Requires React 19.2 specifically. Current project version may be 19.0 or 19.1.
 - Slightly more syntax overhead.
 
@@ -411,10 +457,12 @@ From Kai's perspective: "I can check how many Pulse runs are queued without leav
 **Adds a left icon column (20px wide) to the sidebar, content area narrows to 300px.**
 
 **Pros:**
+
 - Most established pattern for developer tooling.
 - Easy to extend to more views later.
 
 **Cons:**
+
 - Implementation complexity significantly higher — sidebar becomes two-column layout.
 - 320px total width leaves only 300px for content — very tight.
 - Overkill for 3 views. VS Code has 8+ views in the activity bar.
@@ -435,11 +483,13 @@ From Kai's perspective: "I can check how many Pulse runs are queued without leav
 ## Security and Performance Considerations
 
 **Performance:**
+
 - Three simultaneously-mounted views: minimal overhead. Sessions view already renders the session list. Schedules and Connections views would be lightweight (read-only summaries, not the full management dialogs). TanStack Query handles deduplication — even if both views query the same endpoint, only one HTTP request fires.
 - The CSS `hidden` approach keeps all three views in the DOM, increasing node count slightly. With `<Activity>`, the hidden nodes are removed from the browser's render tree, saving style recalculation cost. For a narrow sidebar panel, this difference is negligible.
 - Scroll position preservation: automatic with CSS `hidden` (the scroll container remains in DOM). With `<Activity>`, also automatic.
 
 **State synchronization:**
+
 - `sidebarActiveTab` in Zustand ensures tab state survives sidebar open/close (mobile Sheet re-mounts would otherwise reset local component state).
 - Badge clear (unviewedCount) must trigger when navigating TO the Schedules tab, not just when the Pulse dialog opens. Update `useCompletedRunBadge` usage accordingly.
 

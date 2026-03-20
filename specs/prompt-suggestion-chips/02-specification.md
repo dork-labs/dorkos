@@ -80,7 +80,7 @@ export const StreamEventTypeSchema = z
     'text_delta',
     // ... existing types ...
     'compact_boundary',
-    'prompt_suggestion',  // NEW
+    'prompt_suggestion', // NEW
   ])
   .openapi('StreamEventType');
 ```
@@ -106,7 +106,7 @@ export const StreamEventSchema = z
     data: z.union([
       // ... existing schemas ...
       CompactBoundaryEventSchema,
-      PromptSuggestionEventSchema,  // NEW
+      PromptSuggestionEventSchema, // NEW
     ]),
   })
   .openapi('StreamEvent');
@@ -120,7 +120,7 @@ Add to the re-export list:
 export type {
   // ... existing exports ...
   CompactBoundaryEvent,
-  PromptSuggestionEvent,  // NEW
+  PromptSuggestionEvent, // NEW
 } from './schemas.js';
 ```
 
@@ -134,7 +134,7 @@ Add `promptSuggestions: true` to the `sdkOptions` object (after line 152):
 const sdkOptions: Options = {
   cwd: effectiveCwd,
   includePartialMessages: true,
-  promptSuggestions: true,  // NEW — enable SDK prompt suggestion emission
+  promptSuggestions: true, // NEW — enable SDK prompt suggestion emission
   settingSources: ['project', 'user'],
   // ...
 };
@@ -168,7 +168,7 @@ Add import for the new type:
 import type {
   // ... existing imports ...
   SystemStatusEvent,
-  PromptSuggestionEvent,  // NEW
+  PromptSuggestionEvent, // NEW
 } from '@dorkos/shared/types';
 ```
 
@@ -178,7 +178,7 @@ Add setter to `StreamEventDeps` interface:
 interface StreamEventDeps {
   // ... existing deps ...
   setSystemStatus: (message: string | null) => void;
-  setPromptSuggestions: (suggestions: string[]) => void;  // NEW
+  setPromptSuggestions: (suggestions: string[]) => void; // NEW
   // ... rest of deps ...
 }
 ```
@@ -281,9 +281,9 @@ interface ChatStatusSectionProps {
   sessionStatus: SessionStatusEvent | null;
   isStreaming: boolean;
   onChipClick: (trigger: string) => void;
-  promptSuggestions: string[];            // NEW
+  promptSuggestions: string[]; // NEW
   onSuggestionClick: (text: string) => void; // NEW
-  showSuggestions: boolean;               // NEW — derived from status/input state
+  showSuggestions: boolean; // NEW — derived from status/input state
 }
 ```
 
@@ -298,10 +298,7 @@ return (
     </AnimatePresence>
     <AnimatePresence>
       {showSuggestions && (
-        <PromptSuggestionChips
-          suggestions={promptSuggestions}
-          onChipClick={onSuggestionClick}
-        />
+        <PromptSuggestionChips suggestions={promptSuggestions} onChipClick={onSuggestionClick} />
       )}
     </AnimatePresence>
     {statusLineContent}
@@ -312,19 +309,19 @@ return (
 **Visibility conditions** (computed in ChatPanel before passing props):
 
 ```typescript
-const showSuggestions =
-  status === 'idle' &&
-  promptSuggestions.length > 0 &&
-  input.length === 0;
+const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 ```
 
 **Click handler** (in ChatPanel):
 
 ```typescript
-const handleSuggestionClick = useCallback((suggestion: string) => {
-  setInput(suggestion);
-  textareaRef.current?.focus();
-}, [setInput]);
+const handleSuggestionClick = useCallback(
+  (suggestion: string) => {
+    setInput(suggestion);
+    textareaRef.current?.focus();
+  },
+  [setInput]
+);
 ```
 
 ### P7: Update Chat Feature Barrel Export
@@ -349,16 +346,19 @@ If `PromptSuggestionChips` needs to be exported (only if used outside the featur
 ### Unit Tests
 
 **`packages/shared/src/__tests__/schemas.test.ts`** (if exists, or create):
+
 - Verify `PromptSuggestionEventSchema` validates `{ suggestions: ['a', 'b'] }`
 - Verify it rejects invalid shapes (missing suggestions, non-array)
 - Verify `StreamEventSchema` accepts `{ type: 'prompt_suggestion', data: { suggestions: ['a'] } }`
 
 **`apps/server/src/services/runtimes/claude-code/__tests__/sdk-event-mapper.test.ts`**:
+
 - Test that `prompt_suggestion` SDK message yields a `prompt_suggestion` StreamEvent
 - Test that empty suggestions array is not forwarded
 - Test that non-array suggestions are not forwarded
 
 **`apps/client/src/layers/features/chat/ui/__tests__/PromptSuggestionChips.test.tsx`**:
+
 - Renders correct number of chips (max 4)
 - Calls `onChipClick` with suggestion text on click
 - Truncates long suggestions (verify `truncate` class + `aria-label` with full text)
@@ -366,6 +366,7 @@ If `PromptSuggestionChips` needs to be exported (only if used outside the featur
 - Each chip is a native `<button>` with `type="button"`
 
 **`apps/client/src/layers/features/chat/model/__tests__/stream-event-handler.test.ts`**:
+
 - Test `prompt_suggestion` event calls `deps.setPromptSuggestions` with the suggestions array
 
 ### Integration Tests
@@ -403,17 +404,20 @@ it('maps prompt_suggestion SDK message to StreamEvent', async () => { ... });
 ## Implementation Phases
 
 ### Phase 1: Foundation (P1-P2)
+
 - Add `PromptSuggestionEventSchema` to shared schemas
 - Add type re-export to `types.ts`
 - Add `promptSuggestions: true` to `sdkOptions` in `message-sender.ts`
 - Add `prompt_suggestion` branch to `sdk-event-mapper.ts`
 
 ### Phase 2: Client Integration (P3-P5)
+
 - Add `prompt_suggestion` case to `stream-event-handler.ts`
 - Add `promptSuggestions` state to `use-chat-session.ts`
 - Create `PromptSuggestionChips.tsx` component
 
 ### Phase 3: Wiring + Tests (P6-P7)
+
 - Wire `PromptSuggestionChips` into `ChatStatusSection.tsx` / `ChatPanel.tsx`
 - Add unit tests for all layers
 - Update barrel exports if needed

@@ -15,7 +15,9 @@ Fix three critical bugs affecting DorkOS chat when Relay is enabled: (1) user me
 The `fix-relay-sse-delivery-pipeline` spec (d62daa1) reduced SSE freezes from ~60% to ~20%, but three critical issues remain:
 
 ### Bug 1: User Messages Missing from History
+
 When Relay is enabled, `ClaudeCodeAdapter.formatPromptWithContext()` wraps user messages as:
+
 ```
 <relay_context>
 Agent-ID: 9c99edf1-...
@@ -24,15 +26,19 @@ Agent-ID: 9c99edf1-...
 
 Write a JavaScript bubble sort function with comments
 ```
+
 `transcript-parser.ts:231` checks `text.startsWith('<relay_context>')` and calls `continue`, discarding the **entire** string including the actual user content after `</relay_context>`. On history reload, all user messages vanish.
 
 ### Bug 2: Skill Tool Result Leaks as User Message
+
 When the agent calls a Skill, the SDK generates a user message with both `tool_result` and `text` content blocks. `transcript-parser.ts:211-220` renders the text parts as a user message when `textParts.length > 0`, even though the text is the skill's expansion prompt (internal SDK content, not user-authored).
 
 ### Bug 3: SSE `done` Event Not Delivered (~20%)
+
 Message 2 in the self-test completed on the backend (JSONL confirmed) but the client's stop button persisted for 25+ seconds. The four-layer fix (stable EventSource, subscribe-first handshake, pending buffer, terminal `done` in finally) did not fully eliminate the issue.
 
 ### Bug 4: 503 Flood from Session ID Mismatch
+
 `sessions.ts:351` passes the raw Agent-ID to `registerClient()` without translating to the SDK-Session-ID. The broadcaster creates a file watcher for `{agentId}.jsonl` which doesn't exist on disk (the actual file is `{sdkSessionId}.jsonl`). This causes watcher failures and potentially counts against SSE limits.
 
 ## Goals
@@ -70,6 +76,7 @@ Message 2 in the self-test completed on the backend (JSONL confirmed) but the cl
 ### Fix 1: Strip Relay Context from User Messages (transcript-parser.ts)
 
 **Current code (line 231):**
+
 ```typescript
 if (text.startsWith('<relay_context>')) {
   continue;
@@ -77,6 +84,7 @@ if (text.startsWith('<relay_context>')) {
 ```
 
 **Fix:** Extract the actual user content after `</relay_context>`:
+
 ```typescript
 if (text.startsWith('<relay_context>')) {
   const closingTag = '</relay_context>';
@@ -95,6 +103,7 @@ This also fixes session title extraction — `extractTitle()` in `transcript-rea
 ### Fix 2: Suppress Skill Expansion Text from User Messages (transcript-parser.ts)
 
 **Current code (lines 187-220):**
+
 ```typescript
 if (hasToolResult && textParts.length === 0) {
   // ... handle pending command ...
@@ -104,6 +113,7 @@ if (hasToolResult && textParts.length === 0) {
 ```
 
 **Fix:** When a user message contains `tool_result` blocks, the `text` blocks are internal SDK expansion content (skill prompts, system messages), not user-authored. Suppress them:
+
 ```typescript
 if (hasToolResult) {
   // tool_result messages are SDK-internal. text blocks are skill expansions,
@@ -122,11 +132,13 @@ The key insight: if `hasToolResult` is true, any `textParts` in the same message
 ### Fix 3: Translate Session ID in SSE Registration (sessions.ts)
 
 **Current code (line 351):**
+
 ```typescript
 sessionBroadcaster.registerClient(sessionId, cwd, res, clientId);
 ```
 
 **Fix:** Apply the same SDK-Session-ID translation used by GET /messages:
+
 ```typescript
 const sdkSessionId = agentManager.getSdkSessionId(sessionId) ?? sessionId;
 sessionBroadcaster.registerClient(sdkSessionId, cwd, res, clientId);
@@ -139,6 +151,7 @@ This ensures the file watcher targets the correct JSONL file and prevents duplic
 The four-layer server-side fix is architecturally sound but the `done` event still occasionally fails to reach the client. Rather than adding more complexity to the server pipeline, add a **client-side staleness detector** as a defense-in-depth mechanism:
 
 **In `use-chat-session.ts`, add a staleness timeout when relay is enabled:**
+
 ```typescript
 // After receiving a text_delta or tool event, start a staleness timer.
 // If no events arrive for DONE_STALENESS_MS, poll the session status.
@@ -168,6 +181,7 @@ This ensures the client never hangs indefinitely. The timer is reset on every re
 The parser has accumulated complexity. Refactor to address the code quality issues found in review:
 
 #### 5a: Extract `stripRelayContext()` helper
+
 ```typescript
 /** Strip relay context wrapper, returning the user content or null if pure metadata. */
 export function stripRelayContext(text: string): string | null {
@@ -181,12 +195,14 @@ export function stripRelayContext(text: string): string | null {
 ```
 
 #### 5b: Extract `applyToolResult()` helper
+
 Deduplicate lines 164-181 (tool_result handling for `toolCallMap` and `toolCallPartMap`):
+
 ```typescript
 function applyToolResult(
   tc: HistoryToolCall | ToolCallPart | undefined,
   resultText: string,
-  sdkAnswers?: Record<string, string>,
+  sdkAnswers?: Record<string, string>
 ): void {
   if (!tc) return;
   tc.result = resultText;
@@ -201,11 +217,13 @@ function applyToolResult(
 Call it twice: `applyToolResult(toolCallMap.get(id), resultText, sdkAnswers)` and `applyToolResult(toolCallPartMap.get(id), resultText, sdkAnswers)`.
 
 #### 5c: Extract `emitPendingCommand()` helper
+
 Deduplicate lines 196-209 and 248-261:
+
 ```typescript
 function emitPendingCommand(
   cmd: { commandName: string; commandArgs: string },
-  messages: HistoryMessage[],
+  messages: HistoryMessage[]
 ): void {
   const displayContent = cmd.commandArgs
     ? `${cmd.commandName} ${cmd.commandArgs}`
@@ -221,7 +239,9 @@ function emitPendingCommand(
 ```
 
 #### 5d: Define tool name constants
+
 Replace magic strings with constants in `@dorkos/shared`:
+
 ```typescript
 // packages/shared/src/constants.ts
 export const SDK_TOOL_NAMES = {
@@ -299,12 +319,14 @@ export const SDK_TOOL_NAMES = {
 ## Implementation Phases
 
 ### Phase 1: Core Fixes (Critical)
+
 1. Fix `stripRelayContext()` — extract helper, fix parser line 231
 2. Fix `hasToolResult` text suppression — parser lines 187-220
 3. Fix session ID translation in SSE registration — sessions.ts:351
 4. Add all unit tests for Phase 1 fixes
 
 ### Phase 2: SSE Reliability + Code Quality
+
 5. Add client-side staleness detector in `use-chat-session.ts`
 6. Add `done` event tracing logs in `session-broadcaster.ts`
 7. Extract `applyToolResult()` helper (DRY fix)
@@ -313,6 +335,7 @@ export const SDK_TOOL_NAMES = {
 10. Add remaining tests
 
 ### Phase 3: Verification
+
 11. Run full test suite
 12. Run `/chat:self-test` to verify all issues are fixed
 

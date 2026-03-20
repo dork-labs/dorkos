@@ -23,11 +23,11 @@ Relay is the universal message bus for DorkOS. It handles inboxes, outboxes, and
 
 ## Role in the Module Architecture
 
-| Module | Depends On | Provides |
-|---|---|---|
-| **Relay** | Nothing (foundation) | Message transport, delivery, inboxes/outboxes |
-| **Mesh** | Relay | Agent discovery, topology, configures Relay routing for agents |
-| **Pulse** | Relay | Scheduled dispatch of messages via Relay |
+| Module    | Depends On           | Provides                                                       |
+| --------- | -------------------- | -------------------------------------------------------------- |
+| **Relay** | Nothing (foundation) | Message transport, delivery, inboxes/outboxes                  |
+| **Mesh**  | Relay                | Agent discovery, topology, configures Relay routing for agents |
+| **Pulse** | Relay                | Scheduled dispatch of messages via Relay                       |
 
 Relay is intentionally "dumb" about the higher-level concepts. It knows about endpoints and messages, not about agents, schedules, or projects.
 
@@ -47,14 +47,15 @@ Relay is intentionally "dumb" about the higher-level concepts. It knows about en
 ### Safety: Budget Envelopes
 
 Budget envelope propagated with every message (can only decrease):
+
 ```typescript
 interface RelayBudget {
-  hopCount: number;        // incremented at each hop
-  maxHops: number;         // default: 5, cannot increase
+  hopCount: number; // incremented at each hop
+  maxHops: number; // default: 5, cannot increase
   ancestorChain: string[]; // endpoint IDs that touched this message
-  ttl: number;             // Unix timestamp expiry
+  ttl: number; // Unix timestamp expiry
   callBudgetRemaining: number; // decremented per call
-  deadline: number;        // wall-clock deadline
+  deadline: number; // wall-clock deadline
 }
 ```
 
@@ -98,13 +99,13 @@ Relay understands only routing and safety. Everything else is opaque payload tha
 
 ```typescript
 interface RelayEnvelope {
-  id: string;              // unique message ID (ULID or UUID)
-  subject: string;         // hierarchical destination
-  from: string;            // sender subject
-  replyTo?: string;        // where to send responses
-  budget: RelayBudget;     // safety envelope (enforced by Relay)
-  createdAt: string;       // ISO timestamp
-  payload: unknown;        // opaque to Relay
+  id: string; // unique message ID (ULID or UUID)
+  subject: string; // hierarchical destination
+  from: string; // sender subject
+  replyTo?: string; // where to send responses
+  budget: RelayBudget; // safety envelope (enforced by Relay)
+  createdAt: string; // ISO timestamp
+  payload: unknown; // opaque to Relay
 }
 ```
 
@@ -120,19 +121,19 @@ All adapters and modules normalize their content into this schema to prevent "lo
 ```typescript
 interface StandardPayload {
   // Content (required):
-  content: string;                    // the actual message text
+  content: string; // the actual message text
 
   // Sender context:
-  senderName?: string;                // human-readable: "Bob Smith", "Finance Agent"
-  senderAvatar?: string;              // URL or local path
+  senderName?: string; // human-readable: "Bob Smith", "Finance Agent"
+  senderAvatar?: string; // URL or local path
 
   // Channel context:
-  channelName?: string;               // "Deploys", "birthday-planning"
+  channelName?: string; // "Deploys", "birthday-planning"
   channelType?: 'dm' | 'group' | 'channel' | 'thread';
 
   // Attachments (standardized):
   attachments?: Array<{
-    path: string;                     // local file path
+    path: string; // local file path
     filename: string;
     mimeType: string;
     size?: number;
@@ -140,19 +141,19 @@ interface StandardPayload {
 
   // Response instructions (adapter-injected):
   responseContext?: {
-    platform: string;                 // 'telegram', 'slack', 'console'
-    maxLength?: number;               // platform message limit
-    supportedFormats?: string[];      // ['text', 'markdown', 'html']
-    instructions?: string;            // platform-specific guidance for the agent
+    platform: string; // 'telegram', 'slack', 'console'
+    maxLength?: number; // platform message limit
+    supportedFormats?: string[]; // ['text', 'markdown', 'html']
+    instructions?: string; // platform-specific guidance for the agent
   };
 
   // Agent-to-agent fields (Mesh layer):
-  performative?: Performative;        // 'request', 'inform', 'query', etc.
+  performative?: Performative; // 'request', 'inform', 'query', etc.
   conversationId?: string;
   correlationId?: string;
 
   // Escape hatch:
-  platformData?: unknown;             // adapter-specific data (Telegram message_id, Slack thread_ts, etc.)
+  platformData?: unknown; // adapter-specific data (Telegram message_id, Slack thread_ts, etc.)
 }
 ```
 
@@ -168,16 +169,17 @@ Relay supports two modes of communication:
 
 ```typescript
 // Messages (persistent):
-relay.publish('relay.agent.myproject.backend', envelope)   // → Maildir + SQLite
+relay.publish('relay.agent.myproject.backend', envelope); // → Maildir + SQLite
 
 // Signals (ephemeral):
 relay.signal('relay.human.telegram.dorian', {
-  type: 'typing',         // or 'presence', 'read_receipt', 'progress'
-  state: 'active'
-})                         // → EventEmitter only, zero storage
+  type: 'typing', // or 'presence', 'read_receipt', 'progress'
+  state: 'active',
+}); // → EventEmitter only, zero storage
 ```
 
 Both modes use the same subject hierarchy and wildcard matching. Signals enable:
+
 - **Typing indicators** (Telegram, iMessage, Slack)
 - **Read receipts** ("I've seen your message")
 - **Delivery receipts** (auto-emitted by Relay on successful delivery)
@@ -193,6 +195,7 @@ Adapters translate between Relay signals and platform-native presence APIs. Impl
 When a message arrives at an agent endpoint, **DorkOS Engine (AgentManager) handles execution**. No adapter needed for Claude Code — the Engine IS the agent runtime.
 
 **Flow:**
+
 1. Message arrives at `relay.agent.myproject.backend`
 2. Relay delivers to endpoint's mailbox
 3. Engine subscribes to `relay.agent.>` (all agent messages)
@@ -203,13 +206,15 @@ When a message arrives at an agent endpoint, **DorkOS Engine (AgentManager) hand
 **Claude Code:** TypeScript Agent SDK (already integrated in `agent-manager.ts`). Not the CLI — SDK gives programmatic control, streaming, tool approval.
 
 **Other agent runtimes** (Codex, OpenCode, Cursor, etc.): Future agent runtime adapters that implement a simple interface:
+
 ```typescript
 interface AgentRuntimeAdapter {
-  id: string;                                       // 'codex', 'opencode'
-  canHandle(manifest: AgentManifest): boolean;       // check agent type
+  id: string; // 'codex', 'opencode'
+  canHandle(manifest: AgentManifest): boolean; // check agent type
   execute(cwd: string, prompt: string, budget: RelayBudget): AsyncIterable<string>;
 }
 ```
+
 Mesh would select the runtime based on the agent's manifest (`runtime: 'codex'`). Phase 1 is Claude Code only.
 
 ---
@@ -242,11 +247,11 @@ Each external channel is a plugin implementing a simple `RelayAdapter` interface
 
 ```typescript
 interface RelayAdapter {
-  id: string;                    // e.g. 'telegram'
-  subjectPrefix: string;         // e.g. 'relay.human.telegram'
+  id: string; // e.g. 'telegram'
+  subjectPrefix: string; // e.g. 'relay.human.telegram'
 
   // Lifecycle:
-  start(relay: RelayCore): Promise<void>;  // begin listening for external messages
+  start(relay: RelayCore): Promise<void>; // begin listening for external messages
   stop(): Promise<void>;
 
   // Relay → External delivery:
@@ -266,17 +271,20 @@ interface RelayAdapter {
 Relay delivers once and does not retry. Failed deliveries go to the dead letter queue. Consumers handle retries.
 
 **Send flow:**
+
 1. Write message JSON to `tmp/{ulid}` (fail → return error to sender)
 2. `rename(tmp/{id}, new/{id})` — atomic POSIX delivery (fail → dead letter + error)
 3. Insert index row in SQLite
 4. Done. No automatic retries.
 
 **Consumer crash recovery:**
+
 - Message stays in `cur/` until consumer restarts
 - Consumer resumes processing from `cur/` on restart
 - No automatic re-delivery by Relay
 
 **Dead letter queue (`failed/`) receives:**
+
 - Messages with expired TTL
 - Messages exceeding budget limits
 - Messages that fail the delivery write
@@ -290,8 +298,8 @@ Relay ships with default-allow (any registered endpoint can message any other). 
 
 ```typescript
 interface RelayAccessRule {
-  from: string;     // subject pattern (supports wildcards)
-  to: string;       // subject pattern (supports wildcards)
+  from: string; // subject pattern (supports wildcards)
+  to: string; // subject pattern (supports wildcards)
   action: 'allow' | 'deny';
   priority: number; // higher priority = evaluated first
 }
@@ -308,12 +316,14 @@ interface RelayAccessRule {
 Reuses existing DorkOS patterns — SQLite for historical queries, SSE for real-time events.
 
 **Metrics** (aggregate queries on `index.db`):
+
 - Message counts by status (delivered, failed, pending)
 - Volume by subject pattern
 - Dead letter queue depth
 - Budget rejection counts
 
 **Real-time stream** (SSE, same pattern as session sync):
+
 ```
 GET /api/relay/events
   → event: message_delivered  { subject, from, id }
@@ -323,6 +333,7 @@ GET /api/relay/events
 ```
 
 **Message tracing:**
+
 ```
 GET /api/relay/messages?from=relay.agent.myproject.*
 GET /api/relay/messages/:id/trace
@@ -379,6 +390,7 @@ The "budget" is a safety mechanism preventing agent communication loops and runa
 ```
 
 Relay enforces automatically before every delivery:
+
 - `hopCount < maxHops`? No → reject
 - Sender already in `ancestorChain`? Yes → cycle, reject
 - `Date.now() > ttl`? Yes → expired, reject
@@ -411,11 +423,13 @@ relay.channel.deploy-notifications # explicit channel, any subscriber
 Both are **payload conventions**, not Relay features. Relay delivers envelopes; content semantics belong to Mesh or adapters.
 
 **Attachments:** Reference files by path (local-only system, no need to embed binary):
+
 ```typescript
 payload: { content: "Here's the report", attachments: [{ path: '/path/to/report.pdf', mimeType: 'application/pdf' }] }
 ```
 
 **Editing:** New message with `replaces` field:
+
 ```typescript
 payload: { replaces: 'msg-001', content: "Deploy succeeded — 3 warnings" }
 ```
@@ -439,14 +453,15 @@ apps/
 ```
 
 **Composition:**
-```typescript
-import { RelayCore } from '@dorkos/relay'
-import { MeshRegistry } from '@dorkos/mesh'
-import { SchedulerService } from '@dorkos/pulse'
 
-const relay = new RelayCore({ dataDir: '~/.dork/relay' })
-const mesh = new MeshRegistry({ relay })
-const scheduler = new SchedulerService({ relay })
+```typescript
+import { RelayCore } from '@dorkos/relay';
+import { MeshRegistry } from '@dorkos/mesh';
+import { SchedulerService } from '@dorkos/pulse';
+
+const relay = new RelayCore({ dataDir: '~/.dork/relay' });
+const mesh = new MeshRegistry({ relay });
+const scheduler = new SchedulerService({ relay });
 ```
 
 **Why:** Clean module boundaries, independently testable, composable (Obsidian plugin, CLI, future integrations can import directly). Follows existing monorepo pattern (`packages/shared`, `packages/cli`).
@@ -461,15 +476,15 @@ The marketing site's `ACTIVITY_POOL` in `ActivityFeedHero.tsx` is a simulated ve
 
 ```typescript
 // Console subscribes:
-const events = new EventSource('/api/relay/events')
+const events = new EventSource('/api/relay/events');
 events.onmessage = (e) => {
-  const event = JSON.parse(e.data)
+  const event = JSON.parse(e.data);
   addToFeed({
-    module: extractModule(event.subject),  // 'agent', 'pulse', 'relay', etc.
-    text: summarizeEvent(event),            // human-readable from structured data
-    timestamp: event.createdAt
-  })
-}
+    module: extractModule(event.subject), // 'agent', 'pulse', 'relay', etc.
+    text: summarizeEvent(event), // human-readable from structured data
+    timestamp: event.createdAt,
+  });
+};
 ```
 
 Signals add real-time presence: "Agent is thinking...", progress updates, delivery confirmations. A true real-time view of everything happening in the system.
@@ -500,6 +515,7 @@ Current `AgentManager` is tightly coupled to Claude Agent SDK (`query()`, `SDKMe
 ## Litepaper Updates Needed
 
 The litepaper needs updates to reflect the Relay/Mesh responsibility split:
+
 - **Relay section**: "Outbound communication" → "Universal message bus (internal + external)"
 - **Mesh section**: Remove "structured message passing" → "Discovery + topology + access control"
 - **Architecture diagram**: Show Relay as foundational, Mesh/Pulse building on top
@@ -521,6 +537,7 @@ The litepaper needs updates to reflect the Relay/Mesh responsibility split:
 ## Implementation Phases (Draft)
 
 **Phase 1 — Core Transport (`packages/relay`):**
+
 - Endpoint registry (in-memory + config persistence)
 - Maildir message store + SQLite index
 - Message envelope schema (Zod in `@dorkos/shared`)
@@ -531,18 +548,21 @@ The litepaper needs updates to reflect the Relay/Mesh responsibility split:
 - HTTP routes in `apps/server`: send, inbox, message history, SSE stream
 
 **Phase 2 — Safety + Reliability:**
+
 - Budget envelope enforcement
 - Circuit breakers per endpoint pair
 - Rate limiting per sender
 - Message TTL enforcement
 
 **Phase 3 — External Adapters + Console Integration:**
+
 - Adapter plugin interface
 - Telegram adapter (messages + typing signals)
 - Webhook adapter (inbound + outbound)
 - Console activity feed (SSE subscription)
 
 **Phase 4 — Observability + Advanced:**
+
 - Delivery metrics (SQLite queries)
 - Message tracing
 - Agent runtime adapter interface (extract from AgentManager)

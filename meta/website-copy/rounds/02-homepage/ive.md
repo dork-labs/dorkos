@@ -14,7 +14,7 @@ Typography uses two voices only: a monospaced face (JetBrains Mono or Berkeley M
 
 Spacing follows an 8px grid with extreme generosity. Sections are separated by 160-200px of negative space. This is not emptiness. It is the space between components on a board — structural, intentional, load-bearing.
 
-All scroll-triggered transitions are opacity and subtle vertical translation (8-12px). No springs. No bounces. No easing curves that call attention to themselves. The motion language is: *appear*, the way a status line appears on a terminal. Duration: 400-600ms, ease-out.
+All scroll-triggered transitions are opacity and subtle vertical translation (8-12px). No springs. No bounces. No easing curves that call attention to themselves. The motion language is: _appear_, the way a status line appears on a terminal. Duration: 400-600ms, ease-out.
 
 The background carries the faintest suggestion of a dot grid — not illustrative, structural. Like the substrate beneath a circuit board. It is visible only on the darkest sections and fades as content brightens. It says: this is a surface designed to hold systems.
 
@@ -38,7 +38,7 @@ A single monospaced line, center-screen, on black. It holds for 1.2 seconds. The
 
 ## Section 1: Hero — The Problem
 
-*Above the fold. The gap.*
+_Above the fold. The gap._
 
 ### Option A: Short-Form Hero
 
@@ -89,7 +89,7 @@ Geometric sans-serif, 16px, 50% opacity. This is the category declaration. It do
 
 ## Section 2: The Villain — Recognition
 
-*First scroll. Name the specific pain.*
+_First scroll. Name the specific pain._
 
 **Section transition:** As the user scrolls past the hero, a thin horizontal rule activates — 1px, `#F5F5F0` at 8% opacity — spanning 60% of the viewport width. This is the structural separator between sections. It does not decorate. It divides.
 
@@ -129,7 +129,7 @@ The overall feeling should be a diagnostic readout — the system is scanning fo
 
 ## Section 3: The Pivot
 
-*Earned. Mid-page. After the emotional setup.*
+_Earned. Mid-page. After the emotional setup._
 
 **A moment of stillness.** After the four villain cards, 120px of empty space. Then:
 
@@ -150,7 +150,7 @@ Below it, after 32px, a single quiet line:
 
 ## Section 4: The Product — Timeline Narrative
 
-*The night that changes everything.*
+_The night that changes everything._
 
 **Section header** (monospaced, 13px, uppercase, letter-spacing 0.08em, muted amber):
 
@@ -166,37 +166,37 @@ A NIGHT WITH DORKOS
 
 You queue the overnight tasks. Three features across two repos. A refactoring pass on the auth module. You type the cron expressions. Pulse confirms: schedules active.
 
-*Design note: On the word "Pulse," the module name appears in monospaced amber — the first time a module name surfaces. It is not introduced. It simply appears, named, functional.*
+_Design note: On the word "Pulse," the module name appears in monospaced amber — the first time a module name surfaces. It is not introduced. It simply appears, named, functional._
 
 **11:15 PM**
 
 You close the laptop. You go to sleep.
 
-*Design note: This is the shortest entry. Two sentences. Maximum whitespace around it. The brevity is the point — it is the moment of letting go. The vertical timeline line continues through the empty space.*
+_Design note: This is the shortest entry. Two sentences. Maximum whitespace around it. The brevity is the point — it is the moment of letting go. The vertical timeline line continues through the empty space._
 
 **2:47 AM**
 
 CI breaks on the auth service. Pulse detects the failure. It spins up an agent. The agent reads the error, traces the regression, opens a fix. Relay sends you a summary on Telegram. You do not see it until morning.
 
-*Design note: This is where the system earns trust. The language is factual, not dramatic. Each sentence is a step in a process. "Relay" appears in monospaced amber — second module surfaced. The reader is watching infrastructure work.*
+_Design note: This is where the system earns trust. The language is factual, not dramatic. Each sentence is a step in a process. "Relay" appears in monospaced amber — second module surfaced. The reader is watching infrastructure work._
 
 **6:12 AM**
 
 A second agent finishes the feature branch on the payments service. It runs the test suite. Green. It opens a PR and tags you for review. Mesh logs the activity so every agent in the network knows the payments service was just updated.
 
-*Design note: "Mesh" surfaces. Three modules have now appeared without a single feature list or comparison table. They arrived as actors in a story.*
+_Design note: "Mesh" surfaces. Three modules have now appeared without a single feature list or comparison table. They arrived as actors in a story._
 
 **7:00 AM**
 
 You open your laptop. Console shows the night at a glance: three PRs ready for review, one CI fix merged, auth refactor at 80% — waiting on a design question it queued for you. The overnight cost: $4.20 in API calls.
 
-*Design note: "Console" surfaces. The cost figure is specific and grounding — it makes the scenario real, not aspirational. Set the cost in monospaced type at reduced opacity, like a line item.*
+_Design note: "Console" surfaces. The cost figure is specific and grounding — it makes the scenario real, not aspirational. Set the cost in monospaced type at reduced opacity, like a line item._
 
 **7:02 AM**
 
 You review the PRs with coffee. You approve two. You leave a note on the third. Your agents have already started the next iteration.
 
-*Design note: This is the closing beat. It is quiet. The developer is in control — reviewing, approving, directing. The agents are collaborators who worked through the night. The human leads. The timeline ends here, without a punctuation mark of triumph. Just the morning, continuing.*
+_Design note: This is the closing beat. It is quiet. The developer is in control — reviewing, approving, directing. The agents are collaborators who worked through the night. The human leads. The timeline ends here, without a punctuation mark of triumph. Just the morning, continuing._
 
 ---
 
@@ -210,7 +210,7 @@ You review the PRs with coffee. You approve two. You leave a note on the third. 
 
 ## Section 5: The Module Reference
 
-*For the architect who needs the map.*
+_For the architect who needs the map._
 
 **Section transition:** After the timeline, 80px of space, then a horizontal rule (same style as Section 2). Then:
 
@@ -226,14 +226,14 @@ Each row activates on scroll with a subtle status indicator: a small circle (6px
 
 ---
 
-| | |
-|---|---|
-| **No schedule** | **Pulse** — Cron-based autonomous execution. Your agents run while you sleep. |
+|                      |                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| **No schedule**      | **Pulse** — Cron-based autonomous execution. Your agents run while you sleep.                    |
 | **No communication** | **Relay** — Built-in messaging. Telegram, webhooks, inter-agent channels. Your agents reach you. |
-| **No coordination** | **Mesh** — Agent discovery and network. Your agents find each other and collaborate. |
-| **No memory** | **Wing** — Persistent context across sessions. Your agents remember. `Coming soon` |
-| **No oversight** | **Console** — Browser-based command center. You see everything, from anywhere. |
-| **No feedback loop** | **Loop** — Signal, hypothesis, dispatch, measure. Your agents improve. |
+| **No coordination**  | **Mesh** — Agent discovery and network. Your agents find each other and collaborate.             |
+| **No memory**        | **Wing** — Persistent context across sessions. Your agents remember. `Coming soon`               |
+| **No oversight**     | **Console** — Browser-based command center. You see everything, from anywhere.                   |
+| **No feedback loop** | **Loop** — Signal, hypothesis, dispatch, measure. Your agents improve.                           |
 
 ---
 
@@ -247,7 +247,7 @@ Each row activates on scroll with a subtle status indicator: a small circle (6px
 
 ## Section 6: The Install Moment
 
-*Maximum desire. The action.*
+_Maximum desire. The action._
 
 **Design direction:** This is the gravitational center of the page. Everything above has been building to this moment. The background shifts one final time — from `#0D0D0D` to `#111111`. The faintest increase in warmth. The system is ready.
 
@@ -257,7 +257,7 @@ Each row activates on scroll with a subtle status indicator: a small circle (6px
 $ npm install -g dorkos
 ```
 
-**Typography:** JetBrains Mono, 24-28px, `#F5F5F0` at full contrast. The dollar sign and space are at 30% opacity — they are the terminal prompt, not the command. A blinking cursor (muted amber, 500ms interval) follows the last character. The cursor is the invitation. It says: *this is where you begin.*
+**Typography:** JetBrains Mono, 24-28px, `#F5F5F0` at full contrast. The dollar sign and space are at 30% opacity — they are the terminal prompt, not the command. A blinking cursor (muted amber, 500ms interval) follows the last character. The cursor is the invitation. It says: _this is where you begin._
 
 The command sits alone. No button wraps it. No "Get Started" label. No box. It is a terminal prompt with 80px of negative space on every side. The gravity comes from isolation — it is the only actionable element on the entire page, and by this point, the user knows exactly why they would type it.
 
@@ -277,7 +277,7 @@ Geometric sans-serif, 16px, `#F5F5F0` at 40% opacity. Centered. This is the afte
 
 ## Section 7: The Identity Close
 
-*Not a footer. An invitation.*
+_Not a footer. An invitation._
 
 **Design direction:** The background returns to pure black (`#0A0A0A`). The dot grid substrate reappears, faintly. We have come full circle — from the dark before the system booted to the dark after it has finished initializing. But now the dark is populated. The system is running.
 
@@ -343,25 +343,25 @@ Use it in the README. Use it as an internal motto. Use it on the second sticker,
 
 ## Summary of New Copy
 
-| Element | Copy |
-|---|---|
-| **Prelude** | `DorkOS is starting.` |
-| **Hero A** | Your agents are the best developers you have ever worked with. / They cannot do a single thing when you close the laptop. |
-| **Hero B** | You gave the most capable developer who ever existed / no schedule, no memory, no way to reach you, / and a terminal that closes when you look away. |
-| **Hero B subhead** | That is not an intelligence problem. |
-| **Tagline** | You slept. They shipped. |
-| **Position** | The operating system for autonomous AI agents. |
-| **Villain cards** | The Dead Terminal / The Goldfish / The Tab Graveyard / The Flow Killer |
-| **Pivot** | We solved this for applications fifty years ago. We called it an operating system. / Your agents need the same thing. |
-| **Timeline header** | A NIGHT WITH DORKOS |
-| **Timeline** | 11:14 PM through 7:02 AM (six moments) |
-| **Module header** | SUBSYSTEMS |
-| **Module table** | Six gap/fix pairs |
-| **Install** | `$ npm install -g dorkos` |
-| **Trust line** | Open source. Self-hosted. Yours. |
-| **Scale line** | One person. Ten agents. Ship around the clock. |
-| **Identity** | Built by dorks. For dorks. Run by you. |
-| **Origin** | One developer. Section 8 housing... |
-| **Boldness** | The developers building agent teams will outship everyone. / Not because they are better. / Because they never stop. |
-| **Close** | `Ready.` |
-| **New line** | The quiet part is the architecture. |
+| Element             | Copy                                                                                                                                                 |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Prelude**         | `DorkOS is starting.`                                                                                                                                |
+| **Hero A**          | Your agents are the best developers you have ever worked with. / They cannot do a single thing when you close the laptop.                            |
+| **Hero B**          | You gave the most capable developer who ever existed / no schedule, no memory, no way to reach you, / and a terminal that closes when you look away. |
+| **Hero B subhead**  | That is not an intelligence problem.                                                                                                                 |
+| **Tagline**         | You slept. They shipped.                                                                                                                             |
+| **Position**        | The operating system for autonomous AI agents.                                                                                                       |
+| **Villain cards**   | The Dead Terminal / The Goldfish / The Tab Graveyard / The Flow Killer                                                                               |
+| **Pivot**           | We solved this for applications fifty years ago. We called it an operating system. / Your agents need the same thing.                                |
+| **Timeline header** | A NIGHT WITH DORKOS                                                                                                                                  |
+| **Timeline**        | 11:14 PM through 7:02 AM (six moments)                                                                                                               |
+| **Module header**   | SUBSYSTEMS                                                                                                                                           |
+| **Module table**    | Six gap/fix pairs                                                                                                                                    |
+| **Install**         | `$ npm install -g dorkos`                                                                                                                            |
+| **Trust line**      | Open source. Self-hosted. Yours.                                                                                                                     |
+| **Scale line**      | One person. Ten agents. Ship around the clock.                                                                                                       |
+| **Identity**        | Built by dorks. For dorks. Run by you.                                                                                                               |
+| **Origin**          | One developer. Section 8 housing...                                                                                                                  |
+| **Boldness**        | The developers building agent teams will outship everyone. / Not because they are better. / Because they never stop.                                 |
+| **Close**           | `Ready.`                                                                                                                                             |
+| **New line**        | The quiet part is the architecture.                                                                                                                  |

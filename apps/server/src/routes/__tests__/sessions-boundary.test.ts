@@ -36,7 +36,6 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
-
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
@@ -50,14 +49,20 @@ describe('Sessions Routes — Boundary Validation', () => {
   beforeEach(() => {
     fakeRuntime = new FakeAgentRuntime();
     // Provide sensible defaults so boundary-unrelated middleware doesn't fail
-    fakeRuntime.getSession.mockResolvedValue({ id: 'test-id', title: 'Test', createdAt: '', updatedAt: '', permissionMode: 'default' });
+    fakeRuntime.getSession.mockResolvedValue({
+      id: 'test-id',
+      title: 'Test',
+      createdAt: '',
+      updatedAt: '',
+      permissionMode: 'default',
+    });
     vi.clearAllMocks();
   });
 
   describe('PATCH /:id', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)
@@ -72,7 +77,7 @@ describe('Sessions Routes — Boundary Validation', () => {
 
     it('rejects null byte paths with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE'),
+        new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
       const res = await request(app)
@@ -100,7 +105,7 @@ describe('Sessions Routes — Boundary Validation', () => {
   describe('GET /:id/stream', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)
@@ -114,7 +119,7 @@ describe('Sessions Routes — Boundary Validation', () => {
 
     it('rejects null byte paths with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE'),
+        new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
       const res = await request(app)
@@ -127,7 +132,7 @@ describe('Sessions Routes — Boundary Validation', () => {
 
     it('calls assertBoundary with the cwd query parameter', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       await request(app)
@@ -141,12 +146,10 @@ describe('Sessions Routes — Boundary Validation', () => {
   describe('GET / (list sessions)', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
-        .get('/api/sessions')
-        .query({ cwd: '/etc/shadow' });
+      const res = await request(app).get('/api/sessions').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -156,7 +159,7 @@ describe('Sessions Routes — Boundary Validation', () => {
   describe('GET /:id (get session)', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)
@@ -171,7 +174,7 @@ describe('Sessions Routes — Boundary Validation', () => {
   describe('GET /:id/messages', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)
@@ -186,7 +189,7 @@ describe('Sessions Routes — Boundary Validation', () => {
   describe('GET /:id/tasks', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)

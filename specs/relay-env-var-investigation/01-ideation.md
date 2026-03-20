@@ -93,6 +93,7 @@ status: ideation
   - Expected: `relay.enabled: true`, relay routes mounted, Relay panel functional
 
 - **Evidence:** Server log output:
+
   ```
   [DB] Consolidated database ready at .temp/.dork/dork.db
   [Pulse] PulseStore initialized
@@ -141,8 +142,8 @@ status: ideation
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Fix scope | Comprehensive DX fix | User chose: pass `db` to RelayCore + defensive `mkdirSync` + diagnostic `initError` in config endpoint. Prevents this class of bug and improves debuggability. |
-| 2 | Diagnostic field location | `/api/config` response body | The config endpoint already reports feature flag state — adding `initError` is a natural extension. Client can conditionally render it in settings or a status indicator. |
-| 3 | Legacy DB path | Keep but guard | The standalone DB path in `RelayCore` is used by tests. Add `mkdirSync` guard so it works when directory doesn't exist, but the production path should always use injected `db`. |
+| #   | Decision                  | Choice                      | Rationale                                                                                                                                                                        |
+| --- | ------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Fix scope                 | Comprehensive DX fix        | User chose: pass `db` to RelayCore + defensive `mkdirSync` + diagnostic `initError` in config endpoint. Prevents this class of bug and improves debuggability.                   |
+| 2   | Diagnostic field location | `/api/config` response body | The config endpoint already reports feature flag state — adding `initError` is a natural extension. Client can conditionally render it in settings or a status indicator.        |
+| 3   | Legacy DB path            | Keep but guard              | The standalone DB path in `RelayCore` is used by tests. Add `mkdirSync` guard so it works when directory doesn't exist, but the production path should always use injected `db`. |

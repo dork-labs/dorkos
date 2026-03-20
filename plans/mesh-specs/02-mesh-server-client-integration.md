@@ -1,35 +1,35 @@
 ---
-title: "Mesh Server & Client Integration"
+title: 'Mesh Server & Client Integration'
 spec: 2
 order: 2
 status: done
 blockedBy: [1]
 blocks: [3, 4]
 parallelWith: []
-litepaperPhase: "Phase 1 — Discovery, Registration, and Registry"
+litepaperPhase: 'Phase 1 — Discovery, Registration, and Registry'
 complexity: medium
 risk: medium
 estimatedFiles: 15-22
 newPackages: []
-primaryWorkspaces: ["apps/server", "apps/client", "packages/shared"]
+primaryWorkspaces: ['apps/server', 'apps/client', 'packages/shared']
 touchesServer: true
 touchesClient: true
 verification:
-  - "POST /api/mesh/discover triggers a scan and returns candidates"
-  - "POST /api/mesh/agents registers a candidate (writes .dork/agent.json, creates Relay endpoint)"
-  - "POST /api/mesh/agents with a path registers manually (no prior discovery)"
-  - "POST /api/mesh/deny denies a candidate (persists, filters from future scans)"
-  - "GET /api/mesh/agents returns registered agents"
-  - "GET /api/mesh/agents/:id returns agent detail"
-  - "DELETE /api/mesh/agents/:id unregisters an agent"
-  - "MCP tools mesh_discover, mesh_register, mesh_deny, mesh_list work from agent session"
-  - "Mesh is disabled by default — server starts without it"
-  - "DORKOS_MESH_ENABLED=true enables Mesh routes and MCP tools"
-  - "Client Mesh panel shows discovered candidates with approve/deny"
-  - "Client Mesh panel shows registered agents list"
-  - "Client Mesh panel supports manual registration via directory picker"
-  - "npm run build passes (all workspaces)"
-  - "CLAUDE.md and API docs are updated"
+  - 'POST /api/mesh/discover triggers a scan and returns candidates'
+  - 'POST /api/mesh/agents registers a candidate (writes .dork/agent.json, creates Relay endpoint)'
+  - 'POST /api/mesh/agents with a path registers manually (no prior discovery)'
+  - 'POST /api/mesh/deny denies a candidate (persists, filters from future scans)'
+  - 'GET /api/mesh/agents returns registered agents'
+  - 'GET /api/mesh/agents/:id returns agent detail'
+  - 'DELETE /api/mesh/agents/:id unregisters an agent'
+  - 'MCP tools mesh_discover, mesh_register, mesh_deny, mesh_list work from agent session'
+  - 'Mesh is disabled by default — server starts without it'
+  - 'DORKOS_MESH_ENABLED=true enables Mesh routes and MCP tools'
+  - 'Client Mesh panel shows discovered candidates with approve/deny'
+  - 'Client Mesh panel shows registered agents list'
+  - 'Client Mesh panel supports manual registration via directory picker'
+  - 'npm run build passes (all workspaces)'
+  - 'CLAUDE.md and API docs are updated'
 notes: >
   This is integration work — lower conceptual risk than Spec 1, but wider
   blast radius (server + client + shared + docs + turbo.json). Follow the
@@ -139,6 +139,7 @@ OUT OF SCOPE:
 ## Context for Review
 
 This is the integration spec. The /ideate exploration agent should focus on:
+
 - The exact patterns used by Relay for routes, MCP tools, feature flags, and client UI
 - The FSD layer structure in `apps/client/` — how features/relay/ and entities/relay/ are organized
 - The DirectoryPicker component — how it works and how to reuse it for manual registration
@@ -146,6 +147,7 @@ This is the integration spec. The /ideate exploration agent should focus on:
 - The TanStack Query mutation patterns for actions (register, deny, unregister)
 
 The /ideate research agent should investigate:
+
 - Discovery/approval UI patterns (candidate cards, batch approve, filtering)
 - Agent registry dashboard patterns (agent cards, capability badges, status indicators)
 - Form design for agent registration (tag inputs for capabilities, runtime selectors)

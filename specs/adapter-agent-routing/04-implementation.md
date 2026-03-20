@@ -34,7 +34,7 @@
 - `packages/shared/src/relay-schemas.ts` — Added SessionStrategySchema, AdapterBindingSchema, CreateBindingRequestSchema, BindingListResponseSchema, BindingResponseSchema
 - `packages/shared/src/transport.ts` — Added getBindings(), createBinding(), deleteBinding() to Transport interface
 - `apps/server/src/services/relay/binding-store.ts` — BindingStore class with JSON persistence, CRUD, most-specific-first resolution, chokidar hot-reload, atomic writes
-- `apps/server/src/services/relay/binding-router.ts` — BindingRouter service: subscribes to relay.human.*, resolves bindings, manages sessions, republishes to relay.agent.*
+- `apps/server/src/services/relay/binding-router.ts` — BindingRouter service: subscribes to relay.human._, resolves bindings, manages sessions, republishes to relay.agent._
 - `apps/client/src/layers/shared/lib/http-transport.ts` — Added getBindings, createBinding, deleteBinding HTTP methods
 - `apps/client/src/layers/shared/lib/direct-transport.ts` — Added binding stubs (not supported in embedded mode)
 - `apps/client/src/layers/features/mesh/ui/AdapterNode.tsx` — React Flow custom node for adapters (icon, status, binding count)

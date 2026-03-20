@@ -3,9 +3,9 @@ title: Tool Approval
 description: Control what actions Claude takes during a session
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Tool Approval
 
@@ -20,19 +20,17 @@ When Claude wants to use a tool — reading a file, running a command, writing c
 - **Approve and Deny buttons** — your decision controls
 
 <Steps>
+  <Step>**Review** the tool name and input to understand what Claude is about to do.</Step>
+  <Step>**Click Approve** to allow the action. Claude executes the tool and continues.</Step>
   <Step>
-    **Review** the tool name and input to understand what Claude is about to do.
-  </Step>
-  <Step>
-    **Click Approve** to allow the action. Claude executes the tool and continues.
-  </Step>
-  <Step>
-    **Or click Deny** to reject the tool call. Claude receives a denial and chooses a different approach.
+    **Or click Deny** to reject the tool call. Claude receives a denial and chooses a different
+    approach.
   </Step>
 </Steps>
 
 <Callout type="info">
-Tool approvals have a **10-minute timeout**. If you don't respond, the tool call is automatically denied and Claude continues with a different approach.
+  Tool approvals have a **10-minute timeout**. If you don't respond, the tool call is automatically
+  denied and Claude continues with a different approach.
 </Callout>
 
 If you deny a tool call, you can explain why in your next message or ask Claude to try a different approach.
@@ -79,7 +77,8 @@ The current mode is visible in the session info panel.
 The `Bash` tool runs terminal commands. Always review the command before approving.
 
 <Callout type="warn">
-Review `Bash` tool calls carefully. Terminal commands can modify files, install packages, or make network requests. When in doubt, deny and ask Claude to explain its intent.
+  Review `Bash` tool calls carefully. Terminal commands can modify files, install packages, or make
+  network requests. When in doubt, deny and ask Claude to explain its intent.
 </Callout>
 
 ### Web Access

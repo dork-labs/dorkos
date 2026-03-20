@@ -164,14 +164,77 @@ Install the app to your workspace, then copy the **Bot User OAuth Token**.`;
 // ---------------------------------------------------------------------------
 
 const ALL_FIELD_TYPES: ConfigField[] = [
-  { key: 'text-demo', label: 'Text Field', type: 'text', required: true, placeholder: 'Enter text...', description: 'A standard text input.' },
-  { key: 'password-demo', label: 'Password Field', type: 'password', required: true, placeholder: 'xoxb-...', description: 'Masked input with show/hide toggle.', visibleByDefault: true, pattern: '^xoxb-', patternMessage: 'Must start with xoxb-' },
-  { key: 'url-demo', label: 'URL Field', type: 'url', required: false, placeholder: 'https://example.com', description: 'URL-typed input.' },
-  { key: 'number-demo', label: 'Number Field', type: 'number', required: false, placeholder: '30', description: 'Numeric input.' },
-  { key: 'boolean-demo', label: 'Boolean Toggle', type: 'boolean', required: false, description: 'Switch component for boolean fields.' },
-  { key: 'select-demo', label: 'Select Dropdown', type: 'select', required: false, description: 'Standard dropdown selector.', options: [{ label: 'Option A', value: 'a' }, { label: 'Option B', value: 'b' }, { label: 'Option C', value: 'c' }] },
-  { key: 'textarea-demo', label: 'Textarea', type: 'textarea', required: false, placeholder: 'Enter multiline text...', description: 'Multiline text input.' },
-  { key: 'help-demo', label: 'Field with Help', type: 'text', required: false, description: 'Click the help link below.', helpMarkdown: '**Tip:** You can find this value in your dashboard under **Settings** → **API Keys**.' },
+  {
+    key: 'text-demo',
+    label: 'Text Field',
+    type: 'text',
+    required: true,
+    placeholder: 'Enter text...',
+    description: 'A standard text input.',
+  },
+  {
+    key: 'password-demo',
+    label: 'Password Field',
+    type: 'password',
+    required: true,
+    placeholder: 'xoxb-...',
+    description: 'Masked input with show/hide toggle.',
+    visibleByDefault: true,
+    pattern: '^xoxb-',
+    patternMessage: 'Must start with xoxb-',
+  },
+  {
+    key: 'url-demo',
+    label: 'URL Field',
+    type: 'url',
+    required: false,
+    placeholder: 'https://example.com',
+    description: 'URL-typed input.',
+  },
+  {
+    key: 'number-demo',
+    label: 'Number Field',
+    type: 'number',
+    required: false,
+    placeholder: '30',
+    description: 'Numeric input.',
+  },
+  {
+    key: 'boolean-demo',
+    label: 'Boolean Toggle',
+    type: 'boolean',
+    required: false,
+    description: 'Switch component for boolean fields.',
+  },
+  {
+    key: 'select-demo',
+    label: 'Select Dropdown',
+    type: 'select',
+    required: false,
+    description: 'Standard dropdown selector.',
+    options: [
+      { label: 'Option A', value: 'a' },
+      { label: 'Option B', value: 'b' },
+      { label: 'Option C', value: 'c' },
+    ],
+  },
+  {
+    key: 'textarea-demo',
+    label: 'Textarea',
+    type: 'textarea',
+    required: false,
+    placeholder: 'Enter multiline text...',
+    description: 'Multiline text input.',
+  },
+  {
+    key: 'help-demo',
+    label: 'Field with Help',
+    type: 'text',
+    required: false,
+    description: 'Click the help link below.',
+    helpMarkdown:
+      '**Tip:** You can find this value in your dashboard under **Settings** → **API Keys**.',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -179,17 +242,49 @@ const ALL_FIELD_TYPES: ConfigField[] = [
 // ---------------------------------------------------------------------------
 
 const ERROR_FIELDS: ConfigField[] = [
-  { key: 'api-key', label: 'API Key', type: 'text', required: true, placeholder: 'Enter your API key...', description: 'Required text field with validation error.' },
-  { key: 'secret', label: 'Secret Token', type: 'password', required: true, placeholder: 'xoxb-...', description: 'Password field with pattern error.', pattern: '^xoxb-', patternMessage: 'Must start with xoxb-' },
-  { key: 'auto-reconnect', label: 'Auto Reconnect', type: 'boolean', required: false, description: 'Boolean field with error state.' },
-  { key: 'region', label: 'Region', type: 'select', required: true, description: 'Select field with required error.', options: [{ label: 'US East', value: 'us-east' }, { label: 'EU West', value: 'eu-west' }] },
+  {
+    key: 'api-key',
+    label: 'API Key',
+    type: 'text',
+    required: true,
+    placeholder: 'Enter your API key...',
+    description: 'Required text field with validation error.',
+  },
+  {
+    key: 'secret',
+    label: 'Secret Token',
+    type: 'password',
+    required: true,
+    placeholder: 'xoxb-...',
+    description: 'Password field with pattern error.',
+    pattern: '^xoxb-',
+    patternMessage: 'Must start with xoxb-',
+  },
+  {
+    key: 'auto-reconnect',
+    label: 'Auto Reconnect',
+    type: 'boolean',
+    required: false,
+    description: 'Boolean field with error state.',
+  },
+  {
+    key: 'region',
+    label: 'Region',
+    type: 'select',
+    required: true,
+    description: 'Select field with required error.',
+    options: [
+      { label: 'US East', value: 'us-east' },
+      { label: 'EU West', value: 'eu-west' },
+    ],
+  },
 ];
 
 const ERROR_MAP: Record<string, string> = {
   'api-key': 'API Key is required.',
-  'secret': 'Must start with xoxb-',
+  secret: 'Must start with xoxb-',
   'auto-reconnect': 'Auto reconnect requires a valid connection.',
-  'region': 'Region is required.',
+  region: 'Region is required.',
 };
 
 // ---------------------------------------------------------------------------
@@ -327,7 +422,13 @@ function TestStepShowcase() {
 
       <ShowcaseLabel>Success (with bot username)</ShowcaseLabel>
       <ShowcaseDemo>
-        <TestStep isPending={false} isSuccess isError={false} botUsername="dorkos-bot" onRetry={() => {}} />
+        <TestStep
+          isPending={false}
+          isSuccess
+          isError={false}
+          botUsername="dorkos-bot"
+          onRetry={() => {}}
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Error</ShowcaseLabel>

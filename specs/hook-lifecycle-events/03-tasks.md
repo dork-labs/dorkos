@@ -18,6 +18,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add `'hook_started'`, `'hook_progress'`, `'hook_response'` to `StreamEventTypeSchema` enum
 - Define `HookStartedEventSchema`, `HookProgressEventSchema`, `HookResponseEventSchema` Zod schemas with `.openapi()` metadata
 - Add all three to the `StreamEventSchema` data union
@@ -26,10 +27,12 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 - Re-export `HookStartedEvent`, `HookProgressEvent`, `HookResponseEvent`, `HookPart` from `types.ts`
 
 **Files Modified**:
+
 - `packages/shared/src/schemas.ts` — enum values, 3 schemas, union members, ToolCallPartSchema extension
 - `packages/shared/src/types.ts` — type re-exports
 
 **Acceptance Criteria**:
+
 - [ ] All three event types in StreamEventTypeSchema
 - [ ] Three schemas defined with OpenAPI metadata
 - [ ] ToolCallPartSchema includes hooks field
@@ -48,6 +51,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: Task 3.1
 
 **Technical Requirements**:
+
 - Add `TOOL_CONTEXTUAL_HOOK_EVENTS` constant (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`)
 - Add three branches in system message dispatch for `hook_started`, `hook_progress`, `hook_response`
 - Tool-contextual hooks yield new event types; session-level hooks use existing `system_status` and `error` paths
@@ -55,10 +59,12 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 - Session-level `hook_progress` is silent; session-level success `hook_response` is silent
 
 **Files Modified**:
+
 - `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts` — 3 branches + constant
 - `apps/server/src/services/runtimes/claude-code/__tests__/sdk-event-mapper.test.ts` — 9 new tests
 
 **Test Cases** (9 total):
+
 1. `hook_started` (tool-contextual) yields `hook_started` event
 2. `hook_started` (session-level) yields `system_status` event
 3. `hook_progress` (tool-contextual) yields `hook_progress` event
@@ -70,6 +76,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 9. `hook_started` with empty `currentToolId` yields `toolCallId: null`
 
 **Acceptance Criteria**:
+
 - [ ] All routing logic correct per hook_event field
 - [ ] 9 unit tests passing
 - [ ] `pnpm typecheck` and `pnpm lint` pass
@@ -86,6 +93,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: Task 2.1
 
 **Technical Requirements**:
+
 - `HookState` interface in `chat-types.ts` with `hookId`, `hookName`, `hookEvent`, `status`, `stdout`, `stderr`, `exitCode`
 - `ToolCallState` extended with `hooks?: HookState[]`
 - `orphanHooksRef` in `use-chat-session.ts` passed to `createStreamEventHandler`
@@ -95,11 +103,13 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 - `deriveFromParts` updated to propagate hooks
 
 **Files Modified**:
+
 - `apps/client/src/layers/features/chat/model/chat-types.ts` — HookState interface, ToolCallState extension
 - `apps/client/src/layers/features/chat/model/stream-event-handler.ts` — deps, helper, 3 cases, orphan logic
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts` — orphanHooksRef, re-export
 
 **Acceptance Criteria**:
+
 - [ ] HookState interface defined
 - [ ] ToolCallState has hooks field
 - [ ] All three handler cases work correctly
@@ -115,6 +125,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Test `hook_started` adds hook to tool call's hooks array
 - Test `hook_started` without toolCallId buffers to orphanHooksRef
 - Test `hook_progress` updates stdout/stderr
@@ -122,9 +133,11 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 - Test orphan hooks drain on `tool_call_start`
 
 **Files Modified**:
+
 - `apps/client/src/layers/features/chat/model/__tests__/stream-event-handler.test.ts` — 5 test cases
 
 **Acceptance Criteria**:
+
 - [ ] All 5 test cases pass
 - [ ] Tests use mock deps pattern consistent with codebase
 
@@ -140,6 +153,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - `HookRow` component with four visual states (running/success/error/cancelled)
 - Error hooks auto-expand with stderr output and exit code
 - Hook section rendered below tool header with `border-t border-border/50` separator
@@ -147,10 +161,12 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 - Accessible: `aria-expanded` on hook buttons with output
 
 **Files Modified**:
+
 - `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` — HookRow component + integration
 - `apps/client/src/layers/features/chat/ui/__tests__/ToolCallCard.test.tsx` — 7 test cases
 
 **Test Cases** (7 total):
+
 1. Renders hook rows when hooks present
 2. Shows spinner for running hook
 3. Shows check icon for successful hook
@@ -160,6 +176,7 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 7. No section for undefined hooks
 
 **Acceptance Criteria**:
+
 - [ ] All four visual states render correctly
 - [ ] Error state auto-expands
 - [ ] All 7 tests pass
@@ -177,11 +194,13 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: Task 5.2
 
 **Technical Requirements**:
+
 - Tool cards with failed hooks must not auto-hide
 - `hasFailedHook = toolCall.hooks?.some((h) => h.status === 'error')`
 - Condition integrated into auto-hide decision logic
 
 **Acceptance Criteria**:
+
 - [ ] Failed hooks prevent auto-hide
 - [ ] Successful hooks allow normal auto-hide
 
@@ -193,13 +212,16 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 **Can run parallel with**: Task 5.1
 
 **Technical Requirements**:
+
 - New "Hook Lifecycle Events" section in `contributing/interactive-tools.md`
 - Cover routing logic, orphan handling, and visual states
 
 **Files Modified**:
+
 - `contributing/interactive-tools.md`
 
 **Acceptance Criteria**:
+
 - [ ] Documentation section added
 - [ ] Covers routing, orphan handling, visual states
 
@@ -207,14 +229,14 @@ Surface three silently-dropped SDK system message subtypes (`hook_started`, `hoo
 
 ## Summary
 
-| Phase | Tasks | Estimated LOC |
-|---|---|---|
-| Phase 1: Foundation | 1 task | ~48 |
-| Phase 2: Server Mapper | 1 task | ~155 |
-| Phase 3: Client Handler | 2 tasks | ~175 |
-| Phase 4: UI Component | 1 task | ~135 |
-| Phase 5: Polish & Docs | 2 tasks | ~30 |
-| **Total** | **7 tasks** | **~543** |
+| Phase                   | Tasks       | Estimated LOC |
+| ----------------------- | ----------- | ------------- |
+| Phase 1: Foundation     | 1 task      | ~48           |
+| Phase 2: Server Mapper  | 1 task      | ~155          |
+| Phase 3: Client Handler | 2 tasks     | ~175          |
+| Phase 4: UI Component   | 1 task      | ~135          |
+| Phase 5: Polish & Docs  | 2 tasks     | ~30           |
+| **Total**               | **7 tasks** | **~543**      |
 
 **Parallel Opportunities**: Tasks 2.1 and 3.1 can run in parallel (both depend only on 1.1). Tasks 5.1 and 5.2 can run in parallel.
 

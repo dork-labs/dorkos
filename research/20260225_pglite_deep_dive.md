@@ -1,5 +1,5 @@
 ---
-title: "PGlite Deep Dive Research"
+title: 'PGlite Deep Dive Research'
 date: 2026-02-25
 type: exploratory
 status: archived
@@ -49,6 +49,7 @@ The PostgreSQL fork is at `electric-sql/postgres-pglite`, branch `REL_17_5_WASM-
 The library is packaged as a TypeScript client — you import it, instantiate it, and query it directly without any external process or server.
 
 **Version history:**
+
 - v0.2.x → PostgreSQL 16.x
 - v0.3.x → PostgreSQL 17.4 (BREAKING: data directory format changed, pg_dump required to migrate)
 - Current release: **0.3.15** (as of late January 2026, with 243 total releases published)
@@ -75,6 +76,7 @@ No `node-gyp`, no `better-sqlite3`-style prebuilt binaries, no `electron-rebuild
 PGlite is a **first-class Drizzle driver** with official documentation at `orm.drizzle.team/docs/connect-pglite`.
 
 **Import paths:**
+
 ```typescript
 import { drizzle } from 'drizzle-orm/pglite';
 import { PGlite } from '@electric-sql/pglite';
@@ -98,6 +100,7 @@ const db = drizzle({ client });
 ```
 
 **drizzle.config.ts for drizzle-kit:**
+
 ```typescript
 import { defineConfig } from 'drizzle-kit';
 
@@ -107,12 +110,13 @@ export default defineConfig({
   dialect: 'postgresql',
   driver: 'pglite',
   dbCredentials: {
-    url: ':memory:',   // or './path/to/pgdata' for filesystem
+    url: ':memory:', // or './path/to/pgdata' for filesystem
   },
 });
 ```
 
 **drizzle-kit compatibility:**
+
 - `drizzle-kit generate` — works (generates standard PostgreSQL SQL migrations)
 - `drizzle-kit migrate` — works (applies migrations to PGlite instance)
 - `drizzle-kit push` — works (pushes schema changes directly)
@@ -132,14 +136,15 @@ await migrate(db, { migrationsFolder: './drizzle' });
 
 ### 4. Bundle Size
 
-| Metric | Value |
-|--------|-------|
-| npm package (gzipped) | ~3.7 MB |
-| Advertised size | "under 3 MB gzipped" (homepage) |
-| npm package unpacked | Not officially documented; significantly larger than gzipped |
-| WASM binary | Included in the npm package |
+| Metric                | Value                                                        |
+| --------------------- | ------------------------------------------------------------ |
+| npm package (gzipped) | ~3.7 MB                                                      |
+| Advertised size       | "under 3 MB gzipped" (homepage)                              |
+| npm package unpacked  | Not officially documented; significantly larger than gzipped |
+| WASM binary           | Included in the npm package                                  |
 
 Extensions add size on top of the base package. For example:
+
 - `pgcrypto`: 1.1 MB additional
 - `pgvector`: 42.9 KB additional
 - `pg_trgm`: 15.8 KB additional
@@ -156,22 +161,23 @@ Official benchmarks (M2 MacBook Air, from `pglite.dev/benchmarks`):
 
 **Single-row CRUD (milliseconds, lower is better):**
 
-| Operation | PGlite (memory) | SQLite (memory) |
-|-----------|----------------|-----------------|
-| Insert small row | 0.058 ms | 0.083 ms |
-| Select small row | 0.088 ms | 0.042 ms |
-| Update small row | 0.073 ms | 0.036 ms |
-| Delete small row | 0.145 ms | 0.1 ms |
+| Operation        | PGlite (memory) | SQLite (memory) |
+| ---------------- | --------------- | --------------- |
+| Insert small row | 0.058 ms        | 0.083 ms        |
+| Select small row | 0.088 ms        | 0.042 ms        |
+| Update small row | 0.073 ms        | 0.036 ms        |
+| Delete small row | 0.145 ms        | 0.1 ms          |
 
 **Bulk operations (seconds, lower is better):**
 
-| Test | PGlite (memory) | wa-sqlite (memory) |
-|------|-----------------|--------------------|
-| 1,000 INSERTs | 0.016 s | 0.035 s (sync) |
-| 25,000 INSERTs in transaction | 0.292 s | 0.077 s |
-| 100 SELECTs without index | 0.218 s | 0.104 s |
+| Test                          | PGlite (memory) | wa-sqlite (memory) |
+| ----------------------------- | --------------- | ------------------ |
+| 1,000 INSERTs                 | 0.016 s         | 0.035 s (sync)     |
+| 25,000 INSERTs in transaction | 0.292 s         | 0.077 s            |
+| 100 SELECTs without index     | 0.218 s         | 0.104 s            |
 
 **Summary:**
+
 - PGlite beats wa-sqlite for single-INSERT throughput
 - wa-sqlite is significantly faster for bulk inserts (25k inserts: 3.8x faster)
 - SELECT performance: SQLite ~2x faster for simple queries
@@ -186,12 +192,12 @@ Official benchmarks (M2 MacBook Air, from `pglite.dev/benchmarks`):
 
 PGlite uses a virtual filesystem (VFS) abstraction with four backends:
 
-| Backend | Environment | Persistence | Notes |
-|---------|-------------|-------------|-------|
-| **In-Memory FS** | Universal | None | Default. Data lost on process exit. `dumpDataDir()` can export. |
-| **Node FS** | Node.js, Bun | Yes, to filesystem | Writes a Postgres data directory (NOT a single file) |
-| **IndexedDB FS** | Browser | Yes, to IndexedDB | Supports `relaxedDurability` for async writes |
-| **OPFS AHP FS** | Chrome only (web workers) | Yes, via Origin Private FS | Safari broken (252 handle limit bug) |
+| Backend          | Environment               | Persistence                | Notes                                                           |
+| ---------------- | ------------------------- | -------------------------- | --------------------------------------------------------------- |
+| **In-Memory FS** | Universal                 | None                       | Default. Data lost on process exit. `dumpDataDir()` can export. |
+| **Node FS**      | Node.js, Bun              | Yes, to filesystem         | Writes a Postgres data directory (NOT a single file)            |
+| **IndexedDB FS** | Browser                   | Yes, to IndexedDB          | Supports `relaxedDurability` for async writes                   |
+| **OPFS AHP FS**  | Chrome only (web workers) | Yes, via Origin Private FS | Safari broken (252 handle limit bug)                            |
 
 **Critical distinction from SQLite:** PGlite does NOT store data in a single `.db` file. It writes an entire Postgres data directory structure. You pass a directory path, not a file path:
 
@@ -211,6 +217,7 @@ const db = new PGlite('./pgdata');
 This is the most important limitation. The cause is architectural: Emscripten-compiled programs cannot fork processes. PostgreSQL's standard multi-process model (postmaster + backend processes) cannot be replicated in WASM. PGlite operates in PostgreSQL's "single user mode."
 
 **Implications:**
+
 - One PGlite instance = one "connection"
 - Multiple JavaScript callers in the same process are serialized (queries are queued internally)
 - Two different Node.js processes CANNOT open the same PGlite data directory simultaneously — this is data-corruption territory (no WAL-based multi-writer support, no shared memory)
@@ -227,6 +234,7 @@ This is the most important limitation. The cause is architectural: Emscripten-co
 PGlite exposes the full PostgreSQL 17.4 query engine. The following are all confirmed available:
 
 **Core SQL:**
+
 - JSON and JSONB (native, core)
 - CTEs (`WITH` clauses)
 - Window functions
@@ -237,6 +245,7 @@ PGlite exposes the full PostgreSQL 17.4 query engine. The following are all conf
 - `EXPLAIN` / `EXPLAIN ANALYZE`
 
 **Extensions (bundled or separately loadable):**
+
 - `pgvector` — vector similarity search (42.9 KB)
 - `pg_trgm` — trigram similarity for fuzzy text search (15.8 KB)
 - `fuzzystrmatch` — string distance functions (11.7 KB)
@@ -252,6 +261,7 @@ PGlite exposes the full PostgreSQL 17.4 query engine. The following are all conf
 - **`live`** — PGlite-specific reactive query subscriptions (21.3 KB)
 
 **NOT available (known limitations):**
+
 - PostGIS (was experimentally included in a bad release, removed — not ready)
 - Multi-process replication, logical replication, streaming replication
 - `pg_notify` LISTEN/NOTIFY between separate processes (works within one instance)
@@ -263,16 +273,17 @@ PGlite exposes the full PostgreSQL 17.4 query engine. The following are all conf
 
 ### 9. Maturity and Production Readiness
 
-| Property | Detail |
-|----------|--------|
-| Maintainer | ElectricSQL (commercial company, building local-first sync) |
-| Initial release | ~May 2024 (announced at ElectricSQL blog post) |
-| Current version | 0.3.15 (sub-1.0, active development) |
-| Release cadence | Frequent (243 releases as of Feb 2026) |
-| License | Apache 2.0 + PostgreSQL License (dual) |
-| Ecosystem | Drizzle, TypeORM, Knex, Prisma adapters exist |
+| Property        | Detail                                                      |
+| --------------- | ----------------------------------------------------------- |
+| Maintainer      | ElectricSQL (commercial company, building local-first sync) |
+| Initial release | ~May 2024 (announced at ElectricSQL blog post)              |
+| Current version | 0.3.15 (sub-1.0, active development)                        |
+| Release cadence | Frequent (243 releases as of Feb 2026)                      |
+| License         | Apache 2.0 + PostgreSQL License (dual)                      |
+| Ecosystem       | Drizzle, TypeORM, Knex, Prisma adapters exist               |
 
 **Production readiness assessment:**
+
 - Version is still 0.x — no 1.0 stability guarantee
 - ElectricSQL uses PGlite as core infrastructure for their own product (strong commercial incentive to maintain)
 - Primary production use cases documented: offline-first apps, in-browser databases, local-first sync with Electric
@@ -283,17 +294,17 @@ PGlite exposes the full PostgreSQL 17.4 query engine. The following are all conf
 
 ### 10. Limitations Summary
 
-| Limitation | Severity | Notes |
-|-----------|----------|-------|
-| Single connection only | Critical | No multi-process, no concurrent writers |
-| Sub-1.0 versioning | Medium | API may change; migration breaking changes between 0.2→0.3 |
-| Not a single file | Medium | Data directory, not `.db` file — different mental model from SQLite |
-| Bulk write performance | Medium | ~3-4x slower than wa-sqlite for 25k bulk inserts |
-| No PostGIS | Low-medium | Removed after a bad release; not ready |
-| No background jobs | Low | No pg_cron, no LISTEN/NOTIFY across processes |
-| Major version breaks data | Medium | PG16→PG17 format incompatible, need pg_dump migration |
-| OPFS Safari broken | Low | Only matters in browser/Safari context |
-| drizzle-kit migrate CLI | Low | Use programmatic `migrate()` instead; generate/push work fine |
+| Limitation                | Severity   | Notes                                                               |
+| ------------------------- | ---------- | ------------------------------------------------------------------- |
+| Single connection only    | Critical   | No multi-process, no concurrent writers                             |
+| Sub-1.0 versioning        | Medium     | API may change; migration breaking changes between 0.2→0.3          |
+| Not a single file         | Medium     | Data directory, not `.db` file — different mental model from SQLite |
+| Bulk write performance    | Medium     | ~3-4x slower than wa-sqlite for 25k bulk inserts                    |
+| No PostGIS                | Low-medium | Removed after a bad release; not ready                              |
+| No background jobs        | Low        | No pg_cron, no LISTEN/NOTIFY across processes                       |
+| Major version breaks data | Medium     | PG16→PG17 format incompatible, need pg_dump migration               |
+| OPFS Safari broken        | Low        | Only matters in browser/Safari context                              |
+| drizzle-kit migrate CLI   | Low        | Use programmatic `migrate()` instead; generate/push work fine       |
 
 ---
 
@@ -302,12 +313,14 @@ PGlite exposes the full PostgreSQL 17.4 query engine. The following are all conf
 **No documented production cases found.** However, the architecture strongly suggests it should work:
 
 **Why it should work:**
+
 - Electron renderer processes (with Node integration enabled, as in Obsidian) support both browser APIs and Node.js APIs
 - PGlite works in both browser contexts (IndexedDB FS) and Node.js contexts (Node FS)
 - Since it's pure WASM with no native bindings, there is no `electron-rebuild` step
 - No `require()` of native `.node` modules — pure JavaScript + WASM
 
 **Potential issues:**
+
 - WASM binary loading: In Electron, WASM files sometimes need explicit handling in the bundler (Vite's `assetsInclude` or webpack `asset/resource` rules) to ensure the `.wasm` file is served correctly and not processed as JS
 - One documented issue (GitHub #199): "Improve error with pointer to docs when PGlite is unable to load WASM binary" — the WASM binary fails to load with a misleading error when the binary path resolves incorrectly
 - Content Security Policy in Electron may need `wasm-unsafe-eval` or equivalent in some configurations

@@ -1,9 +1,19 @@
 ---
-title: "System Status Messages & Compact Boundary UI Patterns — Surfacing SDK Events in Chat"
+title: 'System Status Messages & Compact Boundary UI Patterns — Surfacing SDK Events in Chat'
 date: 2026-03-16
 type: external-best-practices
 status: active
-tags: [chat-ui, system-status, context-compaction, compact-boundary, ephemeral-notifications, chat-dividers, agent-status, sdk-events]
+tags:
+  [
+    chat-ui,
+    system-status,
+    context-compaction,
+    compact-boundary,
+    ephemeral-notifications,
+    chat-dividers,
+    agent-status,
+    sdk-events,
+  ]
 feature_slug: system-status-compact-boundary
 searches_performed: 11
 sources_count: 22
@@ -26,6 +36,7 @@ The Claude Code Agent SDK emits the following system message subtypes in its str
 **`system` / `init`** — already handled; yields `session_status` event.
 
 **`system` / `compact_boundary`** — fires after automatic or manual compaction. Shape:
+
 ```typescript
 {
   type: "system",
@@ -38,11 +49,12 @@ The Claude Code Agent SDK emits the following system message subtypes in its str
   }
 }
 ```
+
 Currently falls through `mapSdkMessage` without any yield — silently dropped.
 
 **`system` / `status`** — ephemeral operational messages like "Compacting context...", permission mode changes. Shape is underdocumented in the public SDK reference but observed in practice. Currently falls through `mapSdkMessage` without any yield — silently dropped.
 
-**`PreCompact` hook** — fires *before* compaction (in hook system), separate from the stream event. Can be used to archive transcript. Not directly useful for UI feedback but confirms the two-event model (pre-hook + post-stream-event).
+**`PreCompact` hook** — fires _before_ compaction (in hook system), separate from the stream event. Can be used to archive transcript. Not directly useful for UI feedback but confirms the two-event model (pre-hook + post-stream-event).
 
 ### 2. VS Code Copilot Chat — The Closest Industry Reference
 
@@ -50,7 +62,7 @@ VS Code Copilot (February 2026 release) is the most direct comparable. Their app
 
 - **Context compaction**: After automatic summarization, a `"✅ Summarized conversation history"` message appears inline in the chat — rendered as a special system message row, not a user/assistant bubble.
 - **User feedback was mixed**: Multiple GitHub issues (166415, related discussions) show users found this appearing "after almost every single action" to be visually cluttered. One user's exact complaint: it "distracts from my workflow." VS Code added a toggle to disable it.
-- **The lesson**: VS Code made compaction visible but overshot on frequency — the marker appeared too often and too prominently. The correct balance is: *one* persistent marker at the boundary location, with low visual weight.
+- **The lesson**: VS Code made compaction visible but overshot on frequency — the marker appeared too often and too prominently. The correct balance is: _one_ persistent marker at the boundary location, with low visual weight.
 - **Context window indicator**: A fill gauge showing `15K/128K` tokens used in the chat input area. Hoverable for breakdown by category. Made toggleable after user complaints about "anxiety-inducing" anxiety about the token budget.
 
 ### 3. Cursor AI — Context Indicator Trajectory
@@ -58,9 +70,9 @@ VS Code Copilot (February 2026 release) is the most direct comparable. Their app
 Cursor went through a visible regression arc with their context indicator:
 
 - **Early versions**: A circle/gauge showing `45k/200k` tokens used, positioned in the chat input area.
-- **v2.2.44**: The indicator was *removed entirely* — multiple community forum posts requesting it back (threads: "Bring back context usage indicator", "Diminishing transparency in context usage indicator").
+- **v2.2.44**: The indicator was _removed entirely_ — multiple community forum posts requesting it back (threads: "Bring back context usage indicator", "Diminishing transparency in context usage indicator").
 - **Current**: Context usage shown inline in chat when approaching limits, `/summarize` command available. Auto-compaction happens with no persistent UI marker — purely transparent.
-- **The lesson from Cursor's removal**: Their mistake was removing the indicator rather than tuning its visibility. The community strongly prefers having *some* signal, even minimal.
+- **The lesson from Cursor's removal**: Their mistake was removing the indicator rather than tuning its visibility. The community strongly prefers having _some_ signal, even minimal.
 
 ### 4. Slack — The Canonical Ephemeral System Message Pattern
 
@@ -71,13 +83,14 @@ Slack's inline system messages ("Dorian joined #general", "Pinned a message") ar
 - No avatar, no bubble, no timestamp prominence
 - Small font (approximately 12px / `text-xs`)
 - ARIA: `role="status"` or `role="separator"` with `aria-label`
-- They are *persistent* — they stay in history — but visually recessive
+- They are _persistent_ — they stay in history — but visually recessive
 
-For *ephemeral* system events (typing indicators, presence), Slack uses a completely different channel: the status bar beneath the message list, above the input. These never touch the message history.
+For _ephemeral_ system events (typing indicators, presence), Slack uses a completely different channel: the status bar beneath the message list, above the input. These never touch the message history.
 
 ### 5. iMessage / WhatsApp — Date Separator Pattern
 
 Date separators ("Today", "Yesterday", "March 15") in iMessage and WhatsApp follow the same visual language as Slack system messages:
+
 - Centered text
 - Hairline rules (or just spacing)
 - Muted, smaller type
@@ -88,6 +101,7 @@ This is the exact visual treatment appropriate for compact boundaries — they a
 ### 6. Stream Chat React SDK — Technical Implementation Reference
 
 Stream Chat's `DateSeparator` component provides a direct implementation reference:
+
 - Injected automatically into `VirtualizedMessageList` as a list item
 - Three position variants: `left`, `center`, `right`
 - Customizable `formatDate` function — can return arbitrary React content, not just dates
@@ -97,10 +111,11 @@ Stream Chat's `DateSeparator` component provides a direct implementation referen
 ### 7. Carbon Design System — Notification Pattern Guidance
 
 IBM's Carbon Design System provides the authoritative classification matrix:
-- **Toast**: Fixed-position, auto-dismissing, for real-time operational alerts. "Toasts are for ephemeral, live actions (save complete, something just finished *right now*)." Never for historical events.
+
+- **Toast**: Fixed-position, auto-dismissing, for real-time operational alerts. "Toasts are for ephemeral, live actions (save complete, something just finished _right now_)." Never for historical events.
 - **Inline notification**: Appears near the relevant content, persists until dismissed. For contextual status.
 - **Banner**: Top of primary content area. For ongoing system-wide state.
-- **The gap**: None of these are designed for *mid-conversation* status moments. The chat-native equivalent is the "system message row" pattern (Slack, iMessage), which is not a toast.
+- **The gap**: None of these are designed for _mid-conversation_ status moments. The chat-native equivalent is the "system message row" pattern (Slack, iMessage), which is not a toast.
 
 ---
 
@@ -110,14 +125,14 @@ IBM's Carbon Design System provides the authoritative classification matrix:
 
 The most important insight is that these two event types require **fundamentally different treatments** because they have different temporal semantics:
 
-| Attribute | System Status (`status`) | Compact Boundary (`compact_boundary`) |
-|---|---|---|
-| Duration | Ephemeral — describes current agent state | Permanent — records a historical event |
-| Location | Outside message list | Inside message list |
-| Scrollback persistence | No | Yes |
-| Affects conversation history | No | Yes |
-| Analogy | Typing indicator | Date separator |
-| Pattern | Status bar / transient overlay | Inline system message row |
+| Attribute                    | System Status (`status`)                  | Compact Boundary (`compact_boundary`)  |
+| ---------------------------- | ----------------------------------------- | -------------------------------------- |
+| Duration                     | Ephemeral — describes current agent state | Permanent — records a historical event |
+| Location                     | Outside message list                      | Inside message list                    |
+| Scrollback persistence       | No                                        | Yes                                    |
+| Affects conversation history | No                                        | Yes                                    |
+| Analogy                      | Typing indicator                          | Date separator                         |
+| Pattern                      | Status bar / transient overlay            | Inline system message row              |
 
 Mixing these two into the same treatment (e.g., both as chat messages) would be wrong. VS Code's mistake was rendering compaction as a chat message that appeared too often and cluttered the thread.
 
@@ -127,13 +142,14 @@ Mixing these two into the same treatment (e.g., both as chat messages) would be 
 
 DorkOS already has a `StatusLine` component at the feature level. The recommended pattern is a transient status message that:
 
-1. Appears in a dedicated status zone *below the message list, above the input field* (or optionally in the existing status line)
+1. Appears in a dedicated status zone _below the message list, above the input field_ (or optionally in the existing status line)
 2. Fades in via `motion` (150ms ease-out)
 3. Auto-dismisses after 4 seconds via a timer, OR is replaced when the next status arrives
 4. Does NOT create a `ChatMessage` record in the conversation store
 5. Is driven by a new `system_status` stream event type emitted by the server
 
 **Visual spec:**
+
 ```
 ┌─────────────────────────────────────────┐
 │  [message list]                         │
@@ -149,6 +165,7 @@ DorkOS already has a `StatusLine` component at the feature level. The recommende
 **Alternative: merge with existing InferenceIndicator / StatusLine** — if the status is operational ("Compacting context..."), it could replace the "Thinking..." indicator pattern already used during streaming. This is the lowest-friction path.
 
 **What NOT to do:**
+
 - Toast (fixed-position overlay) — wrong context, chat already has a spatial region for these
 - Inline chat message — pollutes history, VS Code proved this is disliked
 - Ignored — the "looks like a freeze" problem is real for users
@@ -160,6 +177,7 @@ DorkOS already has a `StatusLine` component at the feature level. The recommende
 This is a persistent record. When compaction occurs, the old messages above it are summarized — the boundary marks where memory was compressed. Users deserve a clear signal.
 
 **Visual spec:**
+
 ```
 │  [older messages — summarized]          │
 │                                         │
@@ -169,6 +187,7 @@ This is a persistent record. When compaction occurs, the old messages above it a
 ```
 
 Precise visual treatment:
+
 - Full-width row, centered text
 - Hairline rules (`border-t border-border/40`) on both sides
 - Icon: a circular arrow or compress icon (12–14px)
@@ -186,6 +205,7 @@ Precise visual treatment:
 An alternative for system status is to route it into the existing status line chip architecture rather than a separate sub-zone. This has lower implementation cost but couples system status to the status line's existing layout constraints.
 
 For "Compacting context...", the status line could show a spinner + message in place of (or alongside) the existing token count chip. This:
+
 - Reuses existing component infrastructure
 - Is immediately visible without new layout
 - Auto-clears when the `compact_boundary` event arrives (confirming completion)
@@ -201,6 +221,7 @@ This approach creates a nice state machine: "Compacting context..." appears in t
 **Description**: New `system_status` SSE event → render in a dedicated ephemeral status zone below message list. New `compact_boundary` SSE event → inject a `CompactBoundaryDivider` ChatMessage row.
 
 **Pros:**
+
 - Cleanest separation of ephemeral vs persistent
 - Matches industry pattern (Slack, iMessage for dividers; typing indicator zone for status)
 - Zero pollution of message history with ephemeral events
@@ -208,6 +229,7 @@ This approach creates a nice state machine: "Compacting context..." appears in t
 - Matches Dieter Rams "good design is as little design as possible" — subtle, functional
 
 **Cons:**
+
 - Requires new layout region in `ChatPanel.tsx`
 - Two new stream event types needed (`system_status`, `compact_boundary`)
 - Two new components needed (`SystemStatusBanner`, `CompactBoundaryDivider`)
@@ -221,11 +243,13 @@ This approach creates a nice state machine: "Compacting context..." appears in t
 **Description**: Both events route to the existing `StatusLine` component. Status messages appear as a transient chip. Compact boundary appears as a longer-lived chip that only clears on next message.
 
 **Pros:**
+
 - Minimal new code — reuses existing StatusLine infrastructure
 - No new layout changes
 - Fast to implement
 
 **Cons:**
+
 - Compact boundary is not persistent — scrolling up won't show where compaction happened
 - The status line is not visible when scrolled up in the chat
 - Loses the semantic distinction between the two event types
@@ -240,11 +264,13 @@ This approach creates a nice state machine: "Compacting context..." appears in t
 **Description**: Both events generate `ChatMessage` entries and appear as special message rows in the message list.
 
 **Pros:**
+
 - Simplest data model — one rendering path for everything
 - Persistent by default
 - VS Code Copilot did this
 
 **Cons:**
+
 - VS Code Copilot received user complaints about clutter
 - Ephemeral status messages should not be permanent in history
 - "Compacting context..." appearing as a chat message is semantically wrong — it's not a message from the agent, it's infrastructure noise
@@ -283,9 +309,9 @@ Specifically:
 ```tsx
 // Visual: ──────── ↻ Context compacted ─────────
 // Tailwind classes:
-"flex items-center gap-2 py-3 text-xs text-muted-foreground"
+'flex items-center gap-2 py-3 text-xs text-muted-foreground';
 // Left/right lines:
-"flex-1 border-t border-border/40"
+'flex-1 border-t border-border/40';
 // Icon: RotateCcw or Compress from lucide-react, size 12
 // Text: "Context compacted" (auto) | "Context compacted manually" (manual)
 // Hover tooltip: "Compacted at ~{preTokens.toLocaleString()} tokens"
@@ -332,7 +358,7 @@ Specifically:
 
 ## Contradictions & Disputes
 
-- **VS Code Copilot Chat**: Their approach of rendering `"✅ Summarized conversation history"` as an inline chat message is the direct industry precedent — but it received user complaints about clutter and was made toggleable. This argues *for* using a compact, low-weight divider (Solution 1) rather than a full system message row (Solution 3).
+- **VS Code Copilot Chat**: Their approach of rendering `"✅ Summarized conversation history"` as an inline chat message is the direct industry precedent — but it received user complaints about clutter and was made toggleable. This argues _for_ using a compact, low-weight divider (Solution 1) rather than a full system message row (Solution 3).
 - **Cursor**: Removed their context indicator entirely after user feedback, then had community requests to restore it. The lesson is ambiguous — some users want this information, some don't. Solution 1's low-weight treatment threads this needle without adding cognitive load.
 
 ---

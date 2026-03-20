@@ -9,11 +9,13 @@
 ## Phase 1: Foundation (2 tasks, parallelizable)
 
 ### 1.1 Make CommandEntrySchema fields optional for SDK-only commands
+
 **Size:** Small | **Priority:** High | **Dependencies:** None | **Parallel with:** 1.2
 
 Update `CommandEntrySchema` in `packages/shared/src/schemas.ts` to make `namespace`, `command`, and `filePath` optional. SDK-only commands (built-ins like `/compact`, `/help`, skills) lack filesystem metadata and cannot provide these fields.
 
 **Changes:**
+
 - `namespace: z.string()` becomes `namespace: z.string().optional()`
 - `command: z.string()` becomes `command: z.string().optional()`
 - `filePath: z.string()` becomes `filePath: z.string().optional()`
@@ -23,6 +25,7 @@ The inferred `CommandEntry` TypeScript type updates automatically. Backward comp
 ---
 
 ### 1.2 Wire up supportedCommands() callback in message-sender
+
 **Size:** Small | **Priority:** High | **Dependencies:** None | **Parallel with:** 1.1
 
 Add `onCommandsReceived` callback to `MessageSenderOpts` and wire up the `supportedCommands()` SDK call in `executeSdkQuery()`, following the identical pattern of `supportedModels()` (non-blocking, fire-and-forget, debug-level error logging).
@@ -30,6 +33,7 @@ Add `onCommandsReceived` callback to `MessageSenderOpts` and wire up the `suppor
 **File:** `apps/server/src/services/runtimes/claude-code/message-sender.ts`
 
 **Changes:**
+
 1. New optional field on `MessageSenderOpts`: `onCommandsReceived?: (commands: Array<{ name: string; description: string; argumentHint: string }>) => void`
 2. New non-blocking `supportedCommands()` call after the existing `mcpServerStatus` block
 
@@ -38,6 +42,7 @@ Add `onCommandsReceived` callback to `MessageSenderOpts` and wire up the `suppor
 ## Phase 2: Core (1 task)
 
 ### 2.1 Add SDK command caching and merge logic in ClaudeCodeRuntime
+
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.1, 1.2
 
 Add `cachedSdkCommands` property to `ClaudeCodeRuntime`, pass `onCommandsReceived` callback in `sendMessage()`, and replace `getCommands()` with merge logic.
@@ -45,6 +50,7 @@ Add `cachedSdkCommands` property to `ClaudeCodeRuntime`, pass `onCommandsReceive
 **File:** `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts`
 
 **Changes:**
+
 1. New property: `private cachedSdkCommands: Array<{...}> | null = null`
 2. New callback in `sendMessage()` opts (only when cache is empty, matching `onModelsReceived` pattern)
 3. New `getCommands()` implementation: when SDK cache exists, map SDK commands to `CommandEntry[]`, enrich with filesystem metadata via `Map` lookup, sort alphabetically; otherwise fall back to filesystem-only
@@ -58,6 +64,7 @@ Add `cachedSdkCommands` property to `ClaudeCodeRuntime`, pass `onCommandsReceive
 ## Phase 3: Testing (2 tasks, parallelizable)
 
 ### 3.1 Add unit tests for SDK command caching and merge logic
+
 **Size:** Medium | **Priority:** High | **Dependencies:** 2.1 | **Parallel with:** 3.2
 
 Add test cases to `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` covering:
@@ -71,6 +78,7 @@ Add test cases to `apps/server/src/services/runtimes/claude-code/__tests__/claud
 ---
 
 ### 3.2 Add schema validation test and update route test assertions
+
 **Size:** Small | **Priority:** Medium | **Dependencies:** 1.1 | **Parallel with:** 3.1
 
 Add tests to `apps/server/src/routes/__tests__/commands.test.ts` verifying:
@@ -83,14 +91,15 @@ Add tests to `apps/server/src/routes/__tests__/commands.test.ts` verifying:
 
 ## Summary
 
-| Phase | Tasks | Parallelizable |
-|-------|-------|----------------|
-| 1 - Foundation | 2 | Yes (1.1 and 1.2) |
-| 2 - Core | 1 | No (depends on P1) |
-| 3 - Testing | 2 | Yes (3.1 and 3.2) |
-| **Total** | **5** | |
+| Phase          | Tasks | Parallelizable     |
+| -------------- | ----- | ------------------ |
+| 1 - Foundation | 2     | Yes (1.1 and 1.2)  |
+| 2 - Core       | 1     | No (depends on P1) |
+| 3 - Testing    | 2     | Yes (3.1 and 3.2)  |
+| **Total**      | **5** |                    |
 
 **Files modified:**
+
 - `packages/shared/src/schemas.ts`
 - `apps/server/src/services/runtimes/claude-code/message-sender.ts`
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts`

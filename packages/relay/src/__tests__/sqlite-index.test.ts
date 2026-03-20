@@ -215,10 +215,10 @@ describe('deleteExpired', () => {
   it('deletes messages with expiresAt in the past', () => {
     const now = Date.now();
     index.insertMessage(
-      makeMessage({ id: 'expired', expiresAt: new Date(now - 1000).toISOString() }),
+      makeMessage({ id: 'expired', expiresAt: new Date(now - 1000).toISOString() })
     );
     index.insertMessage(
-      makeMessage({ id: 'valid', expiresAt: new Date(now + 60_000).toISOString() }),
+      makeMessage({ id: 'valid', expiresAt: new Date(now + 60_000).toISOString() })
     );
 
     const deleted = index.deleteExpired(now);
@@ -231,7 +231,7 @@ describe('deleteExpired', () => {
   it('returns 0 when no messages are expired', () => {
     const now = Date.now();
     index.insertMessage(
-      makeMessage({ id: 'valid', expiresAt: new Date(now + 60_000).toISOString() }),
+      makeMessage({ id: 'valid', expiresAt: new Date(now + 60_000).toISOString() })
     );
 
     const deleted = index.deleteExpired(now);
@@ -240,12 +240,8 @@ describe('deleteExpired', () => {
 
   it('deletes all messages when all have expired', () => {
     const now = Date.now();
-    index.insertMessage(
-      makeMessage({ id: 'exp1', expiresAt: new Date(now - 2000).toISOString() }),
-    );
-    index.insertMessage(
-      makeMessage({ id: 'exp2', expiresAt: new Date(now - 1000).toISOString() }),
-    );
+    index.insertMessage(makeMessage({ id: 'exp1', expiresAt: new Date(now - 2000).toISOString() }));
+    index.insertMessage(makeMessage({ id: 'exp2', expiresAt: new Date(now - 1000).toISOString() }));
 
     const deleted = index.deleteExpired(now);
     expect(deleted).toBe(2);
@@ -457,10 +453,10 @@ describe('countSenderInWindow', () => {
 
   it('counts messages from a specific sender after the window start', () => {
     index.insertMessage(
-      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A }),
+      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A })
     );
     index.insertMessage(
-      makeMessage({ id: 'a2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_A }),
+      makeMessage({ id: 'a2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_A })
     );
 
     const count = index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z');
@@ -469,13 +465,13 @@ describe('countSenderInWindow', () => {
 
   it('filters by sender — does not count messages from other senders', () => {
     index.insertMessage(
-      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A }),
+      makeMessage({ id: 'a1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A })
     );
     index.insertMessage(
-      makeMessage({ id: 'b1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_B }),
+      makeMessage({ id: 'b1', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_B })
     );
     index.insertMessage(
-      makeMessage({ id: 'b2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_B }),
+      makeMessage({ id: 'b2', createdAt: '2026-01-15T10:01:00.000Z', sender: SENDER_B })
     );
 
     expect(index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z')).toBe(1);
@@ -484,10 +480,10 @@ describe('countSenderInWindow', () => {
 
   it('filters by window start time', () => {
     index.insertMessage(
-      makeMessage({ id: 'old', createdAt: '2026-01-10T00:00:00.000Z', sender: SENDER_A }),
+      makeMessage({ id: 'old', createdAt: '2026-01-10T00:00:00.000Z', sender: SENDER_A })
     );
     index.insertMessage(
-      makeMessage({ id: 'recent', createdAt: '2026-01-15T12:00:00.000Z', sender: SENDER_A }),
+      makeMessage({ id: 'recent', createdAt: '2026-01-15T12:00:00.000Z', sender: SENDER_A })
     );
 
     // Window starts after the old message
@@ -496,11 +492,9 @@ describe('countSenderInWindow', () => {
   });
 
   it('ignores messages with null sender', () => {
+    index.insertMessage(makeMessage({ id: 'no-sender', createdAt: '2026-01-15T10:00:00.000Z' }));
     index.insertMessage(
-      makeMessage({ id: 'no-sender', createdAt: '2026-01-15T10:00:00.000Z' }),
-    );
-    index.insertMessage(
-      makeMessage({ id: 'has-sender', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A }),
+      makeMessage({ id: 'has-sender', createdAt: '2026-01-15T10:00:00.000Z', sender: SENDER_A })
     );
 
     expect(index.countSenderInWindow(SENDER_A, '2026-01-01T00:00:00.000Z')).toBe(1);
@@ -598,7 +592,7 @@ describe('anti-regression: semantic status values', () => {
 
     // Verify at the raw SQL level that the stored value is 'pending'
     const rows = db.all<{ status: string }>(
-      sql`SELECT status FROM relay_index WHERE id = 'status-check'`,
+      sql`SELECT status FROM relay_index WHERE id = 'status-check'`
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('pending');
@@ -614,7 +608,7 @@ describe('anti-regression: semantic status values', () => {
 
     // Verify at the raw SQL level
     const rows = db.all<{ status: string }>(
-      sql`SELECT status FROM relay_index WHERE id = 'delivered-check'`,
+      sql`SELECT status FROM relay_index WHERE id = 'delivered-check'`
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('delivered');
@@ -650,7 +644,7 @@ describe('anti-regression: expiresAt as ISO 8601', () => {
 
     // Verify at the raw SQL level that the stored value is an ISO string
     const rows = db.all<{ expires_at: string }>(
-      sql`SELECT expires_at FROM relay_index WHERE id = 'expiry-check'`,
+      sql`SELECT expires_at FROM relay_index WHERE id = 'expiry-check'`
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].expires_at).toBe(expiry);
@@ -663,7 +657,7 @@ describe('anti-regression: expiresAt as ISO 8601', () => {
 
     // Query the column by name — this would fail if the column were still 'ttl'
     const rows = db.all<{ expires_at: string | null }>(
-      sql`SELECT expires_at FROM relay_index WHERE id = 'col-check'`,
+      sql`SELECT expires_at FROM relay_index WHERE id = 'col-check'`
     );
     expect(rows).toHaveLength(1);
   });
@@ -675,7 +669,7 @@ describe('anti-regression: expiresAt as ISO 8601', () => {
     expect(result?.expiresAt).toBeNull();
 
     const rows = db.all<{ expires_at: string | null }>(
-      sql`SELECT expires_at FROM relay_index WHERE id = 'null-expiry'`,
+      sql`SELECT expires_at FROM relay_index WHERE id = 'null-expiry'`
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].expires_at).toBeNull();

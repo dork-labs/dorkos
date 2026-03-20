@@ -25,9 +25,7 @@ export function useCompletedRunBadge(enabled = true): CompletedRunBadge {
   useEffect(() => {
     if (!runs) return;
 
-    const currentRunning = new Set(
-      runs.filter((r) => r.status === 'running').map((r) => r.id)
-    );
+    const currentRunning = new Set(runs.filter((r) => r.status === 'running').map((r) => r.id));
     const prevRunning = prevRunningIdsRef.current;
 
     // Detect transitions: was running, now terminal

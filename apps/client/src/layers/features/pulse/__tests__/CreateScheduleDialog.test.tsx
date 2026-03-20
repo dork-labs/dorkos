@@ -17,8 +17,24 @@ const MOCK_AGENTS = [
 ];
 
 const MOCK_PRESETS: PulsePreset[] = [
-  { id: 'health-check', name: 'Health Check', description: 'Desc', prompt: 'Prompt health', cron: '0 8 * * 1', timezone: 'UTC', category: 'maintenance' },
-  { id: 'docs-sync', name: 'Docs Sync', description: 'Desc', prompt: 'Prompt docs', cron: '0 10 * * *', timezone: 'UTC', category: 'documentation' },
+  {
+    id: 'health-check',
+    name: 'Health Check',
+    description: 'Desc',
+    prompt: 'Prompt health',
+    cron: '0 8 * * 1',
+    timezone: 'UTC',
+    category: 'maintenance',
+  },
+  {
+    id: 'docs-sync',
+    name: 'Docs Sync',
+    description: 'Desc',
+    prompt: 'Prompt docs',
+    cron: '0 10 * * *',
+    timezone: 'UTC',
+    category: 'documentation',
+  },
 ];
 
 const mockPulsePresetDialog = vi.fn().mockReturnValue({
@@ -42,7 +58,9 @@ vi.mock('../ui/PresetGallery', () => ({
   PresetGallery: ({ onSelect }: { onSelect?: (preset: PulsePreset) => void }) => (
     <div data-testid="preset-gallery">
       {MOCK_PRESETS.map((p) => (
-        <button key={p.id} onClick={() => onSelect?.(p)}>{p.name}</button>
+        <button key={p.id} onClick={() => onSelect?.(p)}>
+          {p.name}
+        </button>
       ))}
     </div>
   ),
@@ -230,11 +248,7 @@ describe('CreateScheduleDialog', () => {
 
     render(
       <Wrapper>
-        <CreateScheduleDialog
-          open={true}
-          onOpenChange={onOpenChange}
-          editSchedule={schedule}
-        />
+        <CreateScheduleDialog open={true} onOpenChange={onOpenChange} editSchedule={schedule} />
       </Wrapper>
     );
 
@@ -293,9 +307,7 @@ describe('CreateScheduleDialog', () => {
     fireEvent.click(screen.getByLabelText('Full autonomy'));
 
     expect(
-      screen.getByText(
-        'Warning: This allows the agent to execute any tool without approval.'
-      )
+      screen.getByText('Warning: This allows the agent to execute any tool without approval.')
     ).toBeTruthy();
   });
 
@@ -531,7 +543,11 @@ describe('CreateScheduleDialog', () => {
     it('opens at preset-picker step by default (create mode)', () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
-      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       expect(screen.getByText('Start from scratch')).toBeTruthy();
     });
 
@@ -539,7 +555,11 @@ describe('CreateScheduleDialog', () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
       const schedule = createMockSchedule({ id: 's1', name: 'My Schedule' });
-      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} editSchedule={schedule} /></Wrapper>);
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} editSchedule={schedule} />
+        </Wrapper>
+      );
       expect(screen.queryByText('Start from scratch')).toBeNull();
       expect(screen.getByText('Edit Schedule')).toBeTruthy();
     });
@@ -547,7 +567,11 @@ describe('CreateScheduleDialog', () => {
     it('advances to form step when a preset card is clicked', async () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
-      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       // PresetGallery mock renders buttons with preset names
       fireEvent.click(screen.getByText('Health Check'));
       await waitFor(() => {
@@ -559,7 +583,11 @@ describe('CreateScheduleDialog', () => {
     it('advances to empty form when "Start from scratch" is clicked', () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
-      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       fireEvent.click(screen.getByText('Start from scratch'));
       expect(screen.getByPlaceholderText('Daily code review')).toBeTruthy();
       expect((screen.getByPlaceholderText('Daily code review') as HTMLInputElement).value).toBe('');
@@ -568,7 +596,11 @@ describe('CreateScheduleDialog', () => {
     it('returns to picker step when Back is clicked', () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
-      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       fireEvent.click(screen.getByText('Start from scratch'));
       fireEvent.click(screen.getByLabelText('Back to preset picker'));
       expect(screen.getByText('Start from scratch')).toBeTruthy();
@@ -583,7 +615,11 @@ describe('CreateScheduleDialog', () => {
       });
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
-      render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       await waitFor(() => {
         expect(screen.getByDisplayValue('Health Check')).toBeTruthy();
       });
@@ -593,13 +629,25 @@ describe('CreateScheduleDialog', () => {
     it('resets to preset-picker step when dialog closes and reopens', () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
-      const { rerender } = render(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      const { rerender } = render(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       // Advance to form
       fireEvent.click(screen.getByText('Start from scratch'));
       // Close dialog
-      rerender(<Wrapper><CreateScheduleDialog open={false} onOpenChange={vi.fn()} /></Wrapper>);
+      rerender(
+        <Wrapper>
+          <CreateScheduleDialog open={false} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       // Reopen dialog
-      rerender(<Wrapper><CreateScheduleDialog open={true} onOpenChange={vi.fn()} /></Wrapper>);
+      rerender(
+        <Wrapper>
+          <CreateScheduleDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
       expect(screen.getByText('Start from scratch')).toBeTruthy();
     });
   });

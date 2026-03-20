@@ -67,10 +67,7 @@ export function ButtonShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Badge"
-        description="Label variants for status and categorization."
-      >
+      <PlaygroundSection title="Badge" description="Label variants for status and categorization.">
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">
             <Badge variant="default">Default</Badge>
@@ -90,10 +87,7 @@ export function ButtonShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Kbd"
-        description="Keyboard shortcut hints."
-      >
+      <PlaygroundSection title="Kbd" description="Keyboard shortcut hints.">
         <ShowcaseDemo>
           <div className="flex flex-wrap items-center gap-3">
             <Kbd>K</Kbd>
@@ -104,8 +98,7 @@ export function ButtonShowcases() {
               <Kbd>
                 <span>&#8984;</span>Shift
               </Kbd>{' '}
-              +{' '}
-              <Kbd>P</Kbd>
+              + <Kbd>P</Kbd>
             </span>
           </div>
         </ShowcaseDemo>

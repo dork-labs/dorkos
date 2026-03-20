@@ -19,11 +19,11 @@ ideation: specs/fix-chat-ui-reliability-bugs/01-ideation.md
 
 Fix three confirmed reliability bugs in the DorkOS chat UI, all discovered via automated self-testing on 2026-03-11. The fixes are entirely client-side — no server changes required.
 
-| # | Bug | Severity | Symptom |
-|---|-----|----------|---------|
-| 1 | React duplicate key storm | High | ~300 console errors per streaming response |
-| 2 | Empty session ID API errors | High | 400/404 on every new session before first message |
-| 3 | Optimistic user message inconsistency | Medium | Bubble vanishes on reload; transient duplicate during streaming |
+| #   | Bug                                   | Severity | Symptom                                                         |
+| --- | ------------------------------------- | -------- | --------------------------------------------------------------- |
+| 1   | React duplicate key storm             | High     | ~300 console errors per streaming response                      |
+| 2   | Empty session ID API errors           | High     | 400/404 on every new session before first message               |
+| 3   | Optimistic user message inconsistency | Medium   | Bubble vanishes on reload; transient duplicate during streaming |
 
 ---
 
@@ -31,7 +31,7 @@ Fix three confirmed reliability bugs in the DorkOS chat UI, all discovered via a
 
 Automated self-testing (`test-results/chat-self-test/20260311-175156.md`) revealed three reliability issues that degrade developer experience, pollute logs, and produce inconsistent UI state:
 
-1. **React duplicate key storm** — `AssistantMessageContent.tsx:121` keys text parts by array index (`key={\`text-${i}\`}`). During streaming, the `parts` array is rebuilt on every `text_delta` event. If the array's shape changes (text → tool_call → text), index-based keys collide, firing ~300 "Encountered two children with the same key" warnings per message. The root cause is in `stream-event-handler.ts:139`: new text parts are created without a stable identifier.
+1. **React duplicate key storm** — `AssistantMessageContent.tsx:121` keys text parts by array index (`key={\`text-${i}\`}`). During streaming, the `parts`array is rebuilt on every`text_delta`event. If the array's shape changes (text → tool_call → text), index-based keys collide, firing ~300 "Encountered two children with the same key" warnings per message. The root cause is in`stream-event-handler.ts:139`: new text parts are created without a stable identifier.
 
 2. **Empty session ID API errors** — `ChatPanel.tsx` coerces a null `sessionId` to `''` before passing it to `useTaskState` and `useSessionStatus`. Neither hook has an `enabled` guard, so they fire API requests immediately with `''` as the session ID (`GET /api/sessions//task-state → 400`, `GET /api/sessions//status → 404`). The correct guard (`enabled: sessionId !== null`) already exists in `use-chat-session.ts:186` for the `historyQuery` — it was simply missed for these two hooks.
 
@@ -67,6 +67,7 @@ Automated self-testing (`test-results/chat-self-test/20260311-175156.md`) reveal
 - No new libraries required
 
 **Related ADRs:**
+
 - ADR-0003: JSONL as source of truth for session message history — Bug 3 fix restores compliance
 - ADR-0043: Agent storage file-first write-through — not directly affected
 
@@ -79,23 +80,27 @@ Automated self-testing (`test-results/chat-self-test/20260311-175156.md`) reveal
 #### Root Cause
 
 `AssistantMessageContent.tsx:121`:
+
 ```tsx
 <div key={`text-${i}`} className="msg-assistant">
 ```
 
 `stream-event-handler.ts:139`:
+
 ```ts
 // text_delta else branch — NEW TEXT PART, no id field
 currentPartsRef.current = [...parts, { type: 'text', text }];
 ```
 
 `TextPartSchema` (`packages/shared/src/schemas.ts:323-328`):
+
 ```ts
 export const TextPartSchema = z.object({
   type: z.literal('text'),
   text: z.string(),
 });
 ```
+
 No `id` field on the wire protocol.
 
 #### Fix
@@ -114,6 +119,7 @@ Or use an intersection at the assignment site with no type-level change to `Text
 **Step 2: Assign `_partId` at text part creation (once, never mutated)**
 
 In the `text_delta` else branch:
+
 ```ts
 // Before (line 139):
 currentPartsRef.current = [...parts, { type: 'text', text }];
@@ -127,6 +133,7 @@ The counter `parts.length` at creation time is the stable position of this part 
 **Step 3: Use `_partId` as the React key**
 
 In `AssistantMessageContent.tsx:121`:
+
 ```tsx
 // Before:
 <div key={`text-${i}`} className="msg-assistant">
@@ -236,6 +243,7 @@ TypeScript will validate these call sites compile with the new `string | null` s
 #### Root Cause
 
 **Part A (delivery inconsistency):**
+
 ```ts
 // use-chat-session.ts:379 — fires BEFORE Relay confirms
 setMessages((prev) => [...prev, userMessage]);
@@ -264,12 +272,14 @@ const [pendingUserContent, setPendingUserContent] = useState<string | null>(null
 ```
 
 Set it when the user submits:
+
 ```ts
 // In executeSubmission, replace setMessages(...userMessage):
 setPendingUserContent(content); // Show pending bubble immediately
 ```
 
 Clear it on the first streaming `text_delta` event (the moment the server has received and begun processing the message):
+
 ```ts
 // In stream-event-handler.ts, text_delta case, at the top:
 if (pendingUserContentRef.current !== null) {
@@ -281,6 +291,7 @@ if (pendingUserContentRef.current !== null) {
 Or equivalently, clear it in `executeSubmission` after the first streaming event arrives. The simplest implementation: clear `pendingUserContent` at the start of the `done` event handler (or on error). If clearing on `text_delta` is preferred for responsiveness, a ref is needed to avoid closure staleness.
 
 **Clear on error:** In the catch block:
+
 ```ts
 setPendingUserContent(null);
 ```
@@ -291,7 +302,7 @@ setPendingUserContent(null);
 // useChatSession return value — add:
 return {
   messages,
-  pendingUserContent,  // ← NEW
+  pendingUserContent, // ← NEW
   // ... existing fields
 };
 ```
@@ -299,6 +310,7 @@ return {
 **Step 4: Thread `pendingUserContent` through `ChatPanel` → `MessageList`**
 
 In `ChatPanel.tsx`:
+
 ```tsx
 const {
   messages,
@@ -308,10 +320,11 @@ const {
 ```
 
 Pass to `MessageList`:
+
 ```tsx
 <MessageList
   messages={messages}
-  pendingUserContent={pendingUserContent}  // ← NEW prop
+  pendingUserContent={pendingUserContent} // ← NEW prop
   // ... existing props
 />
 ```
@@ -329,11 +342,13 @@ interface MessageListProps {
 Render after the last message in the list, when `pendingUserContent` is non-null:
 
 ```tsx
-{pendingUserContent && (
-  <div className="msg-user msg-user--pending" aria-label="Sending…">
-    {pendingUserContent}
-  </div>
-)}
+{
+  pendingUserContent && (
+    <div className="msg-user msg-user--pending" aria-label="Sending…">
+      {pendingUserContent}
+    </div>
+  );
+}
 ```
 
 The pending bubble should be visually distinct from confirmed messages — use reduced opacity or a subtle animation to signal "in-flight" state. Follow the existing `msg-user` styling conventions. Do not add an animated spinner unless it matches existing loading states.
@@ -355,6 +370,7 @@ The pending bubble should be visually distinct from confirmed messages — use r
 #### Why not content-hash deduplication?
 
 Content-hash matching (`role === 'user' && message.content === pendingContent`) is fragile:
+
 - Fails when `transformContent` modifies the message (file prefixes, context injection)
 - Fails for back-to-back identical messages
 - Doesn't fix Part A (delivery failure consistency)
@@ -419,12 +435,15 @@ handleSubmit → setPendingUserContent(content)  ← ephemeral UI state only
 ## User Experience
 
 ### Bug 1
+
 No visible user-facing change. Console noise eliminated. React reconciliation is more efficient with stable keys.
 
 ### Bug 2
+
 No visible user-facing change. 400/404 error toasts (if any) eliminated on new sessions. Server log noise reduced.
 
 ### Bug 3
+
 **Submit feedback:** User sees a pending bubble immediately after pressing Enter/Send. The bubble is visually distinct (reduced opacity or "sending" indicator) and transitions to a normal confirmed bubble once the first streaming token arrives.
 
 **Reload consistency:** User message always appears after page reload, matching what's in the JSONL transcript.
@@ -687,6 +706,7 @@ If the test results document (`test-results/chat-self-test/20260311-175156.md`) 
 ### Phase 1: Bug 2 — Session ID Guard (Lowest Risk, No UX Impact)
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/model/use-task-state.ts` — change signature, add `enabled`
 - `apps/client/src/layers/entities/session/model/use-session-status.ts` — change signature, add `enabled`
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx:37,114` — remove `?? ''`
@@ -698,6 +718,7 @@ If the test results document (`test-results/chat-self-test/20260311-175156.md`) 
 ### Phase 2: Bug 1 — Stable React Keys (Low Risk, No UX Impact)
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/model/stream-event-handler.ts:139` — add `_partId` to new text parts
 - `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx:121` — use `_partId` as key
 
@@ -708,12 +729,14 @@ If the test results document (`test-results/chat-self-test/20260311-175156.md`) 
 ### Phase 3: Bug 3 — Pending User Content Architecture (Moderate Risk, Visible UX Change)
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts` — remove optimistic `setMessages`, add `pendingUserContent` state, expose in return
 - `apps/client/src/layers/features/chat/model/stream-event-handler.ts` — clear `pendingUserContent` on first `text_delta`
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` — destructure `pendingUserContent`, thread to `MessageList`, update empty-state guard
 - `apps/client/src/layers/features/chat/ui/MessageList.tsx` — add `pendingUserContent` prop, render pending bubble
 
 **Verification:**
+
 1. Submit a message. Pending bubble appears immediately.
 2. First streaming token arrives. Pending bubble clears; JSONL-sourced user bubble appears.
 3. Reload page. User bubble is present (sourced from JSONL).

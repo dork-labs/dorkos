@@ -52,7 +52,7 @@ export function CrossNamespaceEdge(props: EdgeProps) {
       {showLabel && label && (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+            className="nodrag nopan border-primary/30 bg-primary/10 text-primary rounded border px-1.5 py-0.5 text-[10px] font-medium"
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,

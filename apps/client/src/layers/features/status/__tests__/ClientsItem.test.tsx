@@ -75,9 +75,7 @@ describe('ClientsItem', () => {
 
     it('updates aria-label to include lock status', () => {
       render(<ClientsItem {...lockedProps} />);
-      expect(
-        screen.getByLabelText('2 clients connected, session locked'),
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText('2 clients connected, session locked')).toBeInTheDocument();
     });
 
     it('applies amber text color when locked', () => {
@@ -107,7 +105,7 @@ describe('ClientsItem', () => {
         <ClientsItem
           {...baseProps}
           lockInfo={{ clientId: 'web-abc', acquiredAt: new Date().toISOString() }}
-        />,
+        />
       );
       fireEvent.click(screen.getByRole('button'));
       expect(screen.getByText('Locked by another client')).toBeInTheDocument();
@@ -148,9 +146,7 @@ describe('ClientsItem', () => {
     });
 
     it('renders "Unknown client" label for unknown type', () => {
-      const unknownClients = [
-        { type: 'unknown' as const, connectedAt: new Date().toISOString() },
-      ];
+      const unknownClients = [{ type: 'unknown' as const, connectedAt: new Date().toISOString() }];
       render(<ClientsItem {...baseProps} clients={unknownClients} clientCount={1} />);
       fireEvent.click(screen.getByRole('button'));
       expect(screen.getByText('Unknown client')).toBeInTheDocument();

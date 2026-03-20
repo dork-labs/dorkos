@@ -234,7 +234,7 @@ Use `collectSseEvents` from `@dorkos/test-utils` to test SSE streaming end-to-en
 import { collectSseEvents } from '@dorkos/test-utils';
 
 const events = await collectSseEvents(app, sessionId, 'Hello');
-expect(events.some(e => e.type === 'text_delta')).toBe(true);
+expect(events.some((e) => e.type === 'text_delta')).toBe(true);
 ```
 
 ## Running Tests

@@ -21,7 +21,7 @@ describe('Database Migrations', () => {
 
     const result = db.$client
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY name",
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY name"
       )
       .all() as { name: string }[];
     const tableNames = result.map((r) => r.name).sort();
@@ -44,7 +44,7 @@ describe('Database Migrations', () => {
     expect(() => {
       db.$client
         .prepare(
-          "INSERT INTO pulse_runs (id, schedule_id, status, started_at, trigger, created_at) VALUES ('01ABC', 'nonexistent', 'running', '2026-01-01T00:00:00Z', 'manual', '2026-01-01T00:00:00Z')",
+          "INSERT INTO pulse_runs (id, schedule_id, status, started_at, trigger, created_at) VALUES ('01ABC', 'nonexistent', 'running', '2026-01-01T00:00:00Z', 'manual', '2026-01-01T00:00:00Z')"
         )
         .run();
     }).toThrow(/FOREIGN KEY/);
@@ -74,14 +74,14 @@ describe('Database Migrations', () => {
 
     db.$client
       .prepare(
-        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01A', 'agent1', 'claude-code', '/tmp/test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01A', 'agent1', 'claude-code', '/tmp/test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
       )
       .run();
 
     expect(() => {
       db.$client
         .prepare(
-          "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01B', 'agent2', 'claude-code', '/tmp/test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01B', 'agent2', 'claude-code', '/tmp/test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
         )
         .run();
     }).toThrow(/UNIQUE/);
@@ -93,13 +93,13 @@ describe('Database Migrations', () => {
 
     db.$client
       .prepare(
-        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01A', 'agent1', 'claude-code', '/tmp/scan-root-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01A', 'agent1', 'claude-code', '/tmp/scan-root-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
       )
       .run();
 
-    const row = db.$client
-      .prepare("SELECT scan_root FROM agents WHERE id = '01A'")
-      .get() as { scan_root: string };
+    const row = db.$client.prepare("SELECT scan_root FROM agents WHERE id = '01A'").get() as {
+      scan_root: string;
+    };
 
     expect(row.scan_root).toBe('');
   });
@@ -110,13 +110,13 @@ describe('Database Migrations', () => {
 
     db.$client
       .prepare(
-        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01B', 'agent2', 'claude-code', '/tmp/behavior-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01B', 'agent2', 'claude-code', '/tmp/behavior-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
       )
       .run();
 
-    const row = db.$client
-      .prepare("SELECT behavior_json FROM agents WHERE id = '01B'")
-      .get() as { behavior_json: string };
+    const row = db.$client.prepare("SELECT behavior_json FROM agents WHERE id = '01B'").get() as {
+      behavior_json: string;
+    };
 
     expect(JSON.parse(row.behavior_json)).toEqual({ responseMode: 'always' });
   });
@@ -127,13 +127,13 @@ describe('Database Migrations', () => {
 
     db.$client
       .prepare(
-        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01C', 'agent3', 'claude-code', '/tmp/budget-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, runtime, project_path, namespace, capabilities_json, status, registered_at, updated_at) VALUES ('01C', 'agent3', 'claude-code', '/tmp/budget-test', 'default', '[]', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
       )
       .run();
 
-    const row = db.$client
-      .prepare("SELECT budget_json FROM agents WHERE id = '01C'")
-      .get() as { budget_json: string };
+    const row = db.$client.prepare("SELECT budget_json FROM agents WHERE id = '01C'").get() as {
+      budget_json: string;
+    };
 
     expect(JSON.parse(row.budget_json)).toEqual({
       maxHopsPerMessage: 5,
@@ -147,14 +147,14 @@ describe('Database Migrations', () => {
 
     db.$client
       .prepare(
-        "INSERT INTO relay_traces (id, message_id, trace_id, subject, status, sent_at) VALUES ('01A', 'msg1', 'trace1', 'test.sub', 'sent', '2026-01-01T00:00:00Z')",
+        "INSERT INTO relay_traces (id, message_id, trace_id, subject, status, sent_at) VALUES ('01A', 'msg1', 'trace1', 'test.sub', 'sent', '2026-01-01T00:00:00Z')"
       )
       .run();
 
     expect(() => {
       db.$client
         .prepare(
-          "INSERT INTO relay_traces (id, message_id, trace_id, subject, status, sent_at) VALUES ('01B', 'msg1', 'trace2', 'test.sub', 'sent', '2026-01-01T00:00:00Z')",
+          "INSERT INTO relay_traces (id, message_id, trace_id, subject, status, sent_at) VALUES ('01B', 'msg1', 'trace2', 'test.sub', 'sent', '2026-01-01T00:00:00Z')"
         )
         .run();
     }).toThrow(/UNIQUE/);

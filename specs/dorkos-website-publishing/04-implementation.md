@@ -49,7 +49,7 @@
 - `apps/web/source.config.ts` — Fumadocs config pointing to ../../docs
 - `apps/web/src/lib/source.ts` — Fumadocs loader with baseUrl /docs
 - `apps/web/tsconfig.json` — Added @/.source path alias
-- `turbo.json` — Added .next/** outputs, NEXT_PUBLIC_*/POSTHOG_* env, generate:api-docs task
+- `turbo.json` — Added .next/\*_ outputs, NEXT*PUBLIC*_/POSTHOG\_\* env, generate:api-docs task
 - `apps/web/src/app/(docs)/layout.tsx` — DocsLayout with RootProvider and sidebar tree
 - `apps/web/src/app/(docs)/docs/[[...slug]]/page.tsx` — Catch-all page with OpenAPI support
 - `apps/web/src/components/mdx-components.tsx` — MDX component overrides

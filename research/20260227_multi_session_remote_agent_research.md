@@ -1,5 +1,5 @@
 ---
-title: "Multi-Session Agent Management, Remote Interaction, Scheduling, and Notification Research"
+title: 'Multi-Session Agent Management, Remote Interaction, Scheduling, and Notification Research'
 date: 2026-02-27
 type: internal-architecture
 status: active
@@ -55,6 +55,7 @@ Developers lose their own context even when the agent retains its. One article a
 **2. Branch and Worktree Tracking**
 
 With parallel git worktrees (the dominant isolation approach), tracking is error-prone:
+
 - "I can't tell which branch a worktree was most recently rebased onto" without external documentation.
 - No built-in way to send identical prompts to all agents simultaneously.
 - Port confusion when multiple dev servers run across worktrees.
@@ -77,15 +78,15 @@ Raw tmux "requires memorizing session names and switching commands." There is no
 
 ### Current Solutions and Tools
 
-| Tool | Approach | Limitations |
-|------|----------|-------------|
-| **tmux + git worktrees** | Terminal multiplexer, separate directories per agent | Manual, no notifications, high cognitive load |
-| **Claude Squad** | TUI managing multiple sessions with navigation | No notifications, terminal-only |
-| **Agent of Empires** | Rust TUI with status dashboard over tmux | Terminal-only, niche |
-| **par (coplane)** | CLI for parallel worktree + session management | Narrow scope |
-| **gwq** | Status dashboard for active worktrees | Status-only, no management |
-| **Claude Code Agent Teams** | Built-in orchestration (experimental) | Disabled by default, limited session resumption |
-| **ccswarm** | Coordinating agents with specialized pools | Complex setup |
+| Tool                        | Approach                                             | Limitations                                     |
+| --------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
+| **tmux + git worktrees**    | Terminal multiplexer, separate directories per agent | Manual, no notifications, high cognitive load   |
+| **Claude Squad**            | TUI managing multiple sessions with navigation       | No notifications, terminal-only                 |
+| **Agent of Empires**        | Rust TUI with status dashboard over tmux             | Terminal-only, niche                            |
+| **par (coplane)**           | CLI for parallel worktree + session management       | Narrow scope                                    |
+| **gwq**                     | Status dashboard for active worktrees                | Status-only, no management                      |
+| **Claude Code Agent Teams** | Built-in orchestration (experimental)                | Disabled by default, limited session resumption |
+| **ccswarm**                 | Coordinating agents with specialized pools           | Complex setup                                   |
 
 The common thread: all existing solutions are terminal-centric, require manual configuration, and lack robust notification or mobile access.
 
@@ -115,6 +116,7 @@ Critically, the feature was announced as a **research preview** — meaning Anth
 Yes, and the community has been solving it with DIY tools for months before Anthropic shipped Remote Control:
 
 **Community-built solutions (pre-Remote Control):**
+
 - **claude-code-telegram** (1.8k GitHub stars, 208 forks): Telegram bot for remote Claude Code access. The star count for a niche developer tool indicates substantial demand.
 - **Claude-Code-Remote** by JessyTsui: Control Claude Code via email, Discord, and Telegram. "Start tasks locally, receive notifications when Claude completes them, and send new commands by simply replying to emails."
 - **Claudegram**: Bridges Telegram to full Claude Code agent running locally.
@@ -132,6 +134,7 @@ The Justin Searls phone notification post captures the workflow precisely: the a
 ### What "Working Away From Desk" Actually Looks Like
 
 The evidence paints a specific picture:
+
 1. Developer starts a long-running agent task at their desk.
 2. They walk away — to a meeting, gym, another room, coffee shop.
 3. They want to know when the agent is done or stuck.
@@ -168,6 +171,7 @@ Remote Control's limitations confirm the gap: "One remote session at a time" and
 Scheduled/autonomous agent execution has moved from research demo to production tooling in 2025–2026. Key players and their approaches:
 
 **GitHub Copilot Coding Agent (GA since September 25, 2025):**
+
 - Runs inside GitHub Actions infrastructure.
 - Triggered by assigning issues to Copilot or prompting in VS Code.
 - Explores repo, writes code, passes tests, opens a pull request.
@@ -175,6 +179,7 @@ Scheduled/autonomous agent execution has moved from research demo to production 
 - All Copilot coding agent PRs require human approval before CI/CD workflows run.
 
 **Devin (Cognition AI):**
+
 - "Goal-Oriented Autonomy" model: developer assigns high-level goal, Devin works independently in cloud sandbox until complete.
 - After processing, presents a detailed execution plan for human approval before starting.
 - Goldman Sachs piloted alongside 12,000 human developers in 2025, describing a "hybrid workforce" with 20% efficiency gains.
@@ -182,11 +187,13 @@ Scheduled/autonomous agent execution has moved from research demo to production 
 - Supports API-driven task triggering, enabling integration into custom scheduling workflows.
 
 **OpenClaw:**
+
 - Open-source, self-hosted.
 - Explicit scheduling: "Every morning at 7 AM IST, give me traffic update and top headlines" — cron-style scheduling is a first-class feature.
 - Mission Control dashboard provides "20+ scheduled tasks per instance" management.
 
 **DorkOS Pulse (existing):**
+
 - DorkOS already ships scheduled agent execution via the Pulse scheduler (SQLite-backed, croner-powered).
 - Agents can create schedules that enter `pending_approval` state — matching the industry-standard approval gate pattern.
 
@@ -195,6 +202,7 @@ Scheduled/autonomous agent execution has moved from research demo to production 
 The clearest automation targets follow a common risk/value pattern:
 
 **High-value, safe-to-schedule (low risk of irreversible action):**
+
 - Daily code health checks and linting reports.
 - Dependency update PRs (Dependabot-style, but AI-authored).
 - Test suite generation for new code.
@@ -203,6 +211,7 @@ The clearest automation targets follow a common risk/value pattern:
 - Performance benchmark runs with regression detection.
 
 **Higher-risk, requiring approval gates:**
+
 - Refactoring across multiple files.
 - Database migrations.
 - Deployment pipeline execution.
@@ -219,6 +228,7 @@ The Fortune article (February 2026) provides the most candid real-world account:
 - **Memory degradation**: "Maintaining coherent context across extended tasks remains problematic."
 
 **Security-specific risks (from Cloud Security Alliance, AWS):**
+
 - Exposed databases and weak auth from agents provisioning infrastructure.
 - Leaked API keys from agents that write code with hardcoded credentials.
 - Agents that can spend money without rate limits.
@@ -262,6 +272,7 @@ Developers receive an average of 200+ notifications daily across platforms. 68% 
 The CI/CD notification ecosystem — the closest analog to agent notification — reveals clear preferences:
 
 **Most adopted channels (in order):**
+
 1. **Slack** — dominant for team notifications; tight GitHub/GitLab integration via Actions; supports threaded replies for progressive updates.
 2. **Email** — universal fallback; Claude-Code-Remote uses email reply-to-command as a remote interaction primitive.
 3. **Discord** — increasingly common for developer-centric teams; Claude-Code-Remote explicitly supports it.
@@ -351,6 +362,7 @@ Against the current landscape, DorkOS has three architectural advantages that ar
 ## Sources & Evidence
 
 ### Topic 1: Multi-Session Management
+
 - [Orchestrate teams of Claude Code sessions - Claude Code Docs](https://code.claude.com/docs/en/agent-teams)
 - [Multi-Agent Orchestration: Running 10+ Claude Instances in Parallel - DEV Community](https://dev.to/bredmond1019/multi-agent-orchestration-running-10-claude-instances-in-parallel-part-3-29da)
 - [Embracing the parallel coding agent lifestyle - Simon Willison](https://simonwillison.net/2025/Oct/5/parallel-coding-agents/)
@@ -364,6 +376,7 @@ Against the current landscape, DorkOS has three architectural advantages that ar
 - [8 trends shaping software engineering in 2026 - Tessl](https://tessl.io/blog/8-trends-shaping-software-engineering-in-2026-according-to-anthropics-agentic-coding-report/)
 
 ### Topic 2: Remote Agent Interaction
+
 - [Continue local sessions from any device with Remote Control - Claude Code Docs](https://code.claude.com/docs/en/remote-control)
 - [Claude Code Remote Control - Simon Willison](https://simonwillison.net/2026/Feb/25/claude-code-remote-control/)
 - [Anthropic reveals Remote Control, a mobile version of Claude Code - TechRadar](https://www.techradar.com/pro/anthropic-reveals-remote-control-a-mobile-version-of-claude-code-to-keep-you-productive-on-the-move)
@@ -374,6 +387,7 @@ Against the current landscape, DorkOS has three architectural advantages that ar
 - [AI agents promise to work while you sleep. The reality is far messier - Fortune](https://fortune.com/2026/02/23/always-on-ai-agents-openclaw-claude-promise-work-while-sleeping-reality-problems-oversight-guardrails/)
 
 ### Topic 3: Autonomous Agent Scheduling
+
 - [GitHub Copilot: Meet the new coding agent - GitHub Blog](https://github.blog/news-insights/product-news/github-copilot-meet-the-new-coding-agent/)
 - [Copilot coding agent is now generally available - GitHub Community](https://github.com/orgs/community/discussions/159068)
 - [Devin AI: The First Autonomous Software Engineer - Medium](https://medium.com/@mrabet_zakariae/the-devin-revolution-how-the-worlds-first-ai-software-engineer-is-changing-tech-forever-295a426ae229)
@@ -385,6 +399,7 @@ Against the current landscape, DorkOS has three architectural advantages that ar
 - [Lessons from 2025 on agents and trust - Google Cloud](https://cloud.google.com/transform/ai-grew-up-and-got-a-job-lessons-from-2025-on-agents-and-trust)
 
 ### Topic 4: Developer Notification Preferences
+
 - [AI | 2025 Stack Overflow Developer Survey](https://survey.stackoverflow.co/2025/ai)
 - [23% of Devs Regularly Use AI Agents - The New Stack](https://thenewstack.io/23-of-devs-regularly-use-ai-agents-per-stack-overflow-survey/)
 - [Alert fatigue solutions for DevOps teams in 2025 - incident.io](https://incident.io/blog/alert-fatigue-solutions-for-dev-ops-teams-in-2025)

@@ -101,13 +101,13 @@ describe('EndpointRegistry', () => {
 
     it('throws when subject contains single wildcard', async () => {
       await expect(registry.registerEndpoint('relay.agent.*')).rejects.toThrow(
-        'must not contain wildcards',
+        'must not contain wildcards'
       );
     });
 
     it('throws when subject contains multi-wildcard', async () => {
       await expect(registry.registerEndpoint('relay.agent.>')).rejects.toThrow(
-        'must not contain wildcards',
+        'must not contain wildcards'
       );
     });
 

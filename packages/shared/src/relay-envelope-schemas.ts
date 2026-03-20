@@ -36,7 +36,11 @@ export const RelayBudgetSchema = z
     hopCount: z.number().int().min(0),
     maxHops: z.number().int().min(1).default(5),
     ancestorChain: z.array(z.string()),
-    ttl: z.number().int().min(0).openapi({ description: 'Absolute expiry timestamp (ms since epoch)' }),
+    ttl: z
+      .number()
+      .int()
+      .min(0)
+      .openapi({ description: 'Absolute expiry timestamp (ms since epoch)' }),
     callBudgetRemaining: z.number().int().min(0),
   })
   .openapi('RelayBudget');
@@ -208,9 +212,9 @@ export const RelayProgressPayloadSchema = z
   .object({
     type: z.literal('progress'),
     step: z.number().int().min(1).describe('Monotonically increasing step counter'),
-    step_type: z.enum(['message', 'tool_result']).describe(
-      'message = assistant text block completed; tool_result = tool execution completed'
-    ),
+    step_type: z
+      .enum(['message', 'tool_result'])
+      .describe('message = assistant text block completed; tool_result = tool execution completed'),
     text: z.string().describe('Text content of this progress step'),
     done: z.literal(false),
   })

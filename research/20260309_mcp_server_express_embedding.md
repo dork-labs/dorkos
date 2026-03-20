@@ -1,9 +1,10 @@
 ---
-title: "MCP Server Embedding in Express — Transport Options, Auth, and Integration Patterns"
+title: 'MCP Server Embedding in Express — Transport Options, Auth, and Integration Patterns'
 date: 2026-03-09
 type: external-best-practices
 status: active
-tags: [mcp, mcp-server, express, streamable-http, sse, stdio, authentication, transport, tool-schema]
+tags:
+  [mcp, mcp-server, express, streamable-http, sse, stdio, authentication, transport, tool-schema]
 feature_slug: mcp-server
 searches_performed: 9
 sources_count: 18
@@ -150,7 +151,10 @@ A simple middleware that checks a pre-shared secret from `Authorization: Bearer 
 ```typescript
 function mcpApiKeyAuth(req: Request, res: Response, next: NextFunction) {
   const key = env.MCP_API_KEY; // from env.ts via Zod
-  if (!key) { next(); return; } // auth disabled if no key configured
+  if (!key) {
+    next();
+    return;
+  } // auth disabled if no key configured
 
   const authHeader = req.headers.authorization ?? '';
   const [scheme, token] = authHeader.split(' ');
@@ -168,6 +172,7 @@ app.use('/mcp', mcpApiKeyAuth, createMcpRouter());
 ```
 
 Clients configure the key via their MCP client's `headers` option:
+
 ```json
 {
   "url": "http://localhost:4242/mcp",
@@ -187,6 +192,7 @@ Acceptable when DorkOS is bound to localhost only (`127.0.0.1`) and the MCP serv
 ### 6. Discovery — How Clients Find the MCP Server
 
 MCP clients are configured manually (no automatic discovery). The external client needs:
+
 - The URL: `http://localhost:4242/mcp` (or ngrok tunnel equivalent)
 - Transport type: `http` (Streamable HTTP)
 - Optional: API key header
@@ -194,6 +200,7 @@ MCP clients are configured manually (no automatic discovery). The external clien
 Example configurations for common clients:
 
 **Claude Code (`~/.claude/settings.json`)**:
+
 ```json
 {
   "mcpServers": {
@@ -214,22 +221,28 @@ DorkOS already defines its tools using `createSdkMcpServer()` from `@anthropic-a
 The tool handler functions themselves (e.g., `handlePing`, `createRelaySendHandler`) are pure async functions that can be shared. Only the registration wrapper differs:
 
 **Current (internal, Claude Agent SDK):**
+
 ```typescript
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 createSdkMcpServer({
   name: 'dorkos',
-  tools: [ tool('ping', 'description', {}, handlePing) ],
+  tools: [tool('ping', 'description', {}, handlePing)],
 });
 ```
 
 **External (standard MCP SDK):**
+
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 const server = new McpServer({ name: 'dorkos', version: '1.0.0' });
-server.registerTool('ping', {
-  description: 'description',
-  inputSchema: z.object({}),
-}, handlePing);
+server.registerTool(
+  'ping',
+  {
+    description: 'description',
+    inputSchema: z.object({}),
+  },
+  handlePing
+);
 ```
 
 The handlers stay identical. A thin adapter or factory pattern bridges the two registration styles.
@@ -255,6 +268,7 @@ The `@modelcontextprotocol/express` helper package handles #1 automatically (Hos
 **Description:** Mount a `StreamableHTTPServerTransport` on an Express router at `/mcp`. The DorkOS Express server handles MCP alongside its existing REST and SSE endpoints. No new process.
 
 **Pros:**
+
 - Zero new process management — same lifecycle as the Express server
 - Direct access to all singleton services (relay, pulse, mesh, config) without IPC
 - Single port exposed (existing `DORKOS_PORT`) — works through existing ngrok tunnel
@@ -264,6 +278,7 @@ The `@modelcontextprotocol/express` helper package handles #1 automatically (Hos
 - Compatible with Claude Code, Claude Desktop, Cursor, Windsurf, and any MCP client supporting Streamable HTTP
 
 **Cons:**
+
 - MCP sessions held in process memory — server restart clears sessions (clients must re-initialize, which they handle automatically)
 - Adds state (`sessions` Map) to the Express process — need cleanup on session close/expiry
 - The `McpServer` tool registration API differs from the internal Claude Agent SDK API — requires a thin wrapper to reuse handler functions
@@ -279,10 +294,12 @@ The `@modelcontextprotocol/express` helper package handles #1 automatically (Hos
 **Description:** Two endpoints: `GET /mcp` returns an SSE stream, `POST /mcp/messages` accepts requests. The older 2024-11-05 transport.
 
 **Pros:**
+
 - Some older MCP clients only support SSE (pre-2025 versions)
 - Can be run alongside Streamable HTTP for backward compatibility
 
 **Cons:**
+
 - Deprecated as of MCP spec 2025-03-26
 - More complex session management (permanent SSE connection required)
 - Security weaknesses: auth tokens passed in URL query strings, auth only checked at connection time
@@ -301,11 +318,13 @@ The `@modelcontextprotocol/express` helper package handles #1 automatically (Hos
 **Description:** A separate Node.js entry point (e.g., `packages/cli/src/mcp-server.ts`) that reads from stdin and writes to stdout. Clients spawn this process directly.
 
 **Pros:**
+
 - Works with Claude Desktop's "local process" MCP configuration style
 - No network stack required — pure IPC
 - Isolation: MCP server crash does not crash Express
 
 **Cons:**
+
 - Requires a second process to be running (or spawned per client) — operational complexity
 - No direct access to the live Express singletons (relay, pulse, mesh) without IPC layer or shared database reads
 - Cannot share sessions with Express HTTP clients
@@ -325,10 +344,12 @@ The `@modelcontextprotocol/express` helper package handles #1 automatically (Hos
 **Description:** A dedicated Express-like server (or raw HTTP server) that runs exclusively as an MCP server on a separate port.
 
 **Pros:**
+
 - Complete process isolation
 - Could be scaled independently
 
 **Cons:**
+
 - All the IPC/DB-sharing problems of Option 3, plus a second port
 - Operationally complex — now two servers to start, monitor, and configure
 - The DorkOS CLI (`dorkos start`) would need to spawn and manage two processes
@@ -345,6 +366,7 @@ The `@modelcontextprotocol/express` helper package handles #1 automatically (Hos
 ### DorkOS-Specific Architecture Fit
 
 DorkOS already has:
+
 - All tool handler functions in `apps/server/src/services/runtimes/claude-code/mcp-tools/` — pure async functions that can be re-used
 - `McpToolDeps` interface for dependency injection into handlers
 - An Express app with existing middleware (CORS, auth patterns, SSE)
@@ -355,13 +377,13 @@ The Streamable HTTP embedded approach slots in naturally. A new route file `rout
 
 **File impact estimate:**
 
-| File | Change |
-|---|---|
-| `apps/server/src/routes/mcp.ts` | New — POST/GET/DELETE handlers, session map |
+| File                                          | Change                                               |
+| --------------------------------------------- | ---------------------------------------------------- |
+| `apps/server/src/routes/mcp.ts`               | New — POST/GET/DELETE handlers, session map          |
 | `apps/server/src/services/core/mcp-server.ts` | New — `McpServer` factory, tool registration adapter |
-| `apps/server/src/app.ts` | Modify — mount `/mcp` router |
-| `apps/server/src/env.ts` | Modify — add `MCP_API_KEY` optional env var |
-| `apps/server/package.json` | Modify — add `@modelcontextprotocol/sdk` dependency |
+| `apps/server/src/app.ts`                      | Modify — mount `/mcp` router                         |
+| `apps/server/src/env.ts`                      | Modify — add `MCP_API_KEY` optional env var          |
+| `apps/server/package.json`                    | Modify — add `@modelcontextprotocol/sdk` dependency  |
 
 ---
 
@@ -398,6 +420,7 @@ The Streamable HTTP embedded approach slots in naturally. A new route file `rout
 **Recommended Approach:** Streamable HTTP transport embedded in Express (Option 1)
 
 **Rationale:**
+
 - Lowest complexity — three route handlers on a new Express router
 - No new process management overhead
 - Direct access to all live DorkOS singletons (relay, pulse, mesh) without IPC
@@ -407,6 +430,7 @@ The Streamable HTTP embedded approach slots in naturally. A new route file `rout
 - Tool handler functions can be reused directly from `mcp-tools/` with only a registration wrapper change
 
 **Implementation order:**
+
 1. Add `@modelcontextprotocol/sdk` as a dependency in `apps/server/package.json`
 2. Create `apps/server/src/services/core/mcp-server.ts` — `McpServer` factory that registers DorkOS tools using the MCP SDK's `server.registerTool()` API, re-using existing handler functions from `mcp-tools/`
 3. Create `apps/server/src/routes/mcp.ts` — POST/GET/DELETE handlers with session management Map
@@ -415,6 +439,7 @@ The Streamable HTTP embedded approach slots in naturally. A new route file `rout
 6. Add CORS `Mcp-Session-Id` to exposed headers (alongside existing `X-Client-Id`)
 
 **Caveats:**
+
 - The `McpServer` (external MCP SDK) and `createSdkMcpServer()` (internal Claude Agent SDK) are different APIs. Tool handler functions are reusable; only registration wrappers differ. This duplication is acceptable and intentional — the two contexts (internal agent injection vs. external MCP server) have different lifecycles and requirements.
 - For the first iteration, expose only a curated subset of tools externally (e.g., ping, get-server-info, relay-send, relay-inbox, session-list). Exposing destructive operations (delete-schedule, unregister-agent) externally requires explicit consideration.
 - Session cleanup (TTL eviction for idle sessions) should be implemented from day one to prevent memory leaks.

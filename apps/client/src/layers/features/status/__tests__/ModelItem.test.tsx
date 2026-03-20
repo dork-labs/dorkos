@@ -50,25 +50,23 @@ function createWrapper() {
 
 describe('ModelItem', () => {
   it('renders the current model display name', async () => {
-    render(
-      <ModelItem model="claude-opus-4-6" onChangeModel={vi.fn()} />,
-      { wrapper: createWrapper() },
-    );
+    render(<ModelItem model="claude-opus-4-6" onChangeModel={vi.fn()} />, {
+      wrapper: createWrapper(),
+    });
     expect(await screen.findByText('Opus 4.6')).toBeInTheDocument();
   });
 
   it('falls back to extracted name for unknown models', () => {
-    render(
-      <ModelItem model="claude-unknown-1-0-20260101" onChangeModel={vi.fn()} />,
-      { wrapper: createWrapper() },
-    );
+    render(<ModelItem model="claude-unknown-1-0-20260101" onChangeModel={vi.fn()} />, {
+      wrapper: createWrapper(),
+    });
     expect(screen.getByText('Unknown')).toBeInTheDocument();
   });
 
   it('renders a disabled button when disabled=true', () => {
     const { container } = render(
       <ModelItem model="claude-opus-4-6" onChangeModel={vi.fn()} disabled />,
-      { wrapper: createWrapper() },
+      { wrapper: createWrapper() }
     );
     // The model trigger is rendered as a <button disabled> element in the disabled path.
     // Use querySelector to target the disabled button directly rather than relying on

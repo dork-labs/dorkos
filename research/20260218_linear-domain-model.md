@@ -1,5 +1,5 @@
 ---
-title: "Linear Domain Model: Comprehensive Research"
+title: 'Linear Domain Model: Comprehensive Research'
 date: 2026-02-18
 type: exploratory
 status: archived
@@ -107,7 +107,7 @@ labelIds:         [UUID] (array of IssueLabel IDs)
 ### Priority encoding (confirmed)
 
 | Integer | Label       |
-|---------|-------------|
+| ------- | ----------- |
 | 0       | No Priority |
 | 1       | Urgent      |
 | 2       | High        |
@@ -119,6 +119,7 @@ Urgent priority triggers automatic email notifications to the assignee.
 ### Estimate types (team-level configuration)
 
 The team's `estimateType` field controls which scale is used:
+
 - `notUsed` — estimates disabled
 - `exponential` — 1, 2, 4, 8, 16...
 - `fibonacci` — 1, 2, 3, 5, 8, 13, 21...
@@ -144,14 +145,14 @@ Workflow states are **per-team** — each team defines its own named states, but
 
 ### State type categories (enum values)
 
-| Type        | Meaning                                   |
-|-------------|-------------------------------------------|
-| `triage`    | Inbox state, excluded from normal views   |
-| `backlog`   | Unstarted, default for new issues         |
-| `unstarted` | Todo (pre-work, before active work)       |
-| `started`   | In progress                               |
-| `completed` | Done                                      |
-| `canceled`  | Rejected/closed                           |
+| Type        | Meaning                                 |
+| ----------- | --------------------------------------- |
+| `triage`    | Inbox state, excluded from normal views |
+| `backlog`   | Unstarted, default for new issues       |
+| `unstarted` | Todo (pre-work, before active work)     |
+| `started`   | In progress                             |
+| `completed` | Done                                    |
+| `canceled`  | Rejected/closed                         |
 
 ### WorkflowState fields
 
@@ -256,13 +257,13 @@ creatorId:    UUID
 
 Projects use **five base categories**, each supporting custom named statuses:
 
-| Category    | Built-in meaning                  |
-|-------------|-----------------------------------|
-| `backlog`   | Early-stage concept               |
-| `planned`   | Ready for execution               |
-| `started`   | Currently in progress             |
-| `completed` | Finished                          |
-| `canceled`  | Abandoned                         |
+| Category    | Built-in meaning      |
+| ----------- | --------------------- |
+| `backlog`   | Early-stage concept   |
+| `planned`   | Ready for execution   |
+| `started`   | Currently in progress |
+| `completed` | Finished              |
+| `canceled`  | Abandoned             |
 
 Additionally, `paused` appears automatically under Planned for paused projects.
 
@@ -271,6 +272,7 @@ Additionally, `paused` appears automatically under Planned for paused projects.
 ### Project milestones
 
 ProjectMilestone fields:
+
 ```
 id:          UUID
 name:        String
@@ -411,12 +413,12 @@ Issue relations link two Issues with a directional relationship type.
 
 ### Relation types (enum)
 
-| API value    | Display       | Meaning                              |
-|--------------|---------------|--------------------------------------|
-| `blocks`     | Blocks        | This issue blocks the related issue  |
-| `blocked`    | Blocked by    | This issue is blocked by the related |
-| `related`    | Related to    | General association                  |
-| `duplicate`  | Duplicate of  | This issue duplicates another        |
+| API value   | Display      | Meaning                              |
+| ----------- | ------------ | ------------------------------------ |
+| `blocks`    | Blocks       | This issue blocks the related issue  |
+| `blocked`   | Blocked by   | This issue is blocked by the related |
+| `related`   | Related to   | General association                  |
+| `duplicate` | Duplicate of | This issue duplicates another        |
 
 ### IssueRelation fields
 
@@ -430,6 +432,7 @@ relatedIssueId:  UUID (target issue)
 ```
 
 Visual indicators in the UI:
+
 - Orange flag = blocked-by
 - Red flag = blocking another issue
 - Green flag = blocking issue was resolved (converts to related)
@@ -604,12 +607,14 @@ Each team defines its own workflow states. States have a `type` (category) and a
 ```
 
 When Triage is enabled:
+
 - Non-team-member-created issues and integration-created issues → Triage automatically
 - Triaged issues can be: Accepted, Duplicated, Declined, or Snoozed
 
 ### Default state assignment
 
 If `stateId` is omitted on `issueCreate`:
+
 - With Triage enabled → lands in the single Triage state
 - Without Triage → lands in team's default Backlog/Unstarted state (configurable)
 
@@ -771,23 +776,23 @@ Documents (N)                         [linked to Projects]
 
 ### Key cardinalities
 
-| Relationship               | Cardinality  |
-|----------------------------|--------------|
-| Issue → Team               | N:1 (required) |
-| Issue → WorkflowState      | N:1 (required) |
-| Issue → Project            | N:1 (optional) |
-| Issue → Cycle              | N:1 (optional) |
-| Issue → Parent Issue       | N:1 (optional) |
-| Issue → Labels             | N:M           |
-| Issue → Assignee (User)    | N:1 (optional) |
-| Issue → IssueRelations     | 1:N (multiple relations) |
-| Project → Teams            | N:M           |
-| Project → Milestones       | 1:N           |
-| Initiative → Projects      | N:M (join table) |
-| Initiative → Parent Init.  | N:1 (optional, up to 5 deep) |
-| Team → WorkflowStates      | 1:N           |
-| Team → Cycles              | 1:N           |
-| Cycle → Issues             | 1:N           |
+| Relationship              | Cardinality                  |
+| ------------------------- | ---------------------------- |
+| Issue → Team              | N:1 (required)               |
+| Issue → WorkflowState     | N:1 (required)               |
+| Issue → Project           | N:1 (optional)               |
+| Issue → Cycle             | N:1 (optional)               |
+| Issue → Parent Issue      | N:1 (optional)               |
+| Issue → Labels            | N:M                          |
+| Issue → Assignee (User)   | N:1 (optional)               |
+| Issue → IssueRelations    | 1:N (multiple relations)     |
+| Project → Teams           | N:M                          |
+| Project → Milestones      | 1:N                          |
+| Initiative → Projects     | N:M (join table)             |
+| Initiative → Parent Init. | N:1 (optional, up to 5 deep) |
+| Team → WorkflowStates     | 1:N                          |
+| Team → Cycles             | 1:N                          |
+| Cycle → Issues            | 1:N                          |
 
 ---
 

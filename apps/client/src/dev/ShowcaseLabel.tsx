@@ -6,12 +6,12 @@ export function ShowcaseLabel({ children }: { children: string }) {
   const { copied, copy } = useCopy();
 
   return (
-    <div className="group/label mb-2 flex items-center text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="group/label text-muted-foreground mb-2 flex items-center text-xs font-medium tracking-wider uppercase">
       {children}
       <button
         type="button"
         onClick={() => copy(children)}
-        className="ml-1.5 text-muted-foreground/0 transition-colors group-hover/label:text-muted-foreground"
+        className="text-muted-foreground/0 group-hover/label:text-muted-foreground ml-1.5 transition-colors"
         aria-label={`Copy "${children}"`}
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

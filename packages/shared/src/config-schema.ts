@@ -1,10 +1,7 @@
 import { z } from 'zod';
 
 /** Sensitive fields that trigger a warning when set via CLI or API */
-export const SENSITIVE_CONFIG_KEYS = [
-  'tunnel.authtoken',
-  'tunnel.auth',
-] as const;
+export const SENSITIVE_CONFIG_KEYS = ['tunnel.authtoken', 'tunnel.auth'] as const;
 
 /** The three guided onboarding steps a first-time user walks through. */
 export const ONBOARDING_STEPS = ['discovery', 'pulse', 'adapters'] as const;
@@ -53,7 +50,11 @@ export const UserConfigSchema = z.object({
         .describe('Version strings the user has dismissed upgrade notifications for'),
     })
     .default(() => ({ theme: 'system' as const, dismissedUpgradeVersions: [] })),
-  logging: LoggingConfigSchema.default(() => ({ level: 'info' as const, maxLogSizeKb: 500, maxLogFiles: 14 })),
+  logging: LoggingConfigSchema.default(() => ({
+    level: 'info' as const,
+    maxLogSizeKb: 500,
+    maxLogFiles: 14,
+  })),
   relay: z
     .object({
       enabled: z.boolean().default(true),
@@ -94,7 +95,11 @@ export const UserConfigSchema = z.object({
     .default(() => ({ relayTools: true, meshTools: true, adapterTools: true, pulseTools: true })),
   uploads: z
     .object({
-      maxFileSize: z.number().int().positive().default(10 * 1024 * 1024), // 10MB
+      maxFileSize: z
+        .number()
+        .int()
+        .positive()
+        .default(10 * 1024 * 1024), // 10MB
       maxFiles: z.number().int().min(1).max(50).default(10),
       allowedTypes: z.array(z.string()).default(() => ['*/*']),
     })

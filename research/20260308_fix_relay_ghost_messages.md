@@ -1,5 +1,5 @@
 ---
-title: "Relay-Mode Ghost Messages — Subscribe-First Race Condition Root Cause & Fix"
+title: 'Relay-Mode Ghost Messages — Subscribe-First Race Condition Root Cause & Fix'
 date: 2026-03-08
 type: implementation
 status: active
@@ -190,23 +190,27 @@ envelope. The `relay_message` listener filters events by `correlationId`, discar
 from previous messages.
 
 **Server changes needed:**
+
 - `POST /api/sessions/:id/messages` accepts a `correlationId` in the request body
 - `publishViaRelay()` includes `correlationId` in the relay message headers/payload
 - ClaudeCode adapter echoes `correlationId` in all response chunks published to
   `relay.human.console.{clientId}`
 
 **Client changes needed:**
+
 - `handleSubmit` generates `correlationId = crypto.randomUUID()` per message
 - `transport.sendMessageRelay()` sends `correlationId` to the POST
 - `relay_message` listener checks `envelope.correlationId === currentCorrelationIdRef.current`
   before processing
 
 **Pros:**
+
 - Eliminates message bleeding entirely — each message only processes events with its own ID
 - No dependency on timing or SSE connection lifecycle
 - Works correctly for rapid successive messages, retries, and reconnects
 
 **Cons:**
+
 - Requires server-side changes in the relay pipeline (adapter must echo the ID)
 - Increased message payload size
 - Requires ClaudeCode adapter changes
@@ -258,11 +262,13 @@ This is the pattern used by the legacy (non-relay) path: SSE is embedded in the 
 The relay path uses a persistent SSE for efficiency, but this could be changed.
 
 **Pros:**
+
 - Clean per-message isolation — no cross-message event leaking
 - Natural cleanup on `done` or error
 - `stream_ready` handshake works correctly per message
 
 **Cons:**
+
 - HTTP overhead: new TCP connection or HTTP/2 stream per message
 - EventSource reconnect behavior adds complexity
 - Breaks the staleness detector pattern (which relies on the persistent SSE)
@@ -278,6 +284,7 @@ pipeline, not just at connection registration time. The client resets `streamRea
 before each `handleSubmit` and waits for the next `stream_ready`.
 
 **How the server sends per-message stream_ready:**
+
 - In the ClaudeCode adapter, when it begins processing a new message from the relay, it
   publishes a `stream_ready` signal to `relay.human.console.{clientId}` BEFORE any content chunks
 - OR: The `POST /api/sessions/:id/messages` handler sends a `stream_ready` via the SSE connection
@@ -369,7 +376,7 @@ Echo `correlationId` from the incoming message payload in all response chunks pu
 // In the adapter's response publishing:
 await relay.publish(
   `relay.human.console.${clientId}`,
-  { ...eventChunk, correlationId },  // echo correlationId from request
+  { ...eventChunk, correlationId }, // echo correlationId from request
   { correlationId }
 );
 ```
@@ -383,7 +390,7 @@ which runs asynchronously. To fix this, update `statusRef.current` synchronously
 ```typescript
 // In handleSubmit, after setStatus('streaming'):
 setStatus('streaming');
-statusRef.current = 'streaming';  // Synchronous pre-update prevents sync_update race
+statusRef.current = 'streaming'; // Synchronous pre-update prevents sync_update race
 ```
 
 This is safe because the `statusRef` is only read by the `sync_update` listener (a closure
@@ -423,6 +430,7 @@ signalReady(clientId: string): void {
 ```
 
 **Client side:**
+
 ```typescript
 // In handleSubmit, before the relay block:
 streamReadyRef.current = false; // Force re-confirmation for this message
@@ -468,7 +476,7 @@ if (envelope.payload.type === 'stream_ready_ack') {
 // ClaudeCode adapter, before iterating SDK generator:
 await relay.publish(`relay.human.console.${clientId}`, {
   type: 'stream_ready_ack',
-  correlationId
+  correlationId,
 });
 // Then iterate and publish SDK events...
 ```
@@ -478,13 +486,13 @@ subscribe-first semantics on the relay path.
 
 ## Comparison Table
 
-| Approach | Fixes Ghost Content | Fixes History Race | Server Changes | Complexity | Recommended? |
-|----------|--------------------|--------------------|----------------|-----------|--------------|
-| Reset streamReadyRef alone | No (server won't resend) | No | None | Low | No — incomplete |
-| Per-message correlation ID | Yes | Partial | Medium | Medium | Yes — primary fix |
-| Advance statusRef synchronously | No | Yes | None | Trivial | Yes — secondary fix |
-| Per-message SSE connection | Yes | Yes | Medium | High | No — too invasive |
-| stream_ready_ack from adapter | Yes (partial) | No | Low | Low | Yes — complement |
+| Approach                        | Fixes Ghost Content      | Fixes History Race | Server Changes | Complexity | Recommended?        |
+| ------------------------------- | ------------------------ | ------------------ | -------------- | ---------- | ------------------- |
+| Reset streamReadyRef alone      | No (server won't resend) | No                 | None           | Low        | No — incomplete     |
+| Per-message correlation ID      | Yes                      | Partial            | Medium         | Medium     | Yes — primary fix   |
+| Advance statusRef synchronously | No                       | Yes                | None           | Trivial    | Yes — secondary fix |
+| Per-message SSE connection      | Yes                      | Yes                | Medium         | High       | No — too invasive   |
+| stream_ready_ack from adapter   | Yes (partial)            | No                 | Low            | Low        | Yes — complement    |
 
 ## Implementation Priority
 
@@ -516,6 +524,7 @@ but provides the infrastructure for Fix 3.
 ### Fix 3 (P0): Server-Side Correlation ID Echoing
 
 **Files:**
+
 - `apps/server/src/routes/sessions.ts` — `publishViaRelay()` accepts and threads correlationId
 - ClaudeCode adapter (`apps/server/src/services/relay/adapters/claude-code-adapter.ts` or similar)
   — echoes correlationId in all published response chunks
@@ -527,6 +536,7 @@ but provides the infrastructure for Fix 3.
 ### Fix 4 (P1): stream_ready_ack from ClaudeCode Adapter
 
 **Files:**
+
 - ClaudeCode adapter — publishes synthetic `stream_ready_ack` as first event per message
 - `use-chat-session.ts` — resets `streamReadyRef.current = false` in `handleSubmit`, handles
   `stream_ready_ack` in the relay_message listener to set it back to `true`
@@ -550,6 +560,7 @@ This is not a production-quality fix — the 5-second wait is unacceptable UX. B
 the root cause and buys time for the full server-side fix.
 
 A better client-only mitigation:
+
 - Track `assistantIdRef.current` at the time the `relay_message` event is **registered** as
   a closure variable, and only call `streamEventHandler` if the current `assistantIdRef.current`
   still matches the captured value. This prevents late events from previous messages from

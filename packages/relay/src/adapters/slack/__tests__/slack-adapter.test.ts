@@ -98,7 +98,7 @@ describe('SlackAdapter', () => {
     const custom = new SlackAdapter(
       's2',
       { botToken: 'xoxb-x', appToken: 'xapp-x', signingSecret: 's' },
-      'Work Slack',
+      'Work Slack'
     );
     expect(custom.displayName).toBe('Work Slack');
   });

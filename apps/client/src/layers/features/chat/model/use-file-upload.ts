@@ -67,9 +67,7 @@ export function useFileUpload() {
 
       const onProgress = (progress: UploadProgress) => {
         setPendingFiles((prev) =>
-          prev.map((f) =>
-            f.status === 'uploading' ? { ...f, progress: progress.percentage } : f
-          )
+          prev.map((f) => (f.status === 'uploading' ? { ...f, progress: progress.percentage } : f))
         );
       };
 
@@ -93,9 +91,7 @@ export function useFileUpload() {
     onError: (error: Error) => {
       setPendingFiles((prev) =>
         prev.map((f) =>
-          f.status === 'uploading'
-            ? { ...f, status: 'error' as const, error: error.message }
-            : f
+          f.status === 'uploading' ? { ...f, status: 'error' as const, error: error.message } : f
         )
       );
     },

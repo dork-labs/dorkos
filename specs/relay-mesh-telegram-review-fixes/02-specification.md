@@ -21,11 +21,11 @@ Split `packages/relay/src/relay-core.ts` (1028 lines) into 4 files. Public API r
 
 **New files:**
 
-| File | Extracted From | Lines | Responsibility |
-|------|---------------|-------|----------------|
-| `packages/relay/src/delivery-pipeline.ts` | `deliverToEndpoint()`, `dispatchToSubscribers()` | ~170 | Endpoint delivery with backpressure, circuit breaker, budget enforcement, subscriber dispatch |
-| `packages/relay/src/adapter-delivery.ts` | `deliverToAdapter()` | ~60 | Adapter routing, timeout management, audit trail indexing |
-| `packages/relay/src/watcher-manager.ts` | `startWatcher()`, `handleNewMessage()`, `stopWatcher()` | ~95 | chokidar file watcher lifecycle for maildir endpoints |
+| File                                      | Extracted From                                          | Lines | Responsibility                                                                                |
+| ----------------------------------------- | ------------------------------------------------------- | ----- | --------------------------------------------------------------------------------------------- |
+| `packages/relay/src/delivery-pipeline.ts` | `deliverToEndpoint()`, `dispatchToSubscribers()`        | ~170  | Endpoint delivery with backpressure, circuit breaker, budget enforcement, subscriber dispatch |
+| `packages/relay/src/adapter-delivery.ts`  | `deliverToAdapter()`                                    | ~60   | Adapter routing, timeout management, audit trail indexing                                     |
+| `packages/relay/src/watcher-manager.ts`   | `startWatcher()`, `handleNewMessage()`, `stopWatcher()` | ~95   | chokidar file watcher lifecycle for maildir endpoints                                         |
 
 **`relay-core.ts` after split:** ~450 lines (within 300-500 guideline). Retains constructor, `publish()` orchestration, subscription/signal delegation, endpoint management facade, access control delegation, config hot-reload, `close()`, and `assertOpen()`.
 
@@ -85,12 +85,20 @@ export class WatcherManager {
 
 ```typescript
 this.deliveryPipeline = new DeliveryPipeline(
-  this.sqliteIndex, this.maildirStore, this.subscriptionRegistry,
-  this.circuitBreaker, backpressureConfig, this.signalEmitter, this.deadLetterQueue,
+  this.sqliteIndex,
+  this.maildirStore,
+  this.subscriptionRegistry,
+  this.circuitBreaker,
+  backpressureConfig,
+  this.signalEmitter,
+  this.deadLetterQueue
 );
 this.adapterDelivery = new AdapterDelivery(this.adapterRegistry, this.sqliteIndex);
 this.watcherManager = new WatcherManager(
-  this.maildirStore, this.subscriptionRegistry, this.sqliteIndex, this.circuitBreaker,
+  this.maildirStore,
+  this.subscriptionRegistry,
+  this.sqliteIndex,
+  this.circuitBreaker
 );
 ```
 
@@ -179,7 +187,7 @@ try {
     new Promise<never>((_, reject) => {
       timer = setTimeout(
         () => reject(new Error('Connection test timed out')),
-        CONNECTION_TEST_TIMEOUT_MS,
+        CONNECTION_TEST_TIMEOUT_MS
       );
     }),
   ]);
@@ -313,6 +321,7 @@ export interface TelegramAdapterConfig {
 **Manifest changes** (`telegram-adapter.ts` TELEGRAM_MANIFEST):
 
 Add config field:
+
 ```typescript
 {
   key: 'webhookSecret',
@@ -383,10 +392,10 @@ Harden the HTTP server:
 
 ```typescript
 const server = createServer(handler);
-server.headersTimeout = 10_000;     // 10s for headers
-server.requestTimeout = 30_000;     // 30s total request
-server.maxHeadersCount = 50;        // Limit header count
-server.keepAliveTimeout = 5_000;    // 5s keep-alive
+server.headersTimeout = 10_000; // 10s for headers
+server.requestTimeout = 30_000; // 30s total request
+server.maxHeadersCount = 50; // Limit header count
+server.keepAliveTimeout = 5_000; // 5s keep-alive
 ```
 
 #### D3: `startedAt` not cleared on stop — `telegram-adapter.ts:347-349`
@@ -471,7 +480,9 @@ Extract the inline styles to a new CSS file:
 
 /* ... remaining styles from the inline block */
 
-@keyframes pulse-glow { /* ... */ }
+@keyframes pulse-glow {
+  /* ... */
+}
 ```
 
 **In TopologyGraph.tsx:** Replace the `<style>` JSX element with an import:
@@ -486,45 +497,45 @@ Tests cover changed code only — no backfilling.
 
 ### New tests for binding-router:
 
-| Test | Covers |
-|------|--------|
-| `handleInbound` catches and logs errors when `publish()` throws | C2 |
-| `getOrCreateSession` deduplicates concurrent calls for same key | C1 |
-| Session map eviction when exceeding MAX_SESSIONS | I6 |
+| Test                                                            | Covers |
+| --------------------------------------------------------------- | ------ |
+| `handleInbound` catches and logs errors when `publish()` throws | C2     |
+| `getOrCreateSession` deduplicates concurrent calls for same key | C1     |
+| Session map eviction when exceeding MAX_SESSIONS                | I6     |
 
 ### Updated tests for relay-core split:
 
-| Test | Covers |
-|------|--------|
-| Existing relay-core tests pass with updated imports | S1 |
-| `DeliveryPipeline.deliverToEndpoint()` unit test | S1 |
-| `AdapterDelivery.deliver()` clears timer on success | I1 |
+| Test                                                | Covers |
+| --------------------------------------------------- | ------ |
+| Existing relay-core tests pass with updated imports | S1     |
+| `DeliveryPipeline.deliverToEndpoint()` unit test    | S1     |
+| `AdapterDelivery.deliver()` clears timer on success | I1     |
 
 ### Updated tests for adapter-manager:
 
-| Test | Covers |
-|------|--------|
-| `testConnection` clears timer on success | I2 |
-| `saveConfig` uses atomic write (tmp file created, renamed) | I5 |
+| Test                                                       | Covers |
+| ---------------------------------------------------------- | ------ |
+| `testConnection` clears timer on success                   | I2     |
+| `saveConfig` uses atomic write (tmp file created, renamed) | I5     |
 
 ### New tests for telegram-adapter:
 
-| Test | Covers |
-|------|--------|
-| Webhook mode passes secret_token to setWebhook and webhookCallback | C3 |
-| Polling reconnection with exponential backoff | I7 |
-| Inbound message content capped at MAX_CONTENT_LENGTH | D4 |
+| Test                                                               | Covers |
+| ------------------------------------------------------------------ | ------ |
+| Webhook mode passes secret_token to setWebhook and webhookCallback | C3     |
+| Polling reconnection with exponential backoff                      | I7     |
+| Inbound message content capped at MAX_CONTENT_LENGTH               | D4     |
 
 ## Implementation Phases
 
 Execute in this order to minimize risk:
 
-| Phase | Issues | Files | Risk |
-|-------|--------|-------|------|
-| 1. Relay Core Split | S1 | `relay-core.ts` → 4 files | Medium (many internal changes, but public API stable) |
-| 2. Relay Bug Fixes | C1, C2, I1-I6, D1, D2 | `binding-router.ts`, `adapter-manager.ts`, extracted files | Low (isolated fixes) |
-| 3. Telegram Fixes | C3, I7, I8, D3, D4 | `telegram-adapter.ts`, `relay-schemas.ts`, `types.ts` | Low (isolated adapter) |
-| 4. Mesh UI Fixes | U1, U2, U3 | `TopologyGraph.tsx`, new CSS file | Low (UI-only, no server changes) |
+| Phase               | Issues                | Files                                                      | Risk                                                  |
+| ------------------- | --------------------- | ---------------------------------------------------------- | ----------------------------------------------------- |
+| 1. Relay Core Split | S1                    | `relay-core.ts` → 4 files                                  | Medium (many internal changes, but public API stable) |
+| 2. Relay Bug Fixes  | C1, C2, I1-I6, D1, D2 | `binding-router.ts`, `adapter-manager.ts`, extracted files | Low (isolated fixes)                                  |
+| 3. Telegram Fixes   | C3, I7, I8, D3, D4    | `telegram-adapter.ts`, `relay-schemas.ts`, `types.ts`      | Low (isolated adapter)                                |
+| 4. Mesh UI Fixes    | U1, U2, U3            | `TopologyGraph.tsx`, new CSS file                          | Low (UI-only, no server changes)                      |
 
 ## Acceptance Criteria
 

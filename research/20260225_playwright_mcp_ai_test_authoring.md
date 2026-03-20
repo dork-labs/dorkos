@@ -1,5 +1,5 @@
 ---
-title: "Playwright MCP — AI-Driven Test Authoring Research"
+title: 'Playwright MCP — AI-Driven Test Authoring Research'
 date: 2026-02-25
 type: external-best-practices
 status: active
@@ -20,17 +20,20 @@ feature_slug: browser-testing-system
 `@playwright/mcp` (Microsoft's official server) exposes tools prefixed with `browser_`:
 
 ### Navigation
+
 - `browser_navigate` — go to URL
 - `browser_navigate_back` — history back
 - `browser_navigate_forward` — history forward
 
 ### Observation (read-only)
+
 - `browser_snapshot` — returns the accessibility tree as structured text (2-5KB; default, no vision model needed)
 - `browser_take_screenshot` — pixel screenshot (requires vision-capable model)
 - `browser_console_messages` — browser console output
 - `browser_network_requests` — captured network activity
 
 ### Interaction
+
 - `browser_click` — click by element ref from snapshot
 - `browser_type` — keyboard input into field
 - `browser_hover` — mouse hover
@@ -41,9 +44,11 @@ feature_slug: browser-testing-system
 - `browser_file_upload` — upload files
 
 ### Tab / Window Management
+
 - `browser_tab_new`, `browser_tab_list`, `browser_tab_select`, `browser_tab_close`
 
 ### Utilities
+
 - `browser_wait_for` — wait for element or condition
 - `browser_resize` — viewport resize
 - `browser_pdf_save` — save page as PDF
@@ -52,6 +57,7 @@ feature_slug: browser-testing-system
 - `browser_close` — close browser
 
 ### Key architecture note
+
 `browser_snapshot` uses Playwright's **accessibility tree**, not pixels. Output is structured, deterministic, and 10-100x smaller than screenshots — ideal for coding agents. Screenshot mode exists but requires a vision model and is slower.
 
 ---
@@ -59,6 +65,7 @@ feature_slug: browser-testing-system
 ## 2. "Explore First, Then Write Tests" Patterns
 
 ### The Canonical Pattern (Debs O'Brien / Playwright docs)
+
 1. Point agent at a live URL
 2. Agent calls `browser_navigate` + `browser_snapshot` to read the page state
 3. Agent tabs through / interacts to discover flows (no predefined script)
@@ -69,6 +76,7 @@ feature_slug: browser-testing-system
 **Key insight:** The exploration phase caught a real bug (wrong search results) that manual testing missed. Autonomous navigation surfaces things a scripted test wouldn't find.
 
 ### Prompt Template Structure
+
 From the documented pattern in `.github/generate_tests.prompt.md`:
 
 ```
@@ -82,16 +90,18 @@ Workflow:
 ```
 
 ### Playwright's Official 3-Agent Architecture (new in 2025)
+
 Initialized via:
+
 ```bash
 npx playwright init-agents --loop=[vscode|claude|opencode]
 ```
 
-| Agent | Input | Output |
-|-------|-------|--------|
-| **Planner** | User request + seed test (+ optional PRD) | Markdown test plan in `specs/` |
-| **Generator** | Markdown plan | `.spec.ts` files in `tests/` with live selector verification |
-| **Healer** | Failing tests | Patched tests (locator fixes, wait adjustments) |
+| Agent         | Input                                     | Output                                                       |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| **Planner**   | User request + seed test (+ optional PRD) | Markdown test plan in `specs/`                               |
+| **Generator** | Markdown plan                             | `.spec.ts` files in `tests/` with live selector verification |
+| **Healer**    | Failing tests                             | Patched tests (locator fixes, wait adjustments)              |
 
 The seed test runs global setup so the planner has an authenticated/initialized browser context.
 
@@ -100,6 +110,7 @@ The seed test runs global setup so the planner has an authenticated/initialized 
 ## 3. Claude + Playwright MCP Patterns Teams Use
 
 ### Pattern A: "Quinn" — PR-triggered QA Agent
+
 Source: alexop.dev
 
 ```json
@@ -118,12 +129,14 @@ Source: alexop.dev
 - Output: Markdown bug report posted back to PR as comment
 
 ### Pattern B: VSCode Agent Mode + MCP
+
 - Configure `.vscode/mcp.json` pointing to `@playwright/mcp`
 - Use GitHub Copilot's Agent Mode (or Claude extension) as the driver
 - Keep a `generate_tests.prompt.md` with role + rules as a reusable template
 - Agent explores site, then writes test file, then runs it in-IDE
 
 ### Pattern C: Claude Code Directly (Simon Willison's approach)
+
 Source: til.simonwillison.net
 
 - Add `@playwright/mcp` to Claude Code's MCP servers config
@@ -132,6 +145,7 @@ Source: til.simonwillison.net
 - Best for ad-hoc test authoring during development
 
 ### Pattern D: Checkly's CI Integration
+
 - Generate tests exploratorily via MCP
 - Promote passing tests into Checkly monitoring checks
 - Use for both test generation AND ongoing synthetic monitoring
@@ -141,6 +155,7 @@ Source: til.simonwillison.net
 ## 4. Write → Run → Fix Loop Best Practices
 
 ### The Core Loop
+
 ```
 1. EXPLORE    browser_navigate + browser_snapshot (read the DOM)
 2. WRITE      browser_generate_playwright_test or hand-write .spec.ts
@@ -151,35 +166,42 @@ Source: til.simonwillison.net
 ```
 
 ### Locator Best Practices (enforce in prompts)
+
 - Prefer: `getByRole()`, `getByTestId()`, `getByLabel()`, `getByText()`
 - Avoid: CSS selectors, XPath — these break on refactors
 
 ### Assertion Best Practices
+
 - Use auto-retrying assertions: `toBeVisible()`, `toContainText()`
 - Avoid: `toBe(true)` on `.isVisible()` — not auto-retrying
 
 ### Structural Best Practices
+
 - One behavior per test (single-purpose)
 - Tests should be independent (no shared mutable state between tests)
 - Accept a generated test only after it passes consistently (run 2-3 times)
 
 ### CI Considerations
+
 - Always use `--headless` flag in CI
 - Traces (`--trace on`) and screenshots (`--screenshot only-on-failure`) are essential debugging artifacts
 - Don't run MCP-generated tests blind in CI — validate them locally first
 
 ### Snapshot vs Screenshot Mode
-| Mode | When to use | Token cost |
-|------|-------------|------------|
-| `browser_snapshot` (default) | Most test generation, coding agents | Low (2-5KB) |
-| `browser_take_screenshot` | Visual regression, complex layouts | High (requires vision model) |
+
+| Mode                         | When to use                         | Token cost                   |
+| ---------------------------- | ----------------------------------- | ---------------------------- |
+| `browser_snapshot` (default) | Most test generation, coding agents | Low (2-5KB)                  |
+| `browser_take_screenshot`    | Visual regression, complex layouts  | High (requires vision model) |
 
 ---
 
 ## 5. DorkOS-Specific Implementation Notes
 
 ### MCP Config for Claude Code
+
 Add to `.claude/settings.json` or via `claude mcp add`:
+
 ```json
 {
   "mcpServers": {
@@ -192,9 +214,11 @@ Add to `.claude/settings.json` or via `claude mcp add`:
 ```
 
 ### Integration with Existing E2E Tests
+
 The existing `apps/e2e/` directory uses Playwright already. The `BasePage.ts` / `ChatPage.ts` + spec files pattern is compatible with MCP-generated tests — MCP can write to that directory using the same conventions.
 
 ### Recommended Workflow for DorkOS
+
 1. Start dev server (`pnpm dev`)
 2. Point Claude Code (with Playwright MCP) at `http://localhost:3000`
 3. Prompt: "Explore the session list and chat interface, then write Playwright tests for [feature] in `apps/e2e/tests/`"

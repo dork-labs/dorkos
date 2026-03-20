@@ -1,5 +1,5 @@
 ---
-title: "Adapter-Agent Routing — Visual Binding System"
+title: 'Adapter-Agent Routing — Visual Binding System'
 date: 2026-02-28
 type: internal-architecture
 status: active
@@ -42,7 +42,7 @@ distinct approaches — and explicit binding tables are best for the DorkOS use 
 - **Subject-prefix routing** (current DorkOS approach): Adapters declare a `subjectPrefix`
   string and the `AdapterRegistry.getBySubject()` method does a `startsWith()` scan. This
   works for single-agent setups but provides no way to route a given adapter's messages to
-  a *specific* agent — all Telegram inbound messages fan to the same `relay.human.telegram.*`
+  a _specific_ agent — all Telegram inbound messages fan to the same `relay.human.telegram.*`
   subject regardless of which agent should handle them.
 
 - **Rules engine routing** (n8n, Zapier, Node-RED): Switch/branch nodes apply conditional
@@ -66,6 +66,7 @@ resumes sessions by CWD. There is no concept of "this Telegram adapter should ro
 Agent X specifically".
 
 Current flow:
+
 ```
 Telegram inbound → TelegramAdapter.start() publishes to relay.human.telegram.{chatId}
                  → ClaudeCodeAdapter handles relay.agent.* subjects only
@@ -73,6 +74,7 @@ Telegram inbound → TelegramAdapter.start() publishes to relay.human.telegram.{
 ```
 
 What needs to happen:
+
 ```
 Telegram inbound → BindingRouter looks up { adapterId: 'telegram-bot-a', chatId }
                  → Resolves to agentId 'agent-xyz' via binding table
@@ -93,6 +95,7 @@ Components in 2025). It is already architecturally aligned with DorkOS's stack
 (React 19, Vite 6, Tailwind 4, shadcn/ui, Zustand).
 
 Key capabilities relevant to the routing UI:
+
 - Custom nodes are plain React components — adapter nodes and agent nodes can be styled
   with the existing DorkOS design system
 - `Handle` components define connection points; validation callbacks can enforce the
@@ -117,6 +120,7 @@ OpenClaw's key: `agent:{agentId}:{provider}:{chatId}` (DMs) or
 `agent:{agentId}:{provider}:group:{groupId}:topic:{threadId}` (groups/threads)
 
 DorkOS equivalent recommendation:
+
 ```
 relay.agent.{agentId}.telegram.{chatId}        (DM session)
 relay.agent.{agentId}.telegram.group.{chatId}  (group session)
@@ -130,11 +134,11 @@ in `StandardPayload` already exists and can carry the `chatId` for reply routing
 
 Three session strategies exist for external channels; each has different UX tradeoffs:
 
-| Strategy | Behavior | Best for |
-|---|---|---|
-| Per-chat session | One conversation thread per chat ID | Persistent personal bots |
-| Per-user session | One thread per user across chats | Support bot with user context |
-| Stateless session | Fresh context each message | Q&A bots, command dispatchers |
+| Strategy          | Behavior                            | Best for                      |
+| ----------------- | ----------------------------------- | ----------------------------- |
+| Per-chat session  | One conversation thread per chat ID | Persistent personal bots      |
+| Per-user session  | One thread per user across chats    | Support bot with user context |
+| Stateless session | Fresh context each message          | Q&A bots, command dispatchers |
 
 Recommendation: default to per-chat sessions (most intuitive), expose as a binding-level
 setting so operators can choose per binding.
@@ -150,6 +154,7 @@ bindings reference that `accountId`. The same pattern maps cleanly to DorkOS:
 each `AdapterConfig.id` is the stable reference used in binding records.
 
 For lifecycle management per instance:
+
 - Individual start/stop is already implemented via `AdapterManager.enable(id)` and
   `disable(id)` — these persist changes and reconcile the registry
 - Health per instance is surfaced via `AdapterStatus` returned by `getStatus()` on each
@@ -171,6 +176,7 @@ masks password-type fields in API responses (returns `***`), and
 single-user local CLI use, but not production multi-user deployments.
 
 **Security recommendations**:
+
 - Short-term (local use): current masking approach is adequate
 - Medium-term: encrypt sensitive fields at rest using a derived key from a
   machine-specific secret (similar to macOS Keychain integration)
@@ -187,6 +193,7 @@ single-user local CLI use, but not production multi-user deployments.
   for the MVP
 
 **Webhook security checklist**:
+
 - HMAC signature verification (already implemented)
 - Timestamp anti-replay window (needs implementation)
 - IP allowlisting per binding (future)
@@ -203,18 +210,18 @@ A new schema needs to be added to `packages/shared/src/relay-schemas.ts`:
 ```typescript
 // Binding: maps an adapter instance + optional chat filter → a specific agent
 export const AdapterBindingSchema = z.object({
-  id: z.string().ulid(),               // Stable binding ID
-  adapterId: z.string(),               // References AdapterConfig.id
-  agentId: z.string(),                 // References agent manifest ID
-  agentDir: z.string().optional(),     // Agent working directory (resolved from Mesh or static)
+  id: z.string().ulid(), // Stable binding ID
+  adapterId: z.string(), // References AdapterConfig.id
+  agentId: z.string(), // References agent manifest ID
+  agentDir: z.string().optional(), // Agent working directory (resolved from Mesh or static)
   // Optional narrowing filters (all must match for binding to apply):
-  chatId: z.string().optional(),       // Exact chat/channel ID (Telegram, Slack, etc.)
+  chatId: z.string().optional(), // Exact chat/channel ID (Telegram, Slack, etc.)
   channelType: ChannelTypeSchema.optional(), // 'dm' | 'group' | 'channel' | 'thread'
   sessionStrategy: z.enum(['per-chat', 'per-user', 'stateless']).default('per-chat'),
   // Reliability overrides:
   rateLimit: RateLimitConfigSchema.partial().optional(),
   // Metadata:
-  label: z.string().optional(),        // Human label shown in topology UI
+  label: z.string().optional(), // Human label shown in topology UI
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -243,6 +250,7 @@ TelegramAdapter receives message from chatId=12345
 ```
 
 Binding resolution order (most-specific wins, same as OpenClaw):
+
 1. adapterId + chatId + channelType
 2. adapterId + chatId
 3. adapterId + channelType
@@ -306,6 +314,7 @@ The topology view should render two columns of nodes connected by animated edges
   action button
 
 **Progressive disclosure**:
+
 - Level 1 (default): Simple view — adapters on left, agents on right, drag to connect
 - Level 2 (click edge): Binding details — session strategy, message count, last activity
 - Level 3 (edge settings panel): Rate limits, chat filters, advanced routing rules
@@ -326,6 +335,7 @@ Each adapter node should function as a status card integrated into the graph can
 
 The three inline action buttons prevent the need to context-switch away from the canvas
 for common operations. Status dot color:
+
 - Green = connected
 - Amber = starting / stopping
 - Red = error (show last error on hover)
@@ -373,6 +383,7 @@ subscribes to `relay.human.*` subjects, resolves the binding table, and republis
 manages bindings via REST CRUD endpoints on `/api/relay/bindings`.
 
 **Pros**:
+
 - Minimal disruption to existing adapter architecture
 - Deterministic, auditable — bindings are a stable JSON file on disk
 - Works cleanly with existing Mesh agent registry for agent discovery
@@ -380,6 +391,7 @@ manages bindings via REST CRUD endpoints on `/api/relay/bindings`.
 - Easy to extend (add Discord adapter, it just needs a binding)
 
 **Cons**:
+
 - Adds a new hop in the message pipeline (subscribe → rewrite → republish)
 - Binding resolution adds ~1ms latency per message (in-memory lookup, negligible)
 - Two-phase delivery (inbound subject → binding lookup → agent subject) slightly
@@ -392,10 +404,12 @@ Each adapter instance is bound to one agent at config time. The TelegramAdapter 
 `this.config.agentId` and publishes directly to `relay.agent.{agentId}.*`.
 
 **Pros**:
+
 - Simpler — no separate binding layer
 - Zero-latency resolution (baked into adapter startup)
 
 **Cons**:
+
 - Breaks the clean separation between transport (adapter) and routing (binding)
 - Harder to rebind at runtime without restarting the adapter
 - Does not support 1-adapter-to-multiple-agents-by-chat-filter scenarios
@@ -407,10 +421,12 @@ Each adapter instance is bound to one agent at config time. The TelegramAdapter 
 (like n8n's Switch node). Rules evaluated in priority order per message.
 
 **Pros**:
+
 - Maximum flexibility — supports complex multi-hop routing, content-based routing
 - Future-proof for advanced use cases
 
 **Cons**:
+
 - Significant scope increase — essentially implementing a mini-workflow engine
 - Visual configuration becomes much more complex (not a simple wiring board)
 - Overkill for the 1:1 binding requirement stated in the feature brief
@@ -478,6 +494,7 @@ Each adapter instance is bound to one agent at config time. The TelegramAdapter 
 **Implement Option A (Binding Table + Subject Rewrite)** with the following phased rollout:
 
 ### Phase 1: Data Model + API (backend only)
+
 1. Add `AdapterBindingSchema` to `packages/shared/src/relay-schemas.ts`
 2. Create `BindingStore` service at `apps/server/src/services/relay/binding-store.ts`
    (SQLite-backed, same pattern as PulseStore)
@@ -487,16 +504,19 @@ Each adapter instance is bound to one agent at config time. The TelegramAdapter 
 5. Wire `BindingRouter` into server startup sequence after `RelayCore` and `AdapterManager`
 
 ### Phase 2: MCP Tool + CLI discoverability
+
 6. Add `relay_create_binding`, `relay_list_bindings`, `relay_delete_binding` MCP tools
    to `mcp-tool-server.ts` so agents can configure their own bindings
 
 ### Phase 3: Visual Topology UI
+
 7. Add `entities/binding/` domain layer (TanStack Query hooks)
 8. Add `features/routing/` with React Flow canvas
 9. Integrate as a new tab in `RelayPanel`
 10. Add `@xyflow/react` to `apps/client/package.json`
 
 ### Phase 4: Polish
+
 11. Animated edge state (active message flow visualization)
 12. Empty state onboarding illustration
 13. Binding audit log viewer in the topology sidebar

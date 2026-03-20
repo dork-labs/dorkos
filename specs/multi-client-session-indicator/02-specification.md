@@ -74,19 +74,23 @@ function inferClientType(clientId: string): ConnectedClient['clientType'] {
 ```
 
 **Extend `registerClient()`:**
+
 - Accept `clientId` as required (no longer `_clientId` — activate the unused parameter)
 - Store `ConnectedClient` in the per-session map keyed by `clientId`
 - After registration, call `broadcastPresence(sessionId)` to notify all connected clients
 
 **Extend `deregisterClient()`:**
+
 - After removal, call `broadcastPresence(sessionId)` to notify remaining clients
 
 **New method `broadcastPresence(sessionId)`:**
+
 - Collects current client count, client types, and lock info (from `SessionLockManager`)
 - Broadcasts `presence_update` SSE event to all connected clients for this session
 - Called on every connect and disconnect
 
 **New method `getPresenceInfo(sessionId)`:**
+
 - Returns `{ clientCount, clients: Array<{ type, connectedAt }>, lockInfo }` for the session
 - Used by `broadcastPresence()` internally
 
@@ -95,6 +99,7 @@ function inferClientType(clientId: string): ConnectedClient['clientType'] {
 #### `routes/sessions.ts`
 
 **Extend GET `/api/sessions/:id/stream`:**
+
 - Pass `clientId` query parameter to `runtime.watchSession()` (already partially supported)
 - Ensure `clientId` is forwarded to `SessionBroadcaster.registerClient()`
 
@@ -103,6 +108,7 @@ The `clientId` query parameter is already parsed at line 278. It just needs to b
 #### `session-lock.ts`
 
 **New method `getLockInfo(sessionId)`:**
+
 - Returns `{ clientId, acquiredAt } | null` for the current lock on a session
 - Used by the broadcaster to include lock state in presence updates
 
@@ -120,15 +126,19 @@ export const PresenceClientSchema = z.object({
 
 export type PresenceClient = z.infer<typeof PresenceClientSchema>;
 
-export const PresenceUpdateEventSchema = z.object({
-  sessionId: z.string(),
-  clientCount: z.number().int(),
-  clients: z.array(PresenceClientSchema),
-  lockInfo: z.object({
-    clientId: z.string(),
-    acquiredAt: z.string(),
-  }).nullable(),
-}).openapi('PresenceUpdateEvent');
+export const PresenceUpdateEventSchema = z
+  .object({
+    sessionId: z.string(),
+    clientCount: z.number().int(),
+    clients: z.array(PresenceClientSchema),
+    lockInfo: z
+      .object({
+        clientId: z.string(),
+        acquiredAt: z.string(),
+      })
+      .nullable(),
+  })
+  .openapi('PresenceUpdateEvent');
 
 export type PresenceUpdateEvent = z.infer<typeof PresenceUpdateEventSchema>;
 ```
@@ -190,6 +200,7 @@ interface ClientsItemProps {
 4. **Pulse**: Brief scale-up animation on the badge when `pulse` is true (using `motion`).
 
 **Popover on hover/click:** Lists connected client types using friendly names:
+
 - `web` → "Web browser"
 - `obsidian` → "Obsidian plugin"
 - `mcp` → "External client"
@@ -202,10 +213,7 @@ Uses the existing Shadcn `Popover` component. Minimal: just a list of client typ
 **Wire `ClientsItem` into the StatusLine** (after the `version` item):
 
 ```tsx
-<StatusLine.Item
-  itemKey="clients"
-  visible={!!presenceInfo && presenceInfo.clientCount > 1}
->
+<StatusLine.Item itemKey="clients" visible={!!presenceInfo && presenceInfo.clientCount > 1}>
   {presenceInfo && (
     <ClientsItem
       clientCount={presenceInfo.clientCount}
@@ -227,12 +235,12 @@ No changes needed. This item is always-on when relevant (multi-client). Unlike c
 
 Clients must send a typed prefix in their `clientId`:
 
-| Client | Prefix | Example |
-|--------|--------|---------|
-| Web browser | `web-` | `web-a1b2c3d4` |
-| Obsidian plugin | `obsidian-` | `obsidian-x9y8z7` |
-| MCP server | `mcp-` | `mcp-external-1` |
-| Unknown/legacy | (none) | `cb-1710000000-abc123` |
+| Client          | Prefix      | Example                |
+| --------------- | ----------- | ---------------------- |
+| Web browser     | `web-`      | `web-a1b2c3d4`         |
+| Obsidian plugin | `obsidian-` | `obsidian-x9y8z7`      |
+| MCP server      | `mcp-`      | `mcp-external-1`       |
+| Unknown/legacy  | (none)      | `cb-1710000000-abc123` |
 
 The web client already generates a `clientId` (currently a UUID). Prefix it with `web-`.
 
@@ -308,15 +316,15 @@ The MCP server should prefix with `mcp-` when it establishes SSE connections on 
 
 ## File Manifest
 
-| File | Change | Phase |
-|------|--------|-------|
-| `packages/shared/src/schemas.ts` | Add `PresenceClient`, `PresenceUpdateEvent` schemas, extend enum + union | 1 |
-| `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` | Track client metadata, broadcast presence on connect/disconnect | 1 |
-| `apps/server/src/services/runtimes/claude-code/session-lock.ts` | Add `getLockInfo()` method | 1 |
-| `apps/client/src/layers/features/status/ui/ClientsItem.tsx` | **New** — StatusLine.Item with Users/Lock icons, pulse, popover | 2-3 |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Add `presence_update` listener, pulse detection | 2 |
-| `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx` | Wire `ClientsItem` into StatusLine | 2 |
-| `apps/client/src/layers/features/status/index.ts` | Export `ClientsItem` | 2 |
+| File                                                                   | Change                                                                   | Phase |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----- |
+| `packages/shared/src/schemas.ts`                                       | Add `PresenceClient`, `PresenceUpdateEvent` schemas, extend enum + union | 1     |
+| `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` | Track client metadata, broadcast presence on connect/disconnect          | 1     |
+| `apps/server/src/services/runtimes/claude-code/session-lock.ts`        | Add `getLockInfo()` method                                               | 1     |
+| `apps/client/src/layers/features/status/ui/ClientsItem.tsx`            | **New** — StatusLine.Item with Users/Lock icons, pulse, popover          | 2-3   |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`       | Add `presence_update` listener, pulse detection                          | 2     |
+| `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx`        | Wire `ClientsItem` into StatusLine                                       | 2     |
+| `apps/client/src/layers/features/status/index.ts`                      | Export `ClientsItem`                                                     | 2     |
 
 ## Out of Scope
 

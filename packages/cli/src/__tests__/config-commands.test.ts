@@ -21,9 +21,7 @@ const MOCK_CONFIG: UserConfig = {
 };
 
 function createMockStore(overrides?: Partial<UserConfig>): ConfigStore {
-  const config = overrides
-    ? { ...MOCK_CONFIG, ...overrides }
-    : { ...MOCK_CONFIG };
+  const config = overrides ? { ...MOCK_CONFIG, ...overrides } : { ...MOCK_CONFIG };
   return {
     getAll: vi.fn(() => config),
     getDot: vi.fn((key: string) => {
@@ -37,7 +35,9 @@ function createMockStore(overrides?: Partial<UserConfig>): ConfigStore {
     }),
     setDot: vi.fn((key: string) => {
       if (key === 'tunnel.authtoken' || key === 'tunnel.auth') {
-        return { warning: `'${key}' contains sensitive data. Consider using environment variables instead.` };
+        return {
+          warning: `'${key}' contains sensitive data. Consider using environment variables instead.`,
+        };
       }
       return {};
     }),
@@ -109,7 +109,9 @@ describe('handleConfigGet', () => {
 
   it('exits with code 1 for unknown key', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
     const store = createMockStore();
     expect(() => handleConfigGet(store, 'nonexistent')).toThrow('exit');
     expect(exitSpy).toHaveBeenCalledWith(1);
@@ -182,7 +184,9 @@ describe('handleConfigPath', () => {
 describe('handleConfigValidate', () => {
   it('exits 0 for valid config', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
     const store = createMockStore();
     expect(() => handleConfigValidate(store)).toThrow('exit');
     expect(exitSpy).toHaveBeenCalledWith(0);
@@ -192,7 +196,9 @@ describe('handleConfigValidate', () => {
 
   it('exits 1 for invalid config', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
     const store = createMockStore();
     vi.mocked(store.validate).mockReturnValue({
       valid: false,
@@ -224,7 +230,9 @@ describe('handleConfigCommand', () => {
 
   it('exits 1 for unknown subcommand', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
     const store = createMockStore();
     expect(() => handleConfigCommand(store, ['unknown'])).toThrow('exit');
     expect(exitSpy).toHaveBeenCalledWith(1);

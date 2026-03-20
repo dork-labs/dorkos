@@ -216,8 +216,7 @@ useEffect(() => {
 const handleScroll = useCallback(() => {
   const container = parentRef.current;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
   const isAtBottom = distanceFromBottom < 200;
   const changed = isAtBottomRef.current !== isAtBottom;
   isAtBottomRef.current = isAtBottom;
@@ -233,8 +232,7 @@ const handleScroll = useCallback(() => {
 const handleScroll = useCallback(() => {
   const container = parentRef.current;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
   const isAtBottom = distanceFromBottom < 200;
 
   // Only disengage auto-scroll when the user has explicitly scrolled up.
@@ -531,11 +529,11 @@ If `queueMicrotask` does not fully eliminate the orphan "Done" in all SSE delive
 
 None. All decisions were resolved during ideation:
 
-| Decision | Resolution |
-|----------|-----------|
-| Bug 1 fix approach | `queueMicrotask` deferral in `tool_result` handler (with `setTimeout(0)` fallback if needed) |
+| Decision           | Resolution                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bug 1 fix approach | `queueMicrotask` deferral in `tool_result` handler (with `setTimeout(0)` fallback if needed)                                                      |
 | Bug 2 fix approach | `isUserScrollingRef` + `wheel`/`touchstart` listeners (Option C primary) + `queueMicrotask` before RAF in ResizeObserver (Option D complementary) |
-| Test scope | Add tests to existing `MessageList.test.tsx` and `MessageItem.test.tsx` |
+| Test scope         | Add tests to existing `MessageList.test.tsx` and `MessageItem.test.tsx`                                                                           |
 
 ---
 

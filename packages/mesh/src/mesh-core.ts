@@ -11,8 +11,14 @@ import os from 'os';
 import { monotonicFactory } from 'ulidx';
 import type { Db } from '@dorkos/db';
 import type {
-  AgentManifest, AgentRuntime, AgentHealth, AgentHealthStatus,
-  DenialRecord, DiscoveryCandidate, MeshInspect, MeshStatus,
+  AgentManifest,
+  AgentRuntime,
+  AgentHealth,
+  AgentHealthStatus,
+  DenialRecord,
+  DiscoveryCandidate,
+  MeshInspect,
+  MeshStatus,
 } from '@dorkos/shared/mesh-schemas';
 import type { RelayCore, SignalEmitter } from '@dorkos/relay';
 import type { DiscoveryStrategy } from './discovery-strategy.js';
@@ -79,31 +85,61 @@ export class MeshCore {
     const defaultScanRoot = options.defaultScanRoot ?? os.homedir();
     const logger = options.logger ?? console;
     const strategies = options.strategies ?? [
-      new ClaudeCodeStrategy(), new CursorStrategy(), new CodexStrategy(),
+      new ClaudeCodeStrategy(),
+      new CursorStrategy(),
+      new CodexStrategy(),
     ];
 
     this.relayBridge = relayBridge;
     this.defaultScanRoot = defaultScanRoot;
     this.logger = logger;
-    this.discoveryDeps = { registry, denialList, relayBridge, strategies, defaultScanRoot, logger, generateUlid: monotonicFactory() };
-    this.agentDeps = { registry, relayBridge, topology, signalEmitter: options.signalEmitter, logger, onUnregisterCallbacks: this.onUnregisterCallbacks };
+    this.discoveryDeps = {
+      registry,
+      denialList,
+      relayBridge,
+      strategies,
+      defaultScanRoot,
+      logger,
+      generateUlid: monotonicFactory(),
+    };
+    this.agentDeps = {
+      registry,
+      relayBridge,
+      topology,
+      signalEmitter: options.signalEmitter,
+      logger,
+      onUnregisterCallbacks: this.onUnregisterCallbacks,
+    };
     this.denialDeps = { denialList };
   }
 
   // --- Discovery & Registration ---
 
   /** Scan root directories for agent candidates. */
-  async *discover(roots: string[], options?: Omit<UnifiedScanOptions, 'root'>): AsyncGenerator<ScanEvent> {
+  async *discover(
+    roots: string[],
+    options?: Omit<UnifiedScanOptions, 'root'>
+  ): AsyncGenerator<ScanEvent> {
     yield* discovery.discover(roots, this.discoveryDeps, options);
   }
 
   /** Register a discovered candidate as a full agent. */
-  async register(candidate: DiscoveryCandidate, overrides?: Partial<AgentManifest>, approver?: string, scanRoot?: string): Promise<AgentManifest> {
+  async register(
+    candidate: DiscoveryCandidate,
+    overrides?: Partial<AgentManifest>,
+    approver?: string,
+    scanRoot?: string
+  ): Promise<AgentManifest> {
     return discovery.register(candidate, this.discoveryDeps, overrides, approver, scanRoot);
   }
 
   /** Register an agent directly by project path without prior discovery. */
-  async registerByPath(projectPath: string, partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime }, approver?: string, scanRoot?: string): Promise<AgentManifest> {
+  async registerByPath(
+    projectPath: string,
+    partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime },
+    approver?: string,
+    scanRoot?: string
+  ): Promise<AgentManifest> {
     return discovery.registerByPath(projectPath, partial, this.discoveryDeps, approver, scanRoot);
   }
 
@@ -127,7 +163,10 @@ export class MeshCore {
   // --- Agent Management ---
 
   /** Update mutable fields of a registered agent (ADR-0043 write-through). */
-  async update(agentId: string, partial: Partial<AgentManifest>): Promise<AgentManifest | undefined> {
+  async update(
+    agentId: string,
+    partial: Partial<AgentManifest>
+  ): Promise<AgentManifest | undefined> {
     return agentMgmt.update(this.agentDeps, agentId, partial);
   }
 
@@ -149,59 +188,97 @@ export class MeshCore {
   // --- Query ---
 
   /** List all registered agents, optionally filtered by runtime, capability, or namespace. */
-  list(filters?: { runtime?: AgentRuntime; capability?: string; callerNamespace?: string }): AgentManifest[] {
+  list(filters?: {
+    runtime?: AgentRuntime;
+    capability?: string;
+    callerNamespace?: string;
+  }): AgentManifest[] {
     return agentMgmt.list(this.agentDeps, filters);
   }
 
   /** List agents with computed health status included. */
-  listWithHealth(filters?: { runtime?: AgentRuntime; capability?: string }): (AgentManifest & { healthStatus: AgentHealthStatus; lastSeenAt: string | null; lastSeenEvent: string | null })[] {
+  listWithHealth(filters?: { runtime?: AgentRuntime; capability?: string }): (AgentManifest & {
+    healthStatus: AgentHealthStatus;
+    lastSeenAt: string | null;
+    lastSeenEvent: string | null;
+  })[] {
     return agentMgmt.listWithHealth(this.agentDeps, filters);
   }
 
   /** List registered agents with their project paths (lightweight view). */
-  listWithPaths(): Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }> {
+  listWithPaths(): Array<{
+    id: string;
+    name: string;
+    projectPath: string;
+    icon?: string;
+    color?: string;
+  }> {
     return agentMgmt.listWithPaths(this.agentDeps);
   }
 
   /** Get an agent manifest by ULID. */
-  get(agentId: string): AgentManifest | undefined { return agentMgmt.get(this.agentDeps, agentId); }
+  get(agentId: string): AgentManifest | undefined {
+    return agentMgmt.get(this.agentDeps, agentId);
+  }
 
   /** Get an agent manifest by project path. */
-  getByPath(projectPath: string): AgentManifest | undefined { return agentMgmt.getByPath(this.agentDeps, projectPath); }
+  getByPath(projectPath: string): AgentManifest | undefined {
+    return agentMgmt.getByPath(this.agentDeps, projectPath);
+  }
 
   /** Get the project path for a registered agent. */
-  getProjectPath(agentId: string): string | undefined { return agentMgmt.getProjectPath(this.agentDeps, agentId); }
+  getProjectPath(agentId: string): string | undefined {
+    return agentMgmt.getProjectPath(this.agentDeps, agentId);
+  }
 
   // --- Topology ---
 
   /** Get the topology view filtered by caller's namespace access. */
-  getTopology(callerNamespace: string): TopologyView { return agentMgmt.getTopology(this.agentDeps, callerNamespace); }
+  getTopology(callerNamespace: string): TopologyView {
+    return agentMgmt.getTopology(this.agentDeps, callerNamespace);
+  }
 
   /** Get which agents a specific agent can reach. */
-  getAgentAccess(agentId: string): AgentManifest[] | undefined { return agentMgmt.getAgentAccess(this.agentDeps, agentId); }
+  getAgentAccess(agentId: string): AgentManifest[] | undefined {
+    return agentMgmt.getAgentAccess(this.agentDeps, agentId);
+  }
 
   /** Add a cross-namespace allow rule via Relay access control. */
-  allowCrossNamespace(sourceNamespace: string, targetNamespace: string): void { agentMgmt.allowCrossNamespace(this.agentDeps, sourceNamespace, targetNamespace); }
+  allowCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
+    agentMgmt.allowCrossNamespace(this.agentDeps, sourceNamespace, targetNamespace);
+  }
 
   /** Remove a cross-namespace allow rule (reverts to default-deny). */
-  denyCrossNamespace(sourceNamespace: string, targetNamespace: string): void { agentMgmt.denyCrossNamespace(this.agentDeps, sourceNamespace, targetNamespace); }
+  denyCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
+    agentMgmt.denyCrossNamespace(this.agentDeps, sourceNamespace, targetNamespace);
+  }
 
   /** List all cross-namespace access rules. */
-  listCrossNamespaceRules(): CrossNamespaceRule[] { return agentMgmt.listCrossNamespaceRules(this.agentDeps); }
+  listCrossNamespaceRules(): CrossNamespaceRule[] {
+    return agentMgmt.listCrossNamespaceRules(this.agentDeps);
+  }
 
   // --- Health & Observability ---
 
   /** Update the last-seen timestamp and event for an agent. */
-  updateLastSeen(agentId: string, event: string): void { agentMgmt.updateLastSeen(this.agentDeps, agentId, event); }
+  updateLastSeen(agentId: string, event: string): void {
+    agentMgmt.updateLastSeen(this.agentDeps, agentId, event);
+  }
 
   /** Get the health status for a single agent. */
-  getAgentHealth(agentId: string): AgentHealth | undefined { return agentMgmt.getAgentHealth(this.agentDeps, agentId); }
+  getAgentHealth(agentId: string): AgentHealth | undefined {
+    return agentMgmt.getAgentHealth(this.agentDeps, agentId);
+  }
 
   /** Get aggregate mesh status -- counts by health status plus runtime and project groupings. */
-  getStatus(): MeshStatus { return agentMgmt.getStatus(this.agentDeps); }
+  getStatus(): MeshStatus {
+    return agentMgmt.getStatus(this.agentDeps);
+  }
 
   /** Get a detailed inspection of a single agent combining manifest, health, and relay info. */
-  inspect(agentId: string): MeshInspect | undefined { return agentMgmt.inspect(this.agentDeps, agentId); }
+  inspect(agentId: string): MeshInspect | undefined {
+    return agentMgmt.inspect(this.agentDeps, agentId);
+  }
 
   // --- Reconciliation ---
 

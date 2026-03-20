@@ -67,11 +67,7 @@ describe('useObservedChats', () => {
       expect(mockTransport.getObservedChats).toHaveBeenCalled();
     });
 
-    const queryState = queryClient.getQueryState([
-      'relay',
-      'observed-chats',
-      'telegram-1',
-    ]);
+    const queryState = queryClient.getQueryState(['relay', 'observed-chats', 'telegram-1']);
     expect(queryState).toBeDefined();
   });
 

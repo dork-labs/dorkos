@@ -247,7 +247,7 @@ function markdownToTelegramHtml(md: string): string {
  */
 export function formatForPlatform(
   content: string,
-  platform: 'slack' | 'telegram' | 'plain',
+  platform: 'slack' | 'telegram' | 'plain'
 ): string {
   switch (platform) {
     case 'slack':

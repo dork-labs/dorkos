@@ -268,9 +268,7 @@ export async function* mapSdkMessage(
   if (message.type === 'result') {
     const result = message as Record<string, unknown>;
     const usage = result.usage as Record<string, unknown> | undefined;
-    const modelUsageMap = result.modelUsage as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+    const modelUsageMap = result.modelUsage as Record<string, Record<string, unknown>> | undefined;
     const firstModelUsage = modelUsageMap ? Object.values(modelUsageMap)[0] : undefined;
     yield {
       type: 'session_status',
@@ -297,10 +295,13 @@ export async function* mapSdkMessage(
 3. Update the call site in `sendMessage()` — change `this.mapSdkMessage(...)` to `mapSdkMessage(...)`
 
 The call site at line 306 changes from:
+
 ```typescript
 for await (const event of this.mapSdkMessage(result.value, session, sessionId, toolState)) {
 ```
+
 to:
+
 ```typescript
 for await (const event of mapSdkMessage(result.value, session, sessionId, toolState)) {
 ```
@@ -343,9 +344,7 @@ import type { AgentSession, ToolState } from '../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /** Collect all events from the async generator */
-async function collectEvents(
-  gen: AsyncGenerator<StreamEvent>
-): Promise<StreamEvent[]> {
+async function collectEvents(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
   for await (const event of gen) {
     events.push(event);
@@ -371,12 +370,24 @@ function makeToolState(): ToolState {
   let currentToolId = '';
   let taskToolInput = '';
   return {
-    get inTool() { return inTool; },
-    get currentToolName() { return currentToolName; },
-    get currentToolId() { return currentToolId; },
-    get taskToolInput() { return taskToolInput; },
-    appendTaskInput: (chunk: string) => { taskToolInput += chunk; },
-    resetTaskInput: () => { taskToolInput = ''; },
+    get inTool() {
+      return inTool;
+    },
+    get currentToolName() {
+      return currentToolName;
+    },
+    get currentToolId() {
+      return currentToolId;
+    },
+    get taskToolInput() {
+      return taskToolInput;
+    },
+    appendTaskInput: (chunk: string) => {
+      taskToolInput += chunk;
+    },
+    resetTaskInput: () => {
+      taskToolInput = '';
+    },
     setToolState: (tool: boolean, name: string, id: string) => {
       inTool = tool;
       currentToolName = name;
@@ -655,10 +666,7 @@ import { logger } from '../lib/logger.js';
  * `Is git repo: false`).
  */
 export async function buildSystemPromptAppend(cwd: string): Promise<string> {
-  const [envResult, gitResult] = await Promise.allSettled([
-    buildEnvBlock(cwd),
-    buildGitBlock(cwd),
-  ]);
+  const [envResult, gitResult] = await Promise.allSettled([buildEnvBlock(cwd), buildGitBlock(cwd)]);
 
   return [
     envResult.status === 'fulfilled' ? envResult.value : '',
@@ -1118,6 +1126,7 @@ it('systemPrompt uses preset type and claude_code preset', async () => {
 Run the following validation checks:
 
 1. **File line counts** — All files must be under 300 lines:
+
    ```bash
    wc -l apps/server/src/services/agent-manager.ts      # Target: ~240
    wc -l apps/server/src/services/sdk-event-mapper.ts    # Target: ~140

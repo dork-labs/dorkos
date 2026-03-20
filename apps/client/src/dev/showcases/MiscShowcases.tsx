@@ -31,10 +31,7 @@ export function MiscShowcases() {
             Fire confetti
           </Button>
         </ShowcaseDemo>
-        <CelebrationOverlay
-          celebration={celebration}
-          onComplete={() => setCelebration(null)}
-        />
+        <CelebrationOverlay celebration={celebration} onComplete={() => setCelebration(null)} />
       </PlaygroundSection>
 
       <PlaygroundSection
@@ -43,10 +40,7 @@ export function MiscShowcases() {
       >
         <ShowcaseLabel>{collapsed ? 'Collapsed' : 'Expanded'}</ShowcaseLabel>
         <ShowcaseDemo>
-          <DragHandle
-            collapsed={collapsed}
-            onToggle={() => setCollapsed((c) => !c)}
-          />
+          <DragHandle collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
         </ShowcaseDemo>
       </PlaygroundSection>
     </>

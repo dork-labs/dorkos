@@ -54,14 +54,14 @@ The existing `claude-code-runtime.test.ts` already proves the simulation pattern
 
 ## Technical Dependencies
 
-| Dependency | Version | Notes |
-|---|---|---|
-| `@anthropic-ai/claude-agent-sdk` | Current (workspace) | Mocked in all tests — not called directly |
-| `vitest` | Current | `vi.fn()`, `vi.mock()`, async generator support |
-| `supertest` | Current | SSE `buffer(true).parse(...)` integration tests |
-| `@playwright/test` | Current | Browser tests + `webServer` config |
-| `@dorkos/shared` | Workspace | `AgentRuntime`, `StreamEvent` types |
-| `@dorkos/test-utils` | Workspace | Extended with new simulation utilities |
+| Dependency                       | Version             | Notes                                           |
+| -------------------------------- | ------------------- | ----------------------------------------------- |
+| `@anthropic-ai/claude-agent-sdk` | Current (workspace) | Mocked in all tests — not called directly       |
+| `vitest`                         | Current             | `vi.fn()`, `vi.mock()`, async generator support |
+| `supertest`                      | Current             | SSE `buffer(true).parse(...)` integration tests |
+| `@playwright/test`               | Current             | Browser tests + `webServer` config              |
+| `@dorkos/shared`                 | Workspace           | `AgentRuntime`, `StreamEvent` types             |
+| `@dorkos/test-utils`             | Workspace           | Extended with new simulation utilities          |
 
 ---
 
@@ -243,7 +243,11 @@ export async function* sdkToolCall(
   };
   yield {
     type: 'stream_event',
-    event: { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: responseText } },
+    event: {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'text_delta', text: responseText },
+    },
     parent_tool_use_id: null,
     session_id: SESSION_ID,
     uuid: BASE_UUID,
@@ -315,7 +319,12 @@ export async function* sdkError(message: string): AsyncGenerator<SDKMessage> {
     result: message,
     stop_reason: 'error',
     total_cost_usd: 0,
-    usage: { input_tokens: 5, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    usage: {
+      input_tokens: 5,
+      output_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    },
     modelUsage: {},
     permission_denials: [],
     session_id: SESSION_ID,
@@ -330,9 +339,7 @@ export async function* sdkError(message: string): AsyncGenerator<SDKMessage> {
 import { wrapSdkQuery, sdkSimpleText } from './sdk-scenarios.js';
 
 // Before (extracted from existing test):
-mockedQuery.mockReturnValue(
-  wrapSdkQuery(sdkSimpleText('Hello, world!'))
-);
+mockedQuery.mockReturnValue(wrapSdkQuery(sdkSimpleText('Hello, world!')));
 ```
 
 ---
@@ -375,7 +382,7 @@ export type TestScenarioKey = (typeof TestScenario)[keyof typeof TestScenario];
 
 A class that `implements AgentRuntime` with `vi.fn()` spies on all methods. Because it uses `implements`, TypeScript produces a compile error if `AgentRuntime` gains new methods without the fake being updated — this is the core value proposition over a hand-crafted object.
 
-```typescript
+````typescript
 import { vi } from 'vitest';
 import type { AgentRuntime, StreamEvent } from '@dorkos/shared/agent-runtime';
 
@@ -416,7 +423,7 @@ export class FakeAgentRuntime implements AgentRuntime {
   sendMessage = vi.fn(async function* (
     this: FakeAgentRuntime,
     _sessionId: string,
-    content: string,
+    content: string
   ): AsyncGenerator<StreamEvent> {
     const scenario = this._scenarios[this._scenarioIndex];
     if (scenario) {
@@ -464,7 +471,7 @@ export class FakeAgentRuntime implements AgentRuntime {
   approveTool = vi.fn();
   submitAnswers = vi.fn().mockReturnValue(true);
 }
-```
+````
 
 **Usage in migrated session tests:**
 
@@ -560,7 +567,7 @@ it('emits text_delta events for a simple text response', async () => {
 
   const events = await collectSseEvents(app, SESSION_ID, 'Hello');
 
-  const textEvents = events.filter(e => e.type === 'text_delta');
+  const textEvents = events.filter((e) => e.type === 'text_delta');
   expect(textEvents.length).toBeGreaterThan(0);
   expect(events.at(-1)?.type).toBe('done');
 });
@@ -601,7 +608,10 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   'tool-call': async function* (_content) {
     yield { type: 'session_status', data: { status: 'running', model: 'claude-haiku-4-5' } };
     yield { type: 'tool_call_start', data: { toolCallId: 'tc-1', toolName: 'Bash', input: {} } };
-    yield { type: 'tool_call_delta', data: { toolCallId: 'tc-1', partialJson: '{"command":"echo hi"}' } };
+    yield {
+      type: 'tool_call_delta',
+      data: { toolCallId: 'tc-1', partialJson: '{"command":"echo hi"}' },
+    };
     yield { type: 'tool_call_end', data: { toolCallId: 'tc-1' } };
     yield { type: 'text_delta', data: { text: 'Done.' } };
     yield { type: 'done', data: {} };
@@ -621,7 +631,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'text_delta', data: { text: 'Created 3 tasks.' } };
     yield { type: 'done', data: {} };
   },
-  'error': async function* (_content) {
+  error: async function* (_content) {
     yield { type: 'session_status', data: { status: 'running', model: 'claude-haiku-4-5' } };
     yield { type: 'error', data: { message: 'Simulated error from TestModeRuntime' } };
     yield { type: 'done', data: {} };
@@ -634,7 +644,10 @@ class ScenarioStore {
 
   setDefault(name: string): void {
     const scenario = BUILT_IN_SCENARIOS[name];
-    if (!scenario) throw new Error(`Unknown scenario: "${name}". Known: ${Object.keys(BUILT_IN_SCENARIOS).join(', ')}`);
+    if (!scenario)
+      throw new Error(
+        `Unknown scenario: "${name}". Known: ${Object.keys(BUILT_IN_SCENARIOS).join(', ')}`
+      );
     this._defaultScenario = scenario;
   }
 
@@ -704,10 +717,7 @@ export class TestModeRuntime implements AgentRuntime {
     return true;
   }
 
-  async *sendMessage(
-    sessionId: string,
-    content: string,
-  ): AsyncGenerator<StreamEvent> {
+  async *sendMessage(sessionId: string, content: string): AsyncGenerator<StreamEvent> {
     const scenario = scenarioStore.getScenario(sessionId);
     yield* scenario(content);
   }
@@ -716,17 +726,35 @@ export class TestModeRuntime implements AgentRuntime {
     return () => {};
   }
 
-  async listSessions() { return []; }
-  async getSession(_id: string) { return null; }
-  async getMessageHistory(_id: string) { return []; }
-  async getSessionTasks(_id: string) { return []; }
-  async getSessionETag(_id: string) { return null; }
-  async readFromOffset(_id: string, _offset: number) { return { content: '', newOffset: 0 }; }
+  async listSessions() {
+    return [];
+  }
+  async getSession(_id: string) {
+    return null;
+  }
+  async getMessageHistory(_id: string) {
+    return [];
+  }
+  async getSessionTasks(_id: string) {
+    return [];
+  }
+  async getSessionETag(_id: string) {
+    return null;
+  }
+  async readFromOffset(_id: string, _offset: number) {
+    return { content: '', newOffset: 0 };
+  }
 
-  acquireLock(_id: string): boolean { return true; }
+  acquireLock(_id: string): boolean {
+    return true;
+  }
   releaseLock(_id: string): void {}
-  isLocked(_id: string): boolean { return false; }
-  getLockInfo(_id: string): undefined { return undefined; }
+  isLocked(_id: string): boolean {
+    return false;
+  }
+  getLockInfo(_id: string): undefined {
+    return undefined;
+  }
 
   getCapabilities(): RuntimeCapabilities {
     return {
@@ -740,12 +768,20 @@ export class TestModeRuntime implements AgentRuntime {
     };
   }
 
-  async getSupportedModels() { return []; }
-  getInternalSessionId(_id: string): undefined { return undefined; }
-  async getCommands() { return { commands: [], lastScanned: '' }; }
+  async getSupportedModels() {
+    return [];
+  }
+  getInternalSessionId(_id: string): undefined {
+    return undefined;
+  }
+  async getCommands() {
+    return { commands: [], lastScanned: '' };
+  }
   checkSessionHealth(_id: string): void {}
   approveTool(_id: string, _toolCallId: string, _approved: boolean): void {}
-  submitAnswers(_id: string, _toolCallId: string, _answers: Record<string, string>): boolean { return false; }
+  submitAnswers(_id: string, _toolCallId: string, _answers: Record<string, string>): boolean {
+    return false;
+  }
 }
 ```
 
@@ -899,31 +935,31 @@ For `claude-code-runtime.test.ts`, the `mockQueryResult()` function (lines 76-82
 
 ### Files to Create
 
-| File | Purpose |
-|---|---|
-| `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts` | `wrapSdkQuery` + SDKMessage scenario builders |
-| `packages/test-utils/src/fake-agent-runtime.ts` | `FakeAgentRuntime` class (Vitest, uses `vi.fn()`) |
-| `packages/test-utils/src/sse-test-helpers.ts` | `collectSseEvents` supertest helper |
-| `packages/test-utils/src/test-scenarios.ts` | `TestScenario` const enum (shared constants) |
-| `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts` | `TestModeRuntime` (live server, no `vi.fn()`) |
-| `apps/server/src/services/runtimes/test-mode/scenario-store.ts` | In-memory scenario store |
-| `apps/server/src/routes/test-control.ts` | Control endpoint (only mounted when `DORKOS_TEST_RUNTIME=true`) |
-| `apps/server/src/routes/__tests__/sessions-streaming.test.ts` | New SSE integration tests using `collectSseEvents` |
+| File                                                                       | Purpose                                                         |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts` | `wrapSdkQuery` + SDKMessage scenario builders                   |
+| `packages/test-utils/src/fake-agent-runtime.ts`                            | `FakeAgentRuntime` class (Vitest, uses `vi.fn()`)               |
+| `packages/test-utils/src/sse-test-helpers.ts`                              | `collectSseEvents` supertest helper                             |
+| `packages/test-utils/src/test-scenarios.ts`                                | `TestScenario` const enum (shared constants)                    |
+| `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts`         | `TestModeRuntime` (live server, no `vi.fn()`)                   |
+| `apps/server/src/services/runtimes/test-mode/scenario-store.ts`            | In-memory scenario store                                        |
+| `apps/server/src/routes/test-control.ts`                                   | Control endpoint (only mounted when `DORKOS_TEST_RUNTIME=true`) |
+| `apps/server/src/routes/__tests__/sessions-streaming.test.ts`              | New SSE integration tests using `collectSseEvents`              |
 
 ### Files to Modify
 
-| File | Change |
-|---|---|
-| `packages/test-utils/src/index.ts` | Export `FakeAgentRuntime`, `collectSseEvents`, `TestScenario` |
-| `apps/server/src/env.ts` | Add `DORKOS_TEST_RUNTIME` env var declaration |
-| `apps/server/src/index.ts` | Conditional `TestModeRuntime` registration |
-| `apps/server/src/app.ts` | Mount `/api/test/*` routes when `DORKOS_TEST_RUNTIME=true` |
-| `apps/server/src/routes/__tests__/sessions.test.ts` | Replace `mockRuntime` with `FakeAgentRuntime` |
-| `apps/server/src/routes/__tests__/sessions-interactive.test.ts` | Replace `mockRuntime` with `FakeAgentRuntime` |
-| `apps/server/src/routes/__tests__/sessions-relay.test.ts` | Replace `mockRuntime` with `FakeAgentRuntime` |
-| `apps/server/src/routes/__tests__/sessions-boundary.test.ts` | Replace `mockRuntime` with `FakeAgentRuntime` |
-| `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` | Use `wrapSdkQuery` + shared scenario builders |
-| `apps/e2e/playwright.config.ts` | Add `webServer` config with `DORKOS_TEST_RUNTIME=true` |
+| File                                                                                  | Change                                                        |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `packages/test-utils/src/index.ts`                                                    | Export `FakeAgentRuntime`, `collectSseEvents`, `TestScenario` |
+| `apps/server/src/env.ts`                                                              | Add `DORKOS_TEST_RUNTIME` env var declaration                 |
+| `apps/server/src/index.ts`                                                            | Conditional `TestModeRuntime` registration                    |
+| `apps/server/src/app.ts`                                                              | Mount `/api/test/*` routes when `DORKOS_TEST_RUNTIME=true`    |
+| `apps/server/src/routes/__tests__/sessions.test.ts`                                   | Replace `mockRuntime` with `FakeAgentRuntime`                 |
+| `apps/server/src/routes/__tests__/sessions-interactive.test.ts`                       | Replace `mockRuntime` with `FakeAgentRuntime`                 |
+| `apps/server/src/routes/__tests__/sessions-relay.test.ts`                             | Replace `mockRuntime` with `FakeAgentRuntime`                 |
+| `apps/server/src/routes/__tests__/sessions-boundary.test.ts`                          | Replace `mockRuntime` with `FakeAgentRuntime`                 |
+| `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` | Use `wrapSdkQuery` + shared scenario builders                 |
+| `apps/e2e/playwright.config.ts`                                                       | Add `webServer` config with `DORKOS_TEST_RUNTIME=true`        |
 
 ---
 
@@ -952,7 +988,9 @@ describe('sdk-scenarios.ts', () => {
     for await (const msg of sdkSimpleText('hi')) messages.push(msg);
     expect(messages[0].type).toBe('system');
     expect(messages[0].subtype).toBe('init');
-    const delta = messages.find(m => m.type === 'stream_event' && m.event?.delta?.type === 'text_delta');
+    const delta = messages.find(
+      (m) => m.type === 'stream_event' && m.event?.delta?.type === 'text_delta'
+    );
     expect(delta).toBeDefined();
     expect(messages.at(-1)?.type).toBe('result');
   });
@@ -961,8 +999,10 @@ describe('sdk-scenarios.ts', () => {
     // Purpose: verify the tool call sequence matches sdk-event-mapper.ts expectations.
     const messages = [];
     for await (const msg of sdkToolCall('Bash', { command: 'echo hi' }, 'done')) messages.push(msg);
-    const types = messages.map(m =>
-      m.type === 'stream_event' ? `${m.event?.type}/${m.event?.delta?.type ?? m.event?.content_block?.type ?? ''}` : m.type
+    const types = messages.map((m) =>
+      m.type === 'stream_event'
+        ? `${m.event?.type}/${m.event?.delta?.type ?? m.event?.content_block?.type ?? ''}`
+        : m.type
     );
     expect(types).toContain('content_block_start/tool_use');
     expect(types).toContain('content_block_delta/input_json_delta');
@@ -974,7 +1014,7 @@ describe('sdk-scenarios.ts', () => {
     // processes into an error StreamEvent, not an exception.
     const messages = [];
     for await (const msg of sdkError('oops')) messages.push(msg);
-    const result = messages.find(m => m.type === 'result');
+    const result = messages.find((m) => m.type === 'result');
     expect(result?.is_error).toBe(true);
     expect(result?.result).toBe('oops');
   });
@@ -998,7 +1038,9 @@ describe('FakeAgentRuntime', () => {
     // Purpose: verify the scenario queue dequeues in order.
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
-      async function* () { yield { type: 'done', data: {} } as StreamEvent; },
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
     ]);
     const events: StreamEvent[] = [];
     for await (const e of runtime.sendMessage('s1', 'hello')) events.push(e);
@@ -1010,8 +1052,12 @@ describe('FakeAgentRuntime', () => {
     // Purpose: verify withScenarios([s1, s2]) supports multi-turn test flows.
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
-      async function* () { yield { type: 'text_delta', data: { text: 'first' } } as StreamEvent; },
-      async function* () { yield { type: 'text_delta', data: { text: 'second' } } as StreamEvent; },
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'first' } } as StreamEvent;
+      },
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'second' } } as StreamEvent;
+      },
     ]);
     const first: StreamEvent[] = [];
     for await (const e of runtime.sendMessage('s1', 'q1')) first.push(e);
@@ -1026,7 +1072,9 @@ describe('FakeAgentRuntime', () => {
     // work correctly — important for route tests that verify message dispatch.
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([async function* () {}]);
-    for await (const _ of runtime.sendMessage('s1', 'x')) { /* noop */ }
+    for await (const _ of runtime.sendMessage('s1', 'x')) {
+      /* noop */
+    }
     expect(runtime.sendMessage).toHaveBeenCalledOnce();
   });
 });
@@ -1047,7 +1095,7 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
 
     const events = await collectSseEvents(app, SESSION_ID, 'Hello');
 
-    const types = events.map(e => e.type);
+    const types = events.map((e) => e.type);
     expect(types).toContain('text_delta');
     expect(types.at(-1)).toBe('done');
   });
@@ -1061,8 +1109,8 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
 
     const events = await collectSseEvents(app, SESSION_ID, 'Run a tool');
 
-    const toolStart = events.find(e => e.type === 'tool_call_start');
-    const toolEnd = events.find(e => e.type === 'tool_call_end');
+    const toolStart = events.find((e) => e.type === 'tool_call_start');
+    const toolEnd = events.find((e) => e.type === 'tool_call_end');
     expect(toolStart).toBeDefined();
     expect(toolEnd).toBeDefined();
   });

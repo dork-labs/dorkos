@@ -6,32 +6,32 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 
 ## Key Files
 
-| Concept                | Location                                                           |
-| ---------------------- | ------------------------------------------------------------------ |
-| Transport interface    | `packages/shared/src/transport.ts`                                 |
-| HttpTransport          | `apps/client/src/layers/shared/lib/transport/http-transport.ts`    |
-| DirectTransport        | `apps/client/src/layers/shared/lib/direct-transport.ts`            |
-| TransportContext       | `apps/client/src/layers/shared/model/TransportContext.tsx`         |
-| Session entity hooks   | `apps/client/src/layers/entities/session/`                         |
-| Command entity hooks   | `apps/client/src/layers/entities/command/`                         |
-| Agent entity hooks     | `apps/client/src/layers/entities/agent/`                           |
-| Runtime entity hooks   | `apps/client/src/layers/entities/runtime/`                         |
-| Relay entity hooks     | `apps/client/src/layers/entities/relay/`                           |
-| Binding entity hooks   | `apps/client/src/layers/entities/binding/`                         |
-| Pulse entity hooks     | `apps/client/src/layers/entities/pulse/`                           |
-| Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
-| Express routes         | `apps/server/src/routes/`                                          |
-| Zod schemas            | `packages/shared/src/schemas.ts`                                   |
+| Concept              | Location                                                         |
+| -------------------- | ---------------------------------------------------------------- |
+| Transport interface  | `packages/shared/src/transport.ts`                               |
+| HttpTransport        | `apps/client/src/layers/shared/lib/transport/http-transport.ts`  |
+| DirectTransport      | `apps/client/src/layers/shared/lib/direct-transport.ts`          |
+| TransportContext     | `apps/client/src/layers/shared/model/TransportContext.tsx`       |
+| Session entity hooks | `apps/client/src/layers/entities/session/`                       |
+| Command entity hooks | `apps/client/src/layers/entities/command/`                       |
+| Agent entity hooks   | `apps/client/src/layers/entities/agent/`                         |
+| Runtime entity hooks | `apps/client/src/layers/entities/runtime/`                       |
+| Relay entity hooks   | `apps/client/src/layers/entities/relay/`                         |
+| Binding entity hooks | `apps/client/src/layers/entities/binding/`                       |
+| Pulse entity hooks   | `apps/client/src/layers/entities/pulse/`                         |
+| Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
+| Express routes       | `apps/server/src/routes/`                                        |
+| Zod schemas          | `packages/shared/src/schemas.ts`                                 |
 
 ## When to Use What
 
-| Scenario                                | Approach                                | Why                                                   |
-| --------------------------------------- | --------------------------------------- | ----------------------------------------------------- |
-| List/read server data (sessions, etc.)  | TanStack Query + Transport method       | Caching, deduplication, background refetch             |
-| Send a chat message (streaming)         | `useChatSession` hook + SSE             | Real-time streaming, handles all event types           |
-| Mutate server data (create session)     | `useMutation` + Transport method        | Automatic cache invalidation, optimistic updates       |
-| Subscribe to real-time updates          | SSE via `GET /api/sessions/:id/stream`  | Multi-client sync, file-watcher backed                 |
-| Static config/health check              | Transport method (no TanStack Query)    | One-shot, no caching needed                            |
+| Scenario                               | Approach                               | Why                                              |
+| -------------------------------------- | -------------------------------------- | ------------------------------------------------ |
+| List/read server data (sessions, etc.) | TanStack Query + Transport method      | Caching, deduplication, background refetch       |
+| Send a chat message (streaming)        | `useChatSession` hook + SSE            | Real-time streaming, handles all event types     |
+| Mutate server data (create session)    | `useMutation` + Transport method       | Automatic cache invalidation, optimistic updates |
+| Subscribe to real-time updates         | SSE via `GET /api/sessions/:id/stream` | Multi-client sync, file-watcher backed           |
+| Static config/health check             | Transport method (no TanStack Query)   | One-shot, no caching needed                      |
 
 ## Core Patterns
 
@@ -89,7 +89,7 @@ const handleSubmit = async (content: string) => {
       }
     },
     abortController.signal,
-    cwd,
+    cwd
   );
 };
 ```
@@ -188,7 +188,7 @@ export function usePreviewData(agentId: string, agentCwd: string) {
 
   // Derived data via useMemo — recomputes only when dependencies change
   const agentSessions = useMemo(
-    () => sessions?.filter(s => s.cwd === agentCwd) ?? [],
+    () => sessions?.filter((s) => s.cwd === agentCwd) ?? [],
     [sessions, agentCwd]
   );
 
@@ -208,12 +208,12 @@ When multiple TanStack Query hooks need to be composed into a single derived res
 
 ```typescript
 export function usePreviewData(agentId: string, agentCwd: string) {
-  const { data: sessions } = useSessions();           // TanStack Query
+  const { data: sessions } = useSessions(); // TanStack Query
   const { data: health } = useMeshAgentHealth(agentId); // TanStack Query
 
   // Derive filtered + sliced data via useMemo
   const agentSessions = useMemo(
-    () => sessions?.filter(s => s.cwd === agentCwd) ?? [],
+    () => sessions?.filter((s) => s.cwd === agentCwd) ?? [],
     [sessions, agentCwd]
   );
 
@@ -230,20 +230,29 @@ When a hook needs to combine TanStack Query data with non-query state (feature f
 ```typescript
 // apps/client/src/layers/entities/agent/model/use-agent-tool-status.ts
 export function useAgentToolStatus(projectPath: string | null): AgentToolStatus {
-  const { data: agent } = useCurrentAgent(projectPath);   // TanStack Query
-  const relayEnabled = useRelayEnabled();                   // Feature flag (config query)
-  const pulseEnabled = usePulseEnabled();                   // Feature flag (config query)
+  const { data: agent } = useCurrentAgent(projectPath); // TanStack Query
+  const relayEnabled = useRelayEnabled(); // Feature flag (config query)
+  const pulseEnabled = usePulseEnabled(); // Feature flag (config query)
 
   return useMemo((): AgentToolStatus => {
     const groups = agent?.enabledToolGroups ?? {};
     return {
-      pulse: !pulseEnabled ? 'disabled-by-server'
-        : groups.pulse === false ? 'disabled-by-agent' : 'enabled',
-      relay: !relayEnabled ? 'disabled-by-server'
-        : groups.relay === false ? 'disabled-by-agent' : 'enabled',
+      pulse: !pulseEnabled
+        ? 'disabled-by-server'
+        : groups.pulse === false
+          ? 'disabled-by-agent'
+          : 'enabled',
+      relay: !relayEnabled
+        ? 'disabled-by-server'
+        : groups.relay === false
+          ? 'disabled-by-agent'
+          : 'enabled',
       mesh: groups.mesh === false ? 'disabled-by-agent' : 'enabled',
-      adapter: !relayEnabled ? 'disabled-by-server'
-        : groups.adapter === false ? 'disabled-by-agent' : 'enabled',
+      adapter: !relayEnabled
+        ? 'disabled-by-server'
+        : groups.adapter === false
+          ? 'disabled-by-agent'
+          : 'enabled',
     };
   }, [agent, relayEnabled, pulseEnabled]);
 }
@@ -592,9 +601,14 @@ export function useUpdateBinding() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, updates }: {
+    mutationFn: ({
+      id,
+      updates,
+    }: {
       id: string;
-      updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>>;
+      updates: Partial<
+        Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>
+      >;
     }) => transport.updateBinding(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...BINDINGS_QUERY_KEY] });

@@ -54,9 +54,7 @@ export function ModelItem({ model, onChangeModel, disabled }: ModelItemProps) {
 
   return (
     <ResponsiveDropdownMenu>
-      <ResponsiveDropdownMenuTrigger asChild>
-        {trigger}
-      </ResponsiveDropdownMenuTrigger>
+      <ResponsiveDropdownMenuTrigger asChild>{trigger}</ResponsiveDropdownMenuTrigger>
       <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
         <ResponsiveDropdownMenuLabel>Model</ResponsiveDropdownMenuLabel>
         <ResponsiveDropdownMenuRadioGroup value={model} onValueChange={onChangeModel}>

@@ -10,13 +10,13 @@
 
 8 tasks across 5 phases. Estimated complexity: 3 large, 4 medium, 1 small.
 
-| Phase | Name | Tasks | Description |
-|-------|------|-------|-------------|
-| 1 | Foundation | 2 | Create shared config package + move sdk-utils.ts |
-| 2 | Per-Package Configs | 4 | Create eslint.config.js for all 11 packages |
-| 3 | Build Configuration | 1 | Update turbo.json, thin root config, clean up deps |
-| 4 | Verification | 1 | Behavioral equivalence + rule verification |
-| 5 | Documentation | 1 | Update CLAUDE.md and architecture.md |
+| Phase | Name                | Tasks | Description                                        |
+| ----- | ------------------- | ----- | -------------------------------------------------- |
+| 1     | Foundation          | 2     | Create shared config package + move sdk-utils.ts   |
+| 2     | Per-Package Configs | 4     | Create eslint.config.js for all 11 packages        |
+| 3     | Build Configuration | 1     | Update turbo.json, thin root config, clean up deps |
+| 4     | Verification        | 1     | Behavioral equivalence + rule verification         |
+| 5     | Documentation       | 1     | Update CLAUDE.md and architecture.md               |
 
 ---
 
@@ -34,6 +34,7 @@ Create the `@dorkos/eslint-config` internal workspace package at `packages/eslin
 - **`test.js`** — Overlay that relaxes rules for test files
 
 Critical constraints:
+
 - `base.js` must NOT include any `no-restricted-imports` rules (package-local only)
 - `base.js` must NOT include `process.env` carve-outs (package-local only)
 - `eslint-config-prettier` must be the last config object in `base.js`
@@ -48,10 +49,10 @@ Run `pnpm install` after creation to register the workspace package.
 
 Move `apps/server/src/lib/sdk-utils.ts` to `apps/server/src/services/runtimes/claude-code/sdk-utils.ts`. Update two import paths:
 
-| File | Old Import | New Import |
-|---|---|---|
-| `apps/server/src/routes/config.ts` | `'../lib/sdk-utils.js'` | `'../services/runtimes/claude-code/sdk-utils.js'` |
-| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | `'../../../lib/sdk-utils.js'` | `'./sdk-utils.js'` |
+| File                                                                   | Old Import                    | New Import                                        |
+| ---------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------- |
+| `apps/server/src/routes/config.ts`                                     | `'../lib/sdk-utils.js'`       | `'../services/runtimes/claude-code/sdk-utils.js'` |
+| `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` | `'../../../lib/sdk-utils.js'` | `'./sdk-utils.js'`                                |
 
 This eliminates the need for any SDK confinement rule carve-out.
 
@@ -80,6 +81,7 @@ Create the server config with Node preset, server-specific `process.env` carve-o
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.1 | **Parallel with:** 2.4
 
 Create configs for three packages with slightly custom needs:
+
 - **obsidian-plugin** — React preset, ignores `build-plugins/`
 - **e2e** — Base only (no test overlay), ignores `test-results/` and `playwright-report/`
 - **CLI** — Node preset, `process.env` carve-outs for `cli.ts` and `config-commands.ts`
@@ -93,6 +95,7 @@ Add `@dorkos/eslint-config` devDep and `"lint": "eslint ."` script where missing
 **Size:** Medium | **Priority:** High | **Dependencies:** 1.1 | **Parallel with:** 2.3
 
 Create configs for six packages using the simple base+test pattern:
+
 - **shared, relay, mesh, test-utils** — Base + test overlay
 - **db** — Base + test overlay, also ignores `drizzle/**` (generated migrations)
 - **icons** — Base only (no tests)
@@ -163,6 +166,7 @@ No new documentation files created.
 ## File Inventory
 
 **New files (17):**
+
 - `packages/eslint-config/package.json`
 - `packages/eslint-config/base.js`
 - `packages/eslint-config/react.js`
@@ -182,6 +186,7 @@ No new documentation files created.
 - `apps/server/src/services/runtimes/claude-code/sdk-utils.ts` (moved)
 
 **Modified files (15):**
+
 - `eslint.config.js` (root, thinned)
 - `turbo.json`
 - `package.json` (root)
@@ -191,4 +196,5 @@ No new documentation files created.
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` (import path)
 
 **Deleted files (1):**
+
 - `apps/server/src/lib/sdk-utils.ts` (moved)

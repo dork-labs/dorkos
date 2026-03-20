@@ -1,7 +1,7 @@
 ---
 number: 109
 slug: file-upload-chat-visibility
-title: "File Upload Chat History Visibility"
+title: 'File Upload Chat History Visibility'
 status: draft
 created: 2026-03-10
 authors: [Claude Code]
@@ -52,10 +52,10 @@ This text is stored in the JSONL transcript and rendered verbatim by `UserMessag
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose | Package |
-|---|---|---|---|
-| `lucide-react` | existing | File type icons (`FileIcon`, `FileImage`, `FileText`, `FileCode`, `FileSpreadsheet`) | `apps/client` |
-| `motion` | existing (^12.x) | AnimatePresence for attachment list transitions | `apps/client` |
+| Dependency     | Version          | Purpose                                                                              | Package       |
+| -------------- | ---------------- | ------------------------------------------------------------------------------------ | ------------- |
+| `lucide-react` | existing         | File type icons (`FileIcon`, `FileImage`, `FileText`, `FileCode`, `FileSpreadsheet`) | `apps/client` |
+| `motion`       | existing (^12.x) | AnimatePresence for attachment list transitions                                      | `apps/client` |
 
 No new dependencies required. All libraries are already installed.
 
@@ -136,6 +136,7 @@ export function parseFilePrefix(content: string): ParsedFilePrefix {
 ```
 
 **Key behaviors:**
+
 - Returns `{ files: [], textContent: content }` for messages without the prefix (passthrough)
 - Strips the UUID prefix (`8a3b2c1d-`) from filenames for display
 - Detects image types by extension
@@ -193,6 +194,7 @@ import path from 'path';
 ```
 
 **Security:**
+
 - `path.basename()` on the filename parameter prevents directory traversal
 - `validateBoundary()` validates the cwd parameter
 - Resolved path is verified to be within the upload directory
@@ -310,6 +312,7 @@ export function FileAttachmentList({ files }: FileAttachmentListProps) {
 ```
 
 **Styling rationale:**
+
 - File chips use `bg-muted rounded-md px-2 py-1 text-xs` — identical to `FileChipBar` pre-send chips
 - Image thumbnails constrained to `max-h-[120px] max-w-[200px]` — matches Claude.ai convention
 - `object-contain` preserves aspect ratio
@@ -380,6 +383,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
 ```
 
 **Changes from current:**
+
 - Import `parseFilePrefix` and `FileAttachmentList`
 - In the default branch (plain text), call `parseFilePrefix(message.content)`
 - Render `FileAttachmentList` above the text content
@@ -461,7 +465,8 @@ describe('parseFilePrefix', () => {
   });
 
   it('extracts single file from prefix', () => {
-    const content = 'Please read the following uploaded file(s):\n- .dork/.temp/uploads/8a3b2c1d-report.pdf\n\nAnalyze this';
+    const content =
+      'Please read the following uploaded file(s):\n- .dork/.temp/uploads/8a3b2c1d-report.pdf\n\nAnalyze this';
     const result = parseFilePrefix(content);
     expect(result.files).toHaveLength(1);
     expect(result.files[0].displayName).toBe('report.pdf');
@@ -470,7 +475,8 @@ describe('parseFilePrefix', () => {
   });
 
   it('extracts multiple files from prefix', () => {
-    const content = 'Please read the following uploaded file(s):\n- .dork/.temp/uploads/aaa11111-a.png\n- .dork/.temp/uploads/bbb22222-b.pdf\n\nCheck these';
+    const content =
+      'Please read the following uploaded file(s):\n- .dork/.temp/uploads/aaa11111-a.png\n- .dork/.temp/uploads/bbb22222-b.pdf\n\nCheck these';
     const result = parseFilePrefix(content);
     expect(result.files).toHaveLength(2);
     expect(result.files[0].displayName).toBe('a.png');
@@ -481,14 +487,16 @@ describe('parseFilePrefix', () => {
   });
 
   it('handles prefix with no message text after', () => {
-    const content = 'Please read the following uploaded file(s):\n- .dork/.temp/uploads/abc12345-file.txt\n';
+    const content =
+      'Please read the following uploaded file(s):\n- .dork/.temp/uploads/abc12345-file.txt\n';
     const result = parseFilePrefix(content);
     expect(result.files).toHaveLength(1);
     expect(result.textContent).toBe('');
   });
 
   it('strips UUID prefix from filenames', () => {
-    const content = 'Please read the following uploaded file(s):\n- .dork/.temp/uploads/a1b2c3d4-my-document.pdf\n\ntext';
+    const content =
+      'Please read the following uploaded file(s):\n- .dork/.temp/uploads/a1b2c3d4-my-document.pdf\n\ntext';
     const result = parseFilePrefix(content);
     expect(result.files[0].displayName).toBe('my-document.pdf');
   });
@@ -576,7 +584,9 @@ describe('GET /api/uploads/:filename', () => {
   });
 
   it('returns 403 when cwd fails boundary validation', async () => {
-    vi.mocked(validateBoundary).mockRejectedValue(new BoundaryError('Outside boundary', 'OUTSIDE_BOUNDARY'));
+    vi.mocked(validateBoundary).mockRejectedValue(
+      new BoundaryError('Outside boundary', 'OUTSIDE_BOUNDARY')
+    );
     const res = await request(app).get('/api/uploads/file.png?cwd=/evil/path');
     expect(res.status).toBe(403);
   });

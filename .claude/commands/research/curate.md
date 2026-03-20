@@ -17,6 +17,7 @@ Systematically review the `research/` directory, display an inventory grouped by
 Glob all `.md` files in `research/`. For each file, read its YAML frontmatter (if present) or infer metadata from filename and content headers.
 
 Build an inventory record for each file:
+
 - **filename** — e.g. `20260222_turborepo_env_vars_dotenv_cli.md`
 - **date** — from frontmatter `date` field, or inferred from `YYYYMMDD_` filename prefix, or "unknown"
 - **type** — from frontmatter `type` field, or "unclassified"
@@ -60,16 +61,17 @@ TYPE: unclassified (N files)  ← legacy files without frontmatter
 
 Flag files meeting any of these criteria:
 
-| Criterion | Why |
-|-----------|-----|
-| Older than 60 days with `status: active` and no `feature_slug` | May have drifted from relevance |
-| `type: internal-architecture` and a related ADR exists in `decisions/` | Likely codified — safe to archive |
-| Duplicate/overlapping topic (same keywords, within 7 days of each other) | Possible redundancy |
-| Already `status: superseded` or `status: archived` but frontmatter not updated | Inconsistent state |
-| `type: implementation` and the associated feature appears shipped (feature_slug maps to a completed spec) | Implementation complete |
-| No frontmatter at all (legacy files) | Needs backfill |
+| Criterion                                                                                                 | Why                               |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Older than 60 days with `status: active` and no `feature_slug`                                            | May have drifted from relevance   |
+| `type: internal-architecture` and a related ADR exists in `decisions/`                                    | Likely codified — safe to archive |
+| Duplicate/overlapping topic (same keywords, within 7 days of each other)                                  | Possible redundancy               |
+| Already `status: superseded` or `status: archived` but frontmatter not updated                            | Inconsistent state                |
+| `type: implementation` and the associated feature appears shipped (feature_slug maps to a completed spec) | Implementation complete           |
+| No frontmatter at all (legacy files)                                                                      | Needs backfill                    |
 
 Print a curation candidates list:
+
 ```
 Curation Candidates (N files)
 ────────────────────────────────────────────────────────────────────
@@ -92,33 +94,35 @@ Curation Candidates (N files)
 
 For each candidate, apply the appropriate action based on context. Use the lifecycle policy:
 
-| Type | Policy |
-|------|--------|
+| Type                      | Policy                                                                     |
+| ------------------------- | -------------------------------------------------------------------------- |
 | `external-best-practices` | Keep unless clearly outdated. Promote strong candidates to `contributing/` |
-| `internal-architecture` | Archive once codified into ADRs or contributor docs |
-| `strategic` | Keep as historical record |
-| `implementation` | Archive once the feature is shipped and stable |
-| `exploratory` | Archive when superseded or abandoned |
+| `internal-architecture`   | Archive once codified into ADRs or contributor docs                        |
+| `strategic`               | Keep as historical record                                                  |
+| `implementation`          | Archive once the feature is shipped and stable                             |
+| `exploratory`             | Archive when superseded or abandoned                                       |
 
 **For each candidate, take one of these actions:**
 
 **A. Mark as `archived`** — update frontmatter `status: archived`
 
 **B. Mark as `superseded`** — update frontmatter:
+
 ```yaml
 status: superseded
-superseded_by: research/YYYYMMDD_newer_file.md  # or decisions/NNNN-slug.md
+superseded_by: research/YYYYMMDD_newer_file.md # or decisions/NNNN-slug.md
 ```
 
 **C. Promote to `contributing/`** — for high-quality evergreen best-practices that have permanent value as developer guides. Copy content, update frontmatter to `status: archived` with note, and create/update the relevant `contributing/*.md` file.
 
 **D. Backfill frontmatter** — for legacy files without YAML frontmatter, infer and add:
+
 ```yaml
 ---
-title: "Inferred from first heading"
-date: YYYY-MM-DD    # from filename prefix or file mtime
-type: <inferred>    # best guess from content
-status: active      # default — curator can override
+title: 'Inferred from first heading'
+date: YYYY-MM-DD # from filename prefix or file mtime
+type: <inferred> # best guess from content
+status: active # default — curator can override
 tags: [inferred, keywords]
 ---
 ```
@@ -130,6 +134,7 @@ tags: [inferred, keywords]
 For each file that needs changes, use the Edit tool to update (or add) YAML frontmatter. Preserve all existing content below the frontmatter block.
 
 When adding frontmatter to a legacy file that has none, prepend:
+
 ```
 ---
 [fields]
@@ -189,8 +194,10 @@ If the user selects any reduction option, remind them to commit any uncommitted 
 **Input**: Files with `status: archived` or `status: superseded` (identified during Steps 1–4).
 
 **Process**:
+
 1. Build the deletion candidate list: all files where `status: archived` OR `status: superseded`. Use `Bash(du:*)` to get file sizes.
 2. Display the list and ask for confirmation:
+
    ```
    Prune: Delete N archived/superseded files?
    ────────────────────────────────────────────
@@ -205,6 +212,7 @@ If the user selects any reduction option, remind them to commit any uncommitted 
    Total: ~X KB freed
    [Delete all] [Review individually] [Skip]
    ```
+
 3. For **"Delete all"**: run `rm research/<filename>` for each file in the list.
 4. For **"Review individually"**: show each file's title + first 5 lines of content, then ask [Delete] [Keep].
 5. Track deleted count and total KB freed for the Step 10 summary.
@@ -216,14 +224,17 @@ If the user selects any reduction option, remind them to commit any uncommitted 
 **Goal**: Consolidate pairs of files that cover the same topic into one canonical file.
 
 **Redundancy detection** — a pair is a merge candidate if ALL of the following are true:
+
 - Same `type`
 - ≥2 matching tags
 - Created within 14 days of each other
 - Both have `status: active`
 
 **Process**:
+
 1. Compare frontmatter across all active files to build candidate pairs.
 2. Display merge candidates:
+
    ```
    Merge Candidates (N pairs)
    ────────────────────────────────────────────
@@ -238,6 +249,7 @@ If the user selects any reduction option, remind them to commit any uncommitted 
      → Suggested: Keep B (more comprehensive). Absorb unique content from A.
    ...
    ```
+
 3. For each pair, ask: [Merge (keep B)] [Merge (keep A)] [Skip this pair]
 4. For approved merges:
    a. Read both files.
@@ -256,6 +268,7 @@ If the user selects any reduction option, remind them to commit any uncommitted 
 **Threshold**: Files with `status: active` and >400 lines.
 
 **Process**:
+
 1. List verbose files sorted by line count descending:
    ```
    Verbose Files (N files over 400 lines)
@@ -270,18 +283,18 @@ If the user selects any reduction option, remind them to commit any uncommitted 
 3. For approved condensations:
    a. Read the full file.
    b. Rewrite it, **preserving**:
-      - YAML frontmatter (unchanged, add `condensed: true` field)
-      - Key findings and conclusions
-      - Specific recommendations with rationale
-      - Important code examples
-      - Decision outcomes
-   c. **Remove**:
-      - Long elaborations of obvious points
-      - Repetitive bullet lists covering the same idea
-      - Sections marked "background" that restate public knowledge
-      - Verbose prose where bullet points suffice
-   d. Target: 40–60% of original line count.
-   e. Overwrite the original file using `Write`.
+   - YAML frontmatter (unchanged, add `condensed: true` field)
+   - Key findings and conclusions
+   - Specific recommendations with rationale
+   - Important code examples
+   - Decision outcomes
+     c. **Remove**:
+   - Long elaborations of obvious points
+   - Repetitive bullet lists covering the same idea
+   - Sections marked "background" that restate public knowledge
+   - Verbose prose where bullet points suffice
+     d. Target: 40–60% of original line count.
+     e. Overwrite the original file using `Write`.
 4. Track original and final line counts for each condensed file for the Step 10 summary.
 
 ---

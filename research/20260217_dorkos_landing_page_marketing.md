@@ -1,5 +1,5 @@
 ---
-title: "DorkOS Landing Page Marketing Research"
+title: 'DorkOS Landing Page Marketing Research'
 date: 2026-02-17
 type: strategic
 status: active
@@ -10,6 +10,7 @@ sources_count: 25
 ---
 
 # DorkOS Landing Page Research
+
 **Date:** 2026-02-17
 **Research Mode:** Deep Research
 **Searches Performed:** 16
@@ -33,6 +34,7 @@ Evil Martians' Head of Design analyzed 100+ successful dev tool landing pages (i
 - **Clever and simple wins.** Most top pages avoid flashy interactions. Clean typography, clear layout, breathing room. The design serves the copy; the copy earns its place.
 
 **Section structure found across top performers (in order):**
+
 1. Nav (logo + docs + GitHub + CTA)
 2. Hero (centered, headline + sub + CTA + product screenshot or terminal demo)
 3. Clients/social proof bar (immediately after hero — "one of the fastest ways to build credibility")
@@ -51,26 +53,31 @@ Evil Martians' Head of Design analyzed 100+ successful dev tool landing pages (i
 ### 2. Real Homepage Copy from Leading Dev Tools
 
 **Railway:** "Ship software peacefully" / "With the all-in-one intelligent cloud provider"
+
 - Primary CTAs: "Deploy →" and "Demo"
 - Note: The headline is emotional, not functional. "Peacefully" is the word doing the work.
 - Section structure: Hero → Build → Network → Scale → Monitor → Evolve → Testimonials → Community (2M+ developers) → Stats
 
 **Supabase:** "Build in a weekend / Scale to millions"
+
 - Subhead: "Supabase is the Postgres development platform."
 - Credibility: 97.7K GitHub stars, Top 100 GitHub repos, SOC2 Type 2, HIPAA
 - Logo bar: Mozilla, GitHub, 1Password, PWC
 - Note: The headline is a promise of transformation, not a description of the product. Supabase is named in the first sentence of the subhead — not buried.
 
 **Cursor:** "Built to make you extraordinarily productive, Cursor is the best way to code with AI."
+
 - Primary CTAs: "Download for macOS ⤓" and "Try mobile agent →"
 - Section structure: Hero → Logo garden (Stripe, OpenAI, Linear, Figma, NVIDIA) → Feature highlights → Multi-platform showcase → Testimonials → Model selection → Codebase indexing → Enterprise → Blog → Footer
 - Note: Cursor leads with the outcome ("extraordinarily productive"), names competitors indirectly through their logo garden (these are customers who chose Cursor over alternatives).
 
 **Warp:** "Warp: The Agentic Development Environment"
+
 - Dark theme (#121212), "Matter" and "Inter" fonts
 - Positions itself in a category ("agentic development environment") rather than describing features
 
 **Linear:** "The system for product development"
+
 - Noted for: sparse design, conversational headline copy, subtle motion showing the tool in action, "copy reads like a Slack message — human and fast"
 - Repeating CTAs keep decision friction low
 
@@ -107,12 +114,12 @@ Successful tribe-building for a developer tool means making the visitor feel tha
 
 **Tribal copy signals (vs. generic copy):**
 
-| Generic | Tribal |
-|---|---|
-| "Powerful AI workflow tool" | "Your AI. Your machine. Your rules." |
-| "Open source AI interface" | "Infrastructure, not SaaS" |
-| "Works with Claude Code" | "Claude Code, unchained from the terminal" |
-| "Privacy-focused" | "No cloud. No middleman. No one watching." |
+| Generic                     | Tribal                                     |
+| --------------------------- | ------------------------------------------ |
+| "Powerful AI workflow tool" | "Your AI. Your machine. Your rules."       |
+| "Open source AI interface"  | "Infrastructure, not SaaS"                 |
+| "Works with Claude Code"    | "Claude Code, unchained from the terminal" |
+| "Privacy-focused"           | "No cloud. No middleman. No one watching." |
 
 **The "not for you" move.** Godin says the most powerful tribe-building copy explicitly excludes people. This builds conviction for the right audience. DorkOS's "What DorkOS is not" section is this move — and it should be explicit on the page, not buried in docs. "DorkOS is not for people who want someone else to manage their AI infrastructure. It's for developers who want to own it."
 
@@ -127,6 +134,7 @@ Successful tribe-building for a developer tool means making the visitor feel tha
 Ogilvy's most famous headline: "At 60 miles an hour, the loudest noise in this new Rolls-Royce comes from the electric clock."
 
 That headline works because:
+
 1. It's specific (60 mph, not "high speed")
 2. It's concrete (electric clock, not "quiet interior")
 3. It's earned through research (Ogilvy read everything about the car for 3 weeks before writing a word)
@@ -180,6 +188,7 @@ BELOW THE FOLD: Terminal/browser screenshot showing Claude Code session
 
 **On the CTA choice (npm install command vs button):**
 The research shows npm install commands as CTAs work specifically for developer-targeted tools because:
+
 - It proves the product exists (you can run this right now)
 - It demonstrates simplicity (one command)
 - It's a conversion in itself — copy → paste → done
@@ -188,6 +197,7 @@ The research shows npm install commands as CTAs work specifically for developer-
 The Evil Martians research recommends having two CTAs: one for immediate conversion (install command), one for exploration (docs or GitHub). This maps to how Cursor does it: "Download for macOS ⤓" + "Try mobile agent →" — primary is immediate action, secondary is softer exploration.
 
 **What not to do in the hero:**
+
 - Don't list features (save that for section 3+)
 - Don't use a button that says "Get Started" (meaningless to a developer)
 - Don't include screenshots of settings panels or config UIs — show the result (a working session in a browser)
@@ -271,6 +281,7 @@ This section must be concrete and specific. The target audience will evaluate wh
 **The research consensus: animated terminal demos work well for developer tools, but only when they show a real workflow, not a contrived "hello world."**
 
 For DorkOS, the ideal demo is:
+
 - Shows the install command running
 - Shows the server starting up (port binding message)
 - Cuts to a browser showing a Claude Code session in progress
@@ -309,6 +320,7 @@ Tools: `termynal` (GitHub: ines/termynal) is a lightweight, accessible library f
 **The research finding:** Technical audiences value transparency over polish. A clear distinction between what's live and what's coming builds more trust than presenting everything as if it exists.
 
 **Best practice for early-stage open source tools:**
+
 - Never list roadmap features as if they exist
 - Do show a public roadmap linked from the page (GitHub Projects or a simple `/roadmap` page)
 - On the marketing page itself, use a "What's live" section with a subtle "Coming soon" callout — not a full roadmap table
@@ -324,13 +336,13 @@ The local-first software movement (Ink & Switch, lofi.so) has articulated the ph
 
 DorkOS fits squarely in this tradition and can borrow from its language. The seven ideals of local-first software map directly:
 
-| Local-First Ideal | DorkOS Expression |
-|---|---|
-| No spinners | Sessions start locally, no round-trips to Anthropic servers for DorkOS itself |
-| Multi-device access | Access your Claude Code session from phone, tablet, another machine |
-| Optional networks | Claude Code runs without DorkOS being connected to any external service |
-| Security by default | JSONL transcripts stay on your machine, behind your firewall |
-| Ultimate user control | You start the session, you approve the tools, you own the files |
+| Local-First Ideal     | DorkOS Expression                                                             |
+| --------------------- | ----------------------------------------------------------------------------- |
+| No spinners           | Sessions start locally, no round-trips to Anthropic servers for DorkOS itself |
+| Multi-device access   | Access your Claude Code session from phone, tablet, another machine           |
+| Optional networks     | Claude Code runs without DorkOS being connected to any external service       |
+| Security by default   | JSONL transcripts stay on your machine, behind your firewall                  |
+| Ultimate user control | You start the session, you approve the tools, you own the files               |
 
 "Own Your AI" as a tagline maps cleanly onto "You own your data, in spite of the cloud." DorkOS is the local-first answer to cloud-hosted AI interfaces.
 
@@ -425,6 +437,7 @@ Option D (Railway-style, emotional outcome):
 **Recommendation:** Use Option A ("Own Your AI.") as the h1, then Option B as the immediate subhead. The combination delivers Jobs' category clarity with Ogilvy's specificity.
 
 ### Words to Ban from the DorkOS Page
+
 - powerful
 - seamless
 - robust
@@ -437,6 +450,7 @@ Option D (Railway-style, emotional outcome):
 - revolutionary
 
 ### Words to Use Instead
+
 - runs on your machine
 - your transcripts, your files
 - one command
@@ -462,16 +476,19 @@ Option D (Railway-style, emotional outcome):
 ## Contradictions & Disputes
 
 **On "how much technical detail in the hero":**
+
 - Ogilvy tradition says: more specific is more credible, include technical details
 - Modern landing page conventional wisdom says: hero should be simple, save details for below the fold
 - Resolution: the hero should have ONE specific technical claim ("runs on your machine," "one npm install") but not multiple. The Ogilvy specificity applies to the details throughout the page, not to cramming the hero with specs.
 
 **On open source as a selling point:**
+
 - Some research suggests "open source" is commoditized as a claim — everyone says it
 - Counter-evidence: Supabase uses "97.7K GitHub stars" and "Top 100 GitHub repos" as major credibility signals, suggesting that for developer audiences, open source credibility still matters — but must be shown, not just stated
 - Resolution: Don't say "we're open source." Show it: star count, contributor count, GitHub link, readable code.
 
 **On social proof format:**
+
 - Generic testimonials ("Great tool!") have low conversion impact
 - Specific, technically-relevant testimonials ("Finally, Claude Code accessible from my iPad without forwarding ports") have high impact
 - The Evil Martians research confirms this: curated, aligned testimonials only. Never auto-pulled reviews.

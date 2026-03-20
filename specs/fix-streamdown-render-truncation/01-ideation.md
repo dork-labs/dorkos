@@ -74,15 +74,18 @@ Streamdown renderer: renders what remend returns (truncated)
 ## 4) Root Cause Analysis
 
 **Repro steps:**
+
 1. Enable relay mode (`DORKOS_RELAY_ENABLED=true`)
 2. Start a session and send: `Add TypeScript types to the function`
-3. Observe the streaming response — the last bullet item containing `\`number[]\`` renders as just `**Array**`; the closing paragraph is absent
+3. Observe the streaming response — the last bullet item containing `\`number[]\``renders as just`**Array**`; the closing paragraph is absent
 
 **Observed vs Expected:**
+
 - Observed: `<li>` contains only `<span class="font-semibold">Array</span>`; no closing paragraph rendered
 - Expected: Full `**Array literals**: \`numbers\` is typed as \`number[]\`` and the following paragraph both rendered
 
 **Evidence:**
+
 - DOM inspection during streaming: `li25.textContent = "Array"` (truncated)
 - DOM inspection after hard reload: `li25.textContent = "Array literals: numbers is typed as number[]"` (correct)
 - JSONL raw text is correct: `- **Array literals**: \`numbers\` is typed as \`number[]\``
@@ -91,7 +94,7 @@ Streamdown renderer: renders what remend returns (truncated)
 **Root-cause hypotheses:**
 
 1. **remend@1.2.1 misidentifies `[]` as incomplete link reference** (HIGH CONFIDENCE — SELECTED)
-   - remend's preprocessing converts `\`number[]\`` to a broken state: the `[` inside backtick code triggers the incomplete-link handler, which then discards everything from `[` onward looking for a `](url)` close
+   - remend's preprocessing converts `\`number[]\``to a broken state: the`[`inside backtick code triggers the incomplete-link handler, which then discards everything from`[`onward looking for a`](url)` close
    - remend@1.2.1 does not correctly respect that `[]` appears inside a complete inline code span; it fires the link completion handler based on `[` presence alone
    - The bug only triggers at chunk boundaries — when a chunk ends with `\`number[]\``, remend sees an incomplete `[...]` in a partial document and fires its completion logic incorrectly
    - Hard reload works because the full text is passed to remend at once; `[]` inside a complete code span is unambiguous and handled correctly
@@ -149,8 +152,8 @@ Approach 1 — upgrade streamdown to 2.4.0. The fix is in the library and the up
 
 No interactive clarification was needed — the fix approach converges unambiguously on upgrading the library.
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Fix approach for `[]` truncation | Upgrade streamdown to 2.4.0 | Root cause is in remend@1.2.1; remend@1.2.2 (bundled in streamdown@2.4.0) contains the inline-code span fix. Single-line change, no workaround code. |
-| 2 | Version specifier for streamdown | Pin to `"^2.4.0"` | Replace `"latest"` with a semver range to prevent unintended upgrades while still receiving patch fixes. |
-| 3 | Test coverage | Add one streaming-path test to StreamingText.test.tsx | Currently mocked away; add a test that verifies `number[]` content is passed through to Streamdown untruncated. Low effort, prevents regression. |
+| #   | Decision                         | Choice                                                | Rationale                                                                                                                                            |
+| --- | -------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Fix approach for `[]` truncation | Upgrade streamdown to 2.4.0                           | Root cause is in remend@1.2.1; remend@1.2.2 (bundled in streamdown@2.4.0) contains the inline-code span fix. Single-line change, no workaround code. |
+| 2   | Version specifier for streamdown | Pin to `"^2.4.0"`                                     | Replace `"latest"` with a semver range to prevent unintended upgrades while still receiving patch fixes.                                             |
+| 3   | Test coverage                    | Add one streaming-path test to StreamingText.test.tsx | Currently mocked away; add a test that verifies `number[]` content is passed through to Streamdown untruncated. Low effort, prevents regression.     |

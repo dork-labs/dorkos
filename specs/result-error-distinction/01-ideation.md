@@ -82,14 +82,15 @@ status: ideation
 
 The SDK defines four result error subtypes:
 
-| SDK Subtype | User Category | Retryable | Frequency |
-|---|---|---|---|
-| `error_max_turns` | Turn limit | No | Common for long autonomous runs |
-| `error_during_execution` | Execution failure | Yes (transient) / No (auth/billing) | Most common |
-| `error_max_budget_usd` | Budget exhausted | No | Rare unless `maxBudgetUsd` configured |
-| `error_max_structured_output_retries` | Output format | No | Rare |
+| SDK Subtype                           | User Category     | Retryable                           | Frequency                             |
+| ------------------------------------- | ----------------- | ----------------------------------- | ------------------------------------- |
+| `error_max_turns`                     | Turn limit        | No                                  | Common for long autonomous runs       |
+| `error_during_execution`              | Execution failure | Yes (transient) / No (auth/billing) | Most common                           |
+| `error_max_budget_usd`                | Budget exhausted  | No                                  | Rare unless `maxBudgetUsd` configured |
+| `error_max_structured_output_retries` | Output format     | No                                  | Rare                                  |
 
 Within `error_during_execution`, sub-cases are detectable by inspecting the `errors[]` string array:
+
 - API overload / 5xx: transient, retryable
 - Authentication/key failure: config problem, not retryable
 - Context window exceeded: needs new session
@@ -99,6 +100,7 @@ Within `error_during_execution`, sub-cases are detectable by inspecting the `err
 Best-in-class AI chat interfaces (ChatGPT, GitHub Copilot Chat, Cursor) render errors **inline in the message timeline** — as a styled message block appended after the last assistant content — not as a banner above the input.
 
 Key characteristics:
+
 - Icon + muted red/amber tint
 - Three-layer copy: what happened / why / what to do next
 - Retry button co-located with the failed turn
@@ -115,17 +117,17 @@ Key characteristics:
 
 ### Error Message Templates
 
-| Category | Heading | Sub-text | Action |
-|---|---|---|---|
-| `max_turns` | "Turn limit reached" | "The agent ran for its maximum number of turns." | "Start new session" |
-| `execution_error` | "Agent stopped unexpectedly" | "An error occurred during execution." + collapsible details | "Retry" button |
-| `budget_exceeded` | "Cost limit reached" | "This session exceeded its budget." | None |
-| `output_format_error` | "Output format error" | "The agent couldn't satisfy the required output format." | None |
+| Category              | Heading                      | Sub-text                                                    | Action              |
+| --------------------- | ---------------------------- | ----------------------------------------------------------- | ------------------- |
+| `max_turns`           | "Turn limit reached"         | "The agent ran for its maximum number of turns."            | "Start new session" |
+| `execution_error`     | "Agent stopped unexpectedly" | "An error occurred during execution." + collapsible details | "Retry" button      |
+| `budget_exceeded`     | "Cost limit reached"         | "This session exceeded its budget."                         | None                |
+| `output_format_error` | "Output format error"        | "The agent couldn't satisfy the required output format."    | None                |
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Error display location | Inline in message stream | Matches industry best practice (ChatGPT, Cursor). Error persists in scroll history, co-located with the failed turn. Moves visibility from 3/5 to 5/5. |
-| 2 | Retry affordance | Retry button on the error block | Re-sends last user message for retryable errors. Non-retryable errors get category-appropriate alternative actions (e.g., "Start new session"). Matches ChatGPT/Claude.ai pattern. |
-| 3 | Error categorization | 3-4 user-facing categories | Group SDK subtypes into max_turns, execution_error, budget_exceeded, output_format_error. Each gets tailored copy and action. Balances helpfulness with simplicity. |
+| #   | Decision               | Choice                          | Rationale                                                                                                                                                                          |
+| --- | ---------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Error display location | Inline in message stream        | Matches industry best practice (ChatGPT, Cursor). Error persists in scroll history, co-located with the failed turn. Moves visibility from 3/5 to 5/5.                             |
+| 2   | Retry affordance       | Retry button on the error block | Re-sends last user message for retryable errors. Non-retryable errors get category-appropriate alternative actions (e.g., "Start new session"). Matches ChatGPT/Claude.ai pattern. |
+| 3   | Error categorization   | 3-4 user-facing categories      | Group SDK subtypes into max_turns, execution_error, budget_exceeded, output_format_error. Each gets tailored copy and action. Balances helpfulness with simplicity.                |

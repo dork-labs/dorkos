@@ -31,20 +31,20 @@ export class AgentQueue {
    * @param agentId - The Mesh ULID identifying the target agent (used as the queue key)
    * @param fn - Async function that performs the actual delivery
    */
-  async process(
-    agentId: string,
-    fn: () => Promise<DeliveryResult>,
-  ): Promise<DeliveryResult> {
+  async process(agentId: string, fn: () => Promise<DeliveryResult>): Promise<DeliveryResult> {
     const current = this.queues.get(agentId) ?? Promise.resolve();
     let result!: DeliveryResult;
     const next = current.then(() =>
       fn().then((r) => {
         result = r;
-      }),
+      })
     );
     // Store the chain but swallow errors to prevent unhandled rejection
     // on the queue reference itself (errors are returned via result)
-    this.queues.set(agentId, next.catch(() => {}));
+    this.queues.set(
+      agentId,
+      next.catch(() => {})
+    );
     await next;
     return result;
   }

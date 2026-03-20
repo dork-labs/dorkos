@@ -59,7 +59,7 @@ export async function loadAdapters(
   configs: PluginAdapterConfig[],
   builtinMap: Map<string, (id: string, config: Record<string, unknown>) => RelayAdapter>,
   configDir: string,
-  logger: Logger = console,
+  logger: Logger = console
 ): Promise<LoadedAdapter[]> {
   const results: LoadedAdapter[] = [];
 
@@ -112,15 +112,10 @@ export async function loadAdapters(
  * @returns A validated RelayAdapter instance
  * @throws If the module doesn't export a default factory function
  */
-function validateAndCreate(
-  mod: unknown,
-  entry: PluginAdapterConfig,
-): RelayAdapter {
+function validateAndCreate(mod: unknown, entry: PluginAdapterConfig): RelayAdapter {
   const m = mod as Record<string, unknown>;
   if (typeof m.default !== 'function') {
-    throw new Error(
-      `Module for '${entry.id}' does not export a default factory function`,
-    );
+    throw new Error(`Module for '${entry.id}' does not export a default factory function`);
   }
   const factory = m.default as (id: string, config: Record<string, unknown>) => RelayAdapter;
   const adapter = factory(entry.id, entry.config);
@@ -141,7 +136,7 @@ function validateAndCreate(
 function extractManifest(
   mod: unknown,
   entry: PluginAdapterConfig,
-  logger: Logger = console,
+  logger: Logger = console
 ): AdapterManifest | undefined {
   const m = mod as Record<string, unknown>;
   if (typeof m.getManifest === 'function') {
@@ -153,7 +148,7 @@ function extractManifest(
       }
       logger.warn(
         `[PluginLoader] Manifest from '${entry.id}' failed validation:`,
-        parsed.error.flatten(),
+        parsed.error.flatten()
       );
     } catch (err) {
       logger.warn(`[PluginLoader] Failed to get manifest from '${entry.id}':`, err);
@@ -193,12 +188,12 @@ function checkApiVersion(manifest: AdapterManifest, adapterId: string, logger: L
   if (hostMajor !== adapterMajor) {
     logger.warn(
       `[PluginLoader] Adapter '${adapterId}' targets API v${manifest.apiVersion} ` +
-      `but host is v${RELAY_ADAPTER_API_VERSION} (major version mismatch)`,
+        `but host is v${RELAY_ADAPTER_API_VERSION} (major version mismatch)`
     );
   } else if (adapterMinor > hostMinor) {
     logger.warn(
       `[PluginLoader] Adapter '${adapterId}' targets API v${manifest.apiVersion} ` +
-      `but host is v${RELAY_ADAPTER_API_VERSION} (adapter expects newer features)`,
+        `but host is v${RELAY_ADAPTER_API_VERSION} (adapter expects newer features)`
     );
   }
 }
@@ -213,21 +208,14 @@ function checkApiVersion(manifest: AdapterManifest, adapterId: string, logger: L
  * @param id - The adapter ID for error messages
  * @throws If the object is missing required RelayAdapter members
  */
-export function validateAdapterShape(
-  obj: unknown,
-  id: string,
-): asserts obj is RelayAdapter {
+export function validateAdapterShape(obj: unknown, id: string): asserts obj is RelayAdapter {
   const a = obj as Record<string, unknown>;
-  if (typeof a.id !== 'string')
-    throw new Error(`Adapter '${id}': missing 'id' property`);
+  if (typeof a.id !== 'string') throw new Error(`Adapter '${id}': missing 'id' property`);
   if (typeof a.subjectPrefix !== 'string' && !Array.isArray(a.subjectPrefix))
     throw new Error(`Adapter '${id}': missing 'subjectPrefix'`);
-  if (typeof a.displayName !== 'string')
-    throw new Error(`Adapter '${id}': missing 'displayName'`);
-  if (typeof a.start !== 'function')
-    throw new Error(`Adapter '${id}': missing 'start()' method`);
-  if (typeof a.stop !== 'function')
-    throw new Error(`Adapter '${id}': missing 'stop()' method`);
+  if (typeof a.displayName !== 'string') throw new Error(`Adapter '${id}': missing 'displayName'`);
+  if (typeof a.start !== 'function') throw new Error(`Adapter '${id}': missing 'start()' method`);
+  if (typeof a.stop !== 'function') throw new Error(`Adapter '${id}': missing 'stop()' method`);
   if (typeof a.deliver !== 'function')
     throw new Error(`Adapter '${id}': missing 'deliver()' method`);
   if (typeof a.getStatus !== 'function')

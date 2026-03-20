@@ -1,5 +1,5 @@
 ---
-title: "Fumadocs + Vercel Documentation Site"
+title: 'Fumadocs + Vercel Documentation Site'
 date: 2026-02-16
 type: implementation
 status: archived
@@ -98,7 +98,7 @@ For external content directories (e.g., a git submodule at `content/docs` that a
 export default defineConfig({
   workspaces: {
     'dorkos-docs': {
-      dir: './content/docs',      // git submodule or symlinked path
+      dir: './content/docs', // git submodule or symlinked path
       config: await import('./content/docs/source.config.ts'),
     },
   },
@@ -107,13 +107,13 @@ export default defineConfig({
 
 #### Fumadocs vs Content Collections
 
-| Aspect | fumadocs-mdx | Content Collections |
-|---|---|---|
-| Processing | Webpack/Turbopack plugin (build-time) | mdx-bundler (more flexible) |
-| Type safety | Yes | Yes |
-| Performance | Excellent (500+ files OK) | Good |
-| Flexibility | Opinionated (good defaults) | Bring-your-own MDX |
-| Recommendation | Default for Fumadocs | When you need CMS-style flexibility |
+| Aspect         | fumadocs-mdx                          | Content Collections                 |
+| -------------- | ------------------------------------- | ----------------------------------- |
+| Processing     | Webpack/Turbopack plugin (build-time) | mdx-bundler (more flexible)         |
+| Type safety    | Yes                                   | Yes                                 |
+| Performance    | Excellent (500+ files OK)             | Good                                |
+| Flexibility    | Opinionated (good defaults)           | Bring-your-own MDX                  |
+| Recommendation | Default for Fumadocs                  | When you need CMS-style flexibility |
 
 **Recommendation for DorkOS**: Use `fumadocs-mdx` (the default). Content Collections is only worth the overhead if you need dynamic/CMS-driven content.
 
@@ -125,6 +125,7 @@ export default defineConfig({
 2. **Virtual files** — integrates directly into the Fumadocs Loader API without generating physical files
 
 Setup summary:
+
 ```bash
 npm i fumadocs-openapi shiki
 ```
@@ -134,7 +135,7 @@ npm i fumadocs-openapi shiki
 import { createOpenAPI, attachFile } from 'fumadocs-openapi/server';
 
 const openapi = createOpenAPI({
-  input: ['./docs/api/openapi.json'],  // path to your exported spec
+  input: ['./docs/api/openapi.json'], // path to your exported spec
 });
 ```
 
@@ -151,16 +152,19 @@ For DorkOS's use case: `npm run docs:export-api` already exports `docs/api/opena
 DorkOS already has a Turborepo monorepo (`apps/`, `packages/`). The question is whether the marketing/docs Next.js site lives:
 
 **Option A: As a new app in the existing DorkOS monorepo** (`apps/web`)
+
 - Pros: Shared packages (design tokens, types), single repo to manage, automatic rebuild when shared packages change, one CI pipeline
 - Cons: Larger repo, website deployment couples with CLI/server changes, Vercel org repo restriction applies (need Pro plan)
 - Best for: Tight coupling between product and docs, shared design system
 
 **Option B: Separate repo for the marketing/docs site**
+
 - Pros: Independent deployment, can be on Vercel Hobby if personal account, simpler repo
 - Cons: No shared packages without npm publishing, two repos to manage
 - Best for: When the site is mostly static and doesn't share code with the product
 
 **Option C: New Turborepo for the marketing/docs site only** (next-forge pattern)
+
 - The next-forge template shows: `apps/web` (marketing), `apps/docs` (Fumadocs), `apps/app` (product), with shared packages
 - Pros: Maximum separation between marketing and docs at the deployment level
 - Cons: Overkill for a docs-only site, two separate Turborepos to maintain
@@ -177,13 +181,13 @@ A Turborepo for the website alone makes sense when: (1) the website team is sepa
 
 #### Pattern Comparison
 
-| Pattern | How it works | Vercel support | Complexity | Freshness |
-|---|---|---|---|---|
-| **Git submodule** | `docs/` is a submodule pointing to `dorkos` repo's `docs/` dir | Needs PAT workaround for private repos; public repos work natively | Medium | Manual `git submodule update` or CI trigger |
-| **Build-time fetch** | Script fetches content from GitHub API or raw URLs during build | Works natively | Low-medium | Always fresh (fetches on every build) |
-| **npm package** | Content published as `@dork-labs/docs-content` npm package | Works natively | High (need to publish on every docs change) | Requires version bump + publish |
-| **Direct copy / monorepo** | Content lives in `apps/web/content/docs/` — same repo | Works natively | Lowest | Committed to same repo |
-| **`@fumadocs/mdx-remote`** | Fetches and compiles MDX at runtime (SSG) | Works natively | Low | Fresh on every build; supports remote GitHub content |
+| Pattern                    | How it works                                                    | Vercel support                                                     | Complexity                                  | Freshness                                            |
+| -------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------- | ---------------------------------------------------- |
+| **Git submodule**          | `docs/` is a submodule pointing to `dorkos` repo's `docs/` dir  | Needs PAT workaround for private repos; public repos work natively | Medium                                      | Manual `git submodule update` or CI trigger          |
+| **Build-time fetch**       | Script fetches content from GitHub API or raw URLs during build | Works natively                                                     | Low-medium                                  | Always fresh (fetches on every build)                |
+| **npm package**            | Content published as `@dork-labs/docs-content` npm package      | Works natively                                                     | High (need to publish on every docs change) | Requires version bump + publish                      |
+| **Direct copy / monorepo** | Content lives in `apps/web/content/docs/` — same repo           | Works natively                                                     | Lowest                                      | Committed to same repo                               |
+| **`@fumadocs/mdx-remote`** | Fetches and compiles MDX at runtime (SSG)                       | Works natively                                                     | Low                                         | Fresh on every build; supports remote GitHub content |
 
 #### Detailed Analysis of Each Pattern
 
@@ -203,7 +207,7 @@ Since the marketing site would live in `apps/web` inside the `dorkos` monorepo, 
 ```ts
 // apps/web/source.config.ts
 export const docs = defineDocs({
-  dir: '../../docs',   // points to /docs/ at repo root
+  dir: '../../docs', // points to /docs/ at repo root
 });
 ```
 
@@ -223,12 +227,13 @@ Only worth it if you need semantic versioning of docs content (e.g., docs that n
 
 Each app in `apps/` becomes a separate **Vercel Project** connected to the same GitHub repo:
 
-| Vercel Project | Root Directory | Domain |
-|---|---|---|
-| `dorkos-web` | `apps/web` | `dorkos.ai` |
-| `dorkos-server` | N/A (not deployed to Vercel) | — |
+| Vercel Project  | Root Directory               | Domain      |
+| --------------- | ---------------------------- | ----------- |
+| `dorkos-web`    | `apps/web`                   | `dorkos.ai` |
+| `dorkos-server` | N/A (not deployed to Vercel) | —           |
 
 Configuration in the Vercel dashboard per project:
+
 - **Root Directory**: `apps/web`
 - **Build Command**: `turbo build` (Vercel auto-scopes to the root directory's package)
 - **Ignored Build Step**: `npx turbo-ignore --fallback=HEAD^1` (skips build if nothing in `apps/web` or its dependencies changed)
@@ -237,11 +242,11 @@ The `turbo-ignore` step is critical for monorepos — it prevents the docs site 
 
 #### Subdomain vs Path Routing
 
-| Approach | Implementation | SEO | Complexity |
-|---|---|---|---|
-| `docs.dorkos.ai` (subdomain) | Separate Vercel project, separate deployment, CNAME to Vercel | Separate domain authority | Low (two projects) |
-| `dorkos.ai/docs` (path) | Same Next.js app, route groups, one deployment | Shares domain authority | Low (one project) |
-| `dorkos.ai/docs` via Next.js Multi-Zone | Two separate deployments, `rewrites` to stitch together | Shares domain authority | Medium |
+| Approach                                | Implementation                                                | SEO                       | Complexity         |
+| --------------------------------------- | ------------------------------------------------------------- | ------------------------- | ------------------ |
+| `docs.dorkos.ai` (subdomain)            | Separate Vercel project, separate deployment, CNAME to Vercel | Separate domain authority | Low (two projects) |
+| `dorkos.ai/docs` (path)                 | Same Next.js app, route groups, one deployment                | Shares domain authority   | Low (one project)  |
+| `dorkos.ai/docs` via Next.js Multi-Zone | Two separate deployments, `rewrites` to stitch together       | Shares domain authority   | Medium             |
 
 **Recommendation**: `dorkos.ai/docs` via route groups in a single Next.js app. This is the simplest approach, shares domain authority for SEO, requires no DNS configuration beyond the main domain, and Fumadocs coexists cleanly with marketing pages via route groups. Use `docs.dorkos.ai` only if you want the docs site to be independently deployable by a different team.
 
@@ -257,12 +262,12 @@ For the OpenAPI docs: `generateFiles()` should run as part of the build step, no
 
 #### Vercel Plan Requirements
 
-| Scenario | Plan Needed | Cost |
-|---|---|---|
-| Personal GitHub account, private repo | Hobby (free) | $0 |
-| GitHub org repo (`dork-labs/dorkos`), private | Pro Team | $20/user/month |
-| GitHub org repo, public | Hobby (free) | $0 |
-| GitHub Actions → Vercel CLI deploy | Any plan (bypasses direct Git integration) | Hobby free |
+| Scenario                                      | Plan Needed                                | Cost           |
+| --------------------------------------------- | ------------------------------------------ | -------------- |
+| Personal GitHub account, private repo         | Hobby (free)                               | $0             |
+| GitHub org repo (`dork-labs/dorkos`), private | Pro Team                                   | $20/user/month |
+| GitHub org repo, public                       | Hobby (free)                               | $0             |
+| GitHub Actions → Vercel CLI deploy            | Any plan (bypasses direct Git integration) | Hobby free     |
 
 **The key restriction**: Vercel's direct GitHub integration for organization repos requires a Team (Pro) plan. This affects `dork-labs/dorkos` if it remains private.
 
@@ -272,7 +277,7 @@ For the OpenAPI docs: `generateFiles()` should run as part of the build step, no
 # .github/workflows/deploy.yml
 - uses: actions/checkout@v4
   with:
-    submodules: recursive  # handles public submodules
+    submodules: recursive # handles public submodules
 - run: vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }}
 ```
 

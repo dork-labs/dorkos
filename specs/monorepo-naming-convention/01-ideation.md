@@ -53,33 +53,36 @@ status: ideation
 
 **Current Naming Inventory:**
 
-| Directory | Package Name | Role |
-|---|---|---|
-| `apps/client` | `@dorkos/client` | React 19 SPA — the main product UI (chat, dashboard, settings) |
-| `apps/server` | `@dorkos/server` | Express API + Agent SDK orchestration + MCP + schedulers |
-| `apps/web` | `@dorkos/web` | Next.js 16 marketing site + Fumadocs documentation |
-| `apps/obsidian-plugin` | `@dorkos/obsidian-plugin` | Obsidian sidebar plugin |
-| `apps/e2e` | `@dorkos/e2e` | Playwright browser tests |
-| `packages/cli` | `dorkos` | Published npm CLI (bundles server + client) |
-| `packages/shared` | `@dorkos/shared` | Zod schemas, TS types, config, transport |
-| `packages/db` | `@dorkos/db` | Drizzle ORM schema layer (SQLite) |
-| `packages/relay` | `@dorkos/relay` | Inter-agent message bus library |
-| `packages/mesh` | `@dorkos/mesh` | Agent discovery & registry library |
-| `packages/test-utils` | `@dorkos/test-utils` | Mock factories, test helpers |
-| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets |
+| Directory                    | Package Name                | Role                                                           |
+| ---------------------------- | --------------------------- | -------------------------------------------------------------- |
+| `apps/client`                | `@dorkos/client`            | React 19 SPA — the main product UI (chat, dashboard, settings) |
+| `apps/server`                | `@dorkos/server`            | Express API + Agent SDK orchestration + MCP + schedulers       |
+| `apps/web`                   | `@dorkos/web`               | Next.js 16 marketing site + Fumadocs documentation             |
+| `apps/obsidian-plugin`       | `@dorkos/obsidian-plugin`   | Obsidian sidebar plugin                                        |
+| `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                                       |
+| `packages/cli`               | `dorkos`                    | Published npm CLI (bundles server + client)                    |
+| `packages/shared`            | `@dorkos/shared`            | Zod schemas, TS types, config, transport                       |
+| `packages/db`                | `@dorkos/db`                | Drizzle ORM schema layer (SQLite)                              |
+| `packages/relay`             | `@dorkos/relay`             | Inter-agent message bus library                                |
+| `packages/mesh`              | `@dorkos/mesh`              | Agent discovery & registry library                             |
+| `packages/test-utils`        | `@dorkos/test-utils`        | Mock factories, test helpers                                   |
+| `packages/typescript-config` | `@dorkos/typescript-config` | Shared tsconfig presets                                        |
 
 **Naming Consistency:**
+
 - All internal packages use `@dorkos/*` scope (good)
 - Published CLI is unscoped `dorkos` (correct for npm distribution)
 - Directory names match package name suffixes in all cases (good)
 - Subsystem packages (`relay`, `mesh`) match product branding (good)
 
 **The DX Problem:**
+
 - `apps/web` is the marketing site, but `apps/client` is the actual web application
 - A new contributor's natural assumption: "the web app is in `apps/web`" — wrong
 - This naming collision creates real confusion because both are web-based
 
 **References to `@dorkos/web` in the codebase:**
+
 - `turbo.json` filter references
 - `package.json` workspace declarations (implicit via `apps/*`)
 - Cross-package dependency declarations
@@ -94,35 +97,38 @@ N/A — not a bug fix.
 
 **Industry Conventions for Marketing Sites in Monorepos:**
 
-| Project | Marketing Site Directory | Main App Directory |
-|---|---|---|
-| Vercel (Next.js repo) | `apps/site` | `apps/web` |
-| Linear | `apps/site` | `apps/app` |
-| Cal.com | `apps/web` (main app) | separate repo for marketing |
-| Turborepo examples | `apps/web` or `apps/docs` | `apps/web` |
-| Shadcn/ui | `apps/www` | N/A |
+| Project               | Marketing Site Directory  | Main App Directory          |
+| --------------------- | ------------------------- | --------------------------- |
+| Vercel (Next.js repo) | `apps/site`               | `apps/web`                  |
+| Linear                | `apps/site`               | `apps/app`                  |
+| Cal.com               | `apps/web` (main app)     | separate repo for marketing |
+| Turborepo examples    | `apps/web` or `apps/docs` | `apps/web`                  |
+| Shadcn/ui             | `apps/www`                | N/A                         |
 
 **Key finding:** When a monorepo has both a product app and a marketing site, the dominant conventions are:
+
 - Marketing/docs: `apps/site` or `apps/www`
 - Product app: `apps/web` or `apps/app`
 
 DorkOS currently has this inverted — `apps/web` is marketing, not the product. `apps/site` is the most common fix.
 
 **On `apps/server` vs `apps/api`:**
+
 - `server` is accurate because it's more than a REST API — it runs Agent SDK sessions, MCP tool servers, Pulse scheduler jobs, SSE streams, and session sync
 - `api` would undersell its scope
 - No rename needed
 
 **Rename Cost Assessment:**
+
 - `apps/web` → `apps/site` touches: directory name, `package.json` name, turbo filter references, Vercel config (turbo-ignore), CLAUDE.md, contributing docs
 - No runtime imports cross this boundary (Next.js app is self-contained)
 - Risk: Low — the marketing site has no cross-package consumers
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Rename `apps/web`? | Yes, rename to `apps/site` | Eliminates genuine confusion — `web` suggests it's the main web app but it's the marketing site. `site` follows Vercel/Linear convention and is immediately clear. |
-| 2 | Rename `apps/server`? | No, keep as-is | The server is more than an API — it runs SDK sessions, MCP servers, schedulers, and SSE streams. `server` accurately reflects its broader role. |
-| 3 | Fix CLAUDE.md doc drift? | Yes, include in scope | CLAUDE.md says "four apps and four shared packages" but the actual count is 5 apps and 7 packages. Small fix, keeps docs honest. |
-| 4 | Rename any packages? | No changes needed | All packages follow consistent `@dorkos/*` scoping, directory names match, subsystem names match product branding. No DX issues found. |
+| #   | Decision                 | Choice                     | Rationale                                                                                                                                                          |
+| --- | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Rename `apps/web`?       | Yes, rename to `apps/site` | Eliminates genuine confusion — `web` suggests it's the main web app but it's the marketing site. `site` follows Vercel/Linear convention and is immediately clear. |
+| 2   | Rename `apps/server`?    | No, keep as-is             | The server is more than an API — it runs SDK sessions, MCP servers, schedulers, and SSE streams. `server` accurately reflects its broader role.                    |
+| 3   | Fix CLAUDE.md doc drift? | Yes, include in scope      | CLAUDE.md says "four apps and four shared packages" but the actual count is 5 apps and 7 packages. Small fix, keeps docs honest.                                   |
+| 4   | Rename any packages?     | No changes needed          | All packages follow consistent `@dorkos/*` scoping, directory names match, subsystem names match product branding. No DX issues found.                             |

@@ -49,20 +49,20 @@ status: specified
 
 **Primary components/modules:**
 
-| File | Role | Issue |
-|------|------|-------|
-| `apps/server/src/routes/sessions.ts` | Session CRUD + SSE streaming | S1: Double lock release |
-| `apps/server/src/services/relay/binding-router.ts` | Adapter-agent session routing | S2: inFlight promise leak |
-| `apps/server/src/app.ts` | Express app factory | S3: CORS wildcard |
-| `apps/server/src/routes/relay.ts` | Relay HTTP endpoints + SSE | S4: Unvalidated subscription pattern |
-| `apps/server/src/services/relay/binding-store.ts` | JSON-backed binding persistence | S5: skipNextReload race |
-| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` | Chat panel orchestrator | C1: Options instability source |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Chat session hook | C2: streamEventHandler cascade + history seeding |
-| `apps/client/src/layers/features/chat/model/use-file-autocomplete.ts` | File autocomplete hook | C3: FSD layer violation |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | SSE event processor | C4: Mutable ref parts |
-| `apps/client/src/layers/features/chat/ui/StreamingText.tsx` | Markdown + link safety modal | C5: ARIA roles |
-| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Session list sidebar | C6: Duplicated query |
-| `apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts` | Relay SSE event stream | C7: Uncaught JSON.parse |
+| File                                                                    | Role                            | Issue                                            |
+| ----------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| `apps/server/src/routes/sessions.ts`                                    | Session CRUD + SSE streaming    | S1: Double lock release                          |
+| `apps/server/src/services/relay/binding-router.ts`                      | Adapter-agent session routing   | S2: inFlight promise leak                        |
+| `apps/server/src/app.ts`                                                | Express app factory             | S3: CORS wildcard                                |
+| `apps/server/src/routes/relay.ts`                                       | Relay HTTP endpoints + SSE      | S4: Unvalidated subscription pattern             |
+| `apps/server/src/services/relay/binding-store.ts`                       | JSON-backed binding persistence | S5: skipNextReload race                          |
+| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`                 | Chat panel orchestrator         | C1: Options instability source                   |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`        | Chat session hook               | C2: streamEventHandler cascade + history seeding |
+| `apps/client/src/layers/features/chat/model/use-file-autocomplete.ts`   | File autocomplete hook          | C3: FSD layer violation                          |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts`    | SSE event processor             | C4: Mutable ref parts                            |
+| `apps/client/src/layers/features/chat/ui/StreamingText.tsx`             | Markdown + link safety modal    | C5: ARIA roles                                   |
+| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`    | Session list sidebar            | C6: Duplicated query                             |
+| `apps/client/src/layers/entities/relay/model/use-relay-event-stream.ts` | Relay SSE event stream          | C7: Uncaught JSON.parse                          |
 
 **Shared dependencies:**
 
@@ -71,6 +71,7 @@ status: specified
 - `@dorkos/shared/relay-schemas.ts` — relay envelope types (consumed by C7)
 
 **Data flow (C1/C2 cascade):**
+
 ```
 ChatPanel renders
   → new options object literal created (always new reference)
@@ -98,19 +99,23 @@ Since all issues have well-defined fixes with established patterns, no external 
 **Fix patterns by category:**
 
 **1. Race conditions (S1, S2, S5):**
+
 - S1: Idempotent release via boolean guard (`releaseLockOnce`)
 - S2: `finally` block for `inFlight.delete(key)` — standard promise cleanup
 - S5: Write generation counter instead of boolean flag
 
 **2. Security hardening (S3, S4):**
+
 - S3: Configurable CORS origin via `DORKOS_CORS_ORIGIN` env var, defaulting to localhost
 - S4: Prefix whitelist for relay subscription patterns
 
 **3. React rendering (C1, C2, C4):**
+
 - C1+C2: Ref-stabilize callbacks inside `useChatSession` (proven pattern from useSWR, React Hook Form)
 - C4: Replace mutation with new object creation
 
 **4. Code quality (C3, C5, C6, C7):**
+
 - C3: Move `FileEntry` type to shared location
 - C5: Correct ARIA roles on modal
 - C6: Replace inline `useQuery` with `useSessions()` hook
@@ -118,8 +123,8 @@ Since all issues have well-defined fixes with established patterns, no external 
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | CORS configuration approach | Configurable via `DORKOS_CORS_ORIGIN` env var, default to localhost origins | Flexible without being wide open. Auto-includes tunnel URL when tunnel is enabled. |
-| 2 | Relay SSE subscription security | Prefix whitelist | Prevents cross-session snooping. Only allows patterns the client should legitimately see. |
-| 3 | ChatPanel options instability fix | Ref-stabilize inside `useChatSession` | Least churn, callers don't change, proven pattern used by useSWR and React Hook Form. |
+| #   | Decision                          | Choice                                                                      | Rationale                                                                                 |
+| --- | --------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| 1   | CORS configuration approach       | Configurable via `DORKOS_CORS_ORIGIN` env var, default to localhost origins | Flexible without being wide open. Auto-includes tunnel URL when tunnel is enabled.        |
+| 2   | Relay SSE subscription security   | Prefix whitelist                                                            | Prevents cross-session snooping. Only allows patterns the client should legitimately see. |
+| 3   | ChatPanel options instability fix | Ref-stabilize inside `useChatSession`                                       | Least churn, callers don't change, proven pattern used by useSWR and React Hook Form.     |

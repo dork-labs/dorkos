@@ -182,6 +182,7 @@ N/A — this is a feature addition, not a bug fix.
 ### Build vs Buy Analysis
 
 All three features should be built from scratch:
+
 - **Rate limiting**: `rate-limiter-flexible` uses fixed windows (wrong algorithm), adds transitive deps, designed for web APIs. `limiter`/`bottleneck` are in-memory only. Our implementation is ~15 lines of TS + 1 prepared SQL statement.
 - **Circuit breakers**: `cockatiel` (zero deps, TypeScript-first) is the strongest library candidate, but its `execute(fn)` wrapper pattern doesn't fit the relay's pipeline model. `opossum` is heavier with peer deps. Our implementation is ~80 lines.
 - **Backpressure**: No standard library handles message-queue backpressure. It's a domain-specific count check. ~20 lines of TS.
@@ -192,23 +193,23 @@ Build all three from scratch. Combined implementation is ~120 lines of core logi
 
 ### Sensible Defaults for Local Agent Systems
 
-| Feature | Parameter | Default | Rationale |
-|---------|-----------|---------|-----------|
-| Rate Limit | `windowSecs` | 60 | One-minute sliding window |
-| Rate Limit | `maxPerWindow` | 100 | ~1.67 msg/sec sustained; handles normal agent communication |
-| Rate Limit | `perSenderOverrides` | `{}` | High-frequency agents can be explicitly allowlisted |
-| Circuit Breaker | `failureThreshold` | 5 | Five consecutive delivery failures |
-| Circuit Breaker | `cooldownMs` | 30,000 | 30 seconds before half-open probe |
-| Circuit Breaker | `halfOpenProbeCount` | 1 | Single probe in half-open |
-| Circuit Breaker | `successToClose` | 2 | Two consecutive successes to close |
-| Backpressure | `maxMailboxSize` | 1,000 | 1,000 unprocessed messages = stalled agent |
-| Backpressure | `pressureWarningAt` | 0.8 | Signal at 80% capacity |
+| Feature         | Parameter            | Default | Rationale                                                   |
+| --------------- | -------------------- | ------- | ----------------------------------------------------------- |
+| Rate Limit      | `windowSecs`         | 60      | One-minute sliding window                                   |
+| Rate Limit      | `maxPerWindow`       | 100     | ~1.67 msg/sec sustained; handles normal agent communication |
+| Rate Limit      | `perSenderOverrides` | `{}`    | High-frequency agents can be explicitly allowlisted         |
+| Circuit Breaker | `failureThreshold`   | 5       | Five consecutive delivery failures                          |
+| Circuit Breaker | `cooldownMs`         | 30,000  | 30 seconds before half-open probe                           |
+| Circuit Breaker | `halfOpenProbeCount` | 1       | Single probe in half-open                                   |
+| Circuit Breaker | `successToClose`     | 2       | Two consecutive successes to close                          |
+| Backpressure    | `maxMailboxSize`     | 1,000   | 1,000 unprocessed messages = stalled agent                  |
+| Backpressure    | `pressureWarningAt`  | 0.8     | Signal at 80% capacity                                      |
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Circuit breaker scope | Per-endpoint (not per-sender-endpoint pair) | Research shows failure modes are endpoint health issues (broken handler, full disk), not sender-specific. Per-endpoint is simpler (one Map entry per registered endpoint), gives a coherent recovery story, and avoids confusion from multiple breakers opening at different times for the same broken endpoint. |
-| 2 | Circuit breaker state persistence | In-memory only, reset on restart | Single-process local system has no multi-instance synchronization needs. Restart resets all breakers to CLOSED, giving endpoints a fresh chance. If still broken, deliveries quickly re-open the breaker. Avoids SQLite write overhead on every state transition. |
-| 3 | Backpressure rejection handling | Structured `PublishResult` rejection (no DLQ) | Backpressure rejection is a pre-delivery policy decision, not a delivery failure. DLQ is for actual delivery attempts that failed. Returning a `rejected` array in `PublishResult` with reason `'backpressure'` keeps the DLQ clean. Same treatment for `'circuit_open'` and `'rate_limited'` rejections. |
-| 4 | Rate limiting scope in fan-out | Once at publish-time (before fan-out) | Rate limiting is a per-sender policy. A message fanning out to 5 endpoints counts as 1 message against the sender's limit. Simpler and more predictable for agent developers. Prevents the same publish from consuming 5x the rate limit quota. |
+| #   | Decision                          | Choice                                        | Rationale                                                                                                                                                                                                                                                                                                        |
+| --- | --------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Circuit breaker scope             | Per-endpoint (not per-sender-endpoint pair)   | Research shows failure modes are endpoint health issues (broken handler, full disk), not sender-specific. Per-endpoint is simpler (one Map entry per registered endpoint), gives a coherent recovery story, and avoids confusion from multiple breakers opening at different times for the same broken endpoint. |
+| 2   | Circuit breaker state persistence | In-memory only, reset on restart              | Single-process local system has no multi-instance synchronization needs. Restart resets all breakers to CLOSED, giving endpoints a fresh chance. If still broken, deliveries quickly re-open the breaker. Avoids SQLite write overhead on every state transition.                                                |
+| 3   | Backpressure rejection handling   | Structured `PublishResult` rejection (no DLQ) | Backpressure rejection is a pre-delivery policy decision, not a delivery failure. DLQ is for actual delivery attempts that failed. Returning a `rejected` array in `PublishResult` with reason `'backpressure'` keeps the DLQ clean. Same treatment for `'circuit_open'` and `'rate_limited'` rejections.        |
+| 4   | Rate limiting scope in fan-out    | Once at publish-time (before fan-out)         | Rate limiting is a per-sender policy. A message fanning out to 5 endpoints counts as 1 message against the sender's limit. Simpler and more predictable for agent developers. Prevents the same publish from consuming 5x the rate limit quota.                                                                  |

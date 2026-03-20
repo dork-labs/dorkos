@@ -47,14 +47,14 @@ Research shows that the best developer tool FTUEs look like "the product working
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `motion` | 12.33.0 (installed) | Animation for onboarding transitions, card entrances, topology morph |
-| `canvas-confetti` | 1.9.4 (installed) | Celebration confetti burst (Beat 2) |
-| `@tanstack/react-query` | installed | Server state for onboarding, presets, discovery |
-| `zod` | installed | Schema validation for onboarding state, scanner params, presets |
-| `lucide-react` | installed | Icons for onboarding UI |
-| `chokidar` | installed | File watching (already used for binding hot-reload) |
+| Dependency              | Version             | Purpose                                                              |
+| ----------------------- | ------------------- | -------------------------------------------------------------------- |
+| `motion`                | 12.33.0 (installed) | Animation for onboarding transitions, card entrances, topology morph |
+| `canvas-confetti`       | 1.9.4 (installed)   | Celebration confetti burst (Beat 2)                                  |
+| `@tanstack/react-query` | installed           | Server state for onboarding, presets, discovery                      |
+| `zod`                   | installed           | Schema validation for onboarding state, scanner params, presets      |
+| `lucide-react`          | installed           | Icons for onboarding UI                                              |
+| `chokidar`              | installed           | File watching (already used for binding hot-reload)                  |
 
 No new dependencies required.
 
@@ -135,30 +135,47 @@ A filesystem traversal service that scans for AI-configured projects.
 export interface DiscoveryCandidate {
   path: string;
   name: string;
-  markers: string[];        // e.g., ['CLAUDE.md', '.claude/']
+  markers: string[]; // e.g., ['CLAUDE.md', '.claude/']
   gitBranch: string | null;
   gitRemote: string | null;
   hasDorkManifest: boolean; // .dork/agent.json exists
 }
 
 export interface ScanOptions {
-  root: string;             // Starting directory (default: os.homedir())
-  maxDepth: number;         // Max traversal depth (default: 5)
+  root: string; // Starting directory (default: os.homedir())
+  maxDepth: number; // Max traversal depth (default: 5)
   excludePatterns: string[];
 }
 
 export const DEFAULT_EXCLUDE_PATTERNS = [
-  'node_modules', '.git', 'vendor', 'Library', 'AppData',
-  '.Trash', 'dist', 'build', '.cache', '.npm', '.nvm',
-  '.local', '.cargo', '.rustup', 'go/pkg',
+  'node_modules',
+  '.git',
+  'vendor',
+  'Library',
+  'AppData',
+  '.Trash',
+  'dist',
+  'build',
+  '.cache',
+  '.npm',
+  '.nvm',
+  '.local',
+  '.cargo',
+  '.rustup',
+  'go/pkg',
 ];
 
 export const AGENT_MARKERS = [
-  'CLAUDE.md', '.claude', '.cursor', '.github/copilot', '.dork/agent.json',
+  'CLAUDE.md',
+  '.claude',
+  '.cursor',
+  '.github/copilot',
+  '.dork/agent.json',
 ];
 ```
 
 The scanner:
+
 1. Traverses from `root` up to `maxDepth` levels deep
 2. At each directory, checks for any `AGENT_MARKERS`
 3. When a marker is found, extracts project metadata (name from git remote or directory name, current branch)
@@ -292,6 +309,7 @@ interface OnboardingFlowProps {
 ```
 
 Layout:
+
 - Full viewport (`fixed inset-0 z-50 bg-background`)
 - Step content centered with max-width container (`max-w-2xl`)
 - Step indicator at top (3 dots showing progress)
@@ -304,6 +322,7 @@ Layout:
 Manages the discovery scan, progressive result display, and celebration sequence.
 
 States:
+
 1. **Pre-scan** — "Let's find your agents" prompt with "Scan" CTA
 2. **Scanning** — Progressive card entrance as agents are found, animated progress
 3. **Celebration** — Three-beat sequence (detailed in section 6)
@@ -317,6 +336,7 @@ Uses `use-discovery-scan.ts` hook for SSE consumption.
 Displays preset cards loaded from the server. Each card is toggleable with an inline cron editor.
 
 States:
+
 1. **Selection** — Preset cards with on/off toggles
 2. **Agent assignment** — For each enabled preset, select which agent(s) to run it against
 3. **Confirmation** — Summary of schedules to create, "Create Schedules" button
@@ -329,6 +349,7 @@ Uses `use-pulse-presets.ts` for loading presets and existing schedule mutation h
 Shows available adapter types as cards. Selecting one launches the existing `AdapterSetupWizard` component (from `features/relay/ui/`).
 
 Cards:
+
 - **Telegram** — "Get notified on Telegram when agents finish work"
 - **Webhooks** — "Send events to any URL"
 - Future adapters as "Coming soon" disabled cards
@@ -338,6 +359,7 @@ Reuses the existing AdapterSetupWizard three-step flow (configure, test, confirm
 #### `AgentCard.tsx` — Discovered Agent Card
 
 Displays a discovered agent with:
+
 - Project name (from git remote or directory name)
 - Path (truncated with home shorthand `~/`)
 - Git branch badge
@@ -348,6 +370,7 @@ Displays a discovered agent with:
 #### `PresetCard.tsx` — Pulse Preset Card
 
 Displays a preset schedule:
+
 - Name and description
 - Cron expression (human-readable)
 - Prompt preview (truncated with expand)
@@ -357,6 +380,7 @@ Displays a preset schedule:
 #### `OnboardingComplete.tsx` — Completion Screen
 
 Summary of everything configured:
+
 - "{N} agents registered" with small topology preview
 - "{M} schedules created" with next run times
 - "Telegram connected" (or "No adapters configured — set up later in Relay")
@@ -365,6 +389,7 @@ Summary of everything configured:
 #### `NoAgentsFound.tsx` — Guided Agent Creation
 
 Inline flow (not a dialog):
+
 1. Directory picker (defaults to the cwd where `dorkos` was launched)
 2. Agent name input (with auto-suggest from directory name)
 3. Optional persona sentence
@@ -426,6 +451,7 @@ interface UseOnboardingReturn {
 ```
 
 Uses TanStack Query for the GET and mutation for PATCH. The query key is `['config']` (reuses the existing config query). The `shouldShowOnboarding` computed property checks:
+
 - No `dismissedAt` set
 - Not all three steps are in `completedSteps` or `skippedSteps`
 
@@ -555,6 +581,7 @@ Features: Chat | Pulse | Relay | Mesh
 ```
 
 On first run only, append:
+
 ```
 New to DorkOS? Open http://localhost:{port} to get started.
 ```
@@ -610,6 +637,7 @@ Start DorkOS with: dorkos
 ### Unit Tests
 
 **Scanner service (`discovery-scanner.test.ts`):**
+
 - Discovers directories with CLAUDE.md marker
 - Discovers directories with .claude/ directory
 - Discovers directories with .dork/agent.json
@@ -620,12 +648,14 @@ Start DorkOS with: dorkos
 - Handles symlinks without infinite loops
 
 **Preset loading (`pulse-presets.test.ts`):**
+
 - Loads presets from JSON file
 - Returns empty array when file doesn't exist
 - Handles malformed JSON gracefully
 - Creates default presets on first server start
 
 **Onboarding state (`use-onboarding.test.ts`):**
+
 - `shouldShowOnboarding` is true when no steps completed and not dismissed
 - `shouldShowOnboarding` is false when all steps completed
 - `shouldShowOnboarding` is false when dismissed
@@ -634,6 +664,7 @@ Start DorkOS with: dorkos
 - `dismiss` sets dismissedAt timestamp
 
 **Feature flag inversion (`feature-flag.test.ts`):**
+
 - `createFeatureFlag()` defaults to enabled (true)
 - `setEnabled(false)` disables the flag
 - Error state tracking works independently of enabled state
@@ -641,6 +672,7 @@ Start DorkOS with: dorkos
 ### Integration Tests
 
 **Discovery scan endpoint (`discovery.integration.test.ts`):**
+
 - SSE stream emits candidate events for discovered agents
 - SSE stream emits progress events during scan
 - SSE stream emits complete event when scan finishes
@@ -649,6 +681,7 @@ Start DorkOS with: dorkos
 - Handles concurrent scan requests
 
 **Config onboarding state (`config.integration.test.ts`):**
+
 - PATCH /api/config with onboarding state updates correctly
 - GET /api/config returns onboarding state
 - Onboarding state persists across server restarts
@@ -656,6 +689,7 @@ Start DorkOS with: dorkos
 ### Component Tests
 
 **OnboardingFlow (`OnboardingFlow.test.tsx`):**
+
 - Renders Step 1 initially
 - Advances to Step 2 after completing Step 1
 - "Skip" button advances to next step
@@ -663,12 +697,14 @@ Start DorkOS with: dorkos
 - Starts at the correct step when `initialStep` is provided
 
 **ProgressCard (`ProgressCard.test.tsx`):**
+
 - Shows remaining incomplete steps
 - Hides completed and skipped steps
 - "X" button calls dismiss
 - Step links call onStepClick with correct step
 
 **AgentCard (`AgentCard.test.tsx`):**
+
 - Renders project name and path
 - Shows marker badges
 - Checkbox toggles selection state
@@ -676,30 +712,36 @@ Start DorkOS with: dorkos
 ## Performance Considerations
 
 **Filesystem scanning:**
+
 - The scanner traverses the home directory which can be large. Depth limit (default 5) and exclusion patterns prevent excessive traversal.
 - Results stream via SSE so the client shows progress immediately rather than waiting for the full scan.
 - The scanner uses `fs.readdir` with `withFileTypes: true` to avoid extra `stat` calls.
 - Scanning runs in the server process. For very large home directories, consider moving to a worker thread in a future iteration.
 
 **Onboarding overlay:**
+
 - The OnboardingFlow is rendered as a fixed overlay. When it unmounts, the main UI (sidebar, chat) renders for the first time — no double-render of the full app.
 - Celebration animations use `motion` library which is already loaded for other animations. No additional bundle cost.
 
 **Empty state previews:**
+
 - The ghosted preview elements are static (no data fetching). They use `opacity-40` and `pointer-events-none` to prevent interaction.
 
 ## Security Considerations
 
 **Filesystem scanning:**
+
 - The scanner root is validated against the directory boundary (`lib/boundary.ts`). Scan requests outside the boundary return 403.
 - The scanner only reads directory listings and checks for file/directory existence. It does not read file contents.
 - Exclusion patterns prevent scanning sensitive directories (Library, AppData).
 - The scanner does not follow symlinks outside the boundary.
 
 **Onboarding state:**
+
 - Stored in `~/.dork/config.json` which is user-local. No sensitive data in onboarding state.
 
 **Preset prompts:**
+
 - Default presets contain generic prompts (lint, test, review). Users can edit them. Prompts are not executed during onboarding — they're stored as schedule configurations.
 
 ## Documentation

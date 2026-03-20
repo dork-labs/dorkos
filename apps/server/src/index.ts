@@ -11,7 +11,12 @@ import { PulseStore } from './services/pulse/pulse-store.js';
 import { SchedulerService } from './services/pulse/scheduler-service.js';
 import { createPulseRouter } from './routes/pulse.js';
 import { setPulseEnabled, setPulseInitError } from './services/pulse/pulse-state.js';
-import { RelayCore, AdapterRegistry, SignalEmitter, type ClaudeCodeAgentRuntimeLike } from '@dorkos/relay';
+import {
+  RelayCore,
+  AdapterRegistry,
+  SignalEmitter,
+  type ClaudeCodeAgentRuntimeLike,
+} from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
@@ -114,9 +119,10 @@ async function start() {
   // Env var wins when explicitly set; fall back to config when not set.
   // boolFlag defaults to false even when unset, so check process.env directly.
   // eslint-disable-next-line no-restricted-syntax -- checks key existence (not value); env.ts boolFlag can't distinguish "unset" from "set to false"
-  const relayEnabled = 'DORKOS_RELAY_ENABLED' in process.env
-    ? env.DORKOS_RELAY_ENABLED
-    : (relayConfig?.enabled ?? false);
+  const relayEnabled =
+    'DORKOS_RELAY_ENABLED' in process.env
+      ? env.DORKOS_RELAY_ENABLED
+      : (relayConfig?.enabled ?? false);
 
   // Phase A: core relay infrastructure (RelayCore + TraceStore)
   // AdapterManager construction is deferred to Phase C (after meshCore init)
@@ -236,17 +242,28 @@ async function start() {
     const mcpAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
     // Mount external MCP server at /mcp (protocol endpoint, not REST API)
     // Stateless mode: each POST creates a fresh McpServer + transport (per SDK docs).
-    app.use('/mcp', validateMcpOrigin, mcpApiKeyAuth, createMcpRouter(() => createExternalMcpServer(mcpToolDeps)));
+    app.use(
+      '/mcp',
+      validateMcpOrigin,
+      mcpApiKeyAuth,
+      createMcpRouter(() => createExternalMcpServer(mcpToolDeps))
+    );
     logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
   }
 
   // Mount Pulse routes if enabled — Pulse requires ClaudeCodeRuntime as SchedulerAgentManager.
   if (pulseEnabled && pulseStore && claudeRuntime) {
-    schedulerService = new SchedulerService(pulseStore, claudeRuntime, {
-      maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
-      retentionCount: schedulerConfig.retentionCount,
-      timezone: schedulerConfig.timezone,
-    }, relayCore, meshCore);
+    schedulerService = new SchedulerService(
+      pulseStore,
+      claudeRuntime,
+      {
+        maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
+        retentionCount: schedulerConfig.retentionCount,
+        timezone: schedulerConfig.timezone,
+      },
+      relayCore,
+      meshCore
+    );
     app.use('/api/pulse', createPulseRouter(pulseStore, schedulerService, dorkHome, meshCore));
     setPulseEnabled(true);
     logger.info('[Pulse] Routes mounted and scheduler configured');
@@ -256,7 +273,9 @@ async function start() {
       meshCore.onUnregister((agentId) => {
         const disabledCount = pulseStore.disableSchedulesByAgentId(agentId);
         if (disabledCount > 0) {
-          logger.info(`[Pulse] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`);
+          logger.info(
+            `[Pulse] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
+          );
         }
       });
     }
@@ -291,11 +310,14 @@ async function start() {
   }
 
   // Mount Admin routes (reset, restart)
-  app.use('/api/admin', createAdminRouter({
-    dorkHome,
-    shutdownServices,
-    closeDb: () => db.$client.close(),
-  }));
+  app.use(
+    '/api/admin',
+    createAdminRouter({
+      dorkHome,
+      shutdownServices,
+      closeDb: () => db.$client.close(),
+    })
+  );
   logger.info('[Admin] Routes mounted');
 
   // Finalize app: API 404 catch-all, error handler, and SPA serving
@@ -321,12 +343,9 @@ async function start() {
 
   // Run session health check periodically — only ClaudeCodeRuntime needs this.
   if (claudeRuntime) {
-    healthCheckInterval = setInterval(
-      () => {
-        claudeRuntime!.checkSessionHealth();
-      },
-      INTERVALS.HEALTH_CHECK_MS
-    );
+    healthCheckInterval = setInterval(() => {
+      claudeRuntime!.checkSessionHealth();
+    }, INTERVALS.HEALTH_CHECK_MS);
   }
 
   // Start ngrok tunnel if enabled
@@ -351,7 +370,10 @@ async function start() {
         ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
       });
     } catch (err) {
-      logger.warn('[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.', logError(err));
+      logger.warn(
+        '[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.',
+        logError(err)
+      );
     }
   }
 }
@@ -404,6 +426,6 @@ process.on('SIGTERM', shutdown);
 start().catch((err) => {
   const info = logError(err);
   logger.error('[DorkOS] Fatal error during startup', info);
-   
+
   process.exit(1);
 });

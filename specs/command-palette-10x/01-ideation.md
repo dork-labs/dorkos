@@ -55,27 +55,28 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role | Change needed |
-|---|---|---|
-| `features/command-palette/ui/CommandPaletteDialog.tsx` | Main palette UI | Major — add preview panel, pages stack, contextual groups, animations |
-| `features/command-palette/ui/AgentCommandItem.tsx` | Agent row renderer | Moderate — add highlight support, selection indicator, hover micro-interactions |
-| `features/command-palette/model/use-palette-items.ts` | Data assembly | Major — add session data, contextual suggestions, category prefix logic |
-| `features/command-palette/model/use-agent-frecency.ts` | Frecency tracking | Moderate — upgrade to Slack bucket system |
-| `features/command-palette/model/use-global-palette.ts` | Keyboard shortcut | Minor — add previous agent tracking |
-| `shared/model/app-store.ts` | Zustand state | Minor — add `previousCwd` field |
+| File                                                   | Role               | Change needed                                                                   |
+| ------------------------------------------------------ | ------------------ | ------------------------------------------------------------------------------- |
+| `features/command-palette/ui/CommandPaletteDialog.tsx` | Main palette UI    | Major — add preview panel, pages stack, contextual groups, animations           |
+| `features/command-palette/ui/AgentCommandItem.tsx`     | Agent row renderer | Moderate — add highlight support, selection indicator, hover micro-interactions |
+| `features/command-palette/model/use-palette-items.ts`  | Data assembly      | Major — add session data, contextual suggestions, category prefix logic         |
+| `features/command-palette/model/use-agent-frecency.ts` | Frecency tracking  | Moderate — upgrade to Slack bucket system                                       |
+| `features/command-palette/model/use-global-palette.ts` | Keyboard shortcut  | Minor — add previous agent tracking                                             |
+| `shared/model/app-store.ts`                            | Zustand state      | Minor — add `previousCwd` field                                                 |
 
 **New files to create:**
 
-| File | Role |
-|---|---|
-| `features/command-palette/ui/AgentPreviewPanel.tsx` | Rich agent context panel (right side) |
-| `features/command-palette/ui/AgentSubMenu.tsx` | Drill-down actions + recent sessions for selected agent |
-| `features/command-palette/ui/HighlightedText.tsx` | Renders fuzzy match highlights as React nodes from range pairs |
-| `features/command-palette/ui/PaletteFooter.tsx` | Dynamic keyboard hint bar |
-| `features/command-palette/model/use-palette-search.ts` | uFuzzy integration with category prefix detection |
-| `features/command-palette/model/use-preview-data.ts` | Debounced preview data fetching for selected agent |
+| File                                                   | Role                                                           |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| `features/command-palette/ui/AgentPreviewPanel.tsx`    | Rich agent context panel (right side)                          |
+| `features/command-palette/ui/AgentSubMenu.tsx`         | Drill-down actions + recent sessions for selected agent        |
+| `features/command-palette/ui/HighlightedText.tsx`      | Renders fuzzy match highlights as React nodes from range pairs |
+| `features/command-palette/ui/PaletteFooter.tsx`        | Dynamic keyboard hint bar                                      |
+| `features/command-palette/model/use-palette-search.ts` | uFuzzy integration with category prefix detection              |
+| `features/command-palette/model/use-preview-data.ts`   | Debounced preview data fetching for selected agent             |
 
 **Shared dependencies:**
+
 - `@/layers/shared/ui` — Command primitives, ResponsiveDialog
 - `@/layers/shared/model` — app-store (Zustand), useIsMobile, useTheme
 - `@/layers/shared/lib` — cn, shortenHomePath, hashToHslColor, hashToEmoji
@@ -118,6 +119,7 @@ User presses Cmd+K
 ```
 
 **Potential blast radius:**
+
 - Direct: ~8 files (palette UI, hooks, app-store, index.css for selection glow)
 - Indirect: ~3 files (entity hooks consumed read-only — no changes needed)
 - Tests: ~4 test files (CommandPaletteDialog.test.tsx updated + 3 new test files for search, preview, sub-menu)
@@ -130,6 +132,7 @@ Research report: `research/20260303_command_palette_10x.md`
 ### Potential Solutions
 
 **1. Preview Panel — Side-by-side Raycast-style (Recommended)**
+
 - Layout: flex-row dialog, list on left (40%), preview on right (60%)
 - Shows only for item types with rich data (agents, sessions)
 - Dialog expands from ~480px to ~720px with motion.div width spring animation
@@ -140,6 +143,7 @@ Research report: `research/20260303_command_palette_10x.md`
 - Maintenance: Low (preview is additive, doesn't change core palette behavior)
 
 **2. Fuzzy Search — uFuzzy with character highlighting (Recommended)**
+
 - 4kb library, range-based match highlighting, word boundary + consecutive char bonuses
 - Integrate via `shouldFilter={false}` on cmdk (disable built-in, manage externally)
 - React-safe `HighlightedText` component builds nodes from range pairs (no unsafe HTML injection)
@@ -149,7 +153,8 @@ Research report: `research/20260303_command_palette_10x.md`
 - Maintenance: Low
 
 **3. Frecency — Slack bucket system (Recommended)**
-- 6 time buckets (4h/24h/72h/1w/1mo/3mo) with score = totalCount * bucketSum / min(visits, 10)
+
+- 6 time buckets (4h/24h/72h/1w/1mo/3mo) with score = totalCount \* bucketSum / min(visits, 10)
 - More natural decay curve than current linear formula
 - Pure client-side, localStorage, same `useSyncExternalStore` pattern
 - Pros: Battle-tested (Slack + Firefox), decays naturally without explicit pruning
@@ -158,6 +163,7 @@ Research report: `research/20260303_command_palette_10x.md`
 - Maintenance: Low
 
 **4. Sub-menu drill-down — cmdk pages stack (Recommended)**
+
 - `const [pages, setPages] = useState<string[]>([])` — array stack, last element is current page
 - Backspace-when-empty goes back; Escape goes back (with `e.stopPropagation()`) or closes
 - CSS height transition via `--cmdk-list-height` variable + `AnimatePresence mode="wait"` with directional slide
@@ -167,6 +173,7 @@ Research report: `research/20260303_command_palette_10x.md`
 - Maintenance: Low
 
 **5. Micro-interactions — Full motion.dev suite (Recommended)**
+
 - Sliding selection indicator: `layoutId="cmd-selection"` on a `motion.div` behind the selected item — creates the "sliding pill" effect (Raycast/Vercel pattern)
 - Stagger entrance: `staggerChildren: 0.04` (40ms) on initial open and page transitions only (not every keystroke)
 - Dialog entrance: spring scale (0.96 to 1) + fade, 150ms
@@ -182,18 +189,18 @@ Research report: `research/20260303_command_palette_10x.md`
 
 ### Key Research Findings
 
-| Tool | Signature Pattern | Takeaway for DorkOS |
-|---|---|---|
-| Raycast | Split-view list+detail | Preview panel model for agents |
-| Linear | Speed-first, zero-latency | Pre-load all data, < 50ms open |
-| VS Code | Prefix scoping (`>`, `@`, `:`) | Category prefixes for agent/command/session search |
-| Superhuman | Shortcut education via palette | Display keyboard shortcuts next to actions |
-| Slack | Bucket frecency | Natural decay algorithm for ranking |
-| Vercel | Sliding selection indicator | `layoutId` pill for premium keyboard nav feel |
+| Tool       | Signature Pattern              | Takeaway for DorkOS                                |
+| ---------- | ------------------------------ | -------------------------------------------------- |
+| Raycast    | Split-view list+detail         | Preview panel model for agents                     |
+| Linear     | Speed-first, zero-latency      | Pre-load all data, < 50ms open                     |
+| VS Code    | Prefix scoping (`>`, `@`, `:`) | Category prefixes for agent/command/session search |
+| Superhuman | Shortcut education via palette | Display keyboard shortcuts next to actions         |
+| Slack      | Bucket frecency                | Natural decay algorithm for ranking                |
+| Vercel     | Sliding selection indicator    | `layoutId` pill for premium keyboard nav feel      |
 
 ### Critical Implementation Details
 
-**cmdk + motion.dev compatibility:** `AnimatePresence` wrapping `CommandItem` components can interfere with cmdk's keyboard navigation. Workaround: wrap the *content* inside `CommandItem`, not the `CommandItem` element itself. The sliding selection indicator uses a `motion.div` with `layoutId` and `position: absolute` within each item's relatively-positioned container.
+**cmdk + motion.dev compatibility:** `AnimatePresence` wrapping `CommandItem` components can interfere with cmdk's keyboard navigation. Workaround: wrap the _content_ inside `CommandItem`, not the `CommandItem` element itself. The sliding selection indicator uses a `motion.div` with `layoutId` and `position: absolute` within each item's relatively-positioned container.
 
 **Escape key handling in sub-menus:** The critical detail is `e.stopPropagation()` when pages exist — otherwise Escape closes the entire dialog instead of going back one level. Only let Escape propagate (to close the dialog) when `pages.length === 0`.
 
@@ -201,15 +208,15 @@ Research report: `research/20260303_command_palette_10x.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Fuzzy search library | uFuzzy (4kb) | Range-based match highlighting without unsafe HTML; precise matching ideal for developer tools; tiny bundle |
-| 2 | Frecency algorithm | Slack bucket system | More natural decay than current linear formula; battle-tested at scale (Slack, Firefox) |
-| 3 | Preview panel layout | Side-by-side Raycast-style | Rich context for informed agent switching; dialog width animation provides premium feel |
-| 4 | Sub-menu pattern | cmdk pages stack | Native cmdk pattern; clean keyboard UX with Backspace/Escape navigation |
-| 5 | Selection indicator | motion.dev layoutId sliding pill | Single highest-impact micro-interaction; makes keyboard nav feel native, not "webby" |
-| 6 | Category prefixes | `@` agents, `>` commands, `#` sessions | VS Code-proven mental model; `@` already exists, extending to `>` and `#` |
-| 7 | Agent switch UX | Enter opens sub-menu, Cmd+Enter opens new tab directly | Sub-menu enables Open Here / New Tab / Recent Sessions; Cmd+Enter as fast path skips sub-menu |
-| 8 | Contextual suggestions | Client-side rules engine (max 3 items) | No new server endpoints; computed from existing hooks (Pulse runs, agent errors, session state) |
-| 9 | Animation timing | Stagger on open + page transitions only | Not on every keystroke — avoids visual noise; 40ms stagger, 150ms dialog open, 200ms preview slide |
-| 10 | Natural language fallback | "Ask Claude: '{query}'" on empty results | Palette never dead-ends; closes and sends query as chat message |
+| #   | Decision                  | Choice                                                 | Rationale                                                                                                   |
+| --- | ------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| 1   | Fuzzy search library      | uFuzzy (4kb)                                           | Range-based match highlighting without unsafe HTML; precise matching ideal for developer tools; tiny bundle |
+| 2   | Frecency algorithm        | Slack bucket system                                    | More natural decay than current linear formula; battle-tested at scale (Slack, Firefox)                     |
+| 3   | Preview panel layout      | Side-by-side Raycast-style                             | Rich context for informed agent switching; dialog width animation provides premium feel                     |
+| 4   | Sub-menu pattern          | cmdk pages stack                                       | Native cmdk pattern; clean keyboard UX with Backspace/Escape navigation                                     |
+| 5   | Selection indicator       | motion.dev layoutId sliding pill                       | Single highest-impact micro-interaction; makes keyboard nav feel native, not "webby"                        |
+| 6   | Category prefixes         | `@` agents, `>` commands, `#` sessions                 | VS Code-proven mental model; `@` already exists, extending to `>` and `#`                                   |
+| 7   | Agent switch UX           | Enter opens sub-menu, Cmd+Enter opens new tab directly | Sub-menu enables Open Here / New Tab / Recent Sessions; Cmd+Enter as fast path skips sub-menu               |
+| 8   | Contextual suggestions    | Client-side rules engine (max 3 items)                 | No new server endpoints; computed from existing hooks (Pulse runs, agent errors, session state)             |
+| 9   | Animation timing          | Stagger on open + page transitions only                | Not on every keystroke — avoids visual noise; 40ms stagger, 150ms dialog open, 200ms preview slide          |
+| 10  | Natural language fallback | "Ask Claude: '{query}'" on empty results               | Palette never dead-ends; closes and sends query as chat message                                             |

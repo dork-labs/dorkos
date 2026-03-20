@@ -7,7 +7,7 @@ spec: fix-chat-ui-reliability-bugs
 superseded-by: null
 ---
 
-# 114. Client-Only _partId Field for Stable React Keys in Streaming Text Parts
+# 114. Client-Only \_partId Field for Stable React Keys in Streaming Text Parts
 
 ## Status
 

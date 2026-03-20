@@ -69,7 +69,8 @@ export function useSessionStatus(
   // streamingStatus is never cleared after streaming ends, so streamingStatus?.model retains its
   // last value and would permanently shadow session?.model (the PATCH-confirmed value). Gate it
   // behind isStreaming so model changes via the dropdown are reflected immediately post-stream.
-  const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
+  const model =
+    localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
 
   // Context: prefer streaming max, fall back to known model context window
   const contextTokens = streamingStatus?.contextTokens ?? session?.contextTokens ?? null;
@@ -123,7 +124,6 @@ export function useSessionStatus(
       setLocalModel(null);
     }
     if (localPermissionMode !== null && session?.permissionMode === localPermissionMode) {
-       
       setLocalPermissionMode(null);
     }
   }, [session?.model, session?.permissionMode, localModel, localPermissionMode]);

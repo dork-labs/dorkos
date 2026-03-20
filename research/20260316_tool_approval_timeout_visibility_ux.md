@@ -1,5 +1,5 @@
 ---
-title: "Tool Approval Timeout Visibility — Countdown UX Patterns for Chat UI"
+title: 'Tool Approval Timeout Visibility — Countdown UX Patterns for Chat UI'
 date: 2026-03-16
 type: external-best-practices
 status: active
@@ -50,6 +50,7 @@ Four candidate approaches evaluated for DorkOS context.
 A thin horizontal bar below the tool header, draining left-to-right over 10 minutes, with color transitioning from neutral → amber → red in warning phases.
 
 **Pros:**
+
 - Compact — adds ~4px of height to the card, doesn't dominate the chat stream
 - Familiar: CI pipelines (Jenkins, CircleCI), file transfers, and download UIs all use horizontal progress for time-limited operations
 - Color transition is the primary urgency signal, not animation speed — less anxiety-inducing
@@ -57,6 +58,7 @@ A thin horizontal bar below the tool header, draining left-to-right over 10 minu
 - CSS `transition` on `width` is GPU-composited — negligible performance cost
 
 **Cons:**
+
 - Less "at a glance" than a circular ring for very short remaining times
 
 **Complexity:** Low
@@ -67,11 +69,13 @@ A thin horizontal bar below the tool header, draining left-to-right over 10 minu
 A small text label showing MM:SS format, updating every second.
 
 **Pros:**
+
 - Maximally clear — unambiguous to screen readers and sighted users alike
 - No animation means no `prefers-reduced-motion` concern
 - Zero implementation complexity
 
 **Cons:**
+
 - No immediate visual urgency — users can ignore text more easily than color change
 - Ticking every second creates visual noise in a chat stream
 - On its own, fails the UX test of "urgency without anxiety" — feels like a bomb timer
@@ -86,11 +90,13 @@ A small text label showing MM:SS format, updating every second.
 An SVG `circle` with `strokeDashoffset` animating the arc, as seen in GitHub Actions job status indicators and `react-countdown-circle-timer`.
 
 **Pros:**
+
 - Highly glanceable — percentage-remaining is instantly readable
 - Visually distinctive — users immediately recognize "this is time-limited"
 - `react-countdown-circle-timer` uses a single RAF loop for smooth animation
 
 **Cons:**
+
 - Oversized for a chat tool approval card — draws too much attention relative to the content
 - A 10-minute countdown on a small ring is visually indistinguishable from 8 minutes for most of the duration
 - Adds a dependency (`react-countdown-circle-timer` ~37k weekly downloads, relatively niche)
@@ -106,11 +112,13 @@ An SVG `circle` with `strokeDashoffset` animating the arc, as seen in GitHub Act
 A colored badge showing "10:00" → "2:00" that transitions from `bg-muted` to `bg-status-warning` to `bg-status-error`.
 
 **Pros:**
+
 - Compact — fits inline next to "Tool approval required" text
 - Color state machine is simple to implement
 - Works well as the _only_ indicator if screen real estate is constrained
 
 **Cons:**
+
 - Less granular urgency communication than a draining bar
 - Updating the displayed time every second is jarring without animation
 
@@ -123,15 +131,16 @@ A colored badge showing "10:00" → "2:00" that transitions from `bg-muted` to `
 
 Based on WCAG 2.2.1 (minimum 20 seconds before timeout to allow action), UK Government Design System patterns, and the DigitalA11Y timeout modal research:
 
-| Threshold | Elapsed | Action |
-|---|---|---|
-| Initial | 0:00–8:00 | Neutral progress bar draining silently. No text countdown. Status: info. |
-| Warning | 8:01–9:00 | Bar color transitions to `status-warning` (amber). "2 minutes remaining" text appears. |
-| Urgent | 9:01–9:40 | Bar color transitions to `status-error` (red). Text updates to seconds: "20 seconds remaining". `aria-live="assertive"` fires once. |
-| Critical | 9:41–9:59 | Brief pulse animation on the bar (skipped under `prefers-reduced-motion`). |
-| Timeout | 10:00 | Component transitions to "Timed out — auto-denied" state. Clear explanation message. |
+| Threshold | Elapsed   | Action                                                                                                                              |
+| --------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Initial   | 0:00–8:00 | Neutral progress bar draining silently. No text countdown. Status: info.                                                            |
+| Warning   | 8:01–9:00 | Bar color transitions to `status-warning` (amber). "2 minutes remaining" text appears.                                              |
+| Urgent    | 9:01–9:40 | Bar color transitions to `status-error` (red). Text updates to seconds: "20 seconds remaining". `aria-live="assertive"` fires once. |
+| Critical  | 9:41–9:59 | Brief pulse animation on the bar (skipped under `prefers-reduced-motion`).                                                          |
+| Timeout   | 10:00     | Component transitions to "Timed out — auto-denied" state. Clear explanation message.                                                |
 
 **Design rationale for 2-minute threshold (not 1 minute or 10%):**
+
 - 10% of 10 minutes = 1 minute — too short for a user who stepped away
 - The UK Government's "5-minute warning at 30 minutes of session" pattern (17% threshold) suggests that 20% (2 minutes) is the right balance for shorter sessions
 - 2 minutes gives enough time to read the warning, understand the tool call, and make a decision
@@ -147,8 +156,12 @@ Use a **CSS `transition` on `width`** with `transition-duration` equal to the fu
   animation: drain var(--timeout-duration) linear forwards;
 }
 @keyframes drain {
-  from { width: 100%; }
-  to { width: 0%; }
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
 }
 ```
 
@@ -160,7 +173,7 @@ Use a **`setInterval` at 1000ms** only during the warning phase (< 2 minutes rem
 useEffect(() => {
   if (secondsRemaining > 120) return; // Before warning threshold — CSS handles visual
   const id = setInterval(() => {
-    setSecondsRemaining(s => s - 1);
+    setSecondsRemaining((s) => s - 1);
   }, 1000);
   return () => clearInterval(id);
 }, [secondsRemaining > 120]);
@@ -181,6 +194,7 @@ Use Tailwind's `transition-colors` class with duration-300ms between color state
 ### 5. Accessibility Considerations
 
 **ARIA roles:**
+
 - The countdown container needs `role="timer"` (implicit `aria-live="off"`)
 - Do NOT use `aria-live="polite"` on the bar — it would announce every second
 - Use a separate hidden `role="status"` element that announces only at threshold crossings:
@@ -189,19 +203,23 @@ Use Tailwind's `transition-colors` class with duration-300ms between color state
   - "Tool approval timed out. Execution denied." (on timeout)
 
 **`prefers-reduced-motion`:**
+
 - Under reduced motion: skip the draining animation on the bar, show only the color state change
 - The text countdown should still update — it's not an animation
 - The CSS `animation` approach makes this trivial: `@media (prefers-reduced-motion: reduce) { animation: none; }`
 
 **Color alone is insufficient:**
+
 - The progress bar changes color AND the text label appears — two independent signals
 - This satisfies WCAG 1.4.1 (Use of Color)
 
 **Keyboard:**
+
 - No new keyboard interactions introduced (existing Approve/Deny shortcut system handles this)
 - The timeout state should not steal focus
 
 **Time limit extension (WCAG 2.2.1):**
+
 - WCAG requires that users can extend the time limit OR be warned with at least 20 seconds remaining
 - The 2-minute warning satisfies the "20 seconds" minimum by a large margin
 - A "Request more time" button in the warning state would satisfy the "extend" requirement
@@ -243,6 +261,7 @@ This is a separate bug from the timeout visibility feature but should be filed a
 ### 8. Timeout State — What to Show After Expiry
 
 When the timeout fires on the client (countdown reaches zero):
+
 1. Transition the card to a "timed out" state (similar to the existing `decided` state)
 2. Show a clear, honest message: **"Auto-denied — timed out after 10 minutes"**
 3. The card coloring should match the "denied" state (`approvalState({ state: 'denied' })`)
@@ -257,6 +276,7 @@ The server will resolve the promise with `{ behavior: 'deny', message: 'Tool app
 ### Progress Bar Implementation Sketch
 
 The component should:
+
 1. Receive `timeoutMs` as a prop (from `ApprovalEvent.timeoutMs` — field to add to schema)
 2. Seed `expiresAt = Date.now() + timeoutMs` on mount
 3. Use a CSS animation for the bar drain (GPU-composited, no JS)
@@ -342,12 +362,12 @@ This approach avoids hardcoding the timeout in the client and keeps the constant
 
 Using existing DorkOS color tokens:
 
-| Phase | Bar color | Text color | Border |
-|---|---|---|---|
-| Idle (> 2 min) | `bg-muted-foreground/20` | — | unchanged |
-| Warning (1–2 min) | `bg-status-warning` | `text-status-warning` | `border-status-warning/30` |
-| Urgent (< 1 min) | `bg-status-error` | `text-status-error` | `border-status-error/30` |
-| Timed out | `bg-status-error/30` | `text-status-error` | `border-status-error` |
+| Phase             | Bar color                | Text color            | Border                     |
+| ----------------- | ------------------------ | --------------------- | -------------------------- |
+| Idle (> 2 min)    | `bg-muted-foreground/20` | —                     | unchanged                  |
+| Warning (1–2 min) | `bg-status-warning`      | `text-status-warning` | `border-status-warning/30` |
+| Urgent (< 1 min)  | `bg-status-error`        | `text-status-error`   | `border-status-error/30`   |
+| Timed out         | `bg-status-error/30`     | `text-status-error`   | `border-status-error`      |
 
 The card border color change is a second visual signal beyond the bar itself, aiding colorblind users.
 

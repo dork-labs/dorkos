@@ -85,7 +85,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
       </button>
 
       {open && (
-        <div className="bg-popover text-popover-foreground absolute left-0 top-full z-50 mt-1 w-full rounded-md border shadow-md">
+        <div className="bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 w-full rounded-md border shadow-md">
           <Command>
             <CommandInput placeholder="Search agents..." />
             <CommandList className="max-h-60">

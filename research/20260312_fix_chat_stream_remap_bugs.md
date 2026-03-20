@@ -1,9 +1,20 @@
 ---
-title: "Fix Chat Stream Remap Bugs — Duplicate Messages & Stale Model Display"
+title: 'Fix Chat Stream Remap Bugs — Duplicate Messages & Stale Model Display'
 date: 2026-03-12
 type: implementation
 status: active
-tags: [chat, streaming, session-id-remap, optimistic-ui, tanstack-query, model-display, sse, done-event, deduplication]
+tags:
+  [
+    chat,
+    streaming,
+    session-id-remap,
+    optimistic-ui,
+    tanstack-query,
+    model-display,
+    sse,
+    done-event,
+    deduplication,
+  ]
 feature_slug: fix-chat-stream-remap-bugs
 searches_performed: 0
 sources_count: 8
@@ -75,6 +86,7 @@ becomes `'idle'` in the same render commit.
 
 **Consequence for the seed effect:** When the `done` event fires and both the new `sessionId` and
 `status='idle'` land in the same render:
+
 1. `sessionId` changes → `historySeededRef.current = false` (session-ID reset effect, line 168)
 2. `statusRef.current !== 'streaming'` → `setMessages([])` IS called (because streaming is now idle)
 3. The history query is now enabled with the new SDK session ID
@@ -119,6 +131,7 @@ This empty flash IS a real UX problem, but it is a different bug from "duplicate
 **The actual duplicate scenario** is more specific: if `setStatus('idle')` and the session-ID change
 do NOT batch together (e.g., on React versions where the `onSessionIdChangeRef` callback runs in a
 non-batched context), then:
+
 - `done` fires → `onSessionIdChangeRef` called → parent setState for sessionId → render A
 - In render A: `sessionId` changed, `status` still `'streaming'` → `statusRef.current === 'streaming'`
   → session-ID reset effect does NOT call `setMessages([])`
@@ -194,6 +207,7 @@ case 'done': {
 ```
 
 **Pros:**
+
 - Surgical — 2-3 lines in the `done` handler
 - Guarantees `messages[]` is empty before remap propagates — no duplicate possible regardless
   of batching behavior
@@ -202,6 +216,7 @@ case 'done': {
   session changes
 
 **Cons:**
+
 - Creates an empty-flash between clear and history arrival — same UX gap as the existing no-remap
   path, just now it also occurs on remap
 - If history is slow (> 500ms), user sees blank conversation for a noticeable moment
@@ -247,11 +262,13 @@ if (historySeededRef.current && !isStreaming) {
 ```
 
 **Pros:**
+
 - No empty flash — messages persist through remap, history fills in any gaps
 - Zero UX degradation during remap
 - Works without changing the stream event handler or transport layer
 
 **Cons:**
+
 - Content-based dedup is fragile: if the assistant response includes a tool call summary that differs
   between streaming state and JSONL format, `local.content === m.content` will miss
 - `content` is derived from parts (multi-block content is joined with '\n' in `deriveFromParts`) —
@@ -292,12 +309,14 @@ if (isRemapping && !isStreaming) {
 ```
 
 **Pros:**
+
 - Explicit state machine — remap is a named, trackable state
 - Full replace guarantees no duplicate (history is authoritative)
 - The UX gap (empty flash) can be avoided by keeping the old messages visible until history arrives
   using a "transitioning" render where the old messages are shown in a dimmed/placeholder state
 
 **Cons:**
+
 - Adds a new ref that must be threaded from `stream-event-handler.ts` back into the seed effect —
   either via a ref in `StreamEventDeps` or a state variable
 - The `isRemapping` flag is an additional ref to keep in sync; if the remap fires but history never
@@ -339,12 +358,14 @@ When history arrives and runs the ID-based dedup, `currentIds` now contains the 
 so the history's assistant message IS deduplicated correctly.
 
 **Pros:**
+
 - Fixes the root cause (ID mismatch) rather than the symptom (duplicate display)
 - No empty flash
 - ID-based dedup becomes fully reliable
 - Works for non-remap paths too (any post-stream history sync)
 
 **Cons:**
+
 - Requires server-side changes: the `done` event payload must include the SDK-assigned message ID
 - The SDK assigns the ID at the JSONL write level — may require reading back from the transcript
   or hooking into the SDK's turn completion callback
@@ -382,7 +403,8 @@ the priority chain.
 Change the priority chain to only use `streamingStatus?.model` when actively streaming:
 
 ```typescript
-const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
+const model =
+  localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 Or equivalently:
@@ -393,6 +415,7 @@ const model = localModel ?? streamingModel ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 **Pros:**
+
 - One-line fix — purely additive, no new state
 - Precisely matches the semantic intent: streaming status is only authoritative during streaming
 - `session?.model` becomes the authoritative display value after streaming, which is the server-confirmed
@@ -403,6 +426,7 @@ const model = localModel ?? streamingModel ?? session?.model ?? DEFAULT_MODEL;
   (the session record is fetched on mount and updated via `sync_update` invalidation after streaming)
 
 **Cons:**
+
 - Between `setStatus('idle')` and `session` query re-fetching with the new model, there is a
   brief window where `session?.model` may show the pre-stream value if the session hasn't been
   invalidated yet. This is a pre-existing timing concern, not introduced by this fix.
@@ -431,6 +455,7 @@ case 'done': {
 ```
 
 **Pros:**
+
 - More thorough: clears ALL stale streaming status (model, costUsd, contextTokens, contextMaxTokens)
   not just model
 - `statusData.costUsd` currently uses `streamingStatus?.costUsd ?? null` — after clearing, this
@@ -438,6 +463,7 @@ case 'done': {
   (cost is per-stream, not persistent).
 
 **Cons:**
+
 - Clearing `costUsd` and context data on stream end may cause the status bar to flash empty
   briefly before `session?.model` (and potentially session context data) loads
 - `sessionStatusRef.current` must also be cleared (it's used in the `session_status` merge logic)
@@ -459,7 +485,11 @@ Remove `streamingStatus?.model` from the priority chain entirely. Instead, expos
 
 ```typescript
 const statusData: SessionStatusData = {
-  model: localModel ?? (isStreaming && streamingStatus?.model ? streamingStatus.model : session?.model ?? DEFAULT_MODEL),
+  model:
+    localModel ??
+    (isStreaming && streamingStatus?.model
+      ? streamingStatus.model
+      : (session?.model ?? DEFAULT_MODEL)),
   // ...
 };
 ```
@@ -503,6 +533,7 @@ case 'done': {
 ```
 
 **Rationale:**
+
 - The `setMessages` setter is already in `StreamEventDeps` (line 27) — no interface change needed
 - Clearing messages early is safe: `setStatus('idle')` fires in the same event handler invocation,
   and the session-ID reset effect will fire `setMessages([])` anyway when the new session ID arrives
@@ -528,10 +559,12 @@ JSONL message ID in the `done` event.
 const model = localModel ?? streamingStatus?.model ?? session?.model ?? DEFAULT_MODEL;
 
 // After:
-const model = localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
+const model =
+  localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
 ```
 
 **Rationale:**
+
 - One-line fix, no new state or side effects
 - Semantically correct: streaming status model is a live signal, not persisted data
 - `session?.model` is the server-confirmed value and the right fallback post-stream

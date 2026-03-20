@@ -23,25 +23,28 @@ Mesh is the agent discovery and network topology layer for DorkOS. It discovers 
 
 **Decision:** Messaging infrastructure belongs in Relay, not Mesh. The three modules have distinct responsibilities:
 
-| Module | Role | OS Analog |
-|---|---|---|
-| **Relay** | Universal message bus — inboxes, outboxes, delivery for ALL endpoints (agent↔agent, human↔agent, external↔agent) | Kernel IPC (D-Bus, Mach ports) |
-| **Mesh** | Agent discovery + network topology + configures Relay routing for the agent network | Service discovery + network config (DNS + iptables) |
-| **Pulse** | Scheduled tasks/prompts, dispatches messages via Relay at designated times | cron / systemd timers |
+| Module    | Role                                                                                                             | OS Analog                                           |
+| --------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Relay** | Universal message bus — inboxes, outboxes, delivery for ALL endpoints (agent↔agent, human↔agent, external↔agent) | Kernel IPC (D-Bus, Mach ports)                      |
+| **Mesh**  | Agent discovery + network topology + configures Relay routing for the agent network                              | Service discovery + network config (DNS + iptables) |
+| **Pulse** | Scheduled tasks/prompts, dispatches messages via Relay at designated times                                       | cron / systemd timers                               |
 
 **Why this is better than Mesh owning messaging:**
+
 - One message format everywhere (agent-to-agent and human-to-agent use the same envelope)
 - Correct dependency direction: Mesh → Relay, Pulse → Relay (no circular deps)
 - Relay can exist without Mesh (ship human↔agent messaging first, add agent network later)
 - Each module is independently useful with a single clear responsibility
 
 **What moves from Mesh to Relay:**
+
 - Maildir + SQLite message storage → Relay
 - Message envelope schema + budget fields → defined by Relay, policies configured by Mesh
 - Dead letter queue, retries, rate limiting → Relay (delivery infrastructure)
 - Circuit breakers → Relay (per-endpoint delivery safety)
 
 **What stays in Mesh:**
+
 - Agent discovery (filesystem scanning for `.dork/agent.json`, `.claude/` fallback)
 - Network topology (who can talk to who)
 - Access control rules (Mesh writes them, Relay enforces them)
@@ -50,6 +53,7 @@ Mesh is the agent discovery and network topology layer for DorkOS. It discovers 
 **Design sequencing:** Relay first (foundation), then Mesh on top. See `plans/2026-02-24-relay-design.md`.
 
 **Package architecture:** Each module is a separate npm package composed by the server:
+
 - `@dorkos/relay` — message bus (foundation)
 - `@dorkos/mesh` — agent discovery + topology
 - `@dorkos/pulse` — scheduling (extracted from `apps/server`)
@@ -113,6 +117,7 @@ How should `.dork/agent.json` be structured? Draft schema:
 ```
 
 Key questions still open:
+
 - Should it align with A2A Agent Card format (Google/Linux Foundation standard)?
 - How are capabilities/skills declared? Freeform strings or a defined vocabulary?
 - Should `runtime` be a required field? (Claude Code is the default)
@@ -124,6 +129,7 @@ Key questions still open:
 > **Resolved:** Relay owns the envelope (routing + budget). All DorkOS components use `StandardPayload` (defined in `@dorkos/shared`) for the payload content. Mesh-specific fields (performatives, conversation tracking) are part of `StandardPayload`.
 
 Agent-to-agent messages use `StandardPayload` with these Mesh-specific fields populated:
+
 - `performative`: request, inform, query, answer, delegate, result, failure, cancel
 - `conversationId`: groups messages in a multi-agent conversation
 - `correlationId`: links a response to its request
@@ -135,6 +141,7 @@ See Relay design doc for the full `StandardPayload` schema.
 ### 6. Access Control Model
 
 Research recommends three-layer system:
+
 1. **Declared capabilities** (manifest) — what agent CAN do
 2. **Scoped tokens** (invocation time) — subset for this specific task
 3. **Runtime policy** — context-aware enforcement
@@ -142,6 +149,7 @@ Research recommends three-layer system:
 Key question: Default-allow within same project, default-deny across projects?
 
 Visibility scoping options:
+
 - `.gitignore`-style visibility config
 - Allowlist vs blocklist per agent
 - "NOT_FOUND" rather than "FORBIDDEN" for hidden agents (Microsoft Teams pattern)
@@ -151,14 +159,15 @@ Visibility scoping options:
 > **Note:** Budget envelope enforcement moves to Relay. Mesh configures budget policies per agent/project.
 
 Budget envelope (propagated with every message, can only decrease):
+
 ```typescript
 interface RelayBudget {
-  hopCount: number;        // incremented at each hop
-  maxHops: number;         // default: 5, cannot increase
+  hopCount: number; // incremented at each hop
+  maxHops: number; // default: 5, cannot increase
   ancestorChain: string[]; // endpoint IDs that touched this message
-  ttl: number;             // Unix timestamp expiry
+  ttl: number; // Unix timestamp expiry
   callBudgetRemaining: number; // decremented per call
-  deadline: number;        // wall-clock deadline
+  deadline: number; // wall-clock deadline
 }
 ```
 
@@ -168,6 +177,7 @@ interface RelayBudget {
 ### 8. Agent Identity
 
 Options (not yet decided):
+
 - Declared ID in manifest (user-controlled, portable)
 - Directory path hash (stable, automatic)
 - Git remote URL (globally unique, git-dependent)
@@ -193,6 +203,7 @@ Options (not yet decided):
 ### 11. API Surface (revised — messaging routes moved to Relay)
 
 Mesh routes (discovery + topology only):
+
 ```
 GET  /api/mesh/agents                  — all registered agents
 GET  /api/mesh/agents?project=backend  — filter by project
@@ -202,6 +213,7 @@ SSE  /api/mesh/events                  — real-time mesh event stream (discover
 ```
 
 Messaging routes (now in Relay):
+
 ```
 POST /api/relay/send                   — send a message (was /api/mesh/agents/:id/messages)
 GET  /api/relay/inbox/:subject         — endpoint inbox (was /api/mesh/agents/:id/messages)
@@ -214,11 +226,13 @@ SSE  /api/relay/events                 — real-time delivery events
 When agents receive messages (especially from group channels), Mesh defines the behavior rules:
 
 **Adapter-level filtering** (first gate — configurable per channel):
+
 - `all`: Forward every message (agent monitors the channel)
 - `mentions-only`: Forward @mentions and direct replies only
 - `none`: Never forward
 
 **Agent-level instructions** (second gate — in manifest or CLAUDE.md):
+
 - When to respond vs. observe silently
 - Response style per channel (brief in group, detailed in DM)
 - Escalation rules (when to notify a human)
@@ -248,17 +262,17 @@ Four deep research reports saved to `research/mesh/`:
 
 ## Analogous Systems Reference
 
-| System | What We Borrow |
-|---|---|
-| D-Bus | Two-bus model (project bus + system bus), name registry, signals |
-| Mach ports | Capability-based access, transferable port rights for direct channels |
-| NATS | Hierarchical topic naming with wildcards (`*` and `>`) |
-| A2A Protocol | Agent Card manifest format, task state machine, skill declarations |
-| Maildir | Lock-free atomic message queuing via POSIX rename |
-| systemd | Filesystem scanning, priority layering, drop-in config |
-| Erlang/OTP | Supervision trees, restart strategies, MaxRestarts/MaxTime |
-| Android | Manifest-declared permissions, runtime grant/deny for dangerous ops |
-| Contract Net | Task announcement → bid → award → result lifecycle |
+| System       | What We Borrow                                                        |
+| ------------ | --------------------------------------------------------------------- |
+| D-Bus        | Two-bus model (project bus + system bus), name registry, signals      |
+| Mach ports   | Capability-based access, transferable port rights for direct channels |
+| NATS         | Hierarchical topic naming with wildcards (`*` and `>`)                |
+| A2A Protocol | Agent Card manifest format, task state machine, skill declarations    |
+| Maildir      | Lock-free atomic message queuing via POSIX rename                     |
+| systemd      | Filesystem scanning, priority layering, drop-in config                |
+| Erlang/OTP   | Supervision trees, restart strategies, MaxRestarts/MaxTime            |
+| Android      | Manifest-declared permissions, runtime grant/deny for dangerous ops   |
+| Contract Net | Task announcement → bid → award → result lifecycle                    |
 
 ---
 
@@ -280,6 +294,7 @@ Four deep research reports saved to `research/mesh/`:
 > **Prerequisite:** Relay must be designed and built first. Mesh Phase 1 depends on Relay being operational.
 
 **Phase 1 — Discovery + Registry:** (after Relay exists)
+
 - MeshRegistry service (in-memory + SQLite persistence)
 - Filesystem scanner with chokidar
 - `.dork/agent.json` manifest format
@@ -288,12 +303,14 @@ Four deep research reports saved to `research/mesh/`:
 - HTTP routes: GET /api/mesh/agents
 
 **Phase 2 — Agent Networking:**
+
 - Access control rules (Mesh writes, Relay enforces)
 - Budget policies per agent/project
 - MCP tools: mesh_discover, mesh_topology
 - Agent-to-agent messaging via Relay
 
 **Phase 3 — Observability + Advanced:**
+
 - Supervision trees (agent-level supervisors)
 - Console UI: topology view, agent status
 - Cross-project visibility configuration

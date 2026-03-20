@@ -10,22 +10,11 @@ vi.mock('@/layers/features/settings', () => ({
 }));
 
 vi.mock('@/layers/shared/ui', () => ({
-  ResponsiveDialog: ({
-    open,
-    children,
-  }: {
-    open: boolean;
-    children: React.ReactNode;
-  }) => (open ? <div>{children}</div> : null),
-  ResponsiveDialogContent: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ResponsiveDialogHeader: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ResponsiveDialogTitle: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  ResponsiveDialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
+    open ? <div>{children}</div> : null,
+  ResponsiveDialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ResponsiveDialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ResponsiveDialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ResponsiveDialogDescription: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),

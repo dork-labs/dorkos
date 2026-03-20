@@ -52,7 +52,7 @@ status: ideation
 - `apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx`: Shows `metrics.totalMessages` labeled "today" but query has no date filter. "Today" is a lie.
 - `apps/client/src/layers/features/relay/ui/RelayEmptyState.tsx`: Ghost preview component with hardcoded example rows. Exists but is NOT imported anywhere. Dead code.
 - `apps/client/src/layers/features/relay/ui/DeadLetterSection.tsx`: Flat list rendering. Has `REASON_CONFIG` with color-coded reason badges, but no aggregation. Each dead letter is an individual row.
-- `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx`: Uses `useRelayConversations` (polls every 5s). SSE stream updates a *different* query key — the two are disconnected.
+- `apps/client/src/layers/features/relay/ui/ActivityFeed.tsx`: Uses `useRelayConversations` (polls every 5s). SSE stream updates a _different_ query key — the two are disconnected.
 - `apps/client/src/layers/features/relay/ui/ConversationRow.tsx`: 411 lines. Three levels of progressive disclosure. "Route" quick-action has a latent bug: `extractAdapterId` returns empty string for current subject formats.
 - `apps/client/src/layers/features/relay/ui/AdapterSetupWizard.tsx`: 477 lines. Manifest-driven form, auto-populates label from bot username on successful test. Best UX in the panel.
 - `apps/client/src/layers/features/relay/ui/BindingList.tsx`: Standalone flat list. Imports from `entities/binding` (cross-entity coupling). Functionally redundant with AdapterCard inline bindings.
@@ -120,15 +120,15 @@ Polling → useRelayConversations (5s) → ActivityFeed (actual data source)
 
 N/A — this is a design overhaul, not a bug fix. However, several bugs were discovered during review:
 
-| Bug | Location | Impact |
-|-----|----------|--------|
-| "Today" shows all-time count | `trace-store.ts` `getMetrics()` — no date filter | Misleading health bar data |
-| SSE disconnected from Activity Feed | `use-relay-event-stream.ts` updates wrong query key | Activity Feed polls at 5s instead of real-time |
-| Double toast on adapter add | `use-adapter-catalog.ts` + `AdapterSetupWizard.tsx` both fire toast | Duplicate notification |
-| `extractAdapterId` returns empty | `ConversationRow.tsx` regex doesn't match current subjects | Quick-route creates broken bindings |
-| `RelayEmptyState` unused | Component exists, not imported | Designed empty state wasted |
-| P95 latency hardcoded null | `trace-store.ts` — "p95 via offset not ported" | Metrics dashboard always shows "—" |
-| AdapterEventLog uncaught parse | `JSON.parse(metadata)` in render with no try/catch | Potential crash on malformed data |
+| Bug                                 | Location                                                            | Impact                                         |
+| ----------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------- |
+| "Today" shows all-time count        | `trace-store.ts` `getMetrics()` — no date filter                    | Misleading health bar data                     |
+| SSE disconnected from Activity Feed | `use-relay-event-stream.ts` updates wrong query key                 | Activity Feed polls at 5s instead of real-time |
+| Double toast on adapter add         | `use-adapter-catalog.ts` + `AdapterSetupWizard.tsx` both fire toast | Duplicate notification                         |
+| `extractAdapterId` returns empty    | `ConversationRow.tsx` regex doesn't match current subjects          | Quick-route creates broken bindings            |
+| `RelayEmptyState` unused            | Component exists, not imported                                      | Designed empty state wasted                    |
+| P95 latency hardcoded null          | `trace-store.ts` — "p95 via offset not ported"                      | Metrics dashboard always shows "—"             |
+| AdapterEventLog uncaught parse      | `JSON.parse(metadata)` in render with no try/catch                  | Potential crash on malformed data              |
 
 ---
 
@@ -178,14 +178,14 @@ The radical single-view option (3) was considered but rejected because it doesn'
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Tab structure | Two tabs: Connections + Activity | Both the design critique and bindings review independently concluded four tabs is too many. Adapters+Bindings are one concept to the user. Endpoints is an implementation detail. |
-| 2 | Health bar design | Semantic status indicator (healthy/degraded/critical) | Raw numbers without context destroy trust. Jobs: "Lead with the story, not the data." The 90% failure rate should be impossible to miss, not hidden in four equal-weight stats. |
-| 3 | Dead letter presentation | Aggregated failure insights grouped by source+error | 15,044 identical rows is hostile UX. Group by source+error+timewindow with counts. Provide actions (dismiss, configure, view sample). |
-| 4 | Empty states | Connect existing `RelayEmptyState` ghost preview; overhaul all empty state copy | The component already exists and is unused. ADR-0038 Mode A/B provides the pattern. Each empty state must communicate what, why, and what-to-do-next. |
-| 5 | Wizard changes | Light-touch: remove Adapter ID field, fix stepper, add Back/Cancel | The wizard is the strongest UX surface. The manifest-driven form system is excellent. Don't redesign — refine. |
-| 6 | Binding permissions | Add `canInitiate` (default false), `canReply` (default true), `canReceive` (default true) to binding schema | Kai's #1 safety concern for overnight autonomous runs. Permissions belong on bindings (routing decision point), not adapters (dumb protocol bridges). Conservative defaults. |
-| 7 | Session strategy visibility | Hide behind "Advanced" toggle, only show badge when non-default | Every binding shows "Per Chat" — if there's only one option in practice, it's noise. Default to per-chat and hide unless deviant. |
-| 8 | Orphan binding cleanup | Auto-clean when adapter is removed | Currently logged as warning and left in place. Stale bindings confuse routing and clutter the UI. |
-| 9 | Bug fixes (P0) | Fix "today" label, SSE→conversations wiring, double toast, extractAdapterId | These are data integrity and trust bugs that must ship before or alongside the redesign. |
+| #   | Decision                    | Choice                                                                                                      | Rationale                                                                                                                                                                         |
+| --- | --------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Tab structure               | Two tabs: Connections + Activity                                                                            | Both the design critique and bindings review independently concluded four tabs is too many. Adapters+Bindings are one concept to the user. Endpoints is an implementation detail. |
+| 2   | Health bar design           | Semantic status indicator (healthy/degraded/critical)                                                       | Raw numbers without context destroy trust. Jobs: "Lead with the story, not the data." The 90% failure rate should be impossible to miss, not hidden in four equal-weight stats.   |
+| 3   | Dead letter presentation    | Aggregated failure insights grouped by source+error                                                         | 15,044 identical rows is hostile UX. Group by source+error+timewindow with counts. Provide actions (dismiss, configure, view sample).                                             |
+| 4   | Empty states                | Connect existing `RelayEmptyState` ghost preview; overhaul all empty state copy                             | The component already exists and is unused. ADR-0038 Mode A/B provides the pattern. Each empty state must communicate what, why, and what-to-do-next.                             |
+| 5   | Wizard changes              | Light-touch: remove Adapter ID field, fix stepper, add Back/Cancel                                          | The wizard is the strongest UX surface. The manifest-driven form system is excellent. Don't redesign — refine.                                                                    |
+| 6   | Binding permissions         | Add `canInitiate` (default false), `canReply` (default true), `canReceive` (default true) to binding schema | Kai's #1 safety concern for overnight autonomous runs. Permissions belong on bindings (routing decision point), not adapters (dumb protocol bridges). Conservative defaults.      |
+| 7   | Session strategy visibility | Hide behind "Advanced" toggle, only show badge when non-default                                             | Every binding shows "Per Chat" — if there's only one option in practice, it's noise. Default to per-chat and hide unless deviant.                                                 |
+| 8   | Orphan binding cleanup      | Auto-clean when adapter is removed                                                                          | Currently logged as warning and left in place. Stale bindings confuse routing and clutter the UI.                                                                                 |
+| 9   | Bug fixes (P0)              | Fix "today" label, SSE→conversations wiring, double toast, extractAdapterId                                 | These are data integrity and trust bugs that must ship before or alongside the redesign.                                                                                          |

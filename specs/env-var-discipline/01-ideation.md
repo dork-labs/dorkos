@@ -47,17 +47,18 @@ status: ideation
 
 **Files to create (new `env.ts` modules):**
 
-| File | Vars declared |
-|------|--------------|
-| `apps/server/src/env.ts` | NODE_ENV, DORKOS_PORT, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN |
-| `apps/client/src/env.ts` | MODE, DEV (Vite built-ins; stub with comment showing VITE_* pattern) |
-| `apps/roadmap/src/server/env.ts` | ROADMAP_PORT, ROADMAP_PROJECT_ROOT |
-| `apps/web/src/env.ts` | NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST, NODE_ENV |
-| `packages/cli/src/env.ts` | DORK_HOME, LOG_LEVEL, NODE_ENV (only vars CLI itself reads; bootstrap mutations stay in cli.ts) |
+| File                             | Vars declared                                                                                                                                                                                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/env.ts`         | NODE_ENV, DORKOS_PORT, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION, CLIENT_DIST_PATH, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, DORKOS_MESH_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN |
+| `apps/client/src/env.ts`         | MODE, DEV (Vite built-ins; stub with comment showing VITE\_\* pattern)                                                                                                                                                                                               |
+| `apps/roadmap/src/server/env.ts` | ROADMAP_PORT, ROADMAP_PROJECT_ROOT                                                                                                                                                                                                                                   |
+| `apps/web/src/env.ts`            | NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST, NODE_ENV                                                                                                                                                                                                          |
+| `packages/cli/src/env.ts`        | DORK_HOME, LOG_LEVEL, NODE_ENV (only vars CLI itself reads; bootstrap mutations stay in cli.ts)                                                                                                                                                                      |
 
 **Files to update (migrate `process.env` reads → `env`):**
 
-*apps/server (12 files):*
+_apps/server (12 files):_
+
 - `src/index.ts` — 19 accesses → `import { env } from './env'`
 - `src/app.ts` — 2 accesses (NODE_ENV, CLIENT_DIST_PATH)
 - `src/lib/dork-home.ts` — 2 accesses (DORK_HOME, NODE_ENV)
@@ -71,25 +72,31 @@ status: ideation
 - `src/services/core/agent-manager.ts` — 1 access (DORKOS_DEFAULT_CWD)
 - `src/services/pulse/pulse-store.ts` — 1 access (DORK_HOME)
 
-*apps/web (2 files):*
+_apps/web (2 files):_
+
 - `src/lib/posthog-server.ts` — 2 accesses
 - `instrumentation-client.ts` — 2 accesses
 
-*apps/roadmap (1 file):*
+_apps/roadmap (1 file):_
+
 - `src/server/index.ts` — 2 accesses
 
 **Files to update (config/tooling):**
+
 - `.env.example` — add 8 missing vars with comments
 - `turbo.json` — add ROADMAP_PORT, ROADMAP_PROJECT_ROOT, CLIENT_DIST_PATH, DORKOS_VERSION to `globalPassThroughEnv`
 - `eslint.config.js` — add `no-restricted-syntax` rule with carve-outs
 
 **Files to create (documentation):**
+
 - `contributing/environment-variables.md` — new developer guide: pattern, how to add vars, ESLint rule, test strategy
 
 **Shared dependencies:**
+
 - `zod` (already installed in all relevant packages)
 
 **Data flow:**
+
 ```
 process.env (populated by CLI bootstrap / shell / .env file)
   → env.ts (Zod schema → parse → typed export)
@@ -99,6 +106,7 @@ process.env (populated by CLI bootstrap / shell / .env file)
 **Feature flags/config:** No external feature flags; the feature flags ARE the env vars being migrated.
 
 **Potential blast radius:**
+
 - Direct: 18 source files + 5 new env.ts files + 3 config files
 - Indirect: All server modules that currently receive env vars as function params or constructor args may need signature updates (unlikely — most read `process.env` inline)
 - Tests: 6 test files that manipulate `process.env` directly will need review (they set `process.env.FOO = 'bar'` in `beforeEach`). Strategy: use `vi.stubEnv()` + `vi.resetModules()` — they already test env-dependent behavior; the existing technique stays valid.
@@ -118,10 +126,12 @@ Full details in `research/20260225_env_var_discipline.md`. Summary:
 **T3 Env vs Manual Zod — Recommendation: Manual Zod**
 
 T3 Env's primary value-adds are (a) a runtime server/client firewall and (b) monorepo `extends` composition. Both are redundant for DorkOS:
+
 - Server/client separation is enforced by FSD layer rules and Vite's `VITE_*` prefix stripping — no runtime check needed
 - The apps share very few env vars, so `extends` composition adds complexity for minimal gain
 
 T3 Env's open bugs make it a poor fit:
+
 - `skipValidation` does not apply Zod defaults (issues #155, #266) — tests that skip validation get `undefined` for vars with defaults
 - Extended configs don't inherit `skipValidation` (issue #323) — monorepo setup breaks silently in CI
 - ESM-only: CLI's esbuild CJS output would require workarounds
@@ -140,13 +150,13 @@ The manual Zod pattern matches the style of `packages/shared/src/config-schema.t
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Spec scope | Foundation + full migration | One complete PR, no half-finished state. ESLint rule without migration would be immediately noisy. |
-| 2 | Library choice | Manual Zod (no T3 Env) | T3 Env has open bugs with `skipValidation` + defaults. Zod already a dep; patterns consistent with config-schema.ts. |
-| 3 | Boolean feature flag typing | Transform to `boolean` | `env.DORKOS_PULSE_ENABLED` reads as a real boolean everywhere; removes 19 `=== 'true'` comparisons. |
-| 4 | CLI env.ts scope | Thin env.ts + keep bootstrap mutations | CLI *sets* env vars to bootstrap the server process — this is intentional. `cli/src/env.ts` validates only what the CLI itself reads (DORK_HOME, LOG_LEVEL, NODE_ENV). Bootstrap assignments get an inline ESLint disable with explanatory comment. |
-| 5 | Client env.ts | Create stub | Establishes the pattern and import path. Prevents future ad-hoc `import.meta.env` access from accumulating. Schema validates Vite built-ins; comment shows VITE_* pattern. |
+| #   | Decision                    | Choice                                 | Rationale                                                                                                                                                                                                                                           |
+| --- | --------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Spec scope                  | Foundation + full migration            | One complete PR, no half-finished state. ESLint rule without migration would be immediately noisy.                                                                                                                                                  |
+| 2   | Library choice              | Manual Zod (no T3 Env)                 | T3 Env has open bugs with `skipValidation` + defaults. Zod already a dep; patterns consistent with config-schema.ts.                                                                                                                                |
+| 3   | Boolean feature flag typing | Transform to `boolean`                 | `env.DORKOS_PULSE_ENABLED` reads as a real boolean everywhere; removes 19 `=== 'true'` comparisons.                                                                                                                                                 |
+| 4   | CLI env.ts scope            | Thin env.ts + keep bootstrap mutations | CLI _sets_ env vars to bootstrap the server process — this is intentional. `cli/src/env.ts` validates only what the CLI itself reads (DORK_HOME, LOG_LEVEL, NODE_ENV). Bootstrap assignments get an inline ESLint disable with explanatory comment. |
+| 5   | Client env.ts               | Create stub                            | Establishes the pattern and import path. Prevents future ad-hoc `import.meta.env` access from accumulating. Schema validates Vite built-ins; comment shows VITE\_\* pattern.                                                                        |
 
 ---
 
@@ -157,7 +167,10 @@ The manual Zod pattern matches the style of `packages/shared/src/config-schema.t
 ```ts
 import { z } from 'zod';
 
-const boolFlag = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const boolFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
 
 const serverEnvSchema = z.object({
   // Runtime
@@ -185,7 +198,7 @@ const result = serverEnvSchema.safeParse(process.env);
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
-  result.error.issues.forEach(i => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
   console.error('\n  Copy .env.example to .env\n');
   process.exit(1);
 }
@@ -228,7 +241,7 @@ const roadmapEnvSchema = z.object({
 const result = roadmapEnvSchema.safeParse(process.env);
 if (!result.success) {
   console.error('\n  Roadmap: invalid environment variables:');
-  result.error.issues.forEach(i => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
   process.exit(1);
 }
 

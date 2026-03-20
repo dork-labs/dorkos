@@ -243,8 +243,12 @@ it('does not call invalidateQueries on sync_update while streaming', async () =>
     es?.emit('stream_ready', { clientId: 'test-uuid-1' });
   });
 
-  act(() => { result.current.setInput('hello'); });
-  await act(async () => { await result.current.handleSubmit(); });
+  act(() => {
+    result.current.setInput('hello');
+  });
+  await act(async () => {
+    await result.current.handleSubmit();
+  });
 
   expect(result.current.status).toBe('streaming');
   invalidateSpy.mockClear();
@@ -370,9 +374,9 @@ GET /messages route:
 
 ## Files Changed
 
-| File | Tasks |
-|------|-------|
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | 1.1, 1.2, 1.3 |
-| `apps/server/src/routes/sessions.ts` | 1.4 |
-| `apps/client/src/layers/features/chat/model/__tests__/use-chat-session-relay.test.ts` | 2.1 |
-| `apps/server/src/routes/__tests__/sessions.test.ts` | 2.2 |
+| File                                                                                  | Tasks         |
+| ------------------------------------------------------------------------------------- | ------------- |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`                      | 1.1, 1.2, 1.3 |
+| `apps/server/src/routes/sessions.ts`                                                  | 1.4           |
+| `apps/client/src/layers/features/chat/model/__tests__/use-chat-session-relay.test.ts` | 2.1           |
+| `apps/server/src/routes/__tests__/sessions.test.ts`                                   | 2.2           |

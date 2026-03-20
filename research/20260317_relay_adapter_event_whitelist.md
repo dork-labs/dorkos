@@ -1,9 +1,20 @@
 ---
-title: "Relay Adapter Event Whitelist — Filtering, Platform APIs, Streaming Patterns"
+title: 'Relay Adapter Event Whitelist — Filtering, Platform APIs, Streaming Patterns'
 date: 2026-03-17
 type: external-best-practices
 status: active
-tags: [relay, adapter, slack, telegram, streaming, event-filtering, whitelist, typescript, discriminated-union]
+tags:
+  [
+    relay,
+    adapter,
+    slack,
+    telegram,
+    streaming,
+    event-filtering,
+    whitelist,
+    typescript,
+    discriminated-union,
+  ]
 feature_slug: relay-adapter-event-whitelist
 searches_performed: 7
 sources_count: 24
@@ -24,6 +35,7 @@ The whitelist approach is definitively the correct direction for relay adapter e
 The current code in `payload-utils.ts` (lines 53–65) uses `SILENT_EVENT_TYPES`, a `Set` of known-to-be-silent event types. When the SDK adds new event types — `thinking_delta`, `system_status`, `tool_progress`, `subagent_started`, `hook_started`, `prompt_suggestion`, `presence_update`, `rate_limit`, `compact_boundary`, etc. — they are not in the set, so they fall through to the standard payload path, which JSON-serializes the whole event and sends it as a raw message.
 
 **The whitelist (allowlist) pattern:**
+
 - Default: **drop**. If the event type is not explicitly handled, silently skip it.
 - Explicit: only `text_delta`, `done`, and `error` warrant action from relay adapters.
 - All other event types — whether known-but-silent or entirely new and unknown — are dropped by default.
@@ -31,6 +43,7 @@ The current code in `payload-utils.ts` (lines 53–65) uses `SILENT_EVENT_TYPES`
 **Security/systems analogy:** The whitelist approach is "fail-closed" — unknown events are silently discarded. The blacklist approach is "fail-open" — unknown events pass through, causing exactly the leakage seen in production. Every major security framework (firewalls, API gateways, CSP) uses whitelists for this exact reason.
 
 **Concretely, the current Telegram outbound logic:**
+
 ```typescript
 // CURRENT (blacklist — broken)
 if (SILENT_EVENT_TYPES.has(eventType)) {
@@ -41,6 +54,7 @@ if (SILENT_EVENT_TYPES.has(eventType)) {
 ```
 
 **Should become:**
+
 ```typescript
 // PROPOSED (whitelist — forward-compatible)
 // All handled cases are explicit above this point:
@@ -93,6 +107,7 @@ function assertNever(x: never): never {
 ```
 
 **The correct adapter handler pattern using exhaustiveness:**
+
 ```typescript
 function handleStreamEvent(eventType: StreamEventType, ...): DeliveryResult | null {
   switch (eventType) {
@@ -116,6 +131,7 @@ function handleStreamEvent(eventType: StreamEventType, ...): DeliveryResult | nu
 The Claude Agent SDK types are not fully controlled by DorkOS. When the SDK adds new event types, they arrive as unknown strings. In that case, the `detectStreamEventType()` function already returns a `string | null` — and the adapter must treat any string it doesn't explicitly handle as "drop". The TypeScript exhaustiveness check applies to the _known union_ only.
 
 **Practical recommendation:** Implement both layers:
+
 1. A typed enum/union of all _currently known_ event types (for compile-time safety within the known set)
 2. A default `return null` (drop) for any event type that falls through, regardless of whether it's known-and-silent or unknown-and-new
 
@@ -126,6 +142,7 @@ This eliminates the need for `SILENT_EVENT_TYPES` entirely. The set of "things w
 **Slack released a native streaming API in October 2025 that eliminates the need for the `chat.update` edit-in-place workaround.**
 
 The three new methods:
+
 - `chat.startStream` — creates a new streaming message placeholder
 - `chat.appendStream` — appends text to the stream (token-by-token)
 - `chat.stopStream` — finalizes the stream
@@ -133,11 +150,13 @@ The three new methods:
 The `@slack/bolt` v4 SDK provides a `client.chat_stream()` / `streamer.append()` / `streamer.stop()` helper utility.
 
 **Why this matters for DorkOS:**
+
 - The existing `chat.update` approach is throttled to approximately 50 edits/minute across all conversations — this limit is hit quickly when streaming AI responses
 - `chat.appendStream` is specifically designed for this use case and has favorable rate limits (details in Slack's streaming API docs)
 - Native streaming avoids the flickering/full-replace behavior of `chat.update` — Slack renders the appended text smoothly without re-sending the full message
 
 **Migration path for the Slack adapter:**
+
 ```typescript
 // Current: chat.postMessage + chat.update on throttle
 //   → streams the full accumulated text on each update tick
@@ -149,6 +168,7 @@ The `@slack/bolt` v4 SDK provides a `client.chat_stream()` / `streamer.append()`
 **Caveat:** The native streaming API requires the bot to have the `chat:write` scope and may require `@slack/bolt` v4.x or the lower-level `@slack/web-api` with the `streaming` feature flag. Verify exact scope requirements before adopting. If the current `chat.update` approach is working reliably, migration to the native streaming API is a polish upgrade, not an urgent correctness fix.
 
 **Rate limit context (for both approaches):**
+
 - `chat.postMessage`: 1 message/second per channel (workspace burst cap)
 - `chat.update`: ~50 edits/minute across all conversations (this is the bottleneck)
 - `chat.appendStream`: designed for high-frequency append, no published hard limit (but respect platform etiquette)
@@ -161,15 +181,18 @@ The `@slack/bolt` v4 SDK provides a `client.chat_stream()` / `streamer.append()`
 Previously (Bot API 9.3, December 2025): method existed but was restricted. As of Bot API 9.5, all bots can use it.
 
 **Behavior:**
+
 - In **private chats (DMs)**: `sendMessageDraft` streams a "typing preview" bubble in real-time — the recipient sees the AI response appearing character by character, like ChatGPT. This is a native Telegram UX, not a workaround.
 - In **groups/topics**: `sendMessage` + `editMessageText` is still the approach (streaming draft only works natively in DMs). The current buffer-and-flush approach in `telegram/outbound.ts` is correct for group contexts.
 
 **Current DorkOS Telegram adapter behavior:**
+
 - Buffers all `text_delta` events in `responseBuffers` (per chatId)
 - Flushes the complete buffer on `done` as a single `sendMessage` call
 - This is correct for both DMs and groups with the old API
 
 **With sendMessageDraft available:**
+
 - DMs: Call `sendMessageDraft(chatId, text)` for each `text_delta` chunk
 - Groups: Keep the existing buffer-and-flush approach
 - This gives DM users the native streaming UX while groups get the single-message flush
@@ -248,15 +271,16 @@ The current Slack adapter correctly throttles `chat.update` via `STREAM_UPDATE_I
 
 **Batching strategies ranked by user experience quality:**
 
-| Strategy | UX | API Cost | Complexity |
-|---|---|---|---|
-| **Buffer-and-flush** (current Telegram) | Low — user sees nothing until complete | Lowest — 1 call | Lowest |
-| **Throttled edit-in-place** (current Slack, `chat.update`) | Medium — visible progress at 1-sec intervals | Medium — N edits/min | Medium |
-| **Native streaming** (Slack `appendStream`, Telegram `sendMessageDraft`) | High — real-time, smooth, native UX | Designed for high-freq | Low (SDK helper) |
+| Strategy                                                                 | UX                                           | API Cost               | Complexity       |
+| ------------------------------------------------------------------------ | -------------------------------------------- | ---------------------- | ---------------- |
+| **Buffer-and-flush** (current Telegram)                                  | Low — user sees nothing until complete       | Lowest — 1 call        | Lowest           |
+| **Throttled edit-in-place** (current Slack, `chat.update`)               | Medium — visible progress at 1-sec intervals | Medium — N edits/min   | Medium           |
+| **Native streaming** (Slack `appendStream`, Telegram `sendMessageDraft`) | High — real-time, smooth, native UX          | Designed for high-freq | Low (SDK helper) |
 
 **For the whitelist fix specifically:** The batching/streaming strategy does not change with the whitelist. The fix is orthogonal — it only changes _which events trigger delivery actions_. The accumulation buffer, throttle timer, and flush-on-done logic all stay the same.
 
 **General recommendation for future-proofing the Telegram adapter:**
+
 - Keep buffer-and-flush for groups (correct, safe)
 - Add `sendMessageDraft` for DMs behind a feature flag initially (e.g., `config.streaming: true`)
 - This mirrors the Slack adapter's existing `streaming: boolean` config field
@@ -268,6 +292,7 @@ The current Slack adapter correctly throttles `chat.update` via `STREAM_UPDATE_I
 In `packages/relay/src/lib/payload-utils.ts`, `SILENT_EVENT_TYPES` is used in both adapters:
 
 **Telegram (`adapters/telegram/outbound.ts` lines 144-147):**
+
 ```typescript
 if (SILENT_EVENT_TYPES.has(eventType)) {
   return { success: true, durationMs: Date.now() - startTime };
@@ -276,6 +301,7 @@ if (SILENT_EVENT_TYPES.has(eventType)) {
 ```
 
 **Slack (`adapters/slack/outbound.ts` lines 594-596):**
+
 ```typescript
 if (SILENT_EVENT_TYPES.has(eventType)) {
   return { success: true, durationMs: Date.now() - startTime };
@@ -284,6 +310,7 @@ if (SILENT_EVENT_TYPES.has(eventType)) {
 ```
 
 The set currently contains:
+
 ```
 session_status, tool_call_start, tool_call_delta, tool_call_end,
 tool_result, approval_required, question_prompt, task_update,
@@ -291,6 +318,7 @@ relay_receipt, message_delivered, relay_message
 ```
 
 Event types NOT in the set (as of today, that would cause leakage):
+
 - `thinking_delta` — extended thinking content
 - `system_status` — system-level status updates
 - `tool_progress` — incremental tool progress
@@ -307,12 +335,14 @@ Event types NOT in the set (as of today, that would cause leakage):
 **Option A: Delete the SILENT_EVENT_TYPES export and change the fallthrough**
 
 In `payload-utils.ts`:
+
 ```typescript
 // DELETE the SILENT_EVENT_TYPES export entirely
 // It is now the wrong model
 ```
 
 In `telegram/outbound.ts` — replace the final branch:
+
 ```typescript
 // BEFORE:
 if (SILENT_EVENT_TYPES.has(eventType)) {
@@ -332,16 +362,14 @@ This is a 2-line change in each outbound file (delete the `if (SILENT_EVENT_TYPE
 **Option B: Rename to HANDLED_EVENT_TYPES as an allowlist (more explicit)**
 
 Keep a set in `payload-utils.ts`, but invert the semantics:
+
 ```typescript
 /** StreamEvent types that relay adapters actively handle. All others are dropped. */
-export const HANDLED_STREAM_EVENT_TYPES = new Set([
-  'text_delta',
-  'done',
-  'error',
-] as const);
+export const HANDLED_STREAM_EVENT_TYPES = new Set(['text_delta', 'done', 'error'] as const);
 ```
 
 Then in adapters:
+
 ```typescript
 // Early exit for events we don't handle
 if (!HANDLED_STREAM_EVENT_TYPES.has(eventType)) {
@@ -351,6 +379,7 @@ if (!HANDLED_STREAM_EVENT_TYPES.has(eventType)) {
 ```
 
 **Option A (delete SILENT_EVENT_TYPES) is recommended** because:
+
 - The concept of a "silent" set is the wrong mental model and should not persist in the codebase
 - The whitelist is implicitly encoded in the three explicit `if` checks already present in each adapter's stream handler
 - Removing `SILENT_EVENT_TYPES` forces future adapter authors to consciously choose what to handle vs drop
@@ -364,6 +393,7 @@ When `SILENT_EVENT_TYPES` is deleted, the following tests need updating:
 2. `packages/relay/src/adapters/slack/__tests__/outbound.test.ts` — remove the `SILENT_EVENT_TYPES` import and mock (line 64)
 
 Add new tests in each adapter's outbound test:
+
 ```typescript
 describe('event whitelist — unknown events are silently dropped', () => {
   it.each([

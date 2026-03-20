@@ -151,12 +151,12 @@ Look for:
 
 Common TanStack Query issues:
 
-| Issue | Symptom | Fix |
-|---|---|---|
-| Stale data | Old data after mutation | Invalidate queries after mutation |
-| Cache key collision | Wrong data displayed | Make queryKey more specific |
-| Query disabled | No fetch occurs | Check `enabled` condition |
-| Infinite loading | Never resolves | Check queryFn for errors |
+| Issue                | Symptom                 | Fix                                   |
+| -------------------- | ----------------------- | ------------------------------------- |
+| Stale data           | Old data after mutation | Invalidate queries after mutation     |
+| Cache key collision  | Wrong data displayed    | Make queryKey more specific           |
+| Query disabled       | No fetch occurs         | Check `enabled` condition             |
+| Infinite loading     | Never resolves          | Check queryFn for errors              |
 | Missing invalidation | Data stale after action | Add `queryClient.invalidateQueries()` |
 
 ### 3.3 Express Route Layer
@@ -173,14 +173,14 @@ Look for:
 
 Key route files:
 
-| Route File | Endpoints |
-|---|---|
+| Route File           | Endpoints                             |
+| -------------------- | ------------------------------------- |
 | `routes/sessions.ts` | Session CRUD, SSE streaming, messages |
-| `routes/relay.ts` | Relay messaging, adapters, bindings |
-| `routes/mesh.ts` | Mesh discovery, agents, topology |
-| `routes/pulse.ts` | Schedules, runs, triggers |
-| `routes/agents.ts` | Agent identity CRUD |
-| `routes/config.ts` | Server configuration |
+| `routes/relay.ts`    | Relay messaging, adapters, bindings   |
+| `routes/mesh.ts`     | Mesh discovery, agents, topology      |
+| `routes/pulse.ts`    | Schedules, runs, triggers             |
+| `routes/agents.ts`   | Agent identity CRUD                   |
+| `routes/config.ts`   | Server configuration                  |
 
 ### 3.4 Service Layer
 
@@ -351,30 +351,32 @@ mcp__playwright__browser_network_requests: { includeStatic: false }
 
 ### Project File Locations
 
-| Layer | Location |
-|---|---|
-| Components | `apps/client/src/layers/features/*/ui/` |
-| TanStack Query hooks | `apps/client/src/layers/entities/*/model/` |
-| Zustand store | `apps/client/src/layers/shared/model/app-store.ts` |
-| Transport interface | `packages/shared/src/transport.ts` |
-| Express routes | `apps/server/src/routes/` |
-| Services | `apps/server/src/services/` |
-| Zod schemas | `packages/shared/src/schemas.ts`, `relay-schemas.ts`, `mesh-schemas.ts` |
-| SQLite DB | `{DORK_HOME}/dork.db` |
-| Session transcripts | `~/.claude/projects/{slug}/*.jsonl` |
-| Relay state | `{DORK_HOME}/relay/` |
-| Server config | `{DORK_HOME}/config.json` |
-| Server logs | `{DORK_HOME}/logs/dorkos.log` |
+| Layer                | Location                                                                |
+| -------------------- | ----------------------------------------------------------------------- |
+| Components           | `apps/client/src/layers/features/*/ui/`                                 |
+| TanStack Query hooks | `apps/client/src/layers/entities/*/model/`                              |
+| Zustand store        | `apps/client/src/layers/shared/model/app-store.ts`                      |
+| Transport interface  | `packages/shared/src/transport.ts`                                      |
+| Express routes       | `apps/server/src/routes/`                                               |
+| Services             | `apps/server/src/services/`                                             |
+| Zod schemas          | `packages/shared/src/schemas.ts`, `relay-schemas.ts`, `mesh-schemas.ts` |
+| SQLite DB            | `{DORK_HOME}/dork.db`                                                   |
+| Session transcripts  | `~/.claude/projects/{slug}/*.jsonl`                                     |
+| Relay state          | `{DORK_HOME}/relay/`                                                    |
+| Server config        | `{DORK_HOME}/config.json`                                               |
+| Server logs          | `{DORK_HOME}/logs/dorkos.log`                                           |
 
 ### Common Express Route Patterns
 
 ```typescript
 // Zod validation
 const parsed = Schema.safeParse(req.body);
-if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.format() });
+if (!parsed.success)
+  return res.status(400).json({ error: 'Validation failed', details: parsed.error.format() });
 
 // Boundary check
-if (!validateBoundary(req.body.path)) return res.status(403).json({ error: 'Path outside boundary' });
+if (!validateBoundary(req.body.path))
+  return res.status(403).json({ error: 'Path outside boundary' });
 
 // Feature flag guard
 if (!isRelayEnabled()) return res.status(503).json({ error: 'Relay is not enabled' });

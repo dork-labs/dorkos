@@ -1,7 +1,30 @@
-import type { Transport, AdapterListItem, AdapterEvent, UploadFile, McpConfigResponse } from '@dorkos/shared/transport';
+import type {
+  Transport,
+  AdapterListItem,
+  AdapterEvent,
+  UploadFile,
+  McpConfigResponse,
+} from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { TraceSpan, DeliveryMetrics, CatalogEntry, AdapterBinding, CreateBindingRequest } from '@dorkos/shared/relay-schemas';
-import type { AgentManifest, DiscoveryCandidate, DenialRecord, AgentHealth, MeshStatus, TopologyView, CrossNamespaceRule, UpdateAccessRuleRequest, TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
+import type {
+  TraceSpan,
+  DeliveryMetrics,
+  CatalogEntry,
+  AdapterBinding,
+  CreateBindingRequest,
+} from '@dorkos/shared/relay-schemas';
+import type {
+  AgentManifest,
+  DiscoveryCandidate,
+  DenialRecord,
+  AgentHealth,
+  MeshStatus,
+  TopologyView,
+  CrossNamespaceRule,
+  UpdateAccessRuleRequest,
+  TransportScanOptions,
+  TransportScanEvent,
+} from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
   Session,
@@ -236,9 +259,21 @@ export class DirectTransport implements Transport {
 
   async getModels(): Promise<ModelOption[]> {
     return [
-      { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast, intelligent model for everyday tasks' },
-      { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'Fastest, most compact model' },
-      { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Most capable model for complex tasks' },
+      {
+        value: 'claude-sonnet-4-5-20250929',
+        displayName: 'Sonnet 4.5',
+        description: 'Fast, intelligent model for everyday tasks',
+      },
+      {
+        value: 'claude-haiku-4-5-20251001',
+        displayName: 'Haiku 4.5',
+        description: 'Fastest, most compact model',
+      },
+      {
+        value: 'claude-opus-4-6',
+        displayName: 'Opus 4.6',
+        description: 'Most capable model for complex tasks',
+      },
     ];
   }
 
@@ -340,7 +375,7 @@ export class DirectTransport implements Transport {
   async sendMessageRelay(
     _sessionId: string,
     _content: string,
-    _options?: { clientId?: string; correlationId?: string; cwd?: string },
+    _options?: { clientId?: string; correlationId?: string; cwd?: string }
   ): Promise<{ messageId: string; traceId: string }> {
     throw new Error('Relay is not supported in embedded mode');
   }
@@ -366,7 +401,11 @@ export class DirectTransport implements Transport {
     return [];
   }
 
-  async addRelayAdapter(_type: string, _id: string, _config: Record<string, unknown>): Promise<{ ok: boolean }> {
+  async addRelayAdapter(
+    _type: string,
+    _id: string,
+    _config: Record<string, unknown>
+  ): Promise<{ ok: boolean }> {
     throw new Error('Adapter management not supported in embedded mode');
   }
 
@@ -374,11 +413,17 @@ export class DirectTransport implements Transport {
     throw new Error('Adapter management not supported in embedded mode');
   }
 
-  async updateRelayAdapterConfig(_id: string, _config: Record<string, unknown>): Promise<{ ok: boolean }> {
+  async updateRelayAdapterConfig(
+    _id: string,
+    _config: Record<string, unknown>
+  ): Promise<{ ok: boolean }> {
     throw new Error('Adapter management not supported in embedded mode');
   }
 
-  async testRelayAdapterConnection(_type: string, _config: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  async testRelayAdapterConnection(
+    _type: string,
+    _config: Record<string, unknown>
+  ): Promise<{ ok: boolean; error?: string }> {
     throw new Error('Adapter management not supported in embedded mode');
   }
 
@@ -406,7 +451,18 @@ export class DirectTransport implements Transport {
 
   async updateBinding(
     _id: string,
-    _updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
+    _updates: Partial<
+      Pick<
+        AdapterBinding,
+        | 'sessionStrategy'
+        | 'label'
+        | 'chatId'
+        | 'channelType'
+        | 'canInitiate'
+        | 'canReply'
+        | 'canReceive'
+      >
+    >
   ): Promise<AdapterBinding> {
     throw new Error('Relay bindings are not supported in embedded mode');
   }
@@ -416,11 +472,17 @@ export class DirectTransport implements Transport {
   }
 
   // Mesh agent discovery is not supported in embedded mode
-  async discoverMeshAgents(_roots: string[], _maxDepth?: number): Promise<{ candidates: DiscoveryCandidate[] }> {
+  async discoverMeshAgents(
+    _roots: string[],
+    _maxDepth?: number
+  ): Promise<{ candidates: DiscoveryCandidate[] }> {
     throw new Error('Mesh is not supported in embedded mode');
   }
 
-  async listMeshAgents(_filters?: { runtime?: string; capability?: string }): Promise<{ agents: AgentManifest[] }> {
+  async listMeshAgents(_filters?: {
+    runtime?: string;
+    capability?: string;
+  }): Promise<{ agents: AgentManifest[] }> {
     return { agents: [] };
   }
 
@@ -428,7 +490,11 @@ export class DirectTransport implements Transport {
     throw new Error('Mesh is not supported in embedded mode');
   }
 
-  async registerMeshAgent(_path: string, _overrides?: Partial<AgentManifest>, _approver?: string): Promise<AgentManifest> {
+  async registerMeshAgent(
+    _path: string,
+    _overrides?: Partial<AgentManifest>,
+    _approver?: string
+  ): Promise<AgentManifest> {
     throw new Error('Mesh is not supported in embedded mode');
   }
 
@@ -440,7 +506,11 @@ export class DirectTransport implements Transport {
     throw new Error('Mesh is not supported in embedded mode');
   }
 
-  async denyMeshAgent(_path: string, _reason?: string, _denier?: string): Promise<{ success: boolean }> {
+  async denyMeshAgent(
+    _path: string,
+    _reason?: string,
+    _denier?: string
+  ): Promise<{ success: boolean }> {
     throw new Error('Mesh is not supported in embedded mode');
   }
 
@@ -523,7 +593,10 @@ export class DirectTransport implements Transport {
     return manifest;
   }
 
-  async updateAgentByPath(agentPath: string, updates: Partial<AgentManifest>): Promise<AgentManifest> {
+  async updateAgentByPath(
+    agentPath: string,
+    updates: Partial<AgentManifest>
+  ): Promise<AgentManifest> {
     const { readManifest, writeManifest } = await import('@dorkos/shared/manifest');
     const existing = await readManifest(agentPath);
     if (!existing) throw new Error(`No agent registered at path: ${agentPath}`);
@@ -532,7 +605,10 @@ export class DirectTransport implements Transport {
     return updated;
   }
 
-  async getCapabilities(): Promise<{ capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }> {
+  async getCapabilities(): Promise<{
+    capabilities: Record<string, RuntimeCapabilities>;
+    defaultRuntime: string;
+  }> {
     // Delegate to the runtime's getCapabilities() and wrap for the transport response shape.
     const caps = this.services.runtime.getCapabilities();
     return {
@@ -556,7 +632,7 @@ export class DirectTransport implements Transport {
   async scan(
     _options: TransportScanOptions,
     _onEvent: (event: TransportScanEvent) => void,
-    _signal?: AbortSignal,
+    _signal?: AbortSignal
   ): Promise<void> {
     throw new Error('Discovery scan is not supported in Obsidian plugin mode.');
   }
@@ -567,7 +643,7 @@ export class DirectTransport implements Transport {
   async uploadFiles(
     files: UploadFile[],
     cwd: string,
-    _onProgress?: (progress: UploadProgress) => void,
+    _onProgress?: (progress: UploadProgress) => void
   ): Promise<UploadResult[]> {
     const fs = await import('fs/promises');
     const pathMod = await import('path');

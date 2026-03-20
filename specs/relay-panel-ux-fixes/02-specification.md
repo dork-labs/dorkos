@@ -16,7 +16,7 @@ The relay-panel-redesign (#132) consolidated four tabs into two (Connections + A
 
 ### Critical Gaps (P0)
 
-1. **Binding CRUD is gone.** The redesign deleted the standalone Bindings tab because "bindings shown inline in AdapterCard; standalone list is redundant." But AdapterCard only *displays* binding rows — it has no create, edit, or delete actions. `BindingList.tsx` (full CRUD) exists but nothing imports it. `BindingDialog.tsx` supports create+edit modes but is only reachable from `ConversationRow`'s route popover, not from `AdapterCard`. Users who configured an adapter and skipped the wizard bind step can never add a binding afterward (except through dead letter routing).
+1. **Binding CRUD is gone.** The redesign deleted the standalone Bindings tab because "bindings shown inline in AdapterCard; standalone list is redundant." But AdapterCard only _displays_ binding rows — it has no create, edit, or delete actions. `BindingList.tsx` (full CRUD) exists but nothing imports it. `BindingDialog.tsx` supports create+edit modes but is only reachable from `ConversationRow`'s route popover, not from `AdapterCard`. Users who configured an adapter and skipped the wizard bind step can never add a binding afterward (except through dead letter routing).
 
 2. **Health bar click → empty screen.** `handleFailedClick` in `RelayPanel.tsx` sets `activeTab='activity'` and calls `deadLetterRef.current?.scrollIntoView()`, but the `DeadLetterSection` only renders when `showFailures` is `true` (defaults to `false`). The ref target doesn't exist in the DOM when `scrollIntoView` fires.
 
@@ -305,6 +305,7 @@ Pass to ActivityFeed:
 **Investigation approach:** The `useRelayConversations` hook calls `transport.listRelayConversations()`. The `useDeliveryMetrics` hook calls `transport.getRelayDeliveryMetrics()`. If the conversations endpoint only returns conversations observed during the current SSE session (not persisted), while metrics aggregate from the relay bus (persisted counters), there will be a permanent disconnect.
 
 **Server-side check required:** Read the server route handler for `GET /api/relay/conversations` and `GET /api/relay/metrics` to determine:
+
 - Are conversations persisted in SQLite or in-memory only?
 - Does the conversations endpoint serve historical data?
 - What is the lifecycle of a conversation record?
@@ -333,6 +334,7 @@ Fix the server endpoint or query params to return historical data.
 ### 4. Merge "Failed" Filter and "Failures" Toggle Confusion (P1)
 
 **Current state:**
+
 - Status dropdown: "Failed" option filters conversations to `status === 'failed'`
 - "Failures" button: toggles `DeadLetterSection` visibility
 
@@ -373,6 +375,7 @@ This keeps the two controls separate (they operate on genuinely different data) 
 ### 6. Move DeliveryMetrics Inline to Activity Tab (P1)
 
 **Remove from `RelayHealthBar.tsx`:**
+
 - Delete the `Dialog`/`DialogTrigger`/`DialogContent` wrapping `DeliveryMetricsDashboard`
 - Delete the BarChart3 icon button
 - Delete the `metricsOpen` state
@@ -603,6 +606,7 @@ AdapterCard kebab menu
 ### Unit Tests
 
 **AdapterCard binding interactions:**
+
 - Renders "Add binding" CTA when connected but no bindings
 - Clicking binding row opens BindingDialog in edit mode with correct initial values
 - "+" button opens BindingDialog in create mode with adapterId pre-filled
@@ -610,17 +614,20 @@ AdapterCard kebab menu
 - Delete confirmation dialog prevents accidental deletion
 
 **ActivityFeed auto-show failures:**
+
 - `autoShowFailures` prop triggers `showFailures = true`
 - Dead letters auto-show when `useAggregatedDeadLetters` returns non-empty groups
 - User toggle overrides auto-show behavior
 - Red dot badge only shows when user manually closed section
 
 **MetricsSummary:**
+
 - Renders all 4 metric pills with correct colors
 - Hides when no metrics available
 - Failed/dead letter counts use danger/warning colors only when > 0
 
 **DeadLetterSection confirmation:**
+
 - "Mark Resolved" button opens confirmation dialog
 - Cancel does not dismiss dead letters
 - Confirm calls `useDismissDeadLetterGroup` mutation
@@ -628,12 +635,14 @@ AdapterCard kebab menu
 ### Integration Tests
 
 **Health bar → dead letters flow:**
+
 - Click degraded/critical health bar message
 - Verify tab switches to Activity
 - Verify dead letter section is visible
 - Verify scroll position targets dead letter section
 
 **Binding CRUD round-trip:**
+
 - Create binding from AdapterCard → verify it appears in binding rows
 - Edit binding → verify changes reflected
 - Delete binding → verify removal from display

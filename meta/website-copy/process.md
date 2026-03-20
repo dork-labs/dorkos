@@ -4,13 +4,13 @@
 
 Five personas from advertising, product, and design history serve as creative agents. Each brings a distinct lens. All receive the same brief and prompt per round.
 
-| Agent | Real Person | Lens | Role |
-|---|---|---|---|
-| **Ogilvy** | David Ogilvy | Research-driven copy, headlines, long-form persuasion | The Craftsman — writes the actual words |
-| **Jobs** | Steve Jobs | Product narrative, simplicity, keynote story arcs | The Narrator — shapes the story |
-| **Godin** | Seth Godin | Positioning, tribes, "who is this for" | The Strategist — sharpens who we're talking to |
-| **Ive** | Jony Ive | Design language, material honesty, sensory feel | The Aesthetic — how it feels, not just reads |
-| **Wieden** | Dan Wieden | Emotional gut-punch, identity-level branding | The Provocateur — the line you can't forget |
+| Agent      | Real Person  | Lens                                                  | Role                                           |
+| ---------- | ------------ | ----------------------------------------------------- | ---------------------------------------------- |
+| **Ogilvy** | David Ogilvy | Research-driven copy, headlines, long-form persuasion | The Craftsman — writes the actual words        |
+| **Jobs**   | Steve Jobs   | Product narrative, simplicity, keynote story arcs     | The Narrator — shapes the story                |
+| **Godin**  | Seth Godin   | Positioning, tribes, "who is this for"                | The Strategist — sharpens who we're talking to |
+| **Ive**    | Jony Ive     | Design language, material honesty, sensory feel       | The Aesthetic — how it feels, not just reads   |
+| **Wieden** | Dan Wieden   | Emotional gut-punch, identity-level branding          | The Provocateur — the line you can't forget    |
 
 ## How It Works
 
@@ -50,6 +50,7 @@ meta/website-copy/
 ### Agent Prompting Pattern
 
 Each agent receives:
+
 - The full creative brief (`brief/creative-brief.md`)
 - The round prompt (`rounds/NN-topic/prompt.md`)
 - All prior synthesis files (from completed rounds)
@@ -60,6 +61,7 @@ Each agent produces a markdown file with their response. The response should be 
 ### Orchestrator Role
 
 The orchestrator (Claude) does NOT contribute creative opinions. It:
+
 - Writes prompts that are clear and focused
 - Runs agents in parallel
 - Synthesizes responses without adding its own ideas
@@ -69,6 +71,7 @@ The orchestrator (Claude) does NOT contribute creative opinions. It:
 ## When to Use This Process
 
 This process works for any creative work that benefits from multiple expert perspectives:
+
 - Website copy
 - Product naming
 - Brand campaigns
@@ -79,6 +82,7 @@ This process works for any creative work that benefits from multiple expert pers
 ## Adapting the Panel
 
 The panel can be swapped for different creative challenges:
+
 - **Technical documentation**: Knuth, Tufte, Strunk & White
 - **Product strategy**: Cagan, Horowitz, Ries
 - **Visual design**: Rams, Sagmeister, Müller-Brockmann

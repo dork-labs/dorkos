@@ -125,9 +125,7 @@ class ConfigManager {
       if (error instanceof z.ZodError) {
         return {
           valid: false,
-          errors: error.issues.map(
-            (i) => `${i.path.join('.')}: ${i.message}`,
-          ),
+          errors: error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
         };
       }
       throw error;

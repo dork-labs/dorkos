@@ -34,6 +34,7 @@ validate → access control → rate limit → build envelope
 ```
 
 **Impact:**
+
 - All Relay-routed chat messages (POST `/sessions/:id/messages` with `DORKOS_RELAY_ENABLED=true`) are dead-lettered
 - All Pulse scheduled dispatches via Relay (`relay.system.pulse.*`) are dead-lettered
 - The existing test suite validates this buggy behavior as correct (`deliveredTo: 0` for unmatched subjects)
@@ -62,14 +63,14 @@ validate → access control → rate limit → build envelope
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@dorkos/relay` | workspace | Publish pipeline, adapter registry, types |
-| `@dorkos/shared` | workspace | Relay schemas |
-| `@dorkos/db` | workspace | SQLite via Drizzle |
-| `better-sqlite3` | ^11.x | SQLite engine |
-| `ulidx` | ^2.x | ULID generation |
-| `vitest` | ^3.x | Testing |
+| Dependency       | Version   | Purpose                                   |
+| ---------------- | --------- | ----------------------------------------- |
+| `@dorkos/relay`  | workspace | Publish pipeline, adapter registry, types |
+| `@dorkos/shared` | workspace | Relay schemas                             |
+| `@dorkos/db`     | workspace | SQLite via Drizzle                        |
+| `better-sqlite3` | ^11.x     | SQLite engine                             |
+| `ulidx`          | ^2.x      | ULID generation                           |
+| `vitest`         | ^3.x      | Testing                                   |
 
 No new external dependencies required.
 
@@ -103,7 +104,9 @@ if (this.adapterRegistry) {
   try {
     const context = this.adapterContextBuilder?.(subject);
     const adapterDelivered = await this.adapterRegistry.deliver(subject, envelope, context);
-    if (adapterDelivered) { deliveredTo++; }
+    if (adapterDelivered) {
+      deliveredTo++;
+    }
   } catch (err) {
     console.warn('RelayCore: adapter delivery failed:', err instanceof Error ? err.message : err);
   }
@@ -232,7 +235,11 @@ export interface AdapterRegistryLike {
 
 // After:
 export interface AdapterRegistryLike {
-  deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult | null>;
+  deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult | null>;
 }
 ```
 
@@ -338,7 +345,7 @@ Handled by `deliverToAdapter()` (Section 6.2). On successful adapter delivery, a
 this.sqliteIndex.insertMessage({
   id: envelope.id,
   subject,
-  endpointHash: `adapter:${subjectHash}`,  // Prefixed to distinguish from Maildir endpoints
+  endpointHash: `adapter:${subjectHash}`, // Prefixed to distinguish from Maildir endpoints
   status: 'delivered',
   createdAt: envelope.createdAt,
   expiresAt: null,
@@ -446,7 +453,7 @@ it('delivers to adapter when no Maildir endpoints match', async () => {
   const result = await relayWithAdapter.publish(
     'relay.agent.test-session',
     { content: 'hello' },
-    publishOpts,
+    publishOpts
   );
 
   expect(result.deliveredTo).toBe(1);
@@ -454,7 +461,7 @@ it('delivers to adapter when no Maildir endpoints match', async () => {
   expect(mockAdapter.deliver).toHaveBeenCalledWith(
     'relay.agent.test-session',
     expect.objectContaining({ subject: 'relay.agent.test-session' }),
-    undefined,
+    undefined
   );
 });
 ```
@@ -478,7 +485,7 @@ it('delivers to both Maildir endpoints and adapter', async () => {
   const result = await relayMixed.publish(
     'relay.agent.test-session',
     { content: 'hello' },
-    publishOpts,
+    publishOpts
   );
 
   expect(result.deliveredTo).toBe(2); // Maildir + adapter
@@ -505,7 +512,7 @@ it('dead-letters when adapter is sole target and fails', async () => {
   const result = await relayFailing.publish(
     'relay.agent.fail-session',
     { content: 'hello' },
-    publishOpts,
+    publishOpts
   );
 
   expect(result.deliveredTo).toBe(0);
@@ -520,9 +527,11 @@ it('dead-letters when adapter is sole target and fails', async () => {
 it('handles adapter delivery timeout gracefully', async () => {
   const slowAdapter: AdapterRegistryLike = {
     setRelay: vi.fn(),
-    deliver: vi.fn().mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ success: true }), 60_000)),
-    ),
+    deliver: vi
+      .fn()
+      .mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ success: true }), 60_000))
+      ),
     shutdown: vi.fn(),
   };
   const relaySlow = await RelayCore.create({
@@ -535,7 +544,7 @@ it('handles adapter delivery timeout gracefully', async () => {
   const publishPromise = relaySlow.publish(
     'relay.agent.slow-session',
     { content: 'hello' },
-    publishOpts,
+    publishOpts
   );
   vi.advanceTimersByTime(31_000);
   const result = await publishPromise;
@@ -564,7 +573,7 @@ it('does NOT dead-letter when Maildir delivered but adapter failed', async () =>
   const result = await relayPartial.publish(
     'relay.agent.partial',
     { content: 'hello' },
-    publishOpts,
+    publishOpts
   );
 
   expect(result.deliveredTo).toBe(1); // Maildir succeeded
@@ -596,7 +605,7 @@ it('passes adapter context through to adapter delivery', async () => {
   expect(mockAdapter.deliver).toHaveBeenCalledWith(
     'relay.agent.ctx',
     expect.any(Object),
-    mockContext,
+    mockContext
   );
 });
 ```
@@ -668,14 +677,14 @@ describe('relay-core adapter integration', () => {
 
 ### 8.5 Mocking Strategy
 
-| Component | Mock Strategy |
-|---|---|
-| `AdapterRegistryLike` | `vi.fn()` mock object implementing the interface |
-| `DeliveryResult` | Return literal objects `{ success: true/false, ... }` |
-| `SqliteIndex` | Real instance with temp directory (existing pattern) |
-| `MaildirStore` | Real instance with temp directory (existing pattern) |
-| `DeadLetterQueue` | Real instance (depends on MaildirStore + SqliteIndex) |
-| Timeouts | `vi.useFakeTimers()` for the 30s timeout test |
+| Component             | Mock Strategy                                         |
+| --------------------- | ----------------------------------------------------- |
+| `AdapterRegistryLike` | `vi.fn()` mock object implementing the interface      |
+| `DeliveryResult`      | Return literal objects `{ success: true/false, ... }` |
+| `SqliteIndex`         | Real instance with temp directory (existing pattern)  |
+| `MaildirStore`        | Real instance with temp directory (existing pattern)  |
+| `DeadLetterQueue`     | Real instance (depends on MaildirStore + SqliteIndex) |
+| Timeouts              | `vi.useFakeTimers()` for the 30s timeout test         |
 
 ## 9. Performance Considerations
 
@@ -699,11 +708,11 @@ describe('relay-core adapter integration', () => {
 
 ## 11. Documentation
 
-| Document | Update Needed |
-|---|---|
-| `contributing/architecture.md` | Add note about Relay adapter delivery as unified fan-out; document POST/SSE race condition as known edge case |
-| `CHANGELOG.md` | Add entry under [Unreleased] > Fixed |
-| `specs/relay-publish-pipeline-fix/01-ideation.md` | Status update to "specified" |
+| Document                                          | Update Needed                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `contributing/architecture.md`                    | Add note about Relay adapter delivery as unified fan-out; document POST/SSE race condition as known edge case |
+| `CHANGELOG.md`                                    | Add entry under [Unreleased] > Fixed                                                                          |
+| `specs/relay-publish-pipeline-fix/01-ideation.md` | Status update to "specified"                                                                                  |
 
 No new documentation files are needed.
 
@@ -733,15 +742,15 @@ No new documentation files are needed.
 
 ## 13. Files Modified
 
-| File | Change Type | Description |
-|---|---|---|
-| `packages/relay/src/types.ts` | Modify | `AdapterRegistryLike.deliver()` return type → `DeliveryResult \| null`; add `adapterResult` to `PublishResultLike` |
-| `packages/relay/src/adapter-registry.ts` | Modify | `deliver()` returns `DeliveryResult \| null` instead of `boolean` |
-| `packages/relay/src/relay-core.ts` | Modify | Remove early return, add `deliverToAdapter()`, restructure `publish()`, extend `PublishResult` |
-| `apps/server/src/routes/sessions.ts` | Modify | Real trace ID, improved endpoint registration error handling |
-| `packages/relay/src/__tests__/relay-core.test.ts` | Modify | Fix buggy test, add 7+ adapter integration tests |
-| `packages/relay/src/__tests__/adapter-registry.test.ts` | Create | Dedicated AdapterRegistry tests |
-| `apps/server/src/routes/__tests__/sessions-relay.test.ts` | Modify | Trace ID and error handling tests |
+| File                                                      | Change Type | Description                                                                                                        |
+| --------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| `packages/relay/src/types.ts`                             | Modify      | `AdapterRegistryLike.deliver()` return type → `DeliveryResult \| null`; add `adapterResult` to `PublishResultLike` |
+| `packages/relay/src/adapter-registry.ts`                  | Modify      | `deliver()` returns `DeliveryResult \| null` instead of `boolean`                                                  |
+| `packages/relay/src/relay-core.ts`                        | Modify      | Remove early return, add `deliverToAdapter()`, restructure `publish()`, extend `PublishResult`                     |
+| `apps/server/src/routes/sessions.ts`                      | Modify      | Real trace ID, improved endpoint registration error handling                                                       |
+| `packages/relay/src/__tests__/relay-core.test.ts`         | Modify      | Fix buggy test, add 7+ adapter integration tests                                                                   |
+| `packages/relay/src/__tests__/adapter-registry.test.ts`   | Create      | Dedicated AdapterRegistry tests                                                                                    |
+| `apps/server/src/routes/__tests__/sessions-relay.test.ts` | Modify      | Trace ID and error handling tests                                                                                  |
 
 **Files confirmed NO changes needed:**
 
@@ -771,8 +780,8 @@ No new documentation files are needed.
 
 ## 15. Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
+| ADR      | Title                                          | Relevance                                                                                           |
+| -------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | ADR-0029 | Replace MessageReceiver with ClaudeCodeAdapter | Established ClaudeCodeAdapter as unified dispatch; this fix enables it to actually receive messages |
 
 ## 16. References

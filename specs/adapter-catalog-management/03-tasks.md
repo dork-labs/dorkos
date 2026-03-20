@@ -1,4 +1,5 @@
 # Task Breakdown: Adapter Catalog & Management UI
+
 Generated: 2026-02-27
 Source: specs/adapter-catalog-management/02-specification.md
 Last Decompose: 2026-02-27
@@ -10,12 +11,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ## Phase 1: Foundation
 
 ### Task 1.1: Add ConfigField, AdapterManifest, and CatalogEntry Zod schemas to shared package
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add seven Zod schemas to `packages/shared/src/relay-schemas.ts`: `ConfigFieldTypeSchema`, `ConfigFieldOptionSchema`, `ConfigFieldSchema`, `AdapterSetupStepSchema`, `AdapterCategorySchema`, `AdapterManifestSchema`, `CatalogEntrySchema`
 - `ConfigFieldTypeSchema` supports: text, password, number, boolean, select, textarea, url
 - `ConfigFieldSchema` includes: key, label, type, required, default, placeholder, description, options, section, showWhen
@@ -24,6 +27,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - All schemas export inferred TypeScript types
 
 **Acceptance Criteria**:
+
 - [ ] All schemas exported from `packages/shared/src/relay-schemas.ts`
 - [ ] All inferred types exported
 - [ ] `pnpm typecheck` passes
@@ -33,18 +37,21 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 1.2: Export built-in adapter manifests from relay package
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.1
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add `TELEGRAM_MANIFEST` to `packages/relay/src/adapters/telegram-adapter.ts` with full config fields (token, mode, webhookUrl, webhookPort with showWhen conditions)
 - Add `WEBHOOK_MANIFEST` to `packages/relay/src/adapters/webhook-adapter.ts` with nested dot-notation keys and section grouping (Inbound, Outbound)
 - Add `CLAUDE_CODE_MANIFEST` to `packages/relay/src/adapters/claude-code-adapter.ts` with minimal config fields (maxConcurrent, defaultTimeoutMs)
 - Re-export all three manifests from `packages/relay/src/index.ts`
 
 **Acceptance Criteria**:
+
 - [ ] All three manifests exported from `@dorkos/relay`
 - [ ] Each manifest validates against `AdapterManifestSchema`
 - [ ] Manifest configField keys match TypeScript config interfaces
@@ -53,12 +60,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 1.3: Add getCatalog and sensitive field masking to AdapterManager
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 1.1, Task 1.2
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add `manifests` Map to AdapterManager, populated on initialize via `populateBuiltinManifests()`
 - Add `getCatalog()` returning `CatalogEntry[]` pairing manifests with configured instances
 - Add `maskSensitiveFields()` that traverses dot-notation paths for password-type fields
@@ -66,6 +75,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Add `getManifest()` and `registerPluginManifest()` accessors for Phase 2
 
 **Acceptance Criteria**:
+
 - [ ] `getCatalog()` returns all built-in manifests with instances
 - [ ] Password fields masked with `'***'` in both getCatalog and listAdapters
 - [ ] Dot-notation keys (e.g., `inbound.secret`) traversed and masked correctly
@@ -74,18 +84,21 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 1.4: Add GET /adapters/catalog route and Transport interface methods
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.3
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Add `GET /api/relay/adapters/catalog` route BEFORE any parameterized adapter routes
 - Add `getAdapterCatalog()` to Transport interface
 - Implement in HttpTransport via `fetchJSON`
 - Stub in DirectTransport returning empty array
 
 **Acceptance Criteria**:
+
 - [ ] `GET /api/relay/adapters/catalog` returns 200 with `CatalogEntry[]`
 - [ ] Route ordering prevents "catalog" matching as adapter ID
 - [ ] Transport interface updated across all implementations
@@ -96,12 +109,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ## Phase 2: Server CRUD & Connection Test
 
 ### Task 2.1: Add addAdapter, removeAdapter, updateConfig methods to AdapterManager
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 1.3
 **Can run parallel with**: Task 2.2
 
 **Technical Requirements**:
+
 - `addAdapter(type, id, config, enabled)` — validates ID uniqueness, checks multiInstance constraint, persists, starts if enabled
 - `removeAdapter(id)` — stops adapter, removes from config, persists; rejects built-in claude-code
 - `updateConfig(id, config)` — merges config with password preservation (empty/masked passwords preserve existing), restarts adapter
@@ -109,6 +124,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Password preservation uses dot-notation traversal matching maskSensitiveFields pattern
 
 **Acceptance Criteria**:
+
 - [ ] CRUD operations work correctly with proper error handling
 - [ ] Password preservation for empty/masked submissions
 - [ ] Adapter restart on config update
@@ -118,12 +134,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 2.2: Add testConnection method to AdapterManager
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.3
 **Can run parallel with**: Task 2.1
 
 **Technical Requirements**:
+
 - Create transient adapter instance, attempt `start()` with noop RelayPublisher
 - 15-second timeout via `Promise.race`
 - Always call `stop()` in finally block
@@ -131,6 +149,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Return `{ ok: true }` or `{ ok: false, error: string }`
 
 **Acceptance Criteria**:
+
 - [ ] Connection test creates, starts, and cleans up transient adapter
 - [ ] 15-second timeout prevents hanging
 - [ ] Adapter never registered in registry
@@ -139,12 +158,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 2.3: Add CRUD and test routes to relay router
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 2.1, Task 2.2
 **Can run parallel with**: Task 2.4
 
 **Technical Requirements**:
+
 - `POST /api/relay/adapters` — 201 on success, 400/409 on error
 - `DELETE /api/relay/adapters/:id` — 200 on success, 404/400 on error
 - `PATCH /api/relay/adapters/:id/config` — 200 on success, 400/404 on error
@@ -155,6 +176,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - DirectTransport: throw "not supported in embedded mode"
 
 **Acceptance Criteria**:
+
 - [ ] All four routes work with correct status codes
 - [ ] Transport interface updated across all implementations
 - [ ] All route tests pass
@@ -162,12 +184,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 2.4: Update plugin loader to extract manifests from plugin modules
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: Task 1.1, Task 1.2
 **Can run parallel with**: Task 2.3
 
 **Technical Requirements**:
+
 - Update `AdapterPluginModule` to include optional `getManifest?(): AdapterManifest`
 - Add `LoadedAdapter` return type: `{ adapter, manifest? }`
 - Update `loadAdapters()` to return `LoadedAdapter[]`
@@ -175,6 +199,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Update `AdapterManager.loadPlugin()` to register discovered plugin manifests
 
 **Acceptance Criteria**:
+
 - [ ] Plugin modules with `getManifest()` have manifests extracted and validated
 - [ ] Plugins without `getManifest()` get minimal fallback manifest
 - [ ] `AdapterManager.loadPlugin()` registers plugin manifests
@@ -185,12 +210,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ## Phase 3: Client Catalog UI
 
 ### Task 3.1: Add adapter catalog entity hooks
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.4
 **Can run parallel with**: Task 3.2, Task 3.3
 
 **Technical Requirements**:
+
 - `useAdapterCatalog(enabled?)` — TanStack Query with 30s refetch interval
 - `useAddAdapter()` — mutation invalidating catalog + adapters queries
 - `useRemoveAdapter()` — mutation invalidating catalog + adapters queries
@@ -199,6 +226,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - All hooks in `entities/relay/model/use-adapter-catalog.ts`, exported from entity barrel
 
 **Acceptance Criteria**:
+
 - [ ] All five hooks exported from `@/layers/entities/relay`
 - [ ] Correct query key patterns for cache invalidation
 - [ ] Hook tests pass
@@ -206,12 +234,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 3.2: Build ConfigFieldInput component
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 1.1
 **Can run parallel with**: Task 3.1, Task 3.3
 
 **Technical Requirements**:
+
 - Maps seven ConfigField types to shadcn/ui components: text -> Input, url -> Input[type=url], password -> Input[type=password] with eye toggle, number -> Input[type=number], boolean -> Switch, select -> Select, textarea -> Textarea
 - Each field renders: Label (with required asterisk), input component, description text, error message
 - `showWhen` conditional visibility: hide when condition not met
@@ -219,6 +249,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Password eye toggle button with aria-label
 
 **Acceptance Criteria**:
+
 - [ ] All seven field types render correctly
 - [ ] Password toggle works
 - [ ] showWhen conditional visibility works
@@ -228,18 +259,21 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 3.3: Build CatalogCard component
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: Task 1.1
 **Can run parallel with**: Task 3.1, Task 3.2
 
 **Technical Requirements**:
+
 - Display: icon emoji, display name, category badge (color-coded), description
 - "Add" button with Plus icon calls `onAdd` callback
 - Category colors: messaging=blue, automation=purple, internal=gray, custom=green
 - Hover effect on card
 
 **Acceptance Criteria**:
+
 - [ ] Card displays all manifest info
 - [ ] Add button triggers callback
 - [ ] Category badges have correct colors
@@ -248,23 +282,26 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 3.4: Build AdapterSetupWizard component
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 3.1, Task 3.2
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Dialog-based wizard with three steps: configure, test, confirm
 - Add mode: empty form with defaults, adapter ID field, setup instructions callout
 - Edit mode: pre-filled values (passwords empty with "Leave blank to keep current"), no ID field
 - Multi-step navigation when `manifest.setupSteps` is defined
 - Test step: spinner during pending, green check on success, red X on failure, "Skip" link
-- Confirm step: value summary with passwords masked as "***"
+- Confirm step: value summary with passwords masked as "\*\*\*"
 - `unflattenConfig()` converts dot-notation flat form to nested objects
 - Local React state (useState) for wizard form — not Zustand
 - Auto-generated adapter ID from type (with suffix for multiInstance)
 
 **Acceptance Criteria**:
+
 - [ ] Three-step wizard flow works
 - [ ] Add and edit modes behave correctly
 - [ ] Multi-step navigation works
@@ -275,12 +312,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 3.5: Upgrade AdaptersTab and enhance AdapterCard with kebab menu
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 3.1, Task 3.3, Task 3.4
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Replace AdaptersTab data source from `useRelayAdapters` to `useAdapterCatalog`
 - Two sections: "Configured Adapters" (instances from catalog) and "Available Adapters" (unconfigured types + multiInstance types)
 - AdapterCard gets kebab menu (DropdownMenu) with Configure and Remove options
@@ -290,6 +329,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Wizard state managed locally in the tab component
 
 **Acceptance Criteria**:
+
 - [ ] Two-section layout renders correctly
 - [ ] Kebab menu with Configure and Remove
 - [ ] Remove confirmation dialog
@@ -302,12 +342,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ## Phase 4: Polish & Documentation
 
 ### Task 4.1: Handle edge cases and improve error UX
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: Task 3.5
 **Can run parallel with**: Task 4.2
 
 **Technical Requirements**:
+
 - Network error toast notifications for CRUD mutation failures
 - Optimistic UI for enable/disable toggle on AdapterCard
 - Loading skeleton cards while catalog fetches
@@ -316,6 +358,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Verify no duplicate adapter starts during config hot-reload
 
 **Acceptance Criteria**:
+
 - [ ] Error toasts for mutation failures
 - [ ] Optimistic toggle updates
 - [ ] Loading skeletons
@@ -326,12 +369,14 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 ---
 
 ### Task 4.2: Update contributing docs with adapter manifest documentation
+
 **Size**: Medium
 **Priority**: Low
 **Dependencies**: Task 2.3
 **Can run parallel with**: Task 4.1
 
 **Technical Requirements**:
+
 - Update `contributing/relay-adapters.md` with Adapter Manifest section
 - Document ConfigField types, showWhen, setupSteps, section grouping
 - Show complete Telegram manifest as reference example
@@ -340,6 +385,7 @@ Add a declarative adapter metadata system and management UI to DorkOS's Relay su
 - Include example request/response for each endpoint
 
 **Acceptance Criteria**:
+
 - [ ] Adapter Manifest section in relay-adapters.md
 - [ ] Plugin manifest creation instructions
 - [ ] All five endpoints documented in api-reference.md

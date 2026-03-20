@@ -3,8 +3,8 @@ title: Agent Coordination
 description: Patterns for coordinating multiple AI agents with Relay, Mesh, and Pulse
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Agent Coordination
 
@@ -45,11 +45,11 @@ For example, with `/home/user/projects` as the scan root:
 
 Mesh enforces a three-tier priority scheme on inter-agent communication:
 
-| Priority | Rule | Effect |
-|----------|------|--------|
-| 100 | Same-namespace allow | Agents within a namespace communicate freely by default |
-| 50 | Cross-namespace allow | Explicitly granted — you add these rules |
-| 10 | Cross-namespace deny | Default catch-all — blocks everything not explicitly allowed |
+| Priority | Rule                  | Effect                                                       |
+| -------- | --------------------- | ------------------------------------------------------------ |
+| 100      | Same-namespace allow  | Agents within a namespace communicate freely by default      |
+| 50       | Cross-namespace allow | Explicitly granted — you add these rules                     |
+| 10       | Cross-namespace deny  | Default catch-all — blocks everything not explicitly allowed |
 
 Agents in the same namespace (`backend`) can communicate without any configuration. Cross-namespace communication (backend to frontend) requires an explicit allow rule:
 
@@ -97,7 +97,8 @@ Agent "api" asks "web" a question:
 The web agent's response routes back to `relay.agent.backend.api` automatically.
 
 <Callout type="info">
-Every message flowing through Relay carries a budget that limits hops (default 5), TTL (default 1 hour), and API call allowance. This prevents infinite message loops and runaway costs.
+  Every message flowing through Relay carries a budget that limits hops (default 5), TTL (default 1
+  hour), and API call allowance. This prevents infinite message loops and runaway costs.
 </Callout>
 
 ## Scheduled Coordination with Pulse

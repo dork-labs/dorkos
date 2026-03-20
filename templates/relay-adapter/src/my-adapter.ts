@@ -4,11 +4,7 @@
  * @module my-adapter
  */
 import { BaseRelayAdapter } from '@dorkos/relay';
-import type {
-  RelayPublisher,
-  AdapterContext,
-  DeliveryResult,
-} from '@dorkos/relay';
+import type { RelayPublisher, AdapterContext, DeliveryResult } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 /**
@@ -23,9 +19,7 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
  */
 export class MyAdapter extends BaseRelayAdapter {
   constructor(id: string, config: Record<string, unknown>) {
-    const displayName = typeof config.displayName === 'string'
-      ? config.displayName
-      : 'My Adapter';
+    const displayName = typeof config.displayName === 'string' ? config.displayName : 'My Adapter';
     super(id, 'relay.custom.mine', displayName);
   }
 
@@ -54,7 +48,7 @@ export class MyAdapter extends BaseRelayAdapter {
   async deliver(
     _subject: string,
     _envelope: RelayEnvelope,
-    _context?: AdapterContext,
+    _context?: AdapterContext
   ): Promise<DeliveryResult> {
     // TODO: Send the message to your external channel.
     // Call this.trackOutbound() after a successful delivery.

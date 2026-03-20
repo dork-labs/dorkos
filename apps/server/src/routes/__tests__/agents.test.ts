@@ -27,7 +27,6 @@ vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'MOCK_ULID_001'),
 }));
 
-
 import request from 'supertest';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
@@ -70,7 +69,9 @@ describe('Agents Routes', () => {
     it('returns 404 when no manifest found', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app).get('/api/agents/current').query({ path: '/home/user/project' });
+      const res = await request(app)
+        .get('/api/agents/current')
+        .query({ path: '/home/user/project' });
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('No agent registered at this path');
@@ -79,7 +80,9 @@ describe('Agents Routes', () => {
     it('returns 200 with manifest when found', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app).get('/api/agents/current').query({ path: '/home/user/project' });
+      const res = await request(app)
+        .get('/api/agents/current')
+        .query({ path: '/home/user/project' });
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('test-agent-id');
@@ -88,7 +91,7 @@ describe('Agents Routes', () => {
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app).get('/api/agents/current').query({ path: '/etc/shadow' });
@@ -100,9 +103,7 @@ describe('Agents Routes', () => {
 
   describe('POST /api/agents/resolve', () => {
     it('returns agents map for mixed registered/unregistered paths', async () => {
-      mockReadManifest
-        .mockResolvedValueOnce(mockManifest)
-        .mockResolvedValueOnce(null);
+      mockReadManifest.mockResolvedValueOnce(mockManifest).mockResolvedValueOnce(null);
 
       const res = await request(app)
         .post('/api/agents/resolve')
@@ -132,7 +133,7 @@ describe('Agents Routes', () => {
       vi.mocked(validateBoundary)
         .mockResolvedValueOnce('/home/user/good-path')
         .mockRejectedValueOnce(
-          new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+          new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
         );
 
       mockReadManifest.mockResolvedValueOnce(mockManifest);
@@ -151,9 +152,7 @@ describe('Agents Routes', () => {
     it('creates agent with defaults (name from basename, ULID id)', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app)
-        .post('/api/agents')
-        .send({ path: '/home/user/my-project' });
+      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('MOCK_ULID_001');
@@ -161,10 +160,13 @@ describe('Agents Routes', () => {
       expect(res.body.runtime).toBe('claude-code');
       expect(res.body.registeredBy).toBe('dorkos-ui');
       expect(res.body.personaEnabled).toBe(true);
-      expect(mockWriteManifest).toHaveBeenCalledWith('/home/user/my-project', expect.objectContaining({
-        id: 'MOCK_ULID_001',
-        name: 'my-project',
-      }));
+      expect(mockWriteManifest).toHaveBeenCalledWith(
+        '/home/user/my-project',
+        expect.objectContaining({
+          id: 'MOCK_ULID_001',
+          name: 'my-project',
+        })
+      );
     });
 
     it('creates agent with provided name and description', async () => {
@@ -182,9 +184,7 @@ describe('Agents Routes', () => {
     it('returns 409 when agent already exists', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
-        .post('/api/agents')
-        .send({ path: '/home/user/project' });
+      const res = await request(app).post('/api/agents').send({ path: '/home/user/project' });
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('Agent already exists at this path');
@@ -200,12 +200,10 @@ describe('Agents Routes', () => {
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
-        .post('/api/agents')
-        .send({ path: '/etc/shadow' });
+      const res = await request(app).post('/api/agents').send({ path: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -214,9 +212,7 @@ describe('Agents Routes', () => {
 
   describe('PATCH /api/agents/current', () => {
     it('returns 400 when path query is missing', async () => {
-      const res = await request(app)
-        .patch('/api/agents/current')
-        .send({ name: 'new-name' });
+      const res = await request(app).patch('/api/agents/current').send({ name: 'new-name' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('path query parameter required');
@@ -254,7 +250,7 @@ describe('Agents Routes', () => {
           id: 'test-agent-id',
           name: 'updated-name',
           description: 'new description',
-        }),
+        })
       );
     });
 
@@ -273,7 +269,7 @@ describe('Agents Routes', () => {
 
     it('validates boundary and returns 403 for out-of-bounds path', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)

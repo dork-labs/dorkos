@@ -14,6 +14,7 @@
 ### Session 1 - 2026-02-27
 
 **Batch 1-3 (Foundation):**
+
 - Task #5: [P1] Add ConfigField, AdapterManifest, and CatalogEntry Zod schemas to shared package
 - Task #6: [P1] Export built-in adapter manifests from relay package
 - Task #14: [P3] Build ConfigFieldInput component
@@ -22,22 +23,27 @@
 - Task #12: [P2] Update plugin loader to extract manifests from plugin modules
 
 **Batch 4 (Routes + CRUD):**
+
 - Task #8: [P1] Add catalog route and Transport interface methods
 - Task #9: [P2] Add CRUD methods to AdapterManager (addAdapter, removeAdapter, updateConfig)
 - Task #10: [P2] Add testConnection method to AdapterManager
 
 **Batch 5 (Routes + Hooks):**
+
 - Task #11: [P2] Add CRUD and test-connection routes to relay router
 - Task #13: [P3] Add TanStack Query entity hooks for adapter catalog
 
 **Batch 6 (Wizard + Docs):**
+
 - Task #16: [P3] Build AdapterSetupWizard component
 - Task #19: [P4] Update developer documentation and CLAUDE.md
 
 **Batch 7 (Tab Upgrade):**
+
 - Task #17: [P3] Upgrade AdaptersTab with catalog data and AdapterCard kebab menu
 
 **Batch 8 (Polish):**
+
 - Task #18: [P4] Add edge cases, error UX, and loading states
 
 ## Files Modified/Created

@@ -3,10 +3,10 @@ title: Tunnel Setup
 description: Configure ngrok tunnels for remote access to your DorkOS instance
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Tunnel Setup
 
@@ -28,6 +28,7 @@ export NGROK_AUTHTOKEN=your-token-here
 ```
 
 Or paste it directly in the UI when you open the Remote Access dialog (see [UI Toggle](#ui-toggle) below).
+
 </Step>
 
 <Step>
@@ -43,12 +44,14 @@ Or use the environment variable:
 export TUNNEL_ENABLED=true
 dorkos
 ```
+
 </Step>
 
 <Step>
 ### Access the tunnel URL
 
 The tunnel URL appears in the terminal output with a QR code you can scan on mobile.
+
 </Step>
 </Steps>
 
@@ -81,23 +84,41 @@ ngrok offers free static domains that persist across restarts:
 2. Enter it in the **Custom domain** field in the Remote Access dialog, or set `TUNNEL_DOMAIN`
 
 Benefits:
+
 - Same URL across restarts
 - QR codes and bookmarks remain valid
 
 ## Configuration
 
-<TypeTable type={{
-  "TUNNEL_ENABLED": { type: "boolean", description: "Enable the ngrok tunnel", default: "false" },
-  "NGROK_AUTHTOKEN": { type: "string", description: "ngrok authentication token (required when tunnel is enabled)" },
-  "TUNNEL_PORT": { type: "number", description: "Local port to tunnel to", default: "4241 (dev) / DORKOS_PORT (production)" },
-  "TUNNEL_AUTH": { type: "string", description: "HTTP basic auth credentials in 'user:pass' format" },
-  "TUNNEL_DOMAIN": { type: "string", description: "Custom ngrok domain (free static domains available)", default: "Auto-assigned" }
-}} />
+<TypeTable
+  type={{
+    TUNNEL_ENABLED: { type: 'boolean', description: 'Enable the ngrok tunnel', default: 'false' },
+    NGROK_AUTHTOKEN: {
+      type: 'string',
+      description: 'ngrok authentication token (required when tunnel is enabled)',
+    },
+    TUNNEL_PORT: {
+      type: 'number',
+      description: 'Local port to tunnel to',
+      default: '4241 (dev) / DORKOS_PORT (production)',
+    },
+    TUNNEL_AUTH: {
+      type: 'string',
+      description: "HTTP basic auth credentials in 'user:pass' format",
+    },
+    TUNNEL_DOMAIN: {
+      type: 'string',
+      description: 'Custom ngrok domain (free static domains available)',
+      default: 'Auto-assigned',
+    },
+  }}
+/>
 
 ## Security
 
 <Callout type="error">
-Tunnels expose your DorkOS instance to the public internet. Always protect your tunnel with basic auth.
+  Tunnels expose your DorkOS instance to the public internet. Always protect your tunnel with basic
+  auth.
 </Callout>
 
 ```bash
@@ -115,30 +136,35 @@ With basic auth enabled, anyone accessing the tunnel URL is prompted for credent
 ### Server starts normally
 
 DorkOS starts the Express server on the configured port (default 4242).
+
 </Step>
 
 <Step>
 ### Tunnel connects
 
 After the server binds, the tunnel manager dynamically imports the `@ngrok/ngrok` SDK and creates a tunnel. Dynamic import means zero overhead when tunneling is disabled.
+
 </Step>
 
 <Step>
 ### URL is available
 
 The tunnel URL appears in the terminal with a QR code for mobile access. If tunnel creation fails, the server continues working locally.
+
 </Step>
 
 <Step>
 ### Real-time status sync
 
 The tunnel manager emits status events via EventEmitter. These are broadcast to all connected clients via SSE (`GET /api/tunnel/stream`) and across browser tabs via BroadcastChannel.
+
 </Step>
 
 <Step>
 ### Graceful shutdown
 
 When you stop the server (via SIGINT or SIGTERM), the tunnel closes automatically before the process exits.
+
 </Step>
 </Steps>
 
@@ -177,7 +203,8 @@ curl http://localhost:4242/api/health
 ```
 
 <Callout type="info">
-The `tunnel` field only appears in the health response when tunneling is enabled. Use `GET /api/tunnel/status` for full status including connection quality.
+  The `tunnel` field only appears in the health response when tunneling is enabled. Use `GET
+  /api/tunnel/status` for full status including connection quality.
 </Callout>
 
 ## CLI QR Code
@@ -209,7 +236,9 @@ When running as an Obsidian plugin, the tunnel UI is automatically hidden since 
 ## Troubleshooting
 
 <Callout type="warn">
-If the tunnel fails to start, verify your `NGROK_AUTHTOKEN` is valid and that you have not exceeded your ngrok account's tunnel limit. The server continues running locally even if the tunnel fails.
+  If the tunnel fails to start, verify your `NGROK_AUTHTOKEN` is valid and that you have not
+  exceeded your ngrok account's tunnel limit. The server continues running locally even if the
+  tunnel fails.
 </Callout>
 
 Common issues:

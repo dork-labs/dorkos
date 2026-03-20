@@ -50,7 +50,10 @@ export function createMcpRouter(serverFactory: () => McpServer): Router {
   router.get('/', (_req, res) => {
     res.status(405).json({
       jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed. This server operates in stateless mode.' },
+      error: {
+        code: -32000,
+        message: 'Method not allowed. This server operates in stateless mode.',
+      },
       id: null,
     });
   });
@@ -59,7 +62,10 @@ export function createMcpRouter(serverFactory: () => McpServer): Router {
   router.delete('/', (_req, res) => {
     res.status(405).json({
       jsonrpc: '2.0',
-      error: { code: -32000, message: 'Method not allowed. This server operates in stateless mode.' },
+      error: {
+        code: -32000,
+        message: 'Method not allowed. This server operates in stateless mode.',
+      },
       id: null,
     });
   });

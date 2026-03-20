@@ -59,7 +59,9 @@ describe('enforceBudget', () => {
   describe('cycle detection', () => {
     it('rejects when currentEndpoint is already in ancestorChain', () => {
       const endpoint = 'relay.endpoint.a';
-      const envelope = makeEnvelope({ ancestorChain: ['relay.origin', endpoint, 'relay.endpoint.b'] });
+      const envelope = makeEnvelope({
+        ancestorChain: ['relay.origin', endpoint, 'relay.endpoint.b'],
+      });
       const result = enforceBudget(envelope, endpoint);
 
       expect(result.allowed).toBe(false);

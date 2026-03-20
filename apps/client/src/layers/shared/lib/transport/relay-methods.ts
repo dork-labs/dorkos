@@ -72,7 +72,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     readRelayInbox(
       subject: string,
-      opts?: { status?: string; cursor?: string; limit?: number },
+      opts?: { status?: string; cursor?: string; limit?: number }
     ): Promise<{ messages: unknown[]; nextCursor?: string }> {
       const qs = buildQueryString({
         status: opts?.status,
@@ -111,7 +111,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     async sendMessageRelay(
       sessionId: string,
       content: string,
-      options?: { clientId?: string; correlationId?: string; cwd?: string },
+      options?: { clientId?: string; correlationId?: string; cwd?: string }
     ): Promise<{ messageId: string; traceId: string }> {
       const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -159,7 +159,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     addRelayAdapter(
       type: string,
       id: string,
-      config: Record<string, unknown>,
+      config: Record<string, unknown>
     ): Promise<{ ok: boolean }> {
       return fetchJSON(baseUrl, '/relay/adapters', {
         method: 'POST',
@@ -175,7 +175,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     updateRelayAdapterConfig(
       id: string,
-      config: Record<string, unknown>,
+      config: Record<string, unknown>
     ): Promise<{ ok: boolean }> {
       return fetchJSON(baseUrl, `/relay/adapters/${encodeURIComponent(id)}/config`, {
         method: 'PATCH',
@@ -185,7 +185,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     testRelayAdapterConnection(
       type: string,
-      config: Record<string, unknown>,
+      config: Record<string, unknown>
     ): Promise<{ ok: boolean; error?: string; botUsername?: string }> {
       return fetchJSON(baseUrl, '/relay/adapters/test', {
         method: 'POST',
@@ -203,7 +203,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     getObservedChats(adapterId: string): Promise<ObservedChat[]> {
       return fetchJSON<{ chats: ObservedChat[] }>(
         baseUrl,
-        `/relay/adapters/${encodeURIComponent(adapterId)}/chats`,
+        `/relay/adapters/${encodeURIComponent(adapterId)}/chats`
       ).then((r) => r.chats);
     },
 
@@ -211,7 +211,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     getBindings(): Promise<AdapterBinding[]> {
       return fetchJSON<{ bindings: AdapterBinding[] }>(baseUrl, '/relay/bindings').then(
-        (r) => r.bindings,
+        (r) => r.bindings
       );
     },
 
@@ -230,12 +230,27 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     updateBinding(
       id: string,
-      updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
+      updates: Partial<
+        Pick<
+          AdapterBinding,
+          | 'sessionStrategy'
+          | 'label'
+          | 'chatId'
+          | 'channelType'
+          | 'canInitiate'
+          | 'canReply'
+          | 'canReceive'
+        >
+      >
     ): Promise<AdapterBinding> {
-      return fetchJSON<{ binding: AdapterBinding }>(baseUrl, `/relay/bindings/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-      }).then((r) => r.binding);
+      return fetchJSON<{ binding: AdapterBinding }>(
+        baseUrl,
+        `/relay/bindings/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        }
+      ).then((r) => r.binding);
     },
   };
 }

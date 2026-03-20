@@ -50,13 +50,13 @@ This spec closes the routing gap: adapters publish inbound messages, BindingRout
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@xyflow/react` | v12 | React Flow for topology visualization (already installed) |
-| `elkjs` | ^0.9 | Automatic graph layout (already installed) |
-| `chokidar` | ^4 | File watching for binding hot-reload (already installed) |
-| `zod` | ^3.23 | Schema validation (already installed) |
-| `better-sqlite3` | ^11 | Session tracking for `per-chat` strategy (already installed) |
+| Dependency       | Version | Purpose                                                      |
+| ---------------- | ------- | ------------------------------------------------------------ |
+| `@xyflow/react`  | v12     | React Flow for topology visualization (already installed)    |
+| `elkjs`          | ^0.9    | Automatic graph layout (already installed)                   |
+| `chokidar`       | ^4      | File watching for binding hot-reload (already installed)     |
+| `zod`            | ^3.23   | Schema validation (already installed)                        |
+| `better-sqlite3` | ^11     | Session tracking for `per-chat` strategy (already installed) |
 
 All dependencies are already in the project. No new packages required.
 
@@ -213,8 +213,12 @@ export class BindingRouter {
     this.deps.relayCore.on('relay.human.*', this.handleInbound.bind(this));
   }
 
-  private async loadSessionMap(): Promise<void> { /* Read sessions.json if exists */ }
-  private async saveSessionMap(): Promise<void> { /* Atomic write sessions.json */ }
+  private async loadSessionMap(): Promise<void> {
+    /* Read sessions.json if exists */
+  }
+  private async saveSessionMap(): Promise<void> {
+    /* Atomic write sessions.json */
+  }
 
   private async handleInbound(envelope: RelayEnvelope): Promise<void> {
     // Extract adapter context from envelope
@@ -348,6 +352,7 @@ deleteBinding(id: string): Promise<void>;
 ```
 
 Implement in all three transports:
+
 - **HttpTransport**: Standard fetch calls to `/api/relay/bindings`
 - **DirectTransport**: Direct method calls to BindingStore
 - **MockTransport** (test-utils): In-memory array with basic CRUD
@@ -362,23 +367,31 @@ tool('binding_list', {}, async () => {
   return { content: [{ type: 'text', text: JSON.stringify(bindings, null, 2) }] };
 });
 
-tool('binding_create', {
-  adapterId: z.string(),
-  agentId: z.string(),
-  agentDir: z.string(),
-  sessionStrategy: SessionStrategySchema.optional(),
-  label: z.string().optional(),
-}, async (params) => {
-  const binding = deps.bindingStore?.create(params);
-  return { content: [{ type: 'text', text: JSON.stringify(binding, null, 2) }] };
-});
+tool(
+  'binding_create',
+  {
+    adapterId: z.string(),
+    agentId: z.string(),
+    agentDir: z.string(),
+    sessionStrategy: SessionStrategySchema.optional(),
+    label: z.string().optional(),
+  },
+  async (params) => {
+    const binding = deps.bindingStore?.create(params);
+    return { content: [{ type: 'text', text: JSON.stringify(binding, null, 2) }] };
+  }
+);
 
-tool('binding_delete', {
-  id: z.string(),
-}, async (params) => {
-  const success = deps.bindingStore?.delete(params.id);
-  return { content: [{ type: 'text', text: success ? 'Deleted' : 'Not found' }] };
-});
+tool(
+  'binding_delete',
+  {
+    id: z.string(),
+  },
+  async (params) => {
+    const success = deps.bindingStore?.delete(params.id);
+    return { content: [{ type: 'text', text: success ? 'Deleted' : 'Not found' }] };
+  }
+);
 ```
 
 ### 6.9 Client Entity Layer
@@ -502,13 +515,16 @@ const elkOptions = {
 **Connection validation:**
 
 ```typescript
-const isValidConnection = useCallback((connection: Connection) => {
-  // Only allow adapter (source) → agent (target) connections
-  const sourceNode = nodes.find(n => n.id === connection.source);
-  const targetNode = nodes.find(n => n.id === connection.target);
-  if (!sourceNode || !targetNode) return false;
-  return sourceNode.type === 'adapter' && targetNode.type === 'agent';
-}, [nodes]);
+const isValidConnection = useCallback(
+  (connection: Connection) => {
+    // Only allow adapter (source) → agent (target) connections
+    const sourceNode = nodes.find((n) => n.id === connection.source);
+    const targetNode = nodes.find((n) => n.id === connection.target);
+    if (!sourceNode || !targetNode) return false;
+    return sourceNode.type === 'adapter' && targetNode.type === 'agent';
+  },
+  [nodes]
+);
 ```
 
 **BindingDialog** — modal that appears on drag-to-connect, letting user confirm binding and set session strategy, label.
@@ -525,7 +541,7 @@ function adapterToNode(adapter: RelayAdapter, index: number): Node<AdapterNodeDa
     position: { x: 0, y: index * (ADAPTER_NODE_HEIGHT + 24) },
     data: {
       adapter,
-      bindings: allBindings.filter(b => b.adapterId === adapter.id),
+      bindings: allBindings.filter((b) => b.adapterId === adapter.id),
       statusColor: adapter.status === 'running' ? 'green' : 'zinc',
       platformIcon: getPlatformIcon(adapter.type),
     },
@@ -577,6 +593,7 @@ function bindingToEdge(binding: AdapterBinding): Edge {
 ### Agent Self-Service (MCP)
 
 Agents can manage bindings via MCP tools:
+
 - `binding_list` — see all current bindings
 - `binding_create` — create a new binding to themselves
 - `binding_delete` — remove a binding

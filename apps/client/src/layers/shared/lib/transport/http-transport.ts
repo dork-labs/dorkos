@@ -28,7 +28,13 @@ import type {
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
-import type { Transport, AdapterListItem, AdapterEvent, UploadFile, McpConfigResponse } from '@dorkos/shared/transport';
+import type {
+  Transport,
+  AdapterListItem,
+  AdapterEvent,
+  UploadFile,
+  McpConfigResponse,
+} from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   TraceSpan,
@@ -96,21 +102,24 @@ export class HttpTransport implements Transport {
   declare unregisterRelayEndpoint: (subject: string) => Promise<{ success: boolean }>;
   declare readRelayInbox: (
     subject: string,
-    opts?: { status?: string; cursor?: string; limit?: number },
+    opts?: { status?: string; cursor?: string; limit?: number }
   ) => Promise<{ messages: unknown[]; nextCursor?: string }>;
   declare getRelayMetrics: () => Promise<unknown>;
   declare listRelayDeadLetters: (filters?: { endpointHash?: string }) => Promise<unknown[]>;
-  declare listAggregatedDeadLetters: () => Promise<{ groups: import('@dorkos/shared/transport').AggregatedDeadLetter[] }>;
-  declare dismissDeadLetterGroup: (source: string, reason: string) => Promise<{ dismissed: number }>;
+  declare listAggregatedDeadLetters: () => Promise<{
+    groups: import('@dorkos/shared/transport').AggregatedDeadLetter[];
+  }>;
+  declare dismissDeadLetterGroup: (
+    source: string,
+    reason: string
+  ) => Promise<{ dismissed: number }>;
   declare listRelayConversations: () => Promise<{ conversations: RelayConversation[] }>;
   declare sendMessageRelay: (
     sessionId: string,
     content: string,
-    options?: { clientId?: string; correlationId?: string; cwd?: string },
+    options?: { clientId?: string; correlationId?: string; cwd?: string }
   ) => Promise<{ messageId: string; traceId: string }>;
-  declare getRelayTrace: (
-    messageId: string,
-  ) => Promise<{ traceId: string; spans: TraceSpan[] }>;
+  declare getRelayTrace: (messageId: string) => Promise<{ traceId: string; spans: TraceSpan[] }>;
   declare getRelayDeliveryMetrics: () => Promise<DeliveryMetrics>;
   declare listRelayAdapters: () => Promise<AdapterListItem[]>;
   declare toggleRelayAdapter: (id: string, enabled: boolean) => Promise<{ ok: boolean }>;
@@ -118,20 +127,20 @@ export class HttpTransport implements Transport {
   declare addRelayAdapter: (
     type: string,
     id: string,
-    config: Record<string, unknown>,
+    config: Record<string, unknown>
   ) => Promise<{ ok: boolean }>;
   declare removeRelayAdapter: (id: string) => Promise<{ ok: boolean }>;
   declare updateRelayAdapterConfig: (
     id: string,
-    config: Record<string, unknown>,
+    config: Record<string, unknown>
   ) => Promise<{ ok: boolean }>;
   declare testRelayAdapterConnection: (
     type: string,
-    config: Record<string, unknown>,
+    config: Record<string, unknown>
   ) => Promise<{ ok: boolean; error?: string; botUsername?: string }>;
   declare getAdapterEvents: (
     adapterId: string,
-    limit?: number,
+    limit?: number
   ) => Promise<{ events: AdapterEvent[] }>;
   declare getObservedChats: (adapterId: string) => Promise<ObservedChat[]>;
   declare getBindings: () => Promise<AdapterBinding[]>;
@@ -139,13 +148,24 @@ export class HttpTransport implements Transport {
   declare deleteBinding: (id: string) => Promise<void>;
   declare updateBinding: (
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'canInitiate' | 'canReply' | 'canReceive'>>,
+    updates: Partial<
+      Pick<
+        AdapterBinding,
+        | 'sessionStrategy'
+        | 'label'
+        | 'chatId'
+        | 'channelType'
+        | 'canInitiate'
+        | 'canReply'
+        | 'canReceive'
+      >
+    >
   ) => Promise<AdapterBinding>;
 
   declare listMeshAgentPaths: () => Promise<{ agents: AgentPathEntry[] }>;
   declare discoverMeshAgents: (
     roots: string[],
-    maxDepth?: number,
+    maxDepth?: number
   ) => Promise<{ candidates: DiscoveryCandidate[] }>;
   declare listMeshAgents: (filters?: {
     runtime?: string;
@@ -155,42 +175,34 @@ export class HttpTransport implements Transport {
   declare registerMeshAgent: (
     path: string,
     overrides?: Partial<AgentManifest>,
-    approver?: string,
+    approver?: string
   ) => Promise<AgentManifest>;
-  declare updateMeshAgent: (
-    id: string,
-    updates: Partial<AgentManifest>,
-  ) => Promise<AgentManifest>;
+  declare updateMeshAgent: (id: string, updates: Partial<AgentManifest>) => Promise<AgentManifest>;
   declare unregisterMeshAgent: (id: string) => Promise<{ success: boolean }>;
   declare denyMeshAgent: (
     path: string,
     reason?: string,
-    denier?: string,
+    denier?: string
   ) => Promise<{ success: boolean }>;
   declare listDeniedMeshAgents: () => Promise<{ denied: DenialRecord[] }>;
   declare clearMeshDenial: (path: string) => Promise<{ success: boolean }>;
   declare getMeshStatus: () => Promise<MeshStatus>;
   declare getMeshAgentHealth: (id: string) => Promise<AgentHealth>;
-  declare sendMeshHeartbeat: (
-    id: string,
-    event?: string,
-  ) => Promise<{ success: boolean }>;
+  declare sendMeshHeartbeat: (id: string, event?: string) => Promise<{ success: boolean }>;
   declare getMeshTopology: (namespace?: string) => Promise<TopologyView>;
   declare updateMeshAccessRule: (body: UpdateAccessRuleRequest) => Promise<CrossNamespaceRule>;
   declare getMeshAgentAccess: (agentId: string) => Promise<{ agents: AgentManifest[] }>;
   declare getAgentByPath: (path: string) => Promise<AgentManifest | null>;
-  declare resolveAgents: (
-    paths: string[],
-  ) => Promise<Record<string, AgentManifest | null>>;
+  declare resolveAgents: (paths: string[]) => Promise<Record<string, AgentManifest | null>>;
   declare createAgent: (
     path: string,
     name?: string,
     description?: string,
-    runtime?: string,
+    runtime?: string
   ) => Promise<AgentManifest>;
   declare updateAgentByPath: (
     path: string,
-    updates: Partial<AgentManifest>,
+    updates: Partial<AgentManifest>
   ) => Promise<AgentManifest>;
 
   constructor(private baseUrl: string) {
@@ -199,7 +211,7 @@ export class HttpTransport implements Transport {
       this,
       createPulseMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
-      createMeshMethods(baseUrl),
+      createMeshMethods(baseUrl)
     );
   }
 
@@ -266,7 +278,7 @@ export class HttpTransport implements Transport {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
     cwd?: string,
-    options?: { clientMessageId?: string },
+    options?: { clientMessageId?: string }
   ): Promise<void> {
     const body: Record<string, unknown> = { content };
     if (cwd) body.cwd = cwd;
@@ -321,7 +333,7 @@ export class HttpTransport implements Transport {
   submitAnswers(
     sessionId: string,
     toolCallId: string,
-    answers: Record<string, string>,
+    answers: Record<string, string>
   ): Promise<{ ok: boolean }> {
     return fetchJSON<{ ok: boolean }>(this.baseUrl, `/sessions/${sessionId}/submit-answers`, {
       method: 'POST',
@@ -336,7 +348,7 @@ export class HttpTransport implements Transport {
       const qs = buildQueryString({ cwd });
       return await fetchJSON<{ tasks: TaskItem[] }>(
         this.baseUrl,
-        `/sessions/${sessionId}/tasks${qs}`,
+        `/sessions/${sessionId}/tasks${qs}`
       );
     } catch {
       return { tasks: [] };
@@ -440,7 +452,7 @@ export class HttpTransport implements Transport {
   async scan(
     options: TransportScanOptions,
     onEvent: (event: TransportScanEvent) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<void> {
     const response = await fetch(`${this.baseUrl}/discovery/scan`, {
       method: 'POST',
@@ -465,14 +477,14 @@ export class HttpTransport implements Transport {
   getMcpConfig(projectPath: string): Promise<McpConfigResponse> {
     return fetchJSON<McpConfigResponse>(
       this.baseUrl,
-      `/mcp-config?path=${encodeURIComponent(projectPath)}`,
+      `/mcp-config?path=${encodeURIComponent(projectPath)}`
     );
   }
 
   async uploadFiles(
     files: UploadFile[],
     cwd: string,
-    onProgress?: (progress: UploadProgress) => void,
+    onProgress?: (progress: UploadProgress) => void
   ): Promise<UploadResult[]> {
     const formData = new FormData();
     for (const file of files) {

@@ -85,10 +85,12 @@ Add a single-line blockquote below version headings to provide a theme/summary f
 > DorkOS 0.3.0 adds a scheduler and dynamic MCP tools.
 
 ### Added
+
 - ...
 ```
 
 This theme line feeds:
+
 - Blog post descriptions
 - GitHub Release "What's New" opening paragraph
 - Quick reference for users scanning the changelog

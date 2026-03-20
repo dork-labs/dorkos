@@ -1,5 +1,5 @@
 ---
-title: "ESLint 9 Flat Config — Per-Package Monorepo Refactor Patterns"
+title: 'ESLint 9 Flat Config — Per-Package Monorepo Refactor Patterns'
 date: 2026-03-06
 type: external-best-practices
 status: active
@@ -74,6 +74,7 @@ packages/eslint-config/
 ```
 
 **`package.json`:**
+
 ```json
 {
   "name": "@dorkos/eslint-config",
@@ -99,6 +100,7 @@ packages/eslint-config/
 ```
 
 All plugin dependencies live here. Consumer packages add only:
+
 ```json
 "devDependencies": {
   "@dorkos/eslint-config": "workspace:*",
@@ -109,6 +111,7 @@ All plugin dependencies live here. Consumer packages add only:
 ### Consuming Package Pattern
 
 **`apps/client/eslint.config.js`:**
+
 ```js
 import { defineConfig } from 'eslint/config';
 import reactConfig from '@dorkos/eslint-config/react';
@@ -121,34 +124,61 @@ export default defineConfig([
   {
     files: ['src/layers/shared/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/entities/*', '@/layers/entities'], message: 'FSD violation: shared/ cannot import from entities/' },
-          { group: ['@/layers/features/*', '@/layers/features'], message: 'FSD violation: shared/ cannot import from features/' },
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: shared/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/entities/*', '@/layers/entities'],
+              message: 'FSD violation: shared/ cannot import from entities/',
+            },
+            {
+              group: ['@/layers/features/*', '@/layers/features'],
+              message: 'FSD violation: shared/ cannot import from features/',
+            },
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: shared/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
   {
     files: ['src/layers/entities/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/features/*', '@/layers/features'], message: 'FSD violation: entities/ cannot import from features/' },
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: entities/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/features/*', '@/layers/features'],
+              message: 'FSD violation: entities/ cannot import from features/',
+            },
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: entities/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
   {
     files: ['src/layers/features/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          { group: ['@/layers/widgets/*', '@/layers/widgets'], message: 'FSD violation: features/ cannot import from widgets/' },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/layers/widgets/*', '@/layers/widgets'],
+              message: 'FSD violation: features/ cannot import from widgets/',
+            },
+          ],
+        },
+      ],
     },
   },
   {
@@ -160,6 +190,7 @@ export default defineConfig([
 ```
 
 **`apps/server/eslint.config.js`:**
+
 ```js
 import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
@@ -172,12 +203,23 @@ export default [
     files: ['src/**/*.ts'],
     ignores: ['src/lib/dork-home.ts', 'src/**/__tests__/**'],
     rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          { name: 'os', importNames: ['homedir'], message: "Use the resolved dorkHome parameter. See .claude/rules/dork-home.md" },
-          { name: 'node:os', importNames: ['homedir'], message: "Use the resolved dorkHome parameter. See .claude/rules/dork-home.md" },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'os',
+              importNames: ['homedir'],
+              message: 'Use the resolved dorkHome parameter. See .claude/rules/dork-home.md',
+            },
+            {
+              name: 'node:os',
+              importNames: ['homedir'],
+              message: 'Use the resolved dorkHome parameter. See .claude/rules/dork-home.md',
+            },
+          ],
+        },
+      ],
     },
   },
   ...testConfig,
@@ -210,11 +252,13 @@ If a file in `apps/client/src/layers/shared/` matches both A and B, and B is def
 ### Turborepo Task Configuration
 
 Current `turbo.json`:
+
 ```json
 "lint": { "dependsOn": ["^build"], "cache": true }
 ```
 
 Recommended update for per-package lint:
+
 ```json
 "lint": {
   "dependsOn": ["^lint"],
@@ -253,6 +297,7 @@ packages/db/eslint.config.js          ← new, ~10 lines (base config)
 ```
 
 **Pros:**
+
 - Consistent with Turborepo's official recommendation
 - Consistent with the existing `@dorkos/typescript-config` pattern
 - Package-specific rules live with the package (FSD rules in client, server rules in server)
@@ -263,6 +308,7 @@ packages/db/eslint.config.js          ← new, ~10 lines (base config)
 - ESLint can run standalone inside each package without knowing the monorepo root
 
 **Cons:**
+
 - Initial setup: ~8-10 new `eslint.config.js` files to create
 - The shared config package needs its own `package.json` and proper exports
 - Slightly more files to navigate (offset by the fact that each file is small and focused)
@@ -286,11 +332,13 @@ eslint.config.js   ← imports and composes everything with file globs
 ```
 
 **Pros:**
+
 - No new package, no workspace dep changes
 - Single `eslint` run from root; simple mental model
 - Works today without any migration
 
 **Cons:**
+
 - File glob explosion: rules for `apps/client/src/layers/shared/**` alongside rules for `apps/server/src/**` in the same array — hard to read, easy to accidentally overlap
 - The `no-restricted-imports` overwrite problem is fully present and gets worse as more rules are added
 - Turborepo cache is per-root-run, not per-package — a client change re-lints the entire monorepo
@@ -310,18 +358,26 @@ import reactConfig from '@dorkos/eslint-config/react';
 import nodeConfig from '@dorkos/eslint-config/node';
 
 export default [
-  ...reactConfig.map(c => ({ ...c, files: c.files?.map(f => `apps/client/${f}`) ?? ['apps/client/**'] })),
-  ...nodeConfig.map(c => ({ ...c, files: c.files?.map(f => `apps/server/${f}`) ?? ['apps/server/**'] })),
+  ...reactConfig.map((c) => ({
+    ...c,
+    files: c.files?.map((f) => `apps/client/${f}`) ?? ['apps/client/**'],
+  })),
+  ...nodeConfig.map((c) => ({
+    ...c,
+    files: c.files?.map((f) => `apps/server/${f}`) ?? ['apps/server/**'],
+  })),
   // FSD rules targeting apps/client/src/layers/...
   // server rules targeting apps/server/src/...
 ];
 ```
 
 **Pros:**
+
 - Shared config package is reusable and version-controlled
 - Single `eslint` invocation from root (easier for some editors/scripts)
 
 **Cons:**
+
 - Path rewriting is error-prone and fragile (requires manually prefixing all glob paths)
 - `eslint-flat-config-utils` library exists to help with this but adds another dependency
 - No real benefit over Approach A — same number of files/rules, more complexity
@@ -348,6 +404,7 @@ The `no-restricted-syntax` rule banning raw `process.env` access is cross-cuttin
 ### Per-Package `package.json` Updates
 
 Each app/package that gets its own `eslint.config.js` needs:
+
 ```json
 {
   "devDependencies": {
@@ -390,6 +447,7 @@ Currently, ESLint is likely in the root `devDependencies` only. It needs to be i
 **Use Approach A: Per-Package Configs with Shared Config Package.**
 
 Rationale:
+
 1. It is what Turborepo officially recommends, and DorkOS already follows this pattern for TypeScript configs
 2. It eliminates the `no-restricted-imports` overwrite problem structurally — no rules from different packages can conflict because they live in separate config arrays
 3. Turborepo lint caching becomes properly granular — changing client code only re-lints the client
@@ -397,6 +455,7 @@ Rationale:
 5. Each package's ESLint config is readable in isolation — a contributor working on `apps/server` doesn't need to understand the FSD rules for `apps/client`
 
 **Migration Path:**
+
 1. Create `packages/eslint-config/` with `base.js`, `react.js`, `node.js`, `test.js`
 2. Move all ESLint plugin deps from root `devDependencies` into `packages/eslint-config/package.json`
 3. Add `"@dorkos/eslint-config": "workspace:*"` to each app/package `devDependencies`

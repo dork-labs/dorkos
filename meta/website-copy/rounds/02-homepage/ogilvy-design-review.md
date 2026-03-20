@@ -22,11 +22,11 @@ The current headline is a promise. The proposed headline is a recognition. These
 
 "Your AI Never Sleeps" tells the visitor what the product does. It is a claim. Claims require proof, and the proof is below the fold. The visitor must take the headline on faith and keep scrolling. This is adequate. It is not exceptional.
 
-"Your agents are brilliant. They just can't do anything when you leave." does something the current headline cannot: it creates a pause. The first sentence is warm — it validates the reader. The second sentence drops the floor. The reader does not need to scroll to understand the product; they understand the *problem* in the headline itself. The product becomes the obvious solution rather than a claim that requires substantiation.
+"Your agents are brilliant. They just can't do anything when you leave." does something the current headline cannot: it creates a pause. The first sentence is warm — it validates the reader. The second sentence drops the floor. The reader does not need to scroll to understand the product; they understand the _problem_ in the headline itself. The product becomes the obvious solution rather than a claim that requires substantiation.
 
 **In the context of the existing design**, the new headline is stronger for three specific reasons:
 
-First, the activity feed panel to the right already proves the promise. Having a headline that *also* promises ("Never Sleeps") creates redundancy — the feed and the headline are saying the same thing. The new headline creates tension; the feed resolves it. That is a proper left-right compositional argument.
+First, the activity feed panel to the right already proves the promise. Having a headline that _also_ promises ("Never Sleeps") creates redundancy — the feed and the headline are saying the same thing. The new headline creates tension; the feed resolves it. That is a proper left-right compositional argument.
 
 Second, the current hero uses `clamp(32px, 5.5vw, 64px)` with `tracking-[-0.04em]` and a `text-balance` class. The new headline is longer — two sentences instead of four words. At the current clamp range, it will occupy two to three lines on desktop. This is acceptable. The subhead below ("the operating system for autonomous AI agents") is shorter than the current subhead, which compensates. The net vertical footprint is comparable.
 
@@ -150,11 +150,11 @@ The new copy fixes this through the timeline narrative. Instead of describing Pu
 
 The existing "About" section is competent but generic: "DorkOS is an autonomous agent operating system by Dork Labs." The philosophy cards (if they follow the pattern of the `PhilosophyCard` component) are abstract. The closing line — "The name is playful. The tool is serious." — is the strongest line on the current page, but it arrives too late and without enough setup.
 
-The new copy's identity close ("Built by dorks. For dorks. Run by you.") preceded by the origin story (library books, section 8 housing, thirty million users) earns the tribal claim. It transforms DorkOS from a product with a funny name into a product that *means something* to a specific kind of builder. The current site hints at this identity. The new copy owns it.
+The new copy's identity close ("Built by dorks. For dorks. Run by you.") preceded by the origin story (library books, section 8 housing, thirty million users) earns the tribal claim. It transforms DorkOS from a product with a funny name into a product that _means something_ to a specific kind of builder. The current site hints at this identity. The new copy owns it.
 
 **The current site undersells the activity feed.**
 
-This may be the most important design observation in this review. The `ActivityFeedHero` component is extraordinary. A live-updating simulated agent feed with module-colored dots, staggered spring animations, and entries like "Agent found $2,400/yr in unused AWS resources — PR open to delete." This is the single most persuasive element on the current site. It does not argue that DorkOS works. It *shows* DorkOS working.
+This may be the most important design observation in this review. The `ActivityFeedHero` component is extraordinary. A live-updating simulated agent feed with module-colored dots, staggered spring animations, and entries like "Agent found $2,400/yr in unused AWS resources — PR open to delete." This is the single most persuasive element on the current site. It does not argue that DorkOS works. It _shows_ DorkOS working.
 
 The current site places this feed next to a four-word headline. That is an imbalance. The headline does not earn the feed. The feed does all the work.
 
@@ -166,17 +166,17 @@ With the new headline — "Your agents are brilliant. They just can't do anythin
 
 ## Summary of Recommendations
 
-| Element | Current State | Recommendation |
-|---|---|---|
-| **Headline** | "Your AI Never Sleeps." | Replace with "Your agents are brilliant. They just can't do anything when you leave." |
-| **Eyebrow** | "Autonomous by default" | Replace with "the operating system for autonomous AI agents" |
-| **Subhead** | Long product description | Replace with "You slept. They shipped." |
-| **Credibility Bar** | Between hero and system architecture | Move to before install moment. Add "Self-Hosted." |
-| **Honesty Section** | Between How It Works and About | Move to before install moment (after credibility bar). Tighten copy. Keep brackets. |
-| **Contact Section** | Standalone section with own eyebrow | Absorb email reveal into identity close as postscript. Kill standalone section. |
-| **Activity Feed** | Unchanged | No changes needed. The new headline makes it stronger. |
-| **Use Cases Grid** | Feature capabilities list | Replace with villain cards (synthesis Section 2). The current "What This Unlocks" becomes the pain section. |
-| **About Section** | Generic product description + philosophy cards | Replace with identity close (synthesis Section 7). Origin story + tribal claim. |
+| Element             | Current State                                  | Recommendation                                                                                              |
+| ------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Headline**        | "Your AI Never Sleeps."                        | Replace with "Your agents are brilliant. They just can't do anything when you leave."                       |
+| **Eyebrow**         | "Autonomous by default"                        | Replace with "the operating system for autonomous AI agents"                                                |
+| **Subhead**         | Long product description                       | Replace with "You slept. They shipped."                                                                     |
+| **Credibility Bar** | Between hero and system architecture           | Move to before install moment. Add "Self-Hosted."                                                           |
+| **Honesty Section** | Between How It Works and About                 | Move to before install moment (after credibility bar). Tighten copy. Keep brackets.                         |
+| **Contact Section** | Standalone section with own eyebrow            | Absorb email reveal into identity close as postscript. Kill standalone section.                             |
+| **Activity Feed**   | Unchanged                                      | No changes needed. The new headline makes it stronger.                                                      |
+| **Use Cases Grid**  | Feature capabilities list                      | Replace with villain cards (synthesis Section 2). The current "What This Unlocks" becomes the pain section. |
+| **About Section**   | Generic product description + philosophy cards | Replace with identity close (synthesis Section 7). Origin story + tribal claim.                             |
 
 ---
 
@@ -190,5 +190,5 @@ Apply the new words. Keep the warm light.
 
 ---
 
-*David Ogilvy*
-*February 27, 2026*
+_David Ogilvy_
+_February 27, 2026_

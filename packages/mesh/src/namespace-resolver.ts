@@ -28,7 +28,10 @@ export function validateNamespace(ns: string): { valid: true } | { valid: false;
     return { valid: false, reason: 'Namespace must not be empty' };
   }
   if (ns.length > MAX_NAMESPACE_LENGTH) {
-    return { valid: false, reason: `Namespace must be at most ${MAX_NAMESPACE_LENGTH} characters (got ${ns.length})` };
+    return {
+      valid: false,
+      reason: `Namespace must be at most ${MAX_NAMESPACE_LENGTH} characters (got ${ns.length})`,
+    };
   }
   return { valid: true };
 }
@@ -51,7 +54,7 @@ export function validateNamespace(ns: string): { valid: true } | { valid: false;
 export function resolveNamespace(
   projectPath: string,
   scanRoot: string,
-  manifestNamespace?: string,
+  manifestNamespace?: string
 ): string {
   if (manifestNamespace && manifestNamespace.trim().length > 0) {
     const normalized = normalizeNamespace(manifestNamespace);
@@ -65,7 +68,9 @@ export function resolveNamespace(
   const relative = path.relative(scanRoot, projectPath);
   const firstSegment = relative.split(path.sep)[0];
   if (!firstSegment) {
-    throw new Error(`Cannot derive namespace: projectPath '${projectPath}' is at or above scanRoot '${scanRoot}'`);
+    throw new Error(
+      `Cannot derive namespace: projectPath '${projectPath}' is at or above scanRoot '${scanRoot}'`
+    );
   }
 
   const normalized = normalizeNamespace(firstSegment);

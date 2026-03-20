@@ -51,7 +51,7 @@ export function resolveStreamdownAnimation(config: TextEffectConfig): false | An
  * @param preferred - The desired text effect config (defaults to DEFAULT_TEXT_EFFECT)
  */
 export function useTextEffectConfig(
-  preferred: TextEffectConfig = DEFAULT_TEXT_EFFECT,
+  preferred: TextEffectConfig = DEFAULT_TEXT_EFFECT
 ): TextEffectConfig {
   if (typeof window === 'undefined') return preferred;
 

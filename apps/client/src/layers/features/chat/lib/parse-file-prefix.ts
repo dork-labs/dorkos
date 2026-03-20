@@ -16,8 +16,7 @@ export interface ParsedFilePrefix {
   textContent: string;
 }
 
-const FILE_PREFIX_PATTERN =
-  /^Please read the following uploaded file\(s\):\n((?:- .+\n)+)\n?/;
+const FILE_PREFIX_PATTERN = /^Please read the following uploaded file\(s\):\n((?:- .+\n)+)\n?/;
 const UUID_PREFIX_PATTERN = /^[a-f0-9]{8}-/;
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 

@@ -75,22 +75,22 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|------|------|
-| `apps/server/src/index.ts` | Service wiring — instantiates all stores at startup |
-| `apps/server/src/services/pulse/pulse-store.ts` | Pulse persistence (replace with Drizzle queries) |
-| `apps/server/src/services/relay/trace-store.ts` | Relay trace persistence (replace) |
-| `packages/relay/src/sqlite-index.ts` | Relay message index (replace) |
-| `packages/mesh/src/agent-registry.ts` | Mesh agent registry (replace) |
-| `packages/mesh/src/denial-list.ts` | Denied paths list (replace) |
-| `packages/mesh/src/budget-mapper.ts` | Rate-limit buckets (replace) |
-| `packages/relay/src/relay-core.ts` | Instantiates SqliteIndex — update injection |
-| `packages/mesh/src/mesh-core.ts` | Instantiates AgentRegistry — update injection |
-| `apps/server/src/services/mcp-tool-server.ts` | Receives McpToolDeps — update interface |
-| `packages/cli/scripts/build.ts` | Add migration file copy step |
-| `lefthook.yml` | Add pre-commit schema-check hook |
-| `turbo.json` | Add `db:generate` task |
-| `packages/db/` | **New package** — all of the above |
+| File                                            | Role                                                |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `apps/server/src/index.ts`                      | Service wiring — instantiates all stores at startup |
+| `apps/server/src/services/pulse/pulse-store.ts` | Pulse persistence (replace with Drizzle queries)    |
+| `apps/server/src/services/relay/trace-store.ts` | Relay trace persistence (replace)                   |
+| `packages/relay/src/sqlite-index.ts`            | Relay message index (replace)                       |
+| `packages/mesh/src/agent-registry.ts`           | Mesh agent registry (replace)                       |
+| `packages/mesh/src/denial-list.ts`              | Denied paths list (replace)                         |
+| `packages/mesh/src/budget-mapper.ts`            | Rate-limit buckets (replace)                        |
+| `packages/relay/src/relay-core.ts`              | Instantiates SqliteIndex — update injection         |
+| `packages/mesh/src/mesh-core.ts`                | Instantiates AgentRegistry — update injection       |
+| `apps/server/src/services/mcp-tool-server.ts`   | Receives McpToolDeps — update interface             |
+| `packages/cli/scripts/build.ts`                 | Add migration file copy step                        |
+| `lefthook.yml`                                  | Add pre-commit schema-check hook                    |
+| `turbo.json`                                    | Add `db:generate` task                              |
+| `packages/db/`                                  | **New package** — all of the above                  |
 
 **Shared Dependencies:**
 
@@ -144,7 +144,7 @@ migration run regardless of feature flags).
 
 ## 4) Root Cause Analysis
 
-*Not a bug fix — not applicable.*
+_Not a bug fix — not applicable._
 
 ---
 
@@ -154,23 +154,23 @@ migration run regardless of feature flags).
 
 **Table renames (from earlier analysis):**
 
-| Old | New | Reason |
-|-----|-----|--------|
-| `runs` | `pulse_runs` | Namespaced for clarity in shared DB |
-| *(JSON file)* | `pulse_schedules` | Moved from JSON into SQLite |
-| `messages` | `relay_index` | It's a derived index, not messages themselves |
-| `message_traces` | `relay_traces` | Namespaced; shorter |
-| `denials` | `agent_denials` | Namespaced |
-| `budget_counters` | `rate_limit_buckets` | Describes purpose, not contents |
+| Old               | New                  | Reason                                        |
+| ----------------- | -------------------- | --------------------------------------------- |
+| `runs`            | `pulse_runs`         | Namespaced for clarity in shared DB           |
+| _(JSON file)_     | `pulse_schedules`    | Moved from JSON into SQLite                   |
+| `messages`        | `relay_index`        | It's a derived index, not messages themselves |
+| `message_traces`  | `relay_traces`       | Namespaced; shorter                           |
+| `denials`         | `agent_denials`      | Namespaced                                    |
+| `budget_counters` | `rate_limit_buckets` | Describes purpose, not contents               |
 
 **Column renames:**
 
-| Table | Old | New | Reason |
-|-------|-----|-----|--------|
-| `relay_index` | `ttl` | `expires_at` | TTL is a duration; this is an expiry timestamp |
-| `relay_index` | status `'new'`/`'cur'` | `'pending'`/`'delivered'` | Maildir terms leaking into SQL |
-| `pulse_runs` | `output_summary` | `output` | "Summary" implies always truncated |
-| `agents` | `manifest_json` | *(drop)* | Redundant — individual columns already store all fields |
+| Table         | Old                    | New                       | Reason                                                  |
+| ------------- | ---------------------- | ------------------------- | ------------------------------------------------------- |
+| `relay_index` | `ttl`                  | `expires_at`              | TTL is a duration; this is an expiry timestamp          |
+| `relay_index` | status `'new'`/`'cur'` | `'pending'`/`'delivered'` | Maildir terms leaking into SQL                          |
+| `pulse_runs`  | `output_summary`       | `output`                  | "Summary" implies always truncated                      |
+| `agents`      | `manifest_json`        | _(drop)_                  | Redundant — individual columns already store all fields |
 
 **Structural changes:**
 
@@ -184,6 +184,7 @@ migration run regardless of feature flags).
 ### Drizzle Setup Pattern
 
 **`packages/db` package.json** — JIT exports matching `packages/shared` pattern:
+
 ```json
 {
   "name": "@dorkos/db",
@@ -204,6 +205,7 @@ migration run regardless of feature flags).
 `instanceof` check failures.
 
 **`packages/db/drizzle.config.ts`:**
+
 ```typescript
 import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
@@ -215,6 +217,7 @@ export default defineConfig({
 ```
 
 **`packages/db/src/index.ts`** — factory function:
+
 ```typescript
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -249,12 +252,14 @@ export * from './schema/index.js';
 
 `migrate()` from `drizzle-orm/better-sqlite3/migrator` is synchronous (matches
 better-sqlite3's synchronous API). It:
+
 1. Creates `__drizzle_migrations` table automatically on first run
 2. Reads `drizzle/meta/_journal.json` for migration ordering
 3. Applies each pending `.sql` file in sequence
 4. Records applied migrations by content hash (not just filename)
 
 Called once at server startup before any routes are registered:
+
 ```typescript
 // apps/server/src/index.ts
 import { createDb, runMigrations } from '@dorkos/db';
@@ -270,11 +275,9 @@ esbuild does not include static files. The build script must copy the
 ```typescript
 // packages/cli/scripts/build.ts — add after Step 2 (server bundle)
 import { cpSync } from 'fs';
-cpSync(
-  path.join(rootDir, 'packages/db/drizzle'),
-  path.join(outDir, 'drizzle'),
-  { recursive: true }
-);
+cpSync(path.join(rootDir, 'packages/db/drizzle'), path.join(outDir, 'drizzle'), {
+  recursive: true,
+});
 ```
 
 At runtime in the bundled CLI, `__dirname` resolves to `dist/server/`, and
@@ -297,11 +300,11 @@ This is implemented as a lefthook pre-commit hook so it runs automatically:
 pre-commit:
   commands:
     db-migrations:
-      glob: "packages/db/src/schema/*.ts"
+      glob: 'packages/db/src/schema/*.ts'
       run: |
         npx drizzle-kit generate --config packages/db/drizzle.config.ts
         git add packages/db/drizzle/
-      fail_text: "DB schema changed — migrations generated and staged. Review and re-commit."
+      fail_text: 'DB schema changed — migrations generated and staged. Review and re-commit.'
 ```
 
 **How lefthook works for all developers:** `lefthook.yml` is committed to git.
@@ -311,6 +314,7 @@ clones the repo gets the hooks automatically — no per-machine manual setup.
 This is identical to Husky's model.
 
 **Turbo task for manual generation:**
+
 ```json
 // turbo.json addition
 "db:generate": {
@@ -328,6 +332,7 @@ Run in CI (check only — fail if stale): `turbo run db:check --filter=@dorkos/d
 Old databases (`pulse.db`, `relay/index.db`, `mesh/mesh.db`) are left in place
 on disk but ignored by the new server. No data migration is performed. All data
 in these databases is ephemeral or rebuildable:
+
 - `pulse_runs` — run history (nice-to-have, not critical)
 - `relay_index` — derived index, fully rebuildable from Maildir
 - `relay_traces` — delivery telemetry
@@ -340,13 +345,13 @@ A one-time startup log message can inform users: "Database migrated to
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Existing user data during upgrade | Fresh start — old DBs ignored | All data is ephemeral or rebuildable. No migration code to write or test. Old files preserved (not deleted) for safety. |
-| 2 | Migration generation enforcement | Lefthook pre-commit hook | `lefthook.yml` is committed to git, so all developers get the hook on `npm install`. Catches stale migrations at commit time, not after push. DorkOS already uses lefthook — no new tooling needed. |
-| 3 | `relay_index` table location | In `packages/db` | Single database, single schema package, single Drizzle instance. Derived nature documented with a comment in schema. `rebuild()` method in SqliteIndex still works by calling Drizzle insert operations. |
-| 4 | Driver | `better-sqlite3` (unchanged) | No Electron app today; native module rebuild is a solved problem. Drizzle + better-sqlite3 keeps sync API, no constructor refactor needed. |
-| 5 | Schema location | `packages/db/src/schema/{pulse,relay,mesh}.ts` | Domain-organized files, one Drizzle config, one migrations folder. Obsidian plugin can import `@dorkos/db` directly if it ever needs DB access. |
+| #   | Decision                          | Choice                                         | Rationale                                                                                                                                                                                                |
+| --- | --------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Existing user data during upgrade | Fresh start — old DBs ignored                  | All data is ephemeral or rebuildable. No migration code to write or test. Old files preserved (not deleted) for safety.                                                                                  |
+| 2   | Migration generation enforcement  | Lefthook pre-commit hook                       | `lefthook.yml` is committed to git, so all developers get the hook on `npm install`. Catches stale migrations at commit time, not after push. DorkOS already uses lefthook — no new tooling needed.      |
+| 3   | `relay_index` table location      | In `packages/db`                               | Single database, single schema package, single Drizzle instance. Derived nature documented with a comment in schema. `rebuild()` method in SqliteIndex still works by calling Drizzle insert operations. |
+| 4   | Driver                            | `better-sqlite3` (unchanged)                   | No Electron app today; native module rebuild is a solved problem. Drizzle + better-sqlite3 keeps sync API, no constructor refactor needed.                                                               |
+| 5   | Schema location                   | `packages/db/src/schema/{pulse,relay,mesh}.ts` | Domain-organized files, one Drizzle config, one migrations folder. Obsidian plugin can import `@dorkos/db` directly if it ever needs DB access.                                                          |
 
 ---
 
@@ -356,6 +361,7 @@ This is a significant refactor touching 8+ source files. Suggested sequence to
 minimize risk:
 
 **Phase 1 — Create `packages/db`**
+
 1. Scaffold the package (`package.json`, `tsconfig.json`, `drizzle.config.ts`)
 2. Write Drizzle schema files (`pulse.ts`, `relay.ts`, `mesh.ts`) with all
    renamed tables/columns from Section 5
@@ -364,6 +370,7 @@ minimize risk:
 5. Wire up lefthook + turbo tasks
 
 **Phase 2 — Migrate Pulse**
+
 1. Rewrite `PulseStore` to use injected `Db` (Drizzle queries replace all
    prepared statements)
 2. Move `pulse_schedules` from JSON → SQLite (remove `schedules.json` read/write)
@@ -371,18 +378,21 @@ minimize risk:
 4. Update Pulse tests to use `createDb(':memory:')` or tmpfile
 
 **Phase 3 — Migrate Relay**
+
 1. Rewrite `SqliteIndex` to use Drizzle queries
 2. Rewrite `TraceStore` to use Drizzle queries
 3. Update `RelayCore` to receive `db` injection instead of `dbPath`
 4. Update Relay tests
 
 **Phase 4 — Migrate Mesh**
+
 1. Move `julianday()` health computation to TypeScript helper
 2. Rewrite `AgentRegistry`, `DenialList`, `BudgetMapper` to use Drizzle queries
 3. Update `MeshCore` to receive `db` injection
 4. Update Mesh tests
 
 **Phase 5 — CLI Bundle**
+
 1. Add migration copy step to `packages/cli/scripts/build.ts`
 2. Verify path resolution in bundled output
 3. Remove `better-sqlite3` from `packages/relay` and `packages/mesh`
@@ -390,4 +400,4 @@ minimize risk:
 
 ---
 
-*Next step: run `/ideate-to-spec` to convert this to a formal specification.*
+_Next step: run `/ideate-to-spec` to convert this to a formal specification._

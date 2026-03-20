@@ -22,8 +22,8 @@ export function InteractiveCard({
   return (
     <div
       className={cn(
-        'border-l-2 border-status-info bg-muted/50 rounded-msg-tool p-3 text-sm transition-all duration-200',
-        isActive && 'ring-2 ring-ring/30',
+        'border-status-info bg-muted/50 rounded-msg-tool border-l-2 p-3 text-sm transition-all duration-200',
+        isActive && 'ring-ring/30 ring-2',
         !isActive && !isResolved && 'opacity-60',
         className
       )}

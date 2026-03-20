@@ -86,53 +86,53 @@ dorkos cleanup                # Remove all DorkOS data
 
 ### Flags
 
-| Flag | Description |
-|---|---|
-| `-p, --port <port>` | Port to listen on (default: 4242) |
-| `-d, --dir <path>` | Working directory |
-| `-b, --boundary <path>` | Directory boundary (default: home directory) |
-| `-t, --tunnel` | Enable ngrok tunnel for remote access |
+| Flag                      | Description                                                    |
+| ------------------------- | -------------------------------------------------------------- |
+| `-p, --port <port>`       | Port to listen on (default: 4242)                              |
+| `-d, --dir <path>`        | Working directory                                              |
+| `-b, --boundary <path>`   | Directory boundary (default: home directory)                   |
+| `-t, --tunnel`            | Enable ngrok tunnel for remote access                          |
 | `-l, --log-level <level>` | Log level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
 
 ### Config Subcommands
 
-| Command | Description |
-|---|---|
-| `dorkos config` | Show all effective settings |
-| `dorkos config get <key>` | Get a single value |
-| `dorkos config set <key> <value>` | Set a single value |
-| `dorkos config list` | Full JSON output |
-| `dorkos config reset [key]` | Reset to defaults |
-| `dorkos config edit` | Open in `$EDITOR` |
-| `dorkos config path` | Print config file location |
-| `dorkos config validate` | Check validity |
+| Command                           | Description                 |
+| --------------------------------- | --------------------------- |
+| `dorkos config`                   | Show all effective settings |
+| `dorkos config get <key>`         | Get a single value          |
+| `dorkos config set <key> <value>` | Set a single value          |
+| `dorkos config list`              | Full JSON output            |
+| `dorkos config reset [key]`       | Reset to defaults           |
+| `dorkos config edit`              | Open in `$EDITOR`           |
+| `dorkos config path`              | Print config file location  |
+| `dorkos config validate`          | Check validity              |
 
 ## Environment Variables
 
 ### Required
 
-| Variable | Description |
-|---|---|
+| Variable            | Description            |
+| ------------------- | ---------------------- |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key |
 
 ### Optional
 
-| Variable | Default | Description |
-|---|---|---|
-| `DORKOS_PORT` | `4242` | Server port |
-| `DORKOS_HOST` | `localhost` | Server host (use `0.0.0.0` for Docker) |
+| Variable             | Default           | Description                            |
+| -------------------- | ----------------- | -------------------------------------- |
+| `DORKOS_PORT`        | `4242`            | Server port                            |
+| `DORKOS_HOST`        | `localhost`       | Server host (use `0.0.0.0` for Docker) |
 | `DORKOS_DEFAULT_CWD` | Current directory | Default working directory for sessions |
-| `DORKOS_BOUNDARY` | Home directory | Directory boundary root |
-| `LOG_LEVEL` | `info` | Log verbosity |
+| `DORKOS_BOUNDARY`    | Home directory    | Directory boundary root                |
+| `LOG_LEVEL`          | `info`            | Log verbosity                          |
 
 ### Remote Access
 
-| Variable | Description |
-|---|---|
-| `TUNNEL_ENABLED` | Set to `true` to enable ngrok tunnel |
-| `NGROK_AUTHTOKEN` | Your ngrok authentication token |
-| `TUNNEL_DOMAIN` | Custom tunnel domain (optional) |
-| `TUNNEL_AUTH` | Basic auth in `user:pass` format (optional) |
+| Variable          | Description                                 |
+| ----------------- | ------------------------------------------- |
+| `TUNNEL_ENABLED`  | Set to `true` to enable ngrok tunnel        |
+| `NGROK_AUTHTOKEN` | Your ngrok authentication token             |
+| `TUNNEL_DOMAIN`   | Custom tunnel domain (optional)             |
+| `TUNNEL_AUTH`     | Basic auth in `user:pass` format (optional) |
 
 ## Docker
 

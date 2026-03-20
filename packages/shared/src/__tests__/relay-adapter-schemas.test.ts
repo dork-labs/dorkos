@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { ConfigFieldSchema, AdapterManifestSchema, SlackAdapterConfigSchema } from '../relay-adapter-schemas.js';
+import {
+  ConfigFieldSchema,
+  AdapterManifestSchema,
+  SlackAdapterConfigSchema,
+} from '../relay-adapter-schemas.js';
 
 describe('ConfigFieldSchema', () => {
   const baseField = {
@@ -125,12 +129,14 @@ describe('AdapterManifestSchema', () => {
     description: 'A test adapter.',
     category: 'messaging' as const,
     builtin: true,
-    configFields: [{
-      key: 'token',
-      label: 'Token',
-      type: 'password' as const,
-      required: true,
-    }],
+    configFields: [
+      {
+        key: 'token',
+        label: 'Token',
+        type: 'password' as const,
+        required: true,
+      },
+    ],
   };
 
   it('accepts manifest without setupGuide (backward compat)', () => {

@@ -19,14 +19,20 @@ interface ScanLineProps {
  * Root is a motion.div so the outer AnimatePresence can animate exit (fade out
  * the entire composite in one pass rather than requiring per-layer exit logic).
  */
-export function ScanLine({ color, isTextStreaming, fadeEdges = true, edge = 'bottom' }: ScanLineProps) {
+export function ScanLine({
+  color,
+  isTextStreaming,
+  fadeEdges = true,
+  edge = 'bottom',
+}: ScanLineProps) {
   const beamDuration = isTextStreaming ? 1.8 : 2.5;
   const edgeMask = fadeEdges
     ? 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)'
     : undefined;
-  const anchorClass = edge === 'top'
-    ? 'pointer-events-none absolute right-0 top-0 left-0'
-    : 'pointer-events-none absolute right-0 bottom-0 left-0';
+  const anchorClass =
+    edge === 'top'
+      ? 'pointer-events-none absolute right-0 top-0 left-0'
+      : 'pointer-events-none absolute right-0 bottom-0 left-0';
   const layerAnchor = edge === 'top' ? 'top' : 'bottom';
 
   return (
@@ -91,7 +97,8 @@ export function ScanLine({ color, isTextStreaming, fadeEdges = true, edge = 'bot
               [layerAnchor]: 0,
               width: '8%',
               height: 1,
-              background: 'linear-gradient(to right, transparent, white 40%, white 60%, transparent)',
+              background:
+                'linear-gradient(to right, transparent, white 40%, white 60%, transparent)',
               willChange: 'transform',
             }}
           />

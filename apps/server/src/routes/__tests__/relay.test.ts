@@ -38,17 +38,19 @@ describe('Relay routes', () => {
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
-      },
+      }
     );
   });
 
   describe('POST /api/relay/messages', () => {
     it('publishes a message and returns result', async () => {
-      const res = await request(app).post('/api/relay/messages').send({
-        subject: 'relay.test.topic',
-        payload: { hello: 'world' },
-        from: 'relay.agent.sender',
-      });
+      const res = await request(app)
+        .post('/api/relay/messages')
+        .send({
+          subject: 'relay.test.topic',
+          payload: { hello: 'world' },
+          from: 'relay.agent.sender',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.messageId).toBe('msg-1');
@@ -56,7 +58,7 @@ describe('Relay routes', () => {
       expect(vi.mocked(relayCore.publish)).toHaveBeenCalledWith(
         'relay.test.topic',
         { hello: 'world' },
-        expect.objectContaining({ from: 'relay.agent.sender' }),
+        expect.objectContaining({ from: 'relay.agent.sender' })
       );
     });
 
@@ -113,7 +115,7 @@ describe('Relay routes', () => {
       await request(app).get('/api/relay/messages?subject=relay.test&status=new&limit=10');
 
       expect(vi.mocked(relayCore.listMessages)).toHaveBeenCalledWith(
-        expect.objectContaining({ subject: 'relay.test', status: 'new', limit: 10 }),
+        expect.objectContaining({ subject: 'relay.test', status: 'new', limit: 10 })
       );
     });
 
@@ -154,7 +156,12 @@ describe('Relay routes', () => {
   describe('GET /api/relay/endpoints', () => {
     it('returns endpoint list', async () => {
       vi.mocked(relayCore.listEndpoints).mockReturnValue([
-        { subject: 'relay.system.console', hash: 'abc', maildirPath: '/tmp/m/abc', registeredAt: '2026-02-24T00:00:00Z' },
+        {
+          subject: 'relay.system.console',
+          hash: 'abc',
+          maildirPath: '/tmp/m/abc',
+          registeredAt: '2026-02-24T00:00:00Z',
+        },
       ]);
 
       const res = await request(app).get('/api/relay/endpoints');
@@ -290,7 +297,7 @@ describe('Relay routes', () => {
       expect(res.body.messages).toHaveLength(1);
       expect(vi.mocked(relayCore.readInbox)).toHaveBeenCalledWith(
         'relay.agent.myns.chat',
-        expect.any(Object),
+        expect.any(Object)
       );
     });
   });
@@ -387,7 +394,12 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
   return {
     listAdapters: vi.fn().mockReturnValue([
       {
-        config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: 'x', mode: 'polling' } },
+        config: {
+          id: 'tg-main',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'x', mode: 'polling' },
+        },
         status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
       },
       {
@@ -406,7 +418,12 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
     getAdapter: vi.fn((id: string) => {
       if (id === 'tg-main') {
         return {
-          config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: 'x', mode: 'polling' } },
+          config: {
+            id: 'tg-main',
+            type: 'telegram',
+            enabled: true,
+            config: { token: 'x', mode: 'polling' },
+          },
           status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
         };
       }
@@ -442,8 +459,17 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
         },
         instances: [
           {
-            config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: '***', mode: 'polling' } },
-            status: { state: 'connected', messageCount: { inbound: 10, outbound: 5 }, errorCount: 0 },
+            config: {
+              id: 'tg-main',
+              type: 'telegram',
+              enabled: true,
+              config: { token: '***', mode: 'polling' },
+            },
+            status: {
+              state: 'connected',
+              messageCount: { inbound: 10, outbound: 5 },
+              errorCount: 0,
+            },
           },
         ],
       },
@@ -470,12 +496,15 @@ describe('Adapter routes', () => {
     app.use(express.json());
     app.use(
       '/api/relay',
-      createRelayRouter(relayCore as unknown as RelayCore, adapterManager as unknown as AdapterManager),
+      createRelayRouter(
+        relayCore as unknown as RelayCore,
+        adapterManager as unknown as AdapterManager
+      )
     );
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
-      },
+      }
     );
   });
 
@@ -614,7 +643,10 @@ describe('Adapter routes', () => {
 
       const mockAdapter = (adapterManager as unknown as { _mockWebhookAdapter: WebhookAdapter })
         ._mockWebhookAdapter;
-      expect(vi.mocked(mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> }).handleInbound).toHaveBeenCalled();
+      expect(
+        vi.mocked(mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> })
+          .handleInbound
+      ).toHaveBeenCalled();
     });
 
     it('returns 404 for unknown webhook adapter', async () => {
@@ -641,8 +673,9 @@ describe('Adapter routes', () => {
     it('returns 401 when signature verification fails', async () => {
       const mockAdapter = (adapterManager as unknown as { _mockWebhookAdapter: WebhookAdapter })
         ._mockWebhookAdapter;
-      vi.mocked(mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> }).handleInbound
-        .mockResolvedValue({ ok: false, error: 'Invalid signature' });
+      vi.mocked(
+        mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> }
+      ).handleInbound.mockResolvedValue({ ok: false, error: 'Invalid signature' });
 
       const res = await request(app)
         .post('/api/relay/webhooks/wh-github')
@@ -658,7 +691,11 @@ describe('Adapter routes', () => {
     it('returns 201 on success', async () => {
       const res = await request(app)
         .post('/api/relay/adapters')
-        .send({ type: 'webhook', id: 'wh-new', config: { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } } });
+        .send({
+          type: 'webhook',
+          id: 'wh-new',
+          config: { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } },
+        });
 
       expect(res.status).toBe(201);
       expect(res.body).toEqual({ ok: true, id: 'wh-new' });
@@ -667,14 +704,12 @@ describe('Adapter routes', () => {
         'wh-new',
         { inbound: { subject: 'relay.webhook.new', secret: 'secret-long-enough' } },
         undefined,
-        undefined,
+        undefined
       );
     });
 
     it('returns 400 when body missing required fields', async () => {
-      const res = await request(app)
-        .post('/api/relay/adapters')
-        .send({ type: 'webhook' });
+      const res = await request(app).post('/api/relay/adapters').send({ type: 'webhook' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -683,7 +718,7 @@ describe('Adapter routes', () => {
 
     it('returns 409 when ID already exists (DUPLICATE_ID)', async () => {
       vi.mocked(adapterManager.addAdapter).mockRejectedValue(
-        new AdapterError("Adapter with ID 'tg-main' already exists", 'DUPLICATE_ID'),
+        new AdapterError("Adapter with ID 'tg-main' already exists", 'DUPLICATE_ID')
       );
 
       const res = await request(app)
@@ -696,7 +731,7 @@ describe('Adapter routes', () => {
 
     it('returns 400 for UNKNOWN_TYPE', async () => {
       vi.mocked(adapterManager.addAdapter).mockRejectedValue(
-        new AdapterError('Unknown adapter type: foobar', 'UNKNOWN_TYPE'),
+        new AdapterError('Unknown adapter type: foobar', 'UNKNOWN_TYPE')
       );
 
       const res = await request(app)
@@ -709,7 +744,10 @@ describe('Adapter routes', () => {
 
     it('returns 400 for MULTI_INSTANCE_DENIED', async () => {
       vi.mocked(adapterManager.addAdapter).mockRejectedValue(
-        new AdapterError("Adapter type 'claude-code' does not support multiple instances", 'MULTI_INSTANCE_DENIED'),
+        new AdapterError(
+          "Adapter type 'claude-code' does not support multiple instances",
+          'MULTI_INSTANCE_DENIED'
+        )
       );
 
       const res = await request(app)
@@ -732,7 +770,7 @@ describe('Adapter routes', () => {
 
     it('returns 404 when not found', async () => {
       vi.mocked(adapterManager.removeAdapter).mockRejectedValue(
-        new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND'),
+        new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND')
       );
 
       const res = await request(app).delete('/api/relay/adapters/nonexistent');
@@ -743,7 +781,7 @@ describe('Adapter routes', () => {
 
     it('returns 400 for built-in claude-code', async () => {
       vi.mocked(adapterManager.removeAdapter).mockRejectedValue(
-        new AdapterError('Cannot remove the built-in claude-code adapter', 'REMOVE_BUILTIN_DENIED'),
+        new AdapterError('Cannot remove the built-in claude-code adapter', 'REMOVE_BUILTIN_DENIED')
       );
 
       const res = await request(app).delete('/api/relay/adapters/claude-code');
@@ -761,15 +799,15 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith(
-        'tg-main',
-        { token: 'new-token', mode: 'webhook' },
-      );
+      expect(vi.mocked(adapterManager.updateConfig)).toHaveBeenCalledWith('tg-main', {
+        token: 'new-token',
+        mode: 'webhook',
+      });
     });
 
     it('returns 404 when not found', async () => {
       vi.mocked(adapterManager.updateConfig).mockRejectedValue(
-        new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND'),
+        new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND')
       );
 
       const res = await request(app)
@@ -781,9 +819,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 400 when config missing', async () => {
-      const res = await request(app)
-        .patch('/api/relay/adapters/tg-main/config')
-        .send({});
+      const res = await request(app).patch('/api/relay/adapters/tg-main/config').send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -799,10 +835,10 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith(
-        'telegram',
-        { token: 'test-token', mode: 'polling' },
-      );
+      expect(vi.mocked(adapterManager.testConnection)).toHaveBeenCalledWith('telegram', {
+        token: 'test-token',
+        mode: 'polling',
+      });
     });
 
     it('returns 200 with { ok: false, error } on failure', async () => {
@@ -820,9 +856,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 400 when body missing required fields', async () => {
-      const res = await request(app)
-        .post('/api/relay/adapters/test')
-        .send({ type: 'telegram' });
+      const res = await request(app).post('/api/relay/adapters/test').send({ type: 'telegram' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -871,11 +905,14 @@ describe('Adapter routes', () => {
         getById: vi.fn((id: string) => (id === 'b-1' ? mockBinding : undefined)),
         create: vi.fn().mockResolvedValue(mockBinding),
         delete: vi.fn().mockResolvedValue(true),
-        update: vi.fn().mockImplementation(
-          (id: string, updates: Record<string, unknown>) =>
-            id === 'b-1'
-              ? Promise.resolve({ ...mockBinding, ...updates, updatedAt: '2026-01-02T00:00:00.000Z' })
-              : Promise.resolve(undefined),
+        update: vi.fn().mockImplementation((id: string, updates: Record<string, unknown>) =>
+          id === 'b-1'
+            ? Promise.resolve({
+                ...mockBinding,
+                ...updates,
+                updatedAt: '2026-01-02T00:00:00.000Z',
+              })
+            : Promise.resolve(undefined)
         ),
       };
     }
@@ -1044,8 +1081,20 @@ describe('Observed chats route', () => {
   it('returns aggregated chats from trace data', () => {
     const mockTraceStore = {
       getObservedChats: vi.fn().mockReturnValue([
-        { chatId: '111', displayName: 'Alice', channelType: 'dm', lastMessageAt: '2026-03-10T12:00:00.000Z', messageCount: 2 },
-        { chatId: '222', displayName: 'Dev Team', channelType: 'group', lastMessageAt: '2026-03-10T11:00:00.000Z', messageCount: 1 },
+        {
+          chatId: '111',
+          displayName: 'Alice',
+          channelType: 'dm',
+          lastMessageAt: '2026-03-10T12:00:00.000Z',
+          messageCount: 2,
+        },
+        {
+          chatId: '222',
+          displayName: 'Dev Team',
+          channelType: 'group',
+          lastMessageAt: '2026-03-10T11:00:00.000Z',
+          messageCount: 1,
+        },
       ]),
       getSpanByMessageId: vi.fn(),
       getTrace: vi.fn(),
@@ -1057,8 +1106,8 @@ describe('Observed chats route', () => {
       createRelayRouter(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
-        mockTraceStore as never,
-      ),
+        mockTraceStore as never
+      )
     );
 
     return request(app)
@@ -1086,8 +1135,8 @@ describe('Observed chats route', () => {
       createRelayRouter(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
-        mockTraceStore as never,
-      ),
+        mockTraceStore as never
+      )
     );
 
     return request(app)
@@ -1111,8 +1160,8 @@ describe('Observed chats route', () => {
       createRelayRouter(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
-        mockTraceStore as never,
-      ),
+        mockTraceStore as never
+      )
     );
 
     return request(app)
@@ -1136,8 +1185,8 @@ describe('Observed chats route', () => {
       createRelayRouter(
         relayCore as unknown as RelayCore,
         adapterManager as unknown as AdapterManager,
-        mockTraceStore as never,
-      ),
+        mockTraceStore as never
+      )
     );
 
     return request(app)
@@ -1154,8 +1203,8 @@ describe('Observed chats route', () => {
       '/api/relay',
       createRelayRouter(
         relayCore as unknown as RelayCore,
-        adapterManager as unknown as AdapterManager,
-      ),
+        adapterManager as unknown as AdapterManager
+      )
     );
 
     return request(app)
@@ -1170,8 +1219,18 @@ describe('Observed chats route', () => {
 describe('buildConversations', () => {
   it('uses Map for O(1) dead-letter lookup and builds conversations', () => {
     const messages = [
-      { id: 'msg-1', subject: 'relay.agent.session-abc', status: 'failed', createdAt: '2026-01-01T00:00:00Z' },
-      { id: 'msg-2', subject: 'relay.human.console.client-1', status: 'delivered', createdAt: '2026-01-01T00:01:00Z' },
+      {
+        id: 'msg-1',
+        subject: 'relay.agent.session-abc',
+        status: 'failed',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'msg-2',
+        subject: 'relay.human.console.client-1',
+        status: 'delivered',
+        createdAt: '2026-01-01T00:01:00Z',
+      },
     ];
 
     const deadLetters: DeadLetterEntry[] = [
@@ -1194,7 +1253,10 @@ describe('buildConversations', () => {
 
     const labelMap = new Map([
       ['relay.agent.session-abc', { label: 'Agent session-abc', raw: 'relay.agent.session-abc' }],
-      ['relay.human.console.client-1', { label: 'Console client-1', raw: 'relay.human.console.client-1' }],
+      [
+        'relay.human.console.client-1',
+        { label: 'Console client-1', raw: 'relay.human.console.client-1' },
+      ],
     ]);
 
     const conversations = buildConversations(messages, deadLetters, labelMap);
@@ -1215,7 +1277,12 @@ describe('buildConversations', () => {
 
   it('returns empty array when no request messages exist', () => {
     const messages = [
-      { id: 'msg-1', subject: 'relay.human.console.client-1', status: 'delivered', createdAt: '2026-01-01T00:00:00Z' },
+      {
+        id: 'msg-1',
+        subject: 'relay.human.console.client-1',
+        status: 'delivered',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
     ];
     const conversations = buildConversations(messages, [], new Map());
     expect(conversations).toHaveLength(0);
@@ -1223,7 +1290,12 @@ describe('buildConversations', () => {
 
   it('handles messages without dead letters gracefully', () => {
     const messages = [
-      { id: 'msg-1', subject: 'relay.agent.session-1', status: 'delivered', createdAt: '2026-01-01T00:00:00Z' },
+      {
+        id: 'msg-1',
+        subject: 'relay.agent.session-1',
+        status: 'delivered',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
     ];
     const conversations = buildConversations(messages, [], new Map());
     expect(conversations).toHaveLength(1);
@@ -1234,7 +1306,12 @@ describe('buildConversations', () => {
 
   it('infers from subject for system pulse messages', () => {
     const messages = [
-      { id: 'msg-1', subject: 'relay.system.pulse.sched-1', status: 'delivered', createdAt: '2026-01-01T00:00:00Z' },
+      {
+        id: 'msg-1',
+        subject: 'relay.system.pulse.sched-1',
+        status: 'delivered',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
     ];
     const conversations = buildConversations(messages, [], new Map());
     expect(conversations).toHaveLength(1);

@@ -1,5 +1,5 @@
 ---
-title: "PGlite: Sharing a Single Instance Across Multiple Consumers"
+title: 'PGlite: Sharing a Single Instance Across Multiple Consumers'
 date: 2026-02-25
 type: exploratory
 status: archived
@@ -45,15 +45,20 @@ The constraint is not a bug or a missing feature — it is structural. PostgreSQ
 **Does it work in Node.js?** No. It relies on the Web Workers API (browser-exclusive). Node.js Worker Threads exist but are fundamentally different. No adapter for Node.js worker threads exists in the official packages or community.
 
 Usage:
+
 ```ts
 // worker.js
-import { PGlite } from '@electric-sql/pglite'
-import { worker } from '@electric-sql/pglite/worker'
-worker({ async init() { return new PGlite() } })
+import { PGlite } from '@electric-sql/pglite';
+import { worker } from '@electric-sql/pglite/worker';
+worker({
+  async init() {
+    return new PGlite();
+  },
+});
 
 // main.ts
-import { PGliteWorker } from '@electric-sql/pglite/worker'
-const pg = new PGliteWorker(new Worker('./worker.js', { type: 'module' }))
+import { PGliteWorker } from '@electric-sql/pglite/worker';
+const pg = new PGliteWorker(new Worker('./worker.js', { type: 'module' }));
 ```
 
 ### 3. `@electric-sql/pglite-socket` — Official TCP Server, Node.js, Single Client Only
@@ -63,25 +68,29 @@ const pg = new PGliteWorker(new Worker('./worker.js', { type: 'module' }))
 This is a first-party package in the electric-sql monorepo. It wraps Node.js `net` module to expose PGlite as a Postgres TCP server.
 
 **Classes:**
+
 - `PGLiteSocketServer` — TCP server accepting Postgres connections
 - `PGLiteSocketHandler` — Low-level handler for a single socket connection
 
 **Hard constraint:** "As PGlite is a single-connection database, it is not possible to have multiple simultaneous connections open." The socket server enforces an exclusive lock — while one client is attached, other connections are blocked and direct `db.query()` calls will also be blocked.
 
 **CLI:**
+
 ```bash
 npx pglite-server --db ./mydb --port 5432 --run 'npm run dev' --include-database-url
 ```
+
 The `--run` flag spawns a subprocess and injects `DATABASE_URL` so any app that reads that env var gets a standard Postgres connection string pointing at the PGlite server. The server shuts down when the subprocess exits.
 
 **API:**
-```ts
-import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
-import { PGlite } from '@electric-sql/pglite'
 
-const db = new PGlite('./mydb')
-const server = new PGLiteSocketServer({ db, port: 5432, host: '127.0.0.1' })
-await server.start()
+```ts
+import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
+import { PGlite } from '@electric-sql/pglite';
+
+const db = new PGlite('./mydb');
+const server = new PGLiteSocketServer({ db, port: 5432, host: '127.0.0.1' });
+await server.start();
 // also supports Unix socket via `path` option
 ```
 
@@ -96,9 +105,9 @@ await server.start()
 A community-built TCP server that intercepts `SSLRequest` and `StartupMessage` messages to fake authentication, then tunnels remaining Postgres wire protocol directly to a PGlite instance.
 
 ```ts
-import { createServer } from 'pglite-server'
-const pgServer = createServer(db, { logLevel: LogLevel.Debug })
-pgServer.listen(5432)
+import { createServer } from 'pglite-server';
+const pgServer = createServer(db, { logLevel: LogLevel.Debug });
+pgServer.listen(5432);
 ```
 
 The author explicitly recommends `pg-gateway` (Supabase) as the more production-worthy alternative. This project is a learning exercise more than a production tool.
@@ -112,6 +121,7 @@ The author explicitly recommends `pg-gateway` (Supabase) as the more production-
 **PGlite integration pattern:** Handle startup/auth yourself in `pg-gateway` hooks, then use `onMessage()` to forward raw wire protocol messages to PGlite via `connection.sendData()`.
 
 **Key features:**
+
 - Auth modes: `none`, `cleartextPassword`, `md5Password`, `certificate`
 - TLS/SSL with SNI routing (this is how Supabase's `database.build` "Live Share" feature routes browser PGlite instances to external `psql` clients)
 - `detach()` method for taking full socket control
@@ -130,21 +140,23 @@ The author explicitly recommends `pg-gateway` (Supabase) as the more production-
 This package provides a `pg`-compatible adapter that lets you create multiple `Client` and `Pool` instances from the `pg` npm package that all route to the same underlying PGlite instance. All serialization happens in-process.
 
 **Key stats from benchmarks:**
+
 - 80.7% faster than using separate PGlite instances
 - 69.9% memory savings over separate instances
 
 **Pattern:**
-```ts
-import { PGlite } from '@electric-sql/pglite'
-import { createPool } from '@middle-management/pglite-pg-adapter'
 
-const db = new PGlite()
-const pool = createPool(db, { max: 10 })
+```ts
+import { PGlite } from '@electric-sql/pglite';
+import { createPool } from '@middle-management/pglite-pg-adapter';
+
+const db = new PGlite();
+const pool = createPool(db, { max: 10 });
 
 // Now use pool like normal node-postgres
-const client = await pool.connect()
-await client.query('SELECT 1')
-client.release()
+const client = await pool.connect();
+await client.query('SELECT 1');
+client.release();
 ```
 
 **Limitation:** This only works within a single Node.js process. It does not help with multi-process scenarios (e.g., two separate Node.js processes sharing one DB).
@@ -212,6 +224,7 @@ Build a custom TCP server with `pg-gateway` that queues incoming connections, fo
 Run PGlite in a dedicated `worker_threads` Worker. Other threads send query requests over `MessageChannel` and receive results. This is the Node.js equivalent of `PGliteWorker` (which does this for browser Web Workers).
 
 **No existing library does this.** The browser `PGliteWorker` package cannot be used in Node.js because it depends on the Web Workers API. Building this would require:
+
 1. A worker thread that creates and owns the PGlite instance
 2. A message protocol for query/result/transaction exchange
 3. An adapter that presents a `pg`-compatible interface to callers
@@ -232,16 +245,16 @@ This is theoretically sound but would need to be built from scratch. The electri
 
 ## Existing Projects Summary Table
 
-| Project | Type | Node.js | Multi-Consumer | Maturity | Source |
-|---|---|---|---|---|---|
-| `@electric-sql/pglite-socket` | Official TCP server | Yes | No (serial, 1 at a time) | Stable (official) | https://pglite.dev/docs/pglite-socket |
-| `PGliteWorker` | Browser multi-tab worker | No (browser only) | Yes (proxied through leader) | Stable (official) | https://pglite.dev/docs/multi-tab-worker |
-| `@middle-management/pglite-pg-adapter` | In-process `pg` adapter | Yes | Yes (same process only) | Community, unknown | https://www.npmjs.com/package/@middle-management/pglite-pg-adapter |
-| `pg-gateway` | Postgres wire protocol server | Yes | No (serial) | Pre-1.0, active | https://github.com/supabase-community/pg-gateway |
-| `kamilogorek/pglite-server` | TCP wire protocol server | Bun-first | No (serial) | Experimental/spare-time | https://github.com/kamilogorek/pglite-server |
-| `ben-pr-p/pglite-pool` | Test helper + ephemeral pool | Yes (+ Bun) | No (wraps pglite-server) | Community, limited scope | https://github.com/ben-pr-p/pglite-pool |
-| PGlite `live` extension | Reactive queries | Yes | Yes (within one process) | Stable (official) | https://pglite.dev/docs/ |
-| Supabase Live Share | Browser-to-psql tunnel | Browser + proxy | No (1 client at a time) | Production but specialized | https://supabase.com/blog/database-build-live-share |
+| Project                                | Type                          | Node.js           | Multi-Consumer               | Maturity                   | Source                                                             |
+| -------------------------------------- | ----------------------------- | ----------------- | ---------------------------- | -------------------------- | ------------------------------------------------------------------ |
+| `@electric-sql/pglite-socket`          | Official TCP server           | Yes               | No (serial, 1 at a time)     | Stable (official)          | https://pglite.dev/docs/pglite-socket                              |
+| `PGliteWorker`                         | Browser multi-tab worker      | No (browser only) | Yes (proxied through leader) | Stable (official)          | https://pglite.dev/docs/multi-tab-worker                           |
+| `@middle-management/pglite-pg-adapter` | In-process `pg` adapter       | Yes               | Yes (same process only)      | Community, unknown         | https://www.npmjs.com/package/@middle-management/pglite-pg-adapter |
+| `pg-gateway`                           | Postgres wire protocol server | Yes               | No (serial)                  | Pre-1.0, active            | https://github.com/supabase-community/pg-gateway                   |
+| `kamilogorek/pglite-server`            | TCP wire protocol server      | Bun-first         | No (serial)                  | Experimental/spare-time    | https://github.com/kamilogorek/pglite-server                       |
+| `ben-pr-p/pglite-pool`                 | Test helper + ephemeral pool  | Yes (+ Bun)       | No (wraps pglite-server)     | Community, limited scope   | https://github.com/ben-pr-p/pglite-pool                            |
+| PGlite `live` extension                | Reactive queries              | Yes               | Yes (within one process)     | Stable (official)          | https://pglite.dev/docs/                                           |
+| Supabase Live Share                    | Browser-to-psql tunnel        | Browser + proxy   | No (1 client at a time)      | Production but specialized | https://supabase.com/blog/database-build-live-share                |
 
 ---
 

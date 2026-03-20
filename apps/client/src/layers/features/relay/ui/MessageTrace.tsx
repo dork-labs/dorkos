@@ -39,15 +39,11 @@ export function MessageTrace({ messageId, onClose }: MessageTraceProps) {
   const { data, isLoading, error } = useMessageTrace(messageId);
 
   if (isLoading) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">Loading trace...</div>
-    );
+    return <div className="text-muted-foreground p-4 text-sm">Loading trace...</div>;
   }
 
   if (error || !data) {
-    return (
-      <div className="p-4 text-sm text-destructive">Failed to load trace.</div>
-    );
+    return <div className="text-destructive p-4 text-sm">Failed to load trace.</div>;
   }
 
   const { traceId, spans } = data;
@@ -55,55 +51,43 @@ export function MessageTrace({ messageId, onClose }: MessageTraceProps) {
   return (
     <div className="flex flex-col gap-2 p-4">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="text-muted-foreground font-mono text-xs">
           Trace: {traceId.slice(0, 8)}...
         </span>
         {onClose && (
-          <button
-            onClick={onClose}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">
             Close
           </button>
         )}
       </div>
 
-      <div className="relative ml-3 border-l border-border pl-6">
+      <div className="border-border relative ml-3 border-l pl-6">
         {spans.map((span) => {
           const deliveryLatency = latencyLabel(span.sentAt, span.deliveredAt);
-          const processingLatency = latencyLabel(
-            span.deliveredAt,
-            span.processedAt,
-          );
+          const processingLatency = latencyLabel(span.deliveredAt, span.processedAt);
 
           return (
             <div key={span.id} className="relative pb-4 last:pb-0">
               {/* Timeline dot */}
               <div
-                className={`absolute -left-[calc(1.5rem+0.3125rem)] top-1 h-2.5 w-2.5 rounded-full ${statusColor(span.status)}`}
+                className={`absolute top-1 -left-[calc(1.5rem+0.3125rem)] h-2.5 w-2.5 rounded-full ${statusColor(span.status)}`}
               />
 
               {/* Span content */}
               <div className="flex flex-col gap-0.5">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">{span.subject}</span>
-                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                    {span.status}
-                  </span>
+                  <span className="bg-muted rounded px-1.5 py-0.5 text-xs">{span.status}</span>
                 </div>
 
-                <div className="flex gap-3 text-xs text-muted-foreground">
+                <div className="text-muted-foreground flex gap-3 text-xs">
                   <span>Sent: {formatTime(span.sentAt)}</span>
-                  {deliveryLatency && (
-                    <span>Delivery: {deliveryLatency}</span>
-                  )}
-                  {processingLatency && (
-                    <span>Processing: {processingLatency}</span>
-                  )}
+                  {deliveryLatency && <span>Delivery: {deliveryLatency}</span>}
+                  {processingLatency && <span>Processing: {processingLatency}</span>}
                 </div>
 
                 {span.errorMessage && (
-                  <div className="mt-1 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                  <div className="bg-destructive/10 text-destructive mt-1 rounded px-2 py-1 text-xs">
                     {span.errorMessage}
                   </div>
                 )}

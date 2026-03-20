@@ -20,17 +20,18 @@ import { CompactPendingRow } from '../primitives';
  * If autoHide is enabled, tool calls that were already complete on mount are hidden immediately.
  * Tool calls that transition to complete are hidden after TIMING.TOOL_CALL_AUTO_HIDE_MS.
  */
-function useToolCallVisibility(
-  status: string,
-  autoHide: boolean,
-  hasFailedHook: boolean
-): boolean {
+function useToolCallVisibility(status: string, autoHide: boolean, hasFailedHook: boolean): boolean {
   const initialStatusRef = useRef(status);
   // eslint-disable-next-line react-hooks/refs -- Intentional: useState initializer runs once on mount
   const [visible, setVisible] = useState(!(autoHide && initialStatusRef.current === 'complete'));
 
   useEffect(() => {
-    if (autoHide && status === 'complete' && initialStatusRef.current !== 'complete' && !hasFailedHook) {
+    if (
+      autoHide &&
+      status === 'complete' &&
+      initialStatusRef.current !== 'complete' &&
+      !hasFailedHook
+    ) {
       const timer = setTimeout(() => setVisible(false), TIMING.TOOL_CALL_AUTO_HIDE_MS);
       return () => clearTimeout(timer);
     }
@@ -100,8 +101,17 @@ function AutoHideToolCall({
  * Reads session/interaction state from MessageContext instead of props.
  */
 export function AssistantMessageContent({ message }: { message: ChatMessage }) {
-  const { sessionId, isStreaming, activeToolCallId, onToolRef, focusedOptionIndex, onToolDecided, onRetry, inputZoneToolCallId, textEffect } =
-    useMessageContext();
+  const {
+    sessionId,
+    isStreaming,
+    activeToolCallId,
+    onToolRef,
+    focusedOptionIndex,
+    onToolDecided,
+    onRetry,
+    inputZoneToolCallId,
+    textEffect,
+  } = useMessageContext();
   const { expandToolCalls, autoHideToolCalls } = useAppStore();
   const parts = message.parts ?? [];
 
@@ -133,7 +143,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
       {parts.map((part, i) => {
         if (part.type === 'text') {
           return (
-            <div key={(part as { _partId?: string })._partId ?? `text-${i}`} className="msg-assistant">
+            <div
+              key={(part as { _partId?: string })._partId ?? `text-${i}`}
+              className="msg-assistant"
+            >
               <StreamingText
                 content={part.text}
                 isStreaming={isStreaming && i === lastTextPartIndex}

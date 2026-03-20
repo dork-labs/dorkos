@@ -1,9 +1,19 @@
 ---
-title: "AgentRuntime Interface Design Patterns: SseResponse, watchSession, Cross-Package DI, Shim Removal"
+title: 'AgentRuntime Interface Design Patterns: SseResponse, watchSession, Cross-Package DI, Shim Removal'
 date: 2026-03-06
 type: internal-architecture
 status: active
-tags: [agent-runtime, interface-design, hexagonal-architecture, dependency-injection, sse, observer-pattern, typescript, monorepo]
+tags:
+  [
+    agent-runtime,
+    interface-design,
+    hexagonal-architecture,
+    dependency-injection,
+    sse,
+    observer-pattern,
+    typescript,
+    monorepo,
+  ]
 feature_slug: agent-runtime-review-remediation
 searches_performed: 12
 sources_count: 22
@@ -164,12 +174,12 @@ framework coupling in shared modules.
 
 #### Approaches Considered
 
-| Approach | Pros | Cons |
-|---|---|---|
-| **Expand `SseResponse` to `on(event: 'close', cb: () => void): void`** (recommended) | Eliminates cast, expresses intent, framework-agnostic | Slightly breaking change for any mocks that pass `on(event: string, ...)` |
-| Keep `SseResponse = { on(event: string, ...) }` and update `SessionLockManager` to accept it | No interface change | Still too broad — doesn't express the domain requirement |
-| Move `SessionLockManager` to accept `Express.Response` directly | Simple | Couples `session-lock.ts` to Express — defeats the purpose of the interface |
-| Use a union type `SseResponse = Pick<Response, 'on'>` | Concise | Still brings Express into `@dorkos/shared` |
+| Approach                                                                                     | Pros                                                  | Cons                                                                        |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Expand `SseResponse` to `on(event: 'close', cb: () => void): void`** (recommended)         | Eliminates cast, expresses intent, framework-agnostic | Slightly breaking change for any mocks that pass `on(event: string, ...)`   |
+| Keep `SseResponse = { on(event: string, ...) }` and update `SessionLockManager` to accept it | No interface change                                   | Still too broad — doesn't express the domain requirement                    |
+| Move `SessionLockManager` to accept `Express.Response` directly                              | Simple                                                | Couples `session-lock.ts` to Express — defeats the purpose of the interface |
+| Use a union type `SseResponse = Pick<Response, 'on'>`                                        | Concise                                               | Still brings Express into `@dorkos/shared`                                  |
 
 **Recommendation**: Narrow `SseResponse` to `on(event: 'close', cb: () => void): void` and update
 `SessionLockManager` to accept `SseResponse`. Eliminates the cast and makes the interface's purpose
@@ -208,6 +218,7 @@ for change notification is:
 3. Never expose the underlying implementation (`FileSystemWatcher` internals are not public)
 
 The `FileSystemWatcher` pattern:
+
 ```typescript
 // vscode API — never exposes internal chokidar watcher
 interface FileSystemWatcher extends Disposable {
@@ -217,12 +228,13 @@ interface FileSystemWatcher extends Disposable {
 }
 // Usage
 const watcher = workspace.createFileSystemWatcher('**/*.ts');
-const subscription = watcher.onDidChange(uri => handleChange(uri));
+const subscription = watcher.onDidChange((uri) => handleChange(uri));
 // Later:
 subscription.dispose(); // unsubscribe
 ```
 
 The DorkOS equivalent should look like:
+
 ```typescript
 // On AgentRuntime interface
 watchSession(
@@ -332,10 +344,12 @@ satisfy these ports via TypeScript's structural typing — no explicit `implemen
 **Step 1: Identify what `ClaudeCodeRuntime` actually calls**
 
 From `context-builder.ts` and MCP tools, `ClaudeCodeRuntime` calls on MeshCore:
+
 - `meshCore.getRegisteredAgents()` — get peer agents
 - `meshCore.getAgent(agentId)` — resolve agent manifest
 
 From relay integration, `ClaudeCodeRuntime` calls on RelayCore:
+
 - `relayCore.publish(subject, payload)` — publish messages
 - `relayCore.subscribe(subject, handler)` — subscribe to subjects
 
@@ -409,7 +423,7 @@ compatibility structurally without any explicit casts:
 ```typescript
 // index.ts — no cast needed, structural compatibility is checked
 claudeRuntime.setMeshCore(meshCore); // MeshCore satisfies AgentRegistryPort structurally
-claudeRuntime.setRelay(relayCore);   // RelayCore satisfies RelayPort structurally
+claudeRuntime.setRelay(relayCore); // RelayCore satisfies RelayPort structurally
 ```
 
 If `MeshCore` adds or changes methods, the port interface is unaffected. If `ClaudeCodeRuntime`
@@ -429,13 +443,13 @@ No circular import. `@dorkos/shared` does not import from `@dorkos/mesh` or `@do
 
 #### Approaches Considered
 
-| Approach | Pros | Cons |
-|---|---|---|
-| **Narrow port interfaces in `@dorkos/shared`** (recommended) | Type-safe, no circular deps, structural compatibility is automatic | Requires identifying exact API surface; ports must be maintained |
-| `unknown` with runtime type guards in implementations | No interface changes needed | Zero type safety, casts required internally, no IDE support |
-| Generic type parameters `setMeshCore?<T>(meshCore: T): void` | Avoids naming the type | Provides no safety guarantee — caller can pass anything |
-| Move `AgentRuntime` to `apps/server` and import MeshCore directly | Full type safety, simple | Breaks the shared abstraction — client can't use `AgentRuntime` type |
-| `interface` with `import type` from the concrete package | Full API surface, type-safe | Creates `@dorkos/shared → @dorkos/mesh` dependency (circular) |
+| Approach                                                          | Pros                                                               | Cons                                                                 |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| **Narrow port interfaces in `@dorkos/shared`** (recommended)      | Type-safe, no circular deps, structural compatibility is automatic | Requires identifying exact API surface; ports must be maintained     |
+| `unknown` with runtime type guards in implementations             | No interface changes needed                                        | Zero type safety, casts required internally, no IDE support          |
+| Generic type parameters `setMeshCore?<T>(meshCore: T): void`      | Avoids naming the type                                             | Provides no safety guarantee — caller can pass anything              |
+| Move `AgentRuntime` to `apps/server` and import MeshCore directly | Full type safety, simple                                           | Breaks the shared abstraction — client can't use `AgentRuntime` type |
+| `interface` with `import type` from the concrete package          | Full API surface, type-safe                                        | Creates `@dorkos/shared → @dorkos/mesh` dependency (circular)        |
 
 **Recommendation**: Define narrow port interfaces in `@dorkos/shared`. The total API surface that
 `ClaudeCodeRuntime` needs from `MeshCore` is small (2-4 methods). Defining a port interface for

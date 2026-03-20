@@ -11,10 +11,10 @@ interface TopologyEmptyStateProps {
 export function TopologyEmptyState({ onGoToDiscovery }: TopologyEmptyStateProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <Globe className="size-10 text-muted-foreground/50" />
+      <Globe className="text-muted-foreground/50 size-10" />
       <div>
         <h3 className="text-sm font-medium">No agents discovered yet</h3>
-        <p className="mt-1 max-w-[240px] text-xs text-muted-foreground">
+        <p className="text-muted-foreground mt-1 max-w-[240px] text-xs">
           Discover agents from your workspace to see them on the topology graph.
         </p>
       </div>
@@ -22,7 +22,7 @@ export function TopologyEmptyState({ onGoToDiscovery }: TopologyEmptyStateProps)
         <button
           type="button"
           onClick={onGoToDiscovery}
-          className="mt-1 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          className="hover:bg-muted mt-1 rounded-md border px-3 py-1.5 text-xs font-medium"
         >
           Go to Discovery
         </button>

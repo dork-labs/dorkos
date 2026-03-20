@@ -25,12 +25,12 @@ import type { StreamEvent } from '@dorkos/shared/types';
 export interface AgentRuntimeLike {
   ensureSession(
     sessionId: string,
-    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean },
+    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean }
   ): void;
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: string; cwd?: string; systemPromptAppend?: string },
+    opts?: { permissionMode?: string; cwd?: string; systemPromptAppend?: string }
   ): AsyncGenerator<StreamEvent>;
   /**
    * Get the SDK-assigned session UUID for a given session key.

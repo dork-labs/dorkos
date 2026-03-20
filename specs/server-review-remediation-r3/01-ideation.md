@@ -48,6 +48,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `middleware/error-handler.ts` — Global Express error handler (C1)
 - `routes/sessions.ts` — Session CRUD + SSE streaming (C2, I5, M1, M2)
 - `routes/config.ts` — Config GET/PATCH with deepMerge (I4)
@@ -61,6 +62,7 @@ status: ideation
 - `index.ts` — Server bootstrap with config reading (M4)
 
 **Shared dependencies:**
+
 - `lib/boundary.ts` — assertBoundary() used by routes
 - `config/constants.ts` — Shared constants
 - `@dorkos/shared/types` — Zod schemas and types
@@ -69,10 +71,12 @@ status: ideation
 Client request → Express route → assertBoundary → service → response
 
 **Feature flags/config:**
+
 - `env.NODE_ENV` — controls error handler behavior (C1)
 - `env.DORKOS_DEFAULT_CWD` — vault root fallback (I7)
 
 **Potential blast radius:**
+
 - Direct: 11 files modified, 8+ new files created (C3/C4 splits)
 - Indirect: Client may need to handle new 400/429 responses from M2/I5
 - Tests: 4+ new test files for security-critical paths
@@ -80,6 +84,7 @@ Client request → Express route → assertBoundary → service → response
 ## 4) Root Cause Analysis
 
 This is a remediation of accumulated technical debt, not a single bug. Root causes:
+
 - **Security gaps**: Routes added incrementally without consistent boundary validation
 - **Growth without refactoring**: mcp-tool-server.ts and adapter-manager.ts grew organically as features were added
 - **Missing production hardening**: Error handler, deepMerge, SSE limits were written for development convenience
@@ -89,6 +94,7 @@ This is a remediation of accumulated technical debt, not a single bug. Root caus
 ### Potential Solutions
 
 **1. Inline fixes (per-finding targeted changes)**
+
 - Description: Fix each finding individually with minimal code changes
 - Pros: Minimal blast radius, easy to review, fast
 - Cons: Doesn't address structural patterns that led to the issues
@@ -96,6 +102,7 @@ This is a remediation of accumulated technical debt, not a single bug. Root caus
 - Maintenance: Low
 
 **2. Extract shared utilities + inline fixes**
+
 - Description: Create lib/resolve-root.ts, lib/route-utils.ts, standardize patterns, then fix findings
 - Pros: Prevents future recurrence, DRY, establishes patterns
 - Cons: Slightly more files to review
@@ -117,8 +124,8 @@ This is a remediation of accumulated technical debt, not a single bug. Root caus
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Auth/rate limiting scope | Defer to separate spec | I3 is a feature, not a bugfix. This spec focuses on 18 actionable fixes. I8 also deferred since it depends on auth. |
-| 2 | Test scope for refactors | Existing tests + new security tests | Write tests for C1, C2, I4, M2 (security-critical). Skip tests for pure refactors (C3, C4) — just ensure existing tests pass. |
-| 3 | Session cap implementation | Simple Map size check | No new dependency. MAX_SESSIONS constant + check in ensureSession(). 30-min health check already handles cleanup. |
+| #   | Decision                   | Choice                              | Rationale                                                                                                                     |
+| --- | -------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Auth/rate limiting scope   | Defer to separate spec              | I3 is a feature, not a bugfix. This spec focuses on 18 actionable fixes. I8 also deferred since it depends on auth.           |
+| 2   | Test scope for refactors   | Existing tests + new security tests | Write tests for C1, C2, I4, M2 (security-critical). Skip tests for pure refactors (C3, C4) — just ensure existing tests pass. |
+| 3   | Session cap implementation | Simple Map size check               | No new dependency. MAX_SESSIONS constant + check in ensureSession(). 30-min health check already handles cleanup.             |

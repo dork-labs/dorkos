@@ -1,5 +1,5 @@
 ---
-title: "Pulse Scheduler — Design Research"
+title: 'Pulse Scheduler — Design Research'
 date: 2026-02-18
 type: internal-architecture
 status: active
@@ -47,8 +47,8 @@ WAL (Write-Ahead Logging) allows reads and writes to proceed concurrently withou
 
 ```typescript
 db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');   // safe with WAL; faster than FULL
-db.pragma('busy_timeout = 5000');    // retry for 5s before throwing SQLITE_BUSY
+db.pragma('synchronous = NORMAL'); // safe with WAL; faster than FULL
+db.pragma('busy_timeout = 5000'); // retry for 5s before throwing SQLITE_BUSY
 db.pragma('foreign_keys = ON');
 ```
 
@@ -66,7 +66,9 @@ setInterval(() => {
     if (stat.size > WAL_SIZE_LIMIT) {
       db.pragma('wal_checkpoint(RESTART)');
     }
-  } catch { /* WAL file may not exist yet */ }
+  } catch {
+    /* WAL file may not exist yet */
+  }
 }, 30_000);
 ```
 
@@ -100,6 +102,7 @@ db.pragma(`user_version = ${CURRENT_VERSION}`);
 Each migration should be wrapped in `BEGIN IMMEDIATE` / `COMMIT` and be idempotent (use `IF NOT EXISTS`).
 
 Libraries worth evaluating:
+
 - `@blackglory/better-sqlite3-migrations` — Minimal, uses `user_version` directly
 - `better-sqlite3-helper` — Includes `-- Up` / `-- Down` syntax in SQL files
 
@@ -110,8 +113,14 @@ Use a thin custom migration runner (30 lines of TypeScript) rather than a librar
 Singleton pattern: one `Database` instance per process, opened once at server startup, never closed until SIGTERM/SIGINT. Register a graceful shutdown handler:
 
 ```typescript
-process.on('SIGINT', () => { db.close(); process.exit(0); });
-process.on('SIGTERM', () => { db.close(); process.exit(0); });
+process.on('SIGINT', () => {
+  db.close();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  db.close();
+  process.exit(0);
+});
 ```
 
 **Proposed schema:**
@@ -190,6 +199,7 @@ Users type "every weekday at 9am" and the UI parses it to `0 9 * * 1-5` and show
 **Tier 2 — Visual Tab Builder**
 
 A five-tab or segmented control UI (Minute / Hour / Day of Month / Month / Day of Week) where each field has radio options:
+
 - Every [unit]
 - Every N [units]
 - Specific [units] (checkboxes/multi-select)
@@ -263,7 +273,9 @@ activeRuns.set(runId, controller);
 try {
   for await (const event of query({
     prompt: job.prompt,
-    options: { /* ... */ },
+    options: {
+      /* ... */
+    },
     signal,
   })) {
     // handle events
@@ -332,6 +344,7 @@ On SIGTERM, stop accepting new jobs, wait for running jobs to complete (with a 3
 #### Recommendation for DorkOS
 
 Maintain an `activeRuns: Map<string, AbortController>` in the `PulseScheduler` service. The service owns:
+
 - Croner job registration (`Cron` instances keyed by job ID)
 - Run lifecycle (create run row, update status, write logs)
 - Cancellation (expose `cancelRun(runId)` which calls `controller.abort()`)
@@ -378,6 +391,7 @@ The `runs` table (see schema above) holds structured metadata: status, duration,
 **GitHub Actions' grouping model is directly applicable.**
 
 GitHub Actions uses `::group::Title` / `::endgroup::` markers to create collapsible sections in the log viewer. For DorkOS, tool calls are natural group boundaries:
+
 - `group_name = 'tool:bash'` for a Bash tool execution
 - `group_name = 'tool:read'` for a file read
 - `group_name = null` for plain assistant text
@@ -391,6 +405,7 @@ GitHub's log viewer (as described in their engineering blog) handles 50k+ lines 
 **Streaming vs batch log ingestion:**
 
 Agent SDK events stream in real-time. Two options:
+
 1. **Write-through**: Insert each log line immediately as it arrives. Simplest, but creates high write pressure (hundreds of DB writes per run).
 2. **Buffer + flush**: Accumulate lines in memory, flush every 100 lines or 500ms. Reduces write pressure dramatically, with acceptable staleness for live log tailing.
 
@@ -483,6 +498,7 @@ The `claude_code` preset does NOT automatically load `CLAUDE.md` files. To give 
 **Context injection should answer: who am I, why am I running, what should I do?**
 
 Scheduled agents lack the interactive context that human-initiated sessions have. Without explicit job context, the agent may:
+
 - Not know it is running unattended (and stall waiting for user input instead of making autonomous decisions)
 - Not know the purpose of the run
 - Not know it should operate conservatively (no destructive actions without high confidence)
@@ -563,6 +579,7 @@ Expose `permissionMode` as a per-job setting in the UI. Default to `acceptEdits`
 **Output style for scheduled agents:**
 
 Create `~/.claude/output-styles/pulse-job.md` that instructs Claude to:
+
 - Always end with a `## Run Summary` section listing what was done
 - Use structured format for findings that the Pulse UI can parse
 - Keep status updates concise (no verbose progress narration)
@@ -603,25 +620,25 @@ This output style is loaded via `settingSources: ['user']`.
 
 ## Recommendation Summary
 
-| Decision | Recommendation | Rationale |
-|---|---|---|
-| SQLite WAL mode | Enable immediately on DB open | Concurrency + performance |
-| Schema migrations | Custom runner using `user_version` | Simple surface, no library overhead |
-| DB location | `~/.dork/pulse.db` | Consistent with config dir |
-| WAL checkpoint | Monitor and force-checkpoint at 10MB | Prevent unbounded WAL growth |
-| Log storage | `run_logs` table with `seq` ordering | Supports pagination and grouping |
-| Log batching | Buffer 100 lines or 500ms | Reduce write pressure |
-| Cron UX | NL primary, raw expression secondary | Lower barrier for non-technical users |
-| Next-run preview | Always show next 5 runs | Closes feedback loop |
-| Timezone | Store IANA name, default to system TZ | DST safety |
-| Job states | `scheduled`, `running`, `completed`, `failed`, `cancelled` | Minimum viable lifecycle |
-| Cancellation | `AbortController` + `AbortSignal.any()` for timeout | Clean async cancellation |
-| Retries | Default 0, manual re-run preferred | Prevent runaway agents |
-| Concurrency | 1 per job + 3 global cap | Desktop resource limits |
-| System prompt | `preset: 'claude_code'` with `append` context block | Preserve built-in safety |
-| Permission mode | `acceptEdits` default, `bypassPermissions` opt-in | Conservative safe default |
-| Prompt injection filter | Validate job.prompt before append | Security |
-| Output style | Pulse-specific output style via `settingSources: ['user']` | Structured run summaries |
+| Decision                | Recommendation                                             | Rationale                             |
+| ----------------------- | ---------------------------------------------------------- | ------------------------------------- |
+| SQLite WAL mode         | Enable immediately on DB open                              | Concurrency + performance             |
+| Schema migrations       | Custom runner using `user_version`                         | Simple surface, no library overhead   |
+| DB location             | `~/.dork/pulse.db`                                         | Consistent with config dir            |
+| WAL checkpoint          | Monitor and force-checkpoint at 10MB                       | Prevent unbounded WAL growth          |
+| Log storage             | `run_logs` table with `seq` ordering                       | Supports pagination and grouping      |
+| Log batching            | Buffer 100 lines or 500ms                                  | Reduce write pressure                 |
+| Cron UX                 | NL primary, raw expression secondary                       | Lower barrier for non-technical users |
+| Next-run preview        | Always show next 5 runs                                    | Closes feedback loop                  |
+| Timezone                | Store IANA name, default to system TZ                      | DST safety                            |
+| Job states              | `scheduled`, `running`, `completed`, `failed`, `cancelled` | Minimum viable lifecycle              |
+| Cancellation            | `AbortController` + `AbortSignal.any()` for timeout        | Clean async cancellation              |
+| Retries                 | Default 0, manual re-run preferred                         | Prevent runaway agents                |
+| Concurrency             | 1 per job + 3 global cap                                   | Desktop resource limits               |
+| System prompt           | `preset: 'claude_code'` with `append` context block        | Preserve built-in safety              |
+| Permission mode         | `acceptEdits` default, `bypassPermissions` opt-in          | Conservative safe default             |
+| Prompt injection filter | Validate job.prompt before append                          | Security                              |
+| Output style            | Pulse-specific output style via `settingSources: ['user']` | Structured run summaries              |
 
 ---
 

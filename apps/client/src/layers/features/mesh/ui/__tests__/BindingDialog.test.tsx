@@ -78,7 +78,13 @@ const MOCK_AGENTS: AgentManifest[] = [
 ];
 
 const MOCK_OBSERVED_CHATS: ObservedChat[] = [
-  { chatId: '111', displayName: 'Alice', channelType: 'dm', lastMessageAt: new Date().toISOString(), messageCount: 3 },
+  {
+    chatId: '111',
+    displayName: 'Alice',
+    channelType: 'dm',
+    lastMessageAt: new Date().toISOString(),
+    messageCount: 3,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -210,7 +216,7 @@ describe('BindingDialog', () => {
       fireEvent.change(labelInput, { target: { value: 'Customer support' } });
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
       expect(onConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionStrategy: 'per-chat', label: 'Customer support' }),
+        expect.objectContaining({ sessionStrategy: 'per-chat', label: 'Customer support' })
       );
     });
 
@@ -264,7 +270,7 @@ describe('BindingDialog', () => {
         expect.objectContaining({
           label: 'Updated label',
           sessionStrategy: 'per-chat',
-        }),
+        })
       );
     });
   });
@@ -289,24 +295,17 @@ describe('BindingDialog', () => {
     });
 
     it('shows "Active" badge when initialValues has chatId', () => {
-      render(
-        <BindingDialog
-          {...defaultCreateProps}
-          initialValues={{ chatId: '111' }}
-        />,
-        { wrapper: Wrapper },
-      );
+      render(<BindingDialog {...defaultCreateProps} initialValues={{ chatId: '111' }} />, {
+        wrapper: Wrapper,
+      });
       expect(screen.getByText('Active')).toBeInTheDocument();
     });
 
     it('calls useObservedChats with the selected adapterId', () => {
       mockUseObservedChats.mockReturnValue({ data: MOCK_OBSERVED_CHATS });
       render(
-        <BindingDialog
-          {...defaultCreateProps}
-          initialValues={{ adapterId: 'telegram-1' }}
-        />,
-        { wrapper: Wrapper },
+        <BindingDialog {...defaultCreateProps} initialValues={{ adapterId: 'telegram-1' }} />,
+        { wrapper: Wrapper }
       );
       // Hook should have been called with the adapter ID from initialValues
       expect(mockUseObservedChats).toHaveBeenCalledWith('telegram-1');
@@ -320,12 +319,10 @@ describe('BindingDialog', () => {
           onConfirm={onConfirm}
           initialValues={{ chatId: '999' }}
         />,
-        { wrapper: Wrapper },
+        { wrapper: Wrapper }
       );
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
-      expect(onConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({ chatId: '999' }),
-      );
+      expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ chatId: '999' }));
     });
 
     it('"Clear filters" button resets chatId and channelType', () => {
@@ -336,7 +333,7 @@ describe('BindingDialog', () => {
           onConfirm={onConfirm}
           initialValues={{ chatId: '111', channelType: 'dm' }}
         />,
-        { wrapper: Wrapper },
+        { wrapper: Wrapper }
       );
       const clearBtn = screen.getByRole('button', { name: /clear filters/i });
       fireEvent.click(clearBtn);
@@ -350,10 +347,9 @@ describe('BindingDialog', () => {
   describe('cancel action', () => {
     it('calls onOpenChange(false) when Cancel is clicked', () => {
       const onOpenChange = vi.fn();
-      render(
-        <BindingDialog {...defaultCreateProps} onOpenChange={onOpenChange} />,
-        { wrapper: Wrapper },
-      );
+      render(<BindingDialog {...defaultCreateProps} onOpenChange={onOpenChange} />, {
+        wrapper: Wrapper,
+      });
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
@@ -373,7 +369,7 @@ describe('BindingDialog', () => {
             label: 'Pre-filled',
           }}
         />,
-        { wrapper: Wrapper },
+        { wrapper: Wrapper }
       );
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
       expect(onConfirm).toHaveBeenCalledWith(
@@ -382,7 +378,7 @@ describe('BindingDialog', () => {
           agentId: 'agent-1',
           sessionStrategy: 'stateless',
           label: 'Pre-filled',
-        }),
+        })
       );
     });
   });

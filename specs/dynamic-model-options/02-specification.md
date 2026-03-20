@@ -105,9 +105,21 @@ Add to the class:
 import type { ModelOption } from '@dorkos/shared/types';
 
 const DEFAULT_MODELS: ModelOption[] = [
-  { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast, intelligent model for everyday tasks' },
-  { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'Fastest, most compact model' },
-  { value: 'claude-opus-4-6', displayName: 'Opus 4.6', description: 'Most capable model for complex tasks' },
+  {
+    value: 'claude-sonnet-4-5-20250929',
+    displayName: 'Sonnet 4.5',
+    description: 'Fast, intelligent model for everyday tasks',
+  },
+  {
+    value: 'claude-haiku-4-5-20251001',
+    displayName: 'Haiku 4.5',
+    description: 'Fastest, most compact model',
+  },
+  {
+    value: 'claude-opus-4-6',
+    displayName: 'Opus 4.6',
+    description: 'Most capable model for complex tasks',
+  },
 ];
 ```
 
@@ -121,16 +133,19 @@ In `sendMessage()`, after `session.activeQuery = agentQuery;` (line 147), add no
 
 ```typescript
 if (!this.cachedModels) {
-  agentQuery.supportedModels().then((models) => {
-    this.cachedModels = models.map((m) => ({
-      value: m.value,
-      displayName: m.displayName,
-      description: m.description,
-    }));
-    logger.debug('[sendMessage] cached supported models', { count: this.cachedModels.length });
-  }).catch((err) => {
-    logger.debug('[sendMessage] failed to fetch supported models', { err });
-  });
+  agentQuery
+    .supportedModels()
+    .then((models) => {
+      this.cachedModels = models.map((m) => ({
+        value: m.value,
+        displayName: m.displayName,
+        description: m.description,
+      }));
+      logger.debug('[sendMessage] cached supported models', { count: this.cachedModels.length });
+    })
+    .catch((err) => {
+      logger.debug('[sendMessage] failed to fetch supported models', { err });
+    });
 }
 ```
 
@@ -303,6 +318,7 @@ export function ModelItem({ model, onChangeModel }: ModelItemProps) {
 ```
 
 Key changes from current:
+
 - Removed hardcoded `MODEL_OPTIONS`
 - `getModelLabel()` takes `models` array as second parameter
 - Dropdown widened from `w-44` to `w-56` to fit descriptions

@@ -62,12 +62,8 @@ describe('AdapterBindingSchema', () => {
   });
 
   it('rejects invalid permission mode values', () => {
-    expect(() =>
-      AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'auto' }),
-    ).toThrow();
-    expect(() =>
-      AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'yolo' }),
-    ).toThrow();
+    expect(() => AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'auto' })).toThrow();
+    expect(() => AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'yolo' })).toThrow();
   });
 
   it('accepts optional chatId and channelType', () => {
@@ -81,20 +77,16 @@ describe('AdapterBindingSchema', () => {
   });
 
   it('rejects invalid UUID for id', () => {
-    expect(() =>
-      AdapterBindingSchema.parse({ ...validBinding, id: 'not-a-uuid' }),
-    ).toThrow();
+    expect(() => AdapterBindingSchema.parse({ ...validBinding, id: 'not-a-uuid' })).toThrow();
   });
 
   it('rejects invalid channelType', () => {
-    expect(() =>
-      AdapterBindingSchema.parse({ ...validBinding, channelType: 'invalid' }),
-    ).toThrow();
+    expect(() => AdapterBindingSchema.parse({ ...validBinding, channelType: 'invalid' })).toThrow();
   });
 
   it('rejects invalid datetime for createdAt', () => {
     expect(() =>
-      AdapterBindingSchema.parse({ ...validBinding, createdAt: 'not-a-date' }),
+      AdapterBindingSchema.parse({ ...validBinding, createdAt: 'not-a-date' })
     ).toThrow();
   });
 });

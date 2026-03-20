@@ -74,7 +74,7 @@ function extractChatId(conversation: RelayConversation): string | undefined {
  * @returns The channel type string, or undefined when unavailable
  */
 function extractChannelType(
-  conversation: RelayConversation,
+  conversation: RelayConversation
 ): BindingFormValues['channelType'] | undefined {
   if (conversation.payload && typeof conversation.payload === 'object') {
     const payload = conversation.payload as Record<string, unknown>;
@@ -129,7 +129,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
   const extractedAdapterId = extractAdapterId(conversation);
   const existingBindings = useMemo(
     () => allBindings.filter((b) => b.adapterId === extractedAdapterId),
-    [allBindings, extractedAdapterId],
+    [allBindings, extractedAdapterId]
   );
 
   const dotColor = getStatusDotColor(conversation.status);
@@ -171,15 +171,15 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
       });
       setBindingDialogOpen(false);
     },
-    [createBinding],
+    [createBinding]
   );
 
   return (
     <div
       className={cn(
-        'w-full rounded-lg border border-l-2 text-left transition-colors hover:bg-muted/50 hover:shadow-sm',
+        'hover:bg-muted/50 w-full rounded-lg border border-l-2 text-left transition-colors hover:shadow-sm',
         borderColor,
-        expanded && 'bg-muted/30',
+        expanded && 'bg-muted/30'
       )}
     >
       {/* Collapsed view — human-readable summary */}
@@ -191,17 +191,17 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
         >
           <span className={cn('mt-1 size-2 shrink-0 rounded-full', dotColor)} />
           <div className="min-w-0 flex-1 text-left">
-            <div className="text-xs text-muted-foreground">
+            <div className="text-muted-foreground text-xs">
               <span className="inline-block w-8 font-medium">From</span>
               <span className="text-foreground">{conversation.from.label}</span>
             </div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-muted-foreground text-xs">
               <span className="inline-block w-8 font-medium">To</span>
               <span className="text-foreground">{conversation.to.label}</span>
             </div>
             <div className="mt-1 flex items-center gap-2">
               {conversation.preview && (
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                   &quot;{conversation.preview}&quot;
                 </span>
               )}
@@ -213,7 +213,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
         </button>
 
         <div className="flex shrink-0 items-center gap-1">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-muted-foreground text-xs">
             {formatTimeAgo(conversation.sentAt)}
           </span>
 
@@ -280,7 +280,9 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
       {bindingDialogOpen && (
         <BindingDialog
           open={true}
-          onOpenChange={(open) => { if (!open) setBindingDialogOpen(false); }}
+          onOpenChange={(open) => {
+            if (!open) setBindingDialogOpen(false);
+          }}
           mode="create"
           initialValues={{
             adapterId: extractAdapterId(conversation),
@@ -302,19 +304,19 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className="overflow-hidden"
           >
-            <div className="space-y-3 border-t px-3 pb-3 pt-3">
+            <div className="space-y-3 border-t px-3 pt-3 pb-3">
               {/* Payload */}
               {conversation.payload != null && (
                 <div>
-                  <span className="text-xs font-medium text-muted-foreground">Payload</span>
-                  <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 font-mono text-xs">
+                  <span className="text-muted-foreground text-xs font-medium">Payload</span>
+                  <pre className="bg-muted mt-1 max-h-40 overflow-auto rounded p-2 font-mono text-xs">
                     {JSON.stringify(conversation.payload, null, 2)}
                   </pre>
                 </div>
               )}
 
               {/* Delivery timing */}
-              <div className="text-xs text-muted-foreground">
+              <div className="text-muted-foreground text-xs">
                 <span>Sent {formatTime(conversation.sentAt)}</span>
                 {conversation.completedAt && (
                   <span> &middot; Completed {formatTime(conversation.completedAt)}</span>
@@ -329,7 +331,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
 
               {/* Failure reason */}
               {conversation.failureReason && (
-                <div className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                <div className="bg-destructive/10 text-destructive rounded px-2 py-1 text-xs">
                   {conversation.failureReason}
                 </div>
               )}
@@ -341,7 +343,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                   e.stopPropagation();
                   setShowTechnical(!showTechnical);
                 }}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs"
               >
                 {showTechnical ? (
                   <ChevronDown className="size-3.5" />
@@ -392,7 +394,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                       e.stopPropagation();
                       setShowTrace(!showTrace);
                     }}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs"
                   >
                     {showTrace ? (
                       <ChevronDown className="size-3.5" />

@@ -85,7 +85,7 @@ function BindingEdgeInner({
         path={edgePath}
         className={cn(
           'transition-colors duration-150',
-          selected ? 'stroke-primary stroke-2' : 'stroke-primary/60 stroke-2',
+          selected ? 'stroke-primary stroke-2' : 'stroke-primary/60 stroke-2'
         )}
       />
       {showLabel && (
@@ -96,17 +96,17 @@ function BindingEdgeInner({
               pointerEvents: 'all',
               transition: 'opacity 150ms ease-out',
             }}
-            className="nodrag nopan flex max-w-[160px] flex-col items-center gap-0.5 rounded-md bg-background/90 px-1.5 py-0.5 shadow-sm"
+            className="nodrag nopan bg-background/90 flex max-w-[160px] flex-col items-center gap-0.5 rounded-md px-1.5 py-0.5 shadow-sm"
             role="presentation"
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
           >
             <div className="flex items-center gap-1">
-              <span className="truncate text-[10px] text-muted-foreground">{displayLabel}</span>
+              <span className="text-muted-foreground truncate text-[10px]">{displayLabel}</span>
               {selected && d?.onDelete && (
                 <button
                   onClick={handleDelete}
-                  className="ml-0.5 shrink-0 rounded-sm p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive"
+                  className="text-destructive/60 hover:bg-destructive/10 hover:text-destructive ml-0.5 shrink-0 rounded-sm p-0.5"
                   aria-label="Delete binding"
                 >
                   <X className="size-3" />
@@ -117,12 +117,12 @@ function BindingEdgeInner({
             {(d?.chatId || d?.channelType) && (
               <div className="flex items-center gap-1">
                 {d.chatId && (
-                  <span className="rounded bg-muted px-1 py-px text-[9px] text-muted-foreground">
+                  <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
                     {d.chatId}
                   </span>
                 )}
                 {d.channelType && (
-                  <span className="rounded bg-muted px-1 py-px text-[9px] text-muted-foreground">
+                  <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
                     {d.channelType}
                   </span>
                 )}

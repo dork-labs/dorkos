@@ -41,14 +41,15 @@ The brand foundation (spec 4.3) defines Pulse as the feature that makes DorkOS "
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `croner` | ^9.x | Cron scheduling with overrun protection, `isBusy()`, `nextRuns()` |
-| `better-sqlite3` | ^11.x | Synchronous SQLite for run history persistence |
-| `@types/better-sqlite3` | ^7.x | Type definitions |
-| `cronstrue` | ^2.x | Human-readable cron expression translation (client-side) |
+| Dependency              | Version | Purpose                                                           |
+| ----------------------- | ------- | ----------------------------------------------------------------- |
+| `croner`                | ^9.x    | Cron scheduling with overrun protection, `isBusy()`, `nextRuns()` |
+| `better-sqlite3`        | ^11.x   | Synchronous SQLite for run history persistence                    |
+| `@types/better-sqlite3` | ^7.x    | Type definitions                                                  |
+| `cronstrue`             | ^2.x    | Human-readable cron expression translation (client-side)          |
 
 Existing dependencies used:
+
 - `@anthropic-ai/claude-agent-sdk` — Agent execution via `query()`
 - `zod` — Schema validation for all endpoints and MCP tools
 - `conf` — Config management (existing `config-manager.ts`)
@@ -62,24 +63,25 @@ Existing dependencies used:
 
 ```typescript
 interface PulseSchedule {
-  id: string;                              // UUID v4
-  name: string;                            // Human-readable label
-  prompt: string;                          // Agent instructions
-  cron: string;                            // 5-field cron expression
-  timezone: string;                        // IANA timezone (default: system)
-  cwd: string;                             // Working directory for the job
-  enabled: boolean;                        // Pause/resume toggle
-  maxRuntime: number;                      // Timeout in ms (default: 600000 = 10min)
-  permissionMode: 'acceptEdits' | 'bypassPermissions';  // Default: acceptEdits
-  status: 'active' | 'paused' | 'pending_approval';     // Lifecycle state
-  createdAt: string;                       // ISO 8601
-  updatedAt: string;                       // ISO 8601
+  id: string; // UUID v4
+  name: string; // Human-readable label
+  prompt: string; // Agent instructions
+  cron: string; // 5-field cron expression
+  timezone: string; // IANA timezone (default: system)
+  cwd: string; // Working directory for the job
+  enabled: boolean; // Pause/resume toggle
+  maxRuntime: number; // Timeout in ms (default: 600000 = 10min)
+  permissionMode: 'acceptEdits' | 'bypassPermissions'; // Default: acceptEdits
+  status: 'active' | 'paused' | 'pending_approval'; // Lifecycle state
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
 }
 ```
 
 The file is a JSON array of `PulseSchedule` objects. Writes use atomic rename (write to `.tmp`, `rename`) to prevent corruption.
 
 **Status semantics:**
+
 - `active` — Schedule is enabled and will fire at cron times
 - `paused` — Schedule exists but is skipped during poll
 - `pending_approval` — Created by an agent via MCP; requires user approval to activate
@@ -205,11 +207,7 @@ Orchestrates the cron lifecycle and job dispatch.
 
 ```typescript
 export class SchedulerService {
-  constructor(
-    store: PulseStore,
-    agentManager: AgentManager,
-    config: SchedulerConfig
-  );
+  constructor(store: PulseStore, agentManager: AgentManager, config: SchedulerConfig);
 
   start(): void;
   stop(): Promise<void>;
@@ -224,12 +222,14 @@ export class SchedulerService {
 ```
 
 **Startup sequence:**
+
 1. Load schedules from `PulseStore`
 2. Mark any `running` status runs as `failed` (interrupted by restart)
 3. Register enabled + active schedules with croner (`protect: true`)
 4. Start accepting dispatches
 
 **Job dispatch flow:**
+
 1. Croner fires callback for a schedule
 2. Check global concurrency: if `activeRuns.size >= maxConcurrentRuns`, skip with warning log
 3. Create run record in `PulseStore` with status `running`
@@ -269,6 +269,7 @@ function buildPulseAppend(schedule: PulseSchedule, run: PulseRun): string {
 Passed via `{ type: 'preset', preset: 'claude_code', append }` with `settingSources: ['project', 'user']`.
 
 **Graceful shutdown:**
+
 1. Stop all croner jobs (prevents new dispatches)
 2. For each active run: call `abort()` on its controller
 3. Wait up to 30 seconds for active runs to complete/abort
@@ -278,13 +279,13 @@ Passed via `{ type: 'preset', preset: 'claude_code', append }` with `settingSour
 
 Five new tools added to the existing `createDorkOsToolServer()`:
 
-| Tool | Input Schema | Returns |
-|---|---|---|
-| `list_schedules` | `{ enabled_only?: boolean }` | Array of schedule objects |
-| `create_schedule` | `{ name, prompt, cron, cwd?, timezone?, maxRuntime?, permissionMode? }` | Created schedule (status: `pending_approval`) |
-| `update_schedule` | `{ id, name?, prompt?, cron?, enabled?, timezone?, maxRuntime?, permissionMode? }` | Updated schedule |
-| `delete_schedule` | `{ id }` | Confirmation message |
-| `get_run_history` | `{ schedule_id, limit? }` | Array of recent runs |
+| Tool              | Input Schema                                                                       | Returns                                       |
+| ----------------- | ---------------------------------------------------------------------------------- | --------------------------------------------- |
+| `list_schedules`  | `{ enabled_only?: boolean }`                                                       | Array of schedule objects                     |
+| `create_schedule` | `{ name, prompt, cron, cwd?, timezone?, maxRuntime?, permissionMode? }`            | Created schedule (status: `pending_approval`) |
+| `update_schedule` | `{ id, name?, prompt?, cron?, enabled?, timezone?, maxRuntime?, permissionMode? }` | Updated schedule                              |
+| `delete_schedule` | `{ id }`                                                                           | Confirmation message                          |
+| `get_run_history` | `{ schedule_id, limit? }`                                                          | Array of recent runs                          |
 
 **Agent approval flow:** `create_schedule` always creates with `status: 'pending_approval'`. The schedule appears in the Pulse UI with a yellow indicator. User must approve (PATCH with `status: 'active'`) before croner registers it.
 
@@ -294,7 +295,7 @@ The `McpToolDeps` interface is extended:
 export interface McpToolDeps {
   transcriptReader: TranscriptReader;
   defaultCwd: string;
-  pulseStore?: PulseStore;  // Optional, only present when Pulse is enabled
+  pulseStore?: PulseStore; // Optional, only present when Pulse is enabled
 }
 ```
 
@@ -302,16 +303,16 @@ Tools check `deps.pulseStore` and return a clear error if Pulse is disabled.
 
 #### REST Routes (`apps/server/src/routes/pulse.ts`)
 
-| Method | Path | Description | Request Body | Response |
-|---|---|---|---|---|
-| `GET` | `/api/pulse/schedules` | List all schedules | — | `PulseSchedule[]` (with computed `nextRun`) |
-| `POST` | `/api/pulse/schedules` | Create a schedule | `CreateScheduleRequest` | `PulseSchedule` |
-| `PATCH` | `/api/pulse/schedules/:id` | Update a schedule | `UpdateScheduleRequest` | `PulseSchedule` |
-| `DELETE` | `/api/pulse/schedules/:id` | Delete a schedule | — | `{ ok: true }` |
-| `POST` | `/api/pulse/schedules/:id/trigger` | Manual run trigger | — | `{ runId: string }` |
-| `GET` | `/api/pulse/runs` | List runs | `?schedule_id=&limit=&offset=` | `{ runs: PulseRun[], total: number }` |
-| `GET` | `/api/pulse/runs/:id` | Get a specific run | — | `PulseRun` |
-| `POST` | `/api/pulse/runs/:id/cancel` | Cancel a running job | — | `{ ok: true }` |
+| Method   | Path                               | Description          | Request Body                   | Response                                    |
+| -------- | ---------------------------------- | -------------------- | ------------------------------ | ------------------------------------------- |
+| `GET`    | `/api/pulse/schedules`             | List all schedules   | —                              | `PulseSchedule[]` (with computed `nextRun`) |
+| `POST`   | `/api/pulse/schedules`             | Create a schedule    | `CreateScheduleRequest`        | `PulseSchedule`                             |
+| `PATCH`  | `/api/pulse/schedules/:id`         | Update a schedule    | `UpdateScheduleRequest`        | `PulseSchedule`                             |
+| `DELETE` | `/api/pulse/schedules/:id`         | Delete a schedule    | —                              | `{ ok: true }`                              |
+| `POST`   | `/api/pulse/schedules/:id/trigger` | Manual run trigger   | —                              | `{ runId: string }`                         |
+| `GET`    | `/api/pulse/runs`                  | List runs            | `?schedule_id=&limit=&offset=` | `{ runs: PulseRun[], total: number }`       |
+| `GET`    | `/api/pulse/runs/:id`              | Get a specific run   | —                              | `PulseRun`                                  |
+| `POST`   | `/api/pulse/runs/:id/cancel`       | Cancel a running job | —                              | `{ ok: true }`                              |
 
 All routes follow existing patterns: Zod validation, delegate to service, return consistent error responses. `GET /api/pulse/schedules` computes `nextRun` for each schedule using croner `nextRun()`.
 
@@ -330,7 +331,7 @@ scheduler: z.object({
   maxConcurrentRuns: 1,
   timezone: null,
   retentionCount: 100,
-}))
+}));
 ```
 
 **`packages/shared/src/schemas.ts`** — New Pulse schemas:
@@ -426,6 +427,7 @@ Both `HttpTransport` and `DirectTransport` implement these methods.
 ```
 
 **CLI flags** (`packages/cli`):
+
 - `--pulse` / `--no-pulse`: Enable/disable scheduler at startup
 - Sets `DORKOS_PULSE_ENABLED` env var before importing server
 
@@ -435,12 +437,10 @@ Both `HttpTransport` and `DirectTransport` implement these methods.
 
 ```typescript
 // Conditional initialization based on config
-const pulseEnabled = process.env.DORKOS_PULSE_ENABLED === 'true'
-  || configManager.get('scheduler')?.enabled;
+const pulseEnabled =
+  process.env.DORKOS_PULSE_ENABLED === 'true' || configManager.get('scheduler')?.enabled;
 
-const pulseStore = pulseEnabled
-  ? new PulseStore(dorkHome)
-  : undefined;
+const pulseStore = pulseEnabled ? new PulseStore(dorkHome) : undefined;
 
 const schedulerService = pulseStore
   ? new SchedulerService(pulseStore, agentManager, {
@@ -497,6 +497,7 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 ### Server Unit Tests
 
 **`pulse-store.test.ts`:**
+
 - Schedule CRUD operations on JSON file (create, read, update, delete)
 - Run CRUD operations in SQLite (create, update, query, count)
 - Atomic write prevents corruption on concurrent access
@@ -505,6 +506,7 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 - Handles missing/corrupt files gracefully on startup
 
 **`scheduler-service.test.ts`:**
+
 - Registers croner jobs for enabled+active schedules on start
 - Dispatches job when croner callback fires (mock croner)
 - Respects global concurrency cap (skips when at limit)
@@ -517,6 +519,7 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 - `cancelRun` aborts the correct controller
 
 **`mcp-tool-server.test.ts` (extend existing):**
+
 - `create_schedule` creates with `pending_approval` status
 - `list_schedules` with `enabled_only` filter
 - `update_schedule` validates schedule exists, returns 404 if not
@@ -525,6 +528,7 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 - All tools return error when `pulseStore` is undefined
 
 **`pulse.test.ts` (routes):**
+
 - CRUD endpoints return correct status codes and shapes
 - Zod validation rejects invalid cron expressions and missing fields
 - Trigger endpoint creates a manual run and returns run ID
@@ -535,16 +539,19 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 ### Client Tests
 
 **`use-schedules.test.ts`:**
+
 - Fetches and caches schedule list
 - Invalidates cache after mutations
 
 **`PulsePanel.test.tsx`:**
+
 - Renders schedule list with correct status indicators
 - Enabled toggle calls update endpoint
 - "Run Now" calls trigger endpoint
 - Empty state shown when no schedules
 
 **`CreateScheduleDialog.test.tsx`:**
+
 - Required field validation
 - Permission mode warning for bypassPermissions
 - Submit calls create with correct payload
@@ -643,6 +650,7 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 - **ADR-0001: Hexagonal Architecture** — Pulse follows the Transport interface pattern
 
 Consider creating:
+
 - **ADR: SQLite for Local Persistence** — Rationale for `better-sqlite3` + `user_version` migrations
 - **ADR: Agent Approval Gate for MCP Mutations** — Pattern for `pending_approval` on agent-created resources
 

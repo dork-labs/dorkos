@@ -38,20 +38,20 @@ Throughout the review, panelists should identify where imagery (CSS/HTML art, SV
 
 ## Pre-Review: Current Section Inventory
 
-| # | Section | Component | Purpose |
-|---|---------|-----------|---------|
-| 0 | Prelude | `Prelude.tsx` | Boot sequence overlay animation |
-| 1 | Header | `MarketingHeader.tsx` | Logo + nav |
-| 2 | Hero | `ActivityFeedHero.tsx` | Headline, tagline, activity feed, CTAs |
-| 3 | Villain | `VillainSection.tsx` | 4 pain-point cards |
-| 4 | Pivot | `PivotSection.tsx` | "What if" OS metaphor |
-| 5 | Timeline | `TimelineSection.tsx` | Overnight narrative |
-| 6 | Subsystems | `SubsystemsSection.tsx` | 6 modules with gap labels |
-| 7 | Honesty | `HonestySection.tsx` | Transparency statement |
-| 8 | Install | `InstallMoment.tsx` | npm install CTA |
-| 9 | Identity | `IdentityClose.tsx` | Origin story + email |
-| 10 | Close | `TheClose.tsx` | Final tagline |
-| 11 | Footer | `MarketingFooter.tsx` | Links + tagline |
+| #   | Section    | Component               | Purpose                                |
+| --- | ---------- | ----------------------- | -------------------------------------- |
+| 0   | Prelude    | `Prelude.tsx`           | Boot sequence overlay animation        |
+| 1   | Header     | `MarketingHeader.tsx`   | Logo + nav                             |
+| 2   | Hero       | `ActivityFeedHero.tsx`  | Headline, tagline, activity feed, CTAs |
+| 3   | Villain    | `VillainSection.tsx`    | 4 pain-point cards                     |
+| 4   | Pivot      | `PivotSection.tsx`      | "What if" OS metaphor                  |
+| 5   | Timeline   | `TimelineSection.tsx`   | Overnight narrative                    |
+| 6   | Subsystems | `SubsystemsSection.tsx` | 6 modules with gap labels              |
+| 7   | Honesty    | `HonestySection.tsx`    | Transparency statement                 |
+| 8   | Install    | `InstallMoment.tsx`     | npm install CTA                        |
+| 9   | Identity   | `IdentityClose.tsx`     | Origin story + email                   |
+| 10  | Close      | `TheClose.tsx`          | Final tagline                          |
+| 11  | Footer     | `MarketingFooter.tsx`   | Links + tagline                        |
 
 ---
 
@@ -63,18 +63,18 @@ Captured all 12 sections at 1440px viewport width via browser automation.
 
 ### Panel Scoring Summary
 
-| Section | Clarity | Emotion | Design | Conversion | Avg |
-|---------|---------|---------|--------|------------|-----|
-| Prelude | 8.4 | 8.6 | 8.2 | 7.0 | 8.1 |
-| Hero | 8.8 | 8.4 | 7.6 | 8.2 | 8.3 |
-| Villain | 9.0 | 9.0 | 6.4 | 7.6 | 8.0 |
-| Pivot | 8.8 | 8.6 | 7.2 | 7.0 | 7.9 |
-| Timeline | 8.8 | 9.0 | 7.4 | 7.2 | 8.1 |
-| Subsystems | 8.0 | 4.8 | 5.6 | 5.4 | 6.0 |
-| Honesty | 7.6 | 6.0 | 5.8 | 5.4 | 6.2 |
-| Install | 8.6 | 7.4 | 7.2 | 8.2 | 7.9 |
-| Identity | 8.0 | 9.4 | 6.4 | 6.0 | 7.5 |
-| Close | 7.8 | 7.6 | 6.4 | 7.4 | 7.3 |
+| Section    | Clarity | Emotion | Design | Conversion | Avg |
+| ---------- | ------- | ------- | ------ | ---------- | --- |
+| Prelude    | 8.4     | 8.6     | 8.2    | 7.0        | 8.1 |
+| Hero       | 8.8     | 8.4     | 7.6    | 8.2        | 8.3 |
+| Villain    | 9.0     | 9.0     | 6.4    | 7.6        | 8.0 |
+| Pivot      | 8.8     | 8.6     | 7.2    | 7.0        | 7.9 |
+| Timeline   | 8.8     | 9.0     | 7.4    | 7.2        | 8.1 |
+| Subsystems | 8.0     | 4.8     | 5.6    | 5.4        | 6.0 |
+| Honesty    | 7.6     | 6.0     | 5.8    | 5.4        | 6.2 |
+| Install    | 8.6     | 7.4     | 7.2    | 8.2        | 7.9 |
+| Identity   | 8.0     | 9.4     | 6.4    | 6.0        | 7.5 |
+| Close      | 7.8     | 7.6     | 6.4    | 7.4        | 7.3 |
 
 **Overall R1 Pre-Change Average: 7.5**
 
@@ -130,17 +130,17 @@ Captured all 12 sections at 1440px viewport width via browser automation.
 
 ### Panel Scoring Summary (Post-R1)
 
-| Section | Clarity | Emotion | Design | Conversion | Avg |
-|---------|---------|---------|--------|------------|-----|
-| Hero | 8.2 | 8.0 | 8.0 | 6.0 | 7.6 |
-| Villain | 9.0 | 8.6 | 6.8 | 6.4 | 7.7 |
-| Pivot | 8.0 | 6.8 | 6.0 | 4.8 | 6.4 |
-| Timeline | 8.8 | 9.4 | 7.4 | 6.2 | 7.9 |
-| Subsystems | 6.6 | 4.2 | 6.4 | 4.2 | 5.4 |
-| Honesty | 7.8 | 7.2 | 7.4 | 4.6 | 6.8 |
-| Install | 6.8 | 5.2 | 6.2 | 7.0 | 6.3 |
-| Identity | 8.0 | 9.2 | 6.6 | 4.2 | 7.0 |
-| TheClose | 6.8 | 6.0 | 6.6 | 7.0 | 6.6 |
+| Section    | Clarity | Emotion | Design | Conversion | Avg |
+| ---------- | ------- | ------- | ------ | ---------- | --- |
+| Hero       | 8.2     | 8.0     | 8.0    | 6.0        | 7.6 |
+| Villain    | 9.0     | 8.6     | 6.8    | 6.4        | 7.7 |
+| Pivot      | 8.0     | 6.8     | 6.0    | 4.8        | 6.4 |
+| Timeline   | 8.8     | 9.4     | 7.4    | 6.2        | 7.9 |
+| Subsystems | 6.6     | 4.2     | 6.4    | 4.2        | 5.4 |
+| Honesty    | 7.8     | 7.2     | 7.4    | 4.6        | 6.8 |
+| Install    | 6.8     | 5.2     | 6.2    | 7.0        | 6.3 |
+| Identity   | 8.0     | 9.2     | 6.6    | 4.2        | 7.0 |
+| TheClose   | 6.8     | 6.0     | 6.6    | 7.0        | 6.6 |
 
 ### Round 2 Consensus Findings
 
@@ -194,17 +194,17 @@ Captured all 12 sections at 1440px viewport width via browser automation.
 
 ### Panel Scoring Summary (Post-R2)
 
-| Section | Clarity | Emotion | Design | Conversion | Avg |
-|---------|---------|---------|--------|------------|-----|
-| Hero | 8.8 | 8.6 | 8.6 | 7.6 | 8.4 |
-| Villain | 9.0 | 9.4 | 8.0 | 8.0 | 8.6 |
-| Pivot | 8.8 | 7.8 | 8.2 | 7.0 | 7.9 |
-| Timeline | 8.8 | 9.2 | 8.0 | 7.6 | 8.4 |
-| Subsystems | 7.0 | 4.8 | 7.0 | 5.4 | 6.0 |
-| Honesty | 9.0 | 7.6 | 7.8 | 7.0 | 7.9 |
-| Identity | 8.0 | 8.8 | 7.8 | 6.6 | 7.8 |
-| Install | 7.4 | 6.0 | 7.6 | 8.0 | 7.3 |
-| TheClose | 8.8 | 9.2 | 9.4 | 8.8 | 9.1 |
+| Section    | Clarity | Emotion | Design | Conversion | Avg |
+| ---------- | ------- | ------- | ------ | ---------- | --- |
+| Hero       | 8.8     | 8.6     | 8.6    | 7.6        | 8.4 |
+| Villain    | 9.0     | 9.4     | 8.0    | 8.0        | 8.6 |
+| Pivot      | 8.8     | 7.8     | 8.2    | 7.0        | 7.9 |
+| Timeline   | 8.8     | 9.2     | 8.0    | 7.6        | 8.4 |
+| Subsystems | 7.0     | 4.8     | 7.0    | 5.4        | 6.0 |
+| Honesty    | 9.0     | 7.6     | 7.8    | 7.0        | 7.9 |
+| Identity   | 8.0     | 8.8     | 7.8    | 6.6        | 7.8 |
+| Install    | 7.4     | 6.0     | 7.6    | 8.0        | 7.3 |
+| TheClose   | 8.8     | 9.2     | 9.4    | 8.8        | 9.1 |
 
 **Overall R3 Pre-Change Average: 7.9**
 
@@ -245,11 +245,11 @@ Captured all 12 sections at 1440px viewport width via browser automation.
 
 ### Score Progression
 
-| Round | Average | Best Section | Worst Section |
-|-------|---------|-------------|---------------|
-| R1 (Pre) | 7.5 | Villain (8.0) | Subsystems (6.0) |
-| R2 (Pre) | 6.9 | Timeline (7.9) | Subsystems (5.4) |
-| R3 (Pre) | 7.9 | TheClose (9.1) | Subsystems (6.0) |
+| Round     | Average              | Best Section    | Worst Section     |
+| --------- | -------------------- | --------------- | ----------------- |
+| R1 (Pre)  | 7.5                  | Villain (8.0)   | Subsystems (6.0)  |
+| R2 (Pre)  | 6.9                  | Timeline (7.9)  | Subsystems (5.4)  |
+| R3 (Pre)  | 7.9                  | TheClose (9.1)  | Subsystems (6.0)  |
 | R3 (Post) | **~8.3** (estimated) | TheClose (9.1+) | Subsystems (7.0+) |
 
 ### Panel Consensus: Final Verdict
@@ -266,16 +266,16 @@ Captured all 12 sections at 1440px viewport width via browser automation.
 
 ### Key Lines Identified by Panel
 
-| Line | Location | Panel Assessment |
-|------|----------|-----------------|
-| "It stops the moment you stop watching it." | Villain close | **THE line** — defines the brand |
-| "You slept. They shipped." | Hero tagline | Best tagline — don't touch |
-| "Your agents have been productive for eight hours. You have been awake for four minutes." | Timeline | Screenshot moment |
-| "So we built one." | Pivot | Typographic event earned |
-| "Because they never stop." | Identity | Thesis statement |
-| "Ready." | TheClose | Boot sequence complete |
-| "Give them the night." | TheClose | Active, specific, echoes "You slept" |
-| "The intelligence is Claude's. The infrastructure is yours." | Honesty | Trust builder |
+| Line                                                                                      | Location      | Panel Assessment                     |
+| ----------------------------------------------------------------------------------------- | ------------- | ------------------------------------ |
+| "It stops the moment you stop watching it."                                               | Villain close | **THE line** — defines the brand     |
+| "You slept. They shipped."                                                                | Hero tagline  | Best tagline — don't touch           |
+| "Your agents have been productive for eight hours. You have been awake for four minutes." | Timeline      | Screenshot moment                    |
+| "So we built one."                                                                        | Pivot         | Typographic event earned             |
+| "Because they never stop."                                                                | Identity      | Thesis statement                     |
+| "Ready."                                                                                  | TheClose      | Boot sequence complete               |
+| "Give them the night."                                                                    | TheClose      | Active, specific, echoes "You slept" |
+| "The intelligence is Claude's. The infrastructure is yours."                              | Honesty       | Trust builder                        |
 
 ### Remaining Opportunities (Future Work)
 

@@ -219,7 +219,9 @@ describe('useUpdateAdapterConfig', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(transport.updateRelayAdapterConfig).toHaveBeenCalledWith('tg-main', { token: 'new-token' });
+    expect(transport.updateRelayAdapterConfig).toHaveBeenCalledWith('tg-main', {
+      token: 'new-token',
+    });
   });
 
   it('invalidates catalog and adapters queries on success', async () => {
@@ -269,7 +271,9 @@ describe('useTestAdapterConnection', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(transport.testRelayAdapterConnection).toHaveBeenCalledWith('telegram', { token: 'test-token' });
+    expect(transport.testRelayAdapterConnection).toHaveBeenCalledWith('telegram', {
+      token: 'test-token',
+    });
   });
 
   it('does NOT invalidate any queries on success', async () => {

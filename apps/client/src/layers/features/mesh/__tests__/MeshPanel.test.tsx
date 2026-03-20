@@ -19,7 +19,9 @@ const mockUseMeshStatus = vi.fn().mockReturnValue({ data: undefined, isLoading: 
 const mockUseMeshAgentHealth = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
 const mockUseTopology = vi.fn().mockReturnValue({ data: undefined, isLoading: false });
 const mockUseUpdateAccessRule = vi.fn().mockReturnValue({ mutate: vi.fn(), isPending: false });
-const mockUseMeshScanRoots = vi.fn().mockReturnValue({ roots: [], boundary: '/home/user', isSaving: false, setScanRoots: vi.fn() });
+const mockUseMeshScanRoots = vi
+  .fn()
+  .mockReturnValue({ roots: [], boundary: '/home/user', isSaving: false, setScanRoots: vi.fn() });
 const mockUseRegisterAgent = vi.fn().mockReturnValue({ mutate: vi.fn() });
 const mockUseDenyAgent = vi.fn().mockReturnValue({ mutate: vi.fn() });
 
@@ -58,17 +60,23 @@ vi.mock('@radix-ui/react-tabs', () => ({
     <div {...props}>{children}</div>
   ),
   List: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
-    <div role="tablist" {...props}>{children}</div>
+    <div role="tablist" {...props}>
+      {children}
+    </div>
   ),
   Trigger: ({
     children,
     value,
     ...props
   }: Record<string, unknown> & { children?: ReactNode; value?: string }) => (
-    <button role="tab" data-value={value} {...props}>{children}</button>
+    <button role="tab" data-value={value} {...props}>
+      {children}
+    </button>
   ),
   Content: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
-    <div role="tabpanel" {...props}>{children}</div>
+    <div role="tabpanel" {...props}>
+      {children}
+    </div>
   ),
 }));
 
@@ -91,9 +99,18 @@ vi.mock('../ui/DiscoveryView', () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock('../ui/TopologyGraph', () => ({
-  TopologyGraph: ({ onSelectAgent }: { onSelectAgent?: (id: string, projectPath: string) => void }) => (
+  TopologyGraph: ({
+    onSelectAgent,
+  }: {
+    onSelectAgent?: (id: string, projectPath: string) => void;
+  }) => (
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- Test mock; keyboard handler not needed
-    <div data-testid="topology-graph" role="button" tabIndex={0} onClick={() => onSelectAgent?.('agent-1', '/projects/agent-1')} />
+    <div
+      data-testid="topology-graph"
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelectAgent?.('agent-1', '/projects/agent-1')}
+    />
   ),
 }));
 
@@ -119,28 +136,40 @@ function createWrapper() {
 function enableMeshModeA() {
   mockUseRegisteredAgents.mockReturnValue({ data: { agents: [] }, isLoading: false });
   mockUseDeniedAgents.mockReturnValue({ data: { denied: [] }, isLoading: false });
-  mockUseMeshScanRoots.mockReturnValue({ roots: ['/home/user'], boundary: '/home/user', isSaving: false, setScanRoots: vi.fn() });
+  mockUseMeshScanRoots.mockReturnValue({
+    roots: ['/home/user'],
+    boundary: '/home/user',
+    isSaving: false,
+    setScanRoots: vi.fn(),
+  });
 }
 
 /** Set up Mode B — has agents */
 function enableMeshModeB() {
   mockUseRegisteredAgents.mockReturnValue({
     data: {
-      agents: [{
-        id: 'agent-1',
-        name: 'TestAgent',
-        runtime: 'claude-code',
-        description: 'A test agent',
-        capabilities: ['code'],
-        path: '/opt/agents/test',
-        namespace: 'default',
-        version: '1.0.0',
-      }],
+      agents: [
+        {
+          id: 'agent-1',
+          name: 'TestAgent',
+          runtime: 'claude-code',
+          description: 'A test agent',
+          capabilities: ['code'],
+          path: '/opt/agents/test',
+          namespace: 'default',
+          version: '1.0.0',
+        },
+      ],
     },
     isLoading: false,
   });
   mockUseDeniedAgents.mockReturnValue({ data: { denied: [] }, isLoading: false });
-  mockUseMeshScanRoots.mockReturnValue({ roots: ['/home/user'], boundary: '/home/user', isSaving: false, setScanRoots: vi.fn() });
+  mockUseMeshScanRoots.mockReturnValue({
+    roots: ['/home/user'],
+    boundary: '/home/user',
+    isSaving: false,
+    setScanRoots: vi.fn(),
+  });
 }
 
 beforeEach(() => {
@@ -150,7 +179,12 @@ beforeEach(() => {
   mockUseUnregisterAgent.mockReturnValue({ mutate: vi.fn() });
   mockUseMeshStatus.mockReturnValue({ data: undefined, isLoading: false });
   mockUseMeshAgentHealth.mockReturnValue({ data: undefined, isLoading: false });
-  mockUseMeshScanRoots.mockReturnValue({ roots: [], boundary: '/home/user', isSaving: false, setScanRoots: vi.fn() });
+  mockUseMeshScanRoots.mockReturnValue({
+    roots: [],
+    boundary: '/home/user',
+    isSaving: false,
+    setScanRoots: vi.fn(),
+  });
   mockUseRegisterAgent.mockReturnValue({ mutate: vi.fn() });
   mockUseDenyAgent.mockReturnValue({ mutate: vi.fn() });
 });
@@ -248,11 +282,29 @@ describe('MeshPanel - Agents tab empty state', () => {
   it('shows contextual empty state when agents list is empty', () => {
     // Return agents loading=false with empty list but Mode B via loading state
     mockUseRegisteredAgents.mockReturnValue({
-      data: { agents: [{ id: 'x', name: 'X', runtime: 'claude-code', description: '', capabilities: [], path: '/x', namespace: 'ns', version: '1' }] },
+      data: {
+        agents: [
+          {
+            id: 'x',
+            name: 'X',
+            runtime: 'claude-code',
+            description: '',
+            capabilities: [],
+            path: '/x',
+            namespace: 'ns',
+            version: '1',
+          },
+        ],
+      },
       isLoading: false,
     });
     mockUseDeniedAgents.mockReturnValue({ data: { denied: [] }, isLoading: false });
-    mockUseMeshScanRoots.mockReturnValue({ roots: [], boundary: '', isSaving: false, setScanRoots: vi.fn() });
+    mockUseMeshScanRoots.mockReturnValue({
+      roots: [],
+      boundary: '',
+      isSaving: false,
+      setScanRoots: vi.fn(),
+    });
 
     // Re-render with empty agents to test the empty state within Mode B
     // We need Mode B (agents exist) but agents tab to show empty. This is tested

@@ -1,9 +1,21 @@
 ---
-title: "Adapter/Binding UX Overhaul — Gap Research (Post-Setup, Live Pickers, Duplication, Status Indicators)"
+title: 'Adapter/Binding UX Overhaul — Gap Research (Post-Setup, Live Pickers, Duplication, Status Indicators)'
 date: 2026-03-11
 type: external-best-practices
 status: active
-tags: [adapter, binding, post-setup, incomplete-configuration, status-indicator, live-picker, duplication, clone, routing, ux]
+tags:
+  [
+    adapter,
+    binding,
+    post-setup,
+    incomplete-configuration,
+    status-indicator,
+    live-picker,
+    duplication,
+    clone,
+    routing,
+    ux,
+  ]
 feature_slug: adapter-agent-routing
 searches_performed: 22
 sources_count: 42
@@ -35,6 +47,7 @@ This report fills four gaps left by the prior adapter/binding UX research. The c
 Stripe's connected-account model is the most direct analogue to DorkOS adapters. An account can be "connected" (authenticated) but have outstanding requirements that, if unresolved, will eventually restrict its capabilities.
 
 **State taxonomy**: Stripe uses four account states visible in the dashboard:
+
 - **Enabled** — all capabilities active, no outstanding requirements
 - **Restricted soon** — requirements are due; capabilities will pause at a future date
 - **Restricted** — at least one capability is inactive due to unmet requirements
@@ -49,7 +62,7 @@ Stripe's connected-account model is the most direct analogue to DorkOS adapters.
 Datadog's integration tiles use a three-tier status that maps cleanly onto DorkOS's adapter + binding states:
 
 - **Available** — integration exists in catalog, not installed
-- **Detected** — technology is running, integration is not installed or not configured; only partial data is collected. (The key insight: the system *knows* the thing exists but it's not configured yet.)
+- **Detected** — technology is running, integration is not installed or not configured; only partial data is collected. (The key insight: the system _knows_ the thing exists but it's not configured yet.)
 - **Installed** — integration is installed and fully configured; full data flowing
 
 **Visual encoding**: An integration configured incorrectly appears yellow. Missing data after 24 hours shows a "Missing Data" badge. Full green = healthy. — [Introduction to Integrations — Datadog](https://docs.datadoghq.com/getting_started/integrations/)
@@ -59,6 +72,7 @@ Datadog's integration tiles use a three-tier status that maps cleanly onto DorkO
 #### Home Assistant: "Needs Attention" as a First-Class State
 
 Home Assistant integrations can be in several states that are surfaced on the Integrations page:
+
 - **Configured** — running normally
 - **Failed setup, will retry** — connection error; system will auto-retry
 - **Needs attention** — requires user action (reconfiguration, re-auth, missing device)
@@ -77,6 +91,7 @@ In Make.com's scenario canvas, a module that is added but not fully configured s
 #### Hookdeck: Paused Connection as Disconnected Yellow Line
 
 Hookdeck's connection model (Source → Connection → Destination) is architecturally almost identical to DorkOS's (Adapter → Binding → Agent). In Hookdeck's UI:
+
 - Active connections = normal solid line between source and destination
 - Paused connections = **disconnected yellow lines** on the canvas
 
@@ -85,6 +100,7 @@ This is a powerful visual metaphor for DorkOS's topology view: an adapter with n
 #### Sentry: "Waiting for First Event" Empty State
 
 Sentry's new project setup shows a persistent "Waiting for first event" state that combines:
+
 1. A prominent code snippet showing exactly what to add
 2. A live indicator that updates when the first event arrives
 3. No blocking — users can navigate away; the empty state persists in the background
@@ -109,6 +125,7 @@ Tier 3 — One-time toast (shown once, immediately after adapter creation):
 ```
 
 **What NOT to do**:
+
 - No modals requiring binding before the adapter can be used
 - No toast that repeats every time the user opens the relay panel
 - No disabling the adapter or hiding messages because there's no binding
@@ -160,6 +177,7 @@ The most powerful live-data picker pattern for DorkOS is a hybrid:
 The critical edge case: the user wants to create a specific chat binding before any messages have arrived.
 
 **Options**:
+
 1. **Manual entry fallback**: Show a text field for chat ID when no messages exist. Label it clearly: "Chat ID (or wait for a message to arrive and use 'Route to Agent' from the message log)."
 2. **Deferred binding creation**: Catch-all bindings work immediately; specific bindings are created reactively. No need to force proactive chat ID entry.
 3. **"Test message" prompt**: On the empty state, show: "Send a test message from [adapter] to see chats appear here." This guides the user to the reactive creation path.
@@ -169,6 +187,7 @@ The critical edge case: the user wants to create a specific chat binding before 
 #### Filtering the Picker: "Show Only Adapters for This Agent"
 
 When the user is viewing a specific agent and opens the RelayPanel, the sidebar should filter to show only adapters bound to that agent. The filter state should be:
+
 - Communicated as filter chips in the panel header: `[Agent: Builder ✕]`
 - Accessible via a "Show all" link that removes the filter
 - Sticky for the session (clearing on page refresh is acceptable)
@@ -186,15 +205,17 @@ This is the Linear model applied to DorkOS: context-aware sidebar that scopes to
 Zapier is the most documented platform for duplication behavior:
 
 **Full Zap duplication**:
+
 - New Zap appears as `"Copy of [original Zap name]"` in the dashboard
 - All steps are copied verbatim
 - **Connections preserved**: any app connections the user has access to remain set up (including shared team connections)
-- **Webhook URLs reset**: if the Zap uses a webhook trigger, the duplicate gets a *new* webhook URL — it cannot share the same URL as the original
+- **Webhook URLs reset**: if the Zap uses a webhook trigger, the duplicate gets a _new_ webhook URL — it cannot share the same URL as the original
 - **Other users' private connections**: not transferred; the duplicate shows "needs connection" for those steps
 - The copy starts in **draft (off) state**, not active — prevents accidental double-processing
 - Source: [Duplicate your Zap — Zapier Help](https://help.zapier.com/hc/en-us/articles/15408145778829-Duplicate-your-Zap)
 
 **Step-level duplication** (within a Zap):
+
 - Duplicated step appears below the original with `"Copy"` prepended to the step name
 - All field mappings are preserved
 - If the event type is changed after duplication, all field mappings break (expected)
@@ -214,16 +235,16 @@ n8n's workflow duplication prompts the user to enter a name for the duplicate be
 
 Synthesizing across all platforms, the duplication contract is:
 
-| Field Type | Duplication Behavior |
-|---|---|
-| User-specified configuration (form fields, credentials) | Copied verbatim |
-| Display name / label | Prefixed with "Copy of " |
-| Active/enabled state | Reset to **inactive/draft** |
-| Unique external identifiers (webhook URLs, bot tokens, API keys) | **Reset / regenerated** |
-| Generated IDs (database primary keys) | **New ID assigned** |
-| Routing rules / bindings | Copied verbatim (user's intent is to start from the same routing) |
-| Message history / logs | **Not copied** (belongs to the original) |
-| Creation timestamp | Set to duplication time |
+| Field Type                                                       | Duplication Behavior                                              |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| User-specified configuration (form fields, credentials)          | Copied verbatim                                                   |
+| Display name / label                                             | Prefixed with "Copy of "                                          |
+| Active/enabled state                                             | Reset to **inactive/draft**                                       |
+| Unique external identifiers (webhook URLs, bot tokens, API keys) | **Reset / regenerated**                                           |
+| Generated IDs (database primary keys)                            | **New ID assigned**                                               |
+| Routing rules / bindings                                         | Copied verbatim (user's intent is to start from the same routing) |
+| Message history / logs                                           | **Not copied** (belongs to the original)                          |
+| Creation timestamp                                               | Set to duplication time                                           |
 
 #### Applied to DorkOS Bindings
 
@@ -246,13 +267,13 @@ For **binding duplication** (the most common use case — "I want to route this 
 
 The most thorough status indicator specification in any design system. Carbon defines five states with specific semantic meanings:
 
-| State | Color | Semantic | When to Use |
-|---|---|---|---|
-| **Success** | Green | Process complete, system healthy | Active binding + messages flowing |
-| **Caution** | Yellow/Amber | Non-critical issue; action needed to prevent escalation | Adapter connected, no binding |
-| **Warning** | Orange | Threshold breached; near-critical | Adapter connected, binding exists but no recent messages |
-| **Critical** | Red | Failure requiring immediate attention | Adapter connection failed, auth error |
-| **Informational** | Blue | Context, not urgency | Adapter paused intentionally by user |
+| State             | Color        | Semantic                                                | When to Use                                              |
+| ----------------- | ------------ | ------------------------------------------------------- | -------------------------------------------------------- |
+| **Success**       | Green        | Process complete, system healthy                        | Active binding + messages flowing                        |
+| **Caution**       | Yellow/Amber | Non-critical issue; action needed to prevent escalation | Adapter connected, no binding                            |
+| **Warning**       | Orange       | Threshold breached; near-critical                       | Adapter connected, binding exists but no recent messages |
+| **Critical**      | Red          | Failure requiring immediate attention                   | Adapter connection failed, auth error                    |
+| **Informational** | Blue         | Context, not urgency                                    | Adapter paused intentionally by user                     |
 
 **Accessibility principle**: "Shape indicators rely solely on shapes and colors, which might not provide enough accessibility for screen readers and individuals with low color vision. Therefore, using outlines and pairing text with shape indicators is essential." — [Status indicators — Carbon Design System v10](https://v10.carbondesignsystem.com/patterns/status-indicator-pattern/)
 
@@ -301,6 +322,7 @@ The key Stripe insight: distinguish "user chose to pause this" (informational) f
 #### Home Assistant: "Needs Attention" as Persistent Card Badge
 
 Home Assistant's integration cards show persistent state badges that don't require user interaction:
+
 - Normal integration: just the name + entity count
 - Failed integration: `⚠ Failed setup, will retry` in small text below the card name
 - Needs attention: `⚠ Attention required` badge, red background
@@ -312,11 +334,13 @@ Home Assistant's integration cards show persistent state badges that don't requi
 #### Hookdeck: Topology-Level Status Encoding
 
 Hookdeck's canvas UI encodes connection health visually at the topology level:
+
 - Active connection: solid line between source and destination
 - Paused connection: **disconnected yellow/amber line** (literally a gap in the wire)
 - Error: red line or X indicator on the connection edge
 
 This is the topology-view equivalent of the card badge. For DorkOS's React Flow topology:
+
 - Adapter → Agent binding edge: green solid line (healthy)
 - No binding: no edge (adapter node floats, disconnected)
 - Error: red edge or dashed line
@@ -328,12 +352,12 @@ The "dangling adapter node with no edges" is itself a status indicator. It's vis
 
 The core principle for status notification design: "Design should match notification prominence to actual risk level." — [Error Message UX — Pencil & Paper](https://www.pencilandpaper.io/articles/ux-pattern-analysis-error-feedback)
 
-| Risk Level | DorkOS Adapter State | Notification Pattern |
-|---|---|---|
-| Low (informational) | Adapter paused by user | Small blue badge only |
-| Medium (caution) | Connected, no binding | Amber dot + text on card |
-| High (warning) | Binding exists, no recent messages | Orange dot + banner in detail view |
-| Critical | Auth failure, repeated errors | Red dot + banner + one-time toast |
+| Risk Level          | DorkOS Adapter State               | Notification Pattern               |
+| ------------------- | ---------------------------------- | ---------------------------------- |
+| Low (informational) | Adapter paused by user             | Small blue badge only              |
+| Medium (caution)    | Connected, no binding              | Amber dot + text on card           |
+| High (warning)      | Binding exists, no recent messages | Orange dot + banner in detail view |
+| Critical            | Auth failure, repeated errors      | Red dot + banner + one-time toast  |
 
 **The escalation rule**: if the problem has existed for more than N hours, escalate the notification prominence. An adapter that has been unbound for 10 minutes is informational. An adapter that has been unbound for 7 days is more urgent.
 
@@ -396,11 +420,13 @@ State: PAUSED (informational — user intent)
 Based on the Zapier, n8n, and Make.com research, the recommended naming convention for DorkOS:
 
 **Duplicating a binding**:
+
 - Default label: `"[original label] (copy)"` — suffix rather than prefix, more scannable in sorted lists
 - Immediately open the binding edit dialog so the user can adjust fields (especially chatId if they're routing a different chat)
 - The copy starts active (unlike Zap duplication) since bindings don't have draft state
 
 **Duplicating an adapter instance**:
+
 - Default label: `"[original label] (copy)"` — same pattern
 - The adapter token field shows a placeholder: "Enter new token — original token not copied"
 - The copy starts with the setup wizard at step 2 (configure credentials) since a new token is required
@@ -413,6 +439,7 @@ Based on the Zapier, n8n, and Make.com research, the recommended naming conventi
 A subtle UX problem: the user creates an adapter but wants to set up a specific chat binding before any messages have arrived. The reactive "Route to Agent" pattern requires a message to exist first.
 
 **The solution hierarchy** (in order of preference):
+
 1. **Deferred**: Catch-all binding handles all chats until specific routing is needed. User creates specific bindings reactively as chats appear. Zero friction.
 2. **Manual ID entry**: In the binding creation form, show a text field for chatId with the label "Chat ID" and hint text "Or wait for a message to arrive and use the 'Route' button in the message log." This is the escape hatch for power users who know their chat IDs.
 3. **"Send a test message" prompt**: In the empty message log state, show a prompt with the adapter's configuration (e.g., the bot username) so the user can send a test message to get the chat ID to appear.
@@ -443,6 +470,7 @@ Option 1 (deferred/reactive) covers 90% of cases. Option 2 is the developer esca
 ### Post-Setup Nudges: Adopt the Amber Dot + One-Time Toast Model
 
 Use the Datadog/Home Assistant inline badge pattern, not modal blocking:
+
 1. Amber dot on the adapter card = "connected but not routing"
 2. One-time toast after adapter creation = "Bind to an agent to start routing"
 3. Contextual banner in the adapter detail view = persistent until binding created
@@ -462,6 +490,7 @@ For adapter duplication, require the user to enter a new token before the duplic
 ### Status Indicators: Five-State Model with Mandatory Text Labels
 
 Implement the five states from Carbon Design System semantics:
+
 - Green = routing (healthy)
 - Blue = idle (connected, no recent messages, no action needed)
 - Amber = unbound (action recommended)
@@ -475,6 +504,7 @@ Always pair the dot with a text label. Use these same states in both the adapter
 ## Sources & Evidence
 
 ### Post-Setup Incomplete Configuration Patterns
+
 - [Review and take action on connected accounts — Stripe Docs](https://docs.stripe.com/connect/dashboard/review-actionable-accounts) — Progressive restriction UX, "Actions required" section
 - [Account onboarding — Stripe Documentation](https://docs.stripe.com/connect/supported-embedded-components/account-onboarding) — Stripe's onboarding state model
 - [Introduction to Integrations — Datadog](https://docs.datadoghq.com/getting_started/integrations/) — "Available / Detected / Installed" three-tier status
@@ -485,12 +515,14 @@ Always pair the dot with a text label. Use these same states in both the adapter
 - [Error Message UX — Pencil & Paper](https://www.pencilandpaper.io/articles/ux-pattern-analysis-error-feedback) — "Match notification prominence to actual risk level" principle
 
 ### Live Data Pickers
+
 - [Select menu element — Slack Developer Docs](https://docs.slack.dev/reference/block-kit/block-elements/select-menu-element/) — `conversations_select`, `external_select`, `default_to_current_conversation`
 - [Select Menus — discord.js Guide](https://discordjs.guide/interactive-components/select-menus.html) — `channel_select`, `user_select`, auto-populated from server entities
 - [Create rules to filter your emails — Gmail Help](https://support.google.com/mail/answer/6579?hl=en) — "Filter messages like this" reactive filter creation pattern
 - [Filter emails in Gmail — Ablebits](https://www.ablebits.com/office-addins-blog/filter-email-gmail/) — Step-by-step "filter from message" flow
 
 ### Binding/Routing Duplication Patterns
+
 - [Duplicate your Zap — Zapier Help](https://help.zapier.com/hc/en-us/articles/15408145778829-Duplicate-your-Zap) — "Copy of [name]" convention, connection preservation, webhook URL reset
 - [Reorder or duplicate action steps — Zapier Help](https://help.zapier.com/hc/en-us/articles/9528974130957-Reorder-or-duplicate-action-steps-and-paths) — Step-level "Copy" prefix pattern
 - [Copy and paste steps between Zaps — Zapier Help](https://help.zapier.com/hc/en-us/articles/14166765028749-Copy-and-paste-steps-between-Zaps) — Cross-Zap step copying behavior
@@ -498,6 +530,7 @@ Always pair the dot with a text label. Use these same states in both the adapter
 - [Webhook uniqueness on duplication — n8n Community](https://community.n8n.io/t/when-we-copy-paste-a-workflow-to-a-new-workflow-is-there-a-way-to-have-all-the-webhooks-become-unique/178723) — The webhook path uniqueness problem
 
 ### Connection Status Indicators
+
 - [Status indicators — Carbon Design System v10](https://v10.carbondesignsystem.com/patterns/status-indicator-pattern/) — Five-state model: Success / Caution / Warning / Critical / Informational
 - [Connections — Hookdeck](https://hookdeck.com/docs/connections) — Paused = disconnected yellow line on canvas
 - [Introduction to Integrations — Datadog](https://docs.datadoghq.com/getting_started/integrations/) — Three-tier: Available / Detected / Installed

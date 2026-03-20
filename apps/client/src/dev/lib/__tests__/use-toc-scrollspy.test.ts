@@ -28,7 +28,7 @@ beforeEach(() => {
       disconnect() {
         disconnectSpy();
       }
-    },
+    }
   );
 });
 

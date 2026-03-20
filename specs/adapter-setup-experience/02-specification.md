@@ -232,6 +232,7 @@ import { HelpCircle, ChevronDown } from 'lucide-react';
 ```
 
 **Design principles:**
+
 - Collapsed by default -- zero visual noise for experts
 - Trigger text is "Where do I find this?" -- action-oriented, not generic "Help"
 - Content renders in a subtle bordered box below the field
@@ -403,6 +404,7 @@ The turbo.json `outputs: ["dist/**"]` already caches the `dist/` directory inclu
 #### Slack (`packages/relay/src/adapters/slack/docs/setup.md`)
 
 Content covers:
+
 - **Quick Start** -- Click "Create Slack App" button (manifest URL) which pre-fills all settings
 - **Manual Setup** (if user prefers or needs custom configuration):
   1. Create app at api.slack.com/apps (From Scratch, not From Manifest)
@@ -419,6 +421,7 @@ Content covers:
 #### Telegram (`packages/relay/src/adapters/telegram/docs/setup.md`)
 
 Content covers:
+
 - **Create a Bot** -- Open Telegram, search for @BotFather, send `/newbot`, follow prompts
 - **Get Your Token** -- Copy the token BotFather sends (format: `123456789:ABC...`)
 - **Connection Modes** -- Polling (works everywhere, recommended for dev) vs Webhook (requires public HTTPS URL)
@@ -428,6 +431,7 @@ Content covers:
 #### Webhook (`packages/relay/src/adapters/webhook/docs/setup.md`)
 
 Content covers:
+
 - **Overview** -- How inbound/outbound webhooks work in DorkOS Relay
 - **Inbound Webhooks** -- Subject naming (`relay.webhook.<service>`), HMAC-SHA256 verification, request format
 - **Outbound Webhooks** -- URL requirements, HMAC-SHA256 signing, custom headers
@@ -542,35 +546,41 @@ Leave empty if no custom headers are needed.`,
 ### Unit Tests
 
 **Schema tests** (`packages/shared/src/__tests__/relay-adapter-schemas.test.ts`):
+
 - `setupGuide` field is optional and accepts string
 - `helpMarkdown` field is optional and accepts string
 - Manifests without new fields still validate (backward compat)
 - Existing manifest fixtures still pass validation
 
 **Manifest validation tests** (`packages/relay/src/__tests__/manifests.test.ts`):
+
 - All built-in manifests pass schema validation after adding new fields
 - Slack manifest URL is properly URL-encoded and starts with expected prefix
 
 ### Component Tests
 
 **MarkdownContent** (`apps/client/src/layers/shared/ui/__tests__/markdown-content.test.tsx`):
+
 - Renders markdown content (headings, lists, links, code)
 - Handles empty string gracefully
 - Applies className prop
 
 **ConfigFieldInput** (extend existing tests):
+
 - Field without helpMarkdown renders without collapsible
 - Field with helpMarkdown renders collapsible trigger
 - Clicking trigger expands help content
 - Help content renders markdown (links, code blocks)
 
 **SetupGuideSheet** (`apps/client/src/layers/features/relay/ui/__tests__/SetupGuideSheet.test.tsx`):
+
 - Renders when open=true
 - Hidden when open=false
 - Displays title and markdown content
 - Close button works
 
 **ConfigureStep** (extend existing tests):
+
 - setupInstructions renders as markdown (check for HTML output, not plain text)
 - "Setup Guide" button visible when manifest.setupGuide present
 - "Setup Guide" button hidden when manifest.setupGuide absent
@@ -578,6 +588,7 @@ Leave empty if no custom headers are needed.`,
 ### Integration Tests
 
 **Docs loading** (`apps/server/src/services/relay/__tests__/adapter-manager.test.ts`):
+
 - Built-in adapter manifests include setupGuide after initialization (when docs exist)
 - Missing docs/setup.md results in undefined setupGuide (no error)
 - Catalog API response includes setupGuide content
@@ -647,7 +658,7 @@ Leave empty if no custom headers are needed.`,
 
 ## Open Questions
 
-*None -- all decisions resolved during ideation.*
+_None -- all decisions resolved during ideation._
 
 ## References
 

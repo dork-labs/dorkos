@@ -70,12 +70,8 @@ describe('Built-in adapter manifests', () => {
     });
 
     it('marks secret fields as password type', () => {
-      const inboundSecret = WEBHOOK_MANIFEST.configFields.find(
-        (f) => f.key === 'inbound.secret',
-      );
-      const outboundSecret = WEBHOOK_MANIFEST.configFields.find(
-        (f) => f.key === 'outbound.secret',
-      );
+      const inboundSecret = WEBHOOK_MANIFEST.configFields.find((f) => f.key === 'inbound.secret');
+      const outboundSecret = WEBHOOK_MANIFEST.configFields.find((f) => f.key === 'outbound.secret');
       expect(inboundSecret?.type).toBe('password');
       expect(outboundSecret?.type).toBe('password');
     });
@@ -116,7 +112,7 @@ describe('Built-in adapter manifests', () => {
 
     it('has a manifest URL that starts with the Slack API endpoint', () => {
       expect(SLACK_MANIFEST.actionButton?.url).toMatch(
-        /^https:\/\/api\.slack\.com\/apps\?new_app=1&manifest_yaml=/,
+        /^https:\/\/api\.slack\.com\/apps\?new_app=1&manifest_yaml=/
       );
     });
 

@@ -55,18 +55,18 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| Path | Role |
-|------|------|
-| `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx` | Main component, layout orchestration, ReactFlow wrapper |
-| `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts` | Pure element builder: nodes + edges from topology data |
-| `apps/client/src/layers/features/mesh/ui/AgentNode.tsx` | Agent rendering, 3-band LOD, health dot, capability badges |
-| `apps/client/src/layers/features/mesh/ui/AdapterNode.tsx` | Adapter rendering, status dot, platform icon, binding count |
-| `apps/client/src/layers/features/mesh/ui/NamespaceGroupNode.tsx` | Namespace container, colored header, agent count |
-| `apps/client/src/layers/features/mesh/ui/BindingEdge.tsx` | Adapter→Agent binding edge, hover label, delete action |
-| `apps/client/src/layers/features/mesh/ui/use-topology-handlers.ts` | All ReactFlow event handlers |
-| `apps/client/src/layers/features/mesh/lib/elk-layout.ts` | ELK.js async layout engine |
-| `apps/client/src/layers/features/mesh/lib/use-lod-band.ts` | Zoom-based LOD selector |
-| `apps/client/src/layers/features/mesh/ui/topology-graph.css` | Handle visibility, drag-to-connect states |
+| Path                                                                  | Role                                                        |
+| --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx`           | Main component, layout orchestration, ReactFlow wrapper     |
+| `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts` | Pure element builder: nodes + edges from topology data      |
+| `apps/client/src/layers/features/mesh/ui/AgentNode.tsx`               | Agent rendering, 3-band LOD, health dot, capability badges  |
+| `apps/client/src/layers/features/mesh/ui/AdapterNode.tsx`             | Adapter rendering, status dot, platform icon, binding count |
+| `apps/client/src/layers/features/mesh/ui/NamespaceGroupNode.tsx`      | Namespace container, colored header, agent count            |
+| `apps/client/src/layers/features/mesh/ui/BindingEdge.tsx`             | Adapter→Agent binding edge, hover label, delete action      |
+| `apps/client/src/layers/features/mesh/ui/use-topology-handlers.ts`    | All ReactFlow event handlers                                |
+| `apps/client/src/layers/features/mesh/lib/elk-layout.ts`              | ELK.js async layout engine                                  |
+| `apps/client/src/layers/features/mesh/lib/use-lod-band.ts`            | Zoom-based LOD selector                                     |
+| `apps/client/src/layers/features/mesh/ui/topology-graph.css`          | Handle visibility, drag-to-connect states                   |
 
 **Data Flow:**
 
@@ -90,23 +90,25 @@ Not applicable — this is a UX improvement, not a bug fix.
 Two existing research reports are the primary references:
 
 ### `research/20260228_graph_topology_visualization_ux.md`
+
 - MiniMap is "critical for spatial orientation" — highest-value addition
 - LOD rendering is the "single highest-leverage technique" — already implemented
 - Background dots provide spatial reference when panning/zooming
 - Edge labels should hover-to-reveal for dense graphs — already implemented
 
 ### `research/20260226_mesh_topology_elevation.md`
+
 - Three-tier roadmap: Tier 1 (quick wins), Tier 2 (core elevation), Tier 3 (signature delight)
 - This spec covers selected Tier 1 items (MiniMap, Background) plus the CCA/namespace changes
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | CCA as graph node | Remove; show runtime as badge on AgentNode | CCA is an internal runtime, not relay topology. Every agent uses it, so it adds noise without information. Badge communicates runtime without wasting graph space. |
-| 2 | Namespace containers | Always show, even with single namespace | Teaches the concept, provides visual structure, consistent as users scale up. Already implemented but gated behind multi-namespace check. |
-| 3 | Empty adapter state | Ghost placeholder node with dashed border | Progressive disclosure — teaches relay capability without requiring setup. Click-to-add entry point. Disappears when real adapters exist. |
-| 4 | MiniMap + Background | Add both (React Flow built-ins) | Highest-value quick wins from research. MiniMap for spatial orientation, Background dots for spatial reference. |
-| 5 | Adapter node labels | Show label (primary) + type name (secondary) | Aligns with spec 120 adapter labeling. Multi-instance adapters differentiated by label. |
-| 6 | Binding edge filters | Show chatId/channelType as badges on edge label | Aligns with spec 120 binding filter fields. Communicates routing specificity at a glance. |
-| 7 | Topology purpose | All three: dashboard, config tool, mental model | LOD progressive disclosure handles the tension. Zoomed out = status. Mid = relationships. Zoomed in = configuration. |
+| #   | Decision             | Choice                                          | Rationale                                                                                                                                                          |
+| --- | -------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | CCA as graph node    | Remove; show runtime as badge on AgentNode      | CCA is an internal runtime, not relay topology. Every agent uses it, so it adds noise without information. Badge communicates runtime without wasting graph space. |
+| 2   | Namespace containers | Always show, even with single namespace         | Teaches the concept, provides visual structure, consistent as users scale up. Already implemented but gated behind multi-namespace check.                          |
+| 3   | Empty adapter state  | Ghost placeholder node with dashed border       | Progressive disclosure — teaches relay capability without requiring setup. Click-to-add entry point. Disappears when real adapters exist.                          |
+| 4   | MiniMap + Background | Add both (React Flow built-ins)                 | Highest-value quick wins from research. MiniMap for spatial orientation, Background dots for spatial reference.                                                    |
+| 5   | Adapter node labels  | Show label (primary) + type name (secondary)    | Aligns with spec 120 adapter labeling. Multi-instance adapters differentiated by label.                                                                            |
+| 6   | Binding edge filters | Show chatId/channelType as badges on edge label | Aligns with spec 120 binding filter fields. Communicates routing specificity at a glance.                                                                          |
+| 7   | Topology purpose     | All three: dashboard, config tool, mental model | LOD progressive disclosure handles the tension. Zoomed out = status. Mid = relationships. Zoomed in = configuration.                                               |

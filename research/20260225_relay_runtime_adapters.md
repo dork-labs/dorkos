@@ -1,5 +1,5 @@
 ---
-title: "Relay Runtime Adapters — Unified Adapter System & ClaudeCodeAdapter"
+title: 'Relay Runtime Adapters — Unified Adapter System & ClaudeCodeAdapter'
 date: 2026-02-25
 type: internal-architecture
 status: archived
@@ -28,6 +28,7 @@ The recommended approach models Kafka Connect's clean `Connector + Task` separat
 ### 1. The Existing Interface is 90% There
 
 `packages/relay/src/types.ts` already defines `RelayAdapter` with:
+
 - `id`, `subjectPrefix`, `displayName`
 - `start(relay: RelayPublisher): Promise<void>`
 - `stop(): Promise<void>`
@@ -69,6 +70,7 @@ Node.js `import()` works well for plugin loading in ESM environments. The key pa
 **Grafana** loads frontend plugins via SystemJS and backend plugins as gRPC binaries. For DorkOS the analogy is: built-in adapters are first-class, third-party adapters are loaded via `dynamic import()`. Grafana's plugin lifecycle (install → load → initialize → start) maps to DorkOS's `import() → validate → new Adapter(config) → registry.register()`.
 
 **Common patterns across all systems:**
+
 1. A single interface/behaviour contract (not multiple)
 2. Lifecycle hooks: start, stop, deliver/receive
 3. Self-description: id, name, config schema
@@ -82,6 +84,7 @@ From the official SDK docs (`@anthropic-ai/claude-agent-sdk`):
 **Creating isolated sessions:** Call `query({ prompt, options: { cwd, maxTurns, permissionMode } })` — no explicit session creation step. The SDK auto-creates a session and returns the `session_id` in the first `system/init` message.
 
 **Streaming and collecting output:** Iterate the returned async generator. `SDKAssistantMessage` events carry text content blocks. `SDKResultMessage` carries the final `result` string, cost, and duration. The Claude Code adapter should:
+
 1. Collect `text_delta` events from `stream_event` messages (via `includePartialMessages: true`) for progress
 2. Read `SDKResultMessage.result` for the final output to publish back to Relay
 
@@ -92,23 +95,24 @@ From the official SDK docs (`@anthropic-ai/claude-agent-sdk`):
 **Error recovery:** `SDKResultMessage` with `subtype: 'error_max_turns'` or `'error_during_execution'` signals failure. Wrap the generator iteration in try/catch for process-level errors (spawn failures). On any error, create a dead-letter entry.
 
 **Key options for the Claude Code adapter:**
+
 ```typescript
 query({
   prompt: formattedMessage,
   options: {
     cwd: agentDirectory,
-    resume: existingSessionId,          // if resuming
-    permissionMode: 'bypassPermissions',// for autonomous relay dispatch
-    maxTurns: budget.callBudget,        // self-limit via budget
-    abortController: controller,        // for TTL-based timeout
-    settingSources: ['project'],        // load CLAUDE.md from agent dir
+    resume: existingSessionId, // if resuming
+    permissionMode: 'bypassPermissions', // for autonomous relay dispatch
+    maxTurns: budget.callBudget, // self-limit via budget
+    abortController: controller, // for TTL-based timeout
+    settingSources: ['project'], // load CLAUDE.md from agent dir
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
-      append: relayContextBlock,        // inject relay context
+      append: relayContextBlock, // inject relay context
     },
-  }
-})
+  },
+});
 ```
 
 ### 5. Prompt Formatting for Inter-Agent Communication
@@ -118,12 +122,15 @@ The codebase already uses XML blocks for structured context injection (`context-
 **Natural language framing principle:** The agent receives a message that reads like a human wrote it, not a raw envelope dump. Structured metadata goes in XML blocks appended to the system prompt (not the user message).
 
 **Recommended format for the user message (the "prompt"):**
+
 ```
 {message.content}
 ```
+
 Just the content. No wrapper. The agent should experience this as a direct instruction.
 
 **Recommended system prompt append (`<relay_context>` block):**
+
 ```xml
 <relay_context>
 From: {envelope.from} (agent/system/human)
@@ -142,6 +149,7 @@ If you cannot complete this in {callBudget} turns, say so and stop.
 ```
 
 This pattern is validated by:
+
 - Model Context Protocol (MCP) structured JSON-RPC exchanges for context
 - Agent Communication Protocol (ACP) MIME-type extensibility
 - Microsoft multi-agent reference architecture (structured metadata + natural instruction separation)
@@ -153,17 +161,20 @@ This pattern is validated by:
 **Naming convention:** `{host}-{type}-{name}` — e.g., `dorkos-relay-slack`, `dorkos-relay-opencode`. The host prefix (`dorkos-`) makes packages discoverable via npm search. This is the pattern used by ESLint (`eslint-plugin-*`), Vite (`vite-plugin-*`), Babel (`babel-plugin-*`).
 
 **Export pattern:** Factory function as default export. The factory accepts config and returns an adapter instance:
+
 ```typescript
 // dorkos-relay-slack/index.js
 export default function createSlackAdapter(config) {
   return new SlackAdapter(config);
 }
 ```
+
 This matches the Vite/Rollup convention (`export default function myPlugin(options) { return { ... } }`).
 
 **No named `createPlugin` convention is standard** — use `export default` with a descriptive function name.
 
 **Config schema declaration:** The factory should also export a Zod schema as a named export so `AdapterManager` can validate config before instantiating:
+
 ```typescript
 export { SlackAdapterConfigSchema } from './config-schema.js';
 export default createSlackAdapter;
@@ -172,6 +183,7 @@ export default createSlackAdapter;
 **Plugin discovery:** No standard npm discovery mechanism exists (unlike some ecosystems). DorkOS should use explicit config (`adapters.json`) rather than auto-discovery. This is the approach used by Grafana (plugins directory), ESLint (explicit config array), and Vite (explicit plugin array). Auto-discovery based on `peerDependencies` or npm keywords is fragile and slow.
 
 **Package `exports` field:** Third-party adapters should use a simple `exports` field:
+
 ```json
 {
   "exports": {
@@ -190,6 +202,7 @@ export default createSlackAdapter;
 The current `RelayAdapter` in `types.ts` needs two targeted changes:
 
 **Change 1 — Add `AdapterContext` to `deliver()`:**
+
 ```typescript
 export interface AdapterContext {
   /** Agent directory from Mesh registry or message metadata. */
@@ -213,6 +226,7 @@ export interface DeliveryResult {
 ```
 
 **Change 2 — Update `deliver()` signature:**
+
 ```typescript
 deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult>;
 ```
@@ -231,11 +245,11 @@ The plugin loader sits inside `AdapterManager` and extends `createAdapter()`. Cu
 // Current AdapterConfig in types.ts needs to expand:
 export interface AdapterConfig {
   id: string;
-  type: 'telegram' | 'webhook' | 'claude-code';     // built-in types
-  package?: string;   // npm package name for third-party
-  path?: string;      // local file path for dev/custom
+  type: 'telegram' | 'webhook' | 'claude-code'; // built-in types
+  package?: string; // npm package name for third-party
+  path?: string; // local file path for dev/custom
   enabled: boolean;
-  config: unknown;    // adapter-specific config, validated by adapter's schema
+  config: unknown; // adapter-specific config, validated by adapter's schema
 }
 ```
 
@@ -339,10 +353,12 @@ The adapter lives at `packages/relay/src/adapters/claude-code-adapter.ts`. It is
 5. **Prompt formatting:** The `envelope.payload` content goes directly as the user prompt. Relay metadata goes in a `<relay_context>` XML block appended to the system prompt via `systemPrompt.append`.
 
 **Coexistence with MessageReceiver:** The existing `MessageReceiver` subscribes to `relay.agent.>` via `relayCore.subscribe()`. The Claude Code adapter also handles `relay.agent.>` but via the `AdapterRegistry` deliver path. These are separate code paths:
+
 - When Relay is enabled AND the Claude Code adapter is registered: messages go through the adapter's `deliver()` method (called by `AdapterRegistry.deliver()` from `RelayCore`)
 - `MessageReceiver` should be disabled/not started when the Claude Code adapter is active, to avoid double-processing
 
 This is a coordination concern the spec should address. Options:
+
 - Option A: Replace `MessageReceiver` entirely with the Claude Code adapter (cleaner)
 - Option B: The adapter's `subjectPrefix` takes priority over `MessageReceiver`'s subscription
 - Option C: `MessageReceiver` checks if the Claude Code adapter is registered and skips if so
@@ -424,14 +440,15 @@ The Zod schema (`AdaptersConfigFileSchema` in `packages/shared/relay-schemas.ts`
 
 **Recommended approach: `dynamic import()` with duck-type validation**
 
-| Approach | Pros | Cons |
-|---|---|---|
-| `import(packageName)` for npm | Standard ESM, no wrappers | Module cache means no hot-reload; esbuild bundling may need care |
-| `import(pathToFileURL(absPath).href)` for local files | Works in ESM, cross-platform | Same cache limitation |
-| `createRequire()` + `require()` | Works for CJS packages | Doesn't work for ESM-only packages; feels like a workaround |
-| VM sandboxing | True isolation | Complex, leaky, not what any major ecosystem does |
+| Approach                                              | Pros                         | Cons                                                             |
+| ----------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------- |
+| `import(packageName)` for npm                         | Standard ESM, no wrappers    | Module cache means no hot-reload; esbuild bundling may need care |
+| `import(pathToFileURL(absPath).href)` for local files | Works in ESM, cross-platform | Same cache limitation                                            |
+| `createRequire()` + `require()`                       | Works for CJS packages       | Doesn't work for ESM-only packages; feels like a workaround      |
+| VM sandboxing                                         | True isolation               | Complex, leaky, not what any major ecosystem does                |
 
 **Implementation pattern:**
+
 ```typescript
 // npm package
 const mod = await import(packageName);
@@ -445,6 +462,7 @@ function isRelayAdapter(obj): obj is RelayAdapter { ... }
 ```
 
 **Error handling:**
+
 - `ERR_MODULE_NOT_FOUND` → log "Package not found, install with npm install {name}"
 - Export validation failure → log "Module does not export a valid RelayAdapter"
 - Both are non-fatal: log and skip the adapter
@@ -481,11 +499,13 @@ From official Anthropic docs + existing `MessageReceiver` patterns:
 ### Prompt Formatting
 
 **Structure:**
+
 - **User message:** The raw message content only. Clean, natural, no metadata wrappers.
 - **System prompt append:** XML `<relay_context>` block with sender identity, budget, reply instructions
 - **Agent directive:** "If you cannot complete this in N turns, say so and stop early" — this is the key inter-agent protocol instruction
 
 **Example `<relay_context>` block:**
+
 ```xml
 <relay_context>
 From: relay.system.pulse.budget-monitor
@@ -507,14 +527,14 @@ This pattern follows what the codebase already does in `context-builder.ts` for 
 
 ### npm Plugin Conventions
 
-| Convention | Recommendation |
-|---|---|
-| Package name | `dorkos-relay-{channel}` (e.g., `dorkos-relay-slack`) |
+| Convention     | Recommendation                                                                                             |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| Package name   | `dorkos-relay-{channel}` (e.g., `dorkos-relay-slack`)                                                      |
 | Default export | Factory function: `export default function create{Name}Adapter(config) { return new ...Adapter(config); }` |
-| Named exports | Config schema: `export { SlackAdapterConfigSchema }` |
-| `type` field | `"module"` in `package.json` — ESM-only |
-| Main entry | `"exports": { ".": "./dist/index.js" }` |
-| No discovery | Explicit config in `adapters.json` — no auto-discovery via npm keywords |
+| Named exports  | Config schema: `export { SlackAdapterConfigSchema }`                                                       |
+| `type` field   | `"module"` in `package.json` — ESM-only                                                                    |
+| Main entry     | `"exports": { ".": "./dist/index.js" }`                                                                    |
+| No discovery   | Explicit config in `adapters.json` — no auto-discovery via npm keywords                                    |
 
 ---
 
@@ -523,6 +543,7 @@ This pattern follows what the codebase already does in `context-builder.ts` for 
 **Recommended Approach:** Extend the existing `RelayAdapter` interface with `AdapterContext` and `DeliveryResult`, extend `AdapterManager.createAdapter()` to support `package` and `path` fields via dynamic import, and implement `ClaudeCodeAdapter` as a built-in adapter that wraps `AgentManagerLike`.
 
 **Rationale:**
+
 1. The codebase already has 90% of the infrastructure (`RelayAdapter`, `AdapterRegistry`, `AdapterManager`). Minimal changes achieve the spec's goals.
 2. The `AgentManagerLike` interface (already in `message-receiver.ts`) is the right abstraction for the Claude Code adapter — it decouples `packages/relay` from `apps/server`.
 3. Dynamic `import()` is the correct modern Node.js pattern for plugin loading. No additional packages needed.
@@ -530,6 +551,7 @@ This pattern follows what the codebase already does in `context-builder.ts` for 
 5. XML system prompt blocks match the existing `context-builder.ts` pattern — no new conventions introduced.
 
 **Caveats:**
+
 1. `MessageReceiver`'s `relay.agent.>` subscription must be disabled when the Claude Code adapter is active to prevent double-processing. Either gate `MessageReceiver` startup on whether the Claude Code adapter is registered, or refactor `MessageReceiver` to only handle `relay.system.pulse.>`.
 2. `createAdapter()` in `AdapterManager` must become `async` to support dynamic imports — a minor internal refactor.
 3. The `AdapterConfig` Zod schema in `packages/shared/relay-schemas.ts` must be updated to allow `package?: string` and `path?: string` as alternatives to `type`.

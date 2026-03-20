@@ -10,14 +10,14 @@
 
 Four targeted bug fixes discovered during automated self-test of the DorkOS chat UI:
 
-| Fix | Bug | Priority | Phase |
-|---|---|---|---|
-| 1.1 | SSE streaming freeze on responses >~100 tokens | P0 | 1 |
-| 1.2 | Blank chat on hard refresh with DorkOS UUID in URL | P0 | 1 |
-| 2.1 | `<relay_context>` shown as user messages in chat history | P1 | 2 |
-| 2.2 | Session titles show relay metadata instead of first user message | P1 | 2 |
-| 2.3 | Model/permission mode selectors reset each other on update | P2 | 2 |
-| 3.x | Tests and documentation | — | 3 |
+| Fix | Bug                                                              | Priority | Phase |
+| --- | ---------------------------------------------------------------- | -------- | ----- |
+| 1.1 | SSE streaming freeze on responses >~100 tokens                   | P0       | 1     |
+| 1.2 | Blank chat on hard refresh with DorkOS UUID in URL               | P0       | 1     |
+| 2.1 | `<relay_context>` shown as user messages in chat history         | P1       | 2     |
+| 2.2 | Session titles show relay metadata instead of first user message | P1       | 2     |
+| 2.3 | Model/permission mode selectors reset each other on update       | P2       | 2     |
+| 3.x | Tests and documentation                                          | —        | 3     |
 
 No new libraries. No schema or database changes. All fixes are surgical.
 
@@ -50,6 +50,7 @@ export async function sendSSEEvent(res: Response, event: StreamEvent): Promise<v
 **Call sites to update** (`apps/server/src/routes/sessions.ts`): Add `await` to all three calls (main loop, done-redirect, error handler).
 
 **Acceptance criteria:**
+
 - `sendSSEEvent` is exported as `async` returning `Promise<void>`
 - Single `res.write()` call per invocation (combined payload)
 - `drain` listener registered only when `write()` returns `false`
@@ -80,6 +81,7 @@ Apply the same translation in `GET /:id` (metadata) and `GET /:id/tasks` handler
 **Fallback behavior:** `getSdkSessionId()` returns `undefined` after server restart. The `?? sessionId` fallback preserves existing behavior for sidebar-navigated sessions (which already have the SDK UUID in the URL via the `done` event redirect).
 
 **Acceptance criteria:**
+
 - Hard refresh with DorkOS UUID in URL returns correct message history
 - Server-restart sessions loaded via sidebar still work
 - `getSdkSessionId` called before `readTranscript`, `getSession`, and `readTasks`
@@ -114,6 +116,7 @@ if (text.startsWith('<relay_context>')) {
 **Note:** Check `claude-code-adapter.ts:782` to confirm whether `<relay_context>` content and actual user message are on separate JSONL lines (correct assumption for `continue`) or combined on one line (would need different handling).
 
 **Acceptance criteria:**
+
 - Messages starting with `<relay_context>` are excluded from `HistoryMessage[]`
 - Non-relay user messages are unaffected
 - No-op for sessions where `DORKOS_RELAY_ENABLED=false`
@@ -136,13 +139,14 @@ if (
   text.startsWith('<command-name>') ||
   text.startsWith('<command-message>') ||
   text.startsWith('<task-notification>') ||
-  text.startsWith('<relay_context>')    // Filter relay metadata injected by ClaudeCodeAdapter
+  text.startsWith('<relay_context>') // Filter relay metadata injected by ClaudeCodeAdapter
 ) {
   continue;
 }
 ```
 
 **Acceptance criteria:**
+
 - Relay sessions derive title from the first non-relay user message
 - When only relay messages exist in head buffer, fallback to `Session <uuid-prefix>`
 - Non-relay sessions are completely unaffected
@@ -165,15 +169,16 @@ if (
 queryClient.setQueryData(['session', sessionId, selectedCwd], updated);
 
 // After:
-queryClient.setQueryData(
-  ['session', sessionId, selectedCwd],
-  (old: Session | undefined) => ({ ...old, ...updated })
-);
+queryClient.setQueryData(['session', sessionId, selectedCwd], (old: Session | undefined) => ({
+  ...old,
+  ...updated,
+}));
 ```
 
 Add `Session` to the `@dorkos/shared/types` imports if not already present.
 
 **Acceptance criteria:**
+
 - Updating `model` preserves the cached `permissionMode`
 - Updating `permissionMode` preserves the cached `model`
 - Status bar does not visually reset either field when the other is updated
@@ -197,7 +202,9 @@ Update the mock to include `once: vi.fn()`, add `await` to all `sendSSEEvent` ca
 it('waits for drain before resolving when write returns false', async () => {
   const mockRes = {
     write: vi.fn().mockReturnValueOnce(false).mockReturnValue(true),
-    once: vi.fn((event, cb) => { if (event === 'drain') cb(); }),
+    once: vi.fn((event, cb) => {
+      if (event === 'drain') cb();
+    }),
   };
   await sendSSEEvent(mockRes as unknown as Response, { type: 'text_delta', data: { text: 'hi' } });
   expect(mockRes.once).toHaveBeenCalledWith('drain', expect.any(Function));
@@ -235,10 +242,12 @@ Ensure `getTranscriptETag` is mocked in the `transcriptReader` mock setup (retur
 **Depends on:** 2.1, 2.2
 
 **Transcript-parser tests:**
+
 - `filters relay_context blocks from parsed messages` — JSONL with only a `<relay_context>` user line returns 0 user messages, assistant messages are still returned.
 - `does not filter regular user messages` — sanity check that normal messages still pass through.
 
 **Transcript-reader tests:**
+
 - `skips relay_context when extracting session title` — session with `<relay_context>` first, then `'Analyze logs'` gets title `'Analyze logs'`.
 - `uses fallback title when all user messages are relay_context` — session with only relay context messages gets `'Session <uuid-prefix>'` fallback.
 
@@ -253,10 +262,12 @@ Follow existing fs mock patterns in the transcript-reader test file for mocking 
 **Depends on:** 2.3
 
 **Client test:** Two tests using `renderHook` with `QueryClientProvider` + `TransportProvider`:
+
 - `preserves existing permissionMode when updating model` — prime cache with both fields, mock `transport.updateSession` to return only `model`, verify `permissionMode` is preserved in cache after `updateSession({ model })`.
 - `preserves existing model when updating permissionMode` — mirror of above in the other direction.
 
 **Architecture docs:** Update `contributing/architecture.md` with:
+
 1. Note that `sendSSEEvent` is async and must be awaited (with explanation of why).
 2. Note that `GET /api/sessions/:id/messages` calls `getSdkSessionId()` before JSONL lookup for session ID translation.
 
@@ -280,16 +291,16 @@ Tasks 3.1, 3.2, 3.3, and 3.4 are parallel (each depends on its own fix).
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `apps/server/src/services/core/stream-adapter.ts` | `sendSSEEvent` → async, single write, drain await |
-| `apps/server/src/routes/sessions.ts` | Await `sendSSEEvent` calls; add `getSdkSessionId()` translation |
-| `apps/server/src/services/session/transcript-parser.ts` | Add `<relay_context>` filter |
-| `apps/server/src/services/session/transcript-reader.ts` | Add `<relay_context>` to title skip list |
-| `apps/client/src/layers/entities/session/model/use-session-status.ts` | Merge `setQueryData` instead of replace |
-| `apps/server/src/services/core/__tests__/stream-adapter.test.ts` | Update + add backpressure tests |
-| `apps/server/src/routes/__tests__/sessions.test.ts` | Add ID translation tests |
-| `apps/server/src/services/__tests__/transcript-parser.test.ts` | Add relay_context filter tests |
-| `apps/server/src/services/__tests__/transcript-reader.test.ts` | Add relay_context title tests |
-| `apps/client/src/layers/entities/session/model/__tests__/use-session-status.test.ts` | Add cache merge tests |
-| `contributing/architecture.md` | Document async sendSSEEvent and ID translation |
+| File                                                                                 | Change                                                          |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `apps/server/src/services/core/stream-adapter.ts`                                    | `sendSSEEvent` → async, single write, drain await               |
+| `apps/server/src/routes/sessions.ts`                                                 | Await `sendSSEEvent` calls; add `getSdkSessionId()` translation |
+| `apps/server/src/services/session/transcript-parser.ts`                              | Add `<relay_context>` filter                                    |
+| `apps/server/src/services/session/transcript-reader.ts`                              | Add `<relay_context>` to title skip list                        |
+| `apps/client/src/layers/entities/session/model/use-session-status.ts`                | Merge `setQueryData` instead of replace                         |
+| `apps/server/src/services/core/__tests__/stream-adapter.test.ts`                     | Update + add backpressure tests                                 |
+| `apps/server/src/routes/__tests__/sessions.test.ts`                                  | Add ID translation tests                                        |
+| `apps/server/src/services/__tests__/transcript-parser.test.ts`                       | Add relay_context filter tests                                  |
+| `apps/server/src/services/__tests__/transcript-reader.test.ts`                       | Add relay_context title tests                                   |
+| `apps/client/src/layers/entities/session/model/__tests__/use-session-status.test.ts` | Add cache merge tests                                           |
+| `contributing/architecture.md`                                                       | Document async sendSSEEvent and ID translation                  |

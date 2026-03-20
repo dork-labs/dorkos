@@ -1,10 +1,5 @@
 {
   "title": "Getting Started",
-  "pages": [
-    "installation",
-    "quickstart",
-    "configuration",
-    "uninstall"
-  ],
+  "pages": ["installation", "quickstart", "configuration", "uninstall"],
   "defaultOpen": true
 }

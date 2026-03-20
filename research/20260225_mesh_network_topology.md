@@ -1,5 +1,5 @@
 ---
-title: "Mesh Network Topology and Access Control"
+title: 'Mesh Network Topology and Access Control'
 date: 2026-02-25
 type: internal-architecture
 status: archived
@@ -39,18 +39,21 @@ For DorkOS, the filesystem IS the topology. Agents have a `projectPath` already 
 ### 2. Access Control Patterns
 
 **Kubernetes NetworkPolicy** establishes the gold standard for default-deny namespace isolation:
+
 - By default, all pods accept all traffic (default-allow)
 - Once a NetworkPolicy selects a pod, only explicitly allowed traffic passes
 - Cross-namespace traffic requires both: a pod selector in the source namespace AND a namespace selector that matches the destination
 - This "double-allow" model is important: both sides must agree
 
 **Istio AuthorizationPolicy** adds semantic richness:
+
 - Mesh-wide, namespace-wide, or workload-specific scopes
 - Source principal matching (workload identity, not IP addresses)
 - Deny rules take priority over allow rules
 - A single empty `DENY` policy at the root namespace blocks everything
 
 **Consul Intentions** is the most analogous for DorkOS:
+
 - Default: configure a default-deny intention policy for the entire mesh
 - Intentions are service-to-service (not pod-to-pod), matching DorkOS agents
 - Intentions compose: wildcard `*` allows any service in a namespace to reach another namespace's `*` or specific service
@@ -58,6 +61,7 @@ For DorkOS, the filesystem IS the topology. Agents have a `projectPath` already 
 - Consul stores intentions in the catalog, DorkOS stores them in SQLite ACL rules table
 
 **NATS Accounts** are the tightest analogue for subject-based messaging:
+
 - Each account has its own isolated subject namespace — `foo` in account A does not reach subscribers in account B
 - Cross-account access requires explicit export (from source account) + import (from destination account) declarations
 - This is exactly what DorkOS needs: `relay.agent.project-a.*` is invisible to agents in `project-b` unless explicitly imported
@@ -76,11 +80,13 @@ scan-root (global budget)
 ```
 
 Key design decisions from LiteLLM:
+
 - Child budgets cannot exceed parent budgets (guaranteed throughput enforcement)
 - Budget counters are stored separately from the resource definition (in Redis/SQLite, not in the manifest)
 - Rate limits and spend limits are separate dimensions: RPM/TPM (rate) vs total spend (cumulative)
 
 For DorkOS, the existing `AgentBudget` schema already has `maxHopsPerMessage` and `maxCallsPerHour`. The gap is:
+
 1. No project-level budget that caps the sum of all agents in a project
 2. No enforcement mechanism (the budget is declared but never checked)
 3. No budget counter persistence (where do you store current usage?)
@@ -88,6 +94,7 @@ For DorkOS, the existing `AgentBudget` schema already has `maxHopsPerMessage` an
 **Token bucket vs sliding window**: For `maxCallsPerHour`, a sliding window log is already used by the Relay subsystem (ADR 0014). The same pattern should be reused for Mesh budget enforcement. For hop counting per-message, a simple in-flight counter suffices — increment on dispatch, decrement on completion.
 
 **Budget exceeded behavior**: The three options (reject, queue, degrade) map to:
+
 - **Reject**: Return a structured `PublishResult` rejection (ADR 0016 pattern already exists in Relay)
 - **Queue**: Hold the message until budget resets — adds complexity
 - **Degrade**: Allow but flag as over-budget — dangerous for cost control
@@ -97,6 +104,7 @@ Recommendation: reject with a structured error, matching the existing Relay reje
 ### 4. Capability-Based Routing
 
 The A2A protocol (Google, now Linux Foundation) publishes each agent's `/.well-known/agent.json` listing its skills. DorkOS already has `capabilities: string[]` in `AgentManifest`. Capability-based routing means:
+
 - A requesting agent declares what capability it needs ("code-review", "deploy", "budget-approval")
 - The mesh routes to agents that declare that capability
 - Access control then filters: does the requesting agent's project have ACL permission to reach any agent with that capability in the target project?
@@ -120,12 +128,14 @@ namespace: "dorkos"  (first path segment after scan root)
 Implementation: when `MeshCore.discover(roots)` is called, the first path component after each root becomes the namespace. Store `namespace` in the `agents` SQLite table.
 
 Pros:
+
 - Zero configuration — derived automatically from filesystem topology
 - Consistent with how projects are naturally organized (one git repo = one directory = one project)
 - No manifest changes required for existing agents
 - Directly mirrors how Kubernetes assigns namespace (where you deploy determines your namespace)
 
 Cons:
+
 - Breaks if agents span multiple directories
 - Flat (one level deep) — no sub-project grouping
 - Ambiguous if discovery roots overlap or nest
@@ -142,12 +152,14 @@ Cons:
 ```
 
 Pros:
+
 - Explicit and unambiguous
 - Survives relocation
 - Supports agents in non-standard directory layouts
 - Enables multiple agents in the same directory to belong to different projects
 
 Cons:
+
 - Requires agents to know their namespace at registration time
 - Manual for auto-discovered agents (hints won't know the namespace)
 - Creates a chicken-and-egg problem: who sets the namespace?
@@ -157,11 +169,13 @@ Cons:
 Parse `git remote get-url origin` in the project directory and extract the repo path as the namespace (e.g., `doriancollier/dork-os`). Git repos are already the natural unit of project identity.
 
 Pros:
+
 - Globally unique
 - Survives directory relocation
 - Natural alignment with "project" in software development
 
 Cons:
+
 - Requires git to be present
 - Non-git projects have no namespace
 - Remote URL can change (repo rename, fork, migration)
@@ -232,6 +246,7 @@ list(filters?: { runtime?: AgentRuntime; capability?: string }, callerNamespace?
 ```
 
 When `callerNamespace` is provided:
+
 1. Filter to own-namespace agents (always visible)
 2. Check ACL rules for cross-namespace allows
 3. Include cross-namespace agents that pass ACL check
@@ -244,11 +259,13 @@ For the HTTP layer (`routes/mesh.ts`), the caller's identity comes from the requ
 ### Relay Subject Naming and ACL Integration
 
 The current `RelayBridge` uses:
+
 ```
 relay.agent.{basename(projectPath)}.{agentId}
 ```
 
 With namespace support this becomes:
+
 ```
 relay.agent.{namespace}.{agentId}
 ```
@@ -262,14 +279,14 @@ Relay's existing `addAccessRule()` method (if it exists on `RelayCore`) should b
 await relayCore.addAccessRule({
   source: `relay.agent.project-b.*`,
   destination: `relay.agent.project-b.${agentId}`,
-  action: 'allow'
+  action: 'allow',
 });
 
 // Cross-project rules are added separately when the human explicitly allowlists:
 await relayCore.addAccessRule({
   source: `relay.agent.project-a.*`,
   destination: `relay.agent.project-b.${agentId}`,
-  action: 'allow'
+  action: 'allow',
 });
 ```
 
@@ -280,6 +297,7 @@ await relayCore.addAccessRule({
 The existing `AgentBudget` in `AgentManifest` declares limits. Enforcement requires:
 
 1. **Counter storage**: A new SQLite table `budget_counters` in `mesh.db`:
+
    ```sql
    CREATE TABLE budget_counters (
      agent_id TEXT NOT NULL,
@@ -290,6 +308,7 @@ The existing `AgentBudget` in `AgentManifest` declares limits. Enforcement requi
    ```
 
 2. **Project-level budget**: A new `ProjectPolicy` table or embedded in a `namespace_policies` table:
+
    ```sql
    CREATE TABLE namespace_policies (
      namespace TEXT PRIMARY KEY,
@@ -314,12 +333,14 @@ This mirrors LiteLLM's `guaranteed_throughput` mode where child budgets sum cann
 **Description**: Derive namespace from the first path segment after the scan root. Store namespace in the `agents` table. Add a `namespace_acl_rules` SQLite table with `(source_namespace, destination_namespace, action)` tuples. Default: same-namespace = allow, cross-namespace = deny. Human adds explicit allowlist rules via the console UI.
 
 **Pros**:
+
 - Zero config for the common case
 - Simple ACL model — operators understand "project A can talk to project B"
 - Small schema addition (one new table)
 - No manifest changes required
 
 **Cons**:
+
 - Coarse granularity — all agents in project A can reach all agents in project B (or none)
 - Namespace derived from scan root is fragile if roots change
 - No per-agent overrides
@@ -334,6 +355,7 @@ This mirrors LiteLLM's `guaranteed_throughput` mode where child budgets sum cann
 **Description**: Namespace defaults to scan-root-relative path segment, overridable in `.dork/agent.json` via a `namespace` field. ACL rules use NATS-style subject patterns: `relay.agent.project-a.*` → `relay.agent.project-b.*`. Same-namespace traffic is implicitly allowed. Cross-namespace requires an explicit rule. `MeshCore.list()` filters results by caller namespace + ACL rules, returning 404 for invisible agents.
 
 **Pros**:
+
 - Zero-config for common case, explicit override for edge cases
 - Subject patterns are expressive — can allow all-agents to all-agents, or one specific agent to one specific agent
 - Aligns with existing Relay subject naming scheme
@@ -341,6 +363,7 @@ This mirrors LiteLLM's `guaranteed_throughput` mode where child budgets sum cann
 - Extensible to capability-based routing by adding subject capability patterns
 
 **Cons**:
+
 - Medium complexity — namespace derivation logic, ACL engine, schema migration
 - Manifest change: adding optional `namespace` field to `AgentManifest`
 - Subject pattern matching logic needs to be implemented (or reused from Relay's existing NATS-style matching — ADR 0011)
@@ -355,11 +378,13 @@ This mirrors LiteLLM's `guaranteed_throughput` mode where child budgets sum cann
 **Description**: Parse `git remote get-url origin` to derive a globally unique namespace. Assign roles to agents (e.g., `reviewer`, `deployer`, `approver`). ACL rules specify which roles can communicate with which roles across which namespaces.
 
 **Pros**:
+
 - Globally unique namespace — no collision risk
 - Role-based access is familiar to operators
 - Survives directory relocation
 
 **Cons**:
+
 - Requires git to be present — non-git projects excluded
 - Shell execution during discovery adds latency and failure modes
 - Roles add significant management complexity
@@ -375,11 +400,13 @@ This mirrors LiteLLM's `guaranteed_throughput` mode where child budgets sum cann
 **Description**: Agents declare `namespace` and `capabilities` in `.dork/agent.json`. ACL rules gate access by capability: `ALLOW project-a → capability:code-review IN project-b`. The mesh routes to agents in project-b that declare `code-review` and that project-a has permission to reach.
 
 **Pros**:
+
 - Fully explicit — no ambiguity
 - Capability-gated access is expressive and semantically rich
 - Enables agent-to-agent permission negotiation
 
 **Cons**:
+
 - Requires all agents to declare namespace (breaks auto-discovery for unknown agents)
 - Capability taxonomy needs to be standardized
 - ABAC policy evaluation is significantly more complex than ACL rules

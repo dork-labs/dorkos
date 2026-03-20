@@ -116,8 +116,19 @@ TransportContext.tsx
 ```
 HttpTransport({ baseUrl: '/api' })
   -> TransportProvider
-    -> App
+    -> RouterProvider (TanStack Router)
+      -> AppShell (layout route with <Outlet>)
+        -> DashboardPage (/) or SessionPage (/session)
 ```
+
+**Client routing** (`router.tsx`): TanStack Router with code-based routes. A pathless `_shell` layout route renders `AppShell` (sidebar, header, dialogs). Child routes render into `<Outlet>`:
+
+| Path | Component | Search Params |
+| --- | --- | --- |
+| `/` | `DashboardPage` | — |
+| `/session` | `SessionPage` → `ChatPanel` | `?session=`, `?dir=` (Zod-validated) |
+
+Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
 
 ### Obsidian Plugin (`CopilotView.tsx`)
 
@@ -217,14 +228,14 @@ The `AgentRuntime` interface defines all operations that an agent backend must s
 
 Each runtime declares static capability flags via `getCapabilities()`:
 
-| Flag | Description |
-|------|-------------|
+| Flag                      | Description                                                  |
+| ------------------------- | ------------------------------------------------------------ |
 | `supportsPermissionModes` | Whether permission modes (default, plan, auto) are supported |
-| `supportsToolApproval` | Whether tool approval UI should be shown |
-| `supportsCostTracking` | Whether cost/token tracking is available |
-| `supportsResume` | Whether sessions can be resumed |
-| `supportsMcp` | Whether MCP tool servers can be injected |
-| `supportsQuestionPrompt` | Whether AskUserQuestion interactive flow is supported |
+| `supportsToolApproval`    | Whether tool approval UI should be shown                     |
+| `supportsCostTracking`    | Whether cost/token tracking is available                     |
+| `supportsResume`          | Whether sessions can be resumed                              |
+| `supportsMcp`             | Whether MCP tool servers can be injected                     |
+| `supportsQuestionPrompt`  | Whether AskUserQuestion interactive flow is supported        |
 
 ### RuntimeRegistry
 
@@ -255,25 +266,25 @@ router.get('/sessions', async (req, res) => {
 
 All Claude Code-specific services live under `services/runtimes/claude-code/`:
 
-| File | Purpose |
-|------|---------|
-| `claude-code-runtime.ts` | `ClaudeCodeRuntime` class implementing `AgentRuntime` |
-| `agent-types.ts` | `AgentSession` and `ToolState` interfaces |
-| `sdk-event-mapper.ts` | SDK message to `StreamEvent` transformation |
-| `context-builder.ts` | Runtime context injection for system prompt |
-| `tool-filter.ts` | Per-agent MCP tool filtering |
-| `interactive-handlers.ts` | Tool approval and question flows |
-| `transcript-reader.ts` | JSONL session data reader |
-| `transcript-parser.ts` | JSONL line parser |
-| `session-broadcaster.ts` | Cross-client session sync via file watching |
-| `session-lock.ts` | Session write locks |
-| `command-registry.ts` | Slash command discovery |
-| `build-task-event.ts` | Task event builder |
-| `task-reader.ts` | Task state parser |
-| `sdk-utils.ts` | `makeUserPrompt()`, `resolveClaudeCliPath()` |
-| `message-sender.ts` | Extracted send-message logic (streaming, tool filtering, context building) |
-| `mcp-tools/` | MCP tool server (core, pulse, relay, mesh, adapter, binding tools) |
-| `index.ts` | Barrel export for `ClaudeCodeRuntime` |
+| File                      | Purpose                                                                    |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `claude-code-runtime.ts`  | `ClaudeCodeRuntime` class implementing `AgentRuntime`                      |
+| `agent-types.ts`          | `AgentSession` and `ToolState` interfaces                                  |
+| `sdk-event-mapper.ts`     | SDK message to `StreamEvent` transformation                                |
+| `context-builder.ts`      | Runtime context injection for system prompt                                |
+| `tool-filter.ts`          | Per-agent MCP tool filtering                                               |
+| `interactive-handlers.ts` | Tool approval and question flows                                           |
+| `transcript-reader.ts`    | JSONL session data reader                                                  |
+| `transcript-parser.ts`    | JSONL line parser                                                          |
+| `session-broadcaster.ts`  | Cross-client session sync via file watching                                |
+| `session-lock.ts`         | Session write locks                                                        |
+| `command-registry.ts`     | Slash command discovery                                                    |
+| `build-task-event.ts`     | Task event builder                                                         |
+| `task-reader.ts`          | Task state parser                                                          |
+| `sdk-utils.ts`            | `makeUserPrompt()`, `resolveClaudeCliPath()`                               |
+| `message-sender.ts`       | Extracted send-message logic (streaming, tool filtering, context building) |
+| `mcp-tools/`              | MCP tool server (core, pulse, relay, mesh, adapter, binding tools)         |
+| `index.ts`                | Barrel export for `ClaudeCodeRuntime`                                      |
 
 SDK imports (`@anthropic-ai/claude-agent-sdk`) are contained exclusively within `services/runtimes/claude-code/`. No other server code imports the SDK directly. This is enforced by a `no-restricted-imports` rule in the server's `eslint.config.js`.
 
@@ -302,11 +313,11 @@ ClaudeCodeRuntime.sendMessage(sessionId, content, cwd)
 
 Four top-level toggles control six tool groups:
 
-| Toggle | Controls |
-|--------|----------|
-| `pulse` | Pulse tools (list/create/update/delete schedules, run history) |
-| `relay` | Relay tools (send, inbox, endpoints) + Trace tools (get_trace, get_metrics) |
-| `mesh` | Mesh tools (discover, register, list, deny, status, inspect, topology) |
+| Toggle    | Controls                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------- |
+| `pulse`   | Pulse tools (list/create/update/delete schedules, run history)                                    |
+| `relay`   | Relay tools (send, inbox, endpoints) + Trace tools (get_trace, get_metrics)                       |
+| `mesh`    | Mesh tools (discover, register, list, deny, status, inspect, topology)                            |
 | `adapter` | Adapter tools (list/enable/disable/reload adapters) + Binding tools (list/create/delete bindings) |
 
 Core tools (ping, get_server_info, get_session_count, get_current_agent) are always included.
@@ -317,12 +328,12 @@ When a domain is disabled, both the MCP `allowedTools` filter and the context bl
 
 ### Files
 
-| File | Purpose |
-|------|---------|
-| `apps/server/src/services/runtimes/claude-code/tool-filter.ts` | `resolveToolConfig()` + `buildAllowedTools()` |
-| `apps/server/src/services/runtimes/claude-code/context-builder.ts` | Agent-aware block gating, peer agents block |
-| `packages/shared/src/mesh-schemas.ts` | `EnabledToolGroupsSchema` on `AgentManifest` |
-| `packages/shared/src/config-schema.ts` | `agentContext.pulseTools` global default |
+| File                                                               | Purpose                                       |
+| ------------------------------------------------------------------ | --------------------------------------------- |
+| `apps/server/src/services/runtimes/claude-code/tool-filter.ts`     | `resolveToolConfig()` + `buildAllowedTools()` |
+| `apps/server/src/services/runtimes/claude-code/context-builder.ts` | Agent-aware block gating, peer agents block   |
+| `packages/shared/src/mesh-schemas.ts`                              | `EnabledToolGroupsSchema` on `AgentManifest`  |
+| `packages/shared/src/config-schema.ts`                             | `agentContext.pulseTools` global default      |
 
 ## Module Layout
 
@@ -577,7 +588,12 @@ Location: `~/.dork/config.json` (created automatically on first run). Format:
   "relay": { "enabled": true, "dataDir": null },
   "scheduler": { "enabled": true, "maxConcurrentRuns": 1, "timezone": null, "retentionCount": 100 },
   "mesh": { "scanRoots": [] },
-  "agentContext": { "relayTools": true, "meshTools": true, "adapterTools": true, "pulseTools": true }
+  "agentContext": {
+    "relayTools": true,
+    "meshTools": true,
+    "adapterTools": true,
+    "pulseTools": true
+  }
 }
 ```
 
@@ -630,8 +646,7 @@ Both subcommands initialize `ConfigManager` independently and exit before starti
 `DEFAULT_CWD` is the single source of truth for the server's default working directory. It prefers the `DORKOS_DEFAULT_CWD` environment variable (set by the CLI, Obsidian plugin, or tests) and falls back to the repository root resolved from `lib/resolve-root.ts`'s own location.
 
 ```typescript
-export const DEFAULT_CWD: string =
-  env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDir, '../../../');
+export const DEFAULT_CWD: string = env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDir, '../../../');
 ```
 
 This replaced the previous pattern where each route computed its own fallback path, centralizing vault root logic.
@@ -672,11 +687,11 @@ Standard Vite React build. Server compiled separately via `tsc`.
 
 **Docker images:** Three Dockerfiles at the repo root serve different purposes:
 
-| File | Purpose | Command |
-|------|---------|---------|
-| `Dockerfile` | CLI install smoke test (`--version`, `--help`, `--post-install-check`) | `pnpm smoke:docker` |
-| `Dockerfile.integration` | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration` |
-| `Dockerfile.run` | Runnable container — starts a DorkOS server on `DORKOS_PORT` | `pnpm docker:build && pnpm docker:run` |
+| File                     | Purpose                                                                 | Command                                |
+| ------------------------ | ----------------------------------------------------------------------- | -------------------------------------- |
+| `Dockerfile`             | CLI install smoke test (`--version`, `--help`, `--post-install-check`)  | `pnpm smoke:docker`                    |
+| `Dockerfile.integration` | Full integration test — starts server, validates API + client endpoints | `pnpm smoke:integration`               |
+| `Dockerfile.run`         | Runnable container — starts a DorkOS server on `DORKOS_PORT`            | `pnpm docker:build && pnpm docker:run` |
 
 `Dockerfile.integration` supports two install modes via `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to test the published npm package. Both integration and runnable images set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.
 
@@ -692,26 +707,27 @@ The Relay message bus (`packages/relay/src/`) provides inter-agent messaging and
 
 Key sub-modules composed by RelayCore:
 
-| Module | Purpose |
-|--------|---------|
-| `MaildirStore` | Atomic Maildir-based message storage (tmp/ → new/ rename) |
-| `SqliteIndex` | SQLite message history with status queries. Uses `@dorkos/db` Drizzle instance |
-| `EndpointRegistry` | Tracks Maildir endpoints by subject + SHA256 hash |
-| `SubscriptionRegistry` | In-process push subscriptions dispatched by chokidar watchers |
-| `WatcherManager` | chokidar watchers on each endpoint's `new/` directory |
-| `DeadLetterQueue` | O(1) SQLite-backed dead-letter lookup; separate from message history |
-| `AccessControl` | Per-subject access control rules (allow/deny by sender pattern) |
-| `DeliveryPipeline` | Staged delivery: rate limit → circuit breaker → backpressure → Maildir write |
-| `AdapterDelivery` | Adapter delivery with 30-second timeout protection |
-| `SignalEmitter` | Lifecycle signal broadcasting for Mesh bridge integration |
-| `RateLimiter` | Per-sender sliding window rate limiting |
-| `CircuitBreakerManager` | Per-endpoint circuit breaker (CLOSED / OPEN / HALF_OPEN states) |
+| Module                  | Purpose                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `MaildirStore`          | Atomic Maildir-based message storage (tmp/ → new/ rename)                      |
+| `SqliteIndex`           | SQLite message history with status queries. Uses `@dorkos/db` Drizzle instance |
+| `EndpointRegistry`      | Tracks Maildir endpoints by subject + SHA256 hash                              |
+| `SubscriptionRegistry`  | In-process push subscriptions dispatched by chokidar watchers                  |
+| `WatcherManager`        | chokidar watchers on each endpoint's `new/` directory                          |
+| `DeadLetterQueue`       | O(1) SQLite-backed dead-letter lookup; separate from message history           |
+| `AccessControl`         | Per-subject access control rules (allow/deny by sender pattern)                |
+| `DeliveryPipeline`      | Staged delivery: rate limit → circuit breaker → backpressure → Maildir write   |
+| `AdapterDelivery`       | Adapter delivery with 30-second timeout protection                             |
+| `SignalEmitter`         | Lifecycle signal broadcasting for Mesh bridge integration                      |
+| `RateLimiter`           | Per-sender sliding window rate limiting                                        |
+| `CircuitBreakerManager` | Per-endpoint circuit breaker (CLOSED / OPEN / HALF_OPEN states)                |
 
 ### Relay Publish Pipeline — Unified Fan-Out
 
 The `RelayCore.publish()` method uses a unified fan-out model: both Maildir endpoints and adapter delivery are attempted before any dead-letter decision is made. This ensures adapter-only subjects (like `relay.agent.*` handled by `ClaudeCodeAdapter`) receive messages even when no Maildir endpoints are registered.
 
 Pipeline steps:
+
 1. Validate subject format
 2. Access control check
 3. Rate limit check (per-sender)
@@ -744,6 +760,7 @@ interface RelayAdapter {
 **`AdapterRegistry`** (`packages/relay/src/adapter-registry.ts`) manages adapter lifecycle. On `register()`, the registry performs a zero-downtime hot-reload: starts the new adapter, swaps it in, then stops the old adapter. `Promise.allSettled()` is used on `shutdown()` so one adapter crashing never blocks others.
 
 **`AdapterPluginLoader`** (`packages/relay/src/adapter-plugin-loader.ts`) loads adapters from three sources:
+
 1. Built-in adapters (factory map)
 2. npm packages (`plugin.package` field in config — dynamic `import(packageName)`)
 3. Local file paths (`plugin.path` field — dynamic `import(pathToFileURL(absolutePath))`)
@@ -751,6 +768,7 @@ interface RelayAdapter {
 Loading errors are non-fatal: the loader warns and skips the failing adapter.
 
 **`AdapterManager`** (`apps/server/src/services/relay/adapter-manager.ts`) is the server-side lifecycle manager. It:
+
 - Loads config from `~/.dork/relay/adapters.json` and watches for changes via chokidar (hot-reload)
 - Delegates adapter instantiation to `adapter-factory.ts` and `adapter-plugin-loader.ts`
 - Masks sensitive fields (via `AdapterManifest.configFields[].sensitive`) in API responses
@@ -766,17 +784,18 @@ Outbound: RelayCore.publish() → AdapterRegistry.deliver() → Adapter.deliver(
 
 **Built-in adapters:**
 
-| Adapter | Library | Transport | Subject Prefix |
-|---------|---------|-----------|----------------|
-| `TelegramAdapter` | grammY | Long polling / webhook | `relay.human.telegram.*` |
-| `WebhookAdapter` | Native HTTP | HTTP POST + HMAC-SHA256 | `relay.webhook.*` |
-| `ClaudeCodeAdapter` | Claude Agent SDK | In-process | `relay.agent.>`, `relay.system.pulse.>` |
+| Adapter             | Library          | Transport               | Subject Prefix                          |
+| ------------------- | ---------------- | ----------------------- | --------------------------------------- |
+| `TelegramAdapter`   | grammY           | Long polling / webhook  | `relay.human.telegram.*`                |
+| `WebhookAdapter`    | Native HTTP      | HTTP POST + HMAC-SHA256 | `relay.webhook.*`                       |
+| `ClaudeCodeAdapter` | Claude Agent SDK | In-process              | `relay.agent.>`, `relay.system.pulse.>` |
 
 ### ClaudeCodeAdapter
 
 `ClaudeCodeAdapter` (`packages/relay/src/adapters/claude-code-adapter.ts`) is the runtime adapter that bridges Relay to Claude Agent SDK sessions. It replaces the earlier `MessageReceiver` bridge and plugs into `AdapterRegistry` alongside external adapters.
 
 It handles two subject prefixes:
+
 - `relay.agent.>` — delivers messages to an existing agent session (via the runtime's `sendMessage()`)
 - `relay.system.pulse.>` — dispatches Pulse scheduler jobs (via the runtime's `sendMessage()`)
 
@@ -787,6 +806,7 @@ On deliver, it extracts payload content via shared `extractPayloadContent()` uti
 The adapter catalog allows users to discover available adapter types and configure instances without editing JSON files directly.
 
 `AdapterManifest` (in `@dorkos/shared/relay-schemas`) describes each adapter type with:
+
 - `configFields: ConfigField[]` — typed field definitions (text, password, number, boolean) with `required`, `default`, `description`, and `sensitive` flags
 - `multiInstance` — whether multiple instances of the type are allowed
 - `builtin` — whether the adapter ships with DorkOS or is user-installed
@@ -799,6 +819,7 @@ The adapter catalog allows users to discover available adapter types and configu
 The `BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) routes inbound messages from external adapters to the correct agent session. It subscribes to `relay.human.>` and resolves a binding for each message.
 
 **Binding resolution** uses most-specific-first scoring against the `BindingStore`:
+
 1. `adapterId + chatId + channelType` (score 7)
 2. `adapterId + chatId` (score 5)
 3. `adapterId + channelType` (score 3)
@@ -806,6 +827,7 @@ The `BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) routes 
 5. No match → message silently dropped (no dead-letter)
 
 **Session strategies** (configured per binding):
+
 - `per-chat` (default) — one agent session per `chatId`; reuses existing sessions
 - `per-user` — one session per user identity extracted from envelope metadata
 - `stateless` — creates a fresh session for every message
@@ -839,42 +861,42 @@ The Mesh subsystem (`packages/mesh/src/`) provides agent discovery, registration
 
 ### Core Components
 
-| Module | Purpose |
-|--------|---------|
-| `mesh-core.ts` | Thin coordinator delegating to extracted modules (discovery, agent management, denial) |
-| `mesh-discovery.ts` | Discovery & registration logic (`discover`, `register`, `registerByPath`) |
-| `mesh-agent-management.ts` | Agent CRUD, health computation, topology operations |
-| `mesh-denial.ts` | Denial list operations (`deny`, `undeny`, `list`) |
+| Module                         | Purpose                                                                                             |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `mesh-core.ts`                 | Thin coordinator delegating to extracted modules (discovery, agent management, denial)              |
+| `mesh-discovery.ts`            | Discovery & registration logic (`discover`, `register`, `registerByPath`)                           |
+| `mesh-agent-management.ts`     | Agent CRUD, health computation, topology operations                                                 |
+| `mesh-denial.ts`               | Denial list operations (`deny`, `undeny`, `list`)                                                   |
 | `discovery/unified-scanner.ts` | Unified BFS async generator with detection strategies (claude-code, cursor, copilot, dork-manifest) |
-| `agent-registry.ts` | SQLite-backed persistent registry of known agents (via `@dorkos/db` Drizzle instance) |
-| `denial-list.ts` | SQLite-backed denial list preventing re-discovery of denied paths |
-| `namespace-resolver.ts` | Resolves agent namespaces from workspace paths for subject-based routing |
-| `topology.ts` | `TopologyManager` — cross-namespace access rules and filtered topology views |
-| `budget-mapper.ts` | Maps Relay budget envelopes to mesh agent capabilities |
-| `relay-bridge.ts` | Optional bridge publishing lifecycle events to Relay subjects |
-| `health.ts` | `computeHealthStatus()` — active/inactive/stale thresholds from last heartbeat |
-| `reconciler.ts` | Reconciles newly discovered candidates against registry state |
-| `manifest.ts` | Reads/writes `.dork/agent.json` manifest files |
+| `agent-registry.ts`            | SQLite-backed persistent registry of known agents (via `@dorkos/db` Drizzle instance)               |
+| `denial-list.ts`               | SQLite-backed denial list preventing re-discovery of denied paths                                   |
+| `namespace-resolver.ts`        | Resolves agent namespaces from workspace paths for subject-based routing                            |
+| `topology.ts`                  | `TopologyManager` — cross-namespace access rules and filtered topology views                        |
+| `budget-mapper.ts`             | Maps Relay budget envelopes to mesh agent capabilities                                              |
+| `relay-bridge.ts`              | Optional bridge publishing lifecycle events to Relay subjects                                       |
+| `health.ts`                    | `computeHealthStatus()` — active/inactive/stale thresholds from last heartbeat                      |
+| `reconciler.ts`                | Reconciles newly discovered candidates against registry state                                       |
+| `manifest.ts`                  | Reads/writes `.dork/agent.json` manifest files                                                      |
 
 ### Discovery Strategies
 
 Three pluggable strategies detect different agent types:
 
-| Strategy | Detects | Signal |
-|----------|---------|--------|
+| Strategy             | Detects                | Signal                                    |
+| -------------------- | ---------------------- | ----------------------------------------- |
 | `ClaudeCodeStrategy` | Claude Code workspaces | `.claude/` directory with `settings.json` |
-| `CursorStrategy` | Cursor editor sessions | `.cursor/` directory |
-| `CodexStrategy` | OpenAI Codex agents | `.codex/` directory |
+| `CursorStrategy`     | Cursor editor sessions | `.cursor/` directory                      |
+| `CodexStrategy`      | OpenAI Codex agents    | `.codex/` directory                       |
 
 ### Health Tracking
 
 Agent health is computed from the `last_seen_at` timestamp in the agent registry, updated each time a heartbeat is received (`POST /api/mesh/agents/:id/heartbeat`):
 
-| Status | Threshold |
-|--------|-----------|
-| `active` | Last heartbeat < 5 minutes ago |
-| `inactive` | Last heartbeat 5–30 minutes ago |
-| `stale` | Last heartbeat > 30 minutes ago, or never seen |
+| Status     | Threshold                                      |
+| ---------- | ---------------------------------------------- |
+| `active`   | Last heartbeat < 5 minutes ago                 |
+| `inactive` | Last heartbeat 5–30 minutes ago                |
+| `stale`    | Last heartbeat > 30 minutes ago, or never seen |
 
 Health is returned by `GET /api/mesh/agents/:id/health` and aggregated by `GET /api/mesh/status` (`MeshStatus`).
 
@@ -902,9 +924,9 @@ The Pulse subsystem provides cron-based agent scheduling. It lives entirely in `
 
 ### Key Components
 
-| Module | Purpose |
-|--------|---------|
-| `pulse-store.ts` | SQLite database + JSON file for schedule and run state |
+| Module                 | Purpose                                                                 |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `pulse-store.ts`       | SQLite database + JSON file for schedule and run state                  |
 | `scheduler-service.ts` | Cron engine using `croner` with overrun protection and concurrency caps |
 
 ### Dispatch Modes

@@ -32,9 +32,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../../services/core/upload-handler.js', () => ({
   uploadHandler: {
     getUploadDir: vi.fn().mockReturnValue('/test/project/.dork/.temp/uploads'),
-    createMulterMiddleware: vi.fn().mockReturnValue(
-      multer({ storage: multer.memoryStorage() }),
-    ),
+    createMulterMiddleware: vi.fn().mockReturnValue(multer({ storage: multer.memoryStorage() })),
   },
 }));
 
@@ -63,9 +61,7 @@ describe('POST /api/uploads', () => {
   });
 
   it('returns 400 when no files are attached', async () => {
-    const res = await request(app)
-      .post('/api/uploads?cwd=/test/project')
-      .send();
+    const res = await request(app).post('/api/uploads?cwd=/test/project').send();
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/no files/i);
@@ -98,7 +94,7 @@ describe('POST /api/uploads', () => {
 
   it('returns 403 when cwd fails boundary validation', async () => {
     vi.mocked(validateBoundary).mockRejectedValueOnce(
-      new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+      new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
     );
 
     const res = await request(app)
@@ -111,7 +107,7 @@ describe('POST /api/uploads', () => {
 
   it('returns 403 for null byte paths', async () => {
     vi.mocked(validateBoundary).mockRejectedValueOnce(
-      new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE'),
+      new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
     );
 
     const res = await request(app)
@@ -152,7 +148,7 @@ describe('GET /api/uploads/:filename', () => {
 
   it('returns 403 when cwd fails boundary validation', async () => {
     vi.mocked(validateBoundary).mockRejectedValueOnce(
-      new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY'),
+      new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
     );
 
     const res = await request(app).get('/api/uploads/test.png?cwd=/etc/passwd');
@@ -162,9 +158,7 @@ describe('GET /api/uploads/:filename', () => {
   });
 
   it('strips directory traversal via path.basename and returns 404', async () => {
-    const res = await request(app).get(
-      '/api/uploads/..%2F..%2Fetc%2Fpasswd?cwd=/test/project',
-    );
+    const res = await request(app).get('/api/uploads/..%2F..%2Fetc%2Fpasswd?cwd=/test/project');
 
     // path.basename strips traversal, resulting in just "passwd" which won't exist
     expect(res.status).toBe(404);

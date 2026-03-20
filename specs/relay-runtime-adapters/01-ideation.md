@@ -53,6 +53,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary Components/Modules:**
+
 - `packages/relay/src/types.ts` — RelayAdapter interface, AdapterConfig, RelayEnvelope, DeliveryResult types
 - `packages/relay/src/adapter-registry.ts` — Adapter lifecycle management (start/stop/deliver routing)
 - `packages/relay/src/adapters/telegram-adapter.ts` — TelegramAdapter (reference implementation)
@@ -62,12 +63,14 @@ status: ideation
 - `apps/server/src/services/core/agent-manager.ts` — Agent SDK session management
 
 **Shared Dependencies:**
+
 - `packages/relay/src/relay-core.ts` — Central message bus (injected into adapters via `start()`)
 - `packages/shared/src/relay-schemas.ts` — Zod schemas for validation
 - `packages/shared/src/mesh-schemas.ts` — Agent manifest types
 - `apps/server/src/services/core/context-builder.ts` — XML context block formatting
 
 **Data Flow:**
+
 ```
 Message published to relay.agent.{project}.{agentId}
   → RelayCore routes to AdapterRegistry
@@ -83,11 +86,13 @@ Message published to relay.agent.{project}.{agentId}
 ```
 
 **Feature Flags/Config:**
+
 - `DORKOS_RELAY_ENABLED` — gates Relay subsystem (existing)
 - `DORKOS_MESH_ENABLED` — gates Mesh integration for agent info enrichment (existing)
 - `~/.dork/relay/adapters.json` — adapter configuration file (new)
 
 **Potential Blast Radius:**
+
 - Direct: 3-4 new files (ClaudeCodeAdapter, plugin loader, tests), 5-7 modified files
 - Indirect: MessageReceiver removal affects server startup and relay initialization
 - Tests: 3-4 new test files, existing adapter tests should pass unchanged
@@ -102,6 +107,7 @@ N/A — this is a feature, not a bug fix.
 ### Potential Solutions
 
 **1. Extend Existing Adapter Interface Minimally**
+
 - Description: Add `AdapterContext` and `DeliveryResult` to the `deliver()` signature. Add plugin loading to `AdapterManager.createAdapter()` via async dynamic `import()`. Build ClaudeCodeAdapter as a built-in adapter.
 - Pros:
   - 90% of infrastructure already exists — minimal new code
@@ -115,6 +121,7 @@ N/A — this is a feature, not a bug fix.
 - Maintenance: Low
 
 **2. Separate Runtime Adapter Interface**
+
 - Description: Create a separate `RuntimeAdapter` extending `RelayAdapter` with agent-specific methods (resolveAgent, formatPrompt, captureResponse).
 - Pros:
   - Clean separation between external adapters (push to channels) and runtime adapters (dispatch to sessions)
@@ -127,6 +134,7 @@ N/A — this is a feature, not a bug fix.
 - Maintenance: Medium
 
 **3. Full Plugin Framework with Dependency Injection**
+
 - Description: Build a comprehensive plugin framework with lifecycle hooks, DI containers, config schema validation, and hot-reload.
 - Pros:
   - Most extensible and feature-rich
@@ -139,11 +147,13 @@ N/A — this is a feature, not a bug fix.
 - Maintenance: High
 
 ### Security Considerations
+
 - Dynamic `import()` of local files: must validate paths are within allowed directories
 - npm package loading: rely on npm's security model, no additional sandboxing needed
 - Adapter config may contain secrets (API tokens): `adapters.json` should be in `~/.dork/relay/` with user-only permissions
 
 ### Performance Considerations
+
 - ClaudeCodeAdapter concurrency: semaphore-based (maxConcurrent: 3 default) to prevent resource exhaustion
 - Agent SDK sessions are heavyweight — each runs a Claude Code process
 - Plugin loading happens once at startup — no runtime performance impact
@@ -155,6 +165,7 @@ N/A — this is a feature, not a bug fix.
 **Rationale:** The codebase already has 90% of the infrastructure. The `RelayAdapter` interface is structurally sound and matches industry patterns from NATS, Kafka, and RabbitMQ. Adding `AdapterContext` to `deliver()` and building the plugin loader with native `import()` requires minimal new code while achieving all spec goals. The ClaudeCodeAdapter wraps the existing `AgentManagerLike` interface from `message-receiver.ts`, which is proven code.
 
 **Caveats:**
+
 - MessageReceiver must be fully replaced (not left as dead code) to avoid confusion
 - `AdapterManager.createAdapter()` becomes async — all callers must await
 - Local file adapter hot-reload requires server restart due to Node.js module caching — document this
@@ -162,9 +173,9 @@ N/A — this is a feature, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How ClaudeCodeAdapter coexists with MessageReceiver | ClaudeCodeAdapter replaces MessageReceiver entirely | MessageReceiver was a temporary bridge (Spec 5). Both do the same job — receive Relay messages, call AgentManager. One component avoids "which one handles what?" confusion. Code is fresh (just committed), perfect time to replace. |
-| 2 | Plugin hot-reload support | Server restart only | Simpler, safer. Node.js module cache prevents true code hot-reload anyway. Config changes take effect on restart. Matches Kafka Connect and most plugin systems. |
-| 3 | Plugin loader location | In packages/relay/ as part of the library | Adapter loading is a library concern — third-party packages import types from @dorkos/relay. Keeps the server thin. Adapter authors can test loading independently. |
-| 4 | Third-party adapter export convention | Default export factory function | e.g. `export default function createSlackAdapter(config): RelayAdapter`. Matches Vite/ESLint/Rollup ecosystem conventions. Simple, ergonomic, one function to call. |
+| #   | Decision                                            | Choice                                              | Rationale                                                                                                                                                                                                                             |
+| --- | --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | How ClaudeCodeAdapter coexists with MessageReceiver | ClaudeCodeAdapter replaces MessageReceiver entirely | MessageReceiver was a temporary bridge (Spec 5). Both do the same job — receive Relay messages, call AgentManager. One component avoids "which one handles what?" confusion. Code is fresh (just committed), perfect time to replace. |
+| 2   | Plugin hot-reload support                           | Server restart only                                 | Simpler, safer. Node.js module cache prevents true code hot-reload anyway. Config changes take effect on restart. Matches Kafka Connect and most plugin systems.                                                                      |
+| 3   | Plugin loader location                              | In packages/relay/ as part of the library           | Adapter loading is a library concern — third-party packages import types from @dorkos/relay. Keeps the server thin. Adapter authors can test loading independently.                                                                   |
+| 4   | Third-party adapter export convention               | Default export factory function                     | e.g. `export default function createSlackAdapter(config): RelayAdapter`. Matches Vite/ESLint/Rollup ecosystem conventions. Simple, ergonomic, one function to call.                                                                   |

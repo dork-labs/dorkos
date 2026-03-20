@@ -66,9 +66,7 @@ export function OverlayShowcases() {
                   Configure a new autonomous agent for your project.
                 </DialogDescription>
               </DialogHeader>
-              <p className="text-muted-foreground text-sm">
-                Dialog body content goes here.
-              </p>
+              <p className="text-muted-foreground text-sm">Dialog body content goes here.</p>
               <DialogFooter>
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
@@ -82,10 +80,7 @@ export function OverlayShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="AlertDialog"
-        description="Destructive confirmation dialog."
-      >
+      <PlaygroundSection title="AlertDialog" description="Destructive confirmation dialog.">
         <ShowcaseDemo>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -95,8 +90,8 @@ export function OverlayShowcases() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete the agent and all its data. This
-                  action cannot be undone.
+                  This will permanently delete the agent and all its data. This action cannot be
+                  undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -108,10 +103,7 @@ export function OverlayShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Popover"
-        description="Floating panel anchored to a trigger."
-      >
+      <PlaygroundSection title="Popover" description="Floating panel anchored to a trigger.">
         <ShowcaseDemo>
           <Popover>
             <PopoverTrigger asChild>
@@ -129,10 +121,7 @@ export function OverlayShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="DropdownMenu"
-        description="Contextual menu triggered by a button."
-      >
+      <PlaygroundSection title="DropdownMenu" description="Contextual menu triggered by a button.">
         <ShowcaseDemo>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -143,18 +132,13 @@ export function OverlayShowcases() {
               <DropdownMenuItem>Edit Agent</DropdownMenuItem>
               <DropdownMenuItem>Duplicate</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
-                Delete
-              </DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="Sheet"
-        description="Slide-out side panel from any edge."
-      >
+      <PlaygroundSection title="Sheet" description="Slide-out side panel from any edge.">
         <ShowcaseLabel>Right (default)</ShowcaseLabel>
         <ShowcaseDemo>
           <Sheet>
@@ -164,15 +148,15 @@ export function OverlayShowcases() {
             <SheetContent>
               <SheetHeader>
                 <SheetTitle>Agent Details</SheetTitle>
-                <SheetDescription>
-                  View and edit agent configuration.
-                </SheetDescription>
+                <SheetDescription>View and edit agent configuration.</SheetDescription>
               </SheetHeader>
-              <div className="py-4 text-sm text-muted-foreground">
+              <div className="text-muted-foreground py-4 text-sm">
                 Sheet body content goes here.
               </div>
               <SheetClose asChild>
-                <Button variant="outline" className="mt-2">Close</Button>
+                <Button variant="outline" className="mt-2">
+                  Close
+                </Button>
               </SheetClose>
             </SheetContent>
           </Sheet>
@@ -187,13 +171,9 @@ export function OverlayShowcases() {
             <SheetContent side="left">
               <SheetHeader>
                 <SheetTitle>Navigation</SheetTitle>
-                <SheetDescription>
-                  Side navigation panel.
-                </SheetDescription>
+                <SheetDescription>Side navigation panel.</SheetDescription>
               </SheetHeader>
-              <div className="py-4 text-sm text-muted-foreground">
-                Navigation content here.
-              </div>
+              <div className="text-muted-foreground py-4 text-sm">Navigation content here.</div>
             </SheetContent>
           </Sheet>
         </ShowcaseDemo>
@@ -216,7 +196,7 @@ export function OverlayShowcases() {
                 </ResponsiveDialogDescription>
                 <ResponsiveDialogFullscreenToggle />
               </ResponsiveDialogHeader>
-              <div className="py-4 text-sm text-muted-foreground">
+              <div className="text-muted-foreground py-4 text-sm">
                 Responsive dialog body content.
               </div>
               <ResponsiveDialogFooter>

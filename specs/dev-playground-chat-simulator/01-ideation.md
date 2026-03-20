@@ -47,6 +47,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` — Top-level chat view (tightly coupled to useChatSession)
 - `apps/client/src/layers/features/chat/ui/MessageList.tsx` — Virtualized message renderer
 - `apps/client/src/layers/features/chat/ui/ChatInputContainer.tsx` — Input bar with file upload, queue, autocomplete
@@ -55,6 +56,7 @@ status: ideation
 - `apps/client/src/dev/mock-chat-data.ts` — Mock data factories
 
 **Shared dependencies:**
+
 - `@dorkos/shared/types` — MessagePart, QuestionItem, SubagentPart, ErrorPart, HookPart
 - `motion/react` — All message animations (motion.div, AnimatePresence)
 - `@tanstack/react-virtual` — Virtualizer in MessageList
@@ -67,6 +69,7 @@ User message → Transport.sendMessage → SSE stream → StreamEventHandler →
 Scenario steps → useSimulator reducer → ChatMessage[] state → MessageList → MessageItem
 
 **Potential blast radius:**
+
 - Direct: New files only (simulator page, hook, scenarios)
 - Indirect: `playground-registry.ts` (add page type), `DevPlayground.tsx` (add route), `playground-transport.ts` (may need to handle `approveTool`/`denyTool` gracefully)
 
@@ -79,6 +82,7 @@ N/A — this is a new feature, not a bug fix.
 **Potential solutions:**
 
 **1. Scripted Scenario Playback (Recommended)**
+
 - Description: TypeScript arrays of `SimStep` objects driven by a `useReducer` state machine with `setTimeout`-based tick engine
 - Pros: Full control over timing, easy to add scenarios, no server dependency, exercises real components
 - Cons: Scenarios must be manually authored, text streaming requires chunk-splitting helper
@@ -86,6 +90,7 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: Low — scenarios are plain TypeScript
 
 **2. JSONL Transcript Replay**
+
 - Description: Parse real `.jsonl` session files and replay events
 - Pros: Uses real production data, catches edge cases naturally
 - Cons: Requires file I/O or bundling fixtures, events don't map 1:1 to ChatMessage mutations, fragile to schema changes
@@ -93,6 +98,7 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: High — fixtures need updating as schemas evolve
 
 **3. Mock Transport Interception**
+
 - Description: Create a simulator transport that intercepts `sendMessage` and feeds back synthetic StreamEvents through the `onEvent` callback, allowing the real `useChatSession` hook to run
 - Pros: Most authentic — exercises the full data pipeline
 - Cons: Very complex to implement correctly, must mock every transport method, brittle to hook changes
@@ -103,8 +109,8 @@ N/A — this is a new feature, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Render scope | Full ChatPanel layout | User wants to see input bar, status area, and scroll behavior alongside message rendering. Build a SimulatedChatPanel that mirrors ChatPanel's layout but uses useSimulator instead of useChatSession. |
-| 2 | Interactive elements | Visual only, auto-advance | Scenarios auto-transition ToolApproval/QuestionPrompt through states. No real transport calls. Simpler and sufficient for visual QA. |
-| 3 | Playback controls | Full transport controls | Play/Pause, Step Forward, Speed selector (0.5x-4x), Scrub/timeline bar, Reset. Allows frame-by-frame inspection of animations. |
+| #   | Decision             | Choice                    | Rationale                                                                                                                                                                                              |
+| --- | -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Render scope         | Full ChatPanel layout     | User wants to see input bar, status area, and scroll behavior alongside message rendering. Build a SimulatedChatPanel that mirrors ChatPanel's layout but uses useSimulator instead of useChatSession. |
+| 2   | Interactive elements | Visual only, auto-advance | Scenarios auto-transition ToolApproval/QuestionPrompt through states. No real transport calls. Simpler and sufficient for visual QA.                                                                   |
+| 3   | Playback controls    | Full transport controls   | Play/Pause, Step Forward, Speed selector (0.5x-4x), Scrub/timeline bar, Reset. Allows frame-by-frame inspection of animations.                                                                         |

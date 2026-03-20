@@ -412,6 +412,7 @@ Return a brief completion summary (the main context will read the JSON file for 
 ## Success Criteria
 
 The decomposition is complete when:
+
 - Background agent has finished execution
 - `specs/[slug]/03-tasks.json` exists with valid JSON matching the schema
 - `specs/[slug]/03-tasks.md` exists with human-readable breakdown

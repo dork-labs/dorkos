@@ -32,11 +32,11 @@ Inbound messages are published to the Relay subject you configure (e.g., `relay.
 
 Requests must be `POST` with a JSON body and include three required headers:
 
-| Header | Description |
-|---|---|
-| `X-Signature` | HMAC-SHA256 hex digest of `{timestamp}.{raw_body}` |
-| `X-Timestamp` | Unix epoch timestamp (seconds) when the request was created |
-| `X-Nonce` | Unique identifier for this request (prevents replay attacks) |
+| Header        | Description                                                  |
+| ------------- | ------------------------------------------------------------ |
+| `X-Signature` | HMAC-SHA256 hex digest of `{timestamp}.{raw_body}`           |
+| `X-Timestamp` | Unix epoch timestamp (seconds) when the request was created  |
+| `X-Nonce`     | Unique identifier for this request (prevents replay attacks) |
 
 The signature is computed as:
 
@@ -127,12 +127,12 @@ curl -X POST "http://localhost:6242/api/relay/webhooks/${ADAPTER_ID}" \
 
 ### Expected Responses
 
-| Status | Meaning |
-|---|---|
-| `200` | Webhook received and published to Relay |
-| `401` | Signature verification failed (wrong secret, expired timestamp, or reused nonce) |
-| `400` | Missing required headers or invalid JSON body |
-| `404` | Adapter ID not found or adapter is not running |
+| Status | Meaning                                                                          |
+| ------ | -------------------------------------------------------------------------------- |
+| `200`  | Webhook received and published to Relay                                          |
+| `401`  | Signature verification failed (wrong secret, expired timestamp, or reused nonce) |
+| `400`  | Missing required headers or invalid JSON body                                    |
+| `404`  | Adapter ID not found or adapter is not running                                   |
 
 ### Common Errors
 

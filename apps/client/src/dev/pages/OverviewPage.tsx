@@ -1,5 +1,11 @@
 import { Palette, TextCursorInput, Component, MessageSquare, Blocks } from 'lucide-react';
-import { TOKENS_SECTIONS, FORMS_SECTIONS, COMPONENTS_SECTIONS, CHAT_SECTIONS, FEATURES_SECTIONS } from '../playground-registry';
+import {
+  TOKENS_SECTIONS,
+  FORMS_SECTIONS,
+  COMPONENTS_SECTIONS,
+  CHAT_SECTIONS,
+  FEATURES_SECTIONS,
+} from '../playground-registry';
 import type { Page, PlaygroundSection } from '../playground-registry';
 
 interface OverviewPageProps {
@@ -19,28 +25,32 @@ const CATEGORIES: CategoryCard[] = [
   {
     page: 'tokens',
     label: 'Design Tokens',
-    description: 'Color palette, typography, spacing, border radius, and shadow tokens that define the visual language.',
+    description:
+      'Color palette, typography, spacing, border radius, and shadow tokens that define the visual language.',
     icon: Palette,
     sections: TOKENS_SECTIONS,
   },
   {
     page: 'forms',
     label: 'Forms',
-    description: 'Form primitives and composed input components — inputs, selects, comboboxes, and tag inputs.',
+    description:
+      'Form primitives and composed input components — inputs, selects, comboboxes, and tag inputs.',
     icon: TextCursorInput,
     sections: FORMS_SECTIONS,
   },
   {
     page: 'components',
     label: 'Components',
-    description: 'Interactive gallery of shared UI primitives — buttons, overlays, navigation, and feedback.',
+    description:
+      'Interactive gallery of shared UI primitives — buttons, overlays, navigation, and feedback.',
     icon: Component,
     sections: COMPONENTS_SECTIONS,
   },
   {
     page: 'chat',
     label: 'Chat Components',
-    description: 'Visual testing gallery for chat UI — messages, tool calls, input, status indicators, and misc.',
+    description:
+      'Visual testing gallery for chat UI — messages, tool calls, input, status indicators, and misc.',
     icon: MessageSquare,
     sections: CHAT_SECTIONS,
   },
@@ -67,11 +77,7 @@ export function OverviewPage({ onNavigate }: OverviewPageProps) {
       <main className="mx-auto max-w-4xl p-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CATEGORIES.map((category) => (
-            <CategoryCardButton
-              key={category.page}
-              category={category}
-              onNavigate={onNavigate}
-            />
+            <CategoryCardButton key={category.page} category={category} onNavigate={onNavigate} />
           ))}
         </div>
       </main>
@@ -91,9 +97,9 @@ function CategoryCardButton({ category, onNavigate }: CategoryCardButtonProps) {
     <button
       type="button"
       onClick={() => onNavigate(page)}
-      className="bg-card border-border hover:bg-accent focus-visible:ring-ring group flex flex-col gap-4 rounded-xl border p-6 text-left transition-colors focus-visible:outline-none focus-visible:ring-2"
+      className="bg-card border-border hover:bg-accent focus-visible:ring-ring group flex flex-col gap-4 rounded-xl border p-6 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
     >
-      <div className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-lg transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+      <div className="bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary flex size-10 items-center justify-center rounded-lg transition-colors">
         <Icon className="size-5" />
       </div>
 

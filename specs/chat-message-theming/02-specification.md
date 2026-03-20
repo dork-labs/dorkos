@@ -43,12 +43,12 @@ Every styling change requires navigating conditional logic. Adding a new message
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `tailwind-variants` | `^2.0` | Multi-slot variant styling for message components |
-| `tailwindcss` | `4.x` (existing) | CSS-first configuration with `@theme inline` |
-| `motion` | existing | Entrance animations (unchanged) |
-| `class-variance-authority` | existing | Stays for shadcn primitives (no change) |
+| Dependency                 | Version          | Purpose                                           |
+| -------------------------- | ---------------- | ------------------------------------------------- |
+| `tailwind-variants`        | `^2.0`           | Multi-slot variant styling for message components |
+| `tailwindcss`              | `4.x` (existing) | CSS-first configuration with `@theme inline`      |
+| `motion`                   | existing         | Entrance animations (unchanged)                   |
+| `class-variance-authority` | existing         | Stays for shadcn primitives (no change)           |
 
 **New dependency: `tailwind-variants`** (~3.5KB min+gzip). Install via `pnpm --filter=@dorkos/client add tailwind-variants`. TV coexists with CVA — both output class strings. CVA remains for single-element shadcn primitives; TV is used for multi-slot feature components.
 
@@ -65,27 +65,27 @@ These replace all hardcoded emerald/red/blue/green colors in `ToolCallCard` and 
 ```css
 /* === Status tokens === */
 :root {
-  --status-success: 152 69% 31%;      /* replaces emerald-600 */
-  --status-success-bg: 152 69% 96%;   /* replaces emerald-500/10 */
+  --status-success: 152 69% 31%; /* replaces emerald-600 */
+  --status-success-bg: 152 69% 96%; /* replaces emerald-500/10 */
   --status-success-border: 152 69% 80%; /* replaces emerald-500/20 */
   --status-success-fg: 152 69% 31%;
 
-  --status-error: 0 72% 51%;          /* replaces red-600 */
-  --status-error-bg: 0 72% 96%;       /* replaces red-500/10 */
-  --status-error-border: 0 72% 80%;   /* replaces red-500/20 */
+  --status-error: 0 72% 51%; /* replaces red-600 */
+  --status-error-bg: 0 72% 96%; /* replaces red-500/10 */
+  --status-error-border: 0 72% 80%; /* replaces red-500/20 */
   --status-error-fg: 0 72% 41%;
 
-  --status-warning: 38 92% 50%;       /* replaces amber-500 */
-  --status-warning-bg: 38 92% 96%;    /* replaces amber-500/10 */
+  --status-warning: 38 92% 50%; /* replaces amber-500 */
+  --status-warning-bg: 38 92% 96%; /* replaces amber-500/10 */
   --status-warning-border: 38 92% 80%; /* replaces amber-500/20 */
   --status-warning-fg: 38 92% 40%;
 
-  --status-info: 217 91% 60%;         /* replaces blue-500 */
+  --status-info: 217 91% 60%; /* replaces blue-500 */
   --status-info-bg: 217 91% 96%;
   --status-info-border: 217 91% 80%;
   --status-info-fg: 217 91% 40%;
 
-  --status-pending: 0 0% 45%;         /* neutral for pending state */
+  --status-pending: 0 0% 45%; /* neutral for pending state */
   --status-pending-bg: 0 0% 96%;
   --status-pending-fg: 0 0% 32%;
 }
@@ -828,6 +828,7 @@ The Obsidian `.copilot-view-content` theme bridge in `index.css` must be updated
 ## User Experience
 
 No user-visible changes. The refactoring is entirely internal:
+
 - Same visual appearance in both light and dark modes
 - Same animations and transitions
 - Same tool approval/deny flow
@@ -900,6 +901,7 @@ Add all 7 categories of semantic tokens (Sections 1a-1h) to `:root`, `.dark`, `@
 ### Phase 2: MessageContext Extraction
 
 **Files created:**
+
 - `features/chat/ui/message/MessageContext.tsx`
 - `features/chat/ui/message/types.ts`
 
@@ -910,9 +912,11 @@ Add all 7 categories of semantic tokens (Sections 1a-1h) to `:root`, `.dark`, `@
 ### Phase 3: Tailwind-Variants Migration
 
 **Files created:**
+
 - `features/chat/ui/message/message-variants.ts`
 
 **Files modified:**
+
 - `features/chat/ui/MessageItem.tsx` — replace inline `cn()` conditionals with `messageItem()` TV call
 - `features/chat/ui/ToolCallCard.tsx` — replace hardcoded status colors with `toolStatus()` TV call
 - `features/chat/ui/ToolApproval.tsx` — replace hardcoded state colors with `approvalState()` TV call; migrate from `forwardRef` to ref-as-prop
@@ -924,12 +928,14 @@ Add all 7 categories of semantic tokens (Sections 1a-1h) to `:root`, `.dark`, `@
 ### Phase 4: Sub-Component Decomposition
 
 **Files created:**
+
 - `features/chat/ui/message/MessageItem.tsx` (orchestrator)
 - `features/chat/ui/message/UserMessageContent.tsx`
 - `features/chat/ui/message/AssistantMessageContent.tsx`
 - `features/chat/ui/message/index.ts` (barrel)
 
 **Files modified:**
+
 - `features/chat/ui/MessageItem.tsx` — becomes re-export shim
 - `features/chat/__tests__/MessageItem.test.tsx` — update mock paths if needed, add sub-component tests
 

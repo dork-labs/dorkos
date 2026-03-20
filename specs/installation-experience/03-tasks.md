@@ -10,11 +10,11 @@
 
 The foundational phase: create the bash install script, serve it via a Next.js route handler, and add a CLI verification flag.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 1.1 | Create bash install script at `apps/site/scripts/install.sh` | Medium | High | — |
-| 1.2 | Create Next.js Route Handler at `apps/site/src/app/install/route.ts` | Small | High | 1.1 |
-| 1.3 | Add `--post-install-check` flag to `packages/cli/src/cli.ts` | Small | High | — |
+| ID  | Task                                                                 | Size   | Priority | Dependencies |
+| --- | -------------------------------------------------------------------- | ------ | -------- | ------------ |
+| 1.1 | Create bash install script at `apps/site/scripts/install.sh`         | Medium | High     | —            |
+| 1.2 | Create Next.js Route Handler at `apps/site/src/app/install/route.ts` | Small  | High     | 1.1          |
+| 1.3 | Add `--post-install-check` flag to `packages/cli/src/cli.ts`         | Small  | High     | —            |
 
 **Parallel:** 1.1 and 1.3 can run in parallel. 1.2 depends on 1.1 (needs the script file to serve).
 
@@ -23,6 +23,7 @@ The foundational phase: create the bash install script, serve it via a Next.js r
 **File:** `apps/site/scripts/install.sh` (new)
 
 The install script wraps `npm install -g dorkos` with:
+
 - `set -euo pipefail` strict mode
 - Node.js 18+ version check with install instructions (nodejs.org + nvm)
 - npm availability check
@@ -40,6 +41,7 @@ The install script wraps `npm install -g dorkos` with:
 **File:** `apps/site/src/app/install/route.ts` (new)
 
 Route Handler that reads the script at module load time and returns it with:
+
 - `Content-Type: text/plain; charset=utf-8`
 - `Cache-Control: public, max-age=300, s-maxage=3600`
 
@@ -57,10 +59,10 @@ Adds `'post-install-check': { type: 'boolean', default: false }` to parseArgs op
 
 Update the marketing site homepage to feature the curl one-liner as the primary install method with a tabbed interface.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 2.1 | Redesign `InstallMoment.tsx` with 3-tab interface | Large | High | — |
-| 2.2 | Update `page.tsx` ActivityFeedHero props | Small | High | — |
+| ID  | Task                                              | Size  | Priority | Dependencies |
+| --- | ------------------------------------------------- | ----- | -------- | ------------ |
+| 2.1 | Redesign `InstallMoment.tsx` with 3-tab interface | Large | High     | —            |
+| 2.2 | Update `page.tsx` ActivityFeedHero props          | Small | High     | —            |
 
 **Parallel:** 2.1 and 2.2 can run in parallel (different files, no code dependency).
 
@@ -69,6 +71,7 @@ Update the marketing site homepage to feature the curl one-liner as the primary 
 **File:** `apps/site/src/layers/features/marketing/ui/InstallMoment.tsx` (modify)
 
 Major changes:
+
 - Add `INSTALL_METHODS` constant with 3 tab definitions (curl, npm, brew)
 - Add `useState` for active tab (default: `'curl'`) and copied state
 - Tab UI: 3 buttons with active/inactive styling (`border-b-2 border-[#E85D04]` / `text-[#7A756A]`)
@@ -86,6 +89,7 @@ Major changes:
 **File:** `apps/site/src/app/(marketing)/page.tsx` (modify)
 
 Two prop changes on `ActivityFeedHero`:
+
 - `ctaText`: `"npm install -g dorkos"` -> `"curl -fsSL https://dorkos.ai/install | bash"`
 - `ctaHref`: `{siteConfig.npm}` -> `"/docs/getting-started/installation"`
 
@@ -95,10 +99,10 @@ Two prop changes on `ActivityFeedHero`:
 
 Update the Fumadocs documentation to feature curl as the primary install method.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 3.1 | Rewrite `installation.mdx` with curl and Homebrew tabs | Medium | High | — |
-| 3.2 | Update `quickstart.mdx` prerequisites | Small | High | — |
+| ID  | Task                                                   | Size   | Priority | Dependencies |
+| --- | ------------------------------------------------------ | ------ | -------- | ------------ |
+| 3.1 | Rewrite `installation.mdx` with curl and Homebrew tabs | Medium | High     | —            |
+| 3.2 | Update `quickstart.mdx` prerequisites                  | Small  | High     | —            |
 
 **Parallel:** 3.1 and 3.2 can run in parallel.
 
@@ -124,16 +128,17 @@ Single bullet change: `"DorkOS installed globally via npm install -g dorkos"` be
 
 Create and automate the Homebrew tap repository. This is external to the monorepo and lower priority.
 
-| ID  | Task | Size | Priority | Dependencies |
-|-----|------|------|----------|--------------|
-| 4.1 | Create `dork-labs/homebrew-dorkos` repo with formula | Medium | Low | — |
-| 4.2 | Set up GitHub Action for auto-updating formula | Medium | Low | 4.1 |
+| ID  | Task                                                 | Size   | Priority | Dependencies |
+| --- | ---------------------------------------------------- | ------ | -------- | ------------ |
+| 4.1 | Create `dork-labs/homebrew-dorkos` repo with formula | Medium | Low      | —            |
+| 4.2 | Set up GitHub Action for auto-updating formula       | Medium | Low      | 4.1          |
 
 ### 4.1 — Create Homebrew tap repo
 
 **Repo:** `github.com/dork-labs/homebrew-dorkos` (new external repo)
 
 Contains `Formula/dorkos.rb` with:
+
 - `desc`, `homepage`, `license` metadata
 - `depends_on "node@22"`
 - `url` pointing to npm registry tarball
@@ -172,14 +177,14 @@ Phases 1-3 are independent and can be worked in parallel across agents. Phase 4 
 
 ## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total tasks | 9 |
-| Small tasks | 5 |
-| Medium tasks | 3 |
-| Large tasks | 1 |
-| High priority | 7 |
-| Low priority | 2 |
-| New files | 5 (install.sh, route.ts, route test, InstallMoment test, GH Action) |
+| Metric         | Value                                                                     |
+| -------------- | ------------------------------------------------------------------------- |
+| Total tasks    | 9                                                                         |
+| Small tasks    | 5                                                                         |
+| Medium tasks   | 3                                                                         |
+| Large tasks    | 1                                                                         |
+| High priority  | 7                                                                         |
+| Low priority   | 2                                                                         |
+| New files      | 5 (install.sh, route.ts, route test, InstallMoment test, GH Action)       |
 | Modified files | 4 (cli.ts, InstallMoment.tsx, page.tsx, installation.mdx, quickstart.mdx) |
-| External repos | 1 (dork-labs/homebrew-dorkos) |
+| External repos | 1 (dork-labs/homebrew-dorkos)                                             |

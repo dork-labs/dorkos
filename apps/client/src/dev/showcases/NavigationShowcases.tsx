@@ -58,35 +58,59 @@ function SettingsDemo() {
     <div className="border-border overflow-hidden rounded-lg border">
       <NavigationLayout value={active} onValueChange={setActive}>
         <NavigationLayoutBody>
-        <NavigationLayoutSidebar>
-          <NavigationLayoutItem value="appearance" icon={Palette}>Appearance</NavigationLayoutItem>
-          <NavigationLayoutItem value="preferences" icon={Settings2}>Preferences</NavigationLayoutItem>
-          <NavigationLayoutItem value="statusBar" icon={LayoutList}>Status Bar</NavigationLayoutItem>
-          <NavigationLayoutItem value="server" icon={Server}>Server</NavigationLayoutItem>
-          <NavigationLayoutItem value="tools" icon={Wrench}>Tools</NavigationLayoutItem>
-          <NavigationLayoutItem value="advanced" icon={Cog}>Advanced</NavigationLayoutItem>
-        </NavigationLayoutSidebar>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="appearance" icon={Palette}>
+              Appearance
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="preferences" icon={Settings2}>
+              Preferences
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="statusBar" icon={LayoutList}>
+              Status Bar
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="server" icon={Server}>
+              Server
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="tools" icon={Wrench}>
+              Tools
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="advanced" icon={Cog}>
+              Advanced
+            </NavigationLayoutItem>
+          </NavigationLayoutSidebar>
 
-        <NavigationLayoutContent className="p-4">
-          <NavigationLayoutPanel value="appearance">
-            <PanelPlaceholder title="Appearance" description="Theme, font family, font size controls." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="preferences">
-            <PanelPlaceholder title="Preferences" description="Timestamps, tool calls, notifications." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="statusBar">
-            <PanelPlaceholder title="Status Bar" description="Toggle visibility of status bar items." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="server">
-            <PanelPlaceholder title="Server" description="Version, port, uptime, tunnel config." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="tools">
-            <PanelPlaceholder title="Tools" description="Tool approval and configuration." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="advanced">
-            <PanelPlaceholder title="Advanced" description="Reset data, restart server." />
-          </NavigationLayoutPanel>
-        </NavigationLayoutContent>
+          <NavigationLayoutContent className="p-4">
+            <NavigationLayoutPanel value="appearance">
+              <PanelPlaceholder
+                title="Appearance"
+                description="Theme, font family, font size controls."
+              />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="preferences">
+              <PanelPlaceholder
+                title="Preferences"
+                description="Timestamps, tool calls, notifications."
+              />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="statusBar">
+              <PanelPlaceholder
+                title="Status Bar"
+                description="Toggle visibility of status bar items."
+              />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="server">
+              <PanelPlaceholder
+                title="Server"
+                description="Version, port, uptime, tunnel config."
+              />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="tools">
+              <PanelPlaceholder title="Tools" description="Tool approval and configuration." />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="advanced">
+              <PanelPlaceholder title="Advanced" description="Reset data, restart server." />
+            </NavigationLayoutPanel>
+          </NavigationLayoutContent>
         </NavigationLayoutBody>
       </NavigationLayout>
     </div>
@@ -100,27 +124,44 @@ function CompactDemo() {
     <div className="border-border overflow-hidden rounded-lg border">
       <NavigationLayout value={active} onValueChange={setActive}>
         <NavigationLayoutBody>
-        <NavigationLayoutSidebar>
-          <NavigationLayoutItem value="identity" icon={User}>Identity</NavigationLayoutItem>
-          <NavigationLayoutItem value="persona" icon={Sparkles}>Persona</NavigationLayoutItem>
-          <NavigationLayoutItem value="capabilities" icon={Zap}>Capabilities</NavigationLayoutItem>
-          <NavigationLayoutItem value="connections" icon={Plug2}>Connections</NavigationLayoutItem>
-        </NavigationLayoutSidebar>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="identity" icon={User}>
+              Identity
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="persona" icon={Sparkles}>
+              Persona
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="capabilities" icon={Zap}>
+              Capabilities
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="connections" icon={Plug2}>
+              Connections
+            </NavigationLayoutItem>
+          </NavigationLayoutSidebar>
 
-        <NavigationLayoutContent className="p-4">
-          <NavigationLayoutPanel value="identity">
-            <PanelPlaceholder title="Identity" description="Agent name, slug, description." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="persona">
-            <PanelPlaceholder title="Persona" description="System prompt and personality traits." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="capabilities">
-            <PanelPlaceholder title="Capabilities" description="Tools, MCP servers, permissions." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="connections">
-            <PanelPlaceholder title="Connections" description="Relay subscriptions and mesh peers." />
-          </NavigationLayoutPanel>
-        </NavigationLayoutContent>
+          <NavigationLayoutContent className="p-4">
+            <NavigationLayoutPanel value="identity">
+              <PanelPlaceholder title="Identity" description="Agent name, slug, description." />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="persona">
+              <PanelPlaceholder
+                title="Persona"
+                description="System prompt and personality traits."
+              />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="capabilities">
+              <PanelPlaceholder
+                title="Capabilities"
+                description="Tools, MCP servers, permissions."
+              />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="connections">
+              <PanelPlaceholder
+                title="Connections"
+                description="Relay subscriptions and mesh peers."
+              />
+            </NavigationLayoutPanel>
+          </NavigationLayoutContent>
         </NavigationLayoutBody>
       </NavigationLayout>
     </div>
@@ -134,19 +175,26 @@ function MinimalDemo() {
     <div className="border-border overflow-hidden rounded-lg border">
       <NavigationLayout value={active} onValueChange={setActive}>
         <NavigationLayoutBody>
-        <NavigationLayoutSidebar>
-          <NavigationLayoutItem value="general" icon={Settings2}>General</NavigationLayoutItem>
-          <NavigationLayoutItem value="advanced" icon={Cog}>Advanced</NavigationLayoutItem>
-        </NavigationLayoutSidebar>
+          <NavigationLayoutSidebar>
+            <NavigationLayoutItem value="general" icon={Settings2}>
+              General
+            </NavigationLayoutItem>
+            <NavigationLayoutItem value="advanced" icon={Cog}>
+              Advanced
+            </NavigationLayoutItem>
+          </NavigationLayoutSidebar>
 
-        <NavigationLayoutContent className="p-4">
-          <NavigationLayoutPanel value="general">
-            <PanelPlaceholder title="General" description="Basic configuration options." />
-          </NavigationLayoutPanel>
-          <NavigationLayoutPanel value="advanced">
-            <PanelPlaceholder title="Advanced" description="Power-user settings and diagnostics." />
-          </NavigationLayoutPanel>
-        </NavigationLayoutContent>
+          <NavigationLayoutContent className="p-4">
+            <NavigationLayoutPanel value="general">
+              <PanelPlaceholder title="General" description="Basic configuration options." />
+            </NavigationLayoutPanel>
+            <NavigationLayoutPanel value="advanced">
+              <PanelPlaceholder
+                title="Advanced"
+                description="Power-user settings and diagnostics."
+              />
+            </NavigationLayoutPanel>
+          </NavigationLayoutContent>
         </NavigationLayoutBody>
       </NavigationLayout>
     </div>

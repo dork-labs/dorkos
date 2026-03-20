@@ -32,8 +32,15 @@ export function useAddAdapter() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ type, id, config }: { type: string; id: string; config: Record<string, unknown> }) =>
-      transport.addRelayAdapter(type, id, config),
+    mutationFn: ({
+      type,
+      id,
+      config,
+    }: {
+      type: string;
+      id: string;
+      config: Record<string, unknown>;
+    }) => transport.addRelayAdapter(type, id, config),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...CATALOG_KEY] });
       queryClient.invalidateQueries({ queryKey: [...ADAPTERS_KEY] });

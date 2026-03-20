@@ -93,7 +93,7 @@ export async function handleApprovalRequired(
   client: WebClient,
   callbacks: AdapterOutboundCallbacks,
   startTime: number,
-  state: SlackOutboundState,
+  state: SlackOutboundState
 ): Promise<DeliveryResult> {
   const agentId = extractAgentIdFromEnvelope(envelope) ?? 'unknown';
   const sessionId = extractSessionIdFromEnvelope(envelope) ?? 'unknown';
@@ -154,7 +154,7 @@ export async function handleApprovalRequired(
     },
     callbacks,
     startTime,
-    true,
+    true
   );
 
   // Register timeout to update message when approval expires
@@ -170,11 +170,16 @@ export async function handleApprovalRequired(
           blocks: [
             {
               type: 'section',
-              text: { type: 'mrkdwn', text: ':hourglass: *Tool Approval Timed Out*\n~`' + data.toolName + '`~' },
+              text: {
+                type: 'mrkdwn',
+                text: ':hourglass: *Tool Approval Timed Out*\n~`' + data.toolName + '`~',
+              },
             },
           ],
         });
-      } catch { /* best-effort — message may have been deleted */ }
+      } catch {
+        /* best-effort — message may have been deleted */
+      }
     }, data.timeoutMs);
     state.pendingApprovalTimeouts.set(data.toolCallId, {
       timer,

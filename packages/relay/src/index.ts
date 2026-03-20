@@ -26,11 +26,7 @@ export type {
 } from './maildir-store.js';
 
 export { SqliteIndex } from './sqlite-index.js';
-export type {
-  SqliteIndexOptions,
-  IndexedMessage,
-  MessageStatus,
-} from './sqlite-index.js';
+export type { SqliteIndexOptions, IndexedMessage, MessageStatus } from './sqlite-index.js';
 
 export { DeadLetterQueue } from './dead-letter-queue.js';
 export type {

@@ -64,18 +64,12 @@ export function DataDisplayShowcases() {
 
         <ShowcaseLabel>Clickable segments</ShowcaseLabel>
         <ShowcaseDemo>
-          <PathBreadcrumb
-            path="/Users/kai/projects/dork-os"
-            onSegmentClick={() => {}}
-          />
+          <PathBreadcrumb path="/Users/kai/projects/dork-os" onSegmentClick={() => {}} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Small size</ShowcaseLabel>
         <ShowcaseDemo>
-          <PathBreadcrumb
-            path="/home/agent/.dork/sessions"
-            size="sm"
-          />
+          <PathBreadcrumb path="/home/agent/.dork/sessions" size="sm" />
         </ShowcaseDemo>
       </PlaygroundSection>
 
@@ -87,11 +81,7 @@ export function DataDisplayShowcases() {
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <Switch
-                  id="scan-visible"
-                  checked={scanVisible}
-                  onCheckedChange={setScanVisible}
-                />
+                <Switch id="scan-visible" checked={scanVisible} onCheckedChange={setScanVisible} />
                 <Label htmlFor="scan-visible">Visible</Label>
               </div>
               <div className="flex items-center gap-2">
@@ -121,13 +111,17 @@ export function DataDisplayShowcases() {
                 />
               </div>
             </div>
-            <div className="relative h-12 overflow-hidden rounded-lg border bg-card">
-              <div className="flex h-full items-center px-4 text-sm text-muted-foreground">
+            <div className="bg-card relative h-12 overflow-hidden rounded-lg border">
+              <div className="text-muted-foreground flex h-full items-center px-4 text-sm">
                 Agent header area
               </div>
               <AnimatePresence>
                 {scanVisible && (
-                  <ScanLine color={scanColor} isTextStreaming={isStreaming} fadeEdges={scanFadeEdges} />
+                  <ScanLine
+                    color={scanColor}
+                    isTextStreaming={isStreaming}
+                    fadeEdges={scanFadeEdges}
+                  />
                 )}
               </AnimatePresence>
             </div>
@@ -177,12 +171,12 @@ export function DataDisplayShowcases() {
 
         <ShowcaseLabel>Horizontal</ShowcaseLabel>
         <ShowcaseDemo>
-          <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+          <ScrollArea className="w-full rounded-md border whitespace-nowrap">
             <div className="flex gap-4 p-4">
               {Array.from({ length: 12 }, (_, i) => (
                 <div
                   key={i}
-                  className="flex h-20 w-36 shrink-0 items-center justify-center rounded-md border bg-muted text-sm"
+                  className="bg-muted flex h-20 w-36 shrink-0 items-center justify-center rounded-md border text-sm"
                 >
                   Agent {i + 1}
                 </div>

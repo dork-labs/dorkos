@@ -1,9 +1,24 @@
 ---
-title: "Plugin & Integration Setup Documentation Patterns"
+title: 'Plugin & Integration Setup Documentation Patterns'
 date: 2026-03-14
 type: external-best-practices
 status: active
-tags: [adapter, setup, documentation, onboarding, manifest, slack, vscode, home-assistant, raycast, obsidian, wizard, one-click, deep-link]
+tags:
+  [
+    adapter,
+    setup,
+    documentation,
+    onboarding,
+    manifest,
+    slack,
+    vscode,
+    home-assistant,
+    raycast,
+    obsidian,
+    wizard,
+    one-click,
+    deep-link,
+  ]
 feature_slug: adapter-catalog-management
 searches_performed: 15
 sources_count: 32
@@ -40,18 +55,18 @@ Both formats are documented in the official Slack developer docs. The URL drops 
 
 **The full Slack App Manifest format** has these top-level sections:
 
-| Section | Purpose |
-|---|---|
-| `_metadata` | Schema versioning |
-| `display_information` | Name (max 35 chars), description (max 140), background_color |
-| `settings` | Socket mode, event subscriptions, IP allowlists, interactivity |
-| `features` | Bot user, app home, shortcuts, slash commands, unfurl domains |
-| `oauth_config` | Redirect URLs, bot scopes (max 255), user scopes (max 255) |
-| `functions` | Custom workflow steps |
-| `workflows` | Automation sequences |
-| `datastores` | Data persistence for hosted apps |
-| `outgoing_domains` | Egress configuration |
-| `app_directory` | Marketplace listing fields (optional) |
+| Section               | Purpose                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `_metadata`           | Schema versioning                                              |
+| `display_information` | Name (max 35 chars), description (max 140), background_color   |
+| `settings`            | Socket mode, event subscriptions, IP allowlists, interactivity |
+| `features`            | Bot user, app home, shortcuts, slash commands, unfurl domains  |
+| `oauth_config`        | Redirect URLs, bot scopes (max 255), user scopes (max 255)     |
+| `functions`           | Custom workflow steps                                          |
+| `workflows`           | Automation sequences                                           |
+| `datastores`          | Data persistence for hosted apps                               |
+| `outgoing_domains`    | Egress configuration                                           |
+| `app_directory`       | Marketplace listing fields (optional)                          |
 
 **Applied to DorkOS**: DorkOS could provide a "Deploy this adapter in Slack" button for the Slack adapter that encodes a minimal manifest (socket mode enabled, correct scopes for the relay adapter) and links to `https://api.slack.com/apps?new_app=1&manifest_yaml=...`. This gives users a one-click jump into Slack app creation with the right configuration pre-filled.
 
@@ -147,6 +162,7 @@ VS Code's `contributes.walkthroughs` contribution point is the most sophisticate
 Raycast's setup documentation pattern is the simplest and most integrated approach for a preference-gated extension:
 
 **The flow:**
+
 1. User installs extension from the Store
 2. User tries to run a command
 3. If the extension has required preferences not yet set, Raycast shows the **preferences onboarding screen** before the command runs
@@ -154,11 +170,13 @@ Raycast's setup documentation pattern is the simplest and most integrated approa
 5. Clicking the button opens the README in a rich viewer with full markdown rendering and media support
 
 **Store requirements for setup documentation:**
+
 - README must cover: API token acquisition, preference enablement in other apps, any non-trivial setup steps
 - Media files go in a top-level `media/` folder (referenced from README as `./media/screenshot.png`)
 - Screenshots for the store listing: up to 6 screenshots, min 3 recommended, 2000x1250px (16:10), PNG, light theme
 
 **Required preferences gate:**
+
 ```json
 {
   "preferences": [
@@ -185,18 +203,18 @@ Home Assistant's integration setup documentation uses MDX-style custom component
 
 **Documentation site components available for integration setup guides:**
 
-| Component | Syntax | Use |
-|---|---|---|
-| Expandable sections | `{% details "Title" %} content {% enddetails %}` | Hide verbose instructions |
-| Tip box | Custom shortcode | Non-critical recommendations |
-| Note box | Custom shortcode | General highlights |
-| Important box | Custom shortcode | Critical warnings |
-| Screenshot (captioned) | `<p class='img'><img src="..." /></p>` | Illustrated steps |
-| My links | `{% my integrations title="..." %}` | Deep links into HA UI |
-| Inline icons | `{% icon "mdi:dots-vertical" %}` | UI element reference |
-| Glossary tooltips | Custom shortcode | Terminology explanation |
-| Embedded video | `lite-YouTube` component | Tutorial videos |
-| Config blocks | Custom shortcode | YAML/UI config display |
+| Component              | Syntax                                           | Use                          |
+| ---------------------- | ------------------------------------------------ | ---------------------------- |
+| Expandable sections    | `{% details "Title" %} content {% enddetails %}` | Hide verbose instructions    |
+| Tip box                | Custom shortcode                                 | Non-critical recommendations |
+| Note box               | Custom shortcode                                 | General highlights           |
+| Important box          | Custom shortcode                                 | Critical warnings            |
+| Screenshot (captioned) | `<p class='img'><img src="..." /></p>`           | Illustrated steps            |
+| My links               | `{% my integrations title="..." %}`              | Deep links into HA UI        |
+| Inline icons           | `{% icon "mdi:dots-vertical" %}`                 | UI element reference         |
+| Glossary tooltips      | Custom shortcode                                 | Terminology explanation      |
+| Embedded video         | `lite-YouTube` component                         | Tutorial videos              |
+| Config blocks          | Custom shortcode                                 | YAML/UI config display       |
 
 **The config flow UI itself** is data-driven from `strings.json`:
 
@@ -253,6 +271,7 @@ class GithubCredentialsApi implements ICredentialType {
    - Links to external service (e.g., "Go to GitHub Developer Settings")
 
 For complex OAuth credentials (e.g., Google), there are five explicitly numbered steps:
+
 1. Create a Google Cloud Console project
 2. Enable APIs
 3. Configure your OAuth consent screen
@@ -268,11 +287,13 @@ For complex OAuth credentials (e.g., Google), there are five explicitly numbered
 The Heroku Deploy Button is the canonical pattern for "encode configuration in a URL, let the user deploy with one click." It uses `app.json` as the configuration manifest:
 
 **Button URL format:**
+
 ```
 https://www.heroku.com/deploy?template=https://github.com/user/repo
 ```
 
 **Environment variable pre-population:**
+
 ```
 https://www.heroku.com/deploy?template=https://github.com/user/repo&env[API_KEY]=myvalue&env[REGION]=us-east-1
 ```
@@ -302,9 +323,7 @@ This is directly analogous to Slack's `manifest_yaml=` parameter — both allow 
       "required": false
     }
   },
-  "addons": [
-    "heroku-postgresql"
-  ],
+  "addons": ["heroku-postgresql"],
   "scripts": {
     "postdeploy": "bundle exec rake db:migrate"
   }
@@ -312,6 +331,7 @@ This is directly analogous to Slack's `manifest_yaml=` parameter — both allow 
 ```
 
 Key `env` field properties:
+
 - `description`: Shown to the user in the deploy UI (like `ConfigField.description`)
 - `value`: Default value pre-filled in the form
 - `generator: "secret"`: Auto-generates a random secret (user doesn't type it)
@@ -326,6 +346,7 @@ Key `env` field properties:
 GitHub Apps support a `setup_url` field in the app registration. After a user installs the app (selects repositories, grants permissions), GitHub redirects to this URL with an `installation_id` query parameter.
 
 **Use cases:**
+
 - Redirect to a configuration page where the user sets adapter-specific options
 - Show "What happens next" instructions
 - Collect additional configuration not captured in the install flow
@@ -343,6 +364,7 @@ GitHub Apps support a `setup_url` field in the app registration. After a user in
 Synthesizing across all platforms, there are six distinct setup documentation patterns that appear repeatedly:
 
 #### Pattern A: Inline Step Description with External Link
+
 Used by: Home Assistant, n8n (docsUrl), Raycast (description field)
 
 The adapter/credential form shows a one-sentence description above or below the form with a Markdown link to external documentation. Minimal surface area. Zero learning curve.
@@ -354,6 +376,7 @@ The adapter/credential form shows a one-sentence description above or below the 
 This is the lowest-friction version. Suitable for adapters where setup is genuinely simple (Telegram: one field, one step).
 
 #### Pattern B: README / External Docs Tab
+
 Used by: Raycast ("About This Extension"), n8n (docs sidebar link), Grafana (external docs link in plugin metadata)
 
 A button or tab opens full documentation in a separate view (modal, tab, or external browser). Works well for complex adapters with many steps. The tradeoff: the user has to switch contexts.
@@ -361,6 +384,7 @@ A button or tab opens full documentation in a separate view (modal, tab, or exte
 For DorkOS: an "Open Setup Guide" link in the adapter wizard that opens the adapter's `docsUrl` in a new browser tab or a modal with embedded markdown rendering.
 
 #### Pattern C: Multi-Step Wizard with Per-Step Content
+
 Used by: VS Code walkthroughs, Home Assistant config flow, Stripe onboarding embedded components
 
 Each wizard step shows only the fields and instructions relevant to that step. Step completion is tracked. Steps can conditionally show/hide based on state. This is the richest pattern and the most appropriate for adapters with genuinely multi-step setup (e.g., a Slack adapter: create app → get token → configure scopes → install to workspace → paste token into DorkOS).
@@ -368,6 +392,7 @@ Each wizard step shows only the fields and instructions relevant to that step. S
 For DorkOS, this maps to `AdapterManifest.setupSteps[]` (already designed in `20260227_adapter_catalog_patterns.md`).
 
 #### Pattern D: Expandable/Collapsible Sections
+
 Used by: Home Assistant docs (`{% details %}`), GitHub README collapsible sections, many documentation sites
 
 Long instructions are hidden behind a "Click to expand" disclosure. Users who know what they're doing skip it; users who need help expand it. Works well for optional advanced configuration or troubleshooting steps.
@@ -375,6 +400,7 @@ Long instructions are hidden behind a "Click to expand" disclosure. Users who kn
 For DorkOS: an "How do I get this?" disclosure below complex fields like the Telegram bot token field, which expands to show 3-4 step instructions.
 
 #### Pattern E: One-Click Create / Deploy Button
+
 Used by: Slack (`api.slack.com/apps?new_app=1&manifest_yaml=...`), Heroku (Deploy button), Netlify (Deploy to Netlify button)
 
 A button or link encodes configuration in a URL query parameter. Clicking it pre-populates a creation form on the target platform. Reduces what the user has to type. Requires: the configuration is known ahead of time (or partially known), and the target platform supports the URL parameter.
@@ -382,6 +408,7 @@ A button or link encodes configuration in a URL query parameter. Clicking it pre
 For DorkOS: applicable to the Slack adapter specifically. DorkOS could show a "Create Slack App" button that opens the Slack manifest URL with the correct scopes pre-filled. After the user creates the app and copies the bot token, they return to DorkOS to paste it.
 
 #### Pattern F: Required Field Gate (Block Until Complete)
+
 Used by: Raycast (`required: true` preferences), VS Code settings validation
 
 The user cannot proceed with the primary workflow until required fields are filled. This is appropriate for fields where the adapter literally cannot function without them (e.g., the bot token for Telegram). Gates should be field-level, not step-level — blocking the entire wizard is too heavy.
@@ -397,6 +424,7 @@ Given the patterns above and DorkOS's existing `AdapterManifest` design, here is
 #### Enhancement 1: setupInstructions as Markdown (Not Plain Text)
 
 The existing `AdapterManifest.setupInstructions?: string` field should be promoted to support Markdown rendering. This enables:
+
 - Bold for emphasis
 - Inline code for tokens/values users need to copy
 - Links to external services
@@ -460,9 +488,14 @@ Add a `button` field type to `ConfigField` for adapter-specific one-click action
 
 ```typescript
 export type ConfigFieldType =
-  | 'text' | 'password' | 'number' | 'boolean'
-  | 'select' | 'textarea' | 'url'
-  | 'button';  // NEW: renders a call-to-action button
+  | 'text'
+  | 'password'
+  | 'number'
+  | 'boolean'
+  | 'select'
+  | 'textarea'
+  | 'url'
+  | 'button'; // NEW: renders a call-to-action button
 
 export interface ConfigField {
   // ... for type === 'button':
@@ -512,35 +545,44 @@ Steps with a `completionField` auto-advance when the user fills that field. This
 ## Sources & Evidence
 
 ### Slack App Manifest
+
 - [Configuring apps with app manifests | Slack Developer Docs](https://docs.slack.dev/app-manifests/configuring-apps-with-app-manifests/) — URL format `?new_app=1&manifest_yaml=...` confirmed
 - [App manifest reference | Slack Developer Docs](https://docs.slack.dev/reference/app-manifest/) — Complete manifest schema: display_information, settings, features, oauth_config sections
 - [apps.manifest.create method | Slack Developer Docs](https://docs.slack.dev/reference/methods/apps.manifest.create/) — Programmatic app creation API
 
 ### VS Code Walkthroughs
+
 - [Contribution Points | Visual Studio Code Extension API](https://code.visualstudio.com/api/references/contribution-points) — `contributes.walkthroughs` specification, completionEvents, media types
 
 ### Raycast Extension Onboarding
+
 - [Prepare an Extension for Store | Raycast API](https://developers.raycast.com/basics/prepare-an-extension-for-store) — README requirement, "About This Extension" button, screenshot specs (2000x1250, 6 max)
 - [Preferences | Raycast API](https://developers.raycast.com/api-reference/preferences) — `required: true` preference gate
 
 ### Home Assistant
+
 - [Documentation structure and example text | Home Assistant Developer Docs](https://developers.home-assistant.io/docs/documenting/integration-docs-examples/) — Full component list: `{% details %}`, My links, inline icons, embedded video, config blocks
 - [Config flow | Home Assistant Developer Docs](https://developers.home-assistant.io/docs/config_entries_config_flow_handler/) — `strings.json` per-field `data_description` pattern
 
 ### n8n
+
 - [Credentials files | n8n Docs](https://docs.n8n.io/integrations/creating-nodes/build/reference/credentials-files/) — `documentationUrl` field in credential type, resolves to docs.n8n.io path
 - [Credentials library | n8n Docs](https://docs.n8n.io/integrations/builtin/credentials/) — Per-credential documentation page structure
 
 ### Heroku Deploy Button
+
 - [Creating a 'Deploy to Heroku' Button | Heroku Dev Center](https://devcenter.heroku.com/articles/heroku-button) — URL format, `env[NAME]=value` pre-population, `app.json` `generator: "secret"` concept
 
 ### GitHub Apps
+
 - [About the setup URL | GitHub Docs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url) — Post-install redirect, `installation_id` parameter, "Redirect on update" option
 
 ### Grafana
+
 - [Plugin management | Grafana documentation](https://grafana.com/docs/grafana/latest/administration/plugin-management/) — Plugin setup; datasource plugin UI is plugin-owned React component
 
 ### Existing DorkOS Research (Incorporated)
+
 - `research/20260227_adapter_catalog_patterns.md` — `ConfigField[]` descriptor, `AdapterManifest`, `setupSteps[]`, `setupInstructions` (existing design this report extends)
 - `research/20260311_adapter_binding_configuration_ux_patterns.md` — Multi-step wizard, progressive disclosure, Stripe/Home Assistant patterns
 

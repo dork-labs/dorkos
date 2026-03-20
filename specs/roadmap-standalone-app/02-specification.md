@@ -22,6 +22,7 @@ Build a fully standalone roadmap visualization and management app within the Dor
 ## Background / Problem Statement
 
 The current roadmap system consists of:
+
 - A vanilla HTML/CSS/JS visualization (`roadmap/roadmap.html`, 1139 lines of JS) that is deprecated
 - 7 Python scripts for CLI-based data manipulation
 - A JSON file (`roadmap/roadmap.json`) as the data store with a JSON Schema v7 for validation
@@ -52,30 +53,31 @@ This works but has limitations: the HTML visualization is static and disconnecte
 
 ## Technical Dependencies
 
-| Library | Version | Purpose |
-|---|---|---|
-| `express` | ^4.21 | HTTP server |
-| `lowdb` | ^7 | JSON file persistence with atomic writes |
-| `zod` | ^4.3 | Request/response validation |
-| `@asteasolutions/zod-to-openapi` | ^8.4 | OpenAPI spec generation |
-| `uuid` | ^10 | UUID v4 generation for new items |
-| `cors` | ^2.8 | CORS middleware |
-| `react` | ^19 | UI framework |
-| `react-dom` | ^19 | React DOM renderer |
-| `@tanstack/react-query` | ^5.62 | Server state management |
-| `@tanstack/react-table` | ^8 | Table view with sorting/filtering |
-| `@hello-pangea/dnd` | ^17 | Drag-and-drop for Kanban and MoSCoW Grid |
-| `zustand` | ^5 | UI state (view mode, filters, theme) |
-| `tailwindcss` | ^4 | Styling |
-| `motion` | ^12 | Animations |
-| `lucide-react` | latest | Icons |
-| `vite` | ^6 | Dev server and bundler |
-| `marked` or `react-markdown` | latest | Markdown rendering for spec viewer |
-| `@dorkos/shared` | workspace:* | Shared Zod schemas and types |
-| `@dorkos/typescript-config` | workspace:* | Shared tsconfig presets |
-| `@dorkos/test-utils` | workspace:* | Mock factories |
+| Library                          | Version      | Purpose                                  |
+| -------------------------------- | ------------ | ---------------------------------------- |
+| `express`                        | ^4.21        | HTTP server                              |
+| `lowdb`                          | ^7           | JSON file persistence with atomic writes |
+| `zod`                            | ^4.3         | Request/response validation              |
+| `@asteasolutions/zod-to-openapi` | ^8.4         | OpenAPI spec generation                  |
+| `uuid`                           | ^10          | UUID v4 generation for new items         |
+| `cors`                           | ^2.8         | CORS middleware                          |
+| `react`                          | ^19          | UI framework                             |
+| `react-dom`                      | ^19          | React DOM renderer                       |
+| `@tanstack/react-query`          | ^5.62        | Server state management                  |
+| `@tanstack/react-table`          | ^8           | Table view with sorting/filtering        |
+| `@hello-pangea/dnd`              | ^17          | Drag-and-drop for Kanban and MoSCoW Grid |
+| `zustand`                        | ^5           | UI state (view mode, filters, theme)     |
+| `tailwindcss`                    | ^4           | Styling                                  |
+| `motion`                         | ^12          | Animations                               |
+| `lucide-react`                   | latest       | Icons                                    |
+| `vite`                           | ^6           | Dev server and bundler                   |
+| `marked` or `react-markdown`     | latest       | Markdown rendering for spec viewer       |
+| `@dorkos/shared`                 | workspace:\* | Shared Zod schemas and types             |
+| `@dorkos/typescript-config`      | workspace:\* | Shared tsconfig presets                  |
+| `@dorkos/test-utils`             | workspace:\* | Mock factories                           |
 
 **Kibo UI components** (copied via registry, not npm dependency):
+
 - `kanban` — Kanban board component
 - `gantt` — Gantt chart component
 
@@ -154,78 +156,96 @@ export const HealthSchema = z
   .enum(['on-track', 'at-risk', 'off-track', 'blocked'])
   .openapi('Health');
 
-export const TimeHorizonSchema = z
-  .enum(['now', 'next', 'later'])
-  .openapi('TimeHorizon');
+export const TimeHorizonSchema = z.enum(['now', 'next', 'later']).openapi('TimeHorizon');
 
 // === Item Schema ===
 
-export const LinkedArtifactsSchema = z.object({
-  specSlug: z.string().optional(),
-  ideationPath: z.string().optional(),
-  specPath: z.string().optional(),
-  tasksPath: z.string().optional(),
-  implementationPath: z.string().optional(),
-}).openapi('LinkedArtifacts');
+export const LinkedArtifactsSchema = z
+  .object({
+    specSlug: z.string().optional(),
+    ideationPath: z.string().optional(),
+    specPath: z.string().optional(),
+    tasksPath: z.string().optional(),
+    implementationPath: z.string().optional(),
+  })
+  .openapi('LinkedArtifacts');
 
-export const IdeationContextSchema = z.object({
-  targetUsers: z.array(z.string()).optional(),
-  painPoints: z.array(z.string()).optional(),
-  successCriteria: z.array(z.string()).optional(),
-  constraints: z.array(z.string()).optional(),
-}).openapi('IdeationContext');
+export const IdeationContextSchema = z
+  .object({
+    targetUsers: z.array(z.string()).optional(),
+    painPoints: z.array(z.string()).optional(),
+    successCriteria: z.array(z.string()).optional(),
+    constraints: z.array(z.string()).optional(),
+  })
+  .openapi('IdeationContext');
 
-export const WorkflowStateSchema = z.object({
-  phase: z.enum([
-    'not-started', 'ideating', 'specifying', 'decomposing',
-    'implementing', 'testing', 'committing', 'releasing', 'completed',
-  ]).optional(),
-  specSlug: z.string().optional(),
-  tasksTotal: z.number().int().min(0).optional(),
-  tasksCompleted: z.number().int().min(0).optional(),
-  lastSession: z.string().datetime().optional(),
-  attempts: z.number().int().min(0).optional(),
-  blockers: z.array(z.string()).optional(),
-}).openapi('WorkflowState');
+export const WorkflowStateSchema = z
+  .object({
+    phase: z
+      .enum([
+        'not-started',
+        'ideating',
+        'specifying',
+        'decomposing',
+        'implementing',
+        'testing',
+        'committing',
+        'releasing',
+        'completed',
+      ])
+      .optional(),
+    specSlug: z.string().optional(),
+    tasksTotal: z.number().int().min(0).optional(),
+    tasksCompleted: z.number().int().min(0).optional(),
+    lastSession: z.string().datetime().optional(),
+    attempts: z.number().int().min(0).optional(),
+    blockers: z.array(z.string()).optional(),
+  })
+  .openapi('WorkflowState');
 
-export const RoadmapItemSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(3).max(200),
-  description: z.string().max(2000).optional(),
-  type: RoadmapItemTypeSchema,
-  moscow: MoscowSchema,
-  status: RoadmapStatusSchema,
-  health: HealthSchema,
-  timeHorizon: TimeHorizonSchema,
-  effort: z.number().min(0).optional(),
-  dependencies: z.array(z.string().uuid()).optional(),
-  labels: z.array(z.string()).optional(),
-  order: z.number().optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  linkedArtifacts: LinkedArtifactsSchema.optional(),
-  ideationContext: IdeationContextSchema.optional(),
-  workflowState: WorkflowStateSchema.optional(),
-}).openapi('RoadmapItem');
+export const RoadmapItemSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().min(3).max(200),
+    description: z.string().max(2000).optional(),
+    type: RoadmapItemTypeSchema,
+    moscow: MoscowSchema,
+    status: RoadmapStatusSchema,
+    health: HealthSchema,
+    timeHorizon: TimeHorizonSchema,
+    effort: z.number().min(0).optional(),
+    dependencies: z.array(z.string().uuid()).optional(),
+    labels: z.array(z.string()).optional(),
+    order: z.number().optional(),
+    startDate: z.string().datetime().optional(),
+    endDate: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    linkedArtifacts: LinkedArtifactsSchema.optional(),
+    ideationContext: IdeationContextSchema.optional(),
+    workflowState: WorkflowStateSchema.optional(),
+  })
+  .openapi('RoadmapItem');
 
 export type RoadmapItem = z.infer<typeof RoadmapItemSchema>;
 
 // === Request Schemas ===
 
-export const CreateItemRequestSchema = RoadmapItemSchema
-  .omit({ id: true, createdAt: true, updatedAt: true })
-  .openapi('CreateItemRequest');
+export const CreateItemRequestSchema = RoadmapItemSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).openapi('CreateItemRequest');
 
-export const UpdateItemRequestSchema = RoadmapItemSchema
-  .partial()
+export const UpdateItemRequestSchema = RoadmapItemSchema.partial()
   .omit({ id: true, createdAt: true })
   .openapi('UpdateItemRequest');
 
-export const ReorderRequestSchema = z.object({
-  orderedIds: z.array(z.string().uuid()),
-}).openapi('ReorderRequest');
+export const ReorderRequestSchema = z
+  .object({
+    orderedIds: z.array(z.string().uuid()),
+  })
+  .openapi('ReorderRequest');
 
 // === Meta Schema ===
 
@@ -234,34 +254,39 @@ export const TimeHorizonConfigSchema = z.object({
   description: z.string(),
 });
 
-export const RoadmapMetaSchema = z.object({
-  projectName: z.string().min(1).max(100),
-  projectSummary: z.string().max(500),
-  lastUpdated: z.string().datetime(),
-  timeHorizons: z.object({
-    now: TimeHorizonConfigSchema,
-    next: TimeHorizonConfigSchema,
-    later: TimeHorizonConfigSchema,
-  }),
-}).openapi('RoadmapMeta');
+export const RoadmapMetaSchema = z
+  .object({
+    projectName: z.string().min(1).max(100),
+    projectSummary: z.string().max(500),
+    lastUpdated: z.string().datetime(),
+    timeHorizons: z.object({
+      now: TimeHorizonConfigSchema,
+      next: TimeHorizonConfigSchema,
+      later: TimeHorizonConfigSchema,
+    }),
+  })
+  .openapi('RoadmapMeta');
 
 export type RoadmapMeta = z.infer<typeof RoadmapMetaSchema>;
 
 // === Health Stats ===
 
-export const HealthStatsSchema = z.object({
-  totalItems: z.number(),
-  mustHavePercent: z.number(),
-  inProgressCount: z.number(),
-  atRiskCount: z.number(),
-  blockedCount: z.number(),
-  completedCount: z.number(),
-}).openapi('HealthStats');
+export const HealthStatsSchema = z
+  .object({
+    totalItems: z.number(),
+    mustHavePercent: z.number(),
+    inProgressCount: z.number(),
+    atRiskCount: z.number(),
+    blockedCount: z.number(),
+    completedCount: z.number(),
+  })
+  .openapi('HealthStats');
 
 export type HealthStats = z.infer<typeof HealthStatsSchema>;
 ```
 
 Register in `packages/shared/package.json` exports:
+
 ```json
 "./roadmap-schemas": { "types": "./src/roadmap-schemas.ts", "default": "./dist/roadmap-schemas.js" }
 ```
@@ -325,18 +350,19 @@ export function createApp(store: RoadmapStore) {
 
 #### API Endpoints (`src/server/routes/items.ts`)
 
-| Method | Path | Description | Request Body | Response |
-|---|---|---|---|---|
-| `GET` | `/api/roadmap/items` | List all items | — | `RoadmapItem[]` |
-| `POST` | `/api/roadmap/items` | Create item | `CreateItemRequest` | `RoadmapItem` (201) |
-| `GET` | `/api/roadmap/items/:id` | Get single item | — | `RoadmapItem` or 404 |
-| `PATCH` | `/api/roadmap/items/:id` | Update item | `UpdateItemRequest` | `RoadmapItem` or 404 |
-| `DELETE` | `/api/roadmap/items/:id` | Delete item | — | 204 or 404 |
-| `PATCH` | `/api/roadmap/items/reorder` | Reorder items | `ReorderRequest` | 200 |
-| `GET` | `/api/roadmap/meta` | Get project metadata + health stats | — | `RoadmapMeta & { health: HealthStats }` |
-| `GET` | `/api/roadmap/files/*` | Read spec file content | — | `{ content: string }` or 404 |
+| Method   | Path                         | Description                         | Request Body        | Response                                |
+| -------- | ---------------------------- | ----------------------------------- | ------------------- | --------------------------------------- |
+| `GET`    | `/api/roadmap/items`         | List all items                      | —                   | `RoadmapItem[]`                         |
+| `POST`   | `/api/roadmap/items`         | Create item                         | `CreateItemRequest` | `RoadmapItem` (201)                     |
+| `GET`    | `/api/roadmap/items/:id`     | Get single item                     | —                   | `RoadmapItem` or 404                    |
+| `PATCH`  | `/api/roadmap/items/:id`     | Update item                         | `UpdateItemRequest` | `RoadmapItem` or 404                    |
+| `DELETE` | `/api/roadmap/items/:id`     | Delete item                         | —                   | 204 or 404                              |
+| `PATCH`  | `/api/roadmap/items/reorder` | Reorder items                       | `ReorderRequest`    | 200                                     |
+| `GET`    | `/api/roadmap/meta`          | Get project metadata + health stats | —                   | `RoadmapMeta & { health: HealthStats }` |
+| `GET`    | `/api/roadmap/files/*`       | Read spec file content              | —                   | `{ content: string }` or 404            |
 
 Route handler pattern (matching DorkOS):
+
 ```typescript
 router.patch('/:id', async (req, res) => {
   const parsed = UpdateItemRequestSchema.safeParse(req.body);
@@ -373,7 +399,13 @@ export class RoadmapStore {
 
   constructor(filePath: string) {
     const adapter = new JSONFile<RoadmapData>(filePath);
-    this.db = new Low(adapter, { projectName: '', projectSummary: '', lastUpdated: '', timeHorizons: {}, items: [] });
+    this.db = new Low(adapter, {
+      projectName: '',
+      projectSummary: '',
+      lastUpdated: '',
+      timeHorizons: {},
+      items: [],
+    });
   }
 
   async init(): Promise<void> {
@@ -385,7 +417,7 @@ export class RoadmapStore {
   }
 
   getItem(id: string): RoadmapItem | undefined {
-    return this.db.data.items.find(item => item.id === id);
+    return this.db.data.items.find((item) => item.id === id);
   }
 
   async createItem(input: CreateItemInput): Promise<RoadmapItem> {
@@ -403,7 +435,7 @@ export class RoadmapStore {
   }
 
   async updateItem(id: string, patch: Partial<RoadmapItem>): Promise<RoadmapItem | null> {
-    const idx = this.db.data.items.findIndex(item => item.id === id);
+    const idx = this.db.data.items.findIndex((item) => item.id === id);
     if (idx === -1) return null;
 
     const now = new Date().toISOString();
@@ -414,7 +446,7 @@ export class RoadmapStore {
   }
 
   async deleteItem(id: string): Promise<boolean> {
-    const idx = this.db.data.items.findIndex(item => item.id === id);
+    const idx = this.db.data.items.findIndex((item) => item.id === id);
     if (idx === -1) return false;
 
     this.db.data.items.splice(idx, 1);
@@ -425,7 +457,7 @@ export class RoadmapStore {
 
   async reorder(orderedIds: string[]): Promise<void> {
     orderedIds.forEach((id, index) => {
-      const item = this.db.data.items.find(i => i.id === id);
+      const item = this.db.data.items.find((i) => i.id === id);
       if (item) item.order = index;
     });
     this.db.data.lastUpdated = new Date().toISOString();
@@ -434,7 +466,7 @@ export class RoadmapStore {
 
   getMeta(): RoadmapMeta & { health: HealthStats } {
     const items = this.db.data.items;
-    const mustHaves = items.filter(i => i.moscow === 'must-have');
+    const mustHaves = items.filter((i) => i.moscow === 'must-have');
     return {
       projectName: this.db.data.projectName,
       projectSummary: this.db.data.projectSummary,
@@ -443,10 +475,10 @@ export class RoadmapStore {
       health: {
         totalItems: items.length,
         mustHavePercent: items.length > 0 ? Math.round((mustHaves.length / items.length) * 100) : 0,
-        inProgressCount: items.filter(i => i.status === 'in-progress').length,
-        atRiskCount: items.filter(i => i.health === 'at-risk').length,
-        blockedCount: items.filter(i => i.health === 'blocked').length,
-        completedCount: items.filter(i => i.status === 'completed').length,
+        inProgressCount: items.filter((i) => i.status === 'in-progress').length,
+        atRiskCount: items.filter((i) => i.health === 'at-risk').length,
+        blockedCount: items.filter((i) => i.health === 'blocked').length,
+        completedCount: items.filter((i) => i.status === 'completed').length,
       },
     };
   }
@@ -603,8 +635,8 @@ interface AppState {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,           // 30s — data considered fresh
-      refetchOnWindowFocus: true,   // Re-fetch when tab regains focus
+      staleTime: 30_000, // 30s — data considered fresh
+      refetchOnWindowFocus: true, // Re-fetch when tab regains focus
     },
   },
 });
@@ -625,6 +657,7 @@ Wraps Kibo UI's `gantt` component. Filters items to those with `startDate` and `
 #### Health Bar Component
 
 Persistent header bar showing:
+
 - Total items count
 - Must-Have % (with warning indicator if > 60%)
 - In-progress count
@@ -683,7 +716,7 @@ Uses `useRoadmapMeta()` hook which fetches `GET /api/roadmap/meta`.
 export default defineWorkspace([
   'apps/client',
   'apps/server',
-  'apps/roadmap',    // ← Add this
+  'apps/roadmap', // ← Add this
   'packages/cli',
   'packages/shared',
 ]);
@@ -691,24 +724,24 @@ export default defineWorkspace([
 
 #### Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `ROADMAP_PORT` | `4243` | Express server port |
+| Variable       | Default                  | Description               |
+| -------------- | ------------------------ | ------------------------- |
+| `ROADMAP_PORT` | `4243`                   | Express server port       |
 | `ROADMAP_PATH` | `./roadmap/roadmap.json` | Path to roadmap data file |
 
 ### Python Script Migration
 
 Replace each Python script with a shell script wrapper that calls the Express API. Scripts live at `roadmap/scripts/` (same location, `.sh` instead of `.py`).
 
-| Original | Replacement | API Call |
-|---|---|---|
-| `update_status.py <id> <status>` | `update_status.sh` | `curl -X PATCH /api/roadmap/items/<id> -d '{"status":"<status>"}'` |
-| `update_workflow_state.py <id> <json>` | `update_workflow_state.sh` | `curl -X PATCH /api/roadmap/items/<id> -d '{"workflowState":<json>}'` |
-| `link_spec.py <id> <slug>` | `link_spec.sh` | `curl -X PATCH /api/roadmap/items/<id> -d '{"linkedArtifacts":{...}}'` |
-| `link_all_specs.py` | `link_all_specs.sh` | Loop: GET all items, PATCH each with missing artifacts |
-| `find_by_title.py <query>` | `find_by_title.sh` | `curl /api/roadmap/items \| jq '.[] \| select(.title \| test("<query>";"i"))'` |
-| `slugify.py <title>` | `slugify.sh` | Pure bash: `echo "$1" \| tr '[:upper:]' '[:lower:]' \| sed 's/[^a-z0-9]/-/g'` |
-| `clear_roadmap.py <name> <summary>` | `clear_roadmap.sh` | DELETE all items + PATCH meta |
+| Original                               | Replacement                | API Call                                                                       |
+| -------------------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
+| `update_status.py <id> <status>`       | `update_status.sh`         | `curl -X PATCH /api/roadmap/items/<id> -d '{"status":"<status>"}'`             |
+| `update_workflow_state.py <id> <json>` | `update_workflow_state.sh` | `curl -X PATCH /api/roadmap/items/<id> -d '{"workflowState":<json>}'`          |
+| `link_spec.py <id> <slug>`             | `link_spec.sh`             | `curl -X PATCH /api/roadmap/items/<id> -d '{"linkedArtifacts":{...}}'`         |
+| `link_all_specs.py`                    | `link_all_specs.sh`        | Loop: GET all items, PATCH each with missing artifacts                         |
+| `find_by_title.py <query>`             | `find_by_title.sh`         | `curl /api/roadmap/items \| jq '.[] \| select(.title \| test("<query>";"i"))'` |
+| `slugify.py <title>`                   | `slugify.sh`               | Pure bash: `echo "$1" \| tr '[:upper:]' '[:lower:]' \| sed 's/[^a-z0-9]/-/g'`  |
+| `clear_roadmap.py <name> <summary>`    | `clear_roadmap.sh`         | DELETE all items + PATCH meta                                                  |
 
 Each shell script checks if the server is running (`curl -s /api/health`) and prints a helpful message if not.
 
@@ -744,30 +777,31 @@ Toggle between light and dark mode via a button in the top-right corner. Follows
 
 ### Server Tests
 
-| Test | What It Validates |
-|---|---|
+| Test                    | What It Validates                                                 |
+| ----------------------- | ----------------------------------------------------------------- |
 | `roadmap-store.test.ts` | CRUD operations on lowdb, health stats calculation, reorder logic |
-| `items-routes.test.ts` | HTTP status codes, Zod validation errors, 404 handling |
-| `meta-routes.test.ts` | Meta endpoint returns correct stats |
-| `files-routes.test.ts` | Path traversal prevention, 404 for missing files |
+| `items-routes.test.ts`  | HTTP status codes, Zod validation errors, 404 handling            |
+| `meta-routes.test.ts`   | Meta endpoint returns correct stats                               |
+| `files-routes.test.ts`  | Path traversal prevention, 404 for missing files                  |
 
 Mock `lowdb` with an in-memory adapter for deterministic tests.
 
 ### Client Tests
 
-| Test | What It Validates |
-|---|---|
-| `HealthBar.test.tsx` | Renders correct metrics from mock data |
-| `TableView.test.tsx` | Renders table rows, sorting interactions |
-| `KanbanView.test.tsx` | Renders columns with correct items per status |
-| `ItemEditorDialog.test.tsx` | Form validation, submit calls mutation |
-| `useRoadmapItems.test.ts` | TanStack Query hook returns data, handles errors |
+| Test                        | What It Validates                                |
+| --------------------------- | ------------------------------------------------ |
+| `HealthBar.test.tsx`        | Renders correct metrics from mock data           |
+| `TableView.test.tsx`        | Renders table rows, sorting interactions         |
+| `KanbanView.test.tsx`       | Renders columns with correct items per status    |
+| `ItemEditorDialog.test.tsx` | Form validation, submit calls mutation           |
+| `useRoadmapItems.test.ts`   | TanStack Query hook returns data, handles errors |
 
 Mock `fetch` for API calls. Use React Testing Library with jsdom environment.
 
 ### Test Utilities
 
 Add to `packages/test-utils/`:
+
 - `createMockRoadmapItem(overrides?)` — Factory for test items
 - `createMockRoadmapMeta(overrides?)` — Factory for meta + health stats
 

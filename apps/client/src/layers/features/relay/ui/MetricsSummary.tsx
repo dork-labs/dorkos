@@ -20,8 +20,16 @@ export function MetricsSummary({ enabled }: MetricsSummaryProps) {
   const pills = [
     { label: 'Total', value: metrics.totalMessages, variant: 'default' as const },
     { label: 'Delivered', value: metrics.deliveredCount, variant: 'success' as const },
-    { label: 'Failed', value: metrics.failedCount, variant: metrics.failedCount > 0 ? 'danger' : 'default' },
-    { label: 'Dead Letter', value: metrics.deadLetteredCount, variant: metrics.deadLetteredCount > 0 ? 'warning' : 'default' },
+    {
+      label: 'Failed',
+      value: metrics.failedCount,
+      variant: metrics.failedCount > 0 ? 'danger' : 'default',
+    },
+    {
+      label: 'Dead Letter',
+      value: metrics.deadLetteredCount,
+      variant: metrics.deadLetteredCount > 0 ? 'warning' : 'default',
+    },
   ];
 
   return (
@@ -29,12 +37,14 @@ export function MetricsSummary({ enabled }: MetricsSummaryProps) {
       {pills.map(({ label, value, variant }) => (
         <div key={label} className="flex items-center gap-1.5 text-xs">
           <span className="text-muted-foreground">{label}</span>
-          <span className={cn(
-            'font-medium tabular-nums',
-            variant === 'success' && value > 0 && 'text-green-600 dark:text-green-500',
-            variant === 'danger' && 'text-red-600 dark:text-red-500',
-            variant === 'warning' && 'text-amber-600 dark:text-amber-500',
-          )}>
+          <span
+            className={cn(
+              'font-medium tabular-nums',
+              variant === 'success' && value > 0 && 'text-green-600 dark:text-green-500',
+              variant === 'danger' && 'text-red-600 dark:text-red-500',
+              variant === 'warning' && 'text-amber-600 dark:text-amber-500'
+            )}
+          >
             {value.toLocaleString()}
           </span>
         </div>

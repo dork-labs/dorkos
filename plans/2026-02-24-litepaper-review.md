@@ -13,18 +13,18 @@ description: Review and issue tracking for Relay, Mesh, and main DorkOS litepape
 
 ## Documents Under Review
 
-| Document | Path |
-|---|---|
-| Main litepaper (v2) | [meta/dorkos-litepaper.md](../../meta/dorkos-litepaper.md) |
-| Relay litepaper | [meta/modules/relay-litepaper.md](../../meta/modules/relay-litepaper.md) |
-| Mesh litepaper | [meta/modules/mesh-litepaper.md](../../meta/modules/mesh-litepaper.md) |
-| Relay design doc | [plans/2026-02-24-relay-design.md](./2026-02-24-relay-design.md) |
-| Mesh design doc | [plans/2026-02-24-mesh-design.md](./2026-02-24-mesh-design.md) |
-| Main litepaper v1 (archived) | [meta/archive/dorkos-litepaper-v1.md](../../meta/archive/dorkos-litepaper-v1.md) |
-| Loop litepaper (tone reference) | [research/loop-litepaper.md](../../research/loop-litepaper.md) |
-| Brand foundation | [meta/brand-foundation.md](../../meta/brand-foundation.md) |
-| Website modules data | [apps/web/.../marketing/lib/modules.ts](../../apps/web/src/layers/features/marketing/lib/modules.ts) |
-| Website architecture UI | [apps/web/.../marketing/ui/SystemArchitecture.tsx](../../apps/web/src/layers/features/marketing/ui/SystemArchitecture.tsx) |
+| Document                        | Path                                                                                                                       |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Main litepaper (v2)             | [meta/dorkos-litepaper.md](../../meta/dorkos-litepaper.md)                                                                 |
+| Relay litepaper                 | [meta/modules/relay-litepaper.md](../../meta/modules/relay-litepaper.md)                                                   |
+| Mesh litepaper                  | [meta/modules/mesh-litepaper.md](../../meta/modules/mesh-litepaper.md)                                                     |
+| Relay design doc                | [plans/2026-02-24-relay-design.md](./2026-02-24-relay-design.md)                                                           |
+| Mesh design doc                 | [plans/2026-02-24-mesh-design.md](./2026-02-24-mesh-design.md)                                                             |
+| Main litepaper v1 (archived)    | [meta/archive/dorkos-litepaper-v1.md](../../meta/archive/dorkos-litepaper-v1.md)                                           |
+| Loop litepaper (tone reference) | [research/loop-litepaper.md](../../research/loop-litepaper.md)                                                             |
+| Brand foundation                | [meta/brand-foundation.md](../../meta/brand-foundation.md)                                                                 |
+| Website modules data            | [apps/web/.../marketing/lib/modules.ts](../../apps/web/src/layers/features/marketing/lib/modules.ts)                       |
+| Website architecture UI         | [apps/web/.../marketing/ui/SystemArchitecture.tsx](../../apps/web/src/layers/features/marketing/ui/SystemArchitecture.tsx) |
 
 ---
 
@@ -122,7 +122,7 @@ These are architectural gaps surfaced during review. The litepapers don't necess
 
 **Status:** Open
 
-The Mesh litepaper mentions "It calls a Mesh MCP tool" (line 96) for discovery. But neither litepaper explains the agent-facing mechanism for *sending*. The design doc specifies MCP tools (`relay_send`, `relay_inbox` — Mesh design doc line 183), and the Relay litepaper describes Engine subscribing to receive messages (line 129), but the send-side interaction is absent.
+The Mesh litepaper mentions "It calls a Mesh MCP tool" (line 96) for discovery. But neither litepaper explains the agent-facing mechanism for _sending_. The design doc specifies MCP tools (`relay_send`, `relay_inbox` — Mesh design doc line 183), and the Relay litepaper describes Engine subscribing to receive messages (line 129), but the send-side interaction is absent.
 
 An agent in a Claude Code session would presumably call an MCP tool to send a Relay message, but this isn't stated in any litepaper. The mechanism is important because it determines the developer experience — is sending a message as simple as calling a tool?
 
@@ -154,7 +154,7 @@ The Mesh design doc (line 165-169) lists this as an open question with options: 
 
 **Status:** Open
 
-The Relay design doc describes a full access control model (lines 282-299): pattern-based allow/deny rules, priority evaluation, default-allow, hot-reloaded via chokidar. The Mesh litepaper correctly states "Mesh writes rules. Relay enforces them." But the Relay litepaper never mentions that Relay *has* access control at all.
+The Relay design doc describes a full access control model (lines 282-299): pattern-based allow/deny rules, priority evaluation, default-allow, hot-reloaded via chokidar. The Mesh litepaper correctly states "Mesh writes rules. Relay enforces them." But the Relay litepaper never mentions that Relay _has_ access control at all.
 
 A reader of only the Relay litepaper wouldn't know Relay supports configurable access rules. The "Budget Envelopes" section covers safety, but access control (who can message whom) is a separate concern that's entirely absent.
 
@@ -210,14 +210,14 @@ When an agent receives a message through Relay, does Wing automatically inject c
 
 ## Resolution Log
 
-| Item | Date | Resolution |
-|---|---|---|
-| Issue 1 | 2026-02-24 | Switched all litepaper diagrams to Mermaid. Poll arrow now unambiguously originates from Pulse. Also converted Relay send flow and Loop feedback cycle for consistency. |
-| Issue 2 | 2026-02-24 | Kept "A voice" intentionally. The bullet list is evocative shorthand; the description after the dash provides precision. |
-| Issue 3 | 2026-02-24 | Fixed broken link: `./loop-litepaper.md` → `../research/loop-litepaper.md`. |
-| Issue 4 | 2026-02-24 | Replaced "seven modules" with three-tier taxonomy (platform / modules / extensions). Fixed Loop contradiction. Website Relay/Mesh descriptions flagged as needing update. |
-| Issue 5 | 2026-02-24 | Merged budget enforcement into Relay Phase 1. Renamed Phase 2 to "Advanced Reliability." |
-| Issue 6 | 2026-02-24 | Kept as-is. Litepapers describe vision in present tense. The "Today... With Relay..." framing already signals future state. |
+| Item            | Date       | Resolution                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Issue 1         | 2026-02-24 | Switched all litepaper diagrams to Mermaid. Poll arrow now unambiguously originates from Pulse. Also converted Relay send flow and Loop feedback cycle for consistency.                                                                                                                                                                                                                              |
+| Issue 2         | 2026-02-24 | Kept "A voice" intentionally. The bullet list is evocative shorthand; the description after the dash provides precision.                                                                                                                                                                                                                                                                             |
+| Issue 3         | 2026-02-24 | Fixed broken link: `./loop-litepaper.md` → `../research/loop-litepaper.md`.                                                                                                                                                                                                                                                                                                                          |
+| Issue 4         | 2026-02-24 | Replaced "seven modules" with three-tier taxonomy (platform / modules / extensions). Fixed Loop contradiction. Website Relay/Mesh descriptions flagged as needing update.                                                                                                                                                                                                                            |
+| Issue 5         | 2026-02-24 | Merged budget enforcement into Relay Phase 1. Renamed Phase 2 to "Advanced Reliability."                                                                                                                                                                                                                                                                                                             |
+| Issue 6         | 2026-02-24 | Kept as-is. Litepapers describe vision in present tense. The "Today... With Relay..." framing already signals future state.                                                                                                                                                                                                                                                                          |
 | Website updates | 2026-02-24 | Updated Relay description (universal message bus), Mesh description (discovery + topology + access control), Loop status (available + url to looped.me) in `modules.ts`. Updated `SystemArchitecture.tsx` to render "Live" badge and link for modules with external URLs. Updated `brand-foundation.md` Relay/Mesh sections and Loop status. Updated main litepaper Loop status to "Live" with link. |
 
 <!-- When an item is discussed and resolved, add a row here and update the item's Status above -->

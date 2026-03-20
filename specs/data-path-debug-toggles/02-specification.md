@@ -12,6 +12,7 @@ status: specified
 Add two Settings toggles to independently disable the Persistent SSE connection (cross-client sync) and Message Polling (periodic history refetch) in the chat client. These toggles enable isolating data path issues when debugging "strange behavior" in the chat UI.
 
 The DorkOS chat client receives data via three paths:
+
 1. **Live SSE** — Streaming response on POST `/api/sessions/:id/messages` (core interaction loop, NOT toggleable)
 2. **Persistent SSE** — EventSource on GET `/api/sessions/:id/stream` providing cross-client sync and presence updates
 3. **Message Polling** — TanStack Query `refetchInterval` that periodically re-fetches message history (3s active tab, 10s background)
@@ -25,6 +26,7 @@ This spec covers toggles for paths 2 and 3 only.
 Add two new persisted boolean settings using the existing `BOOL_KEYS`/`BOOL_DEFAULTS` pattern:
 
 **AppState interface additions (after line 127):**
+
 ```typescript
 enableCrossClientSync: boolean;
 setEnableCrossClientSync: (v: boolean) => void;
@@ -33,18 +35,21 @@ setEnableMessagePolling: (v: boolean) => void;
 ```
 
 **BOOL_KEYS additions (after line 172, `showStatusBarTunnel`):**
+
 ```typescript
 enableCrossClientSync: 'dorkos-enable-cross-client-sync',
 enableMessagePolling: 'dorkos-enable-message-polling',
 ```
 
 **BOOL_DEFAULTS additions (after line 193, `showStatusBarTunnel`):**
+
 ```typescript
 enableCrossClientSync: true,
 enableMessagePolling: true,
 ```
 
 **Store implementation (after line 371, `setShowStatusBarTunnel`):**
+
 ```typescript
 enableCrossClientSync: readBool(BOOL_KEYS.enableCrossClientSync, BOOL_DEFAULTS.enableCrossClientSync),
 setEnableCrossClientSync: (v) => {
@@ -63,12 +68,14 @@ setEnableMessagePolling: (v) => {
 ### Chat Hook (`use-chat-session.ts`)
 
 **Read toggles from store (after line 115, `selectedCwd`):**
+
 ```typescript
 const enableCrossClientSync = useAppStore((s) => s.enableCrossClientSync);
 const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
 ```
 
 **Guard Persistent SSE effect (line 308-310, add one condition):**
+
 ```typescript
 // Before:
 if (!sessionId) return;
@@ -81,6 +88,7 @@ if (!enableCrossClientSync) return;
 ```
 
 Add `enableCrossClientSync` to the effect's dependency array (line 343):
+
 ```typescript
 }, [sessionId, isStreaming, queryClient, transport.clientId, enableCrossClientSync]);
 ```
@@ -88,6 +96,7 @@ Add `enableCrossClientSync` to the effect's dependency array (line 343):
 When `enableCrossClientSync` changes from `true` to `false`, React runs the cleanup (closes EventSource), then re-runs the effect (hits early return). When toggled back to `true`, the connection is re-established. No stale closure risk.
 
 **Guard Message Polling (line 256-261, add one condition):**
+
 ```typescript
 // Before:
 refetchInterval: () => {
@@ -127,8 +136,8 @@ const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
 <div className="space-y-4 rounded-lg border p-4">
   <h3 className="text-sm font-semibold">Diagnostics</h3>
   <p className="text-muted-foreground text-xs">
-    Toggle data synchronization paths for debugging. Disabling these
-    reduces background network activity but may cause stale data.
+    Toggle data synchronization paths for debugging. Disabling these reduces background network
+    activity but may cause stale data.
   </p>
 
   <div className="flex items-center justify-between gap-4">
@@ -138,10 +147,7 @@ const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
         Real-time updates from other clients and presence indicators
       </p>
     </div>
-    <Switch
-      checked={enableCrossClientSync}
-      onCheckedChange={setEnableCrossClientSync}
-    />
+    <Switch checked={enableCrossClientSync} onCheckedChange={setEnableCrossClientSync} />
   </div>
 
   <Separator />
@@ -153,23 +159,20 @@ const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
         Periodic refresh of message history (3s active, 10s background)
       </p>
     </div>
-    <Switch
-      checked={enableMessagePolling}
-      onCheckedChange={setEnableMessagePolling}
-    />
+    <Switch checked={enableMessagePolling} onCheckedChange={setEnableMessagePolling} />
   </div>
-</div>
+</div>;
 ```
 
 No changes needed to `SettingsDialog.tsx` since `AdvancedTab` reads directly from `useAppStore`.
 
 ### Side Effects When Disabled
 
-| Toggle Off | What Stops | What Still Works |
-|-----------|-----------|-----------------|
-| Cross-client sync | Presence UI (ClientsItem), cross-client query invalidation, `sync_update` events | Live SSE, polling (if enabled), initial history load |
-| Message polling | Periodic 3s/10s refetches | Live SSE, cross-client sync (if enabled), initial history load |
-| Both | All background data paths | Live SSE only — cleanest state for isolating streaming bugs |
+| Toggle Off        | What Stops                                                                       | What Still Works                                               |
+| ----------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Cross-client sync | Presence UI (ClientsItem), cross-client query invalidation, `sync_update` events | Live SSE, polling (if enabled), initial history load           |
+| Message polling   | Periodic 3s/10s refetches                                                        | Live SSE, cross-client sync (if enabled), initial history load |
+| Both              | All background data paths                                                        | Live SSE only — cleanest state for isolating streaming bugs    |
 
 **Interaction between toggles:** When cross-client sync is on but polling is off, `sync_update` events still trigger `queryClient.invalidateQueries()`, which causes a one-time refetch. With both off, messages arrive exclusively from the POST streaming response.
 
@@ -250,10 +253,10 @@ it('creates EventSource when enableCrossClientSync is true (default)', async () 
 
 ## Files Modified
 
-| File | Change |
-|------|--------|
-| `apps/client/src/layers/shared/model/app-store.ts` | Add 2 boolean toggles to interface, BOOL_KEYS, BOOL_DEFAULTS, store impl |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Guard SSE effect and polling interval with store values |
-| `apps/client/src/layers/features/settings/ui/AdvancedTab.tsx` | Add Diagnostics section with 2 Switch toggles |
-| `apps/client/src/layers/shared/model/__tests__/app-store.test.ts` | Add persistence and reset tests |
-| `apps/client/src/layers/features/chat/__tests__/use-chat-session.test.tsx` | Add conditional SSE/polling tests |
+| File                                                                       | Change                                                                   |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `apps/client/src/layers/shared/model/app-store.ts`                         | Add 2 boolean toggles to interface, BOOL_KEYS, BOOL_DEFAULTS, store impl |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`           | Guard SSE effect and polling interval with store values                  |
+| `apps/client/src/layers/features/settings/ui/AdvancedTab.tsx`              | Add Diagnostics section with 2 Switch toggles                            |
+| `apps/client/src/layers/shared/model/__tests__/app-store.test.ts`          | Add persistence and reset tests                                          |
+| `apps/client/src/layers/features/chat/__tests__/use-chat-session.test.tsx` | Add conditional SSE/polling tests                                        |

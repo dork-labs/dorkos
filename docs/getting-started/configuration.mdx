@@ -3,16 +3,17 @@ title: Configuration
 description: Environment variables and configuration options for DorkOS
 ---
 
-import { TypeTable } from 'fumadocs-ui/components/type-table'
-import { Callout } from 'fumadocs-ui/components/callout'
-import { Cards, Card } from 'fumadocs-ui/components/card'
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Configuration
 
 DorkOS is configured via environment variables and a persistent config file at `~/.dork/config.json`. CLI flags take highest precedence; built-in defaults apply when nothing else is set.
 
 <Callout type="info">
-Config precedence: CLI flags &gt; environment variables &gt; `~/.dork/config.json` &gt; built-in defaults.
+  Config precedence: CLI flags &gt; environment variables &gt; `~/.dork/config.json` &gt; built-in
+  defaults.
 </Callout>
 
 ## Required
@@ -41,7 +42,8 @@ Config precedence: CLI flags &gt; environment variables &gt; `~/.dork/config.jso
       default: 'Current directory',
     },
     DORKOS_BOUNDARY: {
-      description: 'Directory boundary root. Restricts all filesystem access to this path and below.',
+      description:
+        'Directory boundary root. Restricts all filesystem access to this path and below.',
       type: 'string',
       default: 'Home directory',
     },
@@ -80,7 +82,8 @@ DorkOS supports ngrok tunnels for remote access from any device. See the [Tunnel
 />
 
 <Callout type="warn">
-Always set `TUNNEL_AUTH` when exposing DorkOS publicly via a tunnel. Without it, anyone with the tunnel URL can access your sessions.
+  Always set `TUNNEL_AUTH` when exposing DorkOS publicly via a tunnel. Without it, anyone with the
+  tunnel URL can access your sessions.
 </Callout>
 
 ## Relay Configuration
@@ -90,7 +93,8 @@ Relay is the messaging layer that lets agents reach you on Telegram, notify each
 <TypeTable
   type={{
     DORKOS_RELAY_ENABLED: {
-      description: 'Enable the Relay messaging layer for inter-agent communication. Adapter configuration lives in `~/.dork/config.json` under the `relay` key.',
+      description:
+        'Enable the Relay messaging layer for inter-agent communication. Adapter configuration lives in `~/.dork/config.json` under the `relay` key.',
       type: 'boolean',
       default: 'false',
     },

@@ -18,7 +18,7 @@ export function MeshStatsHeader({ enabled = true }: MeshStatsHeaderProps) {
   if (!enabled || isLoading || !status) return null;
 
   return (
-    <div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground">
+    <div className="text-muted-foreground flex items-center gap-3 border-b px-3 py-1.5 text-xs">
       <span>{status.totalAgents} agents</span>
       <span className="flex items-center gap-1">
         <span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />

@@ -1,4 +1,9 @@
-import { useSchedules, useActiveRunCount, usePulsePresets, usePulsePresetDialog } from '@/layers/entities/pulse';
+import {
+  useSchedules,
+  useActiveRunCount,
+  usePulsePresets,
+  usePulsePresetDialog,
+} from '@/layers/entities/pulse';
 import { formatCron } from '@/layers/features/pulse';
 import { useAppStore } from '@/layers/shared/model';
 import {
@@ -34,16 +39,14 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
   const featuredPresets = [presets[0], presets[2]].filter(Boolean);
 
   // Filter to only schedules assigned to the selected agent
-  const schedules = agentId
-    ? allSchedules.filter((s) => s.agentId === agentId)
-    : allSchedules;
+  const schedules = agentId ? allSchedules.filter((s) => s.agentId === agentId) : allSchedules;
 
   if (toolStatus === 'disabled-by-agent') {
     return (
       <div className="flex flex-col items-center justify-center gap-3 px-4 py-8">
         <p className="text-muted-foreground/60 text-sm">Pulse disabled for this agent</p>
         <button
-          onClick={() => agentId ? openPulseForAgent(agentId) : setPulseOpen(true)}
+          onClick={() => (agentId ? openPulseForAgent(agentId) : setPulseOpen(true))}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
           Open Pulse →
@@ -55,23 +58,21 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
   if (schedules.length === 0) {
     return (
       <div className="flex flex-col gap-3 px-3 py-4">
-        <p className="text-xs text-muted-foreground/70">No schedules yet.</p>
+        <p className="text-muted-foreground/70 text-xs">No schedules yet.</p>
         {featuredPresets.length > 0 && (
           <div className="space-y-2">
             {featuredPresets.map((preset) => (
-              <div
-                key={preset.id}
-                className="rounded-lg border p-3 text-sm"
-              >
+              <div key={preset.id} className="rounded-lg border p-3 text-sm">
                 <div className="font-medium">{preset.name}</div>
-                <p className="text-xs text-muted-foreground">{formatCron(preset.cron)}</p>
+                <p className="text-muted-foreground text-xs">{formatCron(preset.cron)}</p>
                 <button
                   type="button"
                   onClick={() => {
                     openWithPreset(preset);
-                    if (agentId) openPulseForAgent(agentId); else setPulseOpen(true);
+                    if (agentId) openPulseForAgent(agentId);
+                    else setPulseOpen(true);
                   }}
-                  className="mt-2 text-xs text-primary hover:underline"
+                  className="text-primary mt-2 text-xs hover:underline"
                 >
                   + Use preset
                 </button>
@@ -80,7 +81,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
           </div>
         )}
         <button
-          onClick={() => agentId ? openPulseForAgent(agentId) : setPulseOpen(true)}
+          onClick={() => (agentId ? openPulseForAgent(agentId) : setPulseOpen(true))}
           className="text-muted-foreground hover:text-foreground text-xs transition-colors"
         >
           Open Pulse →
@@ -156,7 +157,7 @@ export function SchedulesView({ toolStatus, agentId }: SchedulesViewProps) {
 
         <div className="px-3 py-2">
           <button
-            onClick={() => agentId ? openPulseForAgent(agentId) : setPulseOpen(true)}
+            onClick={() => (agentId ? openPulseForAgent(agentId) : setPulseOpen(true))}
             className="text-muted-foreground hover:text-foreground text-xs transition-colors"
           >
             Open Pulse →

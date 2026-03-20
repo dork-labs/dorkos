@@ -1,5 +1,5 @@
 ---
-title: "Mesh Panel UX Overhaul — Research Report"
+title: 'Mesh Panel UX Overhaul — Research Report'
 date: 2026-02-25
 type: external-best-practices
 status: active
@@ -29,6 +29,7 @@ World-class developer tools treat empty states as onboarding moments — not err
 Every tab in the current MeshPanel shows either a bare spinner or a one-line muted text message ("No agents registered. Discover and register agents from the Discovery tab."). Research shows this pattern consistently produces dead ends. World-class tools treat the first empty state as the highest-ROI design moment.
 
 **Current problems identified in the codebase:**
+
 - `TopologyGraph`: "No agents discovered yet" (muted text, no CTA)
 - `AgentsTab`: "No agents registered. Discover and register agents from the Discovery tab." (muted text, no action)
 - `DeniedTab`: "No denied paths." (muted text, no context)
@@ -40,6 +41,7 @@ The pattern across all tabs is passive acknowledgment with no forward momentum.
 ### 2. The Discovery Tab Is the Keystone
 
 All other tabs are downstream of Discovery. A user who cannot successfully run a scan never sees agents, topology, namespaces, or access rules. The current Discovery tab has maximum friction:
+
 - A plain text input with no placeholder guidance beyond comma-separated paths
 - No default value suggesting where to look
 - No persistence — the input is blank on every visit
@@ -64,6 +66,7 @@ For Mesh: the server already knows `DORKOS_DEFAULT_CWD` and the active session's
 ### 5. Illustrated Empty States With a Single CTA
 
 Effective empty states combine:
+
 - **Visual anchor** (icon or illustration — not a generic spinner)
 - **Contextual headline** (why it's empty, not just that it is)
 - **One action** (never two or three competing CTAs)
@@ -75,13 +78,14 @@ For Mesh, each tab needs a distinct empty state with an icon, a one-sentence con
 
 ### 6. Topology Graph Empty State Requires Special Treatment
 
-Kiali (Istio's management console) shows a topology graph only when measurable request traffic exists. When the graph is empty, it explains *why* (no traffic recorded, no sidecar injection, Prometheus config) rather than just saying "empty." For visualization empty states, a "ghost graph" pattern (a dimmed placeholder showing what the canvas will look like) is highly effective — it sets expectations and reduces uncertainty.
+Kiali (Istio's management console) shows a topology graph only when measurable request traffic exists. When the graph is empty, it explains _why_ (no traffic recorded, no sidecar injection, Prometheus config) rather than just saying "empty." For visualization empty states, a "ghost graph" pattern (a dimmed placeholder showing what the canvas will look like) is highly effective — it sets expectations and reduces uncertainty.
 
 React Flow (already used in `TopologyGraph.tsx`) supports rendering placeholder nodes with a distinct visual style (dashed borders, ghost styling) in the empty state. This is preferable to the current "No agents discovered yet" text-in-a-canvas pattern.
 
 ### 7. Recent Directories — localStorage Is the Standard Pattern
 
 For web-app path pickers without native filesystem access, the industry standard is:
+
 - localStorage/sessionStorage for persisting recent paths client-side
 - A combobox or tokenized tag input replacing the raw text field
 - Suggested paths rendered as clickable chips (no typing required)
@@ -98,11 +102,13 @@ The DorkOS server already enforces a security boundary via `lib/boundary.ts` (40
 #### Discovery Tab (Priority 1 — Keystone)
 
 **Current state:**
+
 ```
 [ text input: "Roots to scan (comma-separated, e.g. ~/projects, /opt/agents)" ] [ Scan ]
 ```
 
 **Problems:**
+
 1. No default value — blank on first visit
 2. Comma-separation is developer-hostile for a GUI tool
 3. No persistence — state lost on tab change
@@ -112,6 +118,7 @@ The DorkOS server already enforces a security boundary via `lib/boundary.ts` (40
 **Recommended state:**
 
 Replace the raw text input with a tag/chip input pattern:
+
 - Pre-populate with CWD chip on mount (derived from `useDefaultCwd` entity hook already in the codebase)
 - Additional suggestion chips: `~/projects`, `~/workspace`, `~/agents` shown as secondary pills
 - Recent scans persisted in localStorage — shown as a "Recent" section above the input
@@ -120,6 +127,7 @@ Replace the raw text input with a tag/chip input pattern:
 - Show scan depth control (slider 1-5) collapsed by default (progressive disclosure)
 
 **First-time empty state (before any scan):**
+
 ```
 [Icon: Radar/Search wave animation]
 Discover agents on this machine
@@ -133,6 +141,7 @@ DorkOS can find compatible agents anywhere in your filesystem.
 #### Topology Tab (Priority 2 — First Landing)
 
 **Current state:**
+
 ```
 "No agents discovered yet"  (centered muted text on blank canvas)
 ```
@@ -142,6 +151,7 @@ Topology is the default tab. A blank canvas is the worst possible first impressi
 **Recommended state:**
 
 Ghost/placeholder graph approach:
+
 - Render 3 dimmed, dashed-border placeholder nodes arranged in dagre layout
 - Overlay: "Your agent network will appear here" + "Go to Discovery →" button
 - Subtle pulse animation on the placeholder nodes (reduced-motion aware)
@@ -151,6 +161,7 @@ When agents exist but have no edges (current state): show agents connected to a 
 #### Agents Tab (Priority 3)
 
 **Current state:**
+
 ```
 "No agents registered. Discover and register agents from the Discovery tab."
 ```
@@ -158,6 +169,7 @@ When agents exist but have no edges (current state): show agents connected to a 
 This is actually the best of the current empty states — it names the next action. Improve it:
 
 **Recommended state:**
+
 ```
 [Icon: Users/Network]
 No agents registered yet
@@ -173,6 +185,7 @@ The CTA should switch the active tab to Discovery (pass a tab setter or use URL 
 #### Denied Tab (Priority 4)
 
 **Current state:**
+
 ```
 "No denied paths."
 ```
@@ -180,6 +193,7 @@ The CTA should switch the active tab to Discovery (pass a tab setter or use URL 
 This is ambiguous — it could mean "no denials exist" (good) or "the list failed to load" (bad). The empty state should be reassuring.
 
 **Recommended state:**
+
 ```
 [Icon: Shield with checkmark]
 No blocked paths
@@ -193,6 +207,7 @@ No CTA needed — "no denied paths" is a healthy state, not a problem to solve.
 #### Access Tab (Priority 5)
 
 **Current state:**
+
 ```
 [Icon: Shield]
 "No namespaces found. Register agents to see the topology."
@@ -201,6 +216,7 @@ No CTA needed — "no denied paths" is a healthy state, not a problem to solve.
 This is directionally correct but lacks context about what namespaces are.
 
 **Recommended state:**
+
 ```
 [Icon: Shield]
 No namespaces configured
@@ -219,17 +235,20 @@ Register agents in Discovery to create your first namespace.
 #### Approach 1: Wizard-Driven
 
 A step-by-step modal flow launched on first Mesh tab visit:
+
 1. "Let's find your agents" — pick directories
 2. "Review discovered agents" — register or deny
 3. "Set access rules" — namespace configuration
 4. "You're set up!" — show populated topology
 
 **Pros:**
+
 - Complete coverage — no user is left wondering what to do
 - Forces important decisions (access rules) upfront
 - Well-understood pattern (setup wizards in Supabase, Railway, etc.)
 
 **Cons:**
+
 - Engineers actively reject hand-holding — Linear's research shows this
 - Forces decisions before the user understands the system
 - Modal interrupts flow and feels heavyweight for a panel within a larger app
@@ -245,11 +264,13 @@ A step-by-step modal flow launched on first Mesh tab visit:
 Auto-detect CWD, run a silent scan on first Mesh panel load, show results without user input.
 
 **Pros:**
+
 - Maximum "magic" — feels like the tool understands your context
 - Zero friction for the common case
 - Fast path to populated state
 
 **Cons:**
+
 - Silent background scans feel invasive for a security-sensitive tool
 - Filesystem scanning without user consent crosses an ethical line in a tool with access control
 - Results shown without user intent feel surprising
@@ -264,11 +285,13 @@ Auto-detect CWD, run a silent scan on first Mesh panel load, show results withou
 Improve each tab's empty state with better copy, icons, and CTAs. No pre-filling or persistence. No behavior changes.
 
 **Pros:**
+
 - Lowest implementation risk
 - Respects user intent — no automatic actions
 - Incremental — can ship tab by tab
 
 **Cons:**
+
 - Doesn't solve the root problem: the Discovery tab still requires manual path entry
 - Users who don't know what to type remain stuck
 - No persistence means repeated friction on every visit
@@ -282,6 +305,7 @@ Improve each tab's empty state with better copy, icons, and CTAs. No pre-filling
 Pre-fill Discovery input with smart defaults (CWD, common directories); persist recent scan roots in localStorage; improve all tab empty states with icons, contextual copy, and single CTAs. No wizard. No auto-scanning.
 
 **Pros:**
+
 - Respects user intent (no unsolicited scans)
 - Eliminates the blank-slate problem for Discovery
 - Contextual guidance teaches as users explore
@@ -292,6 +316,7 @@ Pre-fill Discovery input with smart defaults (CWD, common directories); persist 
 - Security boundary remains explicit (boundary.ts still enforced on server)
 
 **Cons:**
+
 - Smart defaults may not match every user's directory structure
 - Requires reading CWD from existing entity hooks (minor coupling)
 - localStorage can become stale if directories move
@@ -316,11 +341,11 @@ The server enforces a boundary in `lib/boundary.ts` — paths outside the config
 
 The Mesh panel's five tabs represent three levels of complexity:
 
-| Level | Tabs | User State |
-|---|---|---|
-| Getting started | Discovery | First-time, has nothing |
-| Core workflow | Agents, Topology | Has agents, exploring |
-| Advanced | Denied, Access | Running mesh, managing ACL |
+| Level           | Tabs             | User State                 |
+| --------------- | ---------------- | -------------------------- |
+| Getting started | Discovery        | First-time, has nothing    |
+| Core workflow   | Agents, Topology | Has agents, exploring      |
+| Advanced        | Denied, Access   | Running mesh, managing ACL |
 
 Progressive disclosure principle: only show Access tab complexity (cross-project ACL forms) after the user has agents in multiple namespaces (`namespaceNames.length >= 2` is already implemented in `TopologyPanel.tsx` — extend this gating to the tab trigger itself, graying it out with a tooltip when fewer than 2 namespaces exist).
 
@@ -344,7 +369,7 @@ if (!agents.length) {
       <ReactFlow nodes={GHOST_NODES} edges={[]} nodeTypes={GHOST_NODE_TYPES} fitView>
         <Controls showInteractive={false} />
       </ReactFlow>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/60 backdrop-blur-[1px]">
+      <div className="bg-background/60 absolute inset-0 flex flex-col items-center justify-center gap-3 backdrop-blur-[1px]">
         <p className="font-medium">No agents in the mesh yet</p>
         <button onClick={() => switchToDiscoveryTab()}>Discover Agents →</button>
       </div>
@@ -354,6 +379,7 @@ if (!agents.length) {
 ```
 
 This pattern:
+
 - Preserves canvas layout context for when agents appear
 - Gives users a preview of the experience
 - Doesn't block them with a blank white rectangle
@@ -376,6 +402,7 @@ Recent:  [~/my-project (2h ago)] [~/agents (yesterday)]
 ```
 
 **Implementation notes:**
+
 - Each chip is a removable badge
 - Typing adds a new chip on Enter or comma
 - Suggested paths are server-provided (from a new lightweight endpoint) or client-hardcoded common paths
@@ -397,11 +424,13 @@ Recent:  [~/my-project (2h ago)] [~/agents (yesterday)]
 5. **Access Tab** — Contextual empty state explaining namespaces + CTA; gate tab trigger styling on namespace count
 
 **What NOT to build:**
+
 - A setup wizard — wrong for this audience, high cost, low retention value
 - Auto-scanning on panel load — violates user intent and security norms
 - Tooltips/coach marks/product tours — Linear's research confirms developers reject these
 
 **Design principles to carry through:**
+
 - One action per empty state (never two competing CTAs)
 - Every CTA moves the user forward on the critical path (Discovery → Agents → Topology)
 - Boundaries and constraints made visible upfront, not as error states

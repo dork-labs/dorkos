@@ -11,7 +11,7 @@ const AGENTS_KEY = ['mesh', 'agents'] as const;
  */
 export function useRegisteredAgents(
   filters?: { runtime?: string; capability?: string },
-  enabled = true,
+  enabled = true
 ) {
   const transport = useTransport();
 

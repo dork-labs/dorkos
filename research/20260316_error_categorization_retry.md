@@ -1,5 +1,5 @@
 ---
-title: "Error Categorization and Retry Affordance — Chat UI Best Practices and Implementation Recommendation"
+title: 'Error Categorization and Retry Affordance — Chat UI Best Practices and Implementation Recommendation'
 date: 2026-03-16
 type: implementation
 status: active
@@ -34,19 +34,23 @@ export const ErrorCategorySchema = z
   .enum(['max_turns', 'execution_error', 'budget_exceeded', 'output_format_error'])
   .openapi('ErrorCategory');
 
-export const ErrorEventSchema = z.object({
-  message: z.string(),
-  code: z.string().optional(),
-  category: ErrorCategorySchema.optional(),
-  details: z.string().optional(),
-}).openapi('ErrorEvent');
+export const ErrorEventSchema = z
+  .object({
+    message: z.string(),
+    code: z.string().optional(),
+    category: ErrorCategorySchema.optional(),
+    details: z.string().optional(),
+  })
+  .openapi('ErrorEvent');
 
-export const ErrorPartSchema = z.object({
-  type: z.literal('error'),
-  message: z.string(),
-  category: ErrorCategorySchema.optional(),
-  details: z.string().optional(),
-}).openapi('ErrorPart');
+export const ErrorPartSchema = z
+  .object({
+    type: z.literal('error'),
+    message: z.string(),
+    category: ErrorCategorySchema.optional(),
+    details: z.string().optional(),
+  })
+  .openapi('ErrorPart');
 ```
 
 `ErrorPart` is included in the `MessagePartSchema` discriminated union — the data model is fully
@@ -125,6 +129,7 @@ exactly where the failure happened.
 - No banner above input for SDK result errors; banner reserved for infrastructure errors only
 
 **Pros:**
+
 - Error stays visible as user scrolls (banner above input disappears when list scrolls)
 - Error is co-located with the turn that failed — user immediately understands context
 - Retry button is adjacent to the error — no cognitive distance
@@ -132,6 +137,7 @@ exactly where the failure happened.
 - Leverages the `ErrorPart` data model already in place
 
 **Cons:**
+
 - Requires a new component (`ErrorMessageBlock`) and its integration into the part renderer
 - Adds complexity to `AssistantMessageContent.tsx` (though isolated to a new `case 'error':` branch)
 
@@ -145,10 +151,12 @@ Keep the existing `<div>` banner in `ChatPanel.tsx` but upgrade it to branch on 
 state, show a retry button, and use category-appropriate copy.
 
 **Pros:**
+
 - Minimal structural change — only extends existing code
 - Banner placement is familiar (toasts and banners above the input box are a common pattern)
 
 **Cons:**
+
 - Banner disappears from view when the user scrolls up to re-read the conversation
 - No visual connection between the error and the turn that failed
 - Mixing infrastructure errors (banner) and SDK result errors (also banner) muddies the signal
@@ -167,9 +175,11 @@ state, show a retry button, and use category-appropriate copy.
 Use shadcn `Sonner` (already in the project) to fire a toast for session-terminating errors.
 
 **Pros:**
+
 - Zero layout changes; works with existing infrastructure
 
 **Cons:**
+
 - Toasts are auto-dismissing — error disappears after a few seconds
 - Toasts are semantically "non-blocking informational notifications," not terminal failures
 - No persistent retry affordance
@@ -187,6 +197,7 @@ Approach 1 (inline `ErrorMessageBlock`) combined with restoring the user's last 
 input box on `execution_error` so they can edit and re-send without a separate retry button.
 
 **Mechanism:**
+
 - On `setStatus('error')` for `execution_error`, also call `setDraftContent(lastUserMessage.content)`
   to pre-populate the input
 - The inline `ErrorMessageBlock` shows the error but no explicit "Retry" button — the restored
@@ -195,11 +206,13 @@ input box on `execution_error` so they can edit and re-send without a separate r
   stays empty as today
 
 **Pros:**
+
 - The recovered draft is the most natural retry mechanism — the user can edit before re-sending
 - Eliminates a dedicated Retry button (follows "less, but better" — Dieter Rams principle)
 - Inline message still provides the error explanation and context
 
 **Cons:**
+
 - Restoring draft requires threading `lastUserMessage.content` from `useChatSession` to `ChatInput`
 - The input must be enabled even when `status === 'error'` for this to work (currently blocked)
 - The UX contract changes: the user must re-send, not just click a single Retry button
@@ -213,12 +226,12 @@ input box on `execution_error` so they can edit and re-send without a separate r
 
 ### Category Definitions
 
-| Category | SDK Trigger | User Experience |
-|---|---|---|
-| `max_turns` | `SDKResultMessage.subtype === 'error_max_turns'` | Agent ran out of turns — config-limited, not a failure |
-| `execution_error` | `SDKResultMessage.subtype === 'error_during_execution'` | Runtime exception — API error, server fault, permission denial |
-| `budget_exceeded` | `SDKResultMessage.subtype === 'error_max_budget_usd'` | Cost limit hit — config-limited |
-| `output_format_error` | `SDKResultMessage.subtype === 'error_max_structured_output_retries'` | Structured output schema could not be satisfied |
+| Category              | SDK Trigger                                                          | User Experience                                                |
+| --------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `max_turns`           | `SDKResultMessage.subtype === 'error_max_turns'`                     | Agent ran out of turns — config-limited, not a failure         |
+| `execution_error`     | `SDKResultMessage.subtype === 'error_during_execution'`              | Runtime exception — API error, server fault, permission denial |
+| `budget_exceeded`     | `SDKResultMessage.subtype === 'error_max_budget_usd'`                | Cost limit hit — config-limited                                |
+| `output_format_error` | `SDKResultMessage.subtype === 'error_max_structured_output_retries'` | Structured output schema could not be satisfied                |
 
 Additionally, `SDKAssistantMessage.error` can carry mid-stream errors (`'authentication_failed'`,
 `'billing_error'`, `'rate_limit'`, `'invalid_request'`, `'server_error'`, `'unknown'`). These map
@@ -226,12 +239,12 @@ to `execution_error` for display purposes, with auth-keyword heuristic for the a
 
 ### Retryability
 
-| Category | Auto-retry | Manual retry | Rationale |
-|---|---|---|---|
-| `max_turns` | No | No | Retrying hits the same turn limit immediately |
-| `execution_error` | No | Yes | Transient server errors may clear; user decides |
-| `budget_exceeded` | No | No | Budget is exhausted; retry fails immediately |
-| `output_format_error` | No | No | Same prompt will produce same schema failure |
+| Category              | Auto-retry | Manual retry | Rationale                                       |
+| --------------------- | ---------- | ------------ | ----------------------------------------------- |
+| `max_turns`           | No         | No           | Retrying hits the same turn limit immediately   |
+| `execution_error`     | No         | Yes          | Transient server errors may clear; user decides |
+| `budget_exceeded`     | No         | No           | Budget is exhausted; retry fails immediately    |
+| `output_format_error` | No         | No           | Same prompt will produce same schema failure    |
 
 **Why no auto-retry for any category:** These are all `result`-level terminations, not transient
 mid-stream blips. The `rate_limit` stream event (handled separately via ADR-0136) is the correct
@@ -242,26 +255,26 @@ which violates the "honest by design" principle — users must consent to re-run
 
 Confident, minimal, technical — no apology language, no marketing phrases.
 
-| Category | Heading | Sub-text | Action |
-|---|---|---|---|
-| `max_turns` | "Turn limit reached" | "The agent ran for its maximum number of turns. Start a new session to continue." | None (or "New session" secondary button) |
-| `execution_error` (general) | "Agent stopped unexpectedly" | "An error occurred during execution." + `[Details]` collapsible | "Retry" button (or restored input draft) |
-| `execution_error` (auth detected) | "Authentication error" | "Check your API key in settings." | "Open settings" link |
-| `budget_exceeded` | "Cost limit reached" | "This session exceeded its budget of $X." | None |
-| `output_format_error` | "Output format error" | "The agent couldn't satisfy the required output format. Try rephrasing." | None |
+| Category                          | Heading                      | Sub-text                                                                          | Action                                   |
+| --------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------- |
+| `max_turns`                       | "Turn limit reached"         | "The agent ran for its maximum number of turns. Start a new session to continue." | None (or "New session" secondary button) |
+| `execution_error` (general)       | "Agent stopped unexpectedly" | "An error occurred during execution." + `[Details]` collapsible                   | "Retry" button (or restored input draft) |
+| `execution_error` (auth detected) | "Authentication error"       | "Check your API key in settings."                                                 | "Open settings" link                     |
+| `budget_exceeded`                 | "Cost limit reached"         | "This session exceeded its budget of $X."                                         | None                                     |
+| `output_format_error`             | "Output format error"        | "The agent couldn't satisfy the required output format. Try rephrasing."          | None                                     |
 
 Auth detection heuristic: if `details` or `message` contains any of `['authentication', 'api key',
 'invalid key', 'unauthorized', '401']` (case-insensitive), render the auth sub-variant.
 
 ### Visual System
 
-| Category | Icon (Lucide) | Color token |
-|---|---|---|
-| `max_turns` | `Hash` | `text-muted-foreground` / `border-border` — informational, not error |
-| `execution_error` | `AlertCircle` | `text-destructive` / `border-destructive/30` |
-| `execution_error` (auth) | `KeyRound` | `text-destructive` / `border-destructive/30` |
-| `budget_exceeded` | `DollarSign` | `text-warning` / `border-warning/30` (amber) |
-| `output_format_error` | `FileWarning` | `text-muted-foreground` / `border-border` — informational |
+| Category                 | Icon (Lucide) | Color token                                                          |
+| ------------------------ | ------------- | -------------------------------------------------------------------- |
+| `max_turns`              | `Hash`        | `text-muted-foreground` / `border-border` — informational, not error |
+| `execution_error`        | `AlertCircle` | `text-destructive` / `border-destructive/30`                         |
+| `execution_error` (auth) | `KeyRound`    | `text-destructive` / `border-destructive/30`                         |
+| `budget_exceeded`        | `DollarSign`  | `text-warning` / `border-warning/30` (amber)                         |
+| `output_format_error`    | `FileWarning` | `text-muted-foreground` / `border-border` — informational            |
 
 **Never color alone** — icon + color together, per WCAG and smart interface design patterns.
 

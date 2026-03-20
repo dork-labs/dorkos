@@ -31,10 +31,10 @@ Enhance the transport-level error banner in ChatPanel with categorized copy, ico
 
 Two distinct error surfaces, each for a different error class:
 
-| Surface | Error Class | Examples | Retry? |
-|---------|------------|----------|--------|
-| **Inline ErrorMessageBlock** | SDK result errors (have `category`) | `max_turns`, `execution_error`, `budget_exceeded`, `output_format_error` | Yes, for `execution_error` |
-| **Transport error banner** | Transport/network errors (no `category`) | Network failure, server 500, session locked, timeout | Yes, for transient errors |
+| Surface                      | Error Class                              | Examples                                                                 | Retry?                     |
+| ---------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ | -------------------------- |
+| **Inline ErrorMessageBlock** | SDK result errors (have `category`)      | `max_turns`, `execution_error`, `budget_exceeded`, `output_format_error` | Yes, for `execution_error` |
+| **Transport error banner**   | Transport/network errors (no `category`) | Network failure, server 500, session locked, timeout                     | Yes, for transient errors  |
 
 The inline path is done. This spec covers the banner path only.
 
@@ -54,13 +54,13 @@ interface TransportErrorInfo {
 
 Classification logic in `use-chat-session.ts` catch block:
 
-| Error Signal | Category | Heading | Message | Retryable | Auto-dismiss |
-|-------------|----------|---------|---------|-----------|-------------|
-| `err.code === 'SESSION_LOCKED'` | locked | "Session in use" | "Another client is sending a message. Try again in a few seconds." | No | 5s (`SESSION_BUSY_CLEAR_MS`) |
-| `err.message` contains "fetch" or "network" or `TypeError` | network | "Connection failed" | "Could not reach the server. Check your connection and try again." | Yes | No |
-| HTTP status 500-599 | server | "Server error" | "The server encountered an error. Try again." | Yes | No |
-| HTTP status 408 or timeout | timeout | "Request timed out" | "The server took too long to respond. Try again." | Yes | No |
-| Default | unknown | "Error" | `err.message` (raw, as fallback) | No | No |
+| Error Signal                                               | Category | Heading             | Message                                                            | Retryable | Auto-dismiss                 |
+| ---------------------------------------------------------- | -------- | ------------------- | ------------------------------------------------------------------ | --------- | ---------------------------- |
+| `err.code === 'SESSION_LOCKED'`                            | locked   | "Session in use"    | "Another client is sending a message. Try again in a few seconds." | No        | 5s (`SESSION_BUSY_CLEAR_MS`) |
+| `err.message` contains "fetch" or "network" or `TypeError` | network  | "Connection failed" | "Could not reach the server. Check your connection and try again." | Yes       | No                           |
+| HTTP status 500-599                                        | server   | "Server error"      | "The server encountered an error. Try again."                      | Yes       | No                           |
+| HTTP status 408 or timeout                                 | timeout  | "Request timed out" | "The server took too long to respond. Try again."                  | Yes       | No                           |
+| Default                                                    | unknown  | "Error"             | `err.message` (raw, as fallback)                                   | No        | No                           |
 
 ### Banner Component Enhancement
 
@@ -151,12 +151,12 @@ The `classifyTransportError` function lives in `use-chat-session.ts` as a module
 
 ## Testing Strategy
 
-| Test | Type | What It Validates |
-|------|------|-------------------|
-| `classifyTransportError` unit tests | Unit | Each error signal maps to correct category, heading, message, retryable flag |
-| Banner rendering | Component | Structured error info renders correctly, retry button conditional |
-| Retry click | Component | Button calls handleRetry which re-sends last user message |
-| SESSION_LOCKED behavior | Integration | Existing auto-clear timer still works with new structured error |
+| Test                                | Type        | What It Validates                                                            |
+| ----------------------------------- | ----------- | ---------------------------------------------------------------------------- |
+| `classifyTransportError` unit tests | Unit        | Each error signal maps to correct category, heading, message, retryable flag |
+| Banner rendering                    | Component   | Structured error info renders correctly, retry button conditional            |
+| Retry click                         | Component   | Button calls handleRetry which re-sends last user message                    |
+| SESSION_LOCKED behavior             | Integration | Existing auto-clear timer still works with new structured error              |
 
 ---
 
@@ -168,8 +168,8 @@ No migration needed. The `error` state type changes from `string | null` to `Tra
 
 ## Risks
 
-| Risk | Mitigation |
-|------|-----------|
-| Type change breaks other consumers of `error` | Grep for all `error` destructured from `useChatSession` — only ChatPanel uses it |
-| Classification heuristics miss edge cases | Default "unknown" category preserves raw message as fallback |
-| Retry on network error while server is actually down | Retry is manual and user-initiated — "honest by design" |
+| Risk                                                 | Mitigation                                                                       |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Type change breaks other consumers of `error`        | Grep for all `error` destructured from `useChatSession` — only ChatPanel uses it |
+| Classification heuristics miss edge cases            | Default "unknown" category preserves raw message as fallback                     |
+| Retry on network error while server is actually down | Retry is manual and user-initiated — "honest by design"                          |

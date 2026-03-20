@@ -14,10 +14,7 @@ import { MyAdapter } from './my-adapter.js';
  * @param id - Unique adapter instance ID (from adapters.json config)
  * @param config - Adapter-specific configuration
  */
-export default function createAdapter(
-  id: string,
-  config: Record<string, unknown>,
-): RelayAdapter {
+export default function createAdapter(id: string, config: Record<string, unknown>): RelayAdapter {
   return new MyAdapter(id, config);
 }
 

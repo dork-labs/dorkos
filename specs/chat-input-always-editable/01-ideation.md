@@ -51,24 +51,24 @@ status: ideation
 
 ### Primary Components/Modules
 
-| File | Role |
-|---|---|
-| `apps/client/src/layers/features/chat/ui/ChatInput.tsx` | Textarea, send/stop/clear buttons, keyboard shortcuts, auto-resize |
-| `apps/client/src/layers/features/chat/ui/ChatInputContainer.tsx` | Wraps ChatInput with dropzone, palettes, file chips, status section |
-| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` | Top-level chat composition, file upload orchestration |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Chat state machine: messages, streaming, status, submit |
-| `apps/client/src/layers/features/chat/model/use-file-upload.ts` | File upload lifecycle |
-| `apps/client/src/layers/features/chat/model/use-input-autocomplete.ts` | Command/file palette state + keyboard nav |
+| File                                                                   | Role                                                                |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/ui/ChatInput.tsx`                | Textarea, send/stop/clear buttons, keyboard shortcuts, auto-resize  |
+| `apps/client/src/layers/features/chat/ui/ChatInputContainer.tsx`       | Wraps ChatInput with dropzone, palettes, file chips, status section |
+| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`                | Top-level chat composition, file upload orchestration               |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`       | Chat state machine: messages, streaming, status, submit             |
+| `apps/client/src/layers/features/chat/model/use-file-upload.ts`        | File upload lifecycle                                               |
+| `apps/client/src/layers/features/chat/model/use-input-autocomplete.ts` | Command/file palette state + keyboard nav                           |
 
 ### Shared Dependencies
 
-| Dependency | Used By |
-|---|---|
-| `packages/shared/src/transport.ts` | `use-chat-session` — `sendMessage`, `sendMessageRelay` |
-| `apps/client/src/layers/shared/model/app-store.ts` | `use-chat-session` — `selectedCwd` |
-| `motion/react` (v12) | `ChatInput` — button animations; `ChatPanel` — scroll overlay |
-| TanStack Query | `use-chat-session` — session queries |
-| Zustand | `app-store` — UI state |
+| Dependency                                         | Used By                                                       |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| `packages/shared/src/transport.ts`                 | `use-chat-session` — `sendMessage`, `sendMessageRelay`        |
+| `apps/client/src/layers/shared/model/app-store.ts` | `use-chat-session` — `selectedCwd`                            |
+| `motion/react` (v12)                               | `ChatInput` — button animations; `ChatPanel` — scroll overlay |
+| TanStack Query                                     | `use-chat-session` — session queries                          |
+| Zustand                                            | `app-store` — UI state                                        |
 
 ### Data Flow: Message Submit
 
@@ -122,15 +122,15 @@ N/A — This is a UX improvement, not a bug fix.
 
 ### Competitive Analysis
 
-| App | Type During Stream | Queue Support | Stop Button | Notable UX |
-|---|---|---|---|---|
-| **ChatGPT** | Yes | No (errors on submit) | Yes (square) | Input always editable, submit blocked |
-| **Claude.ai** | No (disabled) | No | No | Mid-response rollback can lose user draft |
-| **Cursor** | Blocked | No | Undocumented | Enter key bugs in agent chat |
-| **Roo Code** | Yes | Yes (full UI) | N/A | Most mature queue: card display, per-item edit/delete |
-| **Relevance AI** | Yes | Yes (visual) | N/A | Seamless background queuing, auto-flush, FIFO |
-| **Vercel AI SDK** | No (official) | Community PR pending | Yes (abort) | Default: `disabled={status !== 'ready'}` |
-| **GitHub Copilot** | Blocked | No | Yes (per-step) | Agents pause every N turns for confirmation |
+| App                | Type During Stream | Queue Support         | Stop Button    | Notable UX                                            |
+| ------------------ | ------------------ | --------------------- | -------------- | ----------------------------------------------------- |
+| **ChatGPT**        | Yes                | No (errors on submit) | Yes (square)   | Input always editable, submit blocked                 |
+| **Claude.ai**      | No (disabled)      | No                    | No             | Mid-response rollback can lose user draft             |
+| **Cursor**         | Blocked            | No                    | Undocumented   | Enter key bugs in agent chat                          |
+| **Roo Code**       | Yes                | Yes (full UI)         | N/A            | Most mature queue: card display, per-item edit/delete |
+| **Relevance AI**   | Yes                | Yes (visual)          | N/A            | Seamless background queuing, auto-flush, FIFO         |
+| **Vercel AI SDK**  | No (official)      | Community PR pending  | Yes (abort)    | Default: `disabled={status !== 'ready'}`              |
+| **GitHub Copilot** | Blocked            | No                    | Yes (per-step) | Agents pause every N turns for confirmation           |
 
 **Key finding:** Roo Code and Relevance AI — both developer-focused tools — have shipped always-on input with message queuing. They are the benchmark. No app does the queue editing UX we're proposing.
 
@@ -147,13 +147,13 @@ Messages composed while the agent is streaming can be misinterpreted as replies 
 
 ### Potential Solutions Evaluated
 
-| # | Approach | Complexity | Verdict |
-|---|---|---|---|
-| 1 | Always-on input, submit blocked, no queue | Very Low | Phase 1 — ships immediately |
-| 2 | Single-item auto-resubmit | Low | Too limited — Kai queues multiple thoughts |
-| 3 | **Full FIFO queue with inline cards, edit/delete, auto-flush** | **Medium** | **Phase 2 — recommended** |
-| 4 | Interrupt + immediate send | Medium-High | SDK doesn't support graceful interrupt |
-| 5 | Full queue side panel | Very High | Over-engineered |
+| #   | Approach                                                       | Complexity  | Verdict                                    |
+| --- | -------------------------------------------------------------- | ----------- | ------------------------------------------ |
+| 1   | Always-on input, submit blocked, no queue                      | Very Low    | Phase 1 — ships immediately                |
+| 2   | Single-item auto-resubmit                                      | Low         | Too limited — Kai queues multiple thoughts |
+| 3   | **Full FIFO queue with inline cards, edit/delete, auto-flush** | **Medium**  | **Phase 2 — recommended**                  |
+| 4   | Interrupt + immediate send                                     | Medium-High | SDK doesn't support graceful interrupt     |
+| 5   | Full queue side panel                                          | Very High   | Over-engineered                            |
 
 ### Security Considerations
 
@@ -170,16 +170,17 @@ Messages composed while the agent is streaming can be misinterpreted as replies 
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|---|---|---|
-| 1 | Scope | Both phases: Phase 1 (always-editable, ~1-2h) + Phase 2 (message queue, ~1-2d) | Phase 1 is a quick win. Phase 2 differentiates DorkOS from every major competitor. The Claude Agent SDK's streaming input mode is built for sequential delivery. Kai thinks in pipelines, not locked doors. |
-| 2 | Queue submit UX | Third button state: "Queue" (clock/stack icon, neutral color) | During streaming with typed text, send button transforms to queue button. Makes queuing visible and intentional — honest design per Dieter Rams. Badge shows queue depth. |
-| 3 | Queue display | Inline cards above input + textarea editor with shell-history navigation | Cards show the queue visually. Arrow keys navigate the stack (like shell history). Clicking a card loads its content into the textarea for editing. "Editing message 2/3" label provides context. Enter saves edits, Escape discards. This is shell-history UX meets visual queue — discoverable for new users, fast for power users. |
-| 4 | Timing annotation | Auto-inject context metadata on queued messages | Prepend `[Note: This message was composed while the agent was responding to the previous message]` before queued messages. Solves the known context misinterpretation bug. ~5 lines of code, huge quality-of-life gain. |
+| #   | Decision          | Choice                                                                         | Rationale                                                                                                                                                                                                                                                                                                                             |
+| --- | ----------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Scope             | Both phases: Phase 1 (always-editable, ~1-2h) + Phase 2 (message queue, ~1-2d) | Phase 1 is a quick win. Phase 2 differentiates DorkOS from every major competitor. The Claude Agent SDK's streaming input mode is built for sequential delivery. Kai thinks in pipelines, not locked doors.                                                                                                                           |
+| 2   | Queue submit UX   | Third button state: "Queue" (clock/stack icon, neutral color)                  | During streaming with typed text, send button transforms to queue button. Makes queuing visible and intentional — honest design per Dieter Rams. Badge shows queue depth.                                                                                                                                                             |
+| 3   | Queue display     | Inline cards above input + textarea editor with shell-history navigation       | Cards show the queue visually. Arrow keys navigate the stack (like shell history). Clicking a card loads its content into the textarea for editing. "Editing message 2/3" label provides context. Enter saves edits, Escape discards. This is shell-history UX meets visual queue — discoverable for new users, fast for power users. |
+| 4   | Timing annotation | Auto-inject context metadata on queued messages                                | Prepend `[Note: This message was composed while the agent was responding to the previous message]` before queued messages. Solves the known context misinterpretation bug. ~5 lines of code, huge quality-of-life gain.                                                                                                               |
 
 ### Phase 1: Always-Editable Input (Quick Win)
 
 **Changes:**
+
 1. Remove `disabled` from textarea — always editable
 2. Keep submit button disabled during streaming (but change to stop icon as today)
 3. Keep paperclip button usable during streaming (attach files for next message)
@@ -188,6 +189,7 @@ Messages composed while the agent is streaming can be misinterpreted as replies 
 6. Update tests
 
 **Interaction model:**
+
 - Textarea: always accepts input
 - Send button: disabled during streaming (shows stop icon for abort)
 - Paperclip: enabled during streaming
@@ -197,6 +199,7 @@ Messages composed while the agent is streaming can be misinterpreted as replies 
 ### Phase 2: Message Queue with Inline Cards
 
 **New state: `useMessageQueue` hook**
+
 ```
 queue: QueueItem[]          // { id, content, createdAt }
 editingIndex: number | null // which queue item is loaded in textarea
@@ -208,6 +211,7 @@ clearQueue()                // clear all (on session change)
 ```
 
 **New component: `QueuePanel`**
+
 - Renders above the textarea, below status section
 - Collapsible card list with stagger animation (`AnimatePresence` + `staggerChildren: 0.05`)
 - Each card: truncated preview text, `x` remove button (hover), selected state indicator (`>`)
@@ -215,11 +219,11 @@ clearQueue()                // clear all (on session change)
 
 **Button states (three-state model):**
 
-| State | Condition | Icon | Color | Action |
-|---|---|---|---|---|
-| Send | `idle` + has text | Arrow up | Primary | Submit message |
-| Stop | `streaming` + no text | Square | Red | Abort streaming |
-| Queue | `streaming` + has text | Clock/stack | Neutral | Add to queue |
+| State | Condition              | Icon        | Color   | Action          |
+| ----- | ---------------------- | ----------- | ------- | --------------- |
+| Send  | `idle` + has text      | Arrow up    | Primary | Submit message  |
+| Stop  | `streaming` + no text  | Square      | Red     | Abort streaming |
+| Queue | `streaming` + has text | Clock/stack | Neutral | Add to queue    |
 
 **Queue editing via arrow keys (shell-history model):**
 
@@ -242,11 +246,13 @@ clearQueue()                // clear all (on session change)
 - **x on card**: remove from queue with scale-down exit animation
 
 **Visual state when editing queued item:**
+
 - Textarea border color changes (subtle accent)
 - Label above textarea: "Editing message 2/3" (replaces placeholder)
 - Button changes from Queue (clock) to Update (checkmark)
 
 **Auto-flush lifecycle:**
+
 1. Status transitions from `streaming` to `idle`
 2. If `queue.length > 0`, pop first item
 3. Prepend timing annotation: `[Note: This message was composed while the agent was responding to the previous message]`
@@ -256,6 +262,7 @@ clearQueue()                // clear all (on session change)
 7. Respect relay `waitForStreamReady` handshake between flushes
 
 **Queue cleanup:**
+
 - Clear queue on `sessionId` change
 - Clear queue on `selectedCwd` change
 - Clear queue on page unload (no persistence)

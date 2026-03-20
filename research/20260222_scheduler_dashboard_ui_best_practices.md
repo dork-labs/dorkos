@@ -1,5 +1,5 @@
 ---
-title: "Scheduler Dashboard UI Best Practices"
+title: 'Scheduler Dashboard UI Best Practices'
 date: 2026-02-22
 type: external-best-practices
 status: active
@@ -72,14 +72,14 @@ For a small-scale self-hosted tool (< 10k runs), offset is fine if simpler to im
 
 The widely-adopted hybrid convention (used by GitHub, Slack, Linear, and AWS Cloudscape):
 
-| Time elapsed | Display | Example |
-|---|---|---|
-| 0–59s | "Just now" or "Xsec ago" | "12s ago" |
-| 1–59m | Relative minutes | "14 min ago" |
-| 1–24h | Relative hours | "3 hours ago" |
-| 1–6 days | Relative days | "2 days ago" |
-| 7+ days | Absolute short | "Feb 10, 2:45 PM" |
-| Different year | Absolute with year | "Jan 5, 2024, 2:45 PM" |
+| Time elapsed   | Display                  | Example                |
+| -------------- | ------------------------ | ---------------------- |
+| 0–59s          | "Just now" or "Xsec ago" | "12s ago"              |
+| 1–59m          | Relative minutes         | "14 min ago"           |
+| 1–24h          | Relative hours           | "3 hours ago"          |
+| 1–6 days       | Relative days            | "2 days ago"           |
+| 7+ days        | Absolute short           | "Feb 10, 2:45 PM"      |
+| Different year | Absolute with year       | "Jan 5, 2024, 2:45 PM" |
 
 **The canonical threshold is 7 days.** Cloudscape uses this threshold in their design system guidelines. UX research confirms "43 weeks ago" is meaningless — users cannot mentally map it to a calendar date.
 
@@ -90,19 +90,19 @@ The widely-adopted hybrid convention (used by GitHub, Slack, Linear, and AWS Clo
 ### Recommended Approach (shadcn/ui)
 
 ```tsx
-import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
+import { formatDistanceToNow, format, differenceInDays } from 'date-fns';
 
 function Timestamp({ date }: { date: Date }) {
-  const daysAgo = differenceInDays(new Date(), date)
-  const isThisYear = date.getFullYear() === new Date().getFullYear()
+  const daysAgo = differenceInDays(new Date(), date);
+  const isThisYear = date.getFullYear() === new Date().getFullYear();
 
-  const relative = formatDistanceToNow(date, { addSuffix: true })
+  const relative = formatDistanceToNow(date, { addSuffix: true });
   const absolute = isThisYear
-    ? format(date, 'MMM d, h:mm a')       // "Feb 10, 2:45 PM"
-    : format(date, 'MMM d, yyyy, h:mm a') // "Jan 5, 2024, 2:45 PM"
+    ? format(date, 'MMM d, h:mm a') // "Feb 10, 2:45 PM"
+    : format(date, 'MMM d, yyyy, h:mm a'); // "Jan 5, 2024, 2:45 PM"
 
-  const display = daysAgo < 7 ? relative : absolute
-  const title   = daysAgo < 7 ? absolute : relative
+  const display = daysAgo < 7 ? relative : absolute;
+  const title = daysAgo < 7 ? absolute : relative;
 
   return (
     <time
@@ -112,7 +112,7 @@ function Timestamp({ date }: { date: Date }) {
     >
       {display}
     </time>
-  )
+  );
 }
 ```
 
@@ -142,22 +142,22 @@ Use the `<time>` element with `dateTime` ISO attribute — screen readers and cr
 
 ```tsx
 // Use shadcn Skeleton primitive
-import { Skeleton } from "@/layers/shared/ui/skeleton"
+import { Skeleton } from '@/layers/shared/ui/skeleton';
 
 function RunHistorySkeleton({ rows = 8 }: { rows?: number }) {
   return (
     <div className="space-y-2">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-3 border rounded-md">
-          <Skeleton className="size-2 rounded-full" />        {/* status dot */}
-          <Skeleton className="h-4 w-24" />                   {/* run ID */}
-          <Skeleton className="h-4 w-32 ml-auto" />           {/* timestamp */}
-          <Skeleton className="h-4 w-16" />                   {/* duration */}
-          <Skeleton className="h-5 w-20 rounded-full" />      {/* trigger badge */}
+        <div key={i} className="flex items-center gap-3 rounded-md border px-4 py-3">
+          <Skeleton className="size-2 rounded-full" /> {/* status dot */}
+          <Skeleton className="h-4 w-24" /> {/* run ID */}
+          <Skeleton className="ml-auto h-4 w-32" /> {/* timestamp */}
+          <Skeleton className="h-4 w-16" /> {/* duration */}
+          <Skeleton className="h-5 w-20 rounded-full" /> {/* trigger badge */}
         </div>
       ))}
     </div>
-  )
+  );
 }
 ```
 
@@ -166,7 +166,7 @@ function RunHistorySkeleton({ rows = 8 }: { rows?: number }) {
 **Reduced motion**: shadcn's `Skeleton` uses `animate-pulse` (CSS animation). Respect `prefers-reduced-motion` by conditionally removing the animation class:
 
 ```tsx
-<Skeleton className={cn("h-4 w-24", !reducedMotion && "animate-pulse")} />
+<Skeleton className={cn('h-4 w-24', !reducedMotion && 'animate-pulse')} />
 ```
 
 Or use `@media (prefers-reduced-motion: reduce)` in your CSS to disable the animation entirely.
@@ -193,13 +193,11 @@ const { data: runs } = useQuery({
   queryKey: ['runs'],
   queryFn: fetchRuns,
   refetchInterval: (query) => {
-    const runs = query.state.data
-    const hasActiveRuns = runs?.some(
-      (r) => r.status === 'running' || r.status === 'queued'
-    )
-    return hasActiveRuns ? 3000 : false
+    const runs = query.state.data;
+    const hasActiveRuns = runs?.some((r) => r.status === 'running' || r.status === 'queued');
+    return hasActiveRuns ? 3000 : false;
   },
-})
+});
 ```
 
 ```ts
@@ -207,11 +205,9 @@ const { data: runs } = useQuery({
 const { data: runs } = useQuery({
   queryKey: ['runs'],
   queryFn: fetchRuns,
-})
+});
 
-const hasActiveRuns = runs?.some(
-  (r) => r.status === 'running' || r.status === 'queued'
-) ?? false
+const hasActiveRuns = runs?.some((r) => r.status === 'running' || r.status === 'queued') ?? false;
 
 // Separate polling query or refetchInterval in the same query:
 useQuery({
@@ -219,7 +215,7 @@ useQuery({
   queryFn: fetchRuns,
   refetchInterval: hasActiveRuns ? 3000 : false,
   // Note: queryKey must match above so they share the cache
-})
+});
 ```
 
 Pattern 1 is more self-contained. Pattern 2 is more readable when you want to separate concerns (e.g., the active-run check logic lives somewhere else).
@@ -228,10 +224,10 @@ Pattern 1 is more self-contained. Pattern 2 is more readable when you want to se
 
 ```ts
 refetchInterval: (query) => {
-  if (query.state.status === 'error') return false // stop on error
-  const hasActive = query.state.data?.some(r => r.status === 'running')
-  return hasActive ? 3000 : false
-}
+  if (query.state.status === 'error') return false; // stop on error
+  const hasActive = query.state.data?.some((r) => r.status === 'running');
+  return hasActive ? 3000 : false;
+};
 ```
 
 **Global background refetch config** — disable `refetchOnWindowFocus` for job history (avoid jarring list updates when user tabs back):
@@ -244,7 +240,7 @@ const queryClient = new QueryClient({
       staleTime: 10_000,
     },
   },
-})
+});
 ```
 
 ### Gotchas
@@ -267,6 +263,7 @@ const queryClient = new QueryClient({
 **GitHub Actions**: Cancel workflow run shows a confirmation ("Are you sure?") modal because cancellation is not always undoable (mid-deployment side effects).
 
 **Rule of thumb**:
+
 - Reversible (soft cancel, can be re-triggered): optimistic update + undo toast, no modal
 - Irreversible with side effects (kills a process, can't undo): confirmation dialog
 
@@ -274,34 +271,34 @@ const queryClient = new QueryClient({
 
 ```tsx
 // Optimistic cancel with undo toast (for soft cancels)
-import { toast } from 'sonner'
+import { toast } from 'sonner';
 
 function cancelRun(runId: string) {
   // 1. Optimistically update local cache
   queryClient.setQueryData(['runs'], (old: Run[]) =>
-    old.map(r => r.id === runId ? { ...r, status: 'cancelling' } : r)
-  )
+    old.map((r) => (r.id === runId ? { ...r, status: 'cancelling' } : r))
+  );
 
   // 2. Show undo toast with 5s window
   toast('Run cancellation requested', {
     action: {
       label: 'Undo',
       onClick: () => {
-        queryClient.invalidateQueries({ queryKey: ['runs'] })
-        revertCancel(runId)
+        queryClient.invalidateQueries({ queryKey: ['runs'] });
+        revertCancel(runId);
       },
     },
     duration: 5000,
-  })
+  });
 
   // 3. Fire API call
   cancelRunMutation.mutate(runId, {
     onError: () => {
       // Roll back optimistic update on error
-      queryClient.invalidateQueries({ queryKey: ['runs'] })
-      toast.error('Failed to cancel run')
+      queryClient.invalidateQueries({ queryKey: ['runs'] });
+      toast.error('Failed to cancel run');
     },
-  })
+  });
 }
 ```
 
@@ -314,10 +311,13 @@ function cancelRun(runId: string) {
   disabled={run.status === 'cancelling'}
   onClick={() => cancelRun(run.id)}
 >
-  {run.status === 'cancelling'
-    ? <><Loader2 className="size-3 animate-spin mr-1" /> Cancelling</>
-    : 'Cancel'
-  }
+  {run.status === 'cancelling' ? (
+    <>
+      <Loader2 className="mr-1 size-3 animate-spin" /> Cancelling
+    </>
+  ) : (
+    'Cancel'
+  )}
 </Button>
 ```
 
@@ -326,7 +326,9 @@ function cancelRun(runId: string) {
 ```tsx
 <AlertDialog>
   <AlertDialogTrigger asChild>
-    <Button variant="destructive" size="sm">Cancel Run</Button>
+    <Button variant="destructive" size="sm">
+      Cancel Run
+    </Button>
   </AlertDialogTrigger>
   <AlertDialogContent>
     <AlertDialogTitle>Cancel this run?</AlertDialogTitle>
@@ -335,9 +337,7 @@ function cancelRun(runId: string) {
     </AlertDialogDescription>
     <AlertDialogFooter>
       <AlertDialogCancel>Keep Running</AlertDialogCancel>
-      <AlertDialogAction onClick={() => cancelRun(run.id)}>
-        Cancel Run
-      </AlertDialogAction>
+      <AlertDialogAction onClick={() => cancelRun(run.id)}>Cancel Run</AlertDialogAction>
     </AlertDialogFooter>
   </AlertDialogContent>
 </AlertDialog>
@@ -368,8 +368,8 @@ The icon-only approach fails accessibility — always pair icons with a visible 
 ### Recommended Approach (shadcn/ui)
 
 ```tsx
-import { Clock, Play, Webhook, RefreshCw } from 'lucide-react'
-import { Badge } from '@/layers/shared/ui/badge'
+import { Clock, Play, Webhook, RefreshCw } from 'lucide-react';
+import { Badge } from '@/layers/shared/ui/badge';
 
 const TRIGGER_CONFIG = {
   scheduled: {
@@ -382,13 +382,15 @@ const TRIGGER_CONFIG = {
     icon: Play,
     label: 'Manual',
     variant: 'secondary' as const,
-    className: 'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-300',
+    className:
+      'bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-300',
   },
   webhook: {
     icon: Webhook,
     label: 'Webhook',
     variant: 'secondary' as const,
-    className: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300',
+    className:
+      'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300',
   },
   retry: {
     icon: RefreshCw,
@@ -396,17 +398,20 @@ const TRIGGER_CONFIG = {
     variant: 'secondary' as const,
     className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300',
   },
-} as const satisfies Record<string, { icon: LucideIcon; label: string; variant: 'secondary'; className: string }>
+} as const satisfies Record<
+  string,
+  { icon: LucideIcon; label: string; variant: 'secondary'; className: string }
+>;
 
 function TriggerBadge({ type }: { type: keyof typeof TRIGGER_CONFIG }) {
-  const config = TRIGGER_CONFIG[type]
-  const Icon = config.icon
+  const config = TRIGGER_CONFIG[type];
+  const Icon = config.icon;
   return (
     <Badge variant={config.variant} className={cn('gap-1', config.className)}>
       <Icon className="size-3" aria-hidden="true" />
       {config.label}
     </Badge>
-  )
+  );
 }
 ```
 
@@ -495,9 +500,9 @@ No row-level onClick needed. The checkbox cell handles selection clearly.
 - **Focus ring visibility**: Ensure your stretched link's focus ring is visible on the row, not just the text. Use `focus-within:ring-2` on the `<tr>` combined with `focus:outline-none` on the `<a>`:
 
 ```tsx
-<tr className="relative focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+<tr className="focus-within:ring-ring relative focus-within:ring-2 focus-within:ring-offset-1">
   <td>
-    <a href="..." className="focus:outline-none after:absolute after:inset-0 after:content-['']">
+    <a href="..." className="after:absolute after:inset-0 after:content-[''] focus:outline-none">
       {run.id}
     </a>
   </td>

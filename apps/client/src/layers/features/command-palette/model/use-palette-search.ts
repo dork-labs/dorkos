@@ -61,10 +61,7 @@ export function usePaletteSearch(items: SearchableItem[], search: string) {
     return items;
   }, [items, prefix]);
 
-  const fuse = useMemo(
-    () => new Fuse(filteredByPrefix, FUSE_OPTIONS),
-    [filteredByPrefix],
-  );
+  const fuse = useMemo(() => new Fuse(filteredByPrefix, FUSE_OPTIONS), [filteredByPrefix]);
 
   const results: SearchResult[] = useMemo(() => {
     if (!term) {

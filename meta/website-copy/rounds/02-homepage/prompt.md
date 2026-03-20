@@ -35,32 +35,32 @@
 
 ### Lines Already Placed
 
-| Line | Placement |
-|---|---|
-| "You slept. They shipped." | Primary tagline. Above or below hero headline. |
-| "Your AI Never Sleeps" | Pulse module section header ONLY. Not a primary line. |
-| "Built by dorks. For dorks. Run by you." | Identity close. NOT the opener. |
-| "We solved this for applications fifty years ago." | Mid-page pivot. Only after emotional setup. |
-| "One Person. Ten Agents. Ship Around the Clock." | Below install CTA. |
-| `npm install -g dorkos` | Primary CTA. Presented once, at max desire. |
-| "DorkOS is starting." / "Ready." | Design language for boot-sequence aesthetic. |
-| "Open source. Self-hosted. Yours." | Below install CTA. |
+| Line                                               | Placement                                             |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| "You slept. They shipped."                         | Primary tagline. Above or below hero headline.        |
+| "Your AI Never Sleeps"                             | Pulse module section header ONLY. Not a primary line. |
+| "Built by dorks. For dorks. Run by you."           | Identity close. NOT the opener.                       |
+| "We solved this for applications fifty years ago." | Mid-page pivot. Only after emotional setup.           |
+| "One Person. Ten Agents. Ship Around the Clock."   | Below install CTA.                                    |
+| `npm install -g dorkos`                            | Primary CTA. Presented once, at max desire.           |
+| "DorkOS is starting." / "Ready."                   | Design language for boot-sequence aesthetic.          |
+| "Open source. Self-hosted. Yours."                 | Below install CTA.                                    |
 
 ### The Modules
 
-| Module | What it does | The gap it fills |
-|---|---|---|
-| **Pulse** | Cron-based autonomous execution | No schedule — agents only run when you're watching |
-| **Relay** | Built-in messaging + Telegram integration | No communication — agents can't reach you or each other |
-| **Mesh** | Agent discovery and network | No colleagues — agents are isolated, no coordination |
-| **Wing** | Persistent memory across sessions (coming soon) | No memory — every session starts from zero |
-| **Console** | Browser-based command center | No oversight — you're alt-tabbing between terminals |
-| **Loop** | Signal -> hypothesis -> dispatch -> measure | No improvement — no feedback loop, no learning |
+| Module      | What it does                                    | The gap it fills                                        |
+| ----------- | ----------------------------------------------- | ------------------------------------------------------- |
+| **Pulse**   | Cron-based autonomous execution                 | No schedule — agents only run when you're watching      |
+| **Relay**   | Built-in messaging + Telegram integration       | No communication — agents can't reach you or each other |
+| **Mesh**    | Agent discovery and network                     | No colleagues — agents are isolated, no coordination    |
+| **Wing**    | Persistent memory across sessions (coming soon) | No memory — every session starts from zero              |
+| **Console** | Browser-based command center                    | No oversight — you're alt-tabbing between terminals     |
+| **Loop**    | Signal -> hypothesis -> dispatch -> measure     | No improvement — no feedback loop, no learning          |
 
 ### Design Language Notes (for your copy to reference)
 
 - The page opens dark. Not decoratively — dark the way a screen is dark before it wakes.
-- Each section *activates* as it scrolls into view. Not slides in — switches on.
+- Each section _activates_ as it scrolls into view. Not slides in — switches on.
 - Typography is machined: monospaced for system names and code, clean sans-serif for human explanation.
 - Generous whitespace = space between components on a board.
 - The install command is a terminal prompt with gravity, not a button.

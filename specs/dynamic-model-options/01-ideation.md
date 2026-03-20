@@ -43,12 +43,14 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/client/src/layers/features/status/ui/ModelItem.tsx` — Model selector dropdown (THE file to change)
 - `apps/server/src/services/core/agent-manager.ts` — SDK query lifecycle, where `supportedModels()` will be called
 - `packages/shared/src/schemas.ts` — Zod schemas (add `ModelOptionSchema`)
 - `packages/shared/src/transport.ts` — Transport interface (add `getModels()`)
 
 **Shared dependencies:**
+
 - `@anthropic-ai/claude-agent-sdk` — `Query` interface with `supportedModels()`
 - `@tanstack/react-query` — Client data fetching
 - `@/layers/shared/model` — `useTransport()` hook for Transport access
@@ -59,6 +61,7 @@ SDK `query()` call -> `agentQuery.supportedModels()` -> cache in AgentManager ->
 **Feature flags/config:** None — always available
 
 **Potential blast radius:**
+
 - Direct: `ModelItem.tsx`, `agent-manager.ts`, `schemas.ts`, `transport.ts`, transports, mock factory
 - Indirect: `StatusLine.tsx` (no changes needed — already passes model prop)
 - Tests: New test files for hook and server method; existing ModelItem tests if any
@@ -68,6 +71,7 @@ SDK `query()` call -> `agentQuery.supportedModels()` -> cache in AgentManager ->
 **Potential solutions:**
 
 **1. SDK `supportedModels()` with server-side caching (Recommended)**
+
 - Description: Call `agentQuery.supportedModels()` after first SDK query, cache in-memory on `AgentManager`, expose via `GET /api/models`
 - Pros:
   - Uses the SDK's own API — always returns models available to the current account
@@ -81,6 +85,7 @@ SDK `query()` call -> `agentQuery.supportedModels()` -> cache in AgentManager ->
 - Maintenance: Low
 
 **2. Anthropic HTTP API `/v1/models`**
+
 - Description: Server calls the Anthropic REST API directly to list models
 - Pros:
   - Available immediately at server startup (no query needed)
@@ -93,6 +98,7 @@ SDK `query()` call -> `agentQuery.supportedModels()` -> cache in AgentManager ->
 - Maintenance: Medium
 
 **3. Server-side config file**
+
 - Description: Store model list in `~/.dork/config.json`, let users customize
 - Pros:
   - User-customizable
@@ -108,10 +114,10 @@ SDK `query()` call -> `agentQuery.supportedModels()` -> cache in AgentManager ->
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Model data source | SDK `supportedModels()` | The SDK already exposes this method on the `Query` interface — no need for separate API keys or HTTP calls |
-| 2 | Caching strategy | In-memory on AgentManager, populated on first query | Models don't change mid-session; fire-and-forget avoids blocking the streaming pipeline |
-| 3 | Cold-start fallback | Hardcoded defaults (Sonnet 4.5, Haiku 4.5, Opus 4.6) | Ensures the dropdown works before any SDK query runs |
-| 4 | Description display | Show in dropdown below model name | User requested descriptions be included in the UI |
-| 5 | Hook placement | `entities/session/model/use-models.ts` | Models are session-adjacent; FSD rules allow features to import from entities |
+| #   | Decision            | Choice                                               | Rationale                                                                                                  |
+| --- | ------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Model data source   | SDK `supportedModels()`                              | The SDK already exposes this method on the `Query` interface — no need for separate API keys or HTTP calls |
+| 2   | Caching strategy    | In-memory on AgentManager, populated on first query  | Models don't change mid-session; fire-and-forget avoids blocking the streaming pipeline                    |
+| 3   | Cold-start fallback | Hardcoded defaults (Sonnet 4.5, Haiku 4.5, Opus 4.6) | Ensures the dropdown works before any SDK query runs                                                       |
+| 4   | Description display | Show in dropdown below model name                    | User requested descriptions be included in the UI                                                          |
+| 5   | Hook placement      | `entities/session/model/use-models.ts`               | Models are session-adjacent; FSD rules allow features to import from entities                              |

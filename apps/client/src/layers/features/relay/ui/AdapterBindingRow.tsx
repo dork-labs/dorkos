@@ -1,6 +1,11 @@
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/layers/shared/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/layers/shared/ui/tooltip';
 import { STRATEGY_BADGE_LABELS } from '../lib/binding-labels';
 
 interface AdapterBindingRowProps {
@@ -27,7 +32,7 @@ export function AdapterBindingRow({
   canReceive = true,
 }: AdapterBindingRowProps) {
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+    <div className="text-muted-foreground flex items-center gap-2 text-sm">
       <ArrowRight className="size-3 shrink-0" />
       <span className="truncate">{agentName}</span>
 
@@ -49,19 +54,22 @@ export function AdapterBindingRow({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <ShieldCheck className="size-3 shrink-0 text-amber-500" aria-label="Can initiate messages" />
+              <ShieldCheck
+                className="size-3 shrink-0 text-amber-500"
+                aria-label="Can initiate messages"
+              />
             </TooltipTrigger>
             <TooltipContent>Can initiate messages</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       )}
       {!canReply && (
-        <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground">
+        <Badge variant="outline" className="text-muted-foreground shrink-0 text-[10px]">
           Reply disabled
         </Badge>
       )}
       {!canReceive && (
-        <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground">
+        <Badge variant="outline" className="text-muted-foreground shrink-0 text-[10px]">
           Receive disabled
         </Badge>
       )}

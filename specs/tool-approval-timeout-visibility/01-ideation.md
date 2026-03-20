@@ -61,6 +61,7 @@ status: ideation
   - `tailwind-variants` — `approvalState` variant in `message-variants.ts`.
 
 - **Data flow:**
+
   ```
   Server: handleToolApproval()
     → setTimeout(INTERACTION_TIMEOUT_MS)
@@ -150,9 +151,9 @@ N/A — this is a UX enhancement, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Timer display style | Linear progress bar + late text | Compact, zero-dependency, GPU-composited CSS animation. Text only appears in final 2 minutes to avoid "bomb timer" anxiety. Follows InferenceIndicator countdown pattern already in codebase. |
-| 2 | Timeout source | Server sends `timeoutMs` in approval event | Future-proof — if timeout becomes configurable, client adapts automatically. Small schema change to `ApprovalEventSchema`. |
-| 3 | Timeout extension | Deferred — no extension for now | Extension requires new route + SSE event + server-side timer reset. If 10 minutes is too short, raise `INTERACTION_TIMEOUT_MS` globally instead. |
-| 4 | Timeout visual | Replace with denied-style card + explanation | Reuses existing "denied" visual state. Message: "Auto-denied -- approval timed out after 10 minutes. The agent continued without this tool." Clear, honest, minimal new UI. |
+| #   | Decision            | Choice                                       | Rationale                                                                                                                                                                                     |
+| --- | ------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Timer display style | Linear progress bar + late text              | Compact, zero-dependency, GPU-composited CSS animation. Text only appears in final 2 minutes to avoid "bomb timer" anxiety. Follows InferenceIndicator countdown pattern already in codebase. |
+| 2   | Timeout source      | Server sends `timeoutMs` in approval event   | Future-proof — if timeout becomes configurable, client adapts automatically. Small schema change to `ApprovalEventSchema`.                                                                    |
+| 3   | Timeout extension   | Deferred — no extension for now              | Extension requires new route + SSE event + server-side timer reset. If 10 minutes is too short, raise `INTERACTION_TIMEOUT_MS` globally instead.                                              |
+| 4   | Timeout visual      | Replace with denied-style card + explanation | Reuses existing "denied" visual state. Message: "Auto-denied -- approval timed out after 10 minutes. The agent continued without this tool." Clear, honest, minimal new UI.                   |

@@ -1,5 +1,5 @@
 ---
-title: "Switch Agent via Identity Chip — Command Palette Pre-filtering API & Sidebar Cleanup"
+title: 'Switch Agent via Identity Chip — Command Palette Pre-filtering API & Sidebar Cleanup'
 date: 2026-03-10
 type: implementation
 status: active
@@ -22,10 +22,12 @@ The codebase already has a fully-featured command palette (`features/command-pal
 ### 1. Existing Architecture — What Is Already In Place
 
 **`app-store.ts`** (`layers/shared/model/app-store.ts`) already has:
+
 - `globalPaletteOpen: boolean` + `setGlobalPaletteOpen(open: boolean)` + `toggleGlobalPalette()`
 - A consistent pattern: all dialogs (`pulseOpen`, `relayOpen`, `meshOpen`, `settingsOpen`, `agentDialogOpen`) are controlled via Zustand booleans with setter actions.
 
 **`CommandPaletteDialog.tsx`** already:
+
 - Reads `globalPaletteOpen` from the store via `useGlobalPalette()`
 - Manages `search` state locally with `useState('')`
 - Resets `search` to `''` in `closePalette()` and on `handleOpenChange(false)`
@@ -34,6 +36,7 @@ The codebase already has a fully-featured command palette (`features/command-pal
 **`AgentIdentityChip.tsx`** currently calls `setAgentDialogOpen(true)` on click. The task requires redirecting this to open the command palette pre-filtered to `@`.
 
 **`AgentHeader.tsx`** (sidebar) already has:
+
 - A CWD path button (using `setPickerOpen`)
 - A `K Switch` button that calls `setGlobalPaletteOpen(true)` with no pre-filtering
 
@@ -44,12 +47,14 @@ The codebase already has a fully-featured command palette (`features/command-pal
 **Approach 1: Zustand store action — `openGlobalPaletteWithSearch(text: string)`**
 
 Add two fields to `app-store.ts`:
+
 ```typescript
 globalPaletteInitialSearch: string;
 openGlobalPaletteWithSearch: (text: string) => void;
 ```
 
 Implementation:
+
 ```typescript
 globalPaletteInitialSearch: '',
 openGlobalPaletteWithSearch: (text) =>
@@ -57,6 +62,7 @@ openGlobalPaletteWithSearch: (text) =>
 ```
 
 In `CommandPaletteDialog.tsx`, inside `handleOpenChange`:
+
 ```typescript
 const globalPaletteInitialSearch = useAppStore((s) => s.globalPaletteInitialSearch);
 const clearPaletteInitialSearch = useAppStore((s) => s.clearPaletteInitialSearch);
@@ -77,17 +83,19 @@ const handleOpenChange = useCallback(
       setSubMenuAgent(null);
     }
   },
-  [setGlobalPaletteOpen, globalPaletteInitialSearch, clearPaletteInitialSearch],
+  [setGlobalPaletteOpen, globalPaletteInitialSearch, clearPaletteInitialSearch]
 );
 ```
 
 Pros:
+
 - Matches every existing DorkOS pattern. All dialog open/close state lives in `app-store`. `AgentIdentityChip` already consumes `useAppStore`. Zero new dependencies.
 - Synchronous, co-located with the other `globalPaletteOpen` actions.
 - Straightforward to test: mock `openGlobalPaletteWithSearch` and assert `globalPaletteOpen === true` and `globalPaletteInitialSearch === '@'`.
 - Any component anywhere in the tree can trigger a pre-filtered open without needing a ref or event channel.
 
 Cons:
+
 - Adds two more fields to an already large `app-store` (~135 lines). Acceptable since the store already has this exact pattern for every dialog.
 
 **Approach 2: Custom event — `document.dispatchEvent(new CustomEvent('open-palette', { detail: { search: '@' } }))`**
@@ -95,10 +103,12 @@ Cons:
 The palette listens with `document.addEventListener('open-palette', ...)`.
 
 Pros:
+
 - No store changes needed.
 - Works across iframes (Obsidian plugin) without prop drilling.
 
 Cons:
+
 - Breaks the DorkOS convention that all cross-component communication uses Zustand (see `app-store.ts` — every dialog is store-driven, none uses custom events).
 - Custom events are harder to test — they require a real `document` in jsdom, and asserting dispatch+listen behavior is more brittle than store assertions.
 - No TypeScript enforcement on the event payload shape. `CustomEvent<{ search: string }>` works but is less ergonomic than a typed Zustand action.
@@ -109,10 +119,12 @@ Cons:
 Expose `{ open: (initialSearch?: string) => void }` via a `ref` forwarded to `CommandPaletteDialog`.
 
 Pros:
+
 - Explicitly imperative — the caller has direct control.
 - No store changes.
 
 Cons:
+
 - `CommandPaletteDialog` is mounted at the `app` layer in `App.tsx` and is not imported as a component that callers typically hold a ref to.
 - `AgentIdentityChip` (in `features/top-nav`) cannot hold a ref to `CommandPaletteDialog` (in `features/command-palette`) without violating the FSD rule that features cannot import from other features' model/hooks. Even if a ref were passed down via props, this creates a tight coupling.
 - React refs work poorly with components that use `AnimatePresence` and conditional rendering — the ref would be null when the dialog is closed.
@@ -162,11 +174,12 @@ const handleOpenChange = useCallback(
       setSubMenuAgent(null);
     }
   },
-  [setGlobalPaletteOpen, globalPaletteInitialSearch, clearPaletteInitialSearch],
+  [setGlobalPaletteOpen, globalPaletteInitialSearch, clearPaletteInitialSearch]
 );
 ```
 
 Also update `closePalette` to clear initial search on explicit close (defensive):
+
 ```typescript
 const closePalette = useCallback(() => {
   setGlobalPaletteOpen(false);
@@ -197,6 +210,7 @@ Update tooltip: `"Agent settings"` → `"Switch agent"` (since the action now op
 ### 4. Sidebar Cleanup — Specific Changes
 
 The task calls for:
+
 - **Remove CWD display** from the sidebar `AgentHeader`
 - **Remove "Switch" button** from `AgentHeader`
 - **Add "Edit Agent" button** to `AgentHeader`
@@ -204,12 +218,14 @@ The task calls for:
 Looking at `AgentHeader.tsx`:
 
 **Current structure (agent registered state):**
+
 ```
 [FolderOpen] ~/projects/my-api    ← CWD button (calls onOpenPicker)
 [K] Switch                         ← calls setGlobalPaletteOpen(true)
 ```
 
 **Target structure:**
+
 ```
 [Pencil] Edit Agent                ← calls onOpenAgentDialog
 ```
@@ -221,6 +237,7 @@ The "K Switch" label is confusing — Cmd+K (not just K) opens the palette. The 
 The "Edit Agent" button should be a compact `SidebarMenuButton`-style row with a `Pencil` or `Settings2` icon (consistent with DorkOS icon usage of lucide-react).
 
 **Revised `AgentHeader.tsx` agent-registered branch:**
+
 ```tsx
 if (agent) {
   return (
@@ -239,6 +256,7 @@ if (agent) {
 ```
 
 For the **unregistered directory** branch, remove CWD and the Switch button but keep the "+Agent" CTA:
+
 ```tsx
 return (
   <div className="px-2 py-2">
@@ -278,6 +296,7 @@ const isAtMode = prefix === '@'; // from usePaletteSearch
 ```
 
 When `isAtMode` is true:
+
 - Features group is hidden
 - Commands group is hidden
 - Quick Actions group is hidden
@@ -299,6 +318,7 @@ The defensive `clearPaletteInitialSearch()` in `closePalette` handles the edge c
 ### FSD Compliance
 
 All changes are FSD-compliant:
+
 - `app-store.ts` is in `layers/shared/model` — accessible to all layers.
 - `AgentIdentityChip` is in `features/top-nav` — already imports from `layers/shared/model`, no new cross-feature imports.
 - `CommandPaletteDialog` is in `features/command-palette` — already imports from `layers/shared/model`.
@@ -319,6 +339,7 @@ The store is currently ~426 lines, already above the 300-line "consider splittin
 **Files changed:** `app-store.ts`, `CommandPaletteDialog.tsx`, `AgentIdentityChip.tsx`, `AgentHeader.tsx`
 
 **Store additions:**
+
 ```typescript
 // interface AppState
 globalPaletteInitialSearch: string;
@@ -355,6 +376,7 @@ Not viable — FSD cross-feature ref passing, breaks with `AnimatePresence`, doe
 **Use Solution A: Zustand `openGlobalPaletteWithSearch` action.**
 
 Rationale:
+
 1. It's the only approach consistent with DorkOS's existing pattern for all dialog open/close state.
 2. It requires no new libraries, no new React patterns, and no FSD violations.
 3. The `"@"` prefix mode is already fully implemented in `CommandPaletteDialog` — the only gap is setting the initial `search` value on open.
@@ -362,12 +384,14 @@ Rationale:
 5. Easy to test: assert `openGlobalPaletteWithSearch('@')` is called on chip click, and assert `setSearch` is called with `'@'` in `handleOpenChange`.
 
 **Sidebar cleanup recommendation:**
+
 - Remove CWD path from `AgentHeader` — it's redundant with the status bar and the command palette preview panel.
 - Remove "K Switch" button — it was the only reason to have `setGlobalPaletteOpen` in `AgentHeader`. The top-nav chip is now the primary switching affordance.
 - Add "Edit Agent" button calling `onOpenAgentDialog`. Use `Pencil` icon from `lucide-react` (already used elsewhere in the codebase).
 - The unregistered branch should show "Create agent" with a `Plus` icon instead of the "+ Agent" text link pattern.
 
 **Tooltip and aria-label update for `AgentIdentityChip`:**
+
 - Tooltip: `"Agent settings"` → `"Switch agent"`
 - `aria-label`: `"{agent.name} — agent settings"` → `"{agent.name} — switch agent"` (or simply `"Switch agent"` when no agent)
 - The `ChevronDown` icon already signals "this opens something" — no icon change needed.
@@ -386,6 +410,7 @@ Rationale:
 All findings are derived from direct codebase inspection. No web searches were performed — existing research covered the conceptual patterns, and the codebase provided the implementation details.
 
 Referenced files:
+
 - `apps/client/src/layers/shared/model/app-store.ts` — Zustand store, all dialog open/close patterns
 - `apps/client/src/layers/features/command-palette/ui/CommandPaletteDialog.tsx` — existing `handleOpenChange`, `closePalette`, `search` state, `@` prefix mode
 - `apps/client/src/layers/features/command-palette/model/use-global-palette.ts` — keyboard handler, store selectors
@@ -396,6 +421,7 @@ Referenced files:
 - `apps/client/src/App.tsx` — `AgentIdentityChip` usage context in the header
 
 Prior research (patterns):
+
 - `research/20260303_command_palette_agent_centric_ux.md` — `@` prefix mode, agent-centric sidebar, Option A agent identity header
 - `research/20260303_command_palette_10x_elevation.md` — stagger animations, cmdk shouldFilter, frecency
 

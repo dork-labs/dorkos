@@ -6,12 +6,18 @@ export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   'simple-text': async function* (content) {
     // session_status data cast needed because data union requires sessionId
-    yield { type: 'session_status', data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' } } as StreamEvent;
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
     yield { type: 'text_delta', data: { text: `Echo: ${content}` } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
   'tool-call': async function* (_content) {
-    yield { type: 'session_status', data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' } } as StreamEvent;
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
     yield {
       type: 'tool_call_start',
       data: { toolCallId: 'tc-1', toolName: 'Bash', status: 'running' },
@@ -19,7 +25,12 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield {
       type: 'tool_call_delta',
       // tool_call_delta uses ToolCallEventSchema: toolCallId, toolName, status are required
-      data: { toolCallId: 'tc-1', toolName: 'Bash', input: '{"command":"echo hi"}', status: 'running' },
+      data: {
+        toolCallId: 'tc-1',
+        toolName: 'Bash',
+        input: '{"command":"echo hi"}',
+        status: 'running',
+      },
     } as StreamEvent;
     yield {
       type: 'tool_call_end',
@@ -29,7 +40,10 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
   'todo-write': async function* (_content) {
-    yield { type: 'session_status', data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' } } as StreamEvent;
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
     // task_update uses TaskUpdateEventSchema: { action, task } — yield 3 create events
     yield {
       type: 'task_update',
@@ -46,9 +60,15 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'text_delta', data: { text: 'Created 3 tasks.' } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
-  'error': async function* (_content) {
-    yield { type: 'session_status', data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' } } as StreamEvent;
-    yield { type: 'error', data: { message: 'Simulated error from TestModeRuntime' } } as StreamEvent;
+  error: async function* (_content) {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield {
+      type: 'error',
+      data: { message: 'Simulated error from TestModeRuntime' },
+    } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
 };
@@ -67,7 +87,7 @@ class ScenarioStore {
     const scenario = BUILT_IN_SCENARIOS[name];
     if (!scenario) {
       throw new Error(
-        `Unknown scenario: "${name}". Known: ${Object.keys(BUILT_IN_SCENARIOS).join(', ')}`,
+        `Unknown scenario: "${name}". Known: ${Object.keys(BUILT_IN_SCENARIOS).join(', ')}`
       );
     }
     this._defaultScenario = scenario;

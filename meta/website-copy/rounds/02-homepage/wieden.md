@@ -7,6 +7,7 @@
 ## Section 1: Hero (Above the Fold)
 
 ### Design Direction
+
 The screen is dark. Not stylistically dark — dark the way a machine is dark before power reaches it. A single blinking cursor. Then the headline arrives, not all at once, but like it was typed. The cursor blinks at 2:47am on a terminal clock in the background — barely visible, almost subliminal. The tagline sits beneath the headline like a stamp. Below that, the position line in a lighter weight. Nothing else competes. This is negative space as conviction.
 
 ---
@@ -31,13 +32,14 @@ The operating system for autonomous AI agents.
 
 ---
 
-*Recommendation: Option B. The long-form builds the absurdity into the sentence itself. You feel the waste before you finish reading. The clock detail (11pm, eight hours) is specific enough to be a memory, not a claim.*
+_Recommendation: Option B. The long-form builds the absurdity into the sentence itself. You feel the waste before you finish reading. The clock detail (11pm, eight hours) is specific enough to be a memory, not a claim._
 
 ---
 
 ## Section 2: The Villain — Recognition
 
 ### Design Direction
+
 Four dark cards. Each one activates on scroll — not sliding in, switching on. A subtle status indicator shifts from dim red to full red as each card enters view. Monospaced timestamps on each card. The feel: system alerts. Error logs you recognize. Typography is tight, spare. Each card is a wound the reader already has. Do not explain. Name it.
 
 ---
@@ -68,7 +70,7 @@ CI went red at 2:47am. The fix was three lines of code. Your agent knew exactly 
 
 ### The Pivot
 
-*After the four cards. Centered. Alone on the screen. Earns its weight because the reader just felt the problem in their chest.*
+_After the four cards. Centered. Alone on the screen. Earns its weight because the reader just felt the problem in their chest._
 
 We solved this for applications fifty years ago.
 
@@ -79,6 +81,7 @@ We called it an operating system.
 ## Section 3: The Product — "What Happens When You Leave"
 
 ### Design Direction
+
 The timeline is the centerpiece. Each timestamp activates sequentially on scroll — like a system log playing back. Monospaced time codes on the left. Human-readable descriptions on the right. The module names appear as subtle system labels (think: `[PULSE]`, `[RELAY]`, `[MESH]`) in a muted accent color beside the relevant timestamp. The entire section should feel like reading a mission log the morning after. The boot-sequence aesthetic peaks here: each timestamp is a subsystem coming online.
 
 ---
@@ -123,29 +126,31 @@ You approve one PR, request a change on another, and queue two more tasks for th
 
 ### The Module Reference
 
-*Below the timeline. Clean, compact. For the architect who needs to map capabilities, not feel them. Two columns: the gap and the fix. Module name in monospaced type.*
+_Below the timeline. Clean, compact. For the architect who needs to map capabilities, not feel them. Two columns: the gap and the fix. Module name in monospaced type._
 
 ### Design Direction
+
 A minimal table or grid. No icons, no illustrations. Monospaced module names. Each row is a problem/solution pair. The section header is understated — this is reference material, not narrative. It earns its place by being useful, not loud.
 
 ---
 
 **The infrastructure your agents are missing.**
 
-| The gap | The fix | |
-|---|---|---|
-| No schedule — agents only run when you are watching | Cron-based autonomous execution. Agents work on your schedule, not your presence. | `PULSE` |
-| No communication — agents cannot reach you or each other | Built-in messaging. Telegram, webhooks, inter-agent channels. They tell you what happened. | `RELAY` |
-| No colleagues — agents are isolated, no coordination | Agent discovery and network. Your agents find each other, share context, collaborate. | `MESH` |
-| No memory — every session starts from zero | Persistent memory across sessions. Context that survives the terminal closing. | `WING` *coming soon* |
-| No oversight — you are alt-tabbing between terminals | Browser-based command center. Every agent, every session, one screen. | `CONSOLE` |
-| No improvement — no feedback loop, no learning | Signal, hypothesis, dispatch, measure. Your system gets better without you telling it to. | `LOOP` |
+| The gap                                                  | The fix                                                                                    |                      |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------- |
+| No schedule — agents only run when you are watching      | Cron-based autonomous execution. Agents work on your schedule, not your presence.          | `PULSE`              |
+| No communication — agents cannot reach you or each other | Built-in messaging. Telegram, webhooks, inter-agent channels. They tell you what happened. | `RELAY`              |
+| No colleagues — agents are isolated, no coordination     | Agent discovery and network. Your agents find each other, share context, collaborate.      | `MESH`               |
+| No memory — every session starts from zero               | Persistent memory across sessions. Context that survives the terminal closing.             | `WING` _coming soon_ |
+| No oversight — you are alt-tabbing between terminals     | Browser-based command center. Every agent, every session, one screen.                      | `CONSOLE`            |
+| No improvement — no feedback loop, no learning           | Signal, hypothesis, dispatch, measure. Your system gets better without you telling it to.  | `LOOP`               |
 
 ---
 
 ## Section 4: The Install Moment
 
 ### Design Direction
+
 Maximum negative space. The terminal prompt sits alone in the center of the screen with the gravity of a command that changes something. Monospaced. High contrast. A blinking cursor before the command, as if the page is waiting for the reader to press Enter. Below it, two lines in a lighter weight. This is not a button. This is a decision. The boot-sequence aesthetic reaches its final state here: `DorkOS is starting...` could flash for 200ms after hover. Then: `Ready.`
 
 ---
@@ -163,11 +168,12 @@ One person. Ten agents. Ship around the clock.
 ## Section 5: The Social Proof Placeholder
 
 ### Design Direction
+
 Reserve this space. Do not fill it with fabricated quotes. When real developers ship things with DorkOS overnight and tell you about it, those stories go here. For now: a single line that implies the space is waiting to be filled with earned proof. Gray text. Understated. Honest.
 
 ---
 
-*This section ships empty. The proof writes itself.*
+_This section ships empty. The proof writes itself._
 
 **Placeholder design:** A row of empty quote blocks with muted outlines — visible architecture, no content. The message is clear: this is pre-launch. The stories are coming.
 
@@ -176,6 +182,7 @@ Reserve this space. Do not fill it with fabricated quotes. When real developers 
 ## Section 6: The Identity Close — "Built by Dorks"
 
 ### Design Direction
+
 The screen shifts. Not to light — to warmer dark. The typography loosens slightly. This section is personal. It is not a company bio. It is a handshake. The tone changes from precision to warmth. If the rest of the page is machined aluminum, this section is the handwritten note inside the box.
 
 ---
@@ -205,6 +212,7 @@ The ones who care too much build the things that matter most.
 ## Section 7: The Final Line
 
 ### Design Direction
+
 Alone on the screen. The last thing the reader sees before the footer. Centered. Full contrast. The cursor blinks once, then stops. The page is still.
 
 ---

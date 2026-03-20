@@ -101,7 +101,10 @@ function SettingRowSection() {
       <ShowcaseLabel>Toggle off (default)</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-md">
-          <SettingRow label="Auto-start agents" description="Launch agents automatically on startup.">
+          <SettingRow
+            label="Auto-start agents"
+            description="Launch agents automatically on startup."
+          >
             <Switch checked={autoStart} onCheckedChange={setAutoStart} />
           </SettingRow>
         </div>
@@ -122,7 +125,10 @@ function SettingRowSection() {
       <ShowcaseLabel>Multiple rows</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-md space-y-4">
-          <SettingRow label="Auto-start agents" description="Launch agents automatically on startup.">
+          <SettingRow
+            label="Auto-start agents"
+            description="Launch agents automatically on startup."
+          >
             <Switch checked={autoStart} onCheckedChange={setAutoStart} />
           </SettingRow>
           <SettingRow
@@ -209,13 +215,22 @@ function FieldCardSection() {
         <div className="w-full max-w-md">
           <FieldCard>
             <FieldCardContent>
-              <SettingRow label="Auto-start agents" description="Launch agents automatically on startup.">
+              <SettingRow
+                label="Auto-start agents"
+                description="Launch agents automatically on startup."
+              >
                 <Switch checked={autoStart} onCheckedChange={setAutoStart} />
               </SettingRow>
-              <SettingRow label="Desktop notifications" description="Receive alerts when agent tasks complete.">
+              <SettingRow
+                label="Desktop notifications"
+                description="Receive alerts when agent tasks complete."
+              >
                 <Switch checked={notifications} onCheckedChange={setNotifications} />
               </SettingRow>
-              <SettingRow label="Usage telemetry" description="Share anonymous usage data to improve DorkOS.">
+              <SettingRow
+                label="Usage telemetry"
+                description="Share anonymous usage data to improve DorkOS."
+              >
                 <Switch checked={telemetry} onCheckedChange={setTelemetry} />
               </SettingRow>
             </FieldCardContent>
@@ -227,13 +242,21 @@ function FieldCardSection() {
       <ShowcaseDemo>
         <div className="w-full max-w-md space-y-2">
           <h3 className="text-sm font-semibold">Diagnostics</h3>
-          <p className="text-xs text-muted-foreground">Toggle data synchronization paths for debugging.</p>
+          <p className="text-muted-foreground text-xs">
+            Toggle data synchronization paths for debugging.
+          </p>
           <FieldCard>
             <FieldCardContent>
-              <SettingRow label="Cross-client sync" description="Real-time updates from other clients.">
+              <SettingRow
+                label="Cross-client sync"
+                description="Real-time updates from other clients."
+              >
                 <Switch checked={notifications} onCheckedChange={setNotifications} />
               </SettingRow>
-              <SettingRow label="Message polling" description="Periodic refresh of message history.">
+              <SettingRow
+                label="Message polling"
+                description="Periodic refresh of message history."
+              >
                 <Switch checked={telemetry} onCheckedChange={setTelemetry} />
               </SettingRow>
             </FieldCardContent>
@@ -249,16 +272,22 @@ function FieldCardSection() {
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Reset All Data</p>
-                  <p className="text-xs text-muted-foreground">Permanently delete all data.</p>
+                  <p className="text-muted-foreground text-xs">Permanently delete all data.</p>
                 </div>
-                <button className="rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground">Reset</button>
+                <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">
+                  Reset
+                </button>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">Restart Server</p>
-                  <p className="text-xs text-muted-foreground">Active sessions will be interrupted.</p>
+                  <p className="text-muted-foreground text-xs">
+                    Active sessions will be interrupted.
+                  </p>
                 </div>
-                <button className="rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground">Restart</button>
+                <button className="bg-destructive text-destructive-foreground rounded-md px-3 py-1.5 text-xs">
+                  Restart
+                </button>
               </div>
             </FieldCardContent>
           </FieldCard>
@@ -287,11 +316,7 @@ function CollapsibleFieldCardSection() {
       <ShowcaseLabel>Collapsed</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-md">
-          <CollapsibleFieldCard
-            open={collapsed}
-            onOpenChange={setCollapsed}
-            trigger="Chat Filter"
-          >
+          <CollapsibleFieldCard open={collapsed} onOpenChange={setCollapsed} trigger="Chat Filter">
             <div className="px-4 py-3">Content inside</div>
           </CollapsibleFieldCard>
         </div>
@@ -300,18 +325,20 @@ function CollapsibleFieldCardSection() {
       <ShowcaseLabel>Expanded with fields</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-md">
-          <CollapsibleFieldCard
-            open={expanded}
-            onOpenChange={setExpanded}
-            trigger="Diagnostics"
-          >
+          <CollapsibleFieldCard open={expanded} onOpenChange={setExpanded} trigger="Diagnostics">
             <div className="px-4 py-3">
-              <SettingRow label="Cross-client sync" description="Real-time updates from other clients.">
+              <SettingRow
+                label="Cross-client sync"
+                description="Real-time updates from other clients."
+              >
                 <Switch checked={sync} onCheckedChange={setSync} />
               </SettingRow>
             </div>
             <div className="px-4 py-3">
-              <SettingRow label="Message polling" description="Periodic refresh of message history.">
+              <SettingRow
+                label="Message polling"
+                description="Periodic refresh of message history."
+              >
                 <Switch checked={polling} onCheckedChange={setPolling} />
               </SettingRow>
             </div>
@@ -326,10 +353,14 @@ function CollapsibleFieldCardSection() {
             open={withBadge}
             onOpenChange={setWithBadge}
             trigger="Advanced"
-            badge={<Badge variant="secondary" className="text-xs">Modified</Badge>}
+            badge={
+              <Badge variant="secondary" className="text-xs">
+                Modified
+              </Badge>
+            }
           >
             <div className="px-4 py-3">
-              <p className="text-sm text-muted-foreground">Advanced settings content here.</p>
+              <p className="text-muted-foreground text-sm">Advanced settings content here.</p>
             </div>
           </CollapsibleFieldCard>
         </div>

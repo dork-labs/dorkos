@@ -21,7 +21,7 @@
 - Task #6: [P2] Create compliance test suite for adapter validation
 - Task #7: [P2] Add API version check to plugin loader
 - Task #8: [P3] Move webhook adapter into subdirectory
-- Task #9: [P3] Co-locate adapter tests into per-adapter __tests__ directories
+- Task #9: [P3] Co-locate adapter tests into per-adapter **tests** directories
 - Task #10: [P3] Run compliance suite on built-in adapters
 - Task #11: [P4] Create adapter template directory
 - Task #12: [P4] Update contributing guide and ADR documentation
@@ -52,10 +52,10 @@
 - `packages/relay/src/__tests__/base-adapter.test.ts` (new) — 20 BaseRelayAdapter unit tests
 - `packages/relay/src/__tests__/version.test.ts` (new) — 3 version constant tests
 - `packages/relay/src/testing/__tests__/compliance-suite.test.ts` (new) — 18 compliance suite self-tests
-- `packages/relay/src/adapters/webhook/__tests__/webhook-adapter.test.ts` (moved) — From adapters/__tests__/
-- `packages/relay/src/adapters/telegram/__tests__/telegram-adapter.test.ts` (moved) — From src/__tests__/adapters/
-- `packages/relay/src/adapters/claude-code/__tests__/claude-code-adapter.test.ts` (moved) — From adapters/__tests__/
-- `packages/relay/src/adapters/claude-code/__tests__/claude-code-adapter-correlation.test.ts` (moved) — From adapters/__tests__/
+- `packages/relay/src/adapters/webhook/__tests__/webhook-adapter.test.ts` (moved) — From adapters/**tests**/
+- `packages/relay/src/adapters/telegram/__tests__/telegram-adapter.test.ts` (moved) — From src/**tests**/adapters/
+- `packages/relay/src/adapters/claude-code/__tests__/claude-code-adapter.test.ts` (moved) — From adapters/**tests**/
+- `packages/relay/src/adapters/claude-code/__tests__/claude-code-adapter-correlation.test.ts` (moved) — From adapters/**tests**/
 - `templates/relay-adapter/src/__tests__/my-adapter.test.ts` (new) — Template compliance test
 
 ## Known Issues

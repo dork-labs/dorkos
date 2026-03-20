@@ -45,7 +45,7 @@ export interface ReconcileResult {
 export async function reconcile(
   registry: AgentRegistry,
   relayBridge: RelayBridge,
-  defaultScanRoot: string,
+  defaultScanRoot: string
 ): Promise<ReconcileResult> {
   const result: ReconcileResult = {
     synced: 0,
@@ -55,9 +55,7 @@ export async function reconcile(
   };
 
   // Build set of already-unreachable IDs to avoid re-marking (which resets grace timer)
-  const unreachableIds = new Set(
-    registry.listUnreachable().map((e) => e.id),
-  );
+  const unreachableIds = new Set(registry.listUnreachable().map((e) => e.id));
 
   const entries = registry.list();
 
@@ -80,7 +78,7 @@ export async function reconcile(
       const namespace = resolveNamespace(
         entry.projectPath,
         entry.scanRoot || defaultScanRoot,
-        manifest.namespace,
+        manifest.namespace
       );
       registry.update(entry.id, {
         name: manifest.name,
@@ -123,10 +121,7 @@ async function pathAccessible(p: string): Promise<boolean> {
 }
 
 /** Compare manifest fields against registry entry. */
-function manifestDiffersFromEntry(
-  manifest: AgentManifest,
-  entry: AgentRegistryEntry,
-): boolean {
+function manifestDiffersFromEntry(manifest: AgentManifest, entry: AgentRegistryEntry): boolean {
   // ADR-0043: sync direction is file → DB; all mutable fields must be compared
   return (
     manifest.name !== entry.name ||

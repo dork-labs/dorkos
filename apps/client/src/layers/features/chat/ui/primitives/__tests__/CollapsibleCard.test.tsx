@@ -12,7 +12,7 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={false} onToggle={vi.fn()} header={<span>Header</span>}>
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.getByText('Header')).toBeDefined();
   });
@@ -22,7 +22,7 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={false} onToggle={onToggle} header={<span>Header</span>}>
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     fireEvent.click(screen.getByRole('button'));
     expect(onToggle).toHaveBeenCalledOnce();
@@ -33,7 +33,7 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={false} onToggle={onToggle} disabled header={<span>Header</span>}>
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     fireEvent.click(screen.getByRole('button'));
     expect(onToggle).not.toHaveBeenCalled();
@@ -43,7 +43,7 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={true} onToggle={vi.fn()} header={<span>Header</span>}>
         Body content
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.getByText('Body content')).toBeDefined();
   });
@@ -52,7 +52,7 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={false} onToggle={vi.fn()} header={<span>Header</span>}>
         Body content
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.queryByText('Body content')).toBeNull();
   });
@@ -61,7 +61,7 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={true} onToggle={vi.fn()} header={<span>Header</span>}>
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
@@ -70,16 +70,21 @@ describe('CollapsibleCard', () => {
     render(
       <CollapsibleCard expanded={false} onToggle={vi.fn()} hideChevron header={<span>Header</span>}>
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBeNull();
   });
 
   it('passes ariaLabel to the button', () => {
     render(
-      <CollapsibleCard expanded={false} onToggle={vi.fn()} ariaLabel="My card" header={<span>Header</span>}>
+      <CollapsibleCard
+        expanded={false}
+        onToggle={vi.fn()}
+        ariaLabel="My card"
+        header={<span>Header</span>}
+      >
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.getByRole('button').getAttribute('aria-label')).toBe('My card');
   });
@@ -93,7 +98,7 @@ describe('CollapsibleCard', () => {
         extraContent={<div>Extra</div>}
       >
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     expect(screen.getByText('Extra')).toBeDefined();
   });
@@ -108,7 +113,7 @@ describe('CollapsibleCard', () => {
         data-status="running"
       >
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     const card = screen.getByTestId('my-card');
     expect(card.getAttribute('data-status')).toBe('running');
@@ -124,7 +129,7 @@ describe('CollapsibleCard', () => {
         data-testid="thinking-card"
       >
         Body
-      </CollapsibleCard>,
+      </CollapsibleCard>
     );
     const card = screen.getByTestId('thinking-card');
     expect(card.className).toContain('border-l-2');

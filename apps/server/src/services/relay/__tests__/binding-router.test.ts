@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  BindingRouter,
-  type RelayCoreLike,
-  type AgentSessionCreator,
-} from '../binding-router.js';
+import { BindingRouter, type RelayCoreLike, type AgentSessionCreator } from '../binding-router.js';
 import type { BindingStore } from '../binding-store.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
@@ -62,10 +58,7 @@ describe('BindingRouter', () => {
   });
 
   it('subscribes to relay.human.> on init', () => {
-    expect(mockRelayCore.subscribe).toHaveBeenCalledWith(
-      'relay.human.>',
-      expect.any(Function),
-    );
+    expect(mockRelayCore.subscribe).toHaveBeenCalledWith('relay.human.>', expect.any(Function));
   });
 
   it('skips messages with unparseable subjects', async () => {
@@ -74,7 +67,13 @@ describe('BindingRouter', () => {
       subject: 'relay.agent.xxx',
       payload: 'hi',
       from: 'tg',
-      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
@@ -89,7 +88,13 @@ describe('BindingRouter', () => {
       subject: 'relay.human.telegram.123',
       payload: 'hi',
       from: 'tg',
-      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
@@ -113,7 +118,13 @@ describe('BindingRouter', () => {
       from: 'agent:session-abc',
       replyTo: undefined,
       payload: { type: 'text_delta', data: { text: 'hello' } },
-      budget: { hopCount: 1, maxHops: 10, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 1,
+        maxHops: 10,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       id: 'msg-response',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
@@ -140,7 +151,13 @@ describe('BindingRouter', () => {
       from: 'relay.human.telegram.bot',
       replyTo: 'relay.human.telegram.12345',
       payload: { content: 'Hello from Telegram' },
-      budget: { hopCount: 0, maxHops: 10, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 10,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       id: 'msg-inbound',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
@@ -148,7 +165,7 @@ describe('BindingRouter', () => {
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
       'relay.agent.session-abc',
       expect.anything(),
-      expect.objectContaining({ from: 'relay.human.telegram.bot' }),
+      expect.objectContaining({ from: 'relay.human.telegram.bot' })
     );
   });
 
@@ -168,7 +185,13 @@ describe('BindingRouter', () => {
       subject: 'relay.human.telegram.123',
       payload: { text: 'hello' },
       from: 'tg',
-      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
@@ -176,7 +199,7 @@ describe('BindingRouter', () => {
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
       'relay.agent.session-abc',
       expect.objectContaining({ text: 'hello', cwd: '/agents/a' }),
-      expect.objectContaining({ from: 'tg' }),
+      expect.objectContaining({ from: 'tg' })
     );
   });
 
@@ -187,7 +210,13 @@ describe('BindingRouter', () => {
       subject: 'relay.human.telegram.12345',
       payload: 'hi',
       from: 'tg',
-      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
@@ -211,7 +240,13 @@ describe('BindingRouter', () => {
       subject: `relay.human.telegram.${chatId}`,
       payload: 'hi',
       from: 'tg',
-      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       createdAt: '2026-01-01T00:00:00.000Z',
     });
 
@@ -255,7 +290,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -266,7 +301,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
       expect(writeFile).toHaveBeenCalled();
@@ -291,7 +332,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -300,7 +341,7 @@ describe('BindingRouter', () => {
 
       // Get the handler registered by the fresh router
       const freshHandler = (mockRelayCore.subscribe as ReturnType<typeof vi.fn>).mock.calls.at(
-        -1,
+        -1
       )?.[1] as typeof capturedHandler;
 
       await freshHandler!({
@@ -308,7 +349,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -317,7 +364,7 @@ describe('BindingRouter', () => {
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
         'relay.agent.session-existing',
         'hi',
-        expect.any(Object),
+        expect.any(Object)
       );
 
       await freshRouter.shutdown();
@@ -330,7 +377,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -343,7 +390,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -359,7 +412,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi again',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -371,7 +430,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -383,7 +442,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -403,7 +468,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -418,9 +483,15 @@ describe('BindingRouter', () => {
           subject: 'relay.human.telegram.123',
           payload: 'hi',
           from: 'tg',
-          budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+          budget: {
+            hopCount: 0,
+            maxHops: 5,
+            ttl: Date.now() + 60000,
+            callBudgetRemaining: 10,
+            ancestorChain: [],
+          },
           createdAt: '2026-01-01T00:00:00.000Z',
-        }),
+        })
       ).resolves.toBeUndefined();
     });
 
@@ -429,14 +500,14 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       });
       vi.mocked(mockAgentManager.createSession).mockRejectedValue(
-        new Error('session creation failed'),
+        new Error('session creation failed')
       );
 
       await expect(
@@ -445,9 +516,15 @@ describe('BindingRouter', () => {
           subject: 'relay.human.telegram.123',
           payload: 'hi',
           from: 'tg',
-          budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+          budget: {
+            hopCount: 0,
+            maxHops: 5,
+            ttl: Date.now() + 60000,
+            callBudgetRemaining: 10,
+            ancestorChain: [],
+          },
           createdAt: '2026-01-01T00:00:00.000Z',
-        }),
+        })
       ).resolves.toBeUndefined();
     });
   });
@@ -460,14 +537,14 @@ describe('BindingRouter', () => {
         () =>
           new Promise((resolve) => {
             resolveSession = resolve;
-          }),
+          })
       );
 
       vi.mocked(mockBindingStore.resolve!).mockReturnValue({
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -479,7 +556,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       };
 
@@ -499,7 +582,7 @@ describe('BindingRouter', () => {
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
         'relay.agent.session-deduped',
         'hi',
-        expect.any(Object),
+        expect.any(Object)
       );
     });
   });
@@ -523,14 +606,14 @@ describe('BindingRouter', () => {
       await evictionRouter.init();
 
       const evictionHandler = (mockRelayCore.subscribe as ReturnType<typeof vi.fn>).mock.calls.at(
-        -1,
+        -1
       )?.[1] as typeof capturedHandler;
 
       vi.mocked(mockBindingStore.resolve!).mockReturnValue({
         id: 'bind-new',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -543,7 +626,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.new-chat',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -555,7 +644,7 @@ describe('BindingRouter', () => {
         id: 'bind-old',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -567,7 +656,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.0',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -584,7 +679,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -601,9 +696,15 @@ describe('BindingRouter', () => {
           subject: 'relay.human.telegram.123',
           payload: 'hi',
           from: 'tg',
-          budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+          budget: {
+            hopCount: 0,
+            maxHops: 5,
+            ttl: Date.now() + 60000,
+            callBudgetRemaining: 10,
+            ancestorChain: [],
+          },
           createdAt: '2026-01-01T00:00:00.000Z',
-        }),
+        })
       ).resolves.toBeUndefined();
 
       // Session was still created and routed successfully
@@ -611,7 +712,7 @@ describe('BindingRouter', () => {
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
         'relay.agent.session-abc',
         'hi',
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -620,7 +721,7 @@ describe('BindingRouter', () => {
         id: 'bind-1',
         adapterId: 'telegram',
         agentId: 'agent-a',
-  
+
         sessionStrategy: 'per-chat',
         label: '',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -633,7 +734,13 @@ describe('BindingRouter', () => {
         subject: 'relay.human.telegram.123',
         payload: 'hi',
         from: 'tg',
-        budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
         createdAt: '2026-01-01T00:00:00.000Z',
       });
 
@@ -641,9 +748,7 @@ describe('BindingRouter', () => {
       vi.mocked(writeFile).mockRejectedValueOnce(new Error('ENOSPC: no space left'));
 
       // Should not throw — cleanup should succeed even when persist fails
-      await expect(
-        router.cleanupOrphanedSessions(new Set()),
-      ).resolves.toBe(1);
+      await expect(router.cleanupOrphanedSessions(new Set())).resolves.toBe(1);
     });
 
     it('does not throw when saveSessionMap fails during shutdown', async () => {
@@ -661,7 +766,13 @@ describe('BindingRouter', () => {
       subject: `relay.human.telegram.${chatId}`,
       payload: { content: 'hello' },
       from: 'tg',
-      budget: { hopCount: 0, maxHops: 5, ttl: Date.now() + 60000, callBudgetRemaining: 10, ancestorChain: [] },
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
       createdAt: '2026-01-01T00:00:00.000Z',
     });
 
@@ -695,13 +806,13 @@ describe('BindingRouter', () => {
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
         expect.stringContaining('relay.agent.'),
         expect.any(Object),
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
     it('includes __bindingPermissions in enriched payload', async () => {
       vi.mocked(mockBindingStore.resolve!).mockReturnValue(
-        makeBinding({ canReply: true, canInitiate: false }),
+        makeBinding({ canReply: true, canInitiate: false })
       );
       await capturedHandler!(makeEnvelope());
 
@@ -714,14 +825,12 @@ describe('BindingRouter', () => {
             permissionMode: 'acceptEdits',
           },
         }),
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
     it('includes canReply=false in __bindingPermissions when set', async () => {
-      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
-        makeBinding({ canReply: false }),
-      );
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canReply: false }));
       await capturedHandler!(makeEnvelope());
 
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
@@ -733,14 +842,12 @@ describe('BindingRouter', () => {
             permissionMode: 'acceptEdits',
           },
         }),
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
     it('includes canInitiate=true in __bindingPermissions when set', async () => {
-      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
-        makeBinding({ canInitiate: true }),
-      );
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canInitiate: true }));
       await capturedHandler!(makeEnvelope());
 
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
@@ -752,7 +859,7 @@ describe('BindingRouter', () => {
             permissionMode: 'acceptEdits',
           },
         }),
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -766,7 +873,7 @@ describe('BindingRouter', () => {
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
         expect.any(String),
         'plain string',
-        expect.any(Object),
+        expect.any(Object)
       );
     });
   });

@@ -25,16 +25,16 @@ export function MeshEmptyState({
   return (
     <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
       {preview && (
-        <div className="mb-4 w-full max-w-sm select-none opacity-40 pointer-events-none">
+        <div className="pointer-events-none mb-4 w-full max-w-sm opacity-40 select-none">
           {preview}
         </div>
       )}
-      <div className="rounded-xl bg-muted/50 p-3">
-        <Icon className="size-6 text-muted-foreground" />
+      <div className="bg-muted/50 rounded-xl p-3">
+        <Icon className="text-muted-foreground size-6" />
       </div>
       <div className="space-y-1">
         <p className="text-sm font-medium">{headline}</p>
-        <p className="max-w-[280px] text-xs text-muted-foreground">{description}</p>
+        <p className="text-muted-foreground max-w-[280px] text-xs">{description}</p>
       </div>
       {action && (
         <Button size="sm" onClick={action.onClick} className="mt-1">
@@ -51,28 +51,28 @@ export function TopologyPreview() {
     <div className="flex items-center justify-center gap-6">
       {/* Node 1 */}
       <div className="flex flex-col items-center gap-1">
-        <div className="flex size-10 items-center justify-center rounded-lg border bg-background">
+        <div className="bg-background flex size-10 items-center justify-center rounded-lg border">
           <span className="text-sm">A</span>
         </div>
-        <span className="text-[10px] text-muted-foreground">frontend</span>
+        <span className="text-muted-foreground text-[10px]">frontend</span>
       </div>
       {/* Edge */}
-      <div className="h-px w-8 bg-border" />
+      <div className="bg-border h-px w-8" />
       {/* Node 2 */}
       <div className="flex flex-col items-center gap-1">
-        <div className="flex size-10 items-center justify-center rounded-lg border bg-background">
+        <div className="bg-background flex size-10 items-center justify-center rounded-lg border">
           <span className="text-sm">B</span>
         </div>
-        <span className="text-[10px] text-muted-foreground">backend</span>
+        <span className="text-muted-foreground text-[10px]">backend</span>
       </div>
       {/* Edge */}
-      <div className="h-px w-8 bg-border" />
+      <div className="bg-border h-px w-8" />
       {/* Node 3 */}
       <div className="flex flex-col items-center gap-1">
-        <div className="flex size-10 items-center justify-center rounded-lg border bg-background">
+        <div className="bg-background flex size-10 items-center justify-center rounded-lg border">
           <span className="text-sm">C</span>
         </div>
-        <span className="text-[10px] text-muted-foreground">shared</span>
+        <span className="text-muted-foreground text-[10px]">shared</span>
       </div>
     </div>
   );

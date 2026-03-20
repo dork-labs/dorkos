@@ -1,9 +1,20 @@
 ---
-title: "Fix Chat Streaming & Model Selector Bugs — Optimistic Message Drop & RadioGroup Desync"
+title: 'Fix Chat Streaming & Model Selector Bugs — Optimistic Message Drop & RadioGroup Desync'
 date: 2026-03-10
 type: implementation
 status: active
-tags: [chat, streaming, optimistic-ui, tanstack-query, radix-ui, radiogroup, history-seeding, race-condition, model-selector]
+tags:
+  [
+    chat,
+    streaming,
+    optimistic-ui,
+    tanstack-query,
+    radix-ui,
+    radiogroup,
+    history-seeding,
+    race-condition,
+    model-selector,
+  ]
 feature_slug: fix-chat-streaming-and-model-selector-bugs
 searches_performed: 7
 sources_count: 14
@@ -24,6 +35,7 @@ Both bugs have surgical, low-risk fixes that follow established patterns already
 **Exact code location:** `apps/client/src/layers/features/chat/model/use-chat-session.ts`
 
 **The sequence:**
+
 1. User sends a message. `sessionId` is `null` → `executeSubmission` generates a client-side UUID, calls `onSessionIdChangeRef.current?.(targetSessionId)`, which propagates the new ID upward (into the URL param, into the `sessionId` prop passed to `useChatSession`).
 2. `setMessages((prev) => [...prev, userMessage])` appends the optimistic user message.
 3. `setStatus('streaming')` and `statusRef.current = 'streaming'` are set synchronously.
@@ -45,7 +57,7 @@ Both bugs have surgical, low-risk fixes that follow established patterns already
      const history = historyQuery.data.messages;
      if (!historySeededRef.current && history.length > 0) {
        historySeededRef.current = true;
-       setMessages(history.map(mapHistoryMessage));   // ← REPLACES entire array
+       setMessages(history.map(mapHistoryMessage)); // ← REPLACES entire array
        return;
      }
      // ...
@@ -64,6 +76,7 @@ Both bugs have surgical, low-risk fixes that follow established patterns already
 **Exact code location:** `apps/client/src/layers/entities/session/model/use-session-status.ts`
 
 **The sequence:**
+
 ```typescript
 const updateSession = useCallback(async (opts) => {
   if (opts.model) setLocalModel(opts.model);       // 1. Optimistic set
@@ -81,6 +94,7 @@ const updateSession = useCallback(async (opts) => {
 ```
 
 **The problem:** Steps 3 and 4 both trigger React renders. The priority chain for `model` is:
+
 ```typescript
 const model = localModel ?? streamingStatus?.model ?? session?.model ?? DEFAULT_MODEL;
 ```
@@ -90,6 +104,7 @@ When step 4 (`setLocalModel(null)`) fires, React schedules a re-render. `localMo
 `setQueryData` updates the cache synchronously, but `useQuery` subscribers re-render on the next React render cycle. In React 18+, `setState` and `setQueryData` called in the same async continuation (after `await`) are NOT automatically batched together — they may produce two separate render commits.
 
 **The two-render gap:**
+
 - Render A: `localModel = null`, `session` still has the OLD value (the `useQuery` hasn't re-rendered yet). If the old `session.model` is stale (e.g., cache was set from a previous server response that differs), `model` resolves to a stale or different value.
 - Render B: `useQuery` picks up the `setQueryData` update. `session.model` now has the correct value. `model` resolves correctly.
 
@@ -132,6 +147,7 @@ useEffect(() => {
 ```
 
 **Pros:**
+
 - Surgical — 3-line addition inside existing effect
 - Follows the same guard philosophy already present in the polling update path (lines 217-224)
 - No new state, no new refs
@@ -139,6 +155,7 @@ useEffect(() => {
 - Matches the comment already written in the session-ID reset effect: "Don't clear messages during streaming"
 
 **Cons:**
+
 - The initial seed will be deferred until after streaming ends. This means: for create-on-first-message, the first seed happens after the `done` event via the existing `historySeededRef` reset-and-reseed flow. This is correct behavior — history is authoritative only after the stream completes.
 - If streaming produces NO `done` event (e.g., hard disconnect), `historySeededRef` may never get set and history won't seed. This is an existing edge case unrelated to this fix.
 
@@ -163,11 +180,13 @@ if (!historySeededRef.current && history.length > 0) {
 ```
 
 **Pros:**
+
 - Preserves optimistic messages even when history loads during streaming
 - More robust against any future path that resets `historySeededRef`
 - Ordering is predictable: optimistic messages lead, server history follows
 
 **Cons:**
+
 - Optimistic messages appear at the TOP of the list (before server history), which is wrong — optimistic messages were just sent and should appear AFTER existing history. The ordering can be fixed by appending local messages that are more recent than the last server message, but this requires timestamp comparison which adds complexity.
 - Server history may already contain a server-persisted version of the optimistic message (by a different ID). The user would see a duplicate momentarily. Requires additional deduplication by content or a stable client-side ID scheme.
 
@@ -192,11 +211,13 @@ useEffect(() => {
 ```
 
 **Pros:**
+
 - Prevents the seed effect from re-running at all during streaming
 - Keeps `historySeededRef = true` which blocks the initial-seed path entirely
 - Even simpler than Approach A
 
 **Cons:**
+
 - If `historySeededRef` is NOT reset on session ID change during streaming, the seed effect's `historySeededRef && !isStreaming` branch will run after streaming ends and merge new history. This is correct.
 - However: for the create-on-first-message case where the session was previously null (no history), `historySeededRef` was already `false`. Not resetting it doesn't help — it stays false. So the initial seed can still fire during streaming for new sessions.
 - In practice, for new sessions: history returns empty → `history.length > 0` is false → no overwrite. The problem only occurs for existing sessions or if history loads just after the first message completes. This approach doesn't fully protect the edge case.
@@ -209,6 +230,7 @@ useEffect(() => {
 ### Recommendation for Bug 1: Approach A
 
 **Approach A** (guard the seed effect with `isStreaming`) is the right fix. It is the minimal, complete, principled solution:
+
 - It matches the existing comment and intent already expressed in the session-ID reset effect
 - It defers seeding until the stream ends, at which point the server history is authoritative and complete
 - It costs 3 lines
@@ -226,10 +248,10 @@ The root cause is that `setLocalModel(null)` fires before the `useQuery` subscri
 ```typescript
 // In use-session-status.ts, replace the success path:
 const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
-queryClient.setQueryData(
-  ['session', sessionId, selectedCwd],
-  (old: Session | undefined) => ({ ...old, ...updated })
-);
+queryClient.setQueryData(['session', sessionId, selectedCwd], (old: Session | undefined) => ({
+  ...old,
+  ...updated,
+}));
 // Clear optimistic overrides only AFTER setQueryData — let React batch them together
 if (opts.model) setLocalModel(null);
 if (opts.permissionMode) setLocalPermissionMode(null);
@@ -279,10 +301,10 @@ The cleanest fix is to recognize that `localModel` is only needed for the OPTIMI
 
 ```typescript
 const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
-queryClient.setQueryData(
-  ['session', sessionId, selectedCwd],
-  (old: Session | undefined) => ({ ...old, ...updated })
-);
+queryClient.setQueryData(['session', sessionId, selectedCwd], (old: Session | undefined) => ({
+  ...old,
+  ...updated,
+}));
 // Do NOT clear localModel immediately — the query cache now has the correct value.
 // localModel matches session.model, so the priority chain resolves the same either way.
 // Clear it on the NEXT session update or session change to avoid staleness.
@@ -303,11 +325,13 @@ useEffect(() => {
 ```
 
 **Pros:**
+
 - `localModel` is held until the cache has definitively caught up
 - No render gap — the RadioGroup always has a valid value (either `localModel` or `session.model`, both matching)
 - Clean, data-driven clearing (effect fires when convergence is confirmed)
 
 **Cons:**
+
 - Adds a `useEffect` with dependency on `session?.model` and `localModel`
 - If `session.model` happens to equal `localModel` by coincidence (user selects the same model that was already set), the effect clears `localModel` correctly — this is fine
 - Slightly more code than the minimal approach
@@ -340,12 +364,14 @@ const model = optimisticModel ?? streamingStatus?.model ?? DEFAULT_MODEL;
 ```
 
 **Pros:**
+
 - Purpose-built for this exact case — `useOptimistic` handles the "show optimistic value during action, revert to real value on settle" flow
 - No manual `setLocalState(null)` call needed
 - React 19 handles batching correctly — no render gap
 - The project uses React 19 (confirmed in CLAUDE.md)
 
 **Cons:**
+
 - Requires `startTransition` wrapper around the async action. The `updateSession` is currently called directly from `onChangeMode`/`onChangeModel` callbacks in `StatusLine.tsx` — wrapping in a transition requires adding `useTransition` to either `use-session-status.ts` or the calling component.
 - `useOptimistic` reverts to the base value if the action throws, but our current code also reverts `localModel` on catch — so the behavior is equivalent.
 - Non-trivial refactor from the current pattern.
@@ -368,7 +394,11 @@ useEffect(() => {
 }, [session?.model, localModel]);
 
 useEffect(() => {
-  if (session?.permissionMode && localPermissionMode && session.permissionMode === localPermissionMode) {
+  if (
+    session?.permissionMode &&
+    localPermissionMode &&
+    session.permissionMode === localPermissionMode
+  ) {
     setLocalPermissionMode(null);
   }
 }, [session?.permissionMode, localPermissionMode]);
@@ -377,11 +407,13 @@ useEffect(() => {
 And remove the `setLocalModel(null)` / `setLocalPermissionMode(null)` calls from the success path of `updateSession` (keep the error/catch path that reverts).
 
 **Why this works:**
+
 - During the PATCH: `localModel` is set. RadioGroup shows `localModel`. Correct.
 - After `setQueryData`: `session.model` is updated in cache. `useQuery` re-renders. `session.model === localModel` → convergence effect fires → `setLocalModel(null)`. Now `model = null ?? session.model` = correct value. No gap.
 - The RadioGroup `value` never loses its value — it transitions smoothly from `localModel` → `session.model` (same value, no visual flash).
 
 **Caveats:**
+
 - If `transport.updateSession` returns a different model than what was set (server normalizes), the convergence effect won't fire and `localModel` stays set indefinitely. Add a fallback: also clear `localModel` in `onSettled` (after a delay or unconditionally after the query invalidates).
 - The simpler version — just `await`ing the effect by placing both `setQueryData` and `setLocalModel(null)` inside a `flushSync` — is possible but inadvisable. The convergence effect is the idiomatic React approach.
 

@@ -7,31 +7,29 @@ import { cn } from '@/layers/shared/lib';
 
 const collapseTransition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
 
-const ERROR_COPY: Record<
-  ErrorCategory,
-  { heading: string; subtext: string; retryable: boolean }
-> = {
-  max_turns: {
-    heading: 'Turn limit reached',
-    subtext: 'The agent ran for its maximum number of turns.',
-    retryable: false,
-  },
-  execution_error: {
-    heading: 'Agent stopped unexpectedly',
-    subtext: 'An error occurred during execution.',
-    retryable: true,
-  },
-  budget_exceeded: {
-    heading: 'Cost limit reached',
-    subtext: 'This session exceeded its budget.',
-    retryable: false,
-  },
-  output_format_error: {
-    heading: 'Output format error',
-    subtext: "The agent couldn't produce the required output format.",
-    retryable: false,
-  },
-};
+const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retryable: boolean }> =
+  {
+    max_turns: {
+      heading: 'Turn limit reached',
+      subtext: 'The agent ran for its maximum number of turns.',
+      retryable: false,
+    },
+    execution_error: {
+      heading: 'Agent stopped unexpectedly',
+      subtext: 'An error occurred during execution.',
+      retryable: true,
+    },
+    budget_exceeded: {
+      heading: 'Cost limit reached',
+      subtext: 'This session exceeded its budget.',
+      retryable: false,
+    },
+    output_format_error: {
+      heading: 'Output format error',
+      subtext: "The agent couldn't produce the required output format.",
+      retryable: false,
+    },
+  };
 
 interface ErrorMessageBlockProps {
   message: string;
@@ -73,15 +71,15 @@ export function ErrorMessageBlock({
       )}
     >
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+        <AlertTriangle className="text-destructive mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{heading}</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">{subtext}</p>
+          <p className="text-muted-foreground mt-0.5 text-sm">{subtext}</p>
           {details && (
             <button
               type="button"
               onClick={() => setShowDetails(!showDetails)}
-              className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground mt-2 flex items-center gap-1 text-xs"
               aria-expanded={showDetails}
             >
               <motion.div
@@ -102,7 +100,7 @@ export function ErrorMessageBlock({
                 transition={collapseTransition}
                 className="overflow-hidden"
               >
-                <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 p-2 text-xs whitespace-pre-wrap">
+                <pre className="bg-muted/50 mt-1 max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
                   {details}
                 </pre>
               </motion.div>

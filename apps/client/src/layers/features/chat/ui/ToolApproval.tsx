@@ -28,7 +28,8 @@ function formatAriaTimeRemaining(seconds: number | null): string {
   if (seconds <= 0) return 'Expired';
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  if (m > 0) return `${m} minute${m !== 1 ? 's' : ''} and ${s} second${s !== 1 ? 's' : ''} remaining`;
+  if (m > 0)
+    return `${m} minute${m !== 1 ? 's' : ''} and ${s} second${s !== 1 ? 's' : ''} remaining`;
   return `${s} second${s !== 1 ? 's' : ''} remaining`;
 }
 
@@ -179,26 +180,22 @@ export function ToolApproval({
   if (decided) {
     const isApproved = decided === 'approved';
     return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={fadeTransition}
-      >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={fadeTransition}>
         <CompactResultRow
           data-testid="tool-approval-decided"
           data-decision={decided}
           icon={
             isApproved ? (
-              <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
+              <Check className="text-status-success size-(--size-icon-sm) shrink-0" />
             ) : (
-              <X className="size-(--size-icon-sm) shrink-0 text-status-error" />
+              <X className="text-status-error size-(--size-icon-sm) shrink-0" />
             )
           }
-          label={<span className="font-mono text-3xs">{toolName}</span>}
+          label={<span className="text-3xs font-mono">{toolName}</span>}
           trailing={
             <span
               className={cn(
-                'rounded-full px-1.5 py-0.5 text-2xs font-medium',
+                'text-2xs rounded-full px-1.5 py-0.5 font-medium',
                 isApproved
                   ? 'bg-status-success-bg text-status-success-fg'
                   : 'bg-status-error-bg text-status-error-fg'
@@ -210,8 +207,8 @@ export function ToolApproval({
         >
           {decided === 'denied' && timedOut.current && (
             <p className="text-2xs text-muted-foreground mt-1">
-              Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes. The agent continued
-              without this tool.
+              Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes.
+              The agent continued without this tool.
             </p>
           )}
         </CompactResultRow>
@@ -220,9 +217,14 @@ export function ToolApproval({
   }
 
   return (
-    <InteractiveCard isActive={isActive} isResolved={!!decided} className="my-1" data-testid="tool-approval">
+    <InteractiveCard
+      isActive={isActive}
+      isResolved={!!decided}
+      className="my-1"
+      data-testid="tool-approval"
+    >
       <div className="mb-2 flex items-center gap-2">
-        <Shield className="size-(--size-icon-md) text-muted-foreground" />
+        <Shield className="text-muted-foreground size-(--size-icon-md)" />
         <span className="font-semibold">Tool approval required</span>
       </div>
 
@@ -234,7 +236,7 @@ export function ToolApproval({
           aria-valuemax={Math.ceil(timeoutMs / 1000)}
           aria-valuenow={secondsRemaining ?? 0}
           aria-valuetext={formatAriaTimeRemaining(secondsRemaining)}
-          className="mb-2 h-1 w-full overflow-hidden rounded-full bg-muted"
+          className="bg-muted mb-2 h-1 w-full overflow-hidden rounded-full"
         >
           <div
             className={cn(

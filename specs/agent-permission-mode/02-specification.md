@@ -21,6 +21,7 @@ The existing binding schema has `canReply`, `canInitiate`, and `canReceive` (bin
 Additionally, `adapter-manager.ts` passes `permissionMode: 'auto'` to `ensureSession()`, but `'auto'` is not a valid value in `PermissionModeSchema`.
 
 Almost all the plumbing exists:
+
 - `PermissionModeSchema` defines the enum
 - `RuntimeCapabilities.supportedPermissionModes` declares what each runtime supports
 - `SessionOpts.permissionMode` is required at session creation
@@ -223,7 +224,7 @@ Add state for permission mode alongside existing permission states:
 
 ```typescript
 const [permissionMode, setPermissionMode] = useState<PermissionMode>(
-  initialValues?.permissionMode ?? 'acceptEdits',
+  initialValues?.permissionMode ?? 'acceptEdits'
 );
 const [bypassWarningOpen, setBypassWarningOpen] = useState(false);
 const [pendingPermissionMode, setPendingPermissionMode] = useState<PermissionMode | null>(null);
@@ -245,7 +246,7 @@ const [advancedOpen, setAdvancedOpen] = useState(
     initialValues?.canReceive === false ||
     (initialValues?.sessionStrategy && initialValues.sessionStrategy !== 'per-chat') ||
     (initialValues?.permissionMode && initialValues.permissionMode !== 'acceptEdits')
-  ),
+  )
 );
 ```
 
@@ -257,7 +258,7 @@ Filter the options:
 
 ```typescript
 const availablePermissionModes = PERMISSION_MODE_OPTIONS.filter((opt) =>
-  supportedModes ? supportedModes.includes(opt.value) : true,
+  supportedModes ? supportedModes.includes(opt.value) : true
 );
 ```
 
@@ -268,7 +269,9 @@ If `supportedPermissionModes` is not available for the selected agent (runtime d
 Add the permission mode selector **inside the Advanced collapsible section**, between the Session Strategy selector and the Permissions toggles:
 
 ```tsx
-{/* Permission mode selector */}
+{
+  /* Permission mode selector */
+}
 <div className="space-y-1.5">
   <Label htmlFor="binding-permission-mode">Permission Mode</Label>
   <Select
@@ -287,11 +290,9 @@ Add the permission mode selector **inside the Advanced collapsible section**, be
     </SelectContent>
   </Select>
   {selectedPermissionMode && (
-    <p className="text-xs text-muted-foreground">
-      {selectedPermissionMode.description}
-    </p>
+    <p className="text-muted-foreground text-xs">{selectedPermissionMode.description}</p>
   )}
-</div>
+</div>;
 ```
 
 #### 6e. Security Warning for `bypassPermissions`
@@ -317,15 +318,13 @@ AlertDialog:
     <AlertDialogHeader>
       <AlertDialogTitle>Enable Full Access?</AlertDialogTitle>
       <AlertDialogDescription>
-        Any user who can send messages through this adapter (e.g., members of your
-        Slack workspace) will be able to trigger unrestricted agent actions,
-        including file system access and command execution.
+        Any user who can send messages through this adapter (e.g., members of your Slack workspace)
+        will be able to trigger unrestricted agent actions, including file system access and command
+        execution.
       </AlertDialogDescription>
     </AlertDialogHeader>
     <AlertDialogFooter>
-      <AlertDialogCancel onClick={() => setPendingPermissionMode(null)}>
-        Cancel
-      </AlertDialogCancel>
+      <AlertDialogCancel onClick={() => setPendingPermissionMode(null)}>Cancel</AlertDialogCancel>
       <AlertDialogAction
         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
         onClick={() => {
@@ -381,6 +380,7 @@ onConfirm({
 ### Runtime Behavior
 
 After a binding is saved with a permission mode:
+
 1. Adapter receives a message (e.g., Slack message)
 2. BindingRouter resolves the binding for this adapter+chat
 3. BindingRouter creates/reuses a session, passing `binding.permissionMode` to `ensureSession()`
@@ -392,6 +392,7 @@ After a binding is saved with a permission mode:
 ### Unit Tests
 
 **Schema tests** (`packages/shared/src/__tests__/relay-binding-schemas.test.ts`):
+
 ```typescript
 /** Validates that permissionMode defaults to 'acceptEdits' when omitted */
 it('defaults permissionMode to acceptEdits', () => {
@@ -409,13 +410,12 @@ it('accepts all valid permission modes', () => {
 
 /** Validates that invalid permission mode values are rejected */
 it('rejects invalid permission mode', () => {
-  expect(() =>
-    AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'auto' }),
-  ).toThrow();
+  expect(() => AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'auto' })).toThrow();
 });
 ```
 
 **Binding store tests** (`apps/server/src/services/relay/__tests__/binding-store.test.ts`):
+
 ```typescript
 /** Verifies that update() persists permissionMode changes */
 it('updates permissionMode on a binding', async () => {
@@ -426,6 +426,7 @@ it('updates permissionMode on a binding', async () => {
 ```
 
 **Binding router tests** (`apps/server/src/services/relay/__tests__/binding-router.test.ts`):
+
 ```typescript
 /** Verifies that binding.permissionMode is passed through to session creation */
 it('passes binding permissionMode to session creator', async () => {
@@ -436,7 +437,7 @@ it('passes binding permissionMode to session creator', async () => {
 
   expect(mockSessionCreator.createSession).toHaveBeenCalledWith(
     expect.any(String),
-    'bypassPermissions',
+    'bypassPermissions'
   );
 });
 
@@ -447,10 +448,7 @@ it('defaults to acceptEdits when binding has no permissionMode', async () => {
 
   await router.handleInbound(inboundEnvelope);
 
-  expect(mockSessionCreator.createSession).toHaveBeenCalledWith(
-    expect.any(String),
-    'acceptEdits',
-  );
+  expect(mockSessionCreator.createSession).toHaveBeenCalledWith(expect.any(String), 'acceptEdits');
 });
 
 /** Verifies that permissionMode is included in __bindingPermissions payload */
@@ -467,12 +465,13 @@ it('includes permissionMode in enriched payload', async () => {
         permissionMode: 'plan',
       }),
     }),
-    expect.any(Object),
+    expect.any(Object)
   );
 });
 ```
 
 **BindingDialog tests** (`apps/client/src/layers/features/mesh/ui/__tests__/BindingDialog.test.tsx`):
+
 ```typescript
 /** Verifies permission mode selector renders with default value */
 it('renders permission mode selector defaulting to Accept Edits', () => {

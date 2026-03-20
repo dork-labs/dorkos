@@ -16,7 +16,11 @@ interface UseFileAutocompleteReturn {
   filteredFiles: (FileEntry & { indices: number[] })[];
   fileTriggerPos: number;
   detectFileTrigger: (value: string, cursor: number) => boolean;
-  handleFileSelect: (entry: FileEntry) => { newValue: string; newCursorPos?: number; keepOpen: boolean };
+  handleFileSelect: (entry: FileEntry) => {
+    newValue: string;
+    newCursorPos?: number;
+    keepOpen: boolean;
+  };
   handleArrowUp: () => void;
   handleArrowDown: () => void;
   handleKeyboardSelect: () => { newValue: string; newCursorPos?: number; keepOpen: boolean } | null;
@@ -38,8 +42,7 @@ export function useFileAutocomplete({
 
   const filteredFiles = useMemo(() => {
     if (!showFiles) return [];
-    if (!fileQuery)
-      return fileEntries.slice(0, 50).map((e) => ({ ...e, indices: [] as number[] }));
+    if (!fileQuery) return fileEntries.slice(0, 50).map((e) => ({ ...e, indices: [] as number[] }));
     return fileEntries
       .map((entry) => ({ ...entry, ...fuzzyMatch(fileQuery, entry.path) }))
       .filter((r) => r.match)
@@ -62,21 +65,18 @@ export function useFileAutocomplete({
   }, [filteredFiles.length, fileSelectedIndex]);
 
   /** Returns true if a file trigger was detected. */
-  const detectFileTrigger = useCallback(
-    (value: string, cursor: number): boolean => {
-      const textToCursor = value.slice(0, cursor);
-      const fileMatch = textToCursor.match(/(^|\s)@([\w./:-]*)$/);
-      if (fileMatch) {
-        setShowFiles(true);
-        setFileQuery(fileMatch[2]);
-        setFileTriggerPos((fileMatch.index ?? 0) + fileMatch[1].length);
-        return true;
-      }
-      setShowFiles(false);
-      return false;
-    },
-    []
-  );
+  const detectFileTrigger = useCallback((value: string, cursor: number): boolean => {
+    const textToCursor = value.slice(0, cursor);
+    const fileMatch = textToCursor.match(/(^|\s)@([\w./:-]*)$/);
+    if (fileMatch) {
+      setShowFiles(true);
+      setFileQuery(fileMatch[2]);
+      setFileTriggerPos((fileMatch.index ?? 0) + fileMatch[1].length);
+      return true;
+    }
+    setShowFiles(false);
+    return false;
+  }, []);
 
   /** Returns the new input value and whether to keep the palette open (for directory drill-down). */
   const handleFileSelect = useCallback(

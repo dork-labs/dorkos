@@ -12,7 +12,12 @@ function makeMockAdapterManager(overrides?: Record<string, unknown>) {
   return {
     listAdapters: vi.fn().mockReturnValue([
       {
-        config: { id: 'tg-main', type: 'telegram', enabled: true, config: { token: 'x', mode: 'polling' } },
+        config: {
+          id: 'tg-main',
+          type: 'telegram',
+          enabled: true,
+          config: { token: 'x', mode: 'polling' },
+        },
         status: { state: 'connected', messageCount: { inbound: 5, outbound: 3 }, errorCount: 0 },
       },
     ]),
@@ -23,7 +28,9 @@ function makeMockAdapterManager(overrides?: Record<string, unknown>) {
   };
 }
 
-function makeMockDeps(adapterManager?: ReturnType<typeof makeMockAdapterManager> | undefined): McpToolDeps {
+function makeMockDeps(
+  adapterManager?: ReturnType<typeof makeMockAdapterManager> | undefined
+): McpToolDeps {
   return {
     transcriptReader: {} as McpToolDeps['transcriptReader'],
     defaultCwd: '/test',
@@ -161,7 +168,8 @@ describe('Adapter MCP Tools', () => {
   describe('tool registration', () => {
     it('adapter tools are not registered when adapterManager is undefined', async () => {
       // Import the factory to verify conditional registration
-      const { createDorkOsToolServer: _createDorkOsToolServer } = await import('../../runtimes/claude-code/mcp-tools/index.js');
+      const { createDorkOsToolServer: _createDorkOsToolServer } =
+        await import('../../runtimes/claude-code/mcp-tools/index.js');
 
       // The tool server with no adapterManager should not include adapter tools
       // We verify by checking the deps flow — the handler guards will block calls

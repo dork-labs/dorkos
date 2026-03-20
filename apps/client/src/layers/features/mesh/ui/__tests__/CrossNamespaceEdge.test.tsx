@@ -66,18 +66,22 @@ describe('CrossNamespaceEdge', () => {
       const { container } = render(
         <svg>
           <CrossNamespaceEdge {...BASE_EDGE_PROPS} />
-        </svg>,
+        </svg>
       );
-      expect(container.querySelector('[data-testid="edge-path-cross-ns-edge-1"]')).toBeInTheDocument();
+      expect(
+        container.querySelector('[data-testid="edge-path-cross-ns-edge-1"]')
+      ).toBeInTheDocument();
     });
 
     it('uses var(--color-primary) for stroke color', () => {
       const { container } = render(
         <svg>
           <CrossNamespaceEdge {...BASE_EDGE_PROPS} />
-        </svg>,
+        </svg>
       );
-      const path = container.querySelector('[data-testid="edge-path-cross-ns-edge-1"]') as HTMLElement;
+      const path = container.querySelector(
+        '[data-testid="edge-path-cross-ns-edge-1"]'
+      ) as HTMLElement;
       expect(path?.style.stroke).toBe('var(--color-primary)');
     });
   });
@@ -87,7 +91,7 @@ describe('CrossNamespaceEdge', () => {
       const { container } = render(
         <svg>
           <CrossNamespaceEdge {...BASE_EDGE_PROPS} />
-        </svg>,
+        </svg>
       );
       expect(container.querySelector('animateMotion')).not.toBeInTheDocument();
       expect(container.querySelector('circle')).not.toBeInTheDocument();
@@ -99,16 +103,18 @@ describe('CrossNamespaceEdge', () => {
       const { container } = render(
         <svg>
           <CrossNamespaceEdge {...BASE_EDGE_PROPS} />
-        </svg>,
+        </svg>
       );
-      expect(container.querySelector('[data-testid="edge-label-renderer"]')).not.toBeInTheDocument();
+      expect(
+        container.querySelector('[data-testid="edge-label-renderer"]')
+      ).not.toBeInTheDocument();
     });
 
     it('shows label when selected', () => {
       const { container } = render(
         <svg>
           <CrossNamespaceEdge {...{ ...BASE_EDGE_PROPS, selected: true }} />
-        </svg>,
+        </svg>
       );
       expect(container.querySelector('[data-testid="edge-label-renderer"]')).toBeInTheDocument();
     });

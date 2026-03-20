@@ -1,5 +1,5 @@
 ---
-title: "CLI npm Package Install Smoke Testing — Docker & GitHub Actions"
+title: 'CLI npm Package Install Smoke Testing — Docker & GitHub Actions'
 date: 2026-03-02
 type: implementation
 status: active
@@ -34,6 +34,7 @@ verify  → dorkos --version
 ```
 
 This pattern verifies:
+
 - The tarball is complete (all `files` entries present)
 - The `bin` entry resolves to an executable file
 - The CLI binary imports cleanly (no missing runtime deps crash on startup)
@@ -49,14 +50,15 @@ Current state: `better-sqlite3` is in `packages/db/package.json:dependencies` bu
 
 For any Docker-based smoke test of a package with native addons:
 
-| Image | Verdict | Reason |
-|---|---|---|
-| `node:20-alpine` | Avoid | musl libc is incompatible with glibc-compiled prebuilt binaries; forces recompile with extra pain |
-| `node:20-slim` | Recommended | Debian slim, glibc, ~200MB, no `python3`/`build-essential` by default but easy to add |
-| `node:20` (full) | Acceptable | Has build tools but ~1GB, overkill for a smoke test |
-| `node:20-bookworm-slim` | Best explicit choice | Pinned Debian codename, reproducible builds |
+| Image                   | Verdict              | Reason                                                                                            |
+| ----------------------- | -------------------- | ------------------------------------------------------------------------------------------------- |
+| `node:20-alpine`        | Avoid                | musl libc is incompatible with glibc-compiled prebuilt binaries; forces recompile with extra pain |
+| `node:20-slim`          | Recommended          | Debian slim, glibc, ~200MB, no `python3`/`build-essential` by default but easy to add             |
+| `node:20` (full)        | Acceptable           | Has build tools but ~1GB, overkill for a smoke test                                               |
+| `node:20-bookworm-slim` | Best explicit choice | Pinned Debian codename, reproducible builds                                                       |
 
 For compiling native addons in Docker, the slim image needs:
+
 ```dockerfile
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
@@ -110,11 +112,11 @@ The bare-runner test (job 2) is faster and covers node version matrix. The Docke
 
 ### 6. Trigger Strategy
 
-| Trigger | Purpose |
-|---|---|
-| `push: branches: [main]` | Catch regressions on every merge |
-| `push: tags: ['v*']` | Gate before npm publish |
-| `workflow_dispatch` | Manual smoke test on demand |
+| Trigger                   | Purpose                           |
+| ------------------------- | --------------------------------- |
+| `push: branches: [main]`  | Catch regressions on every merge  |
+| `push: tags: ['v*']`      | Gate before npm publish           |
+| `workflow_dispatch`       | Manual smoke test on demand       |
 | `pull_request` (optional) | Can be skipped to save CI minutes |
 
 The smoke test job should be a **required check before npm publish**. Use `needs: [smoke-test-bare, smoke-test-docker]` on the publish job.
@@ -124,6 +126,7 @@ The smoke test job should be a **required check before npm publish**. Use `needs
 The `claude` binary is not on PATH in a Docker smoke test. Best practices:
 
 **Option A: Exit with a clear message, exit code 1 (not 127)**
+
 ```typescript
 // In CLI startup
 const claudeAvailable = await which('claude').catch(() => null);
@@ -138,6 +141,7 @@ if (!claudeAvailable) {
 The CLI can start successfully without `claude` in PATH. The check happens when a user tries to create a session. This is preferable for smoke testing because `dorkos --version` and `dorkos --help` should always succeed.
 
 **Option C: Smoke test with a mock `claude` stub**
+
 ```bash
 # In the Docker smoke test stage
 RUN echo '#!/bin/sh\necho "claude stub"' > /usr/local/bin/claude && chmod +x /usr/local/bin/claude
@@ -146,6 +150,7 @@ RUN echo '#!/bin/sh\necho "claude stub"' > /usr/local/bin/claude && chmod +x /us
 The recommended approach for DorkOS is **Option B** for startup + **Option C** for deeper smoke tests that exercise session creation.
 
 **Exit code conventions for missing dependencies:**
+
 - Exit code `1` — general failure (preferred for missing optional runtime deps)
 - Exit code `127` — shell "command not found" (set by shell, not by your process)
 - Exit code `2` — misuse / bad arguments
@@ -163,6 +168,7 @@ The dorkos CLI uses esbuild bundling, which simplifies the pack situation:
 - Runtime `dependencies` listed in `packages/cli/package.json` ARE what npm installs when users run `npm install -g dorkos`
 
 **Critical gap**: `better-sqlite3` must be in `packages/cli/package.json:dependencies` because:
+
 1. The esbuild bundle references it at runtime (native `.node` file)
 2. npm install does not traverse workspace deps when installing from a published tarball
 3. The smoke test will fail with `Cannot find module 'better-sqlite3'` if it's missing
@@ -179,12 +185,13 @@ The dorkos CLI uses esbuild bundling, which simplifies the pack situation:
 - uses: actions/setup-node@v4
   with:
     node-version: '20'
-    cache: 'pnpm'       # caches ~/.pnpm-store automatically
+    cache: 'pnpm' # caches ~/.pnpm-store automatically
 ```
 
 For the smoke test job (which only runs `npm install -g` from a tarball, not `pnpm install`), no pnpm cache is needed. The artifact download replaces the build step entirely.
 
 For Turborepo remote caching, add:
+
 ```yaml
 env:
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -204,6 +211,7 @@ When building a Docker image at the repo root for smoke testing, a lean `.docker
 ```
 
 Or, if passing the `.tgz` via `COPY` with `--build-arg`:
+
 ```dockerfile
 ARG TARBALL
 COPY ${TARBALL} /smoke/
@@ -357,7 +365,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # For npm OIDC trusted publishing
+      id-token: write # For npm OIDC trusted publishing
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -418,6 +426,7 @@ Error relocating better_sqlite3.node: fcntl64: symbol not found
 On Debian slim (`node:20-slim`), glibc is present but build tools are stripped. The solution is installing `python3 build-essential libsqlite3-dev` before running `npm install`.
 
 **Multi-stage approach for production (not smoke testing):**
+
 ```dockerfile
 # Build stage — has all compilation tools
 FROM node:20-slim AS builder
@@ -459,7 +468,7 @@ For a smoke test Dockerfile, there is no benefit to multi-stage — use a single
 
 - Artifact sharing between jobs via `actions/upload-artifact@v4` / `actions/download-artifact@v4` — [GitHub Docs: Store and Share Data](https://docs.github.com/en/actions/tutorials/store-and-share-data)
 
-- pnpm workspace protocol resolution: "Converts workspace:*, workspace:^, workspace:~ to actual version numbers" — [pnpm Workspaces](https://pnpm.io/workspaces)
+- pnpm workspace protocol resolution: "Converts workspace:\*, workspace:^, workspace:~ to actual version numbers" — [pnpm Workspaces](https://pnpm.io/workspaces)
 
 - pnpm pack `--pack-destination` option for directing tarball output — [pnpm pack docs](https://pnpm.io/cli/pack)
 

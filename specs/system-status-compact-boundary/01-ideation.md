@@ -132,6 +132,7 @@ Research agent analyzed 22 sources across AI chat UIs, notification patterns, an
 ### Recommendation
 
 **Solution 1 (Ephemeral Status Zone + Hairline Compact Divider)** because:
+
 - Respects the opposite temporal semantics (ephemeral vs permanent)
 - Avoids the clutter trap that VS Code Copilot fell into
 - Aligns with the Calm Tech design philosophy (unobtrusive, informative when needed)
@@ -139,8 +140,8 @@ Research agent analyzed 22 sources across AI chat UIs, notification patterns, an
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How to display system status messages | Ephemeral status zone between MessageList and ChatInput | Auto-fades after 4s. Matches Slack typing indicator pattern. Doesn't pollute message history. Avoids VS Code Copilot's clutter complaints. |
-| 2 | How to display compact boundary | Centered hairline divider as standalone message | Matches Slack date separator pattern. Uses existing `messageType: 'compaction'`. Visually distinct conversation boundary. |
-| 3 | History persistence for compact boundaries | Stream-only, transient | Simplest implementation — no JSONL parsing changes. Can add persistence in P3 if needed. |
+| #   | Decision                                   | Choice                                                  | Rationale                                                                                                                                  |
+| --- | ------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | How to display system status messages      | Ephemeral status zone between MessageList and ChatInput | Auto-fades after 4s. Matches Slack typing indicator pattern. Doesn't pollute message history. Avoids VS Code Copilot's clutter complaints. |
+| 2   | How to display compact boundary            | Centered hairline divider as standalone message         | Matches Slack date separator pattern. Uses existing `messageType: 'compaction'`. Visually distinct conversation boundary.                  |
+| 3   | History persistence for compact boundaries | Stream-only, transient                                  | Simplest implementation — no JSONL parsing changes. Can add persistence in P3 if needed.                                                   |

@@ -67,9 +67,7 @@ describe('RunHistoryPanel', () => {
   });
 
   it('shows duration for completed runs', async () => {
-    const runs = [
-      createMockRun({ id: 'run-1', status: 'completed', durationMs: 65000 }),
-    ];
+    const runs = [createMockRun({ id: 'run-1', status: 'completed', durationMs: 65000 })];
     const transport = createMockTransport({
       listRuns: vi.fn().mockResolvedValue(runs),
     });
@@ -113,9 +111,7 @@ describe('RunHistoryPanel', () => {
   });
 
   it('clicking a run navigates to its session (same cwd)', async () => {
-    const runs = [
-      createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-abc' }),
-    ];
+    const runs = [createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-abc' })];
     const transport = createMockTransport({
       listRuns: vi.fn().mockResolvedValue(runs),
     });
@@ -142,9 +138,7 @@ describe('RunHistoryPanel', () => {
   });
 
   it('clicking a run with different cwd navigates to directory first', async () => {
-    const runs = [
-      createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-xyz' }),
-    ];
+    const runs = [createMockRun({ id: 'run-1', status: 'completed', sessionId: 'session-xyz' })];
     const transport = createMockTransport({
       listRuns: vi.fn().mockResolvedValue(runs),
     });

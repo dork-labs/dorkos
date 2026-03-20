@@ -15,12 +15,12 @@
 
 - Task #1: [fix-chat-ui-reliability-bugs] [P1] Add enabled guard to useTaskState and update signature to accept null
 - Task #2: [fix-chat-ui-reliability-bugs] [P1] Add enabled guard to useSessionStatus and update signature to accept null
-- Task #3: [fix-chat-ui-reliability-bugs] [P2] Assign stable _partId to new text parts in stream-event-handler
+- Task #3: [fix-chat-ui-reliability-bugs] [P2] Assign stable \_partId to new text parts in stream-event-handler
 - Task #4: [fix-chat-ui-reliability-bugs] [P3] Remove optimistic setMessages and add pendingUserContent state to useChatSession
 - Task #5: [fix-chat-ui-reliability-bugs] [P1] Remove ?? '' coercions at useTaskState and useSessionStatus call sites in ChatPanel
 - Task #6: [fix-chat-ui-reliability-bugs] [P1] Write tests for useTaskState null guard and useSessionStatus null guard
-- Task #7: [fix-chat-ui-reliability-bugs] [P2] Use _partId as React key for text parts in AssistantMessageContent
-- Task #8: [fix-chat-ui-reliability-bugs] [P2] Write tests for stable _partId assignment and React key stability
+- Task #7: [fix-chat-ui-reliability-bugs] [P2] Use \_partId as React key for text parts in AssistantMessageContent
+- Task #8: [fix-chat-ui-reliability-bugs] [P2] Write tests for stable \_partId assignment and React key stability
 - Task #9: [fix-chat-ui-reliability-bugs] [P3] Thread pendingUserContent through ChatPanel to MessageList
 - Task #10: [fix-chat-ui-reliability-bugs] [P3] Add pendingUserContent prop to MessageList and render pending user bubble
 - Task #11: [fix-chat-ui-reliability-bugs] [P3] Update existing tests and write new tests for pendingUserContent behavior
@@ -42,7 +42,7 @@
 
 - `apps/client/src/layers/features/chat/model/__tests__/use-task-state-null-guard.test.tsx` — 3 tests: null guard, positive case, empty state
 - `apps/client/src/layers/entities/session/model/__tests__/use-session-status-guard.test.tsx` — 3 tests: null guard, default values, updateSession no-op
-- `apps/client/src/layers/features/chat/model/__tests__/stream-event-handler-part-id.test.ts` — 4 tests: _partId assignment, preservation, new part after tool call, pendingUserContent cleared on first delta
+- `apps/client/src/layers/features/chat/model/__tests__/stream-event-handler-part-id.test.ts` — 4 tests: \_partId assignment, preservation, new part after tool call, pendingUserContent cleared on first delta
 - `apps/client/src/layers/features/chat/ui/message/__tests__/AssistantMessageContent.test.tsx` — 3 tests: zero key warnings for multi-block, single-block, and history parts
 - `apps/client/src/layers/features/chat/__tests__/use-chat-session.test.tsx` — 6 existing tests updated + new pendingUserContent describe block
 - `apps/client/src/layers/features/chat/model/__tests__/use-chat-session-relay.test.ts` — 2 tests updated

@@ -291,4 +291,4 @@ You've always had more ideas than hours. That ratio just changed.
 
 ---
 
-*Intelligence doesn't scale. Coordination does.*
+_Intelligence doesn't scale. Coordination does._

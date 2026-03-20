@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { HookPart, MessagePart, SessionStatusEvent, TaskUpdateEvent } from '@dorkos/shared/types';
+import type {
+  HookPart,
+  MessagePart,
+  SessionStatusEvent,
+  TaskUpdateEvent,
+} from '@dorkos/shared/types';
 import { createStreamEventHandler } from '../stream-event-handler';
 
 function createDeps() {
@@ -25,7 +30,9 @@ function createDeps() {
   const setPromptSuggestions = vi.fn();
   const rateLimitClearRef = { current: null };
   const onTaskEventRef = { current: undefined as ((event: TaskUpdateEvent) => void) | undefined };
-  const onSessionIdChangeRef = { current: undefined as ((newSessionId: string) => void) | undefined };
+  const onSessionIdChangeRef = {
+    current: undefined as ((newSessionId: string) => void) | undefined,
+  };
   const onStreamingDoneRef = { current: undefined as (() => void) | undefined };
 
   const handler = createStreamEventHandler({
@@ -69,7 +76,7 @@ function createDeps() {
 function addToolCallPart(
   currentPartsRef: { current: MessagePart[] },
   toolCallId: string,
-  toolName = 'Bash',
+  toolName = 'Bash'
 ): void {
   currentPartsRef.current.push({
     type: 'tool_call',
@@ -91,11 +98,11 @@ describe('stream-event-handler — hook_started', () => {
     handler(
       'hook_started',
       { hookId: 'h-1', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-1' },
-      'asst-1',
+      'asst-1'
     );
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-1',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-1'
     );
     expect(tcPart).toBeDefined();
     if (tcPart?.type === 'tool_call') {
@@ -123,7 +130,7 @@ describe('stream-event-handler — hook_started', () => {
     handler(
       'hook_started',
       { hookId: 'h-2', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-orphan' },
-      'asst-1',
+      'asst-1'
     );
 
     // No tool call part should have been created
@@ -150,7 +157,7 @@ describe('stream-event-handler — hook_started', () => {
     handler(
       'hook_started',
       { hookId: 'h-3', hookName: 'session-hook', hookEvent: 'PreToolUse', toolCallId: null },
-      'asst-1',
+      'asst-1'
     );
 
     expect(currentPartsRef.current).toHaveLength(0);
@@ -166,12 +173,12 @@ describe('stream-event-handler — hook_started', () => {
     handler(
       'hook_started',
       { hookId: 'h-a', hookName: 'hook-a', hookEvent: 'PreToolUse', toolCallId: 'tc-multi' },
-      'asst-1',
+      'asst-1'
     );
     handler(
       'hook_started',
       { hookId: 'h-b', hookName: 'hook-b', hookEvent: 'PreToolUse', toolCallId: 'tc-multi' },
-      'asst-1',
+      'asst-1'
     );
 
     const buffered = orphanHooksRef.current.get('tc-multi');
@@ -193,18 +200,14 @@ describe('stream-event-handler — hook_progress', () => {
     handler(
       'hook_started',
       { hookId: 'h-4', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-2' },
-      'asst-1',
+      'asst-1'
     );
 
     // Now send progress
-    handler(
-      'hook_progress',
-      { hookId: 'h-4', stdout: 'Running checks...', stderr: '' },
-      'asst-1',
-    );
+    handler('hook_progress', { hookId: 'h-4', stdout: 'Running checks...', stderr: '' }, 'asst-1');
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-2',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-2'
     );
     expect(tcPart?.type).toBe('tool_call');
     if (tcPart?.type === 'tool_call') {
@@ -225,16 +228,16 @@ describe('stream-event-handler — hook_progress', () => {
     handler(
       'hook_started',
       { hookId: 'h-5', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-3' },
-      'asst-1',
+      'asst-1'
     );
     handler(
       'hook_progress',
       { hookId: 'h-5', stdout: 'stdout line', stderr: 'stderr line' },
-      'asst-1',
+      'asst-1'
     );
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-3',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-3'
     );
     if (tcPart?.type === 'tool_call') {
       const hook = tcPart.hooks?.find((h) => h.hookId === 'h-5');
@@ -258,7 +261,7 @@ describe('stream-event-handler — hook_response', () => {
     handler(
       'hook_started',
       { hookId: 'h-6', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-4' },
-      'asst-1',
+      'asst-1'
     );
     handler(
       'hook_response',
@@ -270,11 +273,11 @@ describe('stream-event-handler — hook_response', () => {
         stdout: 'output before crash',
         stderr: 'fatal: something went wrong',
       },
-      'asst-1',
+      'asst-1'
     );
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-4',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-4'
     );
     if (tcPart?.type === 'tool_call') {
       const hook = tcPart.hooks?.find((h) => h.hookId === 'h-6');
@@ -296,7 +299,7 @@ describe('stream-event-handler — hook_response', () => {
     handler(
       'hook_started',
       { hookId: 'h-7', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-5' },
-      'asst-1',
+      'asst-1'
     );
     handler(
       'hook_response',
@@ -308,11 +311,11 @@ describe('stream-event-handler — hook_response', () => {
         stdout: 'All checks passed',
         stderr: '',
       },
-      'asst-1',
+      'asst-1'
     );
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-5',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-5'
     );
     if (tcPart?.type === 'tool_call') {
       const hook = tcPart.hooks?.find((h) => h.hookId === 'h-7');
@@ -330,7 +333,7 @@ describe('stream-event-handler — hook_response', () => {
     handler(
       'hook_started',
       { hookId: 'h-8', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-6' },
-      'asst-1',
+      'asst-1'
     );
     handler(
       'hook_response',
@@ -341,11 +344,11 @@ describe('stream-event-handler — hook_response', () => {
         stdout: '',
         stderr: '',
       },
-      'asst-1',
+      'asst-1'
     );
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-6',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-6'
     );
     if (tcPart?.type === 'tool_call') {
       const hook = tcPart.hooks?.find((h) => h.hookId === 'h-8');
@@ -364,7 +367,7 @@ describe('stream-event-handler — orphan hook drain on tool_call_start', () => 
     handler(
       'hook_started',
       { hookId: 'h-9', hookName: 'pre-tool', hookEvent: 'PreToolUse', toolCallId: 'tc-late' },
-      'asst-1',
+      'asst-1'
     );
 
     // Confirm it's buffered, not on any tool call part
@@ -372,15 +375,11 @@ describe('stream-event-handler — orphan hook drain on tool_call_start', () => 
     expect(currentPartsRef.current).toHaveLength(0);
 
     // Now the tool call starts
-    handler(
-      'tool_call_start',
-      { toolCallId: 'tc-late', toolName: 'Bash', input: '' },
-      'asst-1',
-    );
+    handler('tool_call_start', { toolCallId: 'tc-late', toolName: 'Bash', input: '' }, 'asst-1');
 
     // Tool call part exists with the hook already attached
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-late',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-late'
     );
     expect(tcPart).toBeDefined();
     if (tcPart?.type === 'tool_call') {
@@ -400,22 +399,18 @@ describe('stream-event-handler — orphan hook drain on tool_call_start', () => 
     handler(
       'hook_started',
       { hookId: 'h-10', hookName: 'hook-x', hookEvent: 'PreToolUse', toolCallId: 'tc-multi2' },
-      'asst-1',
+      'asst-1'
     );
     handler(
       'hook_started',
       { hookId: 'h-11', hookName: 'hook-y', hookEvent: 'PreToolUse', toolCallId: 'tc-multi2' },
-      'asst-1',
+      'asst-1'
     );
 
-    handler(
-      'tool_call_start',
-      { toolCallId: 'tc-multi2', toolName: 'Bash', input: '' },
-      'asst-1',
-    );
+    handler('tool_call_start', { toolCallId: 'tc-multi2', toolName: 'Bash', input: '' }, 'asst-1');
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-multi2',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-multi2'
     );
     if (tcPart?.type === 'tool_call') {
       expect(tcPart.hooks).toHaveLength(2);
@@ -431,14 +426,10 @@ describe('stream-event-handler — orphan hook drain on tool_call_start', () => 
     // hooks — the hooks field should be absent rather than an empty array.
     const { handler, currentPartsRef } = createDeps();
 
-    handler(
-      'tool_call_start',
-      { toolCallId: 'tc-clean', toolName: 'Read', input: '' },
-      'asst-1',
-    );
+    handler('tool_call_start', { toolCallId: 'tc-clean', toolName: 'Read', input: '' }, 'asst-1');
 
     const tcPart = currentPartsRef.current.find(
-      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-clean',
+      (p) => p.type === 'tool_call' && p.toolCallId === 'tc-clean'
     );
     expect(tcPart).toBeDefined();
     if (tcPart?.type === 'tool_call') {

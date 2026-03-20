@@ -6,7 +6,15 @@ import { ThinkingBlock } from '@/layers/features/chat/ui/ThinkingBlock';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { MOCK_SESSION_ID, TOOL_CALLS, TOOL_CALLS_EXTENDED, TOOL_CALLS_WITH_HOOKS, TOOL_CALL_APPROVAL, SUBAGENT_PARTS, ERROR_PARTS } from '../mock-chat-data';
+import {
+  MOCK_SESSION_ID,
+  TOOL_CALLS,
+  TOOL_CALLS_EXTENDED,
+  TOOL_CALLS_WITH_HOOKS,
+  TOOL_CALL_APPROVAL,
+  SUBAGENT_PARTS,
+  ERROR_PARTS,
+} from '../mock-chat-data';
 
 /** Tool-related component showcases: ToolCallCard, ToolApproval. */
 export function ToolShowcases() {
@@ -51,14 +59,17 @@ export function ToolShowcases() {
       >
         <ShowcaseDemo>
           <div className="grid gap-4 md:grid-cols-2">
-            {(Object.entries(TOOL_CALLS_EXTENDED) as [string, (typeof TOOL_CALLS_EXTENDED)[string]][]).map(
-              ([key, tc]) => (
-                <div key={key}>
-                  <ShowcaseLabel>{key}</ShowcaseLabel>
-                  <ToolCallCard toolCall={tc} />
-                </div>
-              )
-            )}
+            {(
+              Object.entries(TOOL_CALLS_EXTENDED) as [
+                string,
+                (typeof TOOL_CALLS_EXTENDED)[string],
+              ][]
+            ).map(([key, tc]) => (
+              <div key={key}>
+                <ShowcaseLabel>{key}</ShowcaseLabel>
+                <ToolCallCard toolCall={tc} />
+              </div>
+            ))}
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
@@ -69,14 +80,17 @@ export function ToolShowcases() {
       >
         <ShowcaseDemo>
           <div className="grid gap-4 md:grid-cols-2">
-            {(Object.entries(TOOL_CALLS_WITH_HOOKS) as [string, (typeof TOOL_CALLS_WITH_HOOKS)[string]][]).map(
-              ([key, tc]) => (
-                <div key={key}>
-                  <ShowcaseLabel>{key}</ShowcaseLabel>
-                  <ToolCallCard toolCall={tc} />
-                </div>
-              )
-            )}
+            {(
+              Object.entries(TOOL_CALLS_WITH_HOOKS) as [
+                string,
+                (typeof TOOL_CALLS_WITH_HOOKS)[string],
+              ][]
+            ).map(([key, tc]) => (
+              <div key={key}>
+                <ShowcaseLabel>{key}</ShowcaseLabel>
+                <ToolCallCard toolCall={tc} />
+              </div>
+            ))}
           </div>
         </ShowcaseDemo>
 

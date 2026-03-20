@@ -52,11 +52,7 @@ export class PulseStore {
 
   /** Get a single schedule by ID. */
   getSchedule(id: string): PulseSchedule | null {
-    const row = this.db
-      .select()
-      .from(pulseSchedules)
-      .where(eq(pulseSchedules.id, id))
-      .get();
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     return row ? mapScheduleRow(row) : null;
   }
 
@@ -65,21 +61,24 @@ export class PulseStore {
     const now = new Date().toISOString();
     const id = ulid();
 
-    this.db.insert(pulseSchedules).values({
-      id,
-      name: input.name,
-      prompt: input.prompt,
-      cron: input.cron,
-      timezone: input.timezone ?? 'UTC',
-      cwd: input.cwd ?? null,
-      agentId: input.agentId ?? null,
-      enabled: input.enabled ?? true,
-      maxRuntime: input.maxRuntime ?? null,
-      permissionMode: input.permissionMode ?? 'acceptEdits',
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    }).run();
+    this.db
+      .insert(pulseSchedules)
+      .values({
+        id,
+        name: input.name,
+        prompt: input.prompt,
+        cron: input.cron,
+        timezone: input.timezone ?? 'UTC',
+        cwd: input.cwd ?? null,
+        agentId: input.agentId ?? null,
+        enabled: input.enabled ?? true,
+        maxRuntime: input.maxRuntime ?? null,
+        permissionMode: input.permissionMode ?? 'acceptEdits',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
 
     return this.getSchedule(id)!;
   }
@@ -104,21 +103,14 @@ export class PulseStore {
     if (input.permissionMode !== undefined) updates.permissionMode = input.permissionMode;
     if (input.status !== undefined) updates.status = input.status;
 
-    this.db
-      .update(pulseSchedules)
-      .set(updates)
-      .where(eq(pulseSchedules.id, id))
-      .run();
+    this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
     return this.getSchedule(id);
   }
 
   /** Delete a schedule by ID. Returns true if found and deleted. */
   deleteSchedule(id: string): boolean {
-    const result = this.db
-      .delete(pulseSchedules)
-      .where(eq(pulseSchedules.id, id))
-      .run();
+    const result = this.db.delete(pulseSchedules).where(eq(pulseSchedules.id, id)).run();
     return result.changes > 0;
   }
 
@@ -129,14 +121,17 @@ export class PulseStore {
     const id = ulid();
     const now = new Date().toISOString();
 
-    this.db.insert(pulseRuns).values({
-      id,
-      scheduleId,
-      status: 'running',
-      startedAt: now,
-      trigger,
-      createdAt: now,
-    }).run();
+    this.db
+      .insert(pulseRuns)
+      .values({
+        id,
+        scheduleId,
+        status: 'running',
+        startedAt: now,
+        trigger,
+        createdAt: now,
+      })
+      .run();
 
     return this.getRun(id)!;
   }
@@ -164,11 +159,7 @@ export class PulseStore {
 
   /** Get a single run by ID. */
   getRun(id: string): PulseRun | null {
-    const row = this.db
-      .select()
-      .from(pulseRuns)
-      .where(eq(pulseRuns.id, id))
-      .get();
+    const row = this.db.select().from(pulseRuns).where(eq(pulseRuns.id, id)).get();
     return row ? mapRunRow(row) : null;
   }
 
@@ -182,7 +173,9 @@ export class PulseStore {
       conditions.push(eq(pulseRuns.scheduleId, opts.scheduleId));
     }
     if (opts.status) {
-      conditions.push(eq(pulseRuns.status, opts.status as typeof pulseRuns.status.enumValues[number]));
+      conditions.push(
+        eq(pulseRuns.status, opts.status as (typeof pulseRuns.status.enumValues)[number])
+      );
     }
 
     const query = this.db
@@ -202,11 +195,7 @@ export class PulseStore {
 
   /** Get all currently running runs. */
   getRunningRuns(): PulseRun[] {
-    const rows = this.db
-      .select()
-      .from(pulseRuns)
-      .where(eq(pulseRuns.status, 'running'))
-      .all();
+    const rows = this.db.select().from(pulseRuns).where(eq(pulseRuns.status, 'running')).all();
     return rows.map(mapRunRow);
   }
 
@@ -220,10 +209,7 @@ export class PulseStore {
         .get();
       return result?.count ?? 0;
     }
-    const result = this.db
-      .select({ count: count() })
-      .from(pulseRuns)
-      .get();
+    const result = this.db.select({ count: count() }).from(pulseRuns).get();
     return result?.count ?? 0;
   }
 
@@ -242,10 +228,7 @@ export class PulseStore {
 
     if (keeperIds.length === 0) {
       // Delete all runs for this schedule
-      const result = this.db
-        .delete(pulseRuns)
-        .where(eq(pulseRuns.scheduleId, scheduleId))
-        .run();
+      const result = this.db.delete(pulseRuns).where(eq(pulseRuns.scheduleId, scheduleId)).run();
       return result.changes;
     }
 
@@ -295,7 +278,6 @@ export class PulseStore {
   close(): void {
     logger.debug('PulseStore: close() called (no-op — db lifecycle managed externally)');
   }
-
 }
 
 /** Convert a Drizzle schedule row to a PulseSchedule object. */

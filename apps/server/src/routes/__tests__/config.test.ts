@@ -84,10 +84,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('returns 200 for empty object body (no-op)', async () => {
-    const response = await request(app)
-      .patch('/api/config')
-      .send({})
-      .expect(200);
+    const response = await request(app).patch('/api/config').send({}).expect(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.config.server.port).toBe(4242);

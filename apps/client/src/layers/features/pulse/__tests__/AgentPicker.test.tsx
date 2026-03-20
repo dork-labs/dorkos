@@ -8,16 +8,27 @@ import { AgentPicker } from '../ui/AgentPicker';
 const MOCK_AGENTS = [
   { id: 'agent-1', name: 'api-bot', projectPath: '/projects/api', icon: '🤖', color: '#6366f1' },
   { id: 'agent-2', name: 'test-bot', projectPath: '/projects/test', icon: '🧪', color: '#22c55e' },
-  { id: 'agent-3', name: 'docs-writer', projectPath: '/projects/docs', icon: '📝', color: '#f59e0b' },
+  {
+    id: 'agent-3',
+    name: 'docs-writer',
+    projectPath: '/projects/docs',
+    icon: '📝',
+    color: '#f59e0b',
+  },
 ];
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: false, media: query, onchange: null,
-      addListener: vi.fn(), removeListener: vi.fn(),
-      addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
     })),
   });
   // cmdk uses ResizeObserver and scrollIntoView internally

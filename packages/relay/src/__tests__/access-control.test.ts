@@ -29,7 +29,7 @@ function makeRule(
   from: string,
   to: string,
   action: 'allow' | 'deny',
-  priority: number,
+  priority: number
 ): RelayAccessRule {
   return { from, to, action, priority };
 }
@@ -60,7 +60,10 @@ describe('AccessControl', () => {
     it('allows all communication when no rules exist', () => {
       acl = new AccessControl(tmpDir);
 
-      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend');
+      const result = acl.checkAccess(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectB.frontend'
+      );
 
       expect(result.allowed).toBe(true);
       expect(result.matchedRule).toBeUndefined();
@@ -73,7 +76,10 @@ describe('AccessControl', () => {
       acl = new AccessControl(tmpDir);
 
       // These subjects don't match the deny rule
-      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend');
+      const result = acl.checkAccess(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectB.frontend'
+      );
 
       expect(result.allowed).toBe(true);
       expect(result.matchedRule).toBeUndefined();
@@ -86,22 +92,33 @@ describe('AccessControl', () => {
 
   describe('allow rules', () => {
     it('permits communication when an allow rule matches', () => {
-      const rule = makeRule('relay.agent.projectA.backend', 'relay.agent.projectA.frontend', 'allow', 10);
+      const rule = makeRule(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectA.frontend',
+        'allow',
+        10
+      );
       writeRulesFile(tmpDir, [rule]);
       acl = new AccessControl(tmpDir);
 
-      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectA.frontend');
+      const result = acl.checkAccess(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectA.frontend'
+      );
 
       expect(result.allowed).toBe(true);
       expect(result.matchedRule).toEqual(rule);
     });
 
     it('returns the matched allow rule in the result', () => {
-      const rule = makeRule('relay.agent.>',  'relay.agent.>', 'allow', 5);
+      const rule = makeRule('relay.agent.>', 'relay.agent.>', 'allow', 5);
       writeRulesFile(tmpDir, [rule]);
       acl = new AccessControl(tmpDir);
 
-      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend');
+      const result = acl.checkAccess(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectB.frontend'
+      );
 
       expect(result.matchedRule).toEqual(rule);
     });
@@ -117,7 +134,10 @@ describe('AccessControl', () => {
       writeRulesFile(tmpDir, [rule]);
       acl = new AccessControl(tmpDir);
 
-      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend');
+      const result = acl.checkAccess(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectB.frontend'
+      );
 
       expect(result.allowed).toBe(false);
       expect(result.matchedRule).toEqual(rule);
@@ -148,7 +168,10 @@ describe('AccessControl', () => {
       acl = new AccessControl(tmpDir);
 
       // The allow rule (priority 10) should win over deny (priority 5)
-      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend');
+      const result = acl.checkAccess(
+        'relay.agent.projectA.backend',
+        'relay.agent.projectB.frontend'
+      );
 
       expect(result.allowed).toBe(true);
       expect(result.matchedRule).toEqual(allowRule);
@@ -193,8 +216,12 @@ describe('AccessControl', () => {
       writeRulesFile(tmpDir, [rule]);
       acl = new AccessControl(tmpDir);
 
-      expect(acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed).toBe(false);
-      expect(acl.checkAccess('relay.agent.projectZ.backend', 'relay.agent.projectB.frontend').allowed).toBe(false);
+      expect(
+        acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed
+      ).toBe(false);
+      expect(
+        acl.checkAccess('relay.agent.projectZ.backend', 'relay.agent.projectB.frontend').allowed
+      ).toBe(false);
     });
 
     it('single wildcard (*) does not match multiple tokens', () => {
@@ -203,7 +230,9 @@ describe('AccessControl', () => {
       acl = new AccessControl(tmpDir);
 
       // relay.agent.projectA.backend has two tokens after relay.agent, * only matches one
-      expect(acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed).toBe(true);
+      expect(
+        acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed
+      ).toBe(true);
     });
 
     it('multi-wildcard (>) matches one or more tokens in to', () => {
@@ -212,7 +241,9 @@ describe('AccessControl', () => {
       acl = new AccessControl(tmpDir);
 
       expect(acl.checkAccess('relay.agent.sender', 'relay.agent.any').allowed).toBe(false);
-      expect(acl.checkAccess('relay.agent.sender', 'relay.agent.deep.nested.path').allowed).toBe(false);
+      expect(acl.checkAccess('relay.agent.sender', 'relay.agent.deep.nested.path').allowed).toBe(
+        false
+      );
     });
 
     it('wildcards work in both from and to simultaneously', () => {
@@ -220,8 +251,12 @@ describe('AccessControl', () => {
       writeRulesFile(tmpDir, [rule]);
       acl = new AccessControl(tmpDir);
 
-      expect(acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed).toBe(false);
-      expect(acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.any.nested.path').allowed).toBe(false);
+      expect(
+        acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.projectB.frontend').allowed
+      ).toBe(false);
+      expect(
+        acl.checkAccess('relay.agent.projectA.backend', 'relay.agent.any.nested.path').allowed
+      ).toBe(false);
     });
   });
 

@@ -61,6 +61,7 @@ Kai thinks: "I pay for the most powerful AI coding agent available. And it only 
 ## How Kai Talks (Language Patterns)
 
 When describing the problem to a friend:
+
 - "My agents just sit there doing nothing when I'm asleep"
 - "I'm the bottleneck for my own AI tools"
 - "I could have caught this at 2am if the agent was running"
@@ -69,6 +70,7 @@ When describing the problem to a friend:
 - "Ship it" / "Does it ship?"
 
 When excited about a tool:
+
 - "This just works"
 - "I woke up to three merged PRs"
 - "It runs while I sleep — that's the whole point"

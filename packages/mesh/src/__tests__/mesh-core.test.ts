@@ -159,7 +159,7 @@ describe('upsertAutoImported()', () => {
     const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     // First discover — auto-imports V1
-     
+
     await collectCandidates(mesh.discover([projects])); // drain
     let agents = mesh.list();
     expect(agents.some((a) => a.name === 'V1')).toBe(true);
@@ -169,7 +169,7 @@ describe('upsertAutoImported()', () => {
     await writeManifest(agentDir, manifestV2);
 
     // Second discover — should sync V2 into DB
-     
+
     await collectCandidates(mesh.discover([projects])); // drain
     agents = mesh.list();
     expect(agents.some((a) => a.name === 'V2')).toBe(true);
@@ -190,7 +190,7 @@ describe('upsertAutoImported()', () => {
     const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     // First discover — auto-imports at old path
-     
+
     await collectCandidates(mesh.discover([projects])); // drain
     expect(mesh.list()).toHaveLength(1);
 
@@ -202,7 +202,7 @@ describe('upsertAutoImported()', () => {
     await fs.rm(path.join(oldDir, '.dork'), { recursive: true, force: true });
 
     // Second discover — should update path via upsert
-     
+
     await collectCandidates(mesh.discover([projects])); // drain
     const agents = mesh.list();
     expect(agents).toHaveLength(1);
@@ -570,7 +570,10 @@ describe('namespace wiring', () => {
       defaultScanRoot: scanRoot,
     });
 
-    const manifestA = await mesh.registerByPath(projectA, { name: 'agent-a', runtime: 'claude-code' });
+    const manifestA = await mesh.registerByPath(projectA, {
+      name: 'agent-a',
+      runtime: 'claude-code',
+    });
     await mesh.registerByPath(projectB, { name: 'agent-b', runtime: 'claude-code' });
 
     await mesh.unregister(manifestA.id);
@@ -663,7 +666,9 @@ describe('register() compensation', () => {
     const candidate = candidates.find((c) => c.path === projectA);
     expect(candidate).toBeDefined();
 
-    const removeManifestSpy = vi.spyOn(manifestModule, 'removeManifest').mockResolvedValue(undefined);
+    const removeManifestSpy = vi
+      .spyOn(manifestModule, 'removeManifest')
+      .mockResolvedValue(undefined);
 
     await expect(mesh.register(candidate!)).rejects.toThrow('Relay error');
     expect(removeManifestSpy).toHaveBeenCalledWith(candidate!.path);
@@ -714,10 +719,12 @@ describe('registerByPath() compensation', () => {
 
     const mesh = new MeshCore({ db, relayCore: mockRelayCore as never, defaultScanRoot: base });
 
-    const removeManifestSpy = vi.spyOn(manifestModule, 'removeManifest').mockResolvedValue(undefined);
+    const removeManifestSpy = vi
+      .spyOn(manifestModule, 'removeManifest')
+      .mockResolvedValue(undefined);
 
     await expect(
-      mesh.registerByPath(projectDir, { name: 'failing-agent', runtime: 'claude-code' }),
+      mesh.registerByPath(projectDir, { name: 'failing-agent', runtime: 'claude-code' })
     ).rejects.toThrow('Relay error');
 
     expect(removeManifestSpy).toHaveBeenCalledWith(projectDir);
@@ -744,7 +751,7 @@ describe('registerByPath() compensation', () => {
     const registryRemoveSpy = vi.spyOn(AgentRegistry.prototype, 'remove');
 
     await expect(
-      mesh.registerByPath(projectDir, { name: 'failing-agent', runtime: 'claude-code' }),
+      mesh.registerByPath(projectDir, { name: 'failing-agent', runtime: 'claude-code' })
     ).rejects.toThrow('Relay error');
 
     expect(registryRemoveSpy).toHaveBeenCalled();
@@ -939,7 +946,10 @@ describe('reconciliation', () => {
     vi.useFakeTimers();
 
     const spy = vi.spyOn(reconcilerModule, 'reconcile').mockResolvedValue({
-      synced: 0, unreachable: 0, removed: 0, discovered: 0,
+      synced: 0,
+      unreachable: 0,
+      removed: 0,
+      discovered: 0,
     });
 
     mesh.startPeriodicReconciliation(1000);
@@ -1118,7 +1128,9 @@ describe('onUnregister callbacks', () => {
       runtime: 'claude-code',
     });
 
-    const failingCb = vi.fn(() => { throw new Error('callback boom'); });
+    const failingCb = vi.fn(() => {
+      throw new Error('callback boom');
+    });
     const successCb = vi.fn();
     mesh.onUnregister(failingCb);
     mesh.onUnregister(successCb);

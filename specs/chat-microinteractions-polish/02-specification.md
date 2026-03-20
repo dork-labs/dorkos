@@ -52,12 +52,12 @@ These are not noticeable individually, but compound into a perception that the U
 
 ## Technical Dependencies
 
-| Dependency | Version | Already present |
-|---|---|---|
-| `motion` (motion.dev) | v12 | Yes — `package.json` |
-| `AnimatePresence`, `motion`, `MotionConfig`, `layoutId` | — | Yes — used in `App.tsx`, `ChatPanel.tsx`, `SessionItem.tsx` |
-| React | 19 | Yes |
-| Tailwind CSS | v4 | Yes |
+| Dependency                                              | Version | Already present                                             |
+| ------------------------------------------------------- | ------- | ----------------------------------------------------------- |
+| `motion` (motion.dev)                                   | v12     | Yes — `package.json`                                        |
+| `AnimatePresence`, `motion`, `MotionConfig`, `layoutId` | —       | Yes — used in `App.tsx`, `ChatPanel.tsx`, `SessionItem.tsx` |
+| React                                                   | 19      | Yes                                                         |
+| Tailwind CSS                                            | v4      | Yes                                                         |
 
 ## Detailed Design
 
@@ -123,16 +123,18 @@ These are not noticeable individually, but compound into a perception that the U
 
 ```tsx
 // Remove from className:
-isActive ? 'bg-secondary text-foreground ...' : 'hover:bg-secondary/50 ...'
+isActive ? 'bg-secondary text-foreground ...' : 'hover:bg-secondary/50 ...';
 
 // Add inside the Wrapper div (before all other children, z-index below content):
-{isActive && (
-  <motion.div
-    layoutId="active-session-bg"
-    className="absolute inset-0 rounded-lg bg-secondary"
-    transition={{ type: 'spring', stiffness: 280, damping: 32 }}
-  />
-)}
+{
+  isActive && (
+    <motion.div
+      layoutId="active-session-bg"
+      className="bg-secondary absolute inset-0 rounded-lg"
+      transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+    />
+  );
+}
 ```
 
 The `Wrapper` div needs `position: relative` (add `relative` to its `className`) and `z-index` context so the absolute `motion.div` sits behind the text content. All existing children need `relative z-10` or equivalent to stay above the sliding background.
@@ -203,6 +205,7 @@ Under `prefers-reduced-motion`, `MotionConfig reducedMotion="user"` collapses `s
 ```
 
 Three changes:
+
 1. `scale: isUser ? 0.97 : 1` — role-gated initial scale. Only user messages start compressed. Assistant messages retain the same behavior as before (no scale).
 2. `animate={{ ..., scale: 1 }}` — explicit target for the spring to settle at.
 3. `transition` upgraded from `{ duration, ease }` to `{ type: 'spring', stiffness: 320, damping: 28 }`. Spring preset: snappy with no bounce.
@@ -241,12 +244,12 @@ App.tsx
 
 ## Spring Preset Reference
 
-| Use case | Preset | Character |
-|---|---|---|
-| Message entry | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce |
-| Sidebar active indicator | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth slide |
-| Tap feedback | `{ type: 'spring', stiffness: 400, damping: 30 }` | Quick, already used for ToolCallCard chevron |
-| Session crossfade | `{ duration: 0.15, ease: 'easeInOut' }` | Linear opacity — intentional, not spring |
+| Use case                 | Preset                                            | Character                                    |
+| ------------------------ | ------------------------------------------------- | -------------------------------------------- |
+| Message entry            | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce                            |
+| Sidebar active indicator | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth slide                                 |
+| Tap feedback             | `{ type: 'spring', stiffness: 400, damping: 30 }` | Quick, already used for ToolCallCard chevron |
+| Session crossfade        | `{ duration: 0.15, ease: 'easeInOut' }`           | Linear opacity — intentional, not spring     |
 
 ## User Experience
 
@@ -273,18 +276,21 @@ No test infrastructure changes required.
 ### Unit Tests
 
 **`SessionItem.test.tsx`** — verify:
+
 - Active session renders `data-testid="session-item"` with appropriate accessible state
 - The `layoutId` `motion.div` renders when `isActive={true}` and is absent when `isActive={false}`
 - `onClick` callback fires when the clickable surface is clicked
 - `isNew` entrance animation renders (mock confirms `initial` prop is set)
 
 **`MessageItem.test.tsx`** — verify:
+
 - New user message has `initial` prop containing `scale: 0.97`
 - New assistant message has `initial` prop with `scale: 1` (or scale absent)
 - History messages have `initial={false}`
 - `transition` prop uses spring config (verify `type: 'spring'` is set for `isNew` cases)
 
 **`App.test.tsx` or integration** — verify:
+
 - `AnimatePresence` renders around the session-keyed area
 - Switching `activeSessionId` re-renders the motion wrapper with the new key
 

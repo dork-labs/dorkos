@@ -49,26 +49,28 @@ status: specification
 
 ### File Size Violations
 
-| File | Lines | Limit | Status |
-|------|-------|-------|--------|
-| `adapters/slack/outbound.ts` | 975 | 500 | **Must split** — nearly 2x hard limit |
-| `apps/server/src/services/relay/adapter-manager.ts` | 590 | 500 | **Must split** |
-| `sqlite-index.ts` | 466 | 300-500 | Should split |
-| `maildir-store.ts` | 457 | 300-500 | Should split |
-| `types.ts` | 445 | 300-500 | Should split |
-| `adapters/webhook/webhook-adapter.ts` | 458 | 300-500 | Should split or shrink via BaseRelayAdapter |
+| File                                                | Lines | Limit   | Status                                      |
+| --------------------------------------------------- | ----- | ------- | ------------------------------------------- |
+| `adapters/slack/outbound.ts`                        | 975   | 500     | **Must split** — nearly 2x hard limit       |
+| `apps/server/src/services/relay/adapter-manager.ts` | 590   | 500     | **Must split**                              |
+| `sqlite-index.ts`                                   | 466   | 300-500 | Should split                                |
+| `maildir-store.ts`                                  | 457   | 300-500 | Should split                                |
+| `types.ts`                                          | 445   | 300-500 | Should split                                |
+| `adapters/webhook/webhook-adapter.ts`               | 458   | 300-500 | Should split or shrink via BaseRelayAdapter |
 
 ### Module-Level Mutable State
 
 Both outbound modules use module-level `Map`s for state:
 
 **Telegram outbound (4 module-level Maps):**
+
 - `typingIntervals: Map<number, ReturnType<typeof setInterval>>`
 - `lastDraftUpdate: Map<number, number>`
 - `callbackIdMap: Map<string, { toolCallId, sessionId, agentId }>`
 - `pendingApprovalTimeouts: Map<string, ReturnType<typeof setTimeout>>`
 
 **Slack outbound (1 module-level Map):**
+
 - `pendingApprovalTimeouts: Map<string, { timer, channelId, messageTs, client }>`
 
 Problem: `multiInstance: true` means multiple adapter instances share this global state. Approving a button on one bot's message could affect another instance. State persists across adapter stop/start cycles.
@@ -90,22 +92,23 @@ Problem: `multiInstance: true` means multiple adapter instances share this globa
 
 **Primary Components/Modules:**
 
-| File | Lines | Role |
-|------|-------|------|
-| `packages/relay/src/types.ts` | 445 | All relay types, adapter interfaces, config re-exports |
-| `packages/relay/src/base-adapter.ts` | 241 | Optional abstract base class for adapters |
-| `packages/relay/src/lib/payload-utils.ts` | 191 | Shared payload extraction, stream event detection, format conversion |
-| `packages/relay/src/adapters/telegram/telegram-adapter.ts` | 288 | Telegram adapter facade |
-| `packages/relay/src/adapters/telegram/inbound.ts` | 176 | Telegram inbound message handling |
-| `packages/relay/src/adapters/telegram/outbound.ts` | 438 | Telegram outbound delivery + streaming + approvals |
-| `packages/relay/src/adapters/slack/slack-adapter.ts` | 429 | Slack adapter facade |
-| `packages/relay/src/adapters/slack/inbound.ts` | 308 | Slack inbound message handling + TTL cache |
-| `packages/relay/src/adapters/slack/outbound.ts` | 975 | Slack outbound delivery + streaming + approvals |
-| `packages/relay/src/adapters/webhook/webhook-adapter.ts` | 458 | Webhook adapter (monolithic, no BaseRelayAdapter) |
-| `packages/relay/src/adapters/claude-code/claude-code-adapter.ts` | 269 | Claude Code adapter |
-| `apps/server/src/services/relay/adapter-manager.ts` | 590 | Server-side adapter lifecycle + binding subsystem init |
+| File                                                             | Lines | Role                                                                 |
+| ---------------------------------------------------------------- | ----- | -------------------------------------------------------------------- |
+| `packages/relay/src/types.ts`                                    | 445   | All relay types, adapter interfaces, config re-exports               |
+| `packages/relay/src/base-adapter.ts`                             | 241   | Optional abstract base class for adapters                            |
+| `packages/relay/src/lib/payload-utils.ts`                        | 191   | Shared payload extraction, stream event detection, format conversion |
+| `packages/relay/src/adapters/telegram/telegram-adapter.ts`       | 288   | Telegram adapter facade                                              |
+| `packages/relay/src/adapters/telegram/inbound.ts`                | 176   | Telegram inbound message handling                                    |
+| `packages/relay/src/adapters/telegram/outbound.ts`               | 438   | Telegram outbound delivery + streaming + approvals                   |
+| `packages/relay/src/adapters/slack/slack-adapter.ts`             | 429   | Slack adapter facade                                                 |
+| `packages/relay/src/adapters/slack/inbound.ts`                   | 308   | Slack inbound message handling + TTL cache                           |
+| `packages/relay/src/adapters/slack/outbound.ts`                  | 975   | Slack outbound delivery + streaming + approvals                      |
+| `packages/relay/src/adapters/webhook/webhook-adapter.ts`         | 458   | Webhook adapter (monolithic, no BaseRelayAdapter)                    |
+| `packages/relay/src/adapters/claude-code/claude-code-adapter.ts` | 269   | Claude Code adapter                                                  |
+| `apps/server/src/services/relay/adapter-manager.ts`              | 590   | Server-side adapter lifecycle + binding subsystem init               |
 
 **Dependency graph for changes:**
+
 ```
 lib/payload-utils.ts          ← shared extraction, will gain envelope helpers
   ↑
@@ -131,6 +134,7 @@ adapter-manager.ts (server)   ← will extract binding subsystem init
 **After:** Shared utilities eliminate duplicated code, files comply with size rules, state is instance-scoped, Telegram users see formatted text, streaming APIs have typed wrappers.
 
 **Value delivered:**
+
 - **Developer safety**: Instance-scoped state prevents cross-adapter bugs when `multiInstance: true`
 - **Maintainability**: Changes to approval handling, streaming, or format conversion happen in one place
 - **User experience**: Telegram users get formatted markdown instead of raw markers
@@ -141,6 +145,7 @@ adapter-manager.ts (server)   ← will extract binding subsystem init
 ### P0 — Must Fix (DRY + Size)
 
 **5a. Split `slack/outbound.ts` (975 lines → 3 files)**
+
 - `outbound.ts` (~350 lines): Main `deliverMessage` router + helpers (`wrapSlackCall`, `addTypingReaction`, `removeTypingReaction`, `streamKey`, `resolveThreadTs`)
 - `stream.ts` (~350 lines): `handleTextDelta`, `handleDone`, `handleError`, `flushStreamBuffer`, `ActiveStream` type
 - `approval.ts` (~250 lines): `handleApprovalRequired`, `extractAgentIdFromEnvelope`, `extractSessionIdFromEnvelope`, approval timeout management
@@ -157,11 +162,13 @@ Add `protected makeInboundCallbacks()` and `protected makeOutboundCallbacks()` t
 ### P1 — Should Fix (Quality + Correctness)
 
 **5e. Move module-level mutable state into adapter instances**
+
 - Telegram: Move `typingIntervals`, `lastDraftUpdate`, `callbackIdMap`, `pendingApprovalTimeouts` into `TelegramAdapter` class, pass into `deliverMessage` via options
 - Slack: Move `pendingApprovalTimeouts` into `SlackAdapter` class, pass via options
 
 **5f. Type the streaming API wrappers**
 Create typed helper functions:
+
 - `telegram/streaming.ts`: `sendMessageDraft(bot, chatId, text)` — encapsulates the `as unknown` cast
 - `slack/streaming.ts`: `startStream(client, ...)`, `appendStream(client, ...)`, `stopStream(client, ...)` — encapsulates casts
 
@@ -181,13 +188,13 @@ Evaluate if a simple `Map` with periodic cleanup (already used in webhook's nonc
 
 ## 6) Unknowns & Risks
 
-| Risk | Mitigation |
-|------|------------|
-| Telegram MarkdownV2 escaping is notoriously finicky | Research existing libraries (e.g., `telegram-format`). Use `slackify-markdown` as a model — it's already a dep. Consider a lightweight `telegramify-markdown` or inline implementation. |
-| Slack native streaming API types may not exist in `@slack/web-api` yet | The typed wrapper approach isolates the cast to one file. When official types arrive, update one file instead of every call site. |
-| Moving module-level state changes function signatures | State container pattern keeps the same function signatures — pass a state object via options instead of individual Maps. |
-| `WebhookAdapter` extending `BaseRelayAdapter` changes its `handleInbound` pattern | `handleInbound` is a public method not on the `RelayAdapter` interface — it's called by Express routes. BaseRelayAdapter doesn't affect it. |
-| Split of `slack/outbound.ts` changes import paths | All imports are internal to the slack adapter directory. The `slack/index.ts` barrel controls the public API — no external import changes. |
+| Risk                                                                              | Mitigation                                                                                                                                                                              |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telegram MarkdownV2 escaping is notoriously finicky                               | Research existing libraries (e.g., `telegram-format`). Use `slackify-markdown` as a model — it's already a dep. Consider a lightweight `telegramify-markdown` or inline implementation. |
+| Slack native streaming API types may not exist in `@slack/web-api` yet            | The typed wrapper approach isolates the cast to one file. When official types arrive, update one file instead of every call site.                                                       |
+| Moving module-level state changes function signatures                             | State container pattern keeps the same function signatures — pass a state object via options instead of individual Maps.                                                                |
+| `WebhookAdapter` extending `BaseRelayAdapter` changes its `handleInbound` pattern | `handleInbound` is a public method not on the `RelayAdapter` interface — it's called by Express routes. BaseRelayAdapter doesn't affect it.                                             |
+| Split of `slack/outbound.ts` changes import paths                                 | All imports are internal to the slack adapter directory. The `slack/index.ts` barrel controls the public API — no external import changes.                                              |
 
 ## 7) Open Questions
 

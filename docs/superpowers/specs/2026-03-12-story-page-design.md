@@ -21,18 +21,18 @@ The vibe throughout: less obligation, more life. The technology is in service of
 
 ## Decisions Summary
 
-| Decision | Choice |
-|---|---|
-| URL | `/story` |
-| Scroll mode | Dual: continuous scroll normally, `?present=true` for presentation snap |
-| Section 1 visualization | Dashboard cards that populate (8-card grid) |
-| Section 3 visualization | Equation reveal (X = Y, one at a time) |
-| Architecture | Extend `layers/features/marketing/` with new story sections |
-| Opening line | "What if the most powerful thing you could do with AI was get Thursday afternoon back?" |
-| Section 3 headline | "Platforms will just be prompts." |
-| Section 3 closer | "Code isn't the scarce thing anymore. Knowing what to ask -- and what to remember -- is." |
-| Section 4 top line | "Anyone has access to the same AI. Not everyone has thought hard about what they actually want." |
-| Section 4 close | "I built this so the machine could handle the obligations. So I could focus on the parts that are irreplaceable." |
+| Decision                | Choice                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| URL                     | `/story`                                                                                                          |
+| Scroll mode             | Dual: continuous scroll normally, `?present=true` for presentation snap                                           |
+| Section 1 visualization | Dashboard cards that populate (8-card grid)                                                                       |
+| Section 3 visualization | Equation reveal (X = Y, one at a time)                                                                            |
+| Architecture            | Extend `layers/features/marketing/` with new story sections                                                       |
+| Opening line            | "What if the most powerful thing you could do with AI was get Thursday afternoon back?"                           |
+| Section 3 headline      | "Platforms will just be prompts."                                                                                 |
+| Section 3 closer        | "Code isn't the scarce thing anymore. Knowing what to ask -- and what to remember -- is."                         |
+| Section 4 top line      | "Anyone has access to the same AI. Not everyone has thought hard about what they actually want."                  |
+| Section 4 close         | "I built this so the machine could handle the obligations. So I could focus on the parts that are irreplaceable." |
 
 ---
 
@@ -111,11 +111,12 @@ export const metadata: Metadata = {
     'How one person built an AI operating system for their whole life -- in two months of evenings.',
   openGraph: {
     title: 'The Story | DorkOS',
-    description: 'How one person built an AI operating system for their whole life -- in two months of evenings.',
+    description:
+      'How one person built an AI operating system for their whole life -- in two months of evenings.',
     url: '/story',
     type: 'website',
   },
-}
+};
 ```
 
 ---
@@ -123,16 +124,17 @@ export const metadata: Metadata = {
 ## Presentation Mode
 
 ### Activation
+
 `?present=true` query parameter. URL: `dorkos.ai/story?present=true`
 
 ### `use-presentation-mode.ts`
 
 ```ts
-'use client'
-import { useSearchParams } from 'next/navigation'
+'use client';
+import { useSearchParams } from 'next/navigation';
 export function usePresentationMode() {
-  const params = useSearchParams()
-  return params.get('present') === 'true'
+  const params = useSearchParams();
+  return params.get('present') === 'true';
 }
 ```
 
@@ -151,24 +153,24 @@ Client component. When presentation mode is active:
 ### Keyboard navigation implementation
 
 ```ts
-const sectionIds = ['morning', 'timeline', 'prompts', 'close']
+const sectionIds = ['morning', 'timeline', 'prompts', 'close'];
 // FutureVisionSection excluded from keyboard nav (page-only)
 
 useEffect(() => {
-  if (!isPresent) return
+  if (!isPresent) return;
   const handler = (e: KeyboardEvent) => {
     if (e.key === 'ArrowRight' || e.key === ' ') {
-      e.preventDefault()
-      scrollToSection(currentIndex + 1)
+      e.preventDefault();
+      scrollToSection(currentIndex + 1);
     }
     if (e.key === 'ArrowLeft') {
-      e.preventDefault()
-      scrollToSection(currentIndex - 1)
+      e.preventDefault();
+      scrollToSection(currentIndex - 1);
     }
-  }
-  window.addEventListener('keydown', handler)
-  return () => window.removeEventListener('keydown', handler)
-}, [isPresent, currentIndex])
+  };
+  window.addEventListener('keydown', handler);
+  return () => window.removeEventListener('keydown', handler);
+}, [isPresent, currentIndex]);
 ```
 
 Current section tracked via `IntersectionObserver` on each section element.
@@ -197,20 +199,20 @@ Current section tracked via `IntersectionObserver` on each section element.
 - **Subline:** "While you slept, the system ran." (warm-gray)
 - **Boot cards grid:** 4-column grid, 8 cards, staggered entrance animation
 
-| Card | Category color | Title | Detail |
-|---|---|---|---|
-| Health | orange border | Synced | HRV · sleep · steps |
-| Companies | blue | 4 loaded | tasks · projects |
-| ⚑ Overdue | orange border + orange text | 15 days | flagged for you |
-| Calendar | purple | 3 preps | meetings identified |
-| Family | blue border | Liam · Thu | therapy · brief outdated |
-| Energy | green | 4 dims | phys · mental · emo · spirit |
-| Coaching | orange | Fear check | priorities → 3 |
-| Output | warm-gray | Ready | calendar · habits · audio |
+| Card      | Category color              | Title      | Detail                       |
+| --------- | --------------------------- | ---------- | ---------------------------- |
+| Health    | orange border               | Synced     | HRV · sleep · steps          |
+| Companies | blue                        | 4 loaded   | tasks · projects             |
+| ⚑ Overdue | orange border + orange text | 15 days    | flagged for you              |
+| Calendar  | purple                      | 3 preps    | meetings identified          |
+| Family    | blue border                 | Liam · Thu | therapy · brief outdated     |
+| Energy    | green                       | 4 dims     | phys · mental · emo · spirit |
+| Coaching  | orange                      | Fear check | priorities → 3               |
+| Output    | warm-gray                   | Ready      | calendar · habits · audio    |
 
 Cards animate in sequentially (staggered, ~80ms apart) using STAGGER + REVEAL.
 
-- **Landing line** (below border): *"This isn't ChatGPT. This is a personal operating system."* — italic, centered, cream-white
+- **Landing line** (below border): _"This isn't ChatGPT. This is a personal operating system."_ — italic, centered, cream-white
 
 ---
 
@@ -222,6 +224,7 @@ Cards animate in sequentially (staggered, ~80ms apart) using STAGGER + REVEAL.
 - **Timeline:** Vertical, 4 numbered steps
 
 Each step:
+
 ```
 [number circle]  PRODUCT -- DURATION (monospace, small, colored)
                  Description sentence (IBM Plex Sans, medium weight)
@@ -230,14 +233,14 @@ Each step:
 
 Steps:
 
-| # | Color | Label | Description | Ceiling |
-|---|---|---|---|---|
-| 1 | orange | LifeOS -- A weekend | Calendar, todos, journaling, coaching. Built for my life -- not for any company. | Needed to manage multiple AI projects at once. |
-| 2 | charcoal | DorkOS -- A few weeks | A command layer across all my agents. One place to run everything. | Still had to be awake for any of it to run. |
-| 3 | charcoal | Pulse -- A few weeks | Scheduled tasks. The system fires overnight. Texts briefings before I wake up. | Agents couldn't talk to each other. |
-| 4 | charcoal | Mesh -- A few weeks | Four companies, each with its own agent. They find each other and coordinate. | *(closing statement, no ceiling)* |
+| #   | Color    | Label                 | Description                                                                      | Ceiling                                        |
+| --- | -------- | --------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | orange   | LifeOS -- A weekend   | Calendar, todos, journaling, coaching. Built for my life -- not for any company. | Needed to manage multiple AI projects at once. |
+| 2   | charcoal | DorkOS -- A few weeks | A command layer across all my agents. One place to run everything.               | Still had to be awake for any of it to run.    |
+| 3   | charcoal | Pulse -- A few weeks  | Scheduled tasks. The system fires overnight. Texts briefings before I wake up.   | Agents couldn't talk to each other.            |
+| 4   | charcoal | Mesh -- A few weeks   | Four companies, each with its own agent. They find each other and coordinate.    | _(closing statement, no ceiling)_              |
 
-- **Footer:** *"Total calendar time from 'I want a to-do list' to 'my agents coordinate while I sleep' -- two months of evenings."* — italic, warm-gray, border-top
+- **Footer:** _"Total calendar time from 'I want a to-do list' to 'my agents coordinate while I sleep' -- two months of evenings."_ — italic, warm-gray, border-top
 
 ---
 
@@ -291,35 +294,137 @@ Left column: cream-white, monospace, right-aligned. `=` in orange. Right column:
 
 ```ts
 export const bootCards = [
-  { id: 'health', label: 'Health', value: 'Synced', detail: 'HRV · sleep · steps', color: 'orange', priority: 'high' },
-  { id: 'companies', label: 'Companies', value: '4 loaded', detail: 'tasks · projects', color: 'blue', priority: 'normal' },
-  { id: 'overdue', label: '⚑ Overdue', value: '15 days', detail: 'flagged for you', color: 'orange', priority: 'urgent' },
-  { id: 'calendar', label: 'Calendar', value: '3 preps', detail: 'meetings identified', color: 'purple', priority: 'normal' },
-  { id: 'family', label: 'Family', value: 'Liam · Thu', detail: 'therapy · brief outdated', color: 'blue', priority: 'high' },
-  { id: 'energy', label: 'Energy', value: '4 dims', detail: 'phys · mental · emo · spirit', color: 'green', priority: 'normal' },
-  { id: 'coaching', label: 'Coaching', value: 'Fear check', detail: 'priorities → 3', color: 'orange', priority: 'normal' },
-  { id: 'output', label: 'Output', value: 'Ready', detail: 'calendar · habits · audio', color: 'gray', priority: 'normal' },
-]
+  {
+    id: 'health',
+    label: 'Health',
+    value: 'Synced',
+    detail: 'HRV · sleep · steps',
+    color: 'orange',
+    priority: 'high',
+  },
+  {
+    id: 'companies',
+    label: 'Companies',
+    value: '4 loaded',
+    detail: 'tasks · projects',
+    color: 'blue',
+    priority: 'normal',
+  },
+  {
+    id: 'overdue',
+    label: '⚑ Overdue',
+    value: '15 days',
+    detail: 'flagged for you',
+    color: 'orange',
+    priority: 'urgent',
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    value: '3 preps',
+    detail: 'meetings identified',
+    color: 'purple',
+    priority: 'normal',
+  },
+  {
+    id: 'family',
+    label: 'Family',
+    value: 'Liam · Thu',
+    detail: 'therapy · brief outdated',
+    color: 'blue',
+    priority: 'high',
+  },
+  {
+    id: 'energy',
+    label: 'Energy',
+    value: '4 dims',
+    detail: 'phys · mental · emo · spirit',
+    color: 'green',
+    priority: 'normal',
+  },
+  {
+    id: 'coaching',
+    label: 'Coaching',
+    value: 'Fear check',
+    detail: 'priorities → 3',
+    color: 'orange',
+    priority: 'normal',
+  },
+  {
+    id: 'output',
+    label: 'Output',
+    value: 'Ready',
+    detail: 'calendar · habits · audio',
+    color: 'gray',
+    priority: 'normal',
+  },
+];
 
 export const evolutionSteps = [
-  { step: 1, product: 'LifeOS', duration: 'A weekend', description: 'Calendar, todos, journaling, coaching. Built for my life -- not for any company.', ceiling: 'Needed to manage multiple AI projects at once.', color: 'orange' },
-  { step: 2, product: 'DorkOS', duration: 'A few weeks', description: 'A command layer across all my agents. One place to run everything.', ceiling: 'Still had to be awake for any of it to run.', color: 'charcoal' },
-  { step: 3, product: 'Pulse', duration: 'A few weeks', description: 'Scheduled tasks. The system fires overnight. Texts briefings before I wake up.', ceiling: "Agents couldn't talk to each other.", color: 'charcoal' },
-  { step: 4, product: 'Mesh', duration: 'A few weeks', description: 'Four companies, each with its own agent. They find each other and coordinate.', ceiling: null, color: 'charcoal' },
-]
+  {
+    step: 1,
+    product: 'LifeOS',
+    duration: 'A weekend',
+    description: 'Calendar, todos, journaling, coaching. Built for my life -- not for any company.',
+    ceiling: 'Needed to manage multiple AI projects at once.',
+    color: 'orange',
+  },
+  {
+    step: 2,
+    product: 'DorkOS',
+    duration: 'A few weeks',
+    description: 'A command layer across all my agents. One place to run everything.',
+    ceiling: 'Still had to be awake for any of it to run.',
+    color: 'charcoal',
+  },
+  {
+    step: 3,
+    product: 'Pulse',
+    duration: 'A few weeks',
+    description: 'Scheduled tasks. The system fires overnight. Texts briefings before I wake up.',
+    ceiling: "Agents couldn't talk to each other.",
+    color: 'charcoal',
+  },
+  {
+    step: 4,
+    product: 'Mesh',
+    duration: 'A few weeks',
+    description: 'Four companies, each with its own agent. They find each other and coordinate.',
+    ceiling: null,
+    color: 'charcoal',
+  },
+];
 
 export const equationItems = [
   { lhs: '50+ skills', rhs: 'text files' },
   { lhs: '~100 coaching Qs', rhs: 'one markdown doc' },
   { lhs: 'board of advisors', rhs: 'configuration' },
   { lhs: 'automated hooks', rhs: 'small scripts' },
-]
+];
 
 export const futureCards = [
-  { id: 'autonomous', label: 'Autonomous', title: 'Agents that run', description: 'Pulse. Already shipping. Your agents work while you sleep.', color: 'orange' },
-  { id: 'connected', label: 'Connected', title: 'Agents that talk', description: 'Mesh. Agent-to-agent discovery and coordination across teams.', color: 'blue' },
-  { id: 'commerce', label: 'Commerce', title: 'Agents that transact', description: 'HTTP 402. Agents negotiate, purchase, settle. The economy reshapes.', color: 'green' },
-]
+  {
+    id: 'autonomous',
+    label: 'Autonomous',
+    title: 'Agents that run',
+    description: 'Pulse. Already shipping. Your agents work while you sleep.',
+    color: 'orange',
+  },
+  {
+    id: 'connected',
+    label: 'Connected',
+    title: 'Agents that talk',
+    description: 'Mesh. Agent-to-agent discovery and coordination across teams.',
+    color: 'blue',
+  },
+  {
+    id: 'commerce',
+    label: 'Commerce',
+    title: 'Agents that transact',
+    description: 'HTTP 402. Agents negotiate, purchase, settle. The economy reshapes.',
+    color: 'green',
+  },
+];
 ```
 
 ---
@@ -334,6 +439,7 @@ All animations use existing `motion-variants.ts` exports:
 - `VIEWPORT` -- `{ once: true, amount: 0.2 }`
 
 Boot cards use a custom stagger delay per card index:
+
 ```tsx
 <motion.div
   variants={REVEAL}
@@ -379,6 +485,7 @@ A simple "back to home" link lives in the `MarketingFooter`.
 ## Success Criteria
 
 ### Presentation (today)
+
 - [ ] Page loads at `dorkos.ai/story?present=true`
 - [ ] Each section fills the viewport
 - [ ] Arrow keys / spacebar advance and retreat between sections
@@ -387,6 +494,7 @@ A simple "back to home" link lives in the `MarketingFooter`.
 - [ ] MarketingHeader hidden in present mode
 
 ### Permanent page
+
 - [ ] Feels native to dorkos.ai -- same typography, motion, color tokens
 - [ ] Tells the DorkOS origin story as a personal narrative
 - [ ] Works as a standalone page for first-time visitors

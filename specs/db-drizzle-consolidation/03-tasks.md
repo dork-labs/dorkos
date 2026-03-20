@@ -8,20 +8,21 @@
 
 ## Summary
 
-| Phase | Name | Tasks | Sizes |
-|-------|------|-------|-------|
-| 1 | Foundation — packages/db | 5 | 2S, 3M |
-| 2 | Migrate Pulse | 3 | 1S, 1M, 1L |
-| 3 | Migrate Relay | 3 | 1M, 1L, 1M |
-| 4 | Migrate Mesh | 4 | 1S, 1L, 2M |
-| 5 | CLI Bundle and Cleanup | 3 | 2S, 1M |
-| **Total** | | **18** | **5S, 8M, 3L** |
+| Phase     | Name                     | Tasks  | Sizes          |
+| --------- | ------------------------ | ------ | -------------- |
+| 1         | Foundation — packages/db | 5      | 2S, 3M         |
+| 2         | Migrate Pulse            | 3      | 1S, 1M, 1L     |
+| 3         | Migrate Relay            | 3      | 1M, 1L, 1M     |
+| 4         | Migrate Mesh             | 4      | 1S, 1L, 2M     |
+| 5         | CLI Bundle and Cleanup   | 3      | 2S, 1M         |
+| **Total** |                          | **18** | **5S, 8M, 3L** |
 
 ---
 
 ## Phase 1 — Foundation (`packages/db`)
 
 ### 1.1 Scaffold packages/db workspace package (S)
+
 - Create `package.json` with `@dorkos/db` name, JIT exports, scripts (`db:generate`, `db:check`, `typecheck`)
 - Create `tsconfig.json` extending `@dorkos/typescript-config/base`
 - Create `drizzle.config.ts` with sqlite dialect and better-sqlite3 driver
@@ -29,6 +30,7 @@
 - Run `pnpm install` to link the new workspace
 
 ### 1.2 Define Drizzle schema files for all tables (M)
+
 **Depends on:** 1.1
 
 - Create `schema/pulse.ts` — `pulse_schedules` and `pulse_runs` tables
@@ -44,6 +46,7 @@
   - pulse_runs renames `output_summary` to `output`
 
 ### 1.3 Implement createDb, runMigrations, and generate initial migration (M)
+
 **Depends on:** 1.2
 
 - Create `src/index.ts` with `createDb()` (WAL, FK ON, 5s busy timeout) and `runMigrations()`
@@ -52,6 +55,7 @@
 - Commit `drizzle/` directory to git
 
 ### 1.4 Write migration smoke tests and createTestDb helper (M)
+
 **Depends on:** 1.3
 
 - Create `packages/db/src/__tests__/migrations.test.ts` (all 7 tables created, idempotent, FK enforced)
@@ -59,6 +63,7 @@
 - Re-export from `packages/test-utils/src/index.ts`
 
 ### 1.5 Install lefthook and configure pre-commit migration enforcement (S)
+
 **Depends on:** 1.3 | **Parallel with:** 1.4
 
 - Install `lefthook` as root devDependency
@@ -71,6 +76,7 @@
 ## Phase 2 — Migrate Pulse
 
 ### 2.1 Wire createDb and runMigrations into server startup (S)
+
 **Depends on:** 1.3
 
 - Add `@dorkos/db` dependency to `apps/server/package.json`
@@ -79,6 +85,7 @@
 - Verify `~/.dork/dork.db` is created on first server start
 
 ### 2.2 Rewrite PulseStore to use Drizzle ORM (L)
+
 **Depends on:** 2.1
 
 - Change constructor: `PulseStore(dorkHome: string)` → `PulseStore(db: Db)`
@@ -88,6 +95,7 @@
 - Update server `index.ts` to pass `db` to `new PulseStore(db)`
 
 ### 2.3 Update Pulse tests to use createTestDb (M)
+
 **Depends on:** 2.2, 1.4
 
 - Replace tmpdir-based test setup with `createTestDb()`
@@ -100,6 +108,7 @@
 ## Phase 3 — Migrate Relay
 
 ### 3.1 Rewrite SqliteIndex to use Drizzle ORM (L)
+
 **Depends on:** 2.1
 
 - Add `@dorkos/db` dependency to `packages/relay/package.json`
@@ -111,6 +120,7 @@
 - Update `RelayCore` to pass `db` to SqliteIndex
 
 ### 3.2 Rewrite TraceStore to use Drizzle ORM (M)
+
 **Depends on:** 2.1 | **Parallel with:** 3.1
 
 - Change constructor: `TraceStore(options)` → `TraceStore(db: Db)`
@@ -120,6 +130,7 @@
 - Update server `index.ts` to pass `db` to TraceStore
 
 ### 3.3 Update Relay tests and add anti-regression tests (M)
+
 **Depends on:** 3.1, 3.2, 1.4
 
 - Replace tmpdir-based test setup with `createTestDb()`
@@ -132,6 +143,7 @@
 ## Phase 4 — Migrate Mesh
 
 ### 4.1 Extract computeHealthStatus to portable TypeScript helper (S)
+
 **Depends on:** none | **Parallel with:** 3.1, 3.2, 2.2
 
 - Create `packages/mesh/src/health.ts` with pure TypeScript health computation
@@ -140,6 +152,7 @@
 - Full boundary condition tests with `vi.useFakeTimers()`
 
 ### 4.2 Rewrite AgentRegistry to use Drizzle ORM (L)
+
 **Depends on:** 4.1, 2.1
 
 - Add `@dorkos/db` dependency to `packages/mesh/package.json`
@@ -151,6 +164,7 @@
 - Use `computeHealthStatus()` instead of `julianday()` SQL
 
 ### 4.3 Rewrite DenialList and BudgetMapper to use Drizzle ORM (M)
+
 **Depends on:** 4.2
 
 - DenialList: `Database.Database` → `Db`, remove migration, Drizzle queries
@@ -159,6 +173,7 @@
 - Update server `index.ts` MeshCore instantiation
 
 ### 4.4 Update Mesh tests and add anti-regression tests (M)
+
 **Depends on:** 4.3, 1.4
 
 - Replace tmpdir/raw DB test setup with `createTestDb()`
@@ -171,6 +186,7 @@
 ## Phase 5 — CLI Bundle and Cleanup
 
 ### 5.1 Add Drizzle migration copy step to CLI build script (S)
+
 **Depends on:** 2.2, 3.1, 3.2, 4.3 | **Parallel with:** 5.2
 
 - Add `cpSync` to copy `packages/db/drizzle/` → `dist/drizzle/` after server bundle
@@ -179,6 +195,7 @@
 - Test CLI locally: verify `~/.dork/dork.db` created on first run
 
 ### 5.2 Clean up dependency tree (S)
+
 **Depends on:** 3.1, 3.2, 4.3 | **Parallel with:** 5.1
 
 - Remove `better-sqlite3` and `@types/better-sqlite3` from `packages/relay` and `packages/mesh`
@@ -188,6 +205,7 @@
 - Grep for zero remaining `PRAGMA user_version` in relay/mesh/pulse
 
 ### 5.3 Run full test suite and verify end-to-end (M)
+
 **Depends on:** 5.1, 5.2, 2.3, 3.3, 4.4
 
 - `pnpm test -- --run` — all tests pass
@@ -216,10 +234,10 @@
 
 ## Checkpoints
 
-| After Phase | Verification |
-|-------------|-------------|
-| 1 | `pnpm --filter=@dorkos/db run typecheck` passes. Migration SQL exists. Smoke tests pass. |
-| 2 | `pnpm test` passes for server. Pulse schedules stored in `dork.db`. |
-| 3 | `pnpm test` passes for relay. Relay SSE stream works in dev. |
-| 4 | `pnpm test` passes for mesh. Agent registration/discovery works in dev. |
-| 5 | CLI builds and starts. Full test suite passes. Single `dork.db` with no old DB references. |
+| After Phase | Verification                                                                               |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| 1           | `pnpm --filter=@dorkos/db run typecheck` passes. Migration SQL exists. Smoke tests pass.   |
+| 2           | `pnpm test` passes for server. Pulse schedules stored in `dork.db`.                        |
+| 3           | `pnpm test` passes for relay. Relay SSE stream works in dev.                               |
+| 4           | `pnpm test` passes for mesh. Agent registration/discovery works in dev.                    |
+| 5           | CLI builds and starts. Full test suite passes. Single `dork.db` with no old DB references. |

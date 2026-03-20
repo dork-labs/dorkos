@@ -1,9 +1,24 @@
 ---
-title: "Command Palette 10x Elevation — Preview Panels, Fuzzy Highlighting, Sub-menus, Animations, Smart Suggestions"
+title: 'Command Palette 10x Elevation — Preview Panels, Fuzzy Highlighting, Sub-menus, Animations, Smart Suggestions'
 date: 2026-03-03
 type: external-best-practices
 status: active
-tags: [command-palette, cmdk, shadcn, motion-dev, fuzzy-search, ufuzzy, fuse-js, frecency, sub-menu, preview-panel, animation, stagger, micro-interactions]
+tags:
+  [
+    command-palette,
+    cmdk,
+    shadcn,
+    motion-dev,
+    fuzzy-search,
+    ufuzzy,
+    fuse-js,
+    frecency,
+    sub-menu,
+    preview-panel,
+    animation,
+    stagger,
+    micro-interactions,
+  ]
 feature_slug: command-palette-10x
 searches_performed: 18
 sources_count: 32
@@ -13,7 +28,7 @@ sources_count: 32
 
 ## Prerequisite: Existing Research
 
-See `research/20260303_command_palette_agent_centric_ux.md` for the foundational patterns (cmdk API, Cmd+K binding, frecency basics, group structure, FSD placement). This report covers the *elevation* layer: the features that separate a good palette from a world-class one.
+See `research/20260303_command_palette_agent_centric_ux.md` for the foundational patterns (cmdk API, Cmd+K binding, frecency basics, group structure, FSD placement). This report covers the _elevation_ layer: the features that separate a good palette from a world-class one.
 
 ---
 
@@ -30,6 +45,7 @@ The five areas covered are: (1) preview/detail panels, (2) contextual smart sugg
 Raycast's most-copied pattern is the split-view: a command list on the left, a live detail/preview panel on the right. This is controlled by the `isShowingDetail` flag on the List component. In web implementations with cmdk, the equivalent is a flex-row container where `CommandList` takes ~40% width and a `PreviewPane` takes ~60%.
 
 Key Raycast design rules for the detail panel:
+
 - When the detail panel is visible, do not show accessories on list items — bring that info into the detail view only (avoids duplication).
 - The detail view renders markdown and structured metadata (labels, links, tags).
 - The panel appears/disappears via a toggle, not by navigating to a separate route.
@@ -41,15 +57,15 @@ For DorkOS agent items, the detail panel would show: agent name + color chip, CW
 
 Slack's Quick Switcher uses a bucket-based frecency system:
 
-| Time Window | Points |
-|---|---|
-| Past 4 hours | 100 |
-| Past day | 80 |
-| Past 3 days | 60 |
-| Past week | 40 |
-| Past month | 20 |
-| Past 90 days | 10 |
-| Beyond 90 days | 0 |
+| Time Window    | Points |
+| -------------- | ------ |
+| Past 4 hours   | 100    |
+| Past day       | 80     |
+| Past 3 days    | 60     |
+| Past week      | 40     |
+| Past month     | 20     |
+| Past 90 days   | 10     |
+| Beyond 90 days | 0      |
 
 **Scoring formula**: `Total Count * Bucket Score / min(visitCount, 10)`
 
@@ -58,6 +74,7 @@ The denominator caps at 10 timestamps. This elegantly handles "I visited this 10
 Slack also stores both query-based entries ("typed 'Hu'") and ID-based entries (target object ID), awarding half-points for ID matches to avoid overriding direct query patterns.
 
 For DorkOS, the zero-query state should show:
+
 - Top 5 agents by frecency score
 - Current agent pinned first (regardless of frecency)
 - 3-4 recently-used feature commands (Pulse, Relay, Mesh, Discover)
@@ -67,6 +84,7 @@ For DorkOS, the zero-query state should show:
 Three libraries compared:
 
 **uFuzzy** (`@leeoniya/ufuzzy`, 4kb):
+
 - Returns `info.ranges` — pairs of `[startIdx, endIdx]` character positions.
 - `uFuzzy.highlight(haystack[i], ranges[i], markFn)` generates highlighted output with character granularity.
 - Scoring bonuses for: consecutive matches, word boundary matches, prefix matches.
@@ -74,23 +92,27 @@ Three libraries compared:
 - Best for: developer tool palettes where input terms are precise (agent names, cwd paths, command names).
 
 **Fuse.js** (`fuse.js`, 24kb):
+
 - Returns match indices via `includeMatches: true` option. Each match has a `key`, `value`, and `indices` array of `[start, end]` pairs.
 - Supports typo-tolerance (Levenshtein distance, configurable threshold).
 - Scoring factors: location in string, length of match, distance from start.
 - Best for: content search where users may misspell queries.
 
 **cmdk's built-in filter**:
+
 - No match indices returned — cannot highlight matched characters.
 - Uses a simple scoring function: returns 0 (hidden) or a score between 0-1.
 - Very fast, zero dependencies.
 - Best for: basic palettes where highlighting is not required.
 
 **match-sorter** (`match-sorter`, 3kb):
+
 - Ranking tiers: `CASE_SENSITIVE_EQUAL`, `EQUAL`, `STARTS_WITH`, `WORD_STARTS_WITH`, `CONTAINS`, `ACRONYM`, `MATCHES`, `NO_MATCH`.
 - Does NOT return match indices. Pair with `highlight-matches-utils` for highlighting.
 - Best for: ranking where hierarchy matters (exact matches beat word-start matches beat substring matches).
 
 **Recommendation for DorkOS**: uFuzzy. Rationale:
+
 1. Agent names and cwd paths are precise terms — typo-tolerance isn't valuable.
 2. The `info.ranges` output gives character-level positions for React highlighting without innerHTML.
 3. 4kb vs Fuse.js's 24kb.
@@ -115,10 +137,7 @@ function highlightMatches(text: string, ranges: number[]): React.ReactNode[] {
       parts.push(<span key={`plain-${i}`}>{text.slice(lastIdx, start)}</span>);
     }
     parts.push(
-      <mark
-        key={`match-${i}`}
-        className="bg-transparent text-foreground font-semibold"
-      >
+      <mark key={`match-${i}`} className="text-foreground bg-transparent font-semibold">
         {text.slice(start, end)}
       </mark>
     );
@@ -136,12 +155,8 @@ function highlightMatches(text: string, ranges: number[]): React.ReactNode[] {
 function AgentResultItem({ agent, ranges }: { agent: Agent; ranges: number[] }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="font-medium">
-        {highlightMatches(agent.name, ranges)}
-      </span>
-      <span className="text-muted-foreground text-sm">
-        {agent.cwd}
-      </span>
+      <span className="font-medium">{highlightMatches(agent.name, ranges)}</span>
+      <span className="text-muted-foreground text-sm">{agent.cwd}</span>
     </div>
   );
 }
@@ -184,7 +199,7 @@ return (
 
     {/* Breadcrumb indicator */}
     {pages.length > 0 && (
-      <div className="px-3 py-1 text-xs text-muted-foreground border-b flex items-center gap-1">
+      <div className="text-muted-foreground flex items-center gap-1 border-b px-3 py-1 text-xs">
         <span>All</span>
         {pages.map((p, i) => (
           <span key={i}> / {p}</span>
@@ -196,10 +211,20 @@ return (
       {/* Root page */}
       {!page && (
         <>
-          <CommandItem onSelect={() => { setPages(['agent-actions']); setSearch(''); }}>
+          <CommandItem
+            onSelect={() => {
+              setPages(['agent-actions']);
+              setSearch('');
+            }}
+          >
             Agent Actions...
           </CommandItem>
-          <CommandItem onSelect={() => { setPages(['settings']); setSearch(''); }}>
+          <CommandItem
+            onSelect={() => {
+              setPages(['settings']);
+              setSearch('');
+            }}
+          >
             Settings...
           </CommandItem>
         </>
@@ -243,8 +268,8 @@ const listVariants = {
   hidden: {},
   visible: {
     transition: {
-      staggerChildren: 0.04,   // 40ms between each item
-      delayChildren: 0.05,     // 50ms before first item starts
+      staggerChildren: 0.04, // 40ms between each item
+      delayChildren: 0.05, // 50ms before first item starts
     },
   },
 };
@@ -270,10 +295,11 @@ const itemVariants = {
       <CommandItem>...</CommandItem>
     </motion.div>
   ))}
-</motion.div>
+</motion.div>;
 ```
 
 **Important caveats for cmdk + motion stagger**:
+
 - Do NOT stagger on every keystroke — only stagger on initial open + large result set changes (debounce by 150ms).
 - Keep stagger delay short: 30-50ms per item max. More than 60ms feels sluggish.
 - Limit animated items to the first 8-10 visible results. Items beyond the fold render instantly.
@@ -288,13 +314,13 @@ const dialogVariants = {
     opacity: 1,
     scale: 1,
     y: 0,
-    transition: { type: 'spring', stiffness: 500, damping: 35 }
+    transition: { type: 'spring', stiffness: 500, damping: 35 },
   },
   exit: {
     opacity: 0,
     scale: 0.96,
     y: -8,
-    transition: { duration: 0.12 }
+    transition: { duration: 0.12 },
   },
 };
 ```
@@ -302,10 +328,7 @@ const dialogVariants = {
 **Item hover micro-interaction:**
 
 ```tsx
-<motion.div
-  whileHover={{ x: 2 }}
-  transition={{ type: 'spring', stiffness: 600, damping: 40 }}
->
+<motion.div whileHover={{ x: 2 }} transition={{ type: 'spring', stiffness: 600, damping: 40 }}>
   <CommandItem>...</CommandItem>
 </motion.div>
 ```
@@ -340,7 +363,7 @@ Directional slide: entering a sub-menu slides in from the right; going back slid
       animate={{ opacity: 1, width: '60%' }}
       exit={{ opacity: 0, width: 0 }}
       transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-      className="border-l overflow-hidden"
+      className="overflow-hidden border-l"
     >
       <PreviewContent item={selectedItem} />
     </motion.div>
@@ -351,13 +374,15 @@ Directional slide: entering a sub-menu slides in from the right; going back slid
 **Selection indicator animation**: When keyboard focus moves between items, the selection background should slide rather than snap. Use `layout` animation on the selection indicator:
 
 ```tsx
-{isSelected && (
-  <motion.div
-    layoutId="command-palette-selection"
-    className="absolute inset-0 bg-accent rounded-md"
-    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-  />
-)}
+{
+  isSelected && (
+    <motion.div
+      layoutId="command-palette-selection"
+      className="bg-accent absolute inset-0 rounded-md"
+      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+    />
+  );
+}
 ```
 
 This creates a "sliding pill" effect as the user arrows through results — the same pattern used by Raycast and Vercel's command menu. Requires the indicator to be a separate element with `layoutId` and `position: absolute`.
@@ -426,16 +451,16 @@ Cons: Can be clipped by viewport edges; feels disconnected.
 
 ### Fuzzy Search Comparison Table
 
-| Feature | uFuzzy | Fuse.js | cmdk built-in | match-sorter |
-|---|---|---|---|---|
-| Character highlighting | Yes (ranges) | Yes (indices) | No | No (needs helper lib) |
-| Typo-tolerance | No | Yes | No | No |
-| Bundle size | 4kb | 24kb | 0 (included) | 3kb |
-| Speed (10k items) | ~5ms | ~40ms | ~2ms | ~10ms |
-| Word boundary bonus | Yes | Configurable | N/A | Yes (ranking tiers) |
-| Consecutive bonus | Yes | N/A | N/A | No |
-| TypeScript | Yes | Yes | Yes | Yes |
-| React highlighting | Ranges to nodes | Indices to nodes | None | With helper lib |
+| Feature                | uFuzzy          | Fuse.js          | cmdk built-in | match-sorter          |
+| ---------------------- | --------------- | ---------------- | ------------- | --------------------- |
+| Character highlighting | Yes (ranges)    | Yes (indices)    | No            | No (needs helper lib) |
+| Typo-tolerance         | No              | Yes              | No            | No                    |
+| Bundle size            | 4kb             | 24kb             | 0 (included)  | 3kb                   |
+| Speed (10k items)      | ~5ms            | ~40ms            | ~2ms          | ~10ms                 |
+| Word boundary bonus    | Yes             | Configurable     | N/A           | Yes (ranking tiers)   |
+| Consecutive bonus      | Yes             | N/A              | N/A           | No                    |
+| TypeScript             | Yes             | Yes              | Yes           | Yes                   |
+| React highlighting     | Ranges to nodes | Indices to nodes | None          | With helper lib       |
 
 For a command palette with fewer than 200 items (DorkOS's typical agent + command count), performance differences are negligible. The deciding factor is highlighting capability and typo-tolerance need.
 
@@ -451,7 +476,7 @@ const MAX_TIMESTAMPS = 10;
 
 interface FrecencyRecord {
   agentId: string;
-  timestamps: number[];   // most recent first, capped at MAX_TIMESTAMPS
+  timestamps: number[]; // most recent first, capped at MAX_TIMESTAMPS
   totalCount: number;
 }
 
@@ -459,20 +484,17 @@ function getBucketScore(timestamp: number): number {
   const ageMs = Date.now() - timestamp;
   const ageHours = ageMs / (1000 * 60 * 60);
 
-  if (ageHours < 4)    return 100;
-  if (ageHours < 24)   return 80;
-  if (ageHours < 72)   return 60;
-  if (ageHours < 168)  return 40;
-  if (ageHours < 720)  return 20;
+  if (ageHours < 4) return 100;
+  if (ageHours < 24) return 80;
+  if (ageHours < 72) return 60;
+  if (ageHours < 168) return 40;
+  if (ageHours < 720) return 20;
   if (ageHours < 2160) return 10;
   return 0;
 }
 
 export function computeFrecencyScore(record: FrecencyRecord): number {
-  const bucketSum = record.timestamps.reduce(
-    (sum, ts) => sum + getBucketScore(ts),
-    0
-  );
+  const bucketSum = record.timestamps.reduce((sum, ts) => sum + getBucketScore(ts), 0);
   // Slack formula: totalCount * bucketSum / min(timestamps.length, MAX_TIMESTAMPS)
   return (record.totalCount * bucketSum) / Math.min(record.timestamps.length, MAX_TIMESTAMPS);
 }
@@ -512,12 +534,14 @@ When using uFuzzy instead of cmdk's built-in filter:
         const idxs = uf.filter(haystack, val);
         const info = uf.info(idxs, haystack, val);
         const order = uf.sort(info, haystack, val);
-        setFilteredResults(order.map(i => ({
-          item: allItems[info.idx[i]],
-          ranges: info.ranges[i],
-        })));
+        setFilteredResults(
+          order.map((i) => ({
+            item: allItems[info.idx[i]],
+            ranges: info.ranges[i],
+          }))
+        );
       } else {
-        setFilteredResults(frecencyOrderedItems.map(item => ({ item, ranges: [] })));
+        setFilteredResults(frecencyOrderedItems.map((item) => ({ item, ranges: [] })));
       }
     }}
   />
@@ -535,14 +559,14 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 
 ### Best-in-Class Pattern Summary
 
-| Tool | Signature Pattern | What Makes It Great |
-|---|---|---|
-| Raycast | Split-view list+detail | Rich context without navigation; preview debounced on selection |
-| Linear | Speed-first, zero-latency | Palette opens in under 50ms; all data pre-loaded; no network on search |
-| VS Code | Prefix scoping (>, @, :) | Mental model clarity; one palette handles files, commands, symbols |
-| Superhuman | Shortcut education via palette | Keyboard shortcuts displayed, muscle memory transfer |
-| Slack | Bucket frecency | Smart ranking without ML; pure client-side; decays naturally |
-| Vercel | Sliding selection indicator | Animated layoutId pill feels native, not "webby" |
+| Tool       | Signature Pattern              | What Makes It Great                                                    |
+| ---------- | ------------------------------ | ---------------------------------------------------------------------- |
+| Raycast    | Split-view list+detail         | Rich context without navigation; preview debounced on selection        |
+| Linear     | Speed-first, zero-latency      | Palette opens in under 50ms; all data pre-loaded; no network on search |
+| VS Code    | Prefix scoping (>, @, :)       | Mental model clarity; one palette handles files, commands, symbols     |
+| Superhuman | Shortcut education via palette | Keyboard shortcuts displayed, muscle memory transfer                   |
+| Slack      | Bucket frecency                | Smart ranking without ML; pure client-side; decays naturally           |
+| Vercel     | Sliding selection indicator    | Animated layoutId pill feels native, not "webby"                       |
 
 ---
 
@@ -570,17 +594,20 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 ### Feature 1: Preview Panel
 
 **Option A: Always-visible side panel (Raycast style)**
+
 - Layout: flex-row dialog, min width 700px, list on left (40%), preview on right (60%)
 - Shows only for item types that have rich data (agents, sessions)
 - Empty state for items without previews: subtle "No preview available" text
 - Pros: Premium feel, matches the gold standard; Cons: Requires wider dialog, content modeling per type
 
 **Option B: On-demand expandable detail (below selection)**
+
 - Use `--cmdk-list-height` CSS var + transition to expand selected item in place
 - No additional dialog width needed
 - Pros: Works at any screen size; Cons: Causes reflow jitter, more jarring
 
 **Option C: Hover/selection tooltip**
+
 - Floating panel appears to the right of the dialog on item focus
 - Pros: Zero layout impact; Cons: Clipping on narrow screens, feels disconnected
 
@@ -589,16 +616,19 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 ### Feature 2: Smart Suggestions (Frecency)
 
 **Option A: Slack bucket system** (recommended)
+
 - 6 time buckets, `totalCount * bucketSum / min(visits, 10)`
 - Pure client-side, localStorage
 - Pros: Battle-tested, decays naturally, no ML needed
 
 **Option B: Simple recency-weighted scoring**
+
 - `score = useCount * 0.3 + (Date.now() - lastUsed) * -0.0001`
 - From the existing research in `20260303_command_palette_agent_centric_ux.md`
 - Pros: Simpler; Cons: Does not decay as naturally, old high-frequency items stay ranked too long
 
 **Option C: Server-side personalization**
+
 - Persist frecency to server, sync across devices
 - Pros: Works on fresh machines; Cons: Requires new API, latency, complexity
 
@@ -607,15 +637,18 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 ### Feature 3: Fuzzy Search with Highlighting
 
 **Option A: uFuzzy** (recommended)
+
 - 4kb, range-based highlighting, word boundary bonuses
 - React-safe node construction from ranges
 - Integrate with `shouldFilter={false}` on cmdk
 
 **Option B: Fuse.js**
+
 - 24kb, typo-tolerant, index-based highlighting
 - More appropriate if users search content (not names)
 
 **Option C: cmdk built-in + no highlighting**
+
 - Zero added dependency, but no character highlighting
 - Acceptable for v1; upgrade path to uFuzzy later
 
@@ -624,16 +657,19 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 ### Feature 4: Sub-menu Drill-down
 
 **Option A: cmdk pages stack** (recommended)
+
 - `const [pages, setPages] = useState<string[]>([])`
 - Backspace-when-empty goes back; Escape goes back (stops propagation) or closes
 - CSS height transition on `--cmdk-list-height`
 - `AnimatePresence mode="wait"` with directional slide
 
 **Option B: Separate dialogs per level**
+
 - Each sub-menu opens a new `CommandDialog`
 - Pros: Clean isolation; Cons: Heavy, loses search context, worse keyboard UX
 
 **Option C: Tab-based scoping (VS Code style)**
+
 - Clicking an item changes the CommandInput prefix (`> `, `@ `, etc.)
 - Pros: Visible context; Cons: Less intuitive for non-power-users
 
@@ -642,6 +678,7 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 ### Feature 5: Micro-interactions and Animations
 
 **Option A: Full motion.dev suite** (recommended)
+
 - Dialog: spring scale+fade on open/close
 - Selection indicator: `layoutId` sliding pill
 - Page transitions: directional x-axis slide with `AnimatePresence mode="wait"`
@@ -650,11 +687,13 @@ Key: `shouldFilter={false}` disables cmdk's internal filter. You manage filterin
 - Preview panel: width spring animation
 
 **Option B: CSS-only transitions**
+
 - Use Tailwind `transition-all`, `duration-150`, keyframes
 - No motion.dev dependency additions
 - Pros: Lighter; Cons: Cannot do layout animations (sliding pill requires FLIP), no stagger
 
 **Option C: Minimal — only open/close animation**
+
 - Just the dialog entrance/exit
 - Pros: Safest performance; Cons: Feels flat compared to Raycast/Linear
 
@@ -720,7 +759,7 @@ For DorkOS command-palette-10x, implement in this priority order:
 - **Linear's internal fuzzy algorithm** is not publicly documented. Based on visual inspection of the product, it appears to use word-boundary scoring similar to VS Code's but no source code is available.
 - **Vercel's command menu animations** were not directly inspectable — the changelog only describes features, not the implementation. Reverse-engineering from their production app would require DevTools inspection.
 - **Arc Browser command bar** patterns were not deeply documented in accessible sources. The pattern is similar to VS Code prefix scoping.
-- **cmdk + motion.dev compatibility**: Known issue tracked in cmdk's GitHub — `AnimatePresence` wrapping `CommandItem` components can interfere with cmdk's keyboard navigation if the motion component intercepts synthetic events. Workaround: wrap the *content* inside `CommandItem`, not `CommandItem` itself.
+- **cmdk + motion.dev compatibility**: Known issue tracked in cmdk's GitHub — `AnimatePresence` wrapping `CommandItem` components can interfere with cmdk's keyboard navigation if the motion component intercepts synthetic events. Workaround: wrap the _content_ inside `CommandItem`, not `CommandItem` itself.
 - **Performance benchmarks for DorkOS item counts** are estimated from general library benchmarks. Actual perf testing on DorkOS's specific haystack sizes should be done during implementation.
 
 ---

@@ -34,7 +34,7 @@ const GROUP_PADDING = 48;
 export async function applyElkLayout(
   nodes: Node[],
   edges: Edge[],
-  useGroups: boolean,
+  useGroups: boolean
 ): Promise<Node[]> {
   if (nodes.length === 0) return nodes;
 

@@ -53,16 +53,16 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|------|------|
-| `packages/mesh/src/agent-registry.ts` | SQLite storage — needs health columns migration |
-| `packages/mesh/src/mesh-core.ts` | Unified API — needs health query methods |
-| `packages/mesh/src/relay-bridge.ts` | Relay integration — needs lifecycle signal emission |
-| `apps/server/src/routes/mesh.ts` | HTTP endpoints — needs GET /status and GET /agents/:id/health |
-| `apps/server/src/services/core/mcp-tool-server.ts` | MCP tools — needs mesh_status and mesh_inspect |
-| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | Main panel — needs Topology tab + stats header |
-| `apps/client/src/layers/entities/mesh/model/` | Domain hooks — needs health, status, lifecycle hooks |
-| `packages/shared/src/mesh-schemas.ts` | Zod schemas — needs health/status/inspect schemas |
+| File                                                    | Role                                                          |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| `packages/mesh/src/agent-registry.ts`                   | SQLite storage — needs health columns migration               |
+| `packages/mesh/src/mesh-core.ts`                        | Unified API — needs health query methods                      |
+| `packages/mesh/src/relay-bridge.ts`                     | Relay integration — needs lifecycle signal emission           |
+| `apps/server/src/routes/mesh.ts`                        | HTTP endpoints — needs GET /status and GET /agents/:id/health |
+| `apps/server/src/services/core/mcp-tool-server.ts`      | MCP tools — needs mesh_status and mesh_inspect                |
+| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | Main panel — needs Topology tab + stats header                |
+| `apps/client/src/layers/entities/mesh/model/`           | Domain hooks — needs health, status, lifecycle hooks          |
+| `packages/shared/src/mesh-schemas.ts`                   | Zod schemas — needs health/status/inspect schemas             |
 
 **Shared Dependencies:**
 
@@ -88,10 +88,10 @@ mesh_inspect MCP tool → MeshCore.inspect(id) → manifest + health + relay end
 
 **Feature Flags/Config:**
 
-| Flag | Env Var | Impact |
-|------|---------|--------|
-| Mesh | `DORKOS_MESH_ENABLED` | Guards all mesh routes, MCP tools, and UI |
-| Relay | `DORKOS_RELAY_ENABLED` | Required for lifecycle signal emission |
+| Flag  | Env Var                | Impact                                    |
+| ----- | ---------------------- | ----------------------------------------- |
+| Mesh  | `DORKOS_MESH_ENABLED`  | Guards all mesh routes, MCP tools, and UI |
+| Relay | `DORKOS_RELAY_ENABLED` | Required for lifecycle signal emission    |
 
 **Potential Blast Radius:**
 
@@ -109,6 +109,7 @@ N/A — this is a new feature, not a bug fix.
 ### Potential Solutions (Graph Library)
 
 **1. @xyflow/react (React Flow v12)** — SELECTED
+
 - Description: Dominant React node-graph library; nodes are plain React components
 - Pros: Confirmed React 19 + Tailwind 4 compat; custom nodes embed shadcn Badge/status dots; first-party dagre + ELK layout adapters; 2.9M weekly npm downloads; excellent DX
 - Cons: ~150-200 KB min+gz (lazy-load the Topology tab); `nodeTypes` must be defined outside parent component
@@ -116,6 +117,7 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: High (active, well-funded)
 
 **2. Cytoscape.js + react-cytoscapejs**
+
 - Description: Graph theory library with canvas/SVG rendering
 - Pros: Strong algorithm support
 - Cons: 365 KB min / 112 KB gzip; canvas-rendered (can't embed React components as nodes); uncertain React 19 compat
@@ -123,6 +125,7 @@ N/A — this is a new feature, not a bug fix.
 - Maintenance: Medium
 
 **3. Custom SVG + d3-force**
+
 - Description: Roll-your-own with React SVG + d3-force physics
 - Pros: ~10 KB, maximum control, full React 19 compat
 - Cons: Must implement drag, zoom/pan, edges, tooltips from scratch
@@ -163,9 +166,9 @@ N/A — this is a new feature, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Graph library for topology visualization | `@xyflow/react` (React Flow v12) | Confirmed React 19 + Tailwind 4 compat, custom nodes as real React components (embed shadcn patterns), first-party dagre layout adapter, 2.9M weekly downloads. Only library that doesn't require canvas rendering workarounds. |
-| 2 | Health status threshold model | Computed 3-state at query time | Active (<5m), Inactive (5-30m), Stale (>30m) computed from `last_seen_at` via SQL CASE WHEN. No background jobs, no stored status column. Hardcode thresholds initially — configurable later only if needed. |
-| 3 | UI layout for observability | New "Topology" tab + stats header in MeshPanel | 4th tab alongside Discovery/Agents/Denied. Compact stats bar above tabs for total/active/inactive counts. Purely additive — no changes to existing tabs. |
-| 4 | Lifecycle event mechanism | Relay signals + SSE fan-out | Emit on `mesh.agent.lifecycle.{event}` via SignalEmitter. Server SSE streams fan to client for real-time updates. Consistent with existing Relay patterns; allows other subsystems to subscribe to mesh events. |
+| #   | Decision                                 | Choice                                         | Rationale                                                                                                                                                                                                                       |
+| --- | ---------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Graph library for topology visualization | `@xyflow/react` (React Flow v12)               | Confirmed React 19 + Tailwind 4 compat, custom nodes as real React components (embed shadcn patterns), first-party dagre layout adapter, 2.9M weekly downloads. Only library that doesn't require canvas rendering workarounds. |
+| 2   | Health status threshold model            | Computed 3-state at query time                 | Active (<5m), Inactive (5-30m), Stale (>30m) computed from `last_seen_at` via SQL CASE WHEN. No background jobs, no stored status column. Hardcode thresholds initially — configurable later only if needed.                    |
+| 3   | UI layout for observability              | New "Topology" tab + stats header in MeshPanel | 4th tab alongside Discovery/Agents/Denied. Compact stats bar above tabs for total/active/inactive counts. Purely additive — no changes to existing tabs.                                                                        |
+| 4   | Lifecycle event mechanism                | Relay signals + SSE fan-out                    | Emit on `mesh.agent.lifecycle.{event}` via SignalEmitter. Server SSE streams fan to client for real-time updates. Consistent with existing Relay patterns; allows other subsystems to subscribe to mesh events.                 |

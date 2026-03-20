@@ -60,7 +60,7 @@ interface AdminDeps {
   closeDb: () => void;
 }
 
-export function createAdminRouter(deps: AdminDeps): Router
+export function createAdminRouter(deps: AdminDeps): Router;
 ```
 
 #### POST `/api/admin/reset`
@@ -118,11 +118,14 @@ router.use(adminLimiter);
 1. Extract a `shutdownServices()` function from the existing `shutdown()` function body (lines 284-310). The existing `shutdown()` becomes `shutdownServices()` + `process.exit(0)`.
 2. Mount admin router after other routes:
    ```typescript
-   app.use('/api/admin', createAdminRouter({
-     dorkHome,
-     shutdownServices,
-     closeDb: () => db.close(),
-   }));
+   app.use(
+     '/api/admin',
+     createAdminRouter({
+       dorkHome,
+       shutdownServices,
+       closeDb: () => db.close(),
+     })
+   );
    ```
 3. The `shutdown()` signal handler (SIGINT/SIGTERM) calls `shutdownServices()` then `process.exit(0)` as before.
 
@@ -151,6 +154,7 @@ restartServer(): Promise<{ message: string }>;
 ```
 
 **HttpTransport** implementation:
+
 ```typescript
 async resetAllData(confirm: string): Promise<{ message: string }> {
   const res = await fetch(`${this.baseUrl}/api/admin/reset`, {
@@ -212,9 +216,10 @@ Danger Zone section layout:
 - Separator between rows using `<Separator />`
 
 Props:
+
 ```typescript
 interface AdvancedTabProps {
-  onResetComplete: () => void;   // triggers restart overlay
+  onResetComplete: () => void; // triggers restart overlay
   onRestartComplete: () => void; // triggers restart overlay
 }
 ```
@@ -254,6 +259,7 @@ AlertDialog with type-to-confirm pattern:
 ```
 
 On confirm:
+
 1. Call `transport.resetAllData('reset')`
 2. On success: call `localStorage.clear()`, then trigger restart overlay via callback
 3. On error: show toast with error message
@@ -274,6 +280,7 @@ Simpler AlertDialog confirmation:
 ```
 
 On confirm:
+
 1. Call `transport.restartServer()`
 2. On success: trigger restart overlay via callback
 3. On error: show toast with error message
@@ -296,6 +303,7 @@ Full-screen overlay rendered via React portal (above everything):
 ```
 
 Behavior:
+
 1. On mount: start polling `GET /api/health` every 1500ms
 2. On successful health response: call `window.location.reload()` (forces fresh state)
 3. After 30 seconds without success: show error state:
@@ -328,6 +336,7 @@ features/settings/
 ```
 
 Server:
+
 ```
 routes/
 ├── admin.ts                    (NEW)

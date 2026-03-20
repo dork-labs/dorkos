@@ -41,10 +41,12 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/client/src/layers/features/chat/ui/ToolCallCard.tsx` — Main component to modify. Contains `ProgressOutput` (lines 8-30) with `PROGRESS_TRUNCATE_BYTES = 5120`, expand/collapse chevron, tool card rendering
 - `apps/client/src/layers/shared/lib/tool-arguments-formatter.tsx` — Tool input display with value truncation. Raw JSON fallback at line 82 needs truncation
 
 **Shared dependencies:**
+
 - `motion/react` — AnimatePresence, motion.div for expand/collapse
 - `lucide-react` — Loader2, Check, X, ChevronDown icons
 - `cn()` utility from shared/lib
@@ -54,10 +56,12 @@ status: ideation
 Server SSE `tool_result` event → `stream-event-handler.ts` stores in `ToolCallPart.result` → `AssistantMessageContent.tsx` renders via `AutoHideToolCall` → `ToolCallCard.tsx` displays result as `<pre>`
 
 **Feature flags/config:**
+
 - `expandToolCalls: boolean` (Zustand) — expand all tool cards on load
 - `autoHideToolCalls: boolean` (Zustand) — hide completed tool calls after delay
 
 **Potential blast radius:**
+
 - Direct: 2 files (`ToolCallCard.tsx`, `tool-arguments-formatter.tsx`)
 - Indirect: None — no API, type, or schema changes
 - Tests: 1 new test file for `ToolCallCard`
@@ -71,6 +75,7 @@ N/A — this is a UX improvement, not a bug fix.
 **Potential solutions:**
 
 **1. CSS-only truncation (`max-height` + `overflow: hidden`)**
+
 - Description: Apply `max-height` with `overflow: hidden`, toggle class to expand
 - Pros: Zero JavaScript, instant toggle
 - Cons: Full DOM still created — browser still computes layout for the entire text node. `whitespace-pre-wrap` on a 100KB string causes expensive line-breaking calculation regardless of visibility. Does NOT solve the performance problem.
@@ -78,6 +83,7 @@ N/A — this is a UX improvement, not a bug fix.
 - Maintenance: Low
 
 **2. String slicing at render layer (Recommended)**
+
 - Description: Keep full string in React state, render `string.slice(0, 5120)` in the DOM, expand to full on button click
 - Pros: DOM only receives 5KB (eliminates layout thrashing), full string stays as a cheap V8 heap primitive, matches existing `ProgressOutput` pattern exactly, simple to implement
 - Cons: Expand to full content could still be slow for 100KB+ (acceptable — user explicitly requested it)
@@ -85,6 +91,7 @@ N/A — this is a UX improvement, not a bug fix.
 - Maintenance: Low
 
 **3. Virtualized rendering (TanStack Virtual)**
+
 - Description: Split content into lines, virtualize with TanStack Virtual, only render visible lines
 - Pros: Handles arbitrarily large content with constant DOM size
 - Cons: Requires fixed-height container (conflicts with AnimatePresence collapse), complex line-height calculation for `whitespace-pre-wrap`, overengineered for content that's usually auto-hidden, adds a dependency interaction
@@ -95,9 +102,9 @@ N/A — this is a UX improvement, not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Character-based vs line-based truncation | Character-based at 5KB | Matches existing `PROGRESS_TRUNCATE_BYTES = 5120` pattern. Consistent, simple, handles both structured and unstructured output. A single very long line could bypass line-based truncation. |
-| 2 | Virtualization on expand | No virtualization | Full string in React state is cheap. TanStack Virtual conflicts with AnimatePresence collapse animations. Auto-hide already collapses most cards. Overengineered for the use case. |
-| 3 | Truncate tool inputs too | Yes, truncate raw JSON fallback | `ToolArgumentsDisplay` already truncates parsed values at 120 chars, but the raw JSON fallback path (parse failure, line 82) has no limit. Apply same 5KB threshold for consistency. |
-| 4 | Extract shared component vs duplicate | Extract shared `TruncatedOutput` | `ProgressOutput` and the new result truncation have identical logic (threshold, slice, show-more button, max-h-48). Extract once, both callers use it. Eliminates near-identical code. |
+| #   | Decision                                 | Choice                           | Rationale                                                                                                                                                                                   |
+| --- | ---------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Character-based vs line-based truncation | Character-based at 5KB           | Matches existing `PROGRESS_TRUNCATE_BYTES = 5120` pattern. Consistent, simple, handles both structured and unstructured output. A single very long line could bypass line-based truncation. |
+| 2   | Virtualization on expand                 | No virtualization                | Full string in React state is cheap. TanStack Virtual conflicts with AnimatePresence collapse animations. Auto-hide already collapses most cards. Overengineered for the use case.          |
+| 3   | Truncate tool inputs too                 | Yes, truncate raw JSON fallback  | `ToolArgumentsDisplay` already truncates parsed values at 120 chars, but the raw JSON fallback path (parse failure, line 82) has no limit. Apply same 5KB threshold for consistency.        |
+| 4   | Extract shared component vs duplicate    | Extract shared `TruncatedOutput` | `ProgressOutput` and the new result truncation have identical logic (threshold, slice, show-more button, max-h-48). Extract once, both callers use it. Eliminates near-identical code.      |

@@ -118,7 +118,7 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
               value={nameValue}
               onChange={(e) => handleNameChange(e.target.value)}
               onBlur={handleNameBlur}
-              className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               placeholder="Agent name"
             />
           </div>
@@ -134,7 +134,7 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
               onChange={(e) => handleDescChange(e.target.value)}
               onBlur={handleDescBlur}
               rows={3}
-              className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               placeholder="What does this agent do?"
             />
           </div>
@@ -144,9 +144,7 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
             <Label className="text-sm font-medium">Runtime</Label>
             <Select
               value={agent.runtime}
-              onValueChange={(v) =>
-                onUpdate({ runtime: v as AgentManifest['runtime'] })
-              }
+              onValueChange={(v) => onUpdate({ runtime: v as AgentManifest['runtime'] })}
             >
               <SelectTrigger className="w-48">
                 <SelectValue />
@@ -182,9 +180,7 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
               onClick={() => onUpdate({ color: c })}
               className={cn(
                 'size-7 rounded-full transition-all duration-150',
-                agent.color === c
-                  ? 'ring-foreground ring-2 ring-offset-2'
-                  : 'hover:scale-110'
+                agent.color === c ? 'ring-foreground ring-2 ring-offset-2' : 'hover:scale-110'
               )}
               style={{ backgroundColor: c }}
               aria-label={`Select color ${c}`}
@@ -213,9 +209,7 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
               onClick={() => onUpdate({ icon: emoji })}
               className={cn(
                 'flex size-8 items-center justify-center rounded-md text-base transition-all duration-150',
-                agent.icon === emoji
-                  ? 'bg-accent ring-foreground ring-1'
-                  : 'hover:bg-accent/50'
+                agent.icon === emoji ? 'bg-accent ring-foreground ring-1' : 'hover:bg-accent/50'
               )}
               aria-label={`Select icon ${emoji}`}
             >
@@ -224,7 +218,6 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
           ))}
         </div>
       </div>
-
     </div>
   );
 }

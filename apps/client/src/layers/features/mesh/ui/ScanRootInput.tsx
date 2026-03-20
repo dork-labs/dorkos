@@ -20,14 +20,14 @@ export function ScanRootInput({ roots, onChange }: ScanRootInputProps) {
         onChange([...roots, trimmed]);
       }
     },
-    [roots, onChange],
+    [roots, onChange]
   );
 
   const removeRoot = useCallback(
     (path: string) => {
       onChange(roots.filter((r) => r !== path));
     },
-    [roots, onChange],
+    [roots, onChange]
   );
 
   const handleKeyDown = useCallback(
@@ -43,26 +43,26 @@ export function ScanRootInput({ roots, onChange }: ScanRootInputProps) {
         removeRoot(roots[roots.length - 1]);
       }
     },
-    [inputValue, roots, addRoot, removeRoot],
+    [inputValue, roots, addRoot, removeRoot]
   );
 
   const handlePickerSelect = useCallback(
     (path: string) => {
       addRoot(path);
     },
-    [addRoot],
+    [addRoot]
   );
 
   return (
     <>
-      <div className="flex min-h-[40px] flex-wrap items-center gap-1.5 rounded-md border bg-transparent px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring">
+      <div className="focus-within:ring-ring flex min-h-[40px] flex-wrap items-center gap-1.5 rounded-md border bg-transparent px-3 py-1.5 focus-within:ring-2">
         {roots.map((root) => (
           <Badge key={root} variant="secondary" className="gap-1 py-0.5 font-mono text-xs">
             {root}
             <button
               type="button"
               onClick={() => removeRoot(root)}
-              className="ml-0.5 rounded-sm hover:bg-muted-foreground/20"
+              className="hover:bg-muted-foreground/20 ml-0.5 rounded-sm"
               aria-label={`Remove ${root}`}
             >
               <X className="size-3" />
@@ -75,12 +75,12 @@ export function ScanRootInput({ roots, onChange }: ScanRootInputProps) {
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={roots.length === 0 ? 'Add paths to scan (Enter to add)' : 'Add more...'}
-          className="min-w-[120px] flex-1 bg-transparent text-sm placeholder:text-muted-foreground focus-visible:outline-none"
+          className="placeholder:text-muted-foreground min-w-[120px] flex-1 bg-transparent text-sm focus-visible:outline-none"
         />
         <button
           type="button"
           onClick={() => setPickerOpen(true)}
-          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground shrink-0 rounded p-1"
           aria-label="Browse for directory"
         >
           <FolderOpen className="size-4" />

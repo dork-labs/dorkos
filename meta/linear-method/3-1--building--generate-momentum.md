@@ -7,4 +7,3 @@ You and your whole team should always try to take swift action and make progress
 There will also be weeks when you won’t necessarily know what is the most important thing to do or you are not sure what decision to make in the product. Don’t become paralyzed in those moments–find a way to act instead. Trust your intuition and do something that seems to make sense. Talk to more users. You’ll gain more clarity as more feedback rolls in. If you’ve designed your operations to move fast and learn, then you can correct or revert decisions.
 
 Startups rarely die because they made too much progress or because of a single bad decision, but they do die when they move too slow or give up.
-

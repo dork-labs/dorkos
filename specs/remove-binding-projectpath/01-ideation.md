@@ -19,7 +19,7 @@ status: ideation
 - **Task brief:** Remove `projectPath` from the `AdapterBinding` schema and derive it at routing time from the agent registry via `meshCore.getProjectPath(agentId)`. Currently, bindings store both `agentId` and `projectPath`, but agents have a 1:1 mapping with projectPath (UNIQUE constraint in DB). This creates redundancy, discrepancy risk, and empty-string bugs when the UI doesn't ask for projectPath during setup.
 - **Assumptions:**
   - An agent's projectPath is always available in the mesh registry when routing occurs (meshCore initializes before AdapterManager)
-  - No valid use case exists for binding an adapter to an agent but routing to a *different* working directory — the agent *is* its directory
+  - No valid use case exists for binding an adapter to an agent but routing to a _different_ working directory — the agent _is_ its directory
   - The `agentDir → projectPath` legacy migration in BindingStore is no longer needed
   - External MCP tool consumers may need a brief transition period for the `binding_create` tool schema change
 - **Out of scope:**
@@ -135,9 +135,9 @@ N/A — this is a design improvement, not a bug fix (though it does fix the empt
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Error handling when `meshCore.getProjectPath()` returns undefined | Log warning and skip routing | Consistent with existing pattern for missing bindings (line 123-126). The binding references a deleted/unregistered agent — routing would fail anyway. |
-| 2 | `meshCore` dependency on BindingRouter | Required, not optional | BindingRouter cannot function without CWD resolution. meshCore is guaranteed available (inits before AdapterManager). Avoiding unnecessary null-checks. |
-| 3 | Migration of existing `bindings.json` | Strip `projectPath` from raw JSON before Zod parse in `BindingStore.load()` | Replaces the existing `agentDir → projectPath` migration. Clean and backward-compatible — existing data loads without error. |
-| 4 | MCP `binding_create` tool transition | Remove `projectPath` from schema directly | External consumers will get a clear Zod validation error if they pass the old field. The tool description will document the change. No transition period — the field was broken anyway (consumers had to guess the path). |
+| #   | Decision                                                          | Choice                                                                      | Rationale                                                                                                                                                                                                                 |
+| --- | ----------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Error handling when `meshCore.getProjectPath()` returns undefined | Log warning and skip routing                                                | Consistent with existing pattern for missing bindings (line 123-126). The binding references a deleted/unregistered agent — routing would fail anyway.                                                                    |
+| 2   | `meshCore` dependency on BindingRouter                            | Required, not optional                                                      | BindingRouter cannot function without CWD resolution. meshCore is guaranteed available (inits before AdapterManager). Avoiding unnecessary null-checks.                                                                   |
+| 3   | Migration of existing `bindings.json`                             | Strip `projectPath` from raw JSON before Zod parse in `BindingStore.load()` | Replaces the existing `agentDir → projectPath` migration. Clean and backward-compatible — existing data loads without error.                                                                                              |
+| 4   | MCP `binding_create` tool transition                              | Remove `projectPath` from schema directly                                   | External consumers will get a clear Zod validation error if they pass the old field. The tool description will document the change. No transition period — the field was broken anyway (consumers had to guess the path). |

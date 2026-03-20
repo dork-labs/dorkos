@@ -60,6 +60,7 @@ const FEATURES: FeatureItem[] = [
 ];
 
 const QUICK_ACTIONS: QuickActionItem[] = [
+  { id: 'dashboard', label: 'Go to Dashboard', icon: 'Home', action: 'navigateDashboard' },
   { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
   { id: 'discover', label: 'Discover Agents', icon: 'Search', action: 'discoverAgents' },
   { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
@@ -162,7 +163,8 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
       if (cwdSessions.length > 0) {
         const mostRecent = cwdSessions[0];
         const lastActive = new Date(mostRecent.updatedAt ?? mostRecent.createdAt ?? '').getTime();
-        if (lastActive > Date.now() - ONE_HOUR_MS) { // eslint-disable-line react-hooks/purity -- Date.now() re-evaluates when sessions change
+        if (lastActive > Date.now() - ONE_HOUR_MS) {
+          // eslint-disable-line react-hooks/purity -- Date.now() re-evaluates when sessions change
           items.push({
             id: 'suggestion-continue',
             label: `Continue: ${mostRecent.title ?? 'Last session'}`,

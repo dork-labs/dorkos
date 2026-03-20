@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+
 // Mock platform
 let mockIsEmbedded = false;
 vi.mock('@/layers/shared/lib/platform', () => ({
@@ -27,13 +28,16 @@ vi.mock('@/layers/entities/session/model/use-session-id', () => ({
   useSessionId: () => [null, mockSetSessionId] as const,
 }));
 
-// Mock nuqs useQueryState
-let mockUrlDir: string | null = null;
-const mockSetUrlDir = vi.fn((dir: string | null) => {
-  mockUrlDir = dir;
-});
-vi.mock('nuqs', () => ({
-  useQueryState: () => [mockUrlDir, mockSetUrlDir],
+// Mock useSessionSearch (TanStack Router search params)
+let mockSearchDir: string | undefined = undefined;
+vi.mock('@/layers/entities/session/model/use-session-search', () => ({
+  useSessionSearch: () => ({ dir: mockSearchDir }),
+}));
+
+// Mock useNavigate
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
 }));
 
 import { useDirectoryState } from '../model/use-directory-state';
@@ -43,11 +47,11 @@ describe('useDirectoryState', () => {
     vi.clearAllMocks();
     mockIsEmbedded = false;
     mockStoreDir = null;
-    mockUrlDir = null;
+    mockSearchDir = undefined;
   });
 
   it('returns URL state in standalone mode', () => {
-    mockUrlDir = '/test/path';
+    mockSearchDir = '/test/path';
     const { result } = renderHook(() => useDirectoryState());
     expect(result.current[0]).toBe('/test/path');
   });
@@ -59,12 +63,16 @@ describe('useDirectoryState', () => {
     expect(result.current[0]).toBe('/embedded/path');
   });
 
-  it('setter updates both URL and Zustand in standalone', () => {
+  it('setter calls navigate and updates Zustand in standalone', () => {
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1]('/new/path');
     });
-    expect(mockSetUrlDir).toHaveBeenCalledWith('/new/path');
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.any(Function),
+      })
+    );
     expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
   });
 
@@ -76,17 +84,21 @@ describe('useDirectoryState', () => {
     expect(mockSetSessionId).toHaveBeenCalledWith(null);
   });
 
-  it('setting null removes ?dir= from URL', () => {
-    mockUrlDir = '/existing/path';
+  it('setting null removes ?dir= from URL via navigate', () => {
+    mockSearchDir = '/existing/path';
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1](null);
     });
-    expect(mockSetUrlDir).toHaveBeenCalledWith(null);
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.any(Function),
+      })
+    );
   });
 
   it('falls back to Zustand when URL has no ?dir= param', () => {
-    mockUrlDir = null;
+    mockSearchDir = undefined;
     mockStoreDir = '/default/path';
     const { result } = renderHook(() => useDirectoryState());
     expect(result.current[0]).toBe('/default/path');
@@ -97,7 +109,7 @@ describe('useDirectoryState', () => {
     act(() => {
       result.current[1]('/new/path', { preserveSession: true });
     });
-    expect(mockSetUrlDir).toHaveBeenCalledWith('/new/path');
+    expect(mockNavigate).toHaveBeenCalled();
     expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
     expect(mockSetSessionId).not.toHaveBeenCalled();
   });

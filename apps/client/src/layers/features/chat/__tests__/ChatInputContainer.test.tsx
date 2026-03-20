@@ -49,7 +49,7 @@ vi.mock('react-dropzone', () => ({
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ isTextStreaming: false }),
+    selector({ isTextStreaming: false })
   ),
 }));
 
@@ -150,7 +150,14 @@ describe('ChatInputContainer mode switching', () => {
       input: '{}',
       status: 'pending',
       interactiveType: 'question',
-      questions: [{ question: 'Pick one', options: [{ label: 'A', description: '' }], multiSelect: false, header: 'Q' }],
+      questions: [
+        {
+          question: 'Pick one',
+          options: [{ label: 'A', description: '' }],
+          multiSelect: false,
+          header: 'Q',
+        },
+      ],
     };
     render(<ChatInputContainer {...baseProps} activeInteraction={interaction} />);
     expect(screen.getByTestId('question-prompt')).toBeInTheDocument();

@@ -1,5 +1,5 @@
 ---
-title: "Scheduler Feature Research: Comprehensive Comparison"
+title: 'Scheduler Feature Research: Comprehensive Comparison'
 date: 2026-02-17
 type: internal-architecture
 status: archived
@@ -23,12 +23,12 @@ The key architectural insight: **the Claude Code agent has zero awareness of Dor
 
 ### Recommendation: File-Based Jobs + SQLite Run History + SDK MCP Tools
 
-| Layer | Store | Purpose |
-|---|---|---|
-| Job definitions | `~/.dork/schedules.json` | Agent-readable, LLM-editable, human-debuggable |
-| Run history & state | SQLite (`~/.dork/scheduler.db`) | ACID audit trail, queryable, UI-friendly |
-| Agent interaction | SDK in-process MCP tools | Full CRUD for agents via `createSdkMcpServer()` |
-| User interaction | REST API + client UI | CRUD, manual triggers, run history |
+| Layer               | Store                           | Purpose                                         |
+| ------------------- | ------------------------------- | ----------------------------------------------- |
+| Job definitions     | `~/.dork/schedules.json`        | Agent-readable, LLM-editable, human-debuggable  |
+| Run history & state | SQLite (`~/.dork/scheduler.db`) | ACID audit trail, queryable, UI-friendly        |
+| Agent interaction   | SDK in-process MCP tools        | Full CRUD for agents via `createSdkMcpServer()` |
+| User interaction    | REST API + client UI            | CRUD, manual triggers, run history              |
 
 ---
 
@@ -74,6 +74,7 @@ const sdkOptions: Options = {
 ### What This Means for Scheduling
 
 The agent that runs when a scheduled job fires is a standard Claude Code session. It can:
+
 - `Read` files from the filesystem
 - `Write` / `Edit` files
 - Run `Bash` commands
@@ -81,6 +82,7 @@ The agent that runs when a scheduled job fires is a standard Claude Code session
 - Access `WebSearch` / `WebFetch`
 
 It **cannot**:
+
 - Call DorkOS REST endpoints (it doesn't know they exist)
 - Query a SQLite database directly (no DB tool)
 - Access in-process services (it's a subprocess)
@@ -93,6 +95,7 @@ This makes file-based storage significantly more valuable than originally assess
 The SDK supports several mechanisms we don't currently use that could give the agent schedule-awareness:
 
 #### Option A: File-Based (Agent Uses Read/Write)
+
 The agent reads `~/.dork/schedules.json` with its built-in `Read` tool. Zero additional infrastructure.
 
 ```
@@ -104,37 +107,44 @@ Agent wants to create a job  → Edit ~/.dork/schedules.json → done
 **Cons**: No validation on writes. File conflicts possible during concurrent access. Must handle JSON parse errors.
 
 #### Option B: SDK MCP Tools (Agent Uses Custom Tools)
+
 We define in-process MCP tools via `createSdkMcpServer()` + `tool()` and inject them into `query()`. The agent gets named tools like `mcp__dorkos__list_schedules`, `mcp__dorkos__create_schedule`.
 
 ```typescript
-import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 
 const schedulerMcp = createSdkMcpServer({
-  name: "dorkos",
-  version: "1.0.0",
+  name: 'dorkos',
+  version: '1.0.0',
   tools: [
-    tool("list_schedules", "List all scheduled jobs with their status and next run time",
+    tool(
+      'list_schedules',
+      'List all scheduled jobs with their status and next run time',
       { enabled_only: z.boolean().optional() },
       async ({ enabled_only }) => {
         const jobs = schedulerService.listJobs({ enabledOnly: enabled_only });
-        return { content: [{ type: "text", text: JSON.stringify(jobs, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(jobs, null, 2) }] };
       }
     ),
-    tool("create_schedule", "Create a new scheduled job",
+    tool(
+      'create_schedule',
+      'Create a new scheduled job',
       {
         name: z.string(),
-        prompt: z.string().describe("What the agent should do when this job runs"),
+        prompt: z.string().describe('What the agent should do when this job runs'),
         cron: z.string().describe("Cron expression (e.g. '0 9 * * 1-5')"),
         timezone: z.string().optional(),
-        context_mode: z.enum(["isolated", "continuing"]).default("isolated"),
+        context_mode: z.enum(['isolated', 'continuing']).default('isolated'),
       },
       async (args) => {
         const job = schedulerService.createJob(args);
-        return { content: [{ type: "text", text: `Created schedule: ${job.name} (${job.cronHuman})` }] };
+        return {
+          content: [{ type: 'text', text: `Created schedule: ${job.name} (${job.cronHuman})` }],
+        };
       }
     ),
     // ... update_schedule, delete_schedule, list_runs, etc.
-  ]
+  ],
 });
 
 // In AgentManager.sendMessage():
@@ -145,16 +155,17 @@ sdkOptions.mcpServers = { dorkos: schedulerMcp };
 **Cons**: Requires SDK MCP tool changes to agent-manager.ts. Only available in sessions started through DorkOS (not bare CLI). Requires `prompt` to be `AsyncIterable<SDKUserMessage>` (SDK constraint for in-process MCP).
 
 #### Option C: System Prompt Append (Agent Reads Context)
+
 We use `systemPrompt: { type: "preset", preset: "claude_code", append: "..." }` to tell the agent about its scheduling context — what job triggered it, what its schedule is, where to find schedule files.
 
 ```typescript
 sdkOptions.systemPrompt = {
-  type: "preset",
-  preset: "claude_code",
+  type: 'preset',
+  preset: 'claude_code',
   append: `You are running as a scheduled DorkOS agent.
 Job: "${job.name}" | Schedule: ${job.cronHuman} | ID: ${job.id}
 Schedule file: ~/.dork/schedules.json (you can Read this for context)
-Run history: ~/.dork/runs/${job.id}.json (you can Read this for past results)`
+Run history: ~/.dork/runs/${job.id}.json (you can Read this for past results)`,
 };
 ```
 
@@ -175,41 +186,41 @@ The agent gets the **best path available**: MCP tools when present (DorkOS sessi
 
 ## Approaches Evaluated
 
-| # | Approach | Real-world Example |
-|---|----------|--------------------|
-| 1 | Custom scheduler + JSON file persistence | OpenClaw |
-| 2 | Custom scheduler + SQLite persistence | NanoClaw |
-| 3 | In-process cron library (croner/node-cron/node-schedule) | — |
-| 4 | Job queue library (Agenda/Bull/BullMQ/Bree) | — |
-| 5 | OS-level scheduler (crontab/Task Scheduler) | — |
-| 6 | File-based config (JSON/YAML) | — |
-| 7 | croner + SQLite only (original recommendation) | — |
-| 8 | Temporal/workflow engines | — |
-| **9** | **File-based jobs + SQLite history + SDK MCP (revised recommendation)** | — |
+| #     | Approach                                                                | Real-world Example |
+| ----- | ----------------------------------------------------------------------- | ------------------ |
+| 1     | Custom scheduler + JSON file persistence                                | OpenClaw           |
+| 2     | Custom scheduler + SQLite persistence                                   | NanoClaw           |
+| 3     | In-process cron library (croner/node-cron/node-schedule)                | —                  |
+| 4     | Job queue library (Agenda/Bull/BullMQ/Bree)                             | —                  |
+| 5     | OS-level scheduler (crontab/Task Scheduler)                             | —                  |
+| 6     | File-based config (JSON/YAML)                                           | —                  |
+| 7     | croner + SQLite only (original recommendation)                          | —                  |
+| 8     | Temporal/workflow engines                                               | —                  |
+| **9** | **File-based jobs + SQLite history + SDK MCP (revised recommendation)** | —                  |
 
 ---
 
 ## Comparison Matrix
 
-| Dimension | OpenClaw (JSON) | NanoClaw (SQLite) | croner only | Bree | Agenda | BullMQ | OS Cron | File-based | croner+SQLite | **File+SQLite+MCP** | Temporal |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Regular scheduled jobs** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | **Yes** | Yes |
-| **One-off jobs** | Yes (`at`) | Yes (`once`) | Yes (Date) | Yes | Yes | Yes | Partial | Partial | Yes | **Yes** | Yes |
-| **Complex rules** | 5-field + tz | 5-field + tz | OCPS 1.4 | Cron + human | Cron + human | Cron | Cron | Cron | OCPS 1.4 | **OCPS 1.4** | DAGs |
-| **Survives restarts** | Yes (JSON) | Yes (SQLite) | No | No | Yes (Mongo) | Yes (Redis) | Yes (OS) | Yes (file) | Yes (SQLite) | **Yes (file+SQLite)** | Yes |
-| **macOS compatible** | Yes | Yes | Yes | Yes | Needs Mongo | Needs Redis | Yes | Yes | Yes | **Yes** | Needs server |
-| **Windows compatible** | Yes | Yes | Yes | Yes | Needs Mongo | Needs Redis | No | Yes | Yes | **Yes** | Needs server |
-| **Agent-readable** | Yes (JSON) | No (binary DB) | N/A | Job files | No | No | No | Yes | No | **Yes (JSON + MCP)** | No |
-| **Agent-manageable** | No | Yes (MCP) | No | No | No | No | No | Partial (Edit) | No | **Yes (MCP + file)** | No |
-| **Job management interface** | CLI + RPC + UI | Conversation (MCP) | Code | Code | Code + REST | Code | CLI | File edit | CLI + REST + UI | **CLI + REST + UI + MCP + file** | Web UI |
-| **Easy to build UI around** | Yes (RPC) | No (MCP only) | No | Partial | Yes | Yes | No | Partial | Yes (REST) | **Yes (REST)** | Yes |
-| **Can trigger LLM calls** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | **Yes** | Yes |
-| **Implementation complexity** | High | Medium-High | Low | Medium | High | High | Low | Low | Medium | **Medium** | Very High |
-| **External services** | None | None | None | None | MongoDB | Redis | None | None | None | **None** | Temporal + DB |
-| **Sleep/wake handling** | 60s clamp | SQLite catch-up | No | No | N/A | N/A | OS handles | No | Per-job policy | **Per-job policy** | N/A |
-| **Missed run recovery** | Startup sweep | Fires all | No | No | Via Mongo | Via Redis | OS handles | No | Configurable | **Configurable** | Yes |
-| **Run history/audit** | JSONL per job | SQLite table | None | None | MongoDB | Redis | None | None | SQLite | **SQLite** | Built-in |
-| **Error backoff** | Exponential | None | None | None | Config | Config | None | None | Config | **Exponential** | Built-in |
+| Dimension                     | OpenClaw (JSON) | NanoClaw (SQLite)  | croner only | Bree         | Agenda       | BullMQ      | OS Cron    | File-based     | croner+SQLite   | **File+SQLite+MCP**              | Temporal      |
+| ----------------------------- | --------------- | ------------------ | ----------- | ------------ | ------------ | ----------- | ---------- | -------------- | --------------- | -------------------------------- | ------------- |
+| **Regular scheduled jobs**    | Yes             | Yes                | Yes         | Yes          | Yes          | Yes         | Yes        | Yes            | Yes             | **Yes**                          | Yes           |
+| **One-off jobs**              | Yes (`at`)      | Yes (`once`)       | Yes (Date)  | Yes          | Yes          | Yes         | Partial    | Partial        | Yes             | **Yes**                          | Yes           |
+| **Complex rules**             | 5-field + tz    | 5-field + tz       | OCPS 1.4    | Cron + human | Cron + human | Cron        | Cron       | Cron           | OCPS 1.4        | **OCPS 1.4**                     | DAGs          |
+| **Survives restarts**         | Yes (JSON)      | Yes (SQLite)       | No          | No           | Yes (Mongo)  | Yes (Redis) | Yes (OS)   | Yes (file)     | Yes (SQLite)    | **Yes (file+SQLite)**            | Yes           |
+| **macOS compatible**          | Yes             | Yes                | Yes         | Yes          | Needs Mongo  | Needs Redis | Yes        | Yes            | Yes             | **Yes**                          | Needs server  |
+| **Windows compatible**        | Yes             | Yes                | Yes         | Yes          | Needs Mongo  | Needs Redis | No         | Yes            | Yes             | **Yes**                          | Needs server  |
+| **Agent-readable**            | Yes (JSON)      | No (binary DB)     | N/A         | Job files    | No           | No          | No         | Yes            | No              | **Yes (JSON + MCP)**             | No            |
+| **Agent-manageable**          | No              | Yes (MCP)          | No          | No           | No           | No          | No         | Partial (Edit) | No              | **Yes (MCP + file)**             | No            |
+| **Job management interface**  | CLI + RPC + UI  | Conversation (MCP) | Code        | Code         | Code + REST  | Code        | CLI        | File edit      | CLI + REST + UI | **CLI + REST + UI + MCP + file** | Web UI        |
+| **Easy to build UI around**   | Yes (RPC)       | No (MCP only)      | No          | Partial      | Yes          | Yes         | No         | Partial        | Yes (REST)      | **Yes (REST)**                   | Yes           |
+| **Can trigger LLM calls**     | Yes             | Yes                | Yes         | Yes          | Yes          | Yes         | Yes        | Yes            | Yes             | **Yes**                          | Yes           |
+| **Implementation complexity** | High            | Medium-High        | Low         | Medium       | High         | High        | Low        | Low            | Medium          | **Medium**                       | Very High     |
+| **External services**         | None            | None               | None        | None         | MongoDB      | Redis       | None       | None           | None            | **None**                         | Temporal + DB |
+| **Sleep/wake handling**       | 60s clamp       | SQLite catch-up    | No          | No           | N/A          | N/A         | OS handles | No             | Per-job policy  | **Per-job policy**               | N/A           |
+| **Missed run recovery**       | Startup sweep   | Fires all          | No          | No           | Via Mongo    | Via Redis   | OS handles | No             | Configurable    | **Configurable**                 | Yes           |
+| **Run history/audit**         | JSONL per job   | SQLite table       | None        | None         | MongoDB      | Redis       | None       | None           | SQLite          | **SQLite**                       | Built-in      |
+| **Error backoff**             | Exponential     | None               | None        | None         | Config       | Config      | None       | None           | Config          | **Exponential**                  | Built-in      |
 
 ---
 
@@ -236,6 +247,7 @@ The agent gets the **best path available**: MCP tools when present (DorkOS sessi
 See the [scheduling approaches analysis](scheduling-approaches-analysis.md) for detailed coverage of: in-process cron libraries (croner, toad-scheduler, node-schedule, node-cron), job queue libraries (Agenda, Bull, Bree), OS-level schedulers, and file-based scheduling.
 
 **Key takeaways**:
+
 - **Agenda/BullMQ**: Require MongoDB/Redis respectively — disqualified for desktop/CLI use
 - **OS cron**: macOS/Linux only, no Windows support — disqualified for cross-platform
 - **Temporal**: Massive infrastructure overkill for local scheduled agent invocations
@@ -256,11 +268,11 @@ This approach would work for a system where only the server and UI manage schedu
 
 The revised recommendation splits the data across two stores based on **who needs to read it**:
 
-| Data | Store | Primary Reader | Why This Store |
-|---|---|---|---|
-| Job definitions | `~/.dork/schedules.json` | Agent (Read tool), Server, UI, Human | Must be LLM-readable without tooling |
-| Run history | SQLite `~/.dork/scheduler.db` | Server, UI | Queryable, append-only, agents rarely need this |
-| Scheduler runtime state | In-memory (croner instances) | Server only | Ephemeral, rebuilt from JSON on startup |
+| Data                    | Store                         | Primary Reader                       | Why This Store                                  |
+| ----------------------- | ----------------------------- | ------------------------------------ | ----------------------------------------------- |
+| Job definitions         | `~/.dork/schedules.json`      | Agent (Read tool), Server, UI, Human | Must be LLM-readable without tooling            |
+| Run history             | SQLite `~/.dork/scheduler.db` | Server, UI                           | Queryable, append-only, agents rarely need this |
+| Scheduler runtime state | In-memory (croner instances)  | Server only                          | Ephemeral, rebuilt from JSON on startup         |
 
 ### Architecture
 
@@ -406,6 +418,7 @@ Designed for maximum LLM readability:
 ```
 
 Key design decisions:
+
 - **Flat JSON, not YAML** — matches DorkOS conventions (`config.json`, `manifest.json`)
 - **Human-readable labels alongside machine values** — `cronHuman` next to `cron`
 - **`prompt` field is the agent instruction** — this is what gets passed to `query()`
@@ -474,6 +487,7 @@ class SchedulerService {
 ```
 
 Key properties:
+
 - **File is always the source of truth** — in-memory state is a cache
 - **Any writer is valid** — REST API, CLI, agent `Edit`, manual editor
 - **Reconciliation** detects diffs between file and in-memory croner jobs
@@ -484,11 +498,11 @@ Key properties:
 
 OpenClaw's documented problems with JSON persistence and how we solve them:
 
-| OpenClaw Problem | Our Solution |
-|---|---|
-| "Manual edits unsafe while running" | File watcher + reconciliation. File is always source of truth, not in-memory state. |
-| No atomic updates | `write tmp + rename` pattern (same as OpenClaw, but we don't fight against it) |
-| No transactional job state tracking | Run state goes to SQLite, not JSON. JSON only has definitions. |
+| OpenClaw Problem                    | Our Solution                                                                                                      |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| "Manual edits unsafe while running" | File watcher + reconciliation. File is always source of truth, not in-memory state.                               |
+| No atomic updates                   | `write tmp + rename` pattern (same as OpenClaw, but we don't fight against it)                                    |
+| No transactional job state tracking | Run state goes to SQLite, not JSON. JSON only has definitions.                                                    |
 | File conflicts on concurrent writes | Debounced watcher + last-write-wins with reconciliation. MCP tools use `mutateJobs()` for safe in-process writes. |
 
 The core insight: OpenClaw's problems come from **using JSON for both definitions and runtime state**. By splitting definitions (JSON) from state (SQLite), we get the readability of files without the fragility of using files as a database.
@@ -501,44 +515,53 @@ When running through DorkOS, the agent gets additional validated tools via `crea
 
 ```typescript
 const schedulerMcpServer = createSdkMcpServer({
-  name: "dorkos",
-  version: "1.0.0",
+  name: 'dorkos',
+  version: '1.0.0',
   tools: [
-    tool("list_schedules",
-      "List all scheduled jobs with their status, schedule, and next run time",
-      { enabled_only: z.boolean().optional().describe("Only show enabled jobs") },
+    tool(
+      'list_schedules',
+      'List all scheduled jobs with their status, schedule, and next run time',
+      { enabled_only: z.boolean().optional().describe('Only show enabled jobs') },
       async ({ enabled_only }) => {
         const jobs = schedulerService.getJobs({ enabledOnly: enabled_only });
-        return { content: [{ type: "text", text: JSON.stringify(jobs, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(jobs, null, 2) }] };
       }
     ),
 
-    tool("create_schedule",
-      "Create a new scheduled job that runs a Claude agent at specified times",
+    tool(
+      'create_schedule',
+      'Create a new scheduled job that runs a Claude agent at specified times',
       {
-        name: z.string().describe("Human-readable job name"),
-        prompt: z.string().describe("Instructions for the agent when the job runs"),
+        name: z.string().describe('Human-readable job name'),
+        prompt: z.string().describe('Instructions for the agent when the job runs'),
         cron: z.string().describe("Cron expression, e.g. '0 9 * * 1-5' for weekdays at 9am"),
         timezone: z.string().optional().describe("IANA timezone, e.g. 'America/New_York'"),
-        cwd: z.string().optional().describe("Working directory for the agent"),
-        context_mode: z.enum(["isolated", "continuing"]).optional().default("isolated"),
+        cwd: z.string().optional().describe('Working directory for the agent'),
+        context_mode: z.enum(['isolated', 'continuing']).optional().default('isolated'),
         model: z.string().optional().describe("Model override, e.g. 'sonnet' or 'haiku'"),
-        max_budget_usd: z.number().optional().describe("Maximum spend per run in USD"),
+        max_budget_usd: z.number().optional().describe('Maximum spend per run in USD'),
       },
       async (args) => {
         const job = await schedulerService.createJob(args);
-        return { content: [{ type: "text", text:
-          `Created schedule "${job.name}"\n` +
-          `Schedule: ${job.schedule.cronHuman}\n` +
-          `Next run: ${job.nextRunAt ?? 'pending'}`
-        }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `Created schedule "${job.name}"\n` +
+                `Schedule: ${job.schedule.cronHuman}\n` +
+                `Next run: ${job.nextRunAt ?? 'pending'}`,
+            },
+          ],
+        };
       }
     ),
 
-    tool("update_schedule",
-      "Update an existing scheduled job",
+    tool(
+      'update_schedule',
+      'Update an existing scheduled job',
       {
-        id: z.string().describe("Job ID to update"),
+        id: z.string().describe('Job ID to update'),
         name: z.string().optional(),
         prompt: z.string().optional(),
         cron: z.string().optional(),
@@ -547,46 +570,50 @@ const schedulerMcpServer = createSdkMcpServer({
       },
       async (args) => {
         const job = await schedulerService.updateJob(args.id, args);
-        return { content: [{ type: "text", text: `Updated schedule "${job.name}"` }] };
+        return { content: [{ type: 'text', text: `Updated schedule "${job.name}"` }] };
       }
     ),
 
-    tool("delete_schedule",
-      "Delete a scheduled job",
-      { id: z.string().describe("Job ID to delete") },
+    tool(
+      'delete_schedule',
+      'Delete a scheduled job',
+      { id: z.string().describe('Job ID to delete') },
       async ({ id }) => {
         await schedulerService.deleteJob(id);
-        return { content: [{ type: "text", text: `Deleted schedule ${id}` }] };
+        return { content: [{ type: 'text', text: `Deleted schedule ${id}` }] };
       }
     ),
 
-    tool("trigger_schedule",
-      "Manually trigger a scheduled job to run immediately",
-      { id: z.string().describe("Job ID to trigger") },
+    tool(
+      'trigger_schedule',
+      'Manually trigger a scheduled job to run immediately',
+      { id: z.string().describe('Job ID to trigger') },
       async ({ id }) => {
         const runId = await schedulerService.triggerJob(id);
-        return { content: [{ type: "text", text: `Triggered job ${id}, run ID: ${runId}` }] };
+        return { content: [{ type: 'text', text: `Triggered job ${id}, run ID: ${runId}` }] };
       }
     ),
 
-    tool("list_schedule_runs",
-      "View run history for a scheduled job",
+    tool(
+      'list_schedule_runs',
+      'View run history for a scheduled job',
       {
-        id: z.string().describe("Job ID"),
+        id: z.string().describe('Job ID'),
         limit: z.number().optional().default(10),
       },
       async ({ id, limit }) => {
         const runs = schedulerService.getRunHistory(id, limit);
-        return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(runs, null, 2) }] };
       }
     ),
-  ]
+  ],
 });
 ```
 
 ### When MCP Tools Are Injected
 
 The MCP tools should be available in **every DorkOS session**, not just scheduled runs. This enables the user to say things like:
+
 - "Schedule a daily code review at 9am"
 - "What schedules do I have?"
 - "Pause the weekly digest"
@@ -598,27 +625,28 @@ The injection point is in `AgentManager.sendMessage()`:
 const sdkOptions: Options = {
   ...existingOptions,
   mcpServers: {
-    dorkos: schedulerMcpServer,  // always available
+    dorkos: schedulerMcpServer, // always available
   },
 };
 ```
 
 ### MCP Tools vs File Access: When Each Is Used
 
-| Scenario | Agent Path | Why |
-|---|---|---|
-| User says "schedule X" in DorkOS chat | MCP tool `create_schedule` | Validated, safe, immediate |
-| User says "schedule X" in CLI session | `Edit ~/.dork/schedules.json` | MCP tools not available in CLI |
-| Scheduled agent wants to see own config | `Read ~/.dork/schedules.json` | Simple, always available |
+| Scenario                                 | Agent Path                                                     | Why                             |
+| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------- |
+| User says "schedule X" in DorkOS chat    | MCP tool `create_schedule`                                     | Validated, safe, immediate      |
+| User says "schedule X" in CLI session    | `Edit ~/.dork/schedules.json`                                  | MCP tools not available in CLI  |
+| Scheduled agent wants to see own config  | `Read ~/.dork/schedules.json`                                  | Simple, always available        |
 | Scheduled agent wants to see run history | MCP tool `list_schedule_runs` OR `Read ~/.dork/runs/<id>.json` | MCP preferred, file as fallback |
-| UI creates a schedule | REST API `POST /api/schedules` | Goes through service layer |
-| Human debugging | `cat ~/.dork/schedules.json \| jq` | File is always readable |
+| UI creates a schedule                    | REST API `POST /api/schedules`                                 | Goes through service layer      |
+| Human debugging                          | `cat ~/.dork/schedules.json \| jq`                             | File is always readable         |
 
 ---
 
 ## What to Adopt From Each Project
 
 ### From OpenClaw
+
 - Three schedule kinds (one-shot, interval, cron) with timezone support
 - Exponential backoff on consecutive failures
 - Per-job run history with size-based pruning
@@ -629,6 +657,7 @@ const sdkOptions: Options = {
 - Atomic file writes (tmp + rename)
 
 ### From NanoClaw
+
 - SQLite for run history (queryable, efficient for append-heavy workload)
 - Simple task interface (prompt + schedule + context mode)
 - Context mode (isolated vs. group/continuing)
@@ -636,6 +665,7 @@ const sdkOptions: Options = {
 - Per-job concurrency prevention
 
 ### Improvements Over Both
+
 - **File-based job definitions + SQLite run history** (best of both persistence models)
 - **SDK MCP tools** for validated in-process schedule management (neither project uses this)
 - **System prompt append** for scheduled run context (neither project does this well)
@@ -650,12 +680,12 @@ const sdkOptions: Options = {
 
 ## Specific Libraries
 
-| Library | Purpose | Why This One |
-|---|---|---|
-| `croner` v10 | Cron expression parsing + in-process scheduling | Zero deps, OCPS 1.4, TypeScript-native, used by PM2/Uptime Kuma |
-| `better-sqlite3` | Run history persistence | Synchronous API, WAL mode, fast single-process access |
-| `cronstrue` | Cron-to-English conversion | Auto-generates `cronHuman` labels |
-| `chokidar` | File watcher for schedules.json | Already a DorkOS dependency (session-broadcaster uses it) |
+| Library          | Purpose                                         | Why This One                                                    |
+| ---------------- | ----------------------------------------------- | --------------------------------------------------------------- |
+| `croner` v10     | Cron expression parsing + in-process scheduling | Zero deps, OCPS 1.4, TypeScript-native, used by PM2/Uptime Kuma |
+| `better-sqlite3` | Run history persistence                         | Synchronous API, WAL mode, fast single-process access           |
+| `cronstrue`      | Cron-to-English conversion                      | Auto-generates `cronHuman` labels                               |
+| `chokidar`       | File watcher for schedules.json                 | Already a DorkOS dependency (session-broadcaster uses it)       |
 
 Note: `drizzle-orm` is optional for SQLite schema management. Raw `better-sqlite3` with prepared statements is simpler for the small schema involved.
 
@@ -663,13 +693,13 @@ Note: `drizzle-orm` is optional for SQLite schema management. Raw `better-sqlite
 
 ## Management Surfaces
 
-| Surface | Operations | Implementation |
-|---|---|---|
-| **REST API** | CRUD + trigger + runs | `routes/schedules.ts` — Zod-validated, serves UI |
-| **SDK MCP tools** | CRUD + trigger + runs | `createSdkMcpServer()` — injected into every DorkOS session |
-| **CLI** | list, add, remove, run | `dorkos schedule list/add/remove/run` subcommands |
-| **Agent file access** | Read + Edit | `~/.dork/schedules.json` — works in any session |
-| **Web UI** | Full management panel | Future — consumes REST API |
+| Surface               | Operations             | Implementation                                              |
+| --------------------- | ---------------------- | ----------------------------------------------------------- |
+| **REST API**          | CRUD + trigger + runs  | `routes/schedules.ts` — Zod-validated, serves UI            |
+| **SDK MCP tools**     | CRUD + trigger + runs  | `createSdkMcpServer()` — injected into every DorkOS session |
+| **CLI**               | list, add, remove, run | `dorkos schedule list/add/remove/run` subcommands           |
+| **Agent file access** | Read + Edit            | `~/.dork/schedules.json` — works in any session             |
+| **Web UI**            | Full management panel  | Future — consumes REST API                                  |
 
 ---
 

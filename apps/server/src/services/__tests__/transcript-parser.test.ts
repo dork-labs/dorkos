@@ -29,8 +29,7 @@ describe('stripRelayContext', () => {
   });
 
   it('handles multiple paragraphs of user content after closing tag', () => {
-    const text =
-      '<relay_context>\nAgent-ID: abc\n</relay_context>\n\nParagraph 1\n\nParagraph 2';
+    const text = '<relay_context>\nAgent-ID: abc\n</relay_context>\n\nParagraph 1\n\nParagraph 2';
     expect(stripRelayContext(text)).toBe('Paragraph 1\n\nParagraph 2');
   });
 
@@ -348,10 +347,7 @@ describe('parseTranscript error/subagent extraction', () => {
         uuid: 'msg-5',
         message: {
           role: 'assistant',
-          content: [
-            { type: 'error' },
-            { type: 'subagent' },
-          ],
+          content: [{ type: 'error' }, { type: 'subagent' }],
         },
       }),
     ];

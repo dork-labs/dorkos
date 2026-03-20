@@ -53,14 +53,14 @@ The V1 Pulse UI overhaul delivered design system adoption, cron presets, timezon
 
 ### Existing Dependencies (no changes)
 
-| Package | Version | Used For |
-|---------|---------|----------|
-| `@radix-ui/react-select` | `^2.1.14` | Visual builder field dropdowns |
-| `cronstrue` | existing | Cron expression humanization (already imported in CreateScheduleDialog) |
-| `sonner` | `^2.0.7` | Toast notifications (already installed and mounted) |
-| `motion` | `^12.33.0` | AnimatePresence for builder expand/collapse |
-| `lucide-react` | latest | FolderOpen icon for directory picker button |
-| `@tanstack/react-query` | `^5.62.0` | Data fetching hooks (useRuns already polls at 10s) |
+| Package                  | Version    | Used For                                                                |
+| ------------------------ | ---------- | ----------------------------------------------------------------------- |
+| `@radix-ui/react-select` | `^2.1.14`  | Visual builder field dropdowns                                          |
+| `cronstrue`              | existing   | Cron expression humanization (already imported in CreateScheduleDialog) |
+| `sonner`                 | `^2.0.7`   | Toast notifications (already installed and mounted)                     |
+| `motion`                 | `^12.33.0` | AnimatePresence for builder expand/collapse                             |
+| `lucide-react`           | latest     | FolderOpen icon for directory picker button                             |
+| `@tanstack/react-query`  | `^5.62.0`  | Data fetching hooks (useRuns already polls at 10s)                      |
 
 ## Detailed Design
 
@@ -108,19 +108,28 @@ const DAY_OF_MONTH_OPTIONS = ['*', ...Array.from({ length: 31 }, (_, i) => Strin
 
 const MONTH_OPTIONS = [
   { value: '*', label: 'Every month' },
-  { value: '1', label: 'Jan' }, { value: '2', label: 'Feb' },
-  { value: '3', label: 'Mar' }, { value: '4', label: 'Apr' },
-  { value: '5', label: 'May' }, { value: '6', label: 'Jun' },
-  { value: '7', label: 'Jul' }, { value: '8', label: 'Aug' },
-  { value: '9', label: 'Sep' }, { value: '10', label: 'Oct' },
-  { value: '11', label: 'Nov' }, { value: '12', label: 'Dec' },
+  { value: '1', label: 'Jan' },
+  { value: '2', label: 'Feb' },
+  { value: '3', label: 'Mar' },
+  { value: '4', label: 'Apr' },
+  { value: '5', label: 'May' },
+  { value: '6', label: 'Jun' },
+  { value: '7', label: 'Jul' },
+  { value: '8', label: 'Aug' },
+  { value: '9', label: 'Sep' },
+  { value: '10', label: 'Oct' },
+  { value: '11', label: 'Nov' },
+  { value: '12', label: 'Dec' },
 ] as const;
 
 const DAY_OF_WEEK_OPTIONS = [
   { value: '*', label: 'Every day' },
-  { value: '0', label: 'Sun' }, { value: '1', label: 'Mon' },
-  { value: '2', label: 'Tue' }, { value: '3', label: 'Wed' },
-  { value: '4', label: 'Thu' }, { value: '5', label: 'Fri' },
+  { value: '0', label: 'Sun' },
+  { value: '1', label: 'Mon' },
+  { value: '2', label: 'Tue' },
+  { value: '3', label: 'Wed' },
+  { value: '4', label: 'Thu' },
+  { value: '5', label: 'Fri' },
   { value: '6', label: 'Sat' },
 ] as const;
 ```
@@ -297,6 +306,7 @@ The `useDirectoryState()` hook import and `setSelectedCwd` call remain — they'
 **File:** `apps/client/src/layers/shared/ui/index.ts`
 
 Add:
+
 ```typescript
 export { DirectoryPicker } from './DirectoryPicker';
 ```
@@ -304,6 +314,7 @@ export { DirectoryPicker } from './DirectoryPicker';
 **File:** `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx`
 
 Update import:
+
 ```typescript
 // Before:
 import { DirectoryPicker } from './DirectoryPicker';
@@ -392,9 +403,7 @@ export function useCompletedRunBadge(enabled = true): CompletedRunBadge {
   useEffect(() => {
     if (!runs) return;
 
-    const currentRunning = new Set(
-      runs.filter((r) => r.status === 'running').map((r) => r.id)
-    );
+    const currentRunning = new Set(runs.filter((r) => r.status === 'running').map((r) => r.id));
     const prevRunning = prevRunningIdsRef.current;
 
     // Detect transitions: was running, now terminal
@@ -428,6 +437,7 @@ export function useCompletedRunBadge(enabled = true): CompletedRunBadge {
 ```
 
 Key design decisions:
+
 - Only fires for runs that transition from `running` → terminal during the current session (not retroactive)
 - Uses `useRef` for `prevRunningIds` to avoid re-render loops
 - `clearBadge()` resets count and persists timestamp to localStorage
@@ -438,6 +448,7 @@ Key design decisions:
 **File:** `apps/client/src/layers/entities/pulse/index.ts`
 
 Add:
+
 ```typescript
 export { useCompletedRunBadge } from './model/use-completed-run-badge';
 ```
@@ -473,6 +484,7 @@ Update the HeartPulse button to show the amber dot:
 ```
 
 Badge states:
+
 - No dot: Pulse disabled or no activity
 - Green pulsing: Run(s) currently active
 - Amber static: Completed run(s) not yet viewed
@@ -605,7 +617,7 @@ useEffect(() => {
 4. For a common schedule: clicks a preset pill (e.g., "Weekdays") — done
 5. For a custom schedule: clicks "Custom schedule" toggle below presets
 6. 5 Select dropdowns appear with AnimatePresence slide-down
-7. User selects Minute=0, Hour=9, Day=*, Month=*, Weekday=1-5
+7. User selects Minute=0, Hour=9, Day=_, Month=_, Weekday=1-5
 8. Raw cron field updates to `0 9 * * 1-5`, preview shows "At 09:00 AM, Monday through Friday"
 9. If user now clicks the "Weekdays" preset pill, the dropdowns update to match
 10. User clicks the FolderOpen button next to Working Directory

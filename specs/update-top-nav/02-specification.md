@@ -95,14 +95,14 @@ interface AgentIdentityChipProps {
 
 **Behavior:**
 
-| State | Visual |
-|-------|--------|
-| Agent configured, idle | `[●] Agent Name ▾` — color dot solid, text `font-medium` |
-| Agent configured, streaming | `[●] Agent Name ▾` — color dot pulses (opacity 1→0.4→1, 1.5s, infinite) |
-| No agent | `[◌] No agent ▾` — muted dot (`border` instead of `bg`), muted text |
-| Agent switching | Name slides out (y: 0→3, opacity→0) then new name slides in (y: -3→0, opacity→1), 120ms |
-| Hover | `bg-accent` background via spring transition |
-| Active/pressed | `scale: 0.97` via `whileTap` |
+| State                       | Visual                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| Agent configured, idle      | `[●] Agent Name ▾` — color dot solid, text `font-medium`                                |
+| Agent configured, streaming | `[●] Agent Name ▾` — color dot pulses (opacity 1→0.4→1, 1.5s, infinite)                 |
+| No agent                    | `[◌] No agent ▾` — muted dot (`border` instead of `bg`), muted text                     |
+| Agent switching             | Name slides out (y: 0→3, opacity→0) then new name slides in (y: -3→0, opacity→1), 120ms |
+| Hover                       | `bg-accent` background via spring transition                                            |
+| Active/pressed              | `scale: 0.97` via `whileTap`                                                            |
 
 **Implementation details:**
 
@@ -137,12 +137,12 @@ import type { AgentVisual } from '@/layers/entities/agent';
 
 **Behavior:**
 
-| State | Visual |
-|-------|--------|
-| Default | Search icon, `text-muted-foreground` |
-| Hover | `text-foreground`, `scale: 1.1` via spring |
-| Active/pressed | `scale: 0.93` via `whileTap` |
-| Tooltip | `"Search"` + `<Kbd>⌘K</Kbd>` (Mac) or `<Kbd>Ctrl+K</Kbd>` (other) |
+| State          | Visual                                                            |
+| -------------- | ----------------------------------------------------------------- |
+| Default        | Search icon, `text-muted-foreground`                              |
+| Hover          | `text-foreground`, `scale: 1.1` via spring                        |
+| Active/pressed | `scale: 0.93` via `whileTap`                                      |
+| Tooltip        | `"Search"` + `<Kbd>⌘K</Kbd>` (Mac) or `<Kbd>Ctrl+K</Kbd>` (other) |
 
 **Implementation details:**
 
@@ -178,17 +178,17 @@ import { Kbd } from '@/layers/shared/ui/kbd';
 ```tsx
 <header
   className="relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
-  style={currentAgent ? {
-    borderBottomColor: `color-mix(in srgb, ${agentVisual.color} 25%, var(--border))`,
-  } : undefined}
+  style={
+    currentAgent
+      ? {
+          borderBottomColor: `color-mix(in srgb, ${agentVisual.color} 25%, var(--border))`,
+        }
+      : undefined
+  }
 >
   <SidebarTrigger className="-ml-0.5" />
   <Separator orientation="vertical" className="mr-1 h-4" />
-  <AgentIdentityChip
-    agent={currentAgent}
-    visual={agentVisual}
-    isStreaming={isStreaming}
-  />
+  <AgentIdentityChip agent={currentAgent} visual={agentVisual} isStreaming={isStreaming} />
   <div className="flex-1" />
   <CommandPaletteTrigger />
 
@@ -220,12 +220,12 @@ import { Separator } from '@/layers/shared/ui';
 
 ### 10x Enhancements Summary
 
-| Enhancement | Where | Trigger | Detail |
-|-------------|-------|---------|--------|
-| Color dot pulse | AgentIdentityChip | `isStreaming === true` | Opacity breathes 1→0.4→1 over 1.5s |
-| Name slide | AgentIdentityChip | Agent changes (key change on `agent?.id`) | y: -3→0→3, opacity 0→1→0, 120ms |
-| Streaming scan line | App.tsx header | `isStreaming === true` | scaleX 0→1 + opacity 0.8→0, 2s, infinite loop |
-| Color-tinted border | App.tsx header `style` | `currentAgent` is truthy | `color-mix(in srgb, color 25%, var(--border))` on border-bottom |
+| Enhancement         | Where                  | Trigger                                   | Detail                                                          |
+| ------------------- | ---------------------- | ----------------------------------------- | --------------------------------------------------------------- |
+| Color dot pulse     | AgentIdentityChip      | `isStreaming === true`                    | Opacity breathes 1→0.4→1 over 1.5s                              |
+| Name slide          | AgentIdentityChip      | Agent changes (key change on `agent?.id`) | y: -3→0→3, opacity 0→1→0, 120ms                                 |
+| Streaming scan line | App.tsx header         | `isStreaming === true`                    | scaleX 0→1 + opacity 0.8→0, 2s, infinite loop                   |
+| Color-tinted border | App.tsx header `style` | `currentAgent` is truthy                  | `color-mix(in srgb, color 25%, var(--border))` on border-bottom |
 
 All animations respect the existing `MotionConfig reducedMotion="user"` wrapper in App.tsx, which honors `prefers-reduced-motion`.
 
@@ -234,11 +234,13 @@ All animations respect the existing `MotionConfig reducedMotion="user"` wrapper 
 **File:** `features/session-list/ui/AgentHeader.tsx`
 
 **What to remove:**
+
 - The agent identity button (colored dot, emoji, bold name, description, path)
 - The gear icon button
 - The `onOpenAgentDialog` prop usage within the component (prop can remain for compatibility but the gear is gone)
 
 **What to keep:**
+
 - Path breadcrumb display with `PathBreadcrumb` for the current working directory
 - The `FolderOpen` icon + directory picker button (`onOpenPicker`)
 - The "+Agent" CTA for unregistered directories (`handleQuickCreate`)
@@ -297,6 +299,7 @@ The search icon on the right provides a persistent mouse target for the command 
 ### Streaming Feedback
 
 When the agent is streaming a response:
+
 1. The color dot breathes subtly (imperceptible but alive)
 2. A thin colored scan line sweeps across the header bottom border (radar/sonar metaphor)
 
@@ -411,7 +414,7 @@ No external documentation changes needed. The header update is a UI enhancement 
 
 ## Open Questions
 
-*None — all decisions resolved during ideation.*
+_None — all decisions resolved during ideation._
 
 ## Related ADRs
 

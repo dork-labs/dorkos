@@ -92,36 +92,36 @@ No external research needed. All issues have clear fixes based on established pa
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Transport interface for scan roots fix | Add `updateConfig()` to Transport | The Obsidian plugin uses `DirectTransport` which has no `fetch`. Raw `fetch` is a Transport bypass that breaks the hexagonal architecture. Both adapters need the new method. |
-| 2 | Duplicate dispatch fix approach | Skip watchers for pipeline-dispatched endpoints | Mark messages dispatched by `DeliveryPipeline` so `WatcherManager` skips them. Preserves watcher support for external writes while preventing double-fire. `claim()` atomicity already prevents data corruption, but handler side effects may not be idempotent. |
-| 3 | Issue scope | Critical + Important only (16 issues) | Covers all bugs, races, leaks, and validation gaps. Suggestions are deferred to keep blast radius manageable. |
+| #   | Decision                               | Choice                                          | Rationale                                                                                                                                                                                                                                                        |
+| --- | -------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Transport interface for scan roots fix | Add `updateConfig()` to Transport               | The Obsidian plugin uses `DirectTransport` which has no `fetch`. Raw `fetch` is a Transport bypass that breaks the hexagonal architecture. Both adapters need the new method.                                                                                    |
+| 2   | Duplicate dispatch fix approach        | Skip watchers for pipeline-dispatched endpoints | Mark messages dispatched by `DeliveryPipeline` so `WatcherManager` skips them. Preserves watcher support for external writes while preventing double-fire. `claim()` atomicity already prevents data corruption, but handler side effects may not be idempotent. |
+| 3   | Issue scope                            | Critical + Important only (16 issues)           | Covers all bugs, races, leaks, and validation gaps. Suggestions are deferred to keep blast radius manageable.                                                                                                                                                    |
 
 ## Issue Inventory (16 items)
 
 ### Critical (6)
 
-| ID | Area | Issue | File |
-|----|------|-------|------|
-| C1 | Telegram | Orphaned bot on reconnect — old Bot not stopped | `telegram-adapter.ts:517-521` |
-| C2 | Telegram | Reconnect timer not tracked — `stop()` can't cancel | `telegram-adapter.ts:512` |
-| C3 | Relay | `BindingStore.skipNextReload` race — boolean consumed by wrong event | `binding-store.ts:182-205` |
-| C4 | Relay | Duplicate dispatch — DeliveryPipeline + WatcherManager both handle same message | `delivery-pipeline.ts:153-154` |
-| C5 | Mesh | Transport bypass — `useMeshScanRoots` uses raw `fetch` | `use-mesh-scan-roots.ts:27-33` |
-| C6 | Mesh | Incomplete compensating transaction — manifest not cleaned up on Relay failure | `mesh-core.ts:212-221, 276-281` |
+| ID  | Area     | Issue                                                                           | File                            |
+| --- | -------- | ------------------------------------------------------------------------------- | ------------------------------- |
+| C1  | Telegram | Orphaned bot on reconnect — old Bot not stopped                                 | `telegram-adapter.ts:517-521`   |
+| C2  | Telegram | Reconnect timer not tracked — `stop()` can't cancel                             | `telegram-adapter.ts:512`       |
+| C3  | Relay    | `BindingStore.skipNextReload` race — boolean consumed by wrong event            | `binding-store.ts:182-205`      |
+| C4  | Relay    | Duplicate dispatch — DeliveryPipeline + WatcherManager both handle same message | `delivery-pipeline.ts:153-154`  |
+| C5  | Mesh     | Transport bypass — `useMeshScanRoots` uses raw `fetch`                          | `use-mesh-scan-roots.ts:27-33`  |
+| C6  | Mesh     | Incomplete compensating transaction — manifest not cleaned up on Relay failure  | `mesh-core.ts:212-221, 276-281` |
 
 ### Important (10)
 
-| ID | Area | Issue | File |
-|----|------|-------|------|
-| I1 | Telegram | Webhook error handler leak — `server.on('error')` never removed | `telegram-adapter.ts:563-566` |
-| I2 | Telegram | `stopWebhookServer` hangs — doesn't destroy keep-alive connections | `telegram-adapter.ts:572-579` |
-| I3 | Telegram | `extractChatId` accepts floats — needs `Number.isInteger` | `telegram-adapter.ts:80-96` |
-| I4 | Relay | Unvalidated `req.body` in adapter routes — `as` casts instead of Zod | `routes/relay.ts:377-444` |
-| I5 | Relay | SSE stream writes without checking `writableEnded` | `routes/relay.ts:303-337` |
-| I6 | Relay | `loadSessionMap` swallows malformed JSON shapes | `binding-router.ts:247-256` |
-| I7 | Mesh | `CrossNamespaceEdge` dead SVG animation — references non-existent path ID | `CrossNamespaceEdge.tsx:56-60` |
-| I8 | Mesh | `handleNodeClick` stale closure — `layoutedNodes` in deps recreates on every drag | `TopologyGraph.tsx:524-545` |
-| I9 | Mesh | Topology refetch triggers ELK recomputation even with unchanged data | `TopologyGraph.tsx`, `use-mesh-topology.ts:19` |
-| I10 | Mesh | `relativeTime` duplicated between `AgentNode.tsx` and `AgentHealthDetail.tsx` | `AgentNode.tsx:50-68`, `AgentHealthDetail.tsx:18-27` |
+| ID  | Area     | Issue                                                                             | File                                                 |
+| --- | -------- | --------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| I1  | Telegram | Webhook error handler leak — `server.on('error')` never removed                   | `telegram-adapter.ts:563-566`                        |
+| I2  | Telegram | `stopWebhookServer` hangs — doesn't destroy keep-alive connections                | `telegram-adapter.ts:572-579`                        |
+| I3  | Telegram | `extractChatId` accepts floats — needs `Number.isInteger`                         | `telegram-adapter.ts:80-96`                          |
+| I4  | Relay    | Unvalidated `req.body` in adapter routes — `as` casts instead of Zod              | `routes/relay.ts:377-444`                            |
+| I5  | Relay    | SSE stream writes without checking `writableEnded`                                | `routes/relay.ts:303-337`                            |
+| I6  | Relay    | `loadSessionMap` swallows malformed JSON shapes                                   | `binding-router.ts:247-256`                          |
+| I7  | Mesh     | `CrossNamespaceEdge` dead SVG animation — references non-existent path ID         | `CrossNamespaceEdge.tsx:56-60`                       |
+| I8  | Mesh     | `handleNodeClick` stale closure — `layoutedNodes` in deps recreates on every drag | `TopologyGraph.tsx:524-545`                          |
+| I9  | Mesh     | Topology refetch triggers ELK recomputation even with unchanged data              | `TopologyGraph.tsx`, `use-mesh-topology.ts:19`       |
+| I10 | Mesh     | `relativeTime` duplicated between `AgentNode.tsx` and `AgentHealthDetail.tsx`     | `AgentNode.tsx:50-68`, `AgentHealthDetail.tsx:18-27` |

@@ -1,5 +1,5 @@
 ---
-title: "Chat Input Always Editable: UX Research & Best Practices"
+title: 'Chat Input Always Editable: UX Research & Best Practices'
 date: 2026-03-10
 type: external-best-practices
 status: active
@@ -24,20 +24,24 @@ The recommended path for DorkOS is **Always-On Input + Optimistic Queue** (Appro
 ### 1. Competitive Analysis: What Major Chat Apps Do
 
 **ChatGPT (OpenAI)**
+
 - The submit button transforms into a Stop button (filled square icon) during generation.
 - The textarea is **not fully disabled** during streaming — users can type ahead, but submitting a new message while one is in-flight can crash the stream or cause errors per the OpenAI community forum.
 - OpenAI has shipped and removed the Stop button in various iterations; the behavior is not stable or intentional from a design standpoint.
 - There is no official message queue — sending during streaming is unsupported and error-prone.
 
 **Claude.ai (Anthropic)**
+
 - Input is disabled during generation. A mid-response rollback (Issue #29684) was reported to silently lose user work typed during the response — validating that this is a real problem Anthropic itself faces.
 - No queue indicator exists.
 
 **Cursor (AI Code Editor)**
+
 - Cursor's chat panel (VS Code-based) shows a generating state but developers report issues with the Enter key shortcut not working from agent chat during generation.
 - No documented queue; input appears disabled/blocked during generation.
 
 **Roo Code (VS Code Extension)**
+
 - Ships the most mature message queuing UI of any tool surveyed.
 - **The textarea stays active at all times.** Enter queues messages immediately.
 - Visual queue indicators: card-based display with "Queued Messages:" label above the input, per-item edit/delete controls, trash icons on hover.
@@ -46,27 +50,32 @@ The recommended path for DorkOS is **Always-On Input + Optimistic Queue** (Appro
 - Known bug (Issue #9315): queued messages sometimes injected late (after 10+ LLM turns instead of on the next available turn). This is an implementation bug, not a design flaw.
 
 **Relevance AI**
+
 - Ships "Message Queuing in Chat: Continue your conversation without waiting" as a named product feature.
 - Visual queue indicator shows count of messages waiting.
 - Automatic sequential delivery, FIFO order.
 - Described as seamless background operation — minimal UI chrome.
 
 **Perplexity AI**
+
 - Prompt controls (Focus, format buttons, etc.) are present around the input.
 - No specific documentation on whether input is disabled during generation found.
 - General UX philosophy (per NN/G analysis) is "search-like" — users expect fast query/response cycles, less relevant to queuing.
 
 **GitHub Copilot Chat**
+
 - Input disabled or blocked during multi-step agent operations.
 - "Agent: Max Requests" setting controls turn limits; Copilot asks for confirmation at each limit.
 - No message queue feature.
 
 **Notion AI**
+
 - Uses inline overlay prompts within the page editor.
 - "Keep", "Try again", "Discard" response controls — flow is sequential, not queue-based.
 - Not directly applicable (document-first interaction model vs. chat).
 
 **Vercel AI SDK / AI Chatbot Template**
+
 - Default recommendation: `disabled={status !== 'ready'}` — disables input during streaming.
 - Community PR #1212 adds a queue UI: collapsible panel above input, visually merges with input card, per-item remove on hover, auto-flush when status returns to `ready`.
 - Stop button intentionally shows only during streaming when input is empty.
@@ -79,6 +88,7 @@ The recommended path for DorkOS is **Always-On Input + Optimistic Queue** (Appro
 Only Roo Code (shipping, with bugs), Relevance AI (shipping), and the Vercel AI chatbot community PR (pending) have documented queue UIs. ChatGPT, Claude.ai, Cursor, and Copilot do not support queuing.
 
 **How queuing should work (consensus pattern):**
+
 1. User types message while agent is responding.
 2. Enter submits — message enters a FIFO queue, not the network.
 3. A queue indicator appears above the input (collapsed by default, expandable).
@@ -97,11 +107,13 @@ No hard limit necessary; browser memory is the practical constraint (per Roo Cod
 ### 3. Claude Agent SDK Capabilities
 
 **Streaming Input Mode** is the SDK's preferred and recommended mode. It explicitly supports:
+
 - Queued Messages: "Send multiple messages that process sequentially, with ability to interrupt"
 - The SDK accepts an AsyncGenerator as the `prompt` argument — yielding new `user` messages at any time during the loop
 - Image attachments, hooks, tool integration, real-time feedback, context persistence
 
 The SDK docs show queuing via an async generator:
+
 ```typescript
 async function* generateMessages() {
   yield { type: "user", message: { role: "user", content: "First message" } };
@@ -112,6 +124,7 @@ for await (const msg of query({ prompt: generateMessages() })) { ... }
 ```
 
 **Interrupt / Cancel:**
+
 - The V1 API had `query.interrupt()` — graceful stop while keeping session alive.
 - The V2 API (current) does **not have a built-in interrupt method** on `SDKSession`. Issue #120 is open requesting `session.interrupt()`.
 - Current workaround: `session.close()` — closes the entire session and loses context.
@@ -126,6 +139,7 @@ for await (const msg of query({ prompt: generateMessages() })) { ... }
 Reading `ChatInput.tsx` and `use-chat-session.ts` reveals:
 
 **Current behavior:**
+
 - `isDisabled = isLoading || sessionBusy` — textarea gets `disabled={isDisabled}`
 - `sessionBusy` fires when `SESSION_LOCKED` error is returned (concurrent write attempt)
 - `handleSubmit` guard: `if (!input.trim() || status === 'streaming') return;`
@@ -134,6 +148,7 @@ Reading `ChatInput.tsx` and `use-chat-session.ts` reveals:
 - A "Session is busy. Please wait..." message renders when `sessionBusy === true`
 
 **What needs to change:**
+
 1. Remove `disabled={isDisabled}` from the textarea
 2. Change the `handleSubmit` guard to queue instead of no-op when streaming
 3. Add queue state (array) to `useChatSession` or a new `useChatQueue` hook
@@ -149,6 +164,7 @@ Reading `ChatInput.tsx` and `use-chat-session.ts` reveals:
 The send/stop button already morphs between two states using `motion/react`. The opportunity is to add a **third state: "queue"** — when the agent is streaming and the user has text, the button becomes a "queue it" affordance (different icon, different color, perhaps a subtle badge showing queue depth).
 
 Icon candidates for queue state:
+
 - Clock or hourglass (implies "later")
 - Stack or layers icon (implies queued)
 - A subtle `+` or "plus arrow" variant
@@ -163,6 +179,7 @@ The queue panel should slide down from above the input (`AnimatePresence` + `ini
 The LibreChat PR #9719 identified the exact bug: after a response completes, draft restoration can overwrite what the user just typed. The fix (65ms quick-save debounce vs. 850ms for empty-value debounce) maps directly to DorkOS's pattern. The always-on input combined with fast draft capture prevents this entirely.
 
 **Keyboard shortcut surface:**
+
 - `Enter` → queue message (when streaming) / send immediately (when idle)
 - `Shift+Enter` → newline (unchanged)
 - `Escape` → existing double-escape-to-clear pattern (keep)
@@ -182,6 +199,7 @@ iOS/Android support `navigator.vibrate()` for queued message confirmation. A sin
 The disabled textarea is an implementation detail leaking into the UX. A well-designed control panel operator never sees "system busy" — they see a queue. The input should always feel like it belongs to the user, not the system.
 
 **The simplest version that still delights:**
+
 1. Remove the `disabled` from the textarea. No other changes required for "always editable."
 2. Prevent submission (silently, not with an error) when streaming.
 3. An "Enter queues when busy" affordance requires only: queue state array, a visual counter badge on the button, and auto-flush logic. ~150 lines of code total.
@@ -201,12 +219,14 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 **Description:** Remove `disabled` from the textarea. Keep the `if (status === 'streaming') return` guard in `handleSubmit`. Show a subtle hint when the user tries to submit during streaming ("Sending when ready..." toast or inline note).
 
 **Pros:**
+
 - Minimal code change (remove ~3 lines from ChatInput.tsx, update tests)
 - User can type and compose draft freely
 - No queuing complexity
 - Draft is preserved across the response
 
 **Cons:**
+
 - Still frustrating: user has to manually re-submit after the agent finishes
 - No feedback about the system understanding their intent
 - Loses the "queue and forget" delight opportunity
@@ -221,11 +241,13 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 **Description:** Remove `disabled`. When user submits during streaming, show a brief toast ("Message queued") and store the pending message in a single-item buffer. On agent completion, auto-send the buffered message.
 
 **Pros:**
+
 - Simple: only one message in the buffer at a time
 - Clear user feedback via toast
 - Auto-sends so user doesn't have to remember to re-send
 
 **Cons:**
+
 - Single-item buffer means a second attempt while the first is queued overwrites or is lost
 - Toast is noisy and ephemeral — harder to edit or cancel a queued message
 - No visual persistence of the queue state
@@ -240,6 +262,7 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 **Description:** Remove `disabled` from textarea. When user submits during streaming, the message enters a local queue (array in `useChatSession` or a new `useChatQueue` hook). A collapsible queue panel appears above the input showing queued messages with edit/delete per item. On agent completion, queue flushes FIFO. Each queued message is tagged with a timing annotation (`wasTypedDuringStream: true`) so the agent receives context about when it was composed.
 
 **Pros:**
+
 - Full creative control for the user — type as many follow-ups as needed
 - Queue is visible and editable (cancellable before it sends)
 - Auto-flushes so no action required
@@ -249,6 +272,7 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 - Matches DorkOS brand: operators work in queues and pipelines
 
 **Cons:**
+
 - More complex to implement (~150-250 lines net new)
 - Queue panel adds UI surface area (though collapsible)
 - Queued messages auto-approving tool calls (Roo Code behavior) requires care — DorkOS should probably NOT auto-approve tools for queued messages, since tool permission dialogs should still surface
@@ -263,10 +287,12 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 **Description:** When the user submits during streaming, interrupt the current agent run (abort), then immediately send the new message. The in-progress response is truncated.
 
 **Pros:**
+
 - Most responsive: new message sends immediately
 - Matches how a user would interrupt someone mid-sentence in conversation
 
 **Cons:**
+
 - V2 SDK API does not have a graceful `interrupt()` method (Issue #120 is open)
 - Current `stop()` calls `abortRef.current?.abort()` which works for legacy SSE path but has edge cases on relay path
 - Abruptly truncating a partial response is jarring — the assistant message is incomplete
@@ -283,9 +309,11 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 **Description:** A persistent queue panel in the sidebar showing all pending messages, their order, status, and scheduling. Drag-to-reorder, bulk cancel, per-message edit.
 
 **Pros:**
+
 - Maximum power-user control
 
 **Cons:**
+
 - Overkill for a chat input UX improvement
 - Violates "less, but better" — a queue counter badge on the button communicates queue depth adequately
 - Would distract from the chat view which is already information-dense
@@ -333,12 +361,14 @@ Kai (10-20 agent sessions/week) will want to stack his next instruction before t
 ### Minimum Viable Delight (Phased)
 
 **Phase 1 (1-2 hours — do this now):**
+
 - Remove `disabled={isDisabled}` from the textarea in `ChatInput.tsx`
 - Change the `isLoading` guard in ChatInput's `handleKeyDown` to allow typing but show a subtle placeholder hint change: `"Message Claude... (will send when ready)"` while streaming
 - Update the 8 tests that currently assert `disabled=true` during loading
 - This delivers "always editable" with zero queue complexity
 
 **Phase 2 (1-2 days — full delight):**
+
 - Add `pendingQueue: string[]` state to `useChatSession`
 - On submit while streaming: push to queue, clear input, show queue badge on send button
 - Queue panel: collapsible card list above the input (`AnimatePresence`, stagger animation)

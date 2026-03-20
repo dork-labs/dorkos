@@ -98,9 +98,7 @@ describe('NamespaceGroupNode', () => {
     });
 
     it('applies namespace color to border with transparency', () => {
-      const { container } = render(
-        <NamespaceGroupNode {...makeMockProps({ color: '#3b82f6' })} />,
-      );
+      const { container } = render(<NamespaceGroupNode {...makeMockProps({ color: '#3b82f6' })} />);
       const wrapper = container.firstChild as HTMLElement;
       // jsdom converts hex+alpha to rgba format
       expect(wrapper.style.borderColor).toBe('rgba(59, 130, 246, 0.25)');
@@ -124,7 +122,7 @@ describe('NamespaceGroupNode', () => {
   describe('pulse dot', () => {
     it('shows pulse dot when activeCount > 0', () => {
       const { container } = render(
-        <NamespaceGroupNode {...makeMockProps({ activeCount: 2, color: '#22c55e' })} />,
+        <NamespaceGroupNode {...makeMockProps({ activeCount: 2, color: '#22c55e' })} />
       );
       // Find the small dot element
       const dots = container.querySelectorAll('.h-1\\.5.w-1\\.5.rounded-full');
@@ -132,34 +130,28 @@ describe('NamespaceGroupNode', () => {
     });
 
     it('does not show pulse dot when activeCount is 0', () => {
-      const { container } = render(
-        <NamespaceGroupNode {...makeMockProps({ activeCount: 0 })} />,
-      );
+      const { container } = render(<NamespaceGroupNode {...makeMockProps({ activeCount: 0 })} />);
       const dots = container.querySelectorAll('.h-1\\.5.w-1\\.5.rounded-full');
       expect(dots.length).toBe(0);
     });
 
     it('applies animate-pulse class when reduced motion is not preferred', () => {
       mockUsePrefersReducedMotion.mockReturnValue(false);
-      const { container } = render(
-        <NamespaceGroupNode {...makeMockProps({ activeCount: 1 })} />,
-      );
+      const { container } = render(<NamespaceGroupNode {...makeMockProps({ activeCount: 1 })} />);
       const dot = container.querySelector('.h-1\\.5.w-1\\.5.rounded-full');
       expect(dot?.className).toContain('animate-pulse');
     });
 
     it('does not apply animate-pulse class when reduced motion is preferred', () => {
       mockUsePrefersReducedMotion.mockReturnValue(true);
-      const { container } = render(
-        <NamespaceGroupNode {...makeMockProps({ activeCount: 1 })} />,
-      );
+      const { container } = render(<NamespaceGroupNode {...makeMockProps({ activeCount: 1 })} />);
       const dot = container.querySelector('.h-1\\.5.w-1\\.5.rounded-full');
       expect(dot?.className).not.toContain('animate-pulse');
     });
 
     it('uses namespace color for the pulse dot background', () => {
       const { container } = render(
-        <NamespaceGroupNode {...makeMockProps({ activeCount: 1, color: '#f59e0b' })} />,
+        <NamespaceGroupNode {...makeMockProps({ activeCount: 1, color: '#f59e0b' })} />
       );
       const dot = container.querySelector('.h-1\\.5.w-1\\.5.rounded-full') as HTMLElement;
       expect(dot.style.backgroundColor).toBe('rgb(245, 158, 11)');

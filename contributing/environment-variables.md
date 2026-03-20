@@ -10,12 +10,12 @@ Each app and package now exports a typed, validated `env` object from a local `e
 
 ## Where Each env.ts Lives
 
-| App / Package    | env.ts path                              | Env vars covered                                                                                                                                                 |
-| ---------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server`    | `apps/server/src/env.ts`                 | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION_OVERRIDE, CLIENT_DIST_PATH, MCP_API_KEY, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
-| `apps/client`    | `apps/client/src/env.ts`                 | MODE, DEV (Vite built-ins)                                                                                                                                       |
-| `apps/site`      | `apps/site/src/env.ts`                   | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                      |
-| `packages/cli`   | `packages/cli/src/env.ts`                | NODE_ENV, DORK_HOME, LOG_LEVEL                                                                                                                                   |
+| App / Package  | env.ts path               | Env vars covered                                                                                                                                                                                                                                                                                        |
+| -------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server`  | `apps/server/src/env.ts`  | DORKOS_PORT, DORKOS_HOST, NODE_ENV, DORKOS_DEFAULT_CWD, DORKOS_BOUNDARY, DORKOS_LOG_LEVEL, DORK_HOME, DORKOS_VERSION_OVERRIDE, CLIENT_DIST_PATH, MCP_API_KEY, DORKOS_PULSE_ENABLED, DORKOS_RELAY_ENABLED, TUNNEL_ENABLED, TUNNEL_PORT, TUNNEL_AUTH, TUNNEL_DOMAIN, NGROK_AUTHTOKEN, DORKOS_CORS_ORIGIN¹ |
+| `apps/client`  | `apps/client/src/env.ts`  | MODE, DEV (Vite built-ins)                                                                                                                                                                                                                                                                              |
+| `apps/site`    | `apps/site/src/env.ts`    | NODE_ENV, NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST                                                                                                                                                                                                                                             |
+| `packages/cli` | `packages/cli/src/env.ts` | NODE_ENV, DORK_HOME, LOG_LEVEL                                                                                                                                                                                                                                                                          |
 
 ¹ `DORKOS_CORS_ORIGIN` is read via direct `process.env` access in `app.ts` rather than through `env.ts` and is not yet migrated to the Zod schema.
 
@@ -32,7 +32,10 @@ Each app and package now exports a typed, validated `env` object from a local `e
 The `boolFlag` helper is used for all boolean feature flags:
 
 ```ts
-const boolFlag = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const boolFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
 ```
 
 `z.coerce.boolean()` is explicitly **not** used here. Zod's coerce converts any non-empty string to `true` — including the string `'false'`. This means `DORKOS_PULSE_ENABLED=false` would be interpreted as `true`, which is the opposite of what the user intended.
@@ -88,31 +91,31 @@ To add a new `VITE_*` var:
 
 ## Complete Env Var Reference
 
-| Variable                  | App            | Type              | Default                   | Description                                                                 |
-| ------------------------- | -------------- | ----------------- | ------------------------- | --------------------------------------------------------------------------- |
-| NODE_ENV                  | server         | string enum       | `development`             | Runtime environment mode                                                    |
-| DORKOS_PORT               | server         | number            | `4242` (dev: `6242`)      | Express server port                                                         |
-| DORKOS_HOST               | server         | string            | `localhost`               | Express server bind address. Set to `0.0.0.0` in Docker containers for port forwarding. |
-| DORKOS_DEFAULT_CWD        | server         | string \| undefined | —                       | Default working directory for new sessions                                  |
-| DORKOS_BOUNDARY           | server         | string \| undefined | —                       | Directory access boundary for file browsing security                        |
-| DORKOS_LOG_LEVEL          | server         | number \| undefined | —                       | Log verbosity: 0=Fatal 1=Error 2=Warn 3=Info 4=Debug 5=Trace               |
-| DORK_HOME                 | server         | string \| undefined | —                       | Config/storage directory (defaults to `~/.dork` in production)             |
-| DORKOS_VERSION_OVERRIDE   | server         | string \| undefined | —                       | Override reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. |
-| CLIENT_DIST_PATH          | server         | string \| undefined | —                       | Path to built React client assets (set by CLI package)                      |
-| MCP_API_KEY               | server         | string \| undefined | —                       | API key for authenticated access to the MCP endpoint (`/mcp`). When set, requests must include `Authorization: Bearer <key>`. When unset, MCP auth is disabled (localhost-only assumed). |
-| DORKOS_PULSE_ENABLED      | server         | boolean           | `false`                   | Enable the Pulse scheduler subsystem                                        |
-| DORKOS_RELAY_ENABLED      | server         | boolean           | `false`                   | Enable the Relay inter-agent message bus                                    |
-| DORKOS_CORS_ORIGIN        | server         | string \| undefined | —                       | CORS allowed origin(s). `*` for wildcard; comma-separated list for multiple origins. Defaults to localhost on DORKOS_PORT and VITE_PORT. Read via direct `process.env` in `app.ts`, not yet in `env.ts`. |
-| TUNNEL_ENABLED            | server         | boolean           | `false`                   | Enable ngrok tunnel on startup                                              |
-| TUNNEL_PORT               | server         | number \| undefined | —                       | Port to expose via ngrok (defaults to DORKOS_PORT)                          |
-| TUNNEL_AUTH               | server         | string \| undefined | —                       | Basic auth credentials for the tunnel (`user:password`)                     |
-| TUNNEL_DOMAIN             | server         | string \| undefined | —                       | Custom ngrok domain                                                         |
-| NGROK_AUTHTOKEN           | server         | string \| undefined | —                       | ngrok authentication token                                                  |
-| MODE                      | client         | string enum       | `development`             | Vite build mode                                                             |
-| DEV                       | client         | boolean           | `false`                   | True when running in Vite dev server                                        |
-| NODE_ENV                  | site           | string enum       | `development`             | Runtime environment mode                                                    |
-| NEXT_PUBLIC_POSTHOG_KEY   | site           | string \| undefined | —                       | PostHog analytics project API key                                           |
-| NEXT_PUBLIC_POSTHOG_HOST  | site           | string            | `https://app.posthog.com` | PostHog analytics ingestion host                                            |
-| NODE_ENV                  | cli            | string enum       | `development`             | Runtime environment mode                                                    |
-| DORK_HOME                 | cli            | string \| undefined | —                       | Config/storage directory (displayed in `dorkos config` output)             |
-| LOG_LEVEL                 | cli            | string \| undefined | —                       | CLI logging verbosity                                                       |
+| Variable                 | App    | Type                | Default                   | Description                                                                                                                                                                                              |
+| ------------------------ | ------ | ------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NODE_ENV                 | server | string enum         | `development`             | Runtime environment mode                                                                                                                                                                                 |
+| DORKOS_PORT              | server | number              | `4242` (dev: `6242`)      | Express server port                                                                                                                                                                                      |
+| DORKOS_HOST              | server | string              | `localhost`               | Express server bind address. Set to `0.0.0.0` in Docker containers for port forwarding.                                                                                                                  |
+| DORKOS_DEFAULT_CWD       | server | string \| undefined | —                         | Default working directory for new sessions                                                                                                                                                               |
+| DORKOS_BOUNDARY          | server | string \| undefined | —                         | Directory access boundary for file browsing security                                                                                                                                                     |
+| DORKOS_LOG_LEVEL         | server | number \| undefined | —                         | Log verbosity: 0=Fatal 1=Error 2=Warn 3=Info 4=Debug 5=Trace                                                                                                                                             |
+| DORK_HOME                | server | string \| undefined | —                         | Config/storage directory (defaults to `~/.dork` in production)                                                                                                                                           |
+| DORKOS_VERSION_OVERRIDE  | server | string \| undefined | —                         | Override reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version.                                                         |
+| CLIENT_DIST_PATH         | server | string \| undefined | —                         | Path to built React client assets (set by CLI package)                                                                                                                                                   |
+| MCP_API_KEY              | server | string \| undefined | —                         | API key for authenticated access to the MCP endpoint (`/mcp`). When set, requests must include `Authorization: Bearer <key>`. When unset, MCP auth is disabled (localhost-only assumed).                 |
+| DORKOS_PULSE_ENABLED     | server | boolean             | `false`                   | Enable the Pulse scheduler subsystem                                                                                                                                                                     |
+| DORKOS_RELAY_ENABLED     | server | boolean             | `false`                   | Enable the Relay inter-agent message bus                                                                                                                                                                 |
+| DORKOS_CORS_ORIGIN       | server | string \| undefined | —                         | CORS allowed origin(s). `*` for wildcard; comma-separated list for multiple origins. Defaults to localhost on DORKOS_PORT and VITE_PORT. Read via direct `process.env` in `app.ts`, not yet in `env.ts`. |
+| TUNNEL_ENABLED           | server | boolean             | `false`                   | Enable ngrok tunnel on startup                                                                                                                                                                           |
+| TUNNEL_PORT              | server | number \| undefined | —                         | Port to expose via ngrok (defaults to DORKOS_PORT)                                                                                                                                                       |
+| TUNNEL_AUTH              | server | string \| undefined | —                         | Basic auth credentials for the tunnel (`user:password`)                                                                                                                                                  |
+| TUNNEL_DOMAIN            | server | string \| undefined | —                         | Custom ngrok domain                                                                                                                                                                                      |
+| NGROK_AUTHTOKEN          | server | string \| undefined | —                         | ngrok authentication token                                                                                                                                                                               |
+| MODE                     | client | string enum         | `development`             | Vite build mode                                                                                                                                                                                          |
+| DEV                      | client | boolean             | `false`                   | True when running in Vite dev server                                                                                                                                                                     |
+| NODE_ENV                 | site   | string enum         | `development`             | Runtime environment mode                                                                                                                                                                                 |
+| NEXT_PUBLIC_POSTHOG_KEY  | site   | string \| undefined | —                         | PostHog analytics project API key                                                                                                                                                                        |
+| NEXT_PUBLIC_POSTHOG_HOST | site   | string              | `https://app.posthog.com` | PostHog analytics ingestion host                                                                                                                                                                         |
+| NODE_ENV                 | cli    | string enum         | `development`             | Runtime environment mode                                                                                                                                                                                 |
+| DORK_HOME                | cli    | string \| undefined | —                         | Config/storage directory (displayed in `dorkos config` output)                                                                                                                                           |
+| LOG_LEVEL                | cli    | string \| undefined | —                         | CLI logging verbosity                                                                                                                                                                                    |

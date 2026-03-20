@@ -46,12 +46,12 @@ A live browser self-test (`/chat:self-test`) sent 8 messages through the full st
 
 ## Technical Dependencies
 
-| Dependency | Notes |
-|---|---|
-| Node.js `http.ServerResponse` | `write()` returns `boolean`; `drain` event on socket |
-| Express `Response` | Thin wrapper over Node's `http.ServerResponse` |
-| TanStack Query v5 | `setQueryData` updater function pattern |
-| `agentManager.getSdkSessionId()` | Already exists in `agent-manager.ts:415` |
+| Dependency                       | Notes                                                |
+| -------------------------------- | ---------------------------------------------------- |
+| Node.js `http.ServerResponse`    | `write()` returns `boolean`; `drain` event on socket |
+| Express `Response`               | Thin wrapper over Node's `http.ServerResponse`       |
+| TanStack Query v5                | `setQueryData` updater function pattern              |
+| `agentManager.getSdkSessionId()` | Already exists in `agent-manager.ts:415`             |
 
 No new libraries. No schema or database changes.
 
@@ -93,6 +93,7 @@ for await (const event of agentManager.sendMessage(sessionId, content, { cwd }))
 Any other call sites of `sendSSEEvent` (relay route, sync broadcaster) must also be updated to `await`.
 
 **Why this is safe:**
+
 - `drain` fires once the buffer drains below the highWaterMark — it does not wait for the client to consume all buffered data
 - The generator in `agent-manager.ts` naturally pauses while we await drain, providing end-to-end flow control
 - Client disconnect causes `res.destroy()` → `drain` never fires → generator is garbage-collected with the request
@@ -114,7 +115,7 @@ Any other call sites of `sendSSEEvent` (relay route, sync broadcaster) must also
 
 router.get('/:id/messages', async (req, res) => {
   const sessionId = req.params.id;
-  const cwd = req.query.cwd as string | undefined ?? defaultCwd;
+  const cwd = (req.query.cwd as string | undefined) ?? defaultCwd;
 
   // Translate client-facing session ID to SDK-assigned JSONL filename
   const sdkSessionId = agentManager.getSdkSessionId(sessionId) ?? sessionId;
@@ -164,7 +165,7 @@ if (
   text.startsWith('<command-name>') ||
   text.startsWith('<command-message>') ||
   text.startsWith('<task-notification>') ||
-  text.startsWith('<relay_context>')    // ← add this
+  text.startsWith('<relay_context>') // ← add this
 ) {
   continue;
 }
@@ -191,10 +192,10 @@ This ensures the session title is derived from the first genuine user-authored m
 queryClient.setQueryData(['session', sessionId, selectedCwd], updated);
 
 // After:
-queryClient.setQueryData(
-  ['session', sessionId, selectedCwd],
-  (old: Session | undefined) => ({ ...old, ...updated })
-);
+queryClient.setQueryData(['session', sessionId, selectedCwd], (old: Session | undefined) => ({
+  ...old,
+  ...updated,
+}));
 ```
 
 This ensures a model update preserves the cached permission mode and vice versa.
@@ -204,12 +205,13 @@ This ensures a model update preserves the cached permission mode and vice versa.
 ```typescript
 // routes/sessions.ts — PATCH handler
 const session = await transcriptReader.getSession(cwd, sdkSessionId);
-const inMemory = agentManager.getSession(sessionId);  // in-memory state
+const inMemory = agentManager.getSession(sessionId); // in-memory state
 
 const result = {
   ...session,
   model: model ?? inMemory?.model ?? session?.model,
-  permissionMode: permissionMode ?? inMemory?.permissionMode ?? session?.permissionMode ?? 'default',
+  permissionMode:
+    permissionMode ?? inMemory?.permissionMode ?? session?.permissionMode ?? 'default',
 };
 res.json(result);
 ```
@@ -257,12 +259,15 @@ After these fixes, the user experiences:
 ### Fix 1: SSE Backpressure
 
 **Unit test** (`apps/server/src/services/__tests__/stream-adapter.test.ts`):
+
 ```typescript
 it('waits for drain before resolving when write returns false', async () => {
   // Purpose: verify that sendSSEEvent does not lose data when the socket buffer is full
   const mockRes = {
     write: vi.fn().mockReturnValueOnce(false).mockReturnValue(true),
-    once: vi.fn((event, cb) => { if (event === 'drain') cb(); }),
+    once: vi.fn((event, cb) => {
+      if (event === 'drain') cb();
+    }),
   };
   await sendSSEEvent(mockRes as unknown as Response, { type: 'text_delta', data: { text: 'hi' } });
   expect(mockRes.once).toHaveBeenCalledWith('drain', expect.any(Function));
@@ -280,11 +285,14 @@ it('does not wait when write returns true', async () => {
 ### Fix 2: Session ID Translation
 
 **Unit test** (`apps/server/src/routes/__tests__/sessions.test.ts`):
+
 ```typescript
 it('uses SDK session ID when fetching message history', async () => {
   // Purpose: verify GET /messages translates client-facing ID to SDK JSONL filename
   agentManager.getSdkSessionId.mockReturnValue('sdk-uuid-123');
-  transcriptReader.readTranscript.mockResolvedValue({ messages: [{ role: 'user', content: 'hi' }] });
+  transcriptReader.readTranscript.mockResolvedValue({
+    messages: [{ role: 'user', content: 'hi' }],
+  });
 
   const res = await request(app).get('/api/sessions/client-uuid-456/messages');
 
@@ -306,11 +314,15 @@ it('falls back to URL session ID when not in agentManager', async () => {
 ### Fix 3: relay_context Filter
 
 **Unit test** (`apps/server/src/services/__tests__/transcript-parser.test.ts`):
+
 ```typescript
 it('filters relay_context blocks from parsed messages', () => {
   // Purpose: confirm relay metadata never reaches the chat UI
   const jsonl = [
-    JSON.stringify({ type: 'user', message: { content: '<relay_context>\nAgent-ID: abc\n</relay_context>\n\nDo a thing' } }),
+    JSON.stringify({
+      type: 'user',
+      message: { content: '<relay_context>\nAgent-ID: abc\n</relay_context>\n\nDo a thing' },
+    }),
     JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } }),
   ].join('\n');
 
@@ -324,11 +336,15 @@ it('filters relay_context blocks from parsed messages', () => {
 ```
 
 **Unit test** (`apps/server/src/services/__tests__/transcript-reader.test.ts`):
+
 ```typescript
 it('skips relay_context when extracting session title', async () => {
   // Purpose: session title should reflect the first real user message, not relay metadata
   const jsonl = [
-    JSON.stringify({ type: 'user', message: { content: '<relay_context>\nAgent-ID: abc\n</relay_context>\n\nAnalyze logs' } }),
+    JSON.stringify({
+      type: 'user',
+      message: { content: '<relay_context>\nAgent-ID: abc\n</relay_context>\n\nAnalyze logs' },
+    }),
   ].join('\n');
 
   mockFs.readFile.mockResolvedValue(Buffer.from(jsonl));
@@ -342,15 +358,20 @@ it('skips relay_context when extracting session title', async () => {
 ### Fix 4: TanStack Query Merge
 
 **Unit test** (`apps/client/src/layers/entities/session/model/__tests__/use-session-status.test.ts`):
+
 ```typescript
 it('preserves existing permissionMode when updating model', async () => {
   // Purpose: prove the merge strategy prevents cross-field reset
   const { result } = renderHook(() => useSessionStatus('session-1'), { wrapper: Wrapper });
 
   // Prime cache with both fields
-  act(() => queryClient.setQueryData(['session', 'session-1', undefined], {
-    id: 'session-1', model: 'claude-haiku-4-5', permissionMode: 'acceptEdits',
-  }));
+  act(() =>
+    queryClient.setQueryData(['session', 'session-1', undefined], {
+      id: 'session-1',
+      model: 'claude-haiku-4-5',
+      permissionMode: 'acceptEdits',
+    })
+  );
 
   // Server returns only the updated field
   mockTransport.updateSession.mockResolvedValue({ id: 'session-1', model: 'claude-opus-4-6' });
@@ -360,7 +381,7 @@ it('preserves existing permissionMode when updating model', async () => {
   const cached = queryClient.getQueryData(['session', 'session-1', undefined]);
   expect(cached).toMatchObject({
     model: 'claude-opus-4-6',
-    permissionMode: 'acceptEdits',  // must be preserved
+    permissionMode: 'acceptEdits', // must be preserved
   });
 });
 ```
@@ -388,6 +409,7 @@ it('preserves existing permissionMode when updating model', async () => {
 ## Documentation
 
 Update `contributing/architecture.md` to note that:
+
 - `sendSSEEvent` is async and must be awaited
 - `GET /api/sessions/:id/messages` applies `getSdkSessionId()` translation before JSONL lookup
 

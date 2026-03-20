@@ -101,7 +101,7 @@ export function SidebarTabRow({
 
                 {/* Schedules numeric badge */}
                 {tab.id === 'schedules' && schedulesBadge > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-green-500 text-[10px] font-medium text-white">
+                  <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-green-500 text-[10px] font-medium text-white">
                     {schedulesBadge > 9 ? '9+' : schedulesBadge}
                     <span className="absolute inset-0 animate-pulse rounded-full bg-green-500/30" />
                   </span>
@@ -111,7 +111,7 @@ export function SidebarTabRow({
                 {tab.id === 'connections' && connectionsStatus !== 'none' && (
                   <span
                     className={cn(
-                      'absolute -right-0.5 -top-0.5 size-1.5 rounded-full',
+                      'absolute -top-0.5 -right-0.5 size-1.5 rounded-full',
                       STATUS_DOT_COLORS[connectionsStatus]
                     )}
                   />

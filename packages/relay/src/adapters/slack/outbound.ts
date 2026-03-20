@@ -38,7 +38,11 @@ import type { SlackOutboundState } from './approval.js';
 // Re-export types so existing imports from outbound.ts continue to work
 export type { ActiveStream, PendingReactions } from './stream.js';
 // Re-export approval state types and helpers so the adapter facade can use them
-export { clearApprovalTimeout, createSlackOutboundState, clearAllApprovalTimeouts } from './approval.js';
+export {
+  clearApprovalTimeout,
+  createSlackOutboundState,
+  clearAllApprovalTimeouts,
+} from './approval.js';
 export type { SlackOutboundState } from './approval.js';
 
 // === Types ===
@@ -98,7 +102,16 @@ function resolveThreadTs(envelope: RelayEnvelope): string | undefined {
  * @param opts - Delivery options
  */
 export async function deliverMessage(opts: SlackDeliverOptions): Promise<DeliveryResult> {
-  const { adapterId, subject, envelope, client, streamState, pendingReactions, callbacks, logger = noopLogger } = opts;
+  const {
+    adapterId,
+    subject,
+    envelope,
+    client,
+    streamState,
+    pendingReactions,
+    callbacks,
+    logger = noopLogger,
+  } = opts;
   const startTime = Date.now();
 
   // Reap orphaned streams that never received a done/error event
@@ -107,9 +120,17 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
       streamState.delete(key);
       // Clean up the pending hourglass reaction that would otherwise linger forever
       if (client) {
-        removePendingReaction(client, stream.channelId, opts.typingIndicator, pendingReactions, logger);
+        removePendingReaction(
+          client,
+          stream.channelId,
+          opts.typingIndicator,
+          pendingReactions,
+          logger
+        );
       }
-      logger.warn(`stream: reaped orphaned stream for ${key} (age: ${Math.round((startTime - stream.startedAt) / 1000)}s)`);
+      logger.warn(
+        `stream: reaped orphaned stream for ${key} (age: ${Math.round((startTime - stream.startedAt) / 1000)}s)`
+      );
     }
   }
 
@@ -120,7 +141,11 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   }
 
   if (!client) {
-    return { success: false, error: `SlackAdapter(${adapterId}): not started`, durationMs: Date.now() - startTime };
+    return {
+      success: false,
+      error: `SlackAdapter(${adapterId}): not started`,
+      durationMs: Date.now() - startTime,
+    };
   }
 
   const channelId = extractChannelId(subject);
@@ -139,13 +164,20 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   // 1. threadTs — real Slack timestamp (always present for messages from Slack users)
   // 2. correlationId — shared across events from the same request
   // 3. envelope.from — agent session ID, consistent across all stream events
-  const payloadObj = envelope.payload && typeof envelope.payload === 'object'
-    ? (envelope.payload as Record<string, unknown>) : undefined;
-  const streamKeyTs = threadTs ?? (payloadObj?.correlationId as string | undefined) ?? envelope.from;
+  const payloadObj =
+    envelope.payload && typeof envelope.payload === 'object'
+      ? (envelope.payload as Record<string, unknown>)
+      : undefined;
+  const streamKeyTs =
+    threadTs ?? (payloadObj?.correlationId as string | undefined) ?? envelope.from;
 
   const ctx: StreamContext = {
-    channelId, threadTs, client, streamState,
-    callbacks, startTime,
+    channelId,
+    threadTs,
+    client,
+    streamState,
+    callbacks,
+    startTime,
     typingIndicator: opts.typingIndicator,
     streamKeyTs,
     pendingReactions,
@@ -158,7 +190,9 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   if (eventType) {
     const textChunk = extractTextDelta(envelope.payload);
     if (textChunk) {
-      logger.debug(`deliver: text_delta to ${channelId} (${textChunk.length} chars, streaming=${opts.streaming ? (opts.nativeStreaming ? 'native' : 'legacy') : 'buffered'})`);
+      logger.debug(
+        `deliver: text_delta to ${channelId} (${textChunk.length} chars, streaming=${opts.streaming ? (opts.nativeStreaming ? 'native' : 'legacy') : 'buffered'})`
+      );
       return handleTextDelta(textChunk, opts.streaming, opts.nativeStreaming, ctx);
     }
 
@@ -176,11 +210,22 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     if (eventType === 'approval_required') {
       const approvalData = extractApprovalData(envelope.payload);
       if (approvalData) {
-        logger.debug(`deliver: approval_required for tool '${approvalData.toolName}' to ${channelId}`);
+        logger.debug(
+          `deliver: approval_required for tool '${approvalData.toolName}' to ${channelId}`
+        );
         // Flush accumulated text before posting the approval card so partial
         // responses aren't lost when the stream pauses for approval.
         await flushStreamBuffer(ctx);
-        return handleApprovalRequired(channelId, threadTs, approvalData, envelope, client, callbacks, startTime, opts.approvalState);
+        return handleApprovalRequired(
+          channelId,
+          threadTs,
+          approvalData,
+          envelope,
+          client,
+          callbacks,
+          startTime,
+          opts.approvalState
+        );
       }
     }
 
@@ -190,11 +235,21 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   }
 
   // --- Standard payload (non-StreamEvent) ---
-  const text = truncateText(formatForPlatform(extractPayloadContent(envelope.payload), 'slack'), MAX_MESSAGE_LENGTH);
+  const text = truncateText(
+    formatForPlatform(extractPayloadContent(envelope.payload), 'slack'),
+    MAX_MESSAGE_LENGTH
+  );
   logger.debug(`deliver: standard payload to ${channelId} (${text.length} chars)`);
 
   return wrapSlackCall(
-    () => client.chat.postMessage({ channel: channelId, text, ...(threadTs ? { thread_ts: threadTs } : {}) }),
-    callbacks, startTime, true,
+    () =>
+      client.chat.postMessage({
+        channel: channelId,
+        text,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      }),
+    callbacks,
+    startTime,
+    true
   );
 }

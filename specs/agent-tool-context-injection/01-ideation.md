@@ -16,7 +16,7 @@ status: ideation
 
 ## 1) Intent & Assumptions
 
-- **Task brief:** DorkOS provides 28 MCP tools to agents across relay, mesh, adapter, binding, and trace domains — but agents receive zero instructions on *how* to use them. No subject hierarchy docs, no workflow examples, no routing conventions. We need to inject `<relay_tools>`, `<mesh_tools>`, and `<adapter_tools>` context blocks into the system prompt with usage instructions, and add configurable settings so power users can see and control what context their agents receive.
+- **Task brief:** DorkOS provides 28 MCP tools to agents across relay, mesh, adapter, binding, and trace domains — but agents receive zero instructions on _how_ to use them. No subject hierarchy docs, no workflow examples, no routing conventions. We need to inject `<relay_tools>`, `<mesh_tools>`, and `<adapter_tools>` context blocks into the system prompt with usage instructions, and add configurable settings so power users can see and control what context their agents receive.
 - **Assumptions:**
   - `context-builder.ts` is the correct injection point (extends existing `<env>`, `<git_status>`, `<agent_identity>` pattern)
   - Static string blocks are sufficient — relay subjects and mesh workflows don't change at runtime
@@ -103,6 +103,7 @@ Full research report: `research/20260303_agent_tool_context_injection.md`
 **Recommendation:** Solution 1. Static XML blocks in context-builder.ts, gated by a dedicated `agentContext` config section. The blocks are ~250-350 tokens each (~0.5% of 200K window). Research shows Claude responds best to XML-tagged, numbered workflow steps with subject conventions documented first.
 
 **Key Research Insights:**
+
 - Tool `tool()` descriptions answer "what does this tool do?"; system prompt blocks answer "when and how to use tools together"
 - Claude 4.x doesn't need aggressive `CRITICAL: YOU MUST` language — calm, direct prose works
 - The relay subject hierarchy is the single most critical missing context (agents literally can't guess `relay.agent.{sessionId}`)
@@ -110,8 +111,8 @@ Full research report: `research/20260303_agent_tool_context_injection.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Settings location | Dedicated `agentContext` config section in `~/.dork/config.json` | Independent from feature flags — users can have relay enabled but suppress context. Exposes what we inject and gives power users control. |
-| 2 | Scope of context blocks | Include adapter/binding context alongside relay and mesh | Enables the "Send me a Telegram message" use case. Adapters and bindings are closely related to relay and agents need to understand the routing conventions. |
-| 3 | UI location for settings | Agent Settings dialog, new "Context" tab | Natural home — it's about what the agent knows. Lives alongside Identity, Persona, Capabilities, Connections. |
+| #   | Decision                 | Choice                                                           | Rationale                                                                                                                                                    |
+| --- | ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Settings location        | Dedicated `agentContext` config section in `~/.dork/config.json` | Independent from feature flags — users can have relay enabled but suppress context. Exposes what we inject and gives power users control.                    |
+| 2   | Scope of context blocks  | Include adapter/binding context alongside relay and mesh         | Enables the "Send me a Telegram message" use case. Adapters and bindings are closely related to relay and agents need to understand the routing conventions. |
+| 3   | UI location for settings | Agent Settings dialog, new "Context" tab                         | Natural home — it's about what the agent knows. Lives alongside Identity, Persona, Capabilities, Connections.                                                |

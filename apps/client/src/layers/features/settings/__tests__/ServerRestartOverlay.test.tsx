@@ -47,9 +47,13 @@ describe('ServerRestartOverlay', () => {
 
   it('polls health endpoint at 1.5s intervals', async () => {
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
-    await act(async () => { vi.advanceTimersByTime(1500); });
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
     expect(mockTransport.health).toHaveBeenCalledTimes(1);
-    await act(async () => { vi.advanceTimersByTime(1500); });
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
     expect(mockTransport.health).toHaveBeenCalledTimes(2);
   });
 
@@ -60,13 +64,17 @@ describe('ServerRestartOverlay', () => {
       uptime: 0,
     });
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
-    await act(async () => { vi.advanceTimersByTime(1500); });
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
     expect(window.location.reload).toHaveBeenCalled();
   });
 
   it('shows error state after 30 second timeout', async () => {
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
-    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
     expect(screen.getByText(/did not restart within 30 seconds/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /dismiss/i })).toBeInTheDocument();
@@ -75,7 +83,9 @@ describe('ServerRestartOverlay', () => {
   it('Try Again resets to loading state', async () => {
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
     // Trigger timeout
-    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
     expect(screen.getByText(/did not restart within 30 seconds/i)).toBeInTheDocument();
     // Click Try Again
     await act(async () => {
@@ -87,7 +97,9 @@ describe('ServerRestartOverlay', () => {
 
   it('Dismiss calls onDismiss callback', async () => {
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
-    await act(async () => { vi.advanceTimersByTime(30_000); });
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
     fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(defaultProps.onDismiss).toHaveBeenCalled();
   });

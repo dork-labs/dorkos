@@ -10,7 +10,7 @@ export function useChatStatusSync(
   status: string,
   isWaitingForUser: boolean,
   activeForm: string | null,
-  isTextStreaming: boolean,
+  isTextStreaming: boolean
 ): void {
   const setIsStreaming = useAppStore((s) => s.setIsStreaming);
   const setIsWaitingForUser = useAppStore((s) => s.setIsWaitingForUser);

@@ -98,7 +98,11 @@ describe('TopologyManager', () => {
     it('returns only caller namespace agents (invisible boundary)', () => {
       const registry = makeMockRegistry([agentA1, agentA2, agentB1, agentC1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const view = tm.getTopology('ns-a');
 
@@ -111,7 +115,11 @@ describe('TopologyManager', () => {
     it('returns all namespaces for admin view (*)', () => {
       const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const view = tm.getTopology('*');
 
@@ -124,7 +132,11 @@ describe('TopologyManager', () => {
     it('includes cross-namespace agents after allowCrossNamespace', () => {
       const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.allowCrossNamespace('ns-a', 'ns-b');
 
@@ -138,7 +150,11 @@ describe('TopologyManager', () => {
     it('hides namespace again after denyCrossNamespace', () => {
       const registry = makeMockRegistry([agentA1, agentB1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.allowCrossNamespace('ns-a', 'ns-b');
       // Verify ns-b is now visible
@@ -154,7 +170,11 @@ describe('TopologyManager', () => {
     it('keeps projectPath but strips scanRoot from agent manifests', () => {
       const registry = makeMockRegistry([agentA1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const view = tm.getTopology('ns-a');
       const agent = view.namespaces[0]!.agents[0]!;
@@ -168,7 +188,11 @@ describe('TopologyManager', () => {
     it('returns empty namespaces when caller has no agents', () => {
       const registry = makeMockRegistry([agentA1, agentB1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const view = tm.getTopology('ns-unknown');
 
@@ -178,7 +202,11 @@ describe('TopologyManager', () => {
     it('includes access rules involving accessible namespaces', () => {
       const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.allowCrossNamespace('ns-a', 'ns-b');
       tm.allowCrossNamespace('ns-b', 'ns-c');
@@ -195,7 +223,11 @@ describe('TopologyManager', () => {
     it('admin view returns all cross-namespace rules', () => {
       const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.allowCrossNamespace('ns-a', 'ns-b');
       tm.allowCrossNamespace('ns-b', 'ns-c');
@@ -214,7 +246,11 @@ describe('TopologyManager', () => {
     it('returns agents in accessible namespaces (excluding self)', () => {
       const registry = makeMockRegistry([agentA1, agentA2, agentB1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const reachable = tm.getAgentAccess('A1');
 
@@ -226,7 +262,11 @@ describe('TopologyManager', () => {
     it('includes cross-namespace agents after allowCrossNamespace', () => {
       const registry = makeMockRegistry([agentA1, agentB1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.allowCrossNamespace('ns-a', 'ns-b');
 
@@ -239,7 +279,11 @@ describe('TopologyManager', () => {
     it('returns undefined for nonexistent agent', () => {
       const registry = makeMockRegistry([agentA1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const result = tm.getAgentAccess('nonexistent');
 
@@ -249,7 +293,11 @@ describe('TopologyManager', () => {
     it('does not include the agent itself in results', () => {
       const registry = makeMockRegistry([agentA1]);
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(registry as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        registry as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const reachable = tm.getAgentAccess('A1');
 
@@ -265,7 +313,11 @@ describe('TopologyManager', () => {
   describe('allowCrossNamespace', () => {
     it('calls relayCore.addAccessRule with priority 50', () => {
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.allowCrossNamespace('ns-a', 'ns-b');
 
@@ -278,7 +330,11 @@ describe('TopologyManager', () => {
     });
 
     it('is a no-op when relayCore is undefined', () => {
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, undefined);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        undefined
+      );
 
       // Should not throw
       tm.allowCrossNamespace('ns-a', 'ns-b');
@@ -288,18 +344,26 @@ describe('TopologyManager', () => {
   describe('denyCrossNamespace', () => {
     it('calls relayCore.removeAccessRule for the source->target pattern', () => {
       const relay = makeMockRelayCore();
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       tm.denyCrossNamespace('ns-a', 'ns-b');
 
       expect(relay.removeAccessRule).toHaveBeenCalledWith(
         'relay.agent.ns-a.*',
-        'relay.agent.ns-b.*',
+        'relay.agent.ns-b.*'
       );
     });
 
     it('is a no-op when relayCore is undefined', () => {
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, undefined);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        undefined
+      );
 
       // Should not throw
       tm.denyCrossNamespace('ns-a', 'ns-b');
@@ -320,7 +384,11 @@ describe('TopologyManager', () => {
         // Cross-namespace deny catch-all (not in relay.agent.{ns}.* format for target)
         { from: 'relay.agent.ns-a.*', to: 'relay.agent.>', action: 'deny', priority: 10 },
       ]);
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       const rules = tm.listCrossNamespaceRules();
 
@@ -333,7 +401,11 @@ describe('TopologyManager', () => {
     });
 
     it('returns empty array when relayCore is undefined', () => {
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, undefined);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        undefined
+      );
 
       expect(tm.listCrossNamespaceRules()).toEqual([]);
     });
@@ -342,7 +414,11 @@ describe('TopologyManager', () => {
       const relay = makeMockRelayCore([
         { from: 'relay.agent.ns-a.*', to: 'relay.agent.ns-a.*', action: 'allow', priority: 100 },
       ]);
-      const tm = new TopologyManager(makeMockRegistry() as never, makeMockRelayBridge() as never, relay as never);
+      const tm = new TopologyManager(
+        makeMockRegistry() as never,
+        makeMockRelayBridge() as never,
+        relay as never
+      );
 
       expect(tm.listCrossNamespaceRules()).toEqual([]);
     });

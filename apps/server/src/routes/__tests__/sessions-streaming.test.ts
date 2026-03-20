@@ -61,7 +61,10 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
     // This is the key integration test for the SSE pipeline end-to-end.
     fakeRuntime.withScenarios([
       async function* () {
-        yield { type: 'session_status', data: { status: 'running', model: 'claude-haiku-4-5' } } as StreamEvent;
+        yield {
+          type: 'session_status',
+          data: { status: 'running', model: 'claude-haiku-4-5' },
+        } as StreamEvent;
         yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
       },
@@ -79,9 +82,18 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
     // matching what the React client expects to render ToolCallCard components.
     fakeRuntime.withScenarios([
       async function* () {
-        yield { type: 'session_status', data: { status: 'running', model: 'claude-haiku-4-5' } } as StreamEvent;
-        yield { type: 'tool_call_start', data: { toolCallId: 'tc-1', toolName: 'Bash', input: {} } } as StreamEvent;
-        yield { type: 'tool_call_delta', data: { toolCallId: 'tc-1', partialJson: '{"command":"echo hi"}' } } as StreamEvent;
+        yield {
+          type: 'session_status',
+          data: { status: 'running', model: 'claude-haiku-4-5' },
+        } as StreamEvent;
+        yield {
+          type: 'tool_call_start',
+          data: { toolCallId: 'tc-1', toolName: 'Bash', input: {} },
+        } as StreamEvent;
+        yield {
+          type: 'tool_call_delta',
+          data: { toolCallId: 'tc-1', partialJson: '{"command":"echo hi"}' },
+        } as StreamEvent;
         yield { type: 'tool_call_end', data: { toolCallId: 'tc-1' } } as StreamEvent;
         yield { type: 'text_delta', data: { text: 'Done.' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
@@ -123,7 +135,7 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
     expect(fakeRuntime.sendMessage).toHaveBeenCalledWith(
       SESSION_ID,
       'test message',
-      expect.any(Object),
+      expect.any(Object)
     );
   });
 });

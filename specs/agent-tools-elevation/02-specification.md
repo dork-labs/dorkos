@@ -59,13 +59,13 @@ Spec #88 (Agent Tool Context Injection) introduced global config toggles (`agent
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@anthropic-ai/claude-code` (Agent SDK) | Current | `allowedTools` option in `query()` |
-| `better-sqlite3` | Current | `agentId` column in `pulse_schedules` |
-| `drizzle-orm` | Current | Schema migration for new column |
-| `zod` | Current | Schema extensions |
-| `shadcn/ui` (Switch, Select, Tooltip) | Current | Tool toggle UI, agent picker |
+| Dependency                              | Version | Purpose                               |
+| --------------------------------------- | ------- | ------------------------------------- |
+| `@anthropic-ai/claude-code` (Agent SDK) | Current | `allowedTools` option in `query()`    |
+| `better-sqlite3`                        | Current | `agentId` column in `pulse_schedules` |
+| `drizzle-orm`                           | Current | Schema migration for new column       |
+| `zod`                                   | Current | Schema extensions                     |
+| `shadcn/ui` (Switch, Select, Tooltip)   | Current | Tool toggle UI, agent picker          |
 
 No new external dependencies required. All libraries are already in the monorepo.
 
@@ -124,11 +124,12 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   personaEnabled: true,
   color: true,
   icon: true,
-  enabledToolGroups: true,  // NEW
+  enabledToolGroups: true, // NEW
 }).partial();
 ```
 
 **Implicit grouping rules:**
+
 - `adapter: false` also disables Binding tools (`binding_list`, `binding_create`, `binding_delete`)
 - `relay: false` also disables Trace tools (`relay_get_trace`, `relay_get_metrics`)
 - Core tools (`ping`, `get_server_info`, `get_session_count`, `agent_get_current`) are always enabled
@@ -273,18 +274,13 @@ const BINDING_TOOLS = [
 ] as const;
 
 // Trace follows relay
-const TRACE_TOOLS = [
-  'mcp__dorkos__relay_get_trace',
-  'mcp__dorkos__relay_get_metrics',
-] as const;
+const TRACE_TOOLS = ['mcp__dorkos__relay_get_trace', 'mcp__dorkos__relay_get_metrics'] as const;
 
 /**
  * Build the allowedTools list for an SDK session based on resolved tool config.
  * Returns undefined if all domains are enabled (no filtering needed).
  */
-export function buildAllowedTools(
-  config: ResolvedToolConfig
-): string[] | undefined {
+export function buildAllowedTools(config: ResolvedToolConfig): string[] | undefined {
   // If everything is enabled, return undefined (no filtering)
   if (config.pulse && config.relay && config.mesh && config.adapter) {
     return undefined;
@@ -316,7 +312,10 @@ In `apps/server/src/services/core/agent-manager.ts`, modify `sendMessage()`:
 const manifest = await readManifest(effectiveCwd).catch(() => null);
 
 const globalConfig = configManager.get('agentContext') ?? {
-  pulseTools: true, relayTools: true, meshTools: true, adapterTools: true,
+  pulseTools: true,
+  relayTools: true,
+  meshTools: true,
+  adapterTools: true,
 };
 
 const toolConfig = resolveToolConfig(manifest?.enabledToolGroups, {
@@ -331,10 +330,7 @@ const baseAppend = await buildSystemPromptAppend(effectiveCwd, this.meshCore, to
 // Apply MCP allowedTools filter
 const allowedTools = buildAllowedTools(toolConfig);
 if (allowedTools) {
-  sdkOptions.allowedTools = [
-    ...(sdkOptions.allowedTools ?? []),
-    ...allowedTools,
-  ];
+  sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...allowedTools];
 }
 ```
 
@@ -352,8 +348,8 @@ The `manifest` is already loaded by `buildAgentBlock()` inside `buildSystemPromp
 export async function buildSystemPromptAppend(
   cwd: string,
   meshCore?: MeshCore | null,
-  toolConfig?: ResolvedToolConfig,
-): Promise<string>
+  toolConfig?: ResolvedToolConfig
+): Promise<string>;
 ```
 
 Existing callers that pass only `cwd` continue to work (all tools enabled by default).
@@ -439,9 +435,7 @@ Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND
 #### 3.5 Peer Agents Block (New)
 
 ```typescript
-async function buildPeerAgentsBlock(
-  meshCore: MeshCore | null | undefined,
-): Promise<string> {
+async function buildPeerAgentsBlock(meshCore: MeshCore | null | undefined): Promise<string> {
   if (!meshCore) return '';
 
   try {
@@ -470,7 +464,7 @@ To contact a peer: mesh_inspect(agentId) for relay endpoint, then relay_send() t
 export async function buildSystemPromptAppend(
   cwd: string,
   meshCore?: MeshCore | null,
-  toolConfig?: ResolvedToolConfig,
+  toolConfig?: ResolvedToolConfig
 ): Promise<string> {
   const manifest = await readManifest(cwd).catch(() => null);
 
@@ -610,6 +604,7 @@ sessions. Global defaults are in Settings > Tools.
 ```
 
 Each `Switch` has three visual states:
+
 - **Inherited (enabled):** Switch on, muted label "Inherited" — agent has no override, global default is `true`
 - **Inherited (disabled):** Switch off, muted label "Inherited" — agent has no override, global default is `false`
 - **Overridden:** Switch on/off, label "Overridden: On/Off" — agent manifest has an explicit value
@@ -681,9 +676,7 @@ export function useAgentToolStatus(projectPath: string): AgentToolStatus {
         : groups.relay === false
           ? 'disabled-by-agent'
           : 'enabled',
-      mesh: groups.mesh === false
-        ? 'disabled-by-agent'
-        : 'enabled',
+      mesh: groups.mesh === false ? 'disabled-by-agent' : 'enabled',
       adapter: !relayEnabled
         ? 'disabled-by-server'
         : groups.adapter === false
@@ -700,11 +693,11 @@ Export from `entities/agent/index.ts`.
 
 Replace current global feature-flag reads with `useAgentToolStatus(projectPath)`:
 
-| ChipState | Rendering |
-|---|---|
-| `enabled` | Colored chip, normal opacity. Tooltip: "Pulse — enabled for {agent.name}" |
-| `disabled-by-agent` | Muted chip, reduced opacity (0.4), strikethrough or `[off]` suffix. Tooltip: "Pulse — disabled for this agent" |
-| `disabled-by-server` | Chip hidden entirely |
+| ChipState            | Rendering                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `enabled`            | Colored chip, normal opacity. Tooltip: "Pulse — enabled for {agent.name}"                                      |
+| `disabled-by-agent`  | Muted chip, reduced opacity (0.4), strikethrough or `[off]` suffix. Tooltip: "Pulse — disabled for this agent" |
+| `disabled-by-server` | Chip hidden entirely                                                                                           |
 
 Active run counts (Pulse) and agent counts (Mesh) continue to render as badges on `enabled` chips.
 
@@ -720,19 +713,21 @@ Add a radio group above the CWD picker:
 <RadioGroup value={scheduleTarget} onValueChange={setScheduleTarget}>
   <RadioGroupItem value="agent">Run for agent</RadioGroupItem>
   <RadioGroupItem value="directory">Run in directory</RadioGroupItem>
-</RadioGroup>
+</RadioGroup>;
 
-{scheduleTarget === 'agent' && (
-  <AgentCombobox
-    agents={agents ?? []}
-    value={selectedAgentId}
-    onValueChange={setSelectedAgentId}
-  />
-)}
+{
+  scheduleTarget === 'agent' && (
+    <AgentCombobox
+      agents={agents ?? []}
+      value={selectedAgentId}
+      onValueChange={setSelectedAgentId}
+    />
+  );
+}
 
-{scheduleTarget === 'directory' && (
-  <DirectoryPicker value={cwd} onChange={setCwd} />
-)}
+{
+  scheduleTarget === 'directory' && <DirectoryPicker value={cwd} onChange={setCwd} />;
+}
 ```
 
 When `scheduleTarget === 'agent'`, the form payload includes `agentId` and omits `cwd`. When `scheduleTarget === 'directory'`, the form payload includes `cwd` and omits `agentId`.
@@ -753,27 +748,26 @@ New component in `features/pulse/ui/AgentCombobox.tsx`. Uses shadcn `Command` (c
 When `schedule.agentId` is set and resolved:
 
 ```tsx
-{agentForSchedule ? (
-  <div className="flex items-center gap-1.5">
-    <span
-      className="size-2.5 rounded-full"
-      style={{ backgroundColor: agentForSchedule.color }}
-    />
-    {agentForSchedule.icon && <span>{agentForSchedule.icon}</span>}
-    <span className="font-medium">{agentForSchedule.name}</span>
-  </div>
-) : schedule.agentId ? (
-  // Agent ID exists but agent not found (unregistered)
-  <div className="flex items-center gap-1.5 text-destructive">
-    <AlertCircle className="size-3.5" />
-    <span className="text-sm">Agent not found</span>
-  </div>
-) : (
-  <div className="flex items-center gap-1.5">
-    <FolderOpen className="size-3.5 text-muted-foreground" />
-    <span className="font-mono text-sm">{schedule.cwd ?? 'default'}</span>
-  </div>
-)}
+{
+  agentForSchedule ? (
+    <div className="flex items-center gap-1.5">
+      <span className="size-2.5 rounded-full" style={{ backgroundColor: agentForSchedule.color }} />
+      {agentForSchedule.icon && <span>{agentForSchedule.icon}</span>}
+      <span className="font-medium">{agentForSchedule.name}</span>
+    </div>
+  ) : schedule.agentId ? (
+    // Agent ID exists but agent not found (unregistered)
+    <div className="text-destructive flex items-center gap-1.5">
+      <AlertCircle className="size-3.5" />
+      <span className="text-sm">Agent not found</span>
+    </div>
+  ) : (
+    <div className="flex items-center gap-1.5">
+      <FolderOpen className="text-muted-foreground size-3.5" />
+      <span className="font-mono text-sm">{schedule.cwd ?? 'default'}</span>
+    </div>
+  );
+}
 ```
 
 ---
@@ -827,6 +821,7 @@ meshCore.unregister(agentId)
 ### Agent Settings — Capabilities Tab
 
 The Capabilities tab gains a "Tool Groups" section at the bottom. Each domain toggle (Pulse, Relay, Mesh, Adapter) shows:
+
 - Current state (inherited from global default or explicitly overridden)
 - Whether the server-level feature is available
 - A reset button to clear per-agent override
@@ -850,6 +845,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 ### Unit Tests
 
 #### `tool-filter.test.ts`
+
 - `resolveToolConfig` with all fields undefined returns global defaults
 - `resolveToolConfig` with explicit `false` overrides global `true`
 - `resolveToolConfig` respects feature flag intersection (relay: true in agent, but relayEnabled=false → false)
@@ -860,6 +856,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 - `buildAllowedTools` always includes Core tools
 
 #### `context-builder.test.ts` (extend existing)
+
 - `buildSystemPromptAppend` with toolConfig.relay=false omits `<relay_tools>` block
 - `buildSystemPromptAppend` with toolConfig.mesh=false omits `<mesh_tools>` block
 - `buildPeerAgentsBlock` with empty agent list returns empty string
@@ -869,17 +866,20 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 - Backward compat: `buildSystemPromptAppend(cwd)` with no extra args works as before
 
 #### `agent-manager.test.ts` (extend existing)
+
 - `sendMessage` loads manifest and applies allowedTools when enabledToolGroups present
 - `sendMessage` passes no allowedTools when manifest has no enabledToolGroups
 - `sendMessage` passes toolConfig to buildSystemPromptAppend
 
 #### `pulse-store.test.ts` (extend existing)
+
 - `disableSchedulesByAgentId` disables matching schedules
 - `disableSchedulesByAgentId` returns 0 when no matches
 - `disableSchedulesByAgentId` only affects enabled schedules (doesn't re-disable already disabled)
 - CRUD with `agentId` field works correctly
 
 #### `scheduler-service.test.ts` (extend existing)
+
 - `resolveEffectiveCwd` with agentId resolves via meshCore
 - `resolveEffectiveCwd` with unknown agentId throws error
 - `resolveEffectiveCwd` without agentId falls back to schedule.cwd
@@ -888,6 +888,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 ### Component Tests
 
 #### `CapabilitiesTab.test.tsx` (extend existing)
+
 - Renders tool group toggles section
 - Toggle calls onUpdate with enabledToolGroups
 - Shows "Inherited" label when agent has no override
@@ -896,12 +897,14 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 - Reset button clears override
 
 #### `AgentContextChips.test.tsx` (extend existing)
+
 - Renders enabled chip when tool status is 'enabled'
 - Renders muted chip when tool status is 'disabled-by-agent'
 - Hides chip when tool status is 'disabled-by-server'
 - Tooltip shows correct reason text
 
 #### `CreateScheduleDialog.test.tsx` (extend existing)
+
 - Shows agent/directory radio toggle
 - Agent picker appears when "Run for agent" selected
 - Directory picker appears when "Run in directory" selected
@@ -909,6 +912,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 - Submits cwd when directory target selected
 
 #### `ScheduleRow.test.tsx` (extend existing)
+
 - Shows agent name and color dot when agentId resolved
 - Shows warning when agentId set but agent not found
 - Shows folder icon and CWD path when no agentId
@@ -916,6 +920,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 ### Hook Tests
 
 #### `use-agent-tool-status.test.ts`
+
 - Returns 'enabled' when feature flag on and agent has no override
 - Returns 'disabled-by-agent' when agent explicitly disables
 - Returns 'disabled-by-server' when feature flag is off
@@ -973,6 +978,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 **Scope:** Make context blocks agent-aware, add peer agents block, add workflow recipes.
 
 **Files modified:**
+
 - `apps/server/src/services/core/context-builder.ts` — New signature, agent-aware gating, `buildPeerAgentsBlock`, `buildPulseToolsBlock`, workflow recipe in relay block
 
 **Files created:** None
@@ -984,11 +990,13 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 **Scope:** Schema changes, tool filter utility, agent-manager integration.
 
 **Files modified:**
+
 - `packages/shared/src/mesh-schemas.ts` — `EnabledToolGroupsSchema`, add to manifest + update schema
 - `packages/shared/src/config-schema.ts` — Add `pulseTools`
 - `apps/server/src/services/core/agent-manager.ts` — Load manifest, resolve config, apply filter
 
 **Files created:**
+
 - `apps/server/src/services/core/tool-filter.ts` — `resolveToolConfig`, `buildAllowedTools`
 
 **Tests:** `tool-filter.test.ts` (new), `agent-manager.test.ts` extensions
@@ -998,11 +1006,13 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 **Scope:** Per-agent toggles in CapabilitiesTab, global defaults in SettingsDialog.
 
 **Files modified:**
+
 - `apps/client/src/layers/features/agent-settings/ui/CapabilitiesTab.tsx` — Add Tool Groups section
 - `apps/client/src/layers/features/agent-settings/ui/AgentDialog.tsx` — Remove context tab, grid-cols-4
 - `apps/client/src/layers/features/settings/ui/SettingsDialog.tsx` — Add Tools tab, grid-cols-6
 
 **Files moved:**
+
 - `ContextTab.tsx` content moves to a `ToolsTab` inside `features/settings/ui/`
 
 **Tests:** `CapabilitiesTab.test.tsx` extensions, new `ToolsTab.test.tsx`
@@ -1012,10 +1022,12 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 **Scope:** Per-agent chip state hook, 3-state chip rendering.
 
 **Files modified:**
+
 - `apps/client/src/layers/features/session-list/ui/AgentContextChips.tsx` — Use `useAgentToolStatus`
 - `apps/client/src/layers/entities/agent/index.ts` — Export new hook
 
 **Files created:**
+
 - `apps/client/src/layers/entities/agent/model/use-agent-tool-status.ts`
 
 **Tests:** `use-agent-tool-status.test.ts` (new), `AgentContextChips.test.tsx` extensions
@@ -1025,6 +1037,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 **Scope:** DB migration, server resolution, cascade, client UI.
 
 **Files modified:**
+
 - `packages/db/src/schema/pulse.ts` — Add `agentId` column
 - `apps/server/src/services/pulse/pulse-store.ts` — `disableSchedulesByAgentId`, CRUD with agentId
 - `apps/server/src/services/pulse/scheduler-service.ts` — `resolveEffectiveCwd`
@@ -1035,6 +1048,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 - `apps/client/src/layers/features/pulse/ui/ScheduleRow.tsx` — Agent display
 
 **Files created:**
+
 - `packages/db/src/migrations/NNNN_add_agent_id_to_pulse_schedules.ts`
 - `apps/client/src/layers/features/pulse/ui/AgentCombobox.tsx`
 
@@ -1044,7 +1058,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 
 ## Open Questions
 
-*None — all decisions resolved during ideation and interactive decision gathering.*
+_None — all decisions resolved during ideation and interactive decision gathering._
 
 ---
 

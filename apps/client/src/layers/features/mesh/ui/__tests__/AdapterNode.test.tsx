@@ -29,11 +29,8 @@ beforeAll(() => {
 // can test AdapterNode rendering without a full ReactFlow canvas context.
 // ---------------------------------------------------------------------------
 vi.mock('@xyflow/react', () => ({
-  Handle: ({ position }: { position: string }) => (
-    <div data-testid={`handle-${position}`} />
-  ),
-  useStore: (selector: (s: unknown) => unknown) =>
-    selector({ transform: [0, 0, 1] }),
+  Handle: ({ position }: { position: string }) => <div data-testid={`handle-${position}`} />,
+  useStore: (selector: (s: unknown) => unknown) => selector({ transform: [0, 0, 1] }),
   Position: {
     Left: 'left',
     Right: 'right',
@@ -48,15 +45,17 @@ import { AdapterNode, ADAPTER_NODE_WIDTH, ADAPTER_NODE_HEIGHT } from '../Adapter
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMockProps(overrides: Partial<{
-  adapterName: string;
-  adapterType: string;
-  adapterStatus: 'running' | 'stopped' | 'error';
-  bindingCount: number;
-  label: string;
-  isGhost: boolean;
-  onGhostClick: () => void;
-}> = {}) {
+function makeMockProps(
+  overrides: Partial<{
+    adapterName: string;
+    adapterType: string;
+    adapterStatus: 'running' | 'stopped' | 'error';
+    bindingCount: number;
+    label: string;
+    isGhost: boolean;
+    onGhostClick: () => void;
+  }> = {}
+) {
   return {
     id: 'adapter-test-1',
     type: 'adapter',
@@ -114,12 +113,16 @@ describe('AdapterNode', () => {
 
   describe('status indicator', () => {
     it('shows green dot for running status', () => {
-      const { container } = render(<AdapterNode {...makeMockProps({ adapterStatus: 'running' })} />);
+      const { container } = render(
+        <AdapterNode {...makeMockProps({ adapterStatus: 'running' })} />
+      );
       expect(container.querySelector('.bg-green-500')).toBeInTheDocument();
     });
 
     it('shows zinc dot for stopped status', () => {
-      const { container } = render(<AdapterNode {...makeMockProps({ adapterStatus: 'stopped' })} />);
+      const { container } = render(
+        <AdapterNode {...makeMockProps({ adapterStatus: 'stopped' })} />
+      );
       expect(container.querySelector('.bg-zinc-400')).toBeInTheDocument();
     });
 
@@ -181,7 +184,9 @@ describe('AdapterNode', () => {
     });
 
     it('shows adapter name as secondary text when label is present', () => {
-      render(<AdapterNode {...makeMockProps({ adapterName: 'Telegram Bot', label: '@support_bot' })} />);
+      render(
+        <AdapterNode {...makeMockProps({ adapterName: 'Telegram Bot', label: '@support_bot' })} />
+      );
       expect(screen.getByText('@support_bot')).toBeInTheDocument();
       expect(screen.getByText('Telegram Bot')).toBeInTheDocument();
     });
@@ -202,50 +207,66 @@ describe('AdapterNode', () => {
 
   describe('ghost node', () => {
     it('renders ghost node with "Add Adapter" text', () => {
-      render(<AdapterNode {...makeMockProps({
-        isGhost: true,
-        adapterName: 'Add Adapter',
-        adapterType: 'ghost',
-        adapterStatus: 'stopped',
-        bindingCount: 0,
-      })} />);
+      render(
+        <AdapterNode
+          {...makeMockProps({
+            isGhost: true,
+            adapterName: 'Add Adapter',
+            adapterType: 'ghost',
+            adapterStatus: 'stopped',
+            bindingCount: 0,
+          })}
+        />
+      );
       expect(screen.getByText('Add Adapter')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
     });
 
     it('ghost node has no output handle', () => {
-      render(<AdapterNode {...makeMockProps({
-        isGhost: true,
-        adapterName: 'Add Adapter',
-        adapterType: 'ghost',
-        adapterStatus: 'stopped',
-        bindingCount: 0,
-      })} />);
+      render(
+        <AdapterNode
+          {...makeMockProps({
+            isGhost: true,
+            adapterName: 'Add Adapter',
+            adapterType: 'ghost',
+            adapterStatus: 'stopped',
+            bindingCount: 0,
+          })}
+        />
+      );
       expect(screen.queryByTestId('handle-right')).not.toBeInTheDocument();
     });
 
     it('ghost node click fires onGhostClick callback', () => {
       const onGhostClick = vi.fn();
-      render(<AdapterNode {...makeMockProps({
-        isGhost: true,
-        adapterName: 'Add Adapter',
-        adapterType: 'ghost',
-        adapterStatus: 'stopped',
-        bindingCount: 0,
-        onGhostClick,
-      })} />);
+      render(
+        <AdapterNode
+          {...makeMockProps({
+            isGhost: true,
+            adapterName: 'Add Adapter',
+            adapterType: 'ghost',
+            adapterStatus: 'stopped',
+            bindingCount: 0,
+            onGhostClick,
+          })}
+        />
+      );
       fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
       expect(onGhostClick).toHaveBeenCalledTimes(1);
     });
 
     it('ghost node applies ADAPTER_NODE_WIDTH and ADAPTER_NODE_HEIGHT', () => {
-      const { container } = render(<AdapterNode {...makeMockProps({
-        isGhost: true,
-        adapterName: 'Add Adapter',
-        adapterType: 'ghost',
-        adapterStatus: 'stopped',
-        bindingCount: 0,
-      })} />);
+      const { container } = render(
+        <AdapterNode
+          {...makeMockProps({
+            isGhost: true,
+            adapterName: 'Add Adapter',
+            adapterType: 'ghost',
+            adapterStatus: 'stopped',
+            bindingCount: 0,
+          })}
+        />
+      );
       const ghost = container.firstChild as HTMLElement;
       expect(ghost.style.width).toBe(`${ADAPTER_NODE_WIDTH}px`);
       expect(ghost.style.height).toBe(`${ADAPTER_NODE_HEIGHT}px`);

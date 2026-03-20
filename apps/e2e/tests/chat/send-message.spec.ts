@@ -28,7 +28,7 @@ test.describe('Chat — Send Message @integration', () => {
   test('assistant message renders markdown after stream ends', async ({ chatPage }) => {
     // Ask for content with common markdown elements
     await chatPage.sendMessage(
-      'Respond with a short markdown example: one heading (##), one bold word, and one bullet list item.',
+      'Respond with a short markdown example: one heading (##), one bold word, and one bullet list item.'
     );
     await chatPage.waitForResponse();
 
@@ -42,7 +42,7 @@ test.describe('Chat — Send Message @integration', () => {
   test('tool calls display as collapsible cards', async ({ chatPage }) => {
     // Trigger a tool call by asking Claude to read a file it can access
     await chatPage.sendMessage(
-      'Use the Read tool to read the file /etc/hostname, then tell me what it contains.',
+      'Use the Read tool to read the file /etc/hostname, then tell me what it contains.'
     );
 
     // Tool call cards should appear during or after streaming

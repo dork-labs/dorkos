@@ -16,7 +16,7 @@ describe('MarkdownContent', () => {
 
   it('applies className prop to the container', () => {
     const { container } = render(
-      <MarkdownContent content="test" className="text-xs text-blue-800" />,
+      <MarkdownContent content="test" className="text-xs text-blue-800" />
     );
     const prose = container.querySelector('.prose');
     expect(prose).toBeTruthy();

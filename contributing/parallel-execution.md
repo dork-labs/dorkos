@@ -365,14 +365,14 @@ Git worktrees provide process-level isolation for parallel work on different bra
 
 ### When to Use Worktrees vs Task Agents
 
-| Scenario | Use Worktrees | Use Task Agents |
-| --- | --- | --- |
-| Different branches | Yes | No |
-| Full build isolation | Yes | No |
-| Same branch, parallel reads | No | Yes |
-| Quick analysis/research | No | Yes |
-| Long-running dev server needed | Yes | No |
-| Shared mutable state ok | N/A | Yes (sequential) |
+| Scenario                       | Use Worktrees | Use Task Agents  |
+| ------------------------------ | ------------- | ---------------- |
+| Different branches             | Yes           | No               |
+| Full build isolation           | Yes           | No               |
+| Same branch, parallel reads    | No            | Yes              |
+| Quick analysis/research        | No            | Yes              |
+| Long-running dev server needed | Yes           | No               |
+| Shared mutable state ok        | N/A           | Yes (sequential) |
 
 **Rule of thumb**: Worktrees = different branches, full isolation. Task agents = same branch, shared context.
 

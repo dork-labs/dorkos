@@ -15,7 +15,7 @@ export function buildStreamingTextSteps(
   messageId: string,
   text: string,
   wordsPerChunk = 4,
-  delayMs = 100,
+  delayMs = 100
 ): SimStep[] {
   const steps: SimStep[] = [];
   // Split preserving whitespace tokens so we can reconstruct exactly

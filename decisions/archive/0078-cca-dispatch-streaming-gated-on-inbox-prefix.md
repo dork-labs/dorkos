@@ -7,7 +7,7 @@ spec: relay-async-query
 superseded-by: null
 ---
 
-# 78. CCA Dispatch Streaming Gated on relay.inbox.dispatch.* Prefix
+# 78. CCA Dispatch Streaming Gated on relay.inbox.dispatch.\* Prefix
 
 ## Status
 
@@ -19,7 +19,7 @@ ClaudeCodeAdapter (CCA) routes two types of replyTo inbox addresses: `relay.inbo
 
 ## Decision
 
-In `handleAgentMessage()`, CCA checks `envelope.replyTo` for the `relay.inbox.dispatch.` prefix. If present, CCA publishes incremental progress events (`{ type: 'progress', step, step_type: 'message'|'tool_result', text, done: false }`) at each AssistantMessage text completion and tool_result, followed by a final `{ type: 'agent_result', text, done: true }`. All other `relay.inbox.*` addresses (including `relay.inbox.query.*`) continue to receive a single aggregated `agent_result` after session completion. Non-inbox replyTo addresses (relay.agent.*, relay.human.*) continue to receive raw StreamEvent streaming as before.
+In `handleAgentMessage()`, CCA checks `envelope.replyTo` for the `relay.inbox.dispatch.` prefix. If present, CCA publishes incremental progress events (`{ type: 'progress', step, step_type: 'message'|'tool_result', text, done: false }`) at each AssistantMessage text completion and tool*result, followed by a final `{ type: 'agent_result', text, done: true }`. All other `relay.inbox.*` addresses (including `relay.inbox.query.*`) continue to receive a single aggregated `agent_result` after session completion. Non-inbox replyTo addresses (relay.agent.*, relay.human.\_) continue to receive raw StreamEvent streaming as before.
 
 ## Consequences
 

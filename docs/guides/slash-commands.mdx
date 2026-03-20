@@ -14,18 +14,21 @@ DorkOS discovers slash commands from your project's `.claude/commands/` director
 ### Open the command palette
 
 Type `/` in the chat input to open the command palette.
+
 </Step>
 
 <Step>
 ### Find your command
 
 Search or browse available commands. Commands are sorted alphabetically and grouped by namespace.
+
 </Step>
 
 <Step>
 ### Insert and run
 
 Select a command to insert it into the chat input. Add arguments after the command name if needed, then send.
+
 </Step>
 </Steps>
 
@@ -48,15 +51,16 @@ DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespac
   </Folder>
 </Files>
 
-| File | Command |
-|---|---|
+| File                | Command           |
+| ------------------- | ----------------- |
 | `docs/reconcile.md` | `/docs:reconcile` |
-| `docs/status.md` | `/docs:status` |
-| `spec/create.md` | `/spec:create` |
-| `spec/execute.md` | `/spec:execute` |
+| `docs/status.md`    | `/docs:status`    |
+| `spec/create.md`    | `/spec:create`    |
+| `spec/execute.md`   | `/spec:execute`   |
 
 <Callout type="info">
-Only `.md` files inside namespace subdirectories are discovered. Top-level files directly inside `commands/` are not picked up — commands must be inside a named subdirectory.
+  Only `.md` files inside namespace subdirectories are discovered. Top-level files directly inside
+  `commands/` are not picked up — commands must be inside a named subdirectory.
 </Callout>
 
 ## Command Format
@@ -78,15 +82,29 @@ category: documentation
 
 ### Frontmatter Fields
 
-<TypeTable type={{
-  "description": { type: "string", description: "Short description shown in the command palette", default: "''" },
-  "argument-hint": { type: "string", description: "Placeholder text for command arguments (e.g. '[guide-name | --all]')" },
-  "allowed-tools": { type: "string", description: "Comma-separated list of tools this command may use (e.g. 'Read, Grep, Glob, Bash')" },
-  "category": { type: "string", description: "Grouping category in the palette" }
-}} />
+<TypeTable
+  type={{
+    description: {
+      type: 'string',
+      description: 'Short description shown in the command palette',
+      default: "''",
+    },
+    'argument-hint': {
+      type: 'string',
+      description: "Placeholder text for command arguments (e.g. '[guide-name | --all]')",
+    },
+    'allowed-tools': {
+      type: 'string',
+      description:
+        "Comma-separated list of tools this command may use (e.g. 'Read, Grep, Glob, Bash')",
+    },
+    category: { type: 'string', description: 'Grouping category in the palette' },
+  }}
+/>
 
 <Callout type="warn">
-If your frontmatter values contain special YAML characters (brackets, colons, pipes), wrap them in quotes. DorkOS includes a fallback parser for malformed YAML, but quoting is more reliable.
+  If your frontmatter values contain special YAML characters (brackets, colons, pipes), wrap them in
+  quotes. DorkOS includes a fallback parser for malformed YAML, but quoting is more reliable.
 </Callout>
 
 ## Creating Custom Commands
@@ -100,6 +118,7 @@ Create a namespace directory inside `.claude/commands/`:
 ```bash
 mkdir -p .claude/commands/mytools
 ```
+
 </Step>
 
 <Step>
@@ -120,12 +139,14 @@ allowed-tools: Read, Bash
 Say hello to the user by name.
 EOF
 ```
+
 </Step>
 
 <Step>
 ### Refresh the command list
 
 The registry caches results for 5 minutes. To refresh immediately, click the refresh button in the command palette or call the API with `?refresh=true`.
+
 </Step>
 </Steps>
 

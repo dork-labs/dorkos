@@ -54,10 +54,10 @@
 
 **Test files:**
 
-- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` — Relocated from core/__tests__/agent-manager.test.ts
-- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime-locking.test.ts` — Relocated from core/__tests__/agent-manager-locking.test.ts
-- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime-models.test.ts` — Relocated from core/__tests__/agent-manager-models.test.ts
-- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime-interactive.test.ts` — Relocated from core/__tests__/agent-manager-interactive.test.ts
+- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts` — Relocated from core/**tests**/agent-manager.test.ts
+- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime-locking.test.ts` — Relocated from core/**tests**/agent-manager-locking.test.ts
+- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime-models.test.ts` — Relocated from core/**tests**/agent-manager-models.test.ts
+- `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime-interactive.test.ts` — Relocated from core/**tests**/agent-manager-interactive.test.ts
 - `apps/server/src/services/runtimes/claude-code/__tests__/type-assertions.test.ts` — **NEW** — Compile-time assertions for structural typing
 
 ## Known Issues
@@ -71,6 +71,7 @@ _(None)_
 All 12 issues from the agent-runtime-abstraction code review (commit bc0fe8b) addressed in a single batch execution. 9 tasks ran in parallel (Batch 1), with eager agents completing the remaining 3 tasks (Batch 2/3) ahead of schedule.
 
 **Verification results:**
+
 - `pnpm typecheck`: 13/13 packages pass
 - Server tests: 68 files, 1169 tests, all passing
 - No stale `@dorkos/server/services/agent-manager` imports

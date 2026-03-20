@@ -6,7 +6,7 @@
 | Authors   | DorkOS Team                                     |
 | Date      | 2026-03-18                                      |
 | Spec Slug | slack-tool-approval                             |
-| Depends   | relay-adapter-event-whitelist (must land first)  |
+| Depends   | relay-adapter-event-whitelist (must land first) |
 
 ## Overview
 
@@ -51,13 +51,13 @@ Chat adapters are completely cut out of this flow. After the relay-adapter-event
 
 ## Technical Dependencies
 
-| Dependency | Type | Notes |
-|---|---|---|
-| relay-adapter-event-whitelist spec | Prerequisite | Must land first so adapters explicitly handle `approval_required` instead of silently dropping it |
-| `@slack/bolt` Socket Mode | Runtime | Provides `app.action()` handler for Block Kit button interactions |
-| `grammy` Bot framework | Runtime | Provides `bot.on('callback_query:data')` handler for inline keyboard interactions |
-| `interactive-handlers.ts` | Server | Source of truth for deferred promises and 10-minute timeout (`SESSIONS.INTERACTION_TIMEOUT_MS = 600000`) |
-| `AgentRuntime.approveTool()` | Server | `approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean` -- resolves/rejects the pending interaction |
+| Dependency                         | Type         | Notes                                                                                                                        |
+| ---------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| relay-adapter-event-whitelist spec | Prerequisite | Must land first so adapters explicitly handle `approval_required` instead of silently dropping it                            |
+| `@slack/bolt` Socket Mode          | Runtime      | Provides `app.action()` handler for Block Kit button interactions                                                            |
+| `grammy` Bot framework             | Runtime      | Provides `bot.on('callback_query:data')` handler for inline keyboard interactions                                            |
+| `interactive-handlers.ts`          | Server       | Source of truth for deferred promises and 10-minute timeout (`SESSIONS.INTERACTION_TIMEOUT_MS = 600000`)                     |
+| `AgentRuntime.approveTool()`       | Server       | `approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean` -- resolves/rejects the pending interaction |
 
 ## Detailed Design
 
@@ -125,7 +125,13 @@ if (eventType === 'approval_required') {
   if (data) {
     logger.debug(`deliver: approval_required for tool '${data.toolName}' to ${channelId}`);
     return handleApprovalRequired(
-      channelId, threadTs, data, envelope, client, callbacks, startTime,
+      channelId,
+      threadTs,
+      data,
+      envelope,
+      client,
+      callbacks,
+      startTime
     );
   }
 }
@@ -168,7 +174,7 @@ async function handleApprovalRequired(
   envelope: RelayEnvelope,
   client: WebClient,
   callbacks: AdapterOutboundCallbacks,
-  startTime: number,
+  startTime: number
 ): Promise<DeliveryResult> {
   // Extract agentId and sessionId from envelope metadata
   const agentId = extractAgentIdFromEnvelope(envelope);
@@ -187,57 +193,58 @@ async function handleApprovalRequired(
   });
 
   return wrapSlackCall(
-    () => client.chat.postMessage({
-      channel: channelId,
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-      text: `Tool approval required: ${data.toolName} (fallback)`,
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `*Tool Approval Required*\n\`${data.toolName}\` ${toolDescription}`,
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `\`\`\`\n${inputPreview}\n\`\`\``,
-          },
-        },
-        {
-          type: 'actions',
-          block_id: 'tool_approval',
-          elements: [
-            {
-              type: 'button',
-              text: { type: 'plain_text', text: 'Approve' },
-              style: 'primary',
-              action_id: 'tool_approve',
-              value: buttonValue,
+    () =>
+      client.chat.postMessage({
+        channel: channelId,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        text: `Tool approval required: ${data.toolName} (fallback)`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Tool Approval Required*\n\`${data.toolName}\` ${toolDescription}`,
             },
-            {
-              type: 'button',
-              text: { type: 'plain_text', text: 'Deny' },
-              style: 'danger',
-              action_id: 'tool_deny',
-              value: buttonValue,
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `\`\`\`\n${inputPreview}\n\`\`\``,
             },
-          ],
-        },
-      ],
-    }),
+          },
+          {
+            type: 'actions',
+            block_id: 'tool_approval',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Approve' },
+                style: 'primary',
+                action_id: 'tool_approve',
+                value: buttonValue,
+              },
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Deny' },
+                style: 'danger',
+                action_id: 'tool_deny',
+                value: buttonValue,
+              },
+            ],
+          },
+        ],
+      }),
     callbacks,
     startTime,
-    true,
+    true
   );
 }
 ```
 
 **Block Kit message structure:**
 
-```json
+````json
 {
   "channel": "D123",
   "thread_ts": "1234567890.123456",
@@ -279,7 +286,7 @@ async function handleApprovalRequired(
     }
   ]
 }
-```
+````
 
 The `value` field (max 2000 chars in Slack) encodes only IDs -- never sensitive tool input. The `text` field at the top level serves as a fallback for notifications and accessibility.
 
@@ -309,7 +316,7 @@ async function handleApprovalAction(
   client: WebClient,
   approved: boolean,
   relay: RelayPublisher | null,
-  logger: RelayLogger,
+  logger: RelayLogger
 ): Promise<void> {
   const action = body.actions[0];
   if (!action || action.type !== 'button') return;
@@ -336,7 +343,7 @@ async function handleApprovalAction(
         respondedBy,
         platform: 'slack',
       } satisfies ApprovalResponse,
-      { from: `relay.human.slack.${body.channel?.id ?? 'unknown'}` },
+      { from: `relay.human.slack.${body.channel?.id ?? 'unknown'}` }
     );
   }
 
@@ -377,9 +384,7 @@ if (eventType === 'approval_required') {
   const data = extractApprovalData(envelope.payload);
   if (data) {
     logger.debug(`deliver: approval_required for tool '${data.toolName}' to chat ${chatId}`);
-    return handleApprovalRequired(
-      bot, chatId, data, envelope, callbacks, startTime,
-    );
+    return handleApprovalRequired(bot, chatId, data, envelope, callbacks, startTime);
   }
 }
 ```
@@ -399,7 +404,7 @@ async function handleApprovalRequired(
   data: ApprovalData,
   envelope: RelayEnvelope,
   callbacks: AdapterOutboundCallbacks,
-  startTime: number,
+  startTime: number
 ): Promise<DeliveryResult> {
   const agentId = extractAgentIdFromEnvelope(envelope);
   const sessionId = extractSessionIdFromEnvelope(envelope);
@@ -427,10 +432,12 @@ async function handleApprovalRequired(
     await bot.api.sendMessage(chatId, messageText, {
       parse_mode: 'Markdown',
       reply_markup: {
-        inline_keyboard: [[
-          { text: 'Approve', callback_data: JSON.stringify({ k: shortKey, a: 1 }) },
-          { text: 'Deny', callback_data: JSON.stringify({ k: shortKey, a: 0 }) },
-        ]],
+        inline_keyboard: [
+          [
+            { text: 'Approve', callback_data: JSON.stringify({ k: shortKey, a: 1 }) },
+            { text: 'Deny', callback_data: JSON.stringify({ k: shortKey, a: 0 }) },
+          ],
+        ],
       },
     });
     callbacks.trackOutbound();
@@ -485,7 +492,7 @@ bot.on('callback_query:data', async (ctx) => {
         respondedBy: String(ctx.from.id),
         platform: 'telegram',
       } satisfies ApprovalResponse,
-      { from: `relay.human.telegram.${ctx.chat?.id ?? 'unknown'}` },
+      { from: `relay.human.telegram.${ctx.chat?.id ?? 'unknown'}` }
     );
   }
 
@@ -509,12 +516,12 @@ Add `approveTool` to the `AgentRuntimeLike` interface:
 export interface AgentRuntimeLike {
   ensureSession(
     sessionId: string,
-    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean },
+    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean }
   ): void;
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: string; cwd?: string },
+    opts?: { permissionMode?: string; cwd?: string }
   ): AsyncGenerator<StreamEvent>;
   getSdkSessionId(sessionId: string): string | undefined;
 
@@ -576,7 +583,7 @@ interface ApprovalPayload {
 export function subscribeToApprovals(
   relay: RelayPublisher,
   agentManager: AgentRuntimeLike,
-  logger?: { debug?: (...args: unknown[]) => void; warn: (...args: unknown[]) => void },
+  logger?: { debug?: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
 ): () => void {
   return relay.subscribe(APPROVAL_SUBJECT_PATTERN, (subject, envelope) => {
     handleApprovalResponse(subject, envelope, agentManager, logger);
@@ -587,7 +594,7 @@ function handleApprovalResponse(
   subject: string,
   envelope: RelayEnvelope,
   agentManager: AgentRuntimeLike,
-  logger?: { debug?: (...args: unknown[]) => void; warn: (...args: unknown[]) => void },
+  logger?: { debug?: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
 ): void {
   const payload = envelope.payload as ApprovalPayload | null;
   if (!payload || payload.type !== 'approval_response') {
@@ -598,14 +605,14 @@ function handleApprovalResponse(
   const { toolCallId, sessionId, approved, respondedBy, platform } = payload;
   logger?.debug?.(
     `[CCA] approval response: tool=${toolCallId} session=${sessionId} ` +
-    `approved=${approved} by=${respondedBy ?? 'unknown'} platform=${platform}`,
+      `approved=${approved} by=${respondedBy ?? 'unknown'} platform=${platform}`
   );
 
   const resolved = agentManager.approveTool(sessionId, toolCallId, approved);
   if (!resolved) {
     logger?.warn(
       `[CCA] approval handler: no pending interaction found for ` +
-      `session=${sessionId} toolCallId=${toolCallId} — may have timed out`,
+        `session=${sessionId} toolCallId=${toolCallId} — may have timed out`
     );
   }
 }
@@ -623,7 +630,7 @@ if (this.relay) {
   this.approvalUnsubscribe = subscribeToApprovals(
     this.relay,
     this.deps.agentManager,
-    this.deps.logger,
+    this.deps.logger
   );
 }
 
@@ -653,8 +660,8 @@ if (event.type === 'approval_required') {
     ...event,
     data: {
       ...(event.data as Record<string, unknown>),
-      agentId,        // from handleAgentMessage scope
-      ccaSessionKey,  // from handleAgentMessage scope
+      agentId, // from handleAgentMessage scope
+      ccaSessionKey, // from handleAgentMessage scope
     },
   };
   await relay.publish(replyTo, enrichedPayload, opts);
@@ -666,12 +673,12 @@ if (event.type === 'approval_required') {
 
 No persistent storage changes. All state is ephemeral:
 
-| State | Storage | Lifetime |
-|---|---|---|
-| Pending approval promise | `session.pendingInteractions` (in-memory Map) | Until resolved, rejected, or 10-min timeout |
-| Slack approval message ts | Not stored (update uses `body.message.ts` from the action callback) | N/A |
-| Telegram callback ID map | `callbackIdMap` (in-memory Map) | 15-minute TTL per entry |
-| CCA approval subscription | Relay subscription registry (in-memory) | Adapter lifetime |
+| State                     | Storage                                                             | Lifetime                                    |
+| ------------------------- | ------------------------------------------------------------------- | ------------------------------------------- |
+| Pending approval promise  | `session.pendingInteractions` (in-memory Map)                       | Until resolved, rejected, or 10-min timeout |
+| Slack approval message ts | Not stored (update uses `body.message.ts` from the action callback) | N/A                                         |
+| Telegram callback ID map  | `callbackIdMap` (in-memory Map)                                     | 15-minute TTL per entry                     |
+| CCA approval subscription | Relay subscription registry (in-memory)                             | Adapter lifetime                            |
 
 ### API Changes
 
@@ -683,7 +690,7 @@ No new HTTP endpoints. The existing `POST /api/sessions/:id/approve` and `/deny`
 
 When an agent requests tool approval, the user sees a threaded message:
 
-```
+````
 +-----------------------------------------------+
 | Tool Approval Required                        |
 | `Write` wants to write to `src/index.ts`      |
@@ -694,7 +701,7 @@ When an agent requests tool approval, the user sees a threaded message:
 |                                               |
 | [Approve]  [Deny]                             |
 +-----------------------------------------------+
-```
+````
 
 After clicking Approve:
 
@@ -727,29 +734,34 @@ When multiple tool approvals are pending (e.g., agent wants to write several fil
 ### Unit Tests
 
 **`packages/relay/src/adapters/slack/__tests__/outbound.test.ts`:**
+
 - `approval_required` payload produces correct Block Kit structure
 - Button `value` field contains only IDs (no sensitive input)
 - Tool input preview is truncated to 500 chars
 - Missing `toolCallId` or `toolName` falls through to whitelist drop
 
 **`packages/relay/src/adapters/slack/__tests__/slack-adapter.test.ts`:**
+
 - Simulated `block_actions` with `tool_approve` action publishes correct relay message
 - Simulated `block_actions` with `tool_deny` action publishes correct relay message
 - Original message is updated via `chat.update()` with result text
 - Malformed button value is handled gracefully
 
 **`packages/relay/src/adapters/telegram/__tests__/outbound.test.ts`:**
+
 - `approval_required` payload produces correct inline keyboard structure
 - `callbackIdMap` stores full IDs and callback_data is under 64 bytes
 - Stale callback map entries are evicted after TTL
 
 **`packages/relay/src/adapters/telegram/__tests__/telegram-adapter.test.ts`:**
+
 - Simulated `callback_query:data` with approve publishes correct relay message
 - Simulated `callback_query:data` with deny publishes correct relay message
 - Expired callback key returns "Approval expired" answer
 - Message is edited to remove keyboard and show result
 
 **`packages/relay/src/adapters/claude-code/__tests__/approval-handler.test.ts`:**
+
 - Valid approval response calls `agentManager.approveTool()` with correct params
 - `approved: true` passes `true`, `approved: false` passes `false`
 - Unknown session/toolCallId logs warning but does not throw
@@ -834,14 +846,14 @@ When multiple tool approvals are pending (e.g., agent wants to write several fil
 
 ## Related ADRs
 
-| ADR | Relevance |
-|---|---|
-| [ADR-0138: Whitelist Relay Adapter Event Filtering](../decisions/0138-whitelist-relay-adapter-event-filtering.md) | Prerequisite -- establishes the whitelist model that this spec extends with an `approval_required` handler |
-| [ADR-0137: Unified Input Zone for Interactive Cards](../decisions/0137-unified-input-zone-for-interactive-cards.md) | Web UI counterpart -- describes how approval cards render in the chat input zone |
-| [ADR-0094: Per-Message Correlation ID for Relay Event Filtering](../decisions/0094-per-message-correlation-id-for-relay-event-filtering.md) | Correlation IDs threaded through the relay pipeline, used for stream key resolution in outbound delivery |
-| [ADR-0135: Binding-Level Permission Mode](../decisions/0135-binding-level-permission-mode.md) | `permissionMode` configuration that determines whether `approval_required` events are emitted |
-| [ADR-0046: Central Binding Router for Adapter-Agent Routing](../decisions/0046-central-binding-router-for-adapter-agent-routing.md) | Binding router that routes messages between adapters and agents |
-| [ADR-0029: Replace Message Receiver with Claude Code Adapter](../decisions/0029-replace-message-receiver-with-claude-code-adapter.md) | Establishes the CCA adapter pattern used for approval subscription |
+| ADR                                                                                                                                         | Relevance                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [ADR-0138: Whitelist Relay Adapter Event Filtering](../decisions/0138-whitelist-relay-adapter-event-filtering.md)                           | Prerequisite -- establishes the whitelist model that this spec extends with an `approval_required` handler |
+| [ADR-0137: Unified Input Zone for Interactive Cards](../decisions/0137-unified-input-zone-for-interactive-cards.md)                         | Web UI counterpart -- describes how approval cards render in the chat input zone                           |
+| [ADR-0094: Per-Message Correlation ID for Relay Event Filtering](../decisions/0094-per-message-correlation-id-for-relay-event-filtering.md) | Correlation IDs threaded through the relay pipeline, used for stream key resolution in outbound delivery   |
+| [ADR-0135: Binding-Level Permission Mode](../decisions/0135-binding-level-permission-mode.md)                                               | `permissionMode` configuration that determines whether `approval_required` events are emitted              |
+| [ADR-0046: Central Binding Router for Adapter-Agent Routing](../decisions/0046-central-binding-router-for-adapter-agent-routing.md)         | Binding router that routes messages between adapters and agents                                            |
+| [ADR-0029: Replace Message Receiver with Claude Code Adapter](../decisions/0029-replace-message-receiver-with-claude-code-adapter.md)       | Establishes the CCA adapter pattern used for approval subscription                                         |
 
 ## References
 

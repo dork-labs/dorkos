@@ -7,7 +7,7 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
   // eslint-disable-next-line no-restricted-syntax -- must read dynamically; env.ts parses once at import and tests mutate NODE_ENV at runtime
   const isDev = process.env.NODE_ENV !== 'production';
   res.status(500).json({
-    error: isDev ? (err.message || 'Internal Server Error') : 'Internal Server Error',
+    error: isDev ? err.message || 'Internal Server Error' : 'Internal Server Error',
     code: 'INTERNAL_ERROR',
   });
 }

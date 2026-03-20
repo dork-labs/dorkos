@@ -1,33 +1,33 @@
 ---
-title: "Mesh Core Library"
+title: 'Mesh Core Library'
 spec: 1
 order: 1
 status: done
 blockedBy: []
 blocks: [2]
 parallelWith: []
-litepaperPhase: "Phase 1 — Discovery, Registration, and Registry"
+litepaperPhase: 'Phase 1 — Discovery, Registration, and Registry'
 complexity: high
 risk: high
 estimatedFiles: 15-20
-newPackages: ["packages/mesh"]
-primaryWorkspaces: ["packages/mesh", "packages/shared"]
+newPackages: ['packages/mesh']
+primaryWorkspaces: ['packages/mesh', 'packages/shared']
 touchesServer: false
 touchesClient: false
 verification:
-  - "npm test passes for packages/mesh"
-  - "npm run typecheck passes"
-  - "MeshCore can be instantiated and discover agents in a test fixture directory"
-  - "ClaudeCodeStrategy detects .claude/ directories with CLAUDE.md"
-  - "CursorStrategy detects .cursor/ directories"
-  - "Discovery skips directories with existing .dork/agent.json (already registered)"
-  - "Discovery skips denied agents"
-  - "Registration writes .dork/agent.json with correct schema"
-  - "Registration creates Relay endpoint for the agent"
-  - "Denial persists in SQLite and filters from future scans"
-  - "Manual registration by path works without discovery"
-  - "Importing hand-authored .dork/agent.json works (auto-import on scan)"
-  - "Agent registry persists across MeshCore restarts"
+  - 'npm test passes for packages/mesh'
+  - 'npm run typecheck passes'
+  - 'MeshCore can be instantiated and discover agents in a test fixture directory'
+  - 'ClaudeCodeStrategy detects .claude/ directories with CLAUDE.md'
+  - 'CursorStrategy detects .cursor/ directories'
+  - 'Discovery skips directories with existing .dork/agent.json (already registered)'
+  - 'Discovery skips denied agents'
+  - 'Registration writes .dork/agent.json with correct schema'
+  - 'Registration creates Relay endpoint for the agent'
+  - 'Denial persists in SQLite and filters from future scans'
+  - 'Manual registration by path works without discovery'
+  - 'Importing hand-authored .dork/agent.json works (auto-import on scan)'
+  - 'Agent registry persists across MeshCore restarts'
 notes: >
   This is the foundation — everything else depends on it. The core challenge
   is the discovery strategy plugin system and the two-phase lifecycle (discover
@@ -124,6 +124,7 @@ OUT OF SCOPE for this spec:
 ## Context for Review
 
 This is the foundation spec — everything else builds on it. The /ideate exploration agent should focus heavily on:
+
 - How `packages/relay/` is structured (package.json exports, tsconfig, vitest config, build)
 - How `packages/relay/src/relay-core.ts` exposes its API (constructor, methods, events)
 - The SQLite patterns in `packages/relay/src/sqlite-index.ts` and `apps/server/src/services/pulse-store.ts`
@@ -131,6 +132,7 @@ This is the foundation spec — everything else builds on it. The /ideate explor
 - How RelayCore's `registerEndpoint()` and `addAccessRule()` methods work
 
 The /ideate research agent should investigate:
+
 - Agent discovery patterns in multi-agent frameworks (AutoGen, CrewAI, LangGraph)
 - A2A Agent Card standard from Linux Foundation (alignment with .dork/agent.json)
 - Filesystem scanning strategies (depth-limited BFS, symlink handling, permission errors)

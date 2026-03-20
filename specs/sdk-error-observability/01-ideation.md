@@ -106,10 +106,9 @@ status: ideation
 
 ## 5) Research
 
-*Full research: `research/20260318_sdk_error_observability.md`*
+_Full research: `research/20260318_sdk_error_observability.md`_
 
 - **Potential solutions:**
-
   1. **Narrow `RESUME_FAILURE_PATTERNS` + retry depth guard** — Remove `'process exited with code'` from the resume pattern list. Add `retryDepth` parameter to `executeSdkQuery` with `MAX_RESUME_RETRIES = 1`. On exhaustion, yield `error` StreamEvent.
      - Pros: Minimal change (one constant reorganization + one parameter + one guard). Breaks the infinite loop unconditionally. Preserves stale-session self-healing for the remaining patterns.
      - Cons: `process exited with code 1` errors that ARE stale sessions (rare edge case) will no longer auto-heal — but `session not found`, `enoent`, and `query closed before response` still cover the majority.
@@ -134,9 +133,9 @@ status: ideation
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How to fix `isResumeFailure()` misclassification | Narrow the pattern list — remove `'process exited with code'` from `RESUME_FAILURE_PATTERNS` | The remaining patterns (`session not found`, `enoent`, `query closed before response`) cover legitimate stale-session scenarios. `process exited with code 1` is too broad and matches API errors, auth failures, and OOM crashes. |
-| 2 | Error UX for Slack/Telegram users | Specific, actionable error messages set in the `error` StreamEvent `message` field | Single source of truth for user-facing copy. Both web UI and adapter platforms receive the same message. No adapter-specific logic needed. Example: "The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment." |
-| 3 | Retry limit for recursive `executeSdkQuery` | Max 1 retry, then surface error | One retry preserves stale-session self-healing. On second failure, yield `error` StreamEvent immediately. `MAX_RESUME_RETRIES = 1` constant. |
-| 4 | How to handle empty streams | Warn log + synthetic `error` StreamEvent when `contentEventCount === 0` after stream completes | Track content events (`text_delta`, `tool_call_start`, `tool_result`, `thinking_delta`). Exclude interactive flows (`approval_required`, `question_prompt`) via `wasInteractive` flag. The `emittedError` flag prevents double-emitting. |
+| #   | Decision                                         | Choice                                                                                         | Rationale                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | How to fix `isResumeFailure()` misclassification | Narrow the pattern list — remove `'process exited with code'` from `RESUME_FAILURE_PATTERNS`   | The remaining patterns (`session not found`, `enoent`, `query closed before response`) cover legitimate stale-session scenarios. `process exited with code 1` is too broad and matches API errors, auth failures, and OOM crashes.                       |
+| 2   | Error UX for Slack/Telegram users                | Specific, actionable error messages set in the `error` StreamEvent `message` field             | Single source of truth for user-facing copy. Both web UI and adapter platforms receive the same message. No adapter-specific logic needed. Example: "The agent stopped unexpectedly. The service may be temporarily overloaded — try again in a moment." |
+| 3   | Retry limit for recursive `executeSdkQuery`      | Max 1 retry, then surface error                                                                | One retry preserves stale-session self-healing. On second failure, yield `error` StreamEvent immediately. `MAX_RESUME_RETRIES = 1` constant.                                                                                                             |
+| 4   | How to handle empty streams                      | Warn log + synthetic `error` StreamEvent when `contentEventCount === 0` after stream completes | Track content events (`text_delta`, `tool_call_start`, `tool_result`, `thinking_delta`). Exclude interactive flows (`approval_required`, `question_prompt`) via `wasInteractive` flag. The `emittedError` flag prevents double-emitting.                 |

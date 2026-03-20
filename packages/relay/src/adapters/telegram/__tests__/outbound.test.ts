@@ -265,7 +265,7 @@ describe('deliverMessage', () => {
       const envelope = createEnvelope(
         'relay.human.telegram.12345',
         { content: 'echo' },
-        'relay.human.telegram.bot',
+        'relay.human.telegram.bot'
       );
       const result = await deliverMessage({
         adapterId: 'telegram',
@@ -396,7 +396,9 @@ describe('deliverMessage', () => {
         streaming: false,
       });
       expect(result.success).toBe(true);
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Accumulated text', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Accumulated text', {
+        parse_mode: 'HTML',
+      });
       expect(responseBuffers.has(12345)).toBe(false);
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
@@ -442,7 +444,7 @@ describe('deliverMessage', () => {
       expect(mockSendMessage).toHaveBeenCalledWith(
         12345,
         expect.stringContaining('[Error: Context exceeded]'),
-        { parse_mode: 'HTML' },
+        { parse_mode: 'HTML' }
       );
       expect(responseBuffers.has(12345)).toBe(false);
     });
@@ -462,7 +464,9 @@ describe('deliverMessage', () => {
         callbacks,
         streaming: false,
       });
-      expect(mockSendMessage).toHaveBeenCalledWith(12345, '[Error: Session failed]', { parse_mode: 'HTML' });
+      expect(mockSendMessage).toHaveBeenCalledWith(12345, '[Error: Session failed]', {
+        parse_mode: 'HTML',
+      });
     });
   });
 
@@ -757,7 +761,7 @@ describe('deliverMessage', () => {
               ]),
             ]),
           }),
-        }),
+        })
       );
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
@@ -819,8 +823,9 @@ describe('deliverMessage', () => {
         streaming: false,
       });
       const call = mockSendMessage.mock.calls[0];
-      const keyboard = (call[2] as { reply_markup: { inline_keyboard: { callback_data: string }[][] } })
-        .reply_markup.inline_keyboard[0];
+      const keyboard = (
+        call[2] as { reply_markup: { inline_keyboard: { callback_data: string }[][] } }
+      ).reply_markup.inline_keyboard[0];
       expect(Buffer.byteLength(keyboard[0].callback_data)).toBeLessThanOrEqual(64);
       expect(Buffer.byteLength(keyboard[1].callback_data)).toBeLessThanOrEqual(64);
     });
@@ -879,10 +884,14 @@ describe('deliverMessage', () => {
 
     it('flushes buffered text before posting approval card', async () => {
       // Simulate text_delta buffering
-      const deltaEnv = createEnvelope('relay.human.telegram.12345', {
-        type: 'text_delta',
-        data: { text: 'Let me search for projects' },
-      }, 'agent:sess-1');
+      const deltaEnv = createEnvelope(
+        'relay.human.telegram.12345',
+        {
+          type: 'text_delta',
+          data: { text: 'Let me search for projects' },
+        },
+        'agent:sess-1'
+      );
       await deliverMessage({
         adapterId: 'telegram',
         subject: 'relay.human.telegram.12345',
@@ -896,17 +905,21 @@ describe('deliverMessage', () => {
       expect(mockSendMessage).not.toHaveBeenCalled(); // buffered only
 
       // Send approval_required — should flush text first
-      const approvalEnv = createEnvelope('relay.human.telegram.12345', {
-        type: 'approval_required',
-        data: {
-          toolCallId: 'toolu_flush',
-          toolName: 'WebSearch',
-          input: '{"query":"art blocks"}',
-          timeoutMs: 600_000,
-          agentId: 'agent-1',
-          ccaSessionKey: 'sess-1',
+      const approvalEnv = createEnvelope(
+        'relay.human.telegram.12345',
+        {
+          type: 'approval_required',
+          data: {
+            toolCallId: 'toolu_flush',
+            toolName: 'WebSearch',
+            input: '{"query":"art blocks"}',
+            timeoutMs: 600_000,
+            agentId: 'agent-1',
+            ccaSessionKey: 'sess-1',
+          },
         },
-      }, 'agent:sess-1');
+        'agent:sess-1'
+      );
       await deliverMessage({
         adapterId: 'telegram',
         subject: 'relay.human.telegram.12345',

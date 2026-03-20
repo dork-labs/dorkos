@@ -14,9 +14,7 @@ vi.mock('child_process', () => ({
 }));
 
 // Mock process.exit to prevent test runner from exiting
-const mockExit = vi
-  .spyOn(process, 'exit')
-  .mockImplementation(() => undefined as never);
+const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
 describe('Admin routes', () => {
   let app: express.Express;
@@ -35,7 +33,7 @@ describe('Admin routes', () => {
         dorkHome: '/tmp/test-dork-home',
         shutdownServices: mockShutdownServices,
         closeDb: mockCloseDb,
-      }),
+      })
     );
   });
 
@@ -51,16 +49,12 @@ describe('Admin routes', () => {
     });
 
     it('returns 400 with wrong confirm value', async () => {
-      const res = await request(app)
-        .post('/api/admin/reset')
-        .send({ confirm: 'delete' });
+      const res = await request(app).post('/api/admin/reset').send({ confirm: 'delete' });
       expect(res.status).toBe(400);
     });
 
     it('returns 200 with correct confirm value', async () => {
-      const res = await request(app)
-        .post('/api/admin/reset')
-        .send({ confirm: 'reset' });
+      const res = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
       expect(res.status).toBe(200);
       expect(res.body.message).toContain('Reset initiated');
     });

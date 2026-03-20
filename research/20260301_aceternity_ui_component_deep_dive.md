@@ -1,5 +1,5 @@
 ---
-title: "Aceternity UI: Component Deep Dive for Onboarding Flows"
+title: 'Aceternity UI: Component Deep Dive for Onboarding Flows'
 date: 2026-03-01
 type: external-best-practices
 status: active
@@ -27,6 +27,7 @@ Aceternity UI is a copy-paste React component library with 200+ components built
 ### 1. Tech Stack and Installation Approach
 
 **Core technologies (used by nearly every component):**
+
 - `motion` (npm, formerly `framer-motion`) — the primary animation layer
 - Tailwind CSS v4 — styling and responsive layout
 - `clsx` + `tailwind-merge` (via a shared `cn()` utility) — conditional class composition
@@ -35,6 +36,7 @@ Aceternity UI is a copy-paste React component library with 200+ components built
 - CSS `@keyframes` — aurora, shooting stars, gradient animations
 
 **Installation model:**
+
 ```bash
 # Via shadcn CLI (preferred):
 npx shadcn@latest add @aceternity/multi-step-loader
@@ -45,9 +47,10 @@ npx shadcn@latest add @aceternity/multi-step-loader
 No Aceternity npm package exists. Components are dropped into your project as source files you own and customize. This is the shadcn pattern.
 
 **Required base utility (`utils.ts`):**
+
 ```typescript
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -55,6 +58,7 @@ export function cn(...inputs: ClassValue[]) {
 ```
 
 **Key Motion APIs used across the library:**
+
 - `useScroll` + `useTransform` — scroll-linked parallax and value mapping
 - `useInView` — trigger animations when element enters viewport
 - `AnimatePresence` — enter/exit animations for conditional renders
@@ -69,28 +73,28 @@ export function cn(...inputs: ClassValue[]) {
 
 #### Background Effects (Atmospheric)
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Aurora Background** | Northern Lights flowing gradient | CSS `@keyframes` on `background-position` (60s linear infinite loop), `hue-rotate` filter |
-| **Background Beams** | SVG path-following beam strokes fanning from a point | Animated SVG `stroke-dashoffset` on path elements |
-| **Background Beams With Collision** | Beams that explode on contact with surface | Framer Motion + collision detection via `containerRef`/`parentRef` |
-| **Background Boxes** | Full-width grid of boxes that highlight amber on hover | CSS hover states on grid children |
-| **Background Gradient** | Animated gradient background | CSS `background-position` animation over oversized gradient |
-| **Background Lines** | Wavy SVG line pattern animation | Animated SVG path with wave pattern |
-| **Background Ripple Effect** | Grid cells that ripple outward on click | Click-event triggered CSS animation cascade |
-| **Canvas Reveal Effect** | Expanding dot grid revealed on hover (Clerk-inspired) | HTML Canvas 2D, dots expand from center on hover |
-| **Dotted Glow Background** | Grid of dots with opacity/glow animation | CSS `box-shadow` + `@keyframes` on grid nodes |
-| **Glowing Stars** | Animated star field background | CSS `@keyframes` opacity/scale on star elements |
-| **Google Gemini Effect** | SVG effects visualization | SVG manipulation, canvas |
-| **Grid and Dot Backgrounds** | Simple CSS grid or dot pattern | CSS `background-image: radial-gradient` or `linear-gradient` |
-| **Lamp Effect** | Lamp/cone visualization above section header | SVG cone shape with radial gradient glow |
-| **Meteors** | Diagonal meteor-like beams | CSS `@keyframes` translateX+opacity on pseudo-elements |
-| **Shooting Stars + Stars Background** | Shooting stars over star field | SVG/Canvas, customizable speed/delay/color |
-| **Spotlight** | Static spotlight cone that animates in on load | SVG-based, CSS `@keyframes` scale+opacity with 0.75s delay |
-| **SVG Mask Effect** | SVG mask revealed as cursor moves | `clip-path` or SVG `<mask>` driven by `mousemove` |
-| **Tracing Beam** | Beam that follows scroll position down the page | Scroll-linked SVG path fill, `useScroll` + `useTransform` |
-| **Vortex** | Swirling vortex canvas background | HTML Canvas 2D, sine wave physics simulation |
-| **Wavy Background** | Moving wave animation | HTML Canvas 2D, configurable colors/speed |
+| Component                             | Visual Effect                                          | Implementation Technique                                                                  |
+| ------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **Aurora Background**                 | Northern Lights flowing gradient                       | CSS `@keyframes` on `background-position` (60s linear infinite loop), `hue-rotate` filter |
+| **Background Beams**                  | SVG path-following beam strokes fanning from a point   | Animated SVG `stroke-dashoffset` on path elements                                         |
+| **Background Beams With Collision**   | Beams that explode on contact with surface             | Framer Motion + collision detection via `containerRef`/`parentRef`                        |
+| **Background Boxes**                  | Full-width grid of boxes that highlight amber on hover | CSS hover states on grid children                                                         |
+| **Background Gradient**               | Animated gradient background                           | CSS `background-position` animation over oversized gradient                               |
+| **Background Lines**                  | Wavy SVG line pattern animation                        | Animated SVG path with wave pattern                                                       |
+| **Background Ripple Effect**          | Grid cells that ripple outward on click                | Click-event triggered CSS animation cascade                                               |
+| **Canvas Reveal Effect**              | Expanding dot grid revealed on hover (Clerk-inspired)  | HTML Canvas 2D, dots expand from center on hover                                          |
+| **Dotted Glow Background**            | Grid of dots with opacity/glow animation               | CSS `box-shadow` + `@keyframes` on grid nodes                                             |
+| **Glowing Stars**                     | Animated star field background                         | CSS `@keyframes` opacity/scale on star elements                                           |
+| **Google Gemini Effect**              | SVG effects visualization                              | SVG manipulation, canvas                                                                  |
+| **Grid and Dot Backgrounds**          | Simple CSS grid or dot pattern                         | CSS `background-image: radial-gradient` or `linear-gradient`                              |
+| **Lamp Effect**                       | Lamp/cone visualization above section header           | SVG cone shape with radial gradient glow                                                  |
+| **Meteors**                           | Diagonal meteor-like beams                             | CSS `@keyframes` translateX+opacity on pseudo-elements                                    |
+| **Shooting Stars + Stars Background** | Shooting stars over star field                         | SVG/Canvas, customizable speed/delay/color                                                |
+| **Spotlight**                         | Static spotlight cone that animates in on load         | SVG-based, CSS `@keyframes` scale+opacity with 0.75s delay                                |
+| **SVG Mask Effect**                   | SVG mask revealed as cursor moves                      | `clip-path` or SVG `<mask>` driven by `mousemove`                                         |
+| **Tracing Beam**                      | Beam that follows scroll position down the page        | Scroll-linked SVG path fill, `useScroll` + `useTransform`                                 |
+| **Vortex**                            | Swirling vortex canvas background                      | HTML Canvas 2D, sine wave physics simulation                                              |
+| **Wavy Background**                   | Moving wave animation                                  | HTML Canvas 2D, configurable colors/speed                                                 |
 
 **Onboarding relevance:** Aurora Background (step completion celebration), Spotlight (draw attention to CTA), Canvas Reveal Effect (reveal content on interaction), Background Beams (visual depth for hero/welcome screen).
 
@@ -98,21 +102,21 @@ export function cn(...inputs: ClassValue[]) {
 
 #### Card Effects
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **3D Card Effect** | Perspective tilt on mouse movement | CSS `perspective` + `rotateX`/`rotateY` driven by `mousemove` |
-| **Card Hover Effect** | Animated gradient slides in from hover direction | Direction-aware CSS transform on hover |
-| **Card Spotlight** | Radial gradient follows cursor within card | `radial-gradient` at `mousemove` coordinates via CSS custom props |
-| **Card Stack** | Stack of testimonial cards | Framer Motion `AnimatePresence` with stacking offsets |
-| **Comet Card** | 3D tilt (Perplexity Comet style) | `rotateX`/`rotateY` with spring physics |
-| **Direction Aware Hover** | Gradient enters from direction of cursor approach | `mousemove` + border detection logic |
-| **Draggable Card** | Tiltable, draggable card with physics | Drag constraints + tilt on cursor position |
-| **Evervault Card** | Encrypted text reveal with gradient on hover | Random char substitution + radial gradient |
-| **Expandable Card** | Card expands to full detail on click | Framer Motion `layoutId` shared layout animation |
-| **Focus Cards** | Hover blurs siblings, sharpens hovered | CSS `filter: blur()` on non-hovered items |
-| **Glare Card** | Linear glare/shine effect (Linear-inspired) | Pseudo-element shine layer at `mousemove` position |
-| **Infinite Moving Cards** | Horizontally looping card row | CSS `@keyframes` translate on a duplicated row |
-| **Wobble Card** | Subtle translation+scale on mouse proximity | `translate` + `scale` driven by `mousemove` |
+| Component                 | Visual Effect                                     | Implementation Technique                                          |
+| ------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
+| **3D Card Effect**        | Perspective tilt on mouse movement                | CSS `perspective` + `rotateX`/`rotateY` driven by `mousemove`     |
+| **Card Hover Effect**     | Animated gradient slides in from hover direction  | Direction-aware CSS transform on hover                            |
+| **Card Spotlight**        | Radial gradient follows cursor within card        | `radial-gradient` at `mousemove` coordinates via CSS custom props |
+| **Card Stack**            | Stack of testimonial cards                        | Framer Motion `AnimatePresence` with stacking offsets             |
+| **Comet Card**            | 3D tilt (Perplexity Comet style)                  | `rotateX`/`rotateY` with spring physics                           |
+| **Direction Aware Hover** | Gradient enters from direction of cursor approach | `mousemove` + border detection logic                              |
+| **Draggable Card**        | Tiltable, draggable card with physics             | Drag constraints + tilt on cursor position                        |
+| **Evervault Card**        | Encrypted text reveal with gradient on hover      | Random char substitution + radial gradient                        |
+| **Expandable Card**       | Card expands to full detail on click              | Framer Motion `layoutId` shared layout animation                  |
+| **Focus Cards**           | Hover blurs siblings, sharpens hovered            | CSS `filter: blur()` on non-hovered items                         |
+| **Glare Card**            | Linear glare/shine effect (Linear-inspired)       | Pseudo-element shine layer at `mousemove` position                |
+| **Infinite Moving Cards** | Horizontally looping card row                     | CSS `@keyframes` translate on a duplicated row                    |
+| **Wobble Card**           | Subtle translation+scale on mouse proximity       | `translate` + `scale` driven by `mousemove`                       |
 
 **Onboarding relevance:** Card Spotlight (step selection, feature highlights), Expandable Card (progressive disclosure of features), Focus Cards (one-at-a-time step reading), 3D Card Effect (agent selection / configuration cards).
 
@@ -120,31 +124,33 @@ export function cn(...inputs: ClassValue[]) {
 
 #### Text Animation Effects
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Canvas Text** | Animated colored curves clipped to text shape | HTML Canvas with color curves + `clip-path` to text outline |
-| **Colourful Text** | Multi-color text with animated color transitions | CSS `animation` cycling through gradient `background-clip: text` |
-| **Container Text Flip** | Word flipping within container | Framer Motion `AnimatePresence` + `y` translate |
-| **Encrypted Text** | Gibberish scramble that gradually reveals real text | `setInterval` random char substitution that resolves left-to-right |
-| **Flip Words** | Word-swapping animation cycling through array | Framer Motion `AnimatePresence`, words array, configurable duration |
-| **Hero Highlight** | Text with animated background highlight (pulsing warmth) | Radial gradient background on inline `<span>`, Motion animation |
-| **Layout Text Flip** | Text flip with layout changes | Framer Motion shared layout + `AnimatePresence` |
-| **Text Generate Effect** | Text fades in word-by-word on load | Framer Motion `staggerChildren` on split words, `opacity: 0 → 1` |
-| **Text Hover Effect** | Animated outline gradient on hover | CSS gradient stroke animation on text |
-| **Text Reveal Card** | Hidden text revealed as cursor moves over card | SVG `<mask>` driven by `mousemove` |
-| **Typewriter Effect** | Character-by-character typing animation | Two variants: `TypewriterEffect` (janky/authentic) and `TypewriterEffectSmooth` (polished) |
+| Component                | Visual Effect                                            | Implementation Technique                                                                   |
+| ------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Canvas Text**          | Animated colored curves clipped to text shape            | HTML Canvas with color curves + `clip-path` to text outline                                |
+| **Colourful Text**       | Multi-color text with animated color transitions         | CSS `animation` cycling through gradient `background-clip: text`                           |
+| **Container Text Flip**  | Word flipping within container                           | Framer Motion `AnimatePresence` + `y` translate                                            |
+| **Encrypted Text**       | Gibberish scramble that gradually reveals real text      | `setInterval` random char substitution that resolves left-to-right                         |
+| **Flip Words**           | Word-swapping animation cycling through array            | Framer Motion `AnimatePresence`, words array, configurable duration                        |
+| **Hero Highlight**       | Text with animated background highlight (pulsing warmth) | Radial gradient background on inline `<span>`, Motion animation                            |
+| **Layout Text Flip**     | Text flip with layout changes                            | Framer Motion shared layout + `AnimatePresence`                                            |
+| **Text Generate Effect** | Text fades in word-by-word on load                       | Framer Motion `staggerChildren` on split words, `opacity: 0 → 1`                           |
+| **Text Hover Effect**    | Animated outline gradient on hover                       | CSS gradient stroke animation on text                                                      |
+| **Text Reveal Card**     | Hidden text revealed as cursor moves over card           | SVG `<mask>` driven by `mousemove`                                                         |
+| **Typewriter Effect**    | Character-by-character typing animation                  | Two variants: `TypewriterEffect` (janky/authentic) and `TypewriterEffectSmooth` (polished) |
 
 **Props for Text Generate Effect:**
+
 ```typescript
 interface TextGenerateEffectProps {
-  words: string;          // Full text string to animate
-  className?: string;     // Container CSS classes
-  duration?: number;      // Animation duration (ms)
-  filter?: boolean;       // Apply blur filter during reveal
+  words: string; // Full text string to animate
+  className?: string; // Container CSS classes
+  duration?: number; // Animation duration (ms)
+  filter?: boolean; // Apply blur filter during reveal
 }
 ```
 
 **Props for Typewriter Effect:**
+
 ```typescript
 interface TypewriterEffectProps {
   words: Array<{ text: string; className?: string }>;
@@ -154,10 +160,11 @@ interface TypewriterEffectProps {
 ```
 
 **Props for Flip Words:**
+
 ```typescript
 interface FlipWordsProps {
-  words: string[];     // Array of words to cycle through
-  duration?: number;   // Display time per word (default: 3000ms)
+  words: string[]; // Array of words to cycle through
+  duration?: number; // Display time per word (default: 3000ms)
   className?: string;
 }
 ```
@@ -168,15 +175,15 @@ interface FlipWordsProps {
 
 #### Navigation Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Floating Dock** | macOS-style dock with magnification | Framer Motion `useMotionValue` + spring physics for magnification |
-| **Floating Navbar** | Sticky navbar that hides on scroll down | `useScroll` + visibility toggle with Motion |
-| **Navbar Menu** | Animated dropdown on hover | Framer Motion `AnimatePresence` children |
-| **Resizable Navbar** | Navbar shrinks/expands on scroll | CSS + scroll listener |
-| **Sidebar** | Expandable hover sidebar | Framer Motion width animation |
-| **Sticky Banner** | Sticky top banner | CSS `position: sticky` |
-| **Tabs** | Animated tab switching with underline indicator | Framer Motion `layoutId` for shared sliding underline |
+| Component            | Visual Effect                                   | Implementation Technique                                          |
+| -------------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
+| **Floating Dock**    | macOS-style dock with magnification             | Framer Motion `useMotionValue` + spring physics for magnification |
+| **Floating Navbar**  | Sticky navbar that hides on scroll down         | `useScroll` + visibility toggle with Motion                       |
+| **Navbar Menu**      | Animated dropdown on hover                      | Framer Motion `AnimatePresence` children                          |
+| **Resizable Navbar** | Navbar shrinks/expands on scroll                | CSS + scroll listener                                             |
+| **Sidebar**          | Expandable hover sidebar                        | Framer Motion width animation                                     |
+| **Sticky Banner**    | Sticky top banner                               | CSS `position: sticky`                                            |
+| **Tabs**             | Animated tab switching with underline indicator | Framer Motion `layoutId` for shared sliding underline             |
 
 **Onboarding relevance:** Tabs (multi-step or multi-section onboarding navigation), Floating Dock (persistent action access during onboarding).
 
@@ -184,14 +191,14 @@ interface FlipWordsProps {
 
 #### Scroll and Parallax Effects
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Container Scroll Animation** | 3D perspective rotation that reverses on scroll | `useScroll` + `useTransform` for `rotateX` |
-| **Hero Parallax** | Multi-layer rotation/translation/opacity on scroll | `useScroll` + `useTransform` on multiple layers |
-| **Macbook Scroll** | Image slides out of MacBook frame on scroll | Scroll-linked image transform |
-| **Parallax Scroll** | Two columns scrolling in opposite directions | Dual `useTransform` at inverted rates |
-| **Sticky Scroll Reveal** | Left content sticky, right content scrolls through sections | `position: sticky` + scroll-linked right panel |
-| **Tracing Beam** | Vertical beam fills as user scrolls page | `useScroll` + SVG `stroke-dashoffset` driven by scroll progress |
+| Component                      | Visual Effect                                               | Implementation Technique                                        |
+| ------------------------------ | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| **Container Scroll Animation** | 3D perspective rotation that reverses on scroll             | `useScroll` + `useTransform` for `rotateX`                      |
+| **Hero Parallax**              | Multi-layer rotation/translation/opacity on scroll          | `useScroll` + `useTransform` on multiple layers                 |
+| **Macbook Scroll**             | Image slides out of MacBook frame on scroll                 | Scroll-linked image transform                                   |
+| **Parallax Scroll**            | Two columns scrolling in opposite directions                | Dual `useTransform` at inverted rates                           |
+| **Sticky Scroll Reveal**       | Left content sticky, right content scrolls through sections | `position: sticky` + scroll-linked right panel                  |
+| **Tracing Beam**               | Vertical beam fills as user scrolls page                    | `useScroll` + SVG `stroke-dashoffset` driven by scroll progress |
 
 **Onboarding relevance:** Tracing Beam (progress visualization), Sticky Scroll Reveal (step-by-step guided tour pattern).
 
@@ -199,19 +206,20 @@ interface FlipWordsProps {
 
 #### Progress and Loader Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
+| Component             | Visual Effect                                  | Implementation Technique                                                     |
+| --------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
 | **Multi Step Loader** | Sequential text states with progress indicator | React state cycling through `loadingStates` array, Framer Motion transitions |
-| **Loader** | Minimal animated loaders | CSS animations |
+| **Loader**            | Minimal animated loaders                       | CSS animations                                                               |
 
 **Multi Step Loader props:**
+
 ```typescript
 interface MultiStepLoaderProps {
-  loadingStates: Array<{ text: string }>;  // Sequential messages to display
-  loading?: boolean;                        // Show/hide the loader
-  duration?: number;                        // Ms between state transitions (default: 2000)
-  loop?: boolean;                           // Loop back to start (default: true)
-  value?: number;                           // Current state index (0-based)
+  loadingStates: Array<{ text: string }>; // Sequential messages to display
+  loading?: boolean; // Show/hide the loader
+  duration?: number; // Ms between state transitions (default: 2000)
+  loop?: boolean; // Loop back to start (default: true)
+  value?: number; // Current state index (0-based)
 }
 ```
 
@@ -223,7 +231,7 @@ interface MultiStepLoaderProps {
 
 ```typescript
 interface TimelineEntry {
-  title: string;           // Section heading (e.g. step name or date)
+  title: string; // Section heading (e.g. step name or date)
   content: React.ReactNode; // Rich content: text, images, checklists
 }
 
@@ -240,13 +248,14 @@ The Timeline component features a **sticky header** and a **scroll-activated bea
 
 #### Particle and Celebration Effects
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Sparkles** | Canvas-rendered configurable sparkle bursts | HTML Canvas, configurable density/size/speed/color/particle count |
-| **Shooting Stars** | Shooting star streaks across the background | CSS/SVG animation |
-| **Glowing Stars** | Twinkling star field | CSS `@keyframes` on star elements |
+| Component          | Visual Effect                               | Implementation Technique                                          |
+| ------------------ | ------------------------------------------- | ----------------------------------------------------------------- |
+| **Sparkles**       | Canvas-rendered configurable sparkle bursts | HTML Canvas, configurable density/size/speed/color/particle count |
+| **Shooting Stars** | Shooting star streaks across the background | CSS/SVG animation                                                 |
+| **Glowing Stars**  | Twinkling star field                        | CSS `@keyframes` on star elements                                 |
 
 **Sparkles props:**
+
 ```typescript
 interface SparklesProps {
   id?: string;
@@ -267,23 +276,24 @@ interface SparklesProps {
 
 #### Border and Glow Effects
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Glowing Effect** | Mouse-proximity border glow (Cursor-inspired) | Mouse tracking + CSS `box-shadow` / border animation |
-| **Hover Border Gradient** | Gradient border that expands on hover | CSS gradient on `::after` pseudo-element |
-| **Moving Border** | Animated gradient that travels around border | CSS `@keyframes` on `border-image` or animated gradient |
+| Component                 | Visual Effect                                 | Implementation Technique                                |
+| ------------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| **Glowing Effect**        | Mouse-proximity border glow (Cursor-inspired) | Mouse tracking + CSS `box-shadow` / border animation    |
+| **Hover Border Gradient** | Gradient border that expands on hover         | CSS gradient on `::after` pseudo-element                |
+| **Moving Border**         | Animated gradient that travels around border  | CSS `@keyframes` on `border-image` or animated gradient |
 
 **Glowing Effect props:**
+
 ```typescript
 interface GlowingEffectProps {
-  blur?: number;             // Glow blur (px)
-  spread?: number;           // Angular spread (degrees, default: 20)
-  proximity?: number;        // Distance threshold beyond element
-  inactiveZone?: number;     // Center radius where effect is disabled (0-1, default: 0.7)
-  glow?: boolean;            // Force-show effect (default: false)
-  borderWidth?: number;      // Border thickness (px, default: 1)
-  variant?: "default" | "white";
-  disabled?: boolean;        // Disable the effect (default: true)
+  blur?: number; // Glow blur (px)
+  spread?: number; // Angular spread (degrees, default: 20)
+  proximity?: number; // Distance threshold beyond element
+  inactiveZone?: number; // Center radius where effect is disabled (0-1, default: 0.7)
+  glow?: boolean; // Force-show effect (default: false)
+  borderWidth?: number; // Border thickness (px, default: 1)
+  variant?: 'default' | 'white';
+  disabled?: boolean; // Disable the effect (default: true)
   movementDuration?: number; // Glow movement animation duration (s, default: 2)
   className?: string;
 }
@@ -295,13 +305,14 @@ interface GlowingEffectProps {
 
 #### Modal and Overlay Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Animated Modal** | Compound modal with scale/rotation transitions on child images | Framer Motion `scale` + random `rotate` (-10° to 10°) on images; `ModalProvider` compound pattern |
-| **Animated Tooltip** | Tooltip reveals on hover with spring animation | Framer Motion `AnimatePresence` + spring `y` |
-| **Link Preview** | Dynamic link preview popover on hover | Hover + async fetch of page preview |
+| Component            | Visual Effect                                                  | Implementation Technique                                                                          |
+| -------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Animated Modal**   | Compound modal with scale/rotation transitions on child images | Framer Motion `scale` + random `rotate` (-10° to 10°) on images; `ModalProvider` compound pattern |
+| **Animated Tooltip** | Tooltip reveals on hover with spring animation                 | Framer Motion `AnimatePresence` + spring `y`                                                      |
+| **Link Preview**     | Dynamic link preview popover on hover                          | Hover + async fetch of page preview                                                               |
 
 **Animated Modal structure:**
+
 ```typescript
 // Compound component pattern
 <ModalProvider>
@@ -319,19 +330,20 @@ interface GlowingEffectProps {
 
 #### Layout Grid Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Bento Grid** | Asymmetric grid with skewed layout | CSS Grid with `md:col-span-2` responsive spanning; Motion hover effects |
-| **Layout Grid** | Click-animated grid with expand-on-click | Framer Motion `layoutId` for smooth expansion |
+| Component       | Visual Effect                            | Implementation Technique                                                |
+| --------------- | ---------------------------------------- | ----------------------------------------------------------------------- |
+| **Bento Grid**  | Asymmetric grid with skewed layout       | CSS Grid with `md:col-span-2` responsive spanning; Motion hover effects |
+| **Layout Grid** | Click-animated grid with expand-on-click | Framer Motion `layoutId` for smooth expansion                           |
 
 **Bento Grid props:**
+
 ```typescript
 interface BentoGridItemProps {
   title: string;
   description: string;
-  header: React.ReactNode;   // Visual component for top of card
-  icon: React.ReactNode;     // Small icon
-  className?: string;        // Includes col-span for asymmetric layout
+  header: React.ReactNode; // Visual component for top of card
+  icon: React.ReactNode; // Small icon
+  className?: string; // Includes col-span for asymmetric layout
 }
 ```
 
@@ -341,23 +353,23 @@ interface BentoGridItemProps {
 
 #### Interactive and Cursor Effects
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Canvas Reveal Effect** | Expanding dot grid on hover (Clerk-inspired) | HTML Canvas 2D; dots grow outward from hover point |
-| **Following Pointer** | Custom animated cursor that follows mouse | CSS absolute positioning + Framer Motion spring tracking |
-| **Lens** | Zoom/magnify lens over images/video | CSS `transform: scale()` within a circular clip |
-| **Pointer Highlight** | Text highlight activated on scroll into view | `useInView` + CSS background highlight animation |
-| **SVG Mask Effect** | Reveal content through cursor-following mask | SVG `<mask>` + `mousemove` positioning |
+| Component                | Visual Effect                                | Implementation Technique                                 |
+| ------------------------ | -------------------------------------------- | -------------------------------------------------------- |
+| **Canvas Reveal Effect** | Expanding dot grid on hover (Clerk-inspired) | HTML Canvas 2D; dots grow outward from hover point       |
+| **Following Pointer**    | Custom animated cursor that follows mouse    | CSS absolute positioning + Framer Motion spring tracking |
+| **Lens**                 | Zoom/magnify lens over images/video          | CSS `transform: scale()` within a circular clip          |
+| **Pointer Highlight**    | Text highlight activated on scroll into view | `useInView` + CSS background highlight animation         |
+| **SVG Mask Effect**      | Reveal content through cursor-following mask | SVG `<mask>` + `mousemove` positioning                   |
 
 ---
 
 #### Input and Form Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **File Upload** | Drag-and-drop upload with animated indicators | `dragover` events + Framer Motion feedback |
+| Component                         | Visual Effect                                         | Implementation Technique                                       |
+| --------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
+| **File Upload**                   | Drag-and-drop upload with animated indicators         | `dragover` events + Framer Motion feedback                     |
 | **Placeholders And Vanish Input** | Placeholder cycles through options, vanishes on input | `AnimatePresence` on placeholder text + canvas particle vanish |
-| **Signup Form** | shadcn form with motion transitions | Framer Motion on form field entry |
+| **Signup Form**                   | shadcn form with motion transitions                   | Framer Motion on form field entry                              |
 
 **Onboarding relevance:** Placeholders and Vanish Input for search-based steps (e.g., "Enter your project directory"), File Upload for configuration import.
 
@@ -365,23 +377,23 @@ interface BentoGridItemProps {
 
 #### Carousel / Slider Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Animated Testimonials** | Auto-cycling image + quote testimonials | Framer Motion `AnimatePresence` + `autoplay` timer (5s) |
-| **Apple Cards Carousel** | Minimal Apple-style horizontal carousel | Framer Motion drag + snap |
-| **Carousel** | Customizable carousel with interactions | Drag/swipe with momentum |
-| **Images Slider** | Full-page keyboard-navigable image slider | Keyboard events + Framer Motion page transitions |
+| Component                 | Visual Effect                             | Implementation Technique                                |
+| ------------------------- | ----------------------------------------- | ------------------------------------------------------- |
+| **Animated Testimonials** | Auto-cycling image + quote testimonials   | Framer Motion `AnimatePresence` + `autoplay` timer (5s) |
+| **Apple Cards Carousel**  | Minimal Apple-style horizontal carousel   | Framer Motion drag + snap                               |
+| **Carousel**              | Customizable carousel with interactions   | Drag/swipe with momentum                                |
+| **Images Slider**         | Full-page keyboard-navigable image slider | Keyboard events + Framer Motion page transitions        |
 
 ---
 
 #### Data Visualization and Special Components
 
-| Component | Visual Effect | Implementation Technique |
-|-----------|--------------|--------------------------|
-| **Compare** | Side-by-side image comparison slider | Drag-to-reveal with CSS clip |
-| **GitHub Globe** | Interactive 3D globe with data points | Three.js sphere |
-| **Timeline** | Scroll-activated beam + sticky headers | `useScroll` + SVG stroke fill |
-| **World Map** | Animated map with connecting arcs | SVG paths with Motion stroke animation |
+| Component        | Visual Effect                          | Implementation Technique               |
+| ---------------- | -------------------------------------- | -------------------------------------- |
+| **Compare**      | Side-by-side image comparison slider   | Drag-to-reveal with CSS clip           |
+| **GitHub Globe** | Interactive 3D globe with data points  | Three.js sphere                        |
+| **Timeline**     | Scroll-activated beam + sticky headers | `useScroll` + SVG stroke fill          |
+| **World Map**    | Animated map with connecting arcs      | SVG paths with Motion stroke animation |
 
 ---
 
@@ -420,12 +432,12 @@ const container = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.05, delayChildren: 0.2 }
-  }
+    transition: { staggerChildren: 0.05, delayChildren: 0.2 },
+  },
 };
 const item = {
-  hidden: { opacity: 0, filter: "blur(4px)" },
-  visible: { opacity: 1, filter: "blur(0)" }
+  hidden: { opacity: 0, filter: 'blur(4px)' },
+  visible: { opacity: 1, filter: 'blur(0)' },
 };
 ```
 
@@ -533,15 +545,15 @@ OnboardingFlow/
 
 These Aceternity components are visually impressive but wrong for onboarding UX:
 
-| Component | Why to Avoid |
-|-----------|-------------|
-| 3D Globe / World Map | No semantic connection to local developer tooling |
-| Vortex | Disorienting; communicates chaos not clarity |
-| Macbook Scroll | Hero/marketing pattern, not functional UI |
-| Shooting Stars / Meteors | Decoration with no meaning |
-| Dither Shader | Live camera access — inappropriate in setup flow |
-| Parallax Scroll (two-column opposite) | Disorienting during a decision-making flow |
-| Canvas Text (curves clipped to text) | Hard to read; decoration over legibility |
+| Component                             | Why to Avoid                                      |
+| ------------------------------------- | ------------------------------------------------- |
+| 3D Globe / World Map                  | No semantic connection to local developer tooling |
+| Vortex                                | Disorienting; communicates chaos not clarity      |
+| Macbook Scroll                        | Hero/marketing pattern, not functional UI         |
+| Shooting Stars / Meteors              | Decoration with no meaning                        |
+| Dither Shader                         | Live camera access — inappropriate in setup flow  |
+| Parallax Scroll (two-column opposite) | Disorienting during a decision-making flow        |
+| Canvas Text (curves clipped to text)  | Hard to read; decoration over legibility          |
 
 ---
 

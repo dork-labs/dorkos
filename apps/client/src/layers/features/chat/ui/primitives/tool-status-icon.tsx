@@ -11,9 +11,7 @@ export function getToolStatusIcon(status: ToolIconStatus): React.ReactNode {
     case 'pending':
     case 'running':
       return (
-        <Loader2
-          className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status }))}
-        />
+        <Loader2 className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status }))} />
       );
     case 'complete':
       return <Check className={cn('size-(--size-icon-xs)', toolStatus({ status }))} />;

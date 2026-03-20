@@ -58,8 +58,7 @@ router.post('/start', async (_req, res) => {
 
   try {
     // Resolve auth token: env var first, then config fallback
-    const authtoken =
-      process.env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken;
+    const authtoken = process.env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken;
     if (!authtoken) {
       return res.status(400).json({ error: 'No ngrok auth token configured' });
     }
@@ -80,8 +79,7 @@ router.post('/start', async (_req, res) => {
 
     return res.json({ url: tunnelManager.status.url });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to start tunnel';
+    const message = err instanceof Error ? err.message : 'Failed to start tunnel';
     return res.status(500).json({ error: message });
   }
 });
@@ -96,8 +94,7 @@ router.post('/stop', async (_req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to stop tunnel';
+    const message = err instanceof Error ? err.message : 'Failed to stop tunnel';
     return res.status(500).json({ error: message });
   }
 });

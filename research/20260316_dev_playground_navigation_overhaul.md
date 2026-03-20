@@ -1,9 +1,20 @@
 ---
-title: "Dev Playground Navigation Overhaul — Scrollspy TOC, Cmd+K Search, Page Organization, Landing Page"
+title: 'Dev Playground Navigation Overhaul — Scrollspy TOC, Cmd+K Search, Page Organization, Landing Page'
 date: 2026-03-16
 type: external-best-practices
 status: active
-tags: [dev-playground, scrollspy, IntersectionObserver, cmdk, command-palette, design-system, navigation, shadcn, react]
+tags:
+  [
+    dev-playground,
+    scrollspy,
+    IntersectionObserver,
+    cmdk,
+    command-palette,
+    design-system,
+    navigation,
+    shadcn,
+    react,
+  ]
 feature_slug: dev-playground-navigation-overhaul
 searches_performed: 9
 sources_count: 22
@@ -21,11 +32,11 @@ The DorkOS Dev Playground currently has 3 sidebar items (Tokens, Components, Cha
 
 ### Pages and Section Counts
 
-| Page | Showcase Files | Sections |
-|------|---------------|---------|
-| Components (`/dev/components`) | ButtonShowcases, FormShowcases, FeedbackShowcases, NavigationShowcases, OverlayShowcases | 19 sections |
-| Chat (`/dev/chat`) | MessageShowcases, ToolShowcases, InputShowcases, StatusShowcases, MiscShowcases | 26 sections |
-| Tokens (`/dev/tokens`) | Inline TokensPage | 4–5 sections |
+| Page                           | Showcase Files                                                                           | Sections     |
+| ------------------------------ | ---------------------------------------------------------------------------------------- | ------------ |
+| Components (`/dev/components`) | ButtonShowcases, FormShowcases, FeedbackShowcases, NavigationShowcases, OverlayShowcases | 19 sections  |
+| Chat (`/dev/chat`)             | MessageShowcases, ToolShowcases, InputShowcases, StatusShowcases, MiscShowcases          | 26 sections  |
+| Tokens (`/dev/tokens`)         | Inline TokensPage                                                                        | 4–5 sections |
 
 Total: ~48 `PlaygroundSection` sections across 2 long-scroll pages + 1 token page.
 
@@ -51,7 +62,9 @@ Best-in-class docs sites (Fumadocs, Tailwind CSS, shadcn/ui, Radix UI) all imple
 
 ```ts
 const observer = new IntersectionObserver(
-  (entries) => { /* ... */ },
+  (entries) => {
+    /* ... */
+  },
   {
     // Offset for the sticky playground header (36px) plus breathing room.
     // Bottom margin keeps sections at the very bottom of viewport from activating.
@@ -130,11 +143,11 @@ The search target is "playground sections," not pages. Each section should be a 
 
 ```ts
 interface PlaygroundSearchItem {
-  id: string;          // anchor ID, e.g. 'tool-call-card'
-  title: string;       // Display name, e.g. 'ToolCallCard'
-  page: Page;          // 'components' | 'chat' | 'tokens'
-  category: string;    // Showcase group, e.g. 'Tools', 'Form', 'Feedback'
-  keywords: string[];  // Aliases: ['tool', 'call', 'approval', 'function']
+  id: string; // anchor ID, e.g. 'tool-call-card'
+  title: string; // Display name, e.g. 'ToolCallCard'
+  page: Page; // 'components' | 'chat' | 'tokens'
+  category: string; // Showcase group, e.g. 'Tools', 'Form', 'Feedback'
+  keywords: string[]; // Aliases: ['tool', 'call', 'approval', 'function']
 }
 ```
 
@@ -143,8 +156,20 @@ This flat array is defined **statically** — not derived at runtime from DOM qu
 ```ts
 // ButtonShowcases.tsx
 export const BUTTON_SEARCH_ITEMS: PlaygroundSearchItem[] = [
-  { id: 'button', title: 'Button', page: 'components', category: 'Actions', keywords: ['btn', 'click', 'primary', 'secondary', 'destructive', 'ghost'] },
-  { id: 'badge', title: 'Badge', page: 'components', category: 'Actions', keywords: ['label', 'tag', 'status', 'pill'] },
+  {
+    id: 'button',
+    title: 'Button',
+    page: 'components',
+    category: 'Actions',
+    keywords: ['btn', 'click', 'primary', 'secondary', 'destructive', 'ghost'],
+  },
+  {
+    id: 'badge',
+    title: 'Badge',
+    page: 'components',
+    category: 'Actions',
+    keywords: ['label', 'tag', 'status', 'pill'],
+  },
   // ...
 ];
 ```
@@ -179,12 +204,12 @@ On item select: call `navigateTo(item.page)` then `setTimeout(() => document.get
 
 **Current vs. alternatives:**
 
-| Approach | Description | Pros | Cons |
-|----------|-------------|------|------|
-| **A: Mega-page (current)** | All sections in one scroll | Simple code, easy to add new sections | No way to jump to specific section; TOC sidebar becomes critical |
-| **B: Category sub-pages** | Each showcase file becomes its own route | Shorter pages, focused context | 10+ routes to maintain; cross-category navigation harder; breaks current simple routing |
-| **C: Per-component pages** | One page per `PlaygroundSection` | Deep linking is trivial; matches Radix/shadcn docs structure | ~50 route entries; massive overhead for a dev-only tool |
-| **D: Mega-page + TOC + search (recommended)** | Keep mega-pages, add right TOC and Cmd+K | Best DX, minimal code change, leverages existing anchor IDs | Right TOC needs ~180px width; requires 1280px+ for 3-column layout |
+| Approach                                      | Description                              | Pros                                                         | Cons                                                                                    |
+| --------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| **A: Mega-page (current)**                    | All sections in one scroll               | Simple code, easy to add new sections                        | No way to jump to specific section; TOC sidebar becomes critical                        |
+| **B: Category sub-pages**                     | Each showcase file becomes its own route | Shorter pages, focused context                               | 10+ routes to maintain; cross-category navigation harder; breaks current simple routing |
+| **C: Per-component pages**                    | One page per `PlaygroundSection`         | Deep linking is trivial; matches Radix/shadcn docs structure | ~50 route entries; massive overhead for a dev-only tool                                 |
+| **D: Mega-page + TOC + search (recommended)** | Keep mega-pages, add right TOC and Cmd+K | Best DX, minimal code change, leverages existing anchor IDs  | Right TOC needs ~180px width; requires 1280px+ for 3-column layout                      |
 
 **The sweet spot: Approach D.** The reference case is the shadcn/ui docs "Components" page — all 50+ components on one page with a left sidebar for page selection and a right TOC for in-page navigation. This is the standard for design system galleries. Radix UI Primitives follows the same pattern.
 
@@ -193,6 +218,7 @@ The DorkOS playground has ~48 sections across 2 pages. This is well within the r
 **Deep linking via URL hash:** The current `history.pushState` approach can be extended to support hash fragments: `/dev/components#tool-call-card`. This enables direct links to specific components. Implementation: parse `window.location.hash` on load, navigate to the right page, then scroll to the anchor after a brief delay.
 
 **Proposed URL structure:**
+
 - `/dev` — Landing/overview page (new)
 - `/dev/tokens` — Token reference (existing)
 - `/dev/components` — Component gallery (existing, + right TOC)
@@ -223,6 +249,7 @@ For a developer playground (internal tool, not marketing), the most useful landi
 ```
 
 Key elements:
+
 1. **Category cards** — clickable, each card links to a page. Show section count and category description.
 2. **Quick Jump chips** — the 6–8 most recently accessed or most important sections as direct deep-link chips below the grid. This is the "frecency" concept applied to a landing page.
 3. **Recent changes indicator** — optional: a "Recently Updated" section showing the last 3 sections modified. Useful for design system maintenance. Keep it optional/v2.
@@ -251,6 +278,7 @@ The three-column layout for a page with right TOC:
 ```
 
 At 1280px viewport width:
+
 - Left sidebar: 240px (shadcn Sidebar default)
 - Content: ~860px (takes remaining space)
 - Right TOC: 200px (sticky)
@@ -267,7 +295,7 @@ The palette should open from a search trigger in the playground header bar (a `<
 // In DevPlayground.tsx header area
 <button
   onClick={() => setSearchOpen(true)}
-  className="text-muted-foreground flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs hover:bg-accent"
+  className="text-muted-foreground hover:bg-accent flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs"
 >
   <Search className="size-3" />
   Search components...
@@ -276,6 +304,7 @@ The palette should open from a search trigger in the playground header bar (a `<
 ```
 
 The `CommandDialog` itself:
+
 ```tsx
 <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
   <CommandInput placeholder="Search components and sections..." />
@@ -382,20 +411,20 @@ The sidebar items become `SidebarMenuSub` items using the shadcn Sidebar's built
 
 ## Approach Comparison Table
 
-| Feature | Approach | Complexity | Recommendation |
-|---------|----------|------------|----------------|
-| In-page navigation | Right TOC (IntersectionObserver) | Low | **Recommended** |
-| In-page navigation | Left sub-nav expansion | Medium | Phase 4 |
-| In-page navigation | Hash URL segments only | Low | Insufficient alone |
-| Search | Cmd+K with cmdk CommandDialog | Low | **Recommended** |
-| Search | Inline filter input per page | Low | Fallback only |
-| Search | URL query param ?q= | Medium | Not needed |
-| Page structure | Keep mega-pages + TOC + search | Low | **Recommended** |
-| Page structure | Split into category sub-pages | Medium | Not recommended |
-| Page structure | Per-component routes | High | Not recommended |
-| Landing page | Category card grid | Low | **Recommended** |
-| Landing page | Visual screenshot thumbnails | High | Overengineered |
-| Landing page | Plain list of links | Very Low | Too minimal |
+| Feature            | Approach                         | Complexity | Recommendation     |
+| ------------------ | -------------------------------- | ---------- | ------------------ |
+| In-page navigation | Right TOC (IntersectionObserver) | Low        | **Recommended**    |
+| In-page navigation | Left sub-nav expansion           | Medium     | Phase 4            |
+| In-page navigation | Hash URL segments only           | Low        | Insufficient alone |
+| Search             | Cmd+K with cmdk CommandDialog    | Low        | **Recommended**    |
+| Search             | Inline filter input per page     | Low        | Fallback only      |
+| Search             | URL query param ?q=              | Medium     | Not needed         |
+| Page structure     | Keep mega-pages + TOC + search   | Low        | **Recommended**    |
+| Page structure     | Split into category sub-pages    | Medium     | Not recommended    |
+| Page structure     | Per-component routes             | High       | Not recommended    |
+| Landing page       | Category card grid               | Low        | **Recommended**    |
+| Landing page       | Visual screenshot thumbnails     | High       | Overengineered     |
+| Landing page       | Plain list of links              | Very Low   | Too minimal        |
 
 ---
 
@@ -404,9 +433,11 @@ The sidebar items become `SidebarMenuSub` items using the shadcn Sidebar's built
 ### PlaygroundSection already has anchors — no refactoring needed
 
 The anchor ID generation in `PlaygroundSection.tsx` is the exact hook needed:
+
 ```ts
 const anchorId = title.toLowerCase().replace(/\s+/g, '-');
 ```
+
 This produces IDs like `tool-call-card`, `chat-input`, `button`. The scrollspy hook can target these directly.
 
 **One important addition:** add `scroll-mt-14` to the `<section>` element to account for the 36px playground header bar. Without this, scrollIntoView lands with the section title hidden behind the header.

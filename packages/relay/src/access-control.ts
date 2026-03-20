@@ -126,7 +126,7 @@ export class AccessControl {
   addRule(rule: RelayAccessRule): void {
     // Remove any exact duplicate (same from + to + priority)
     this.rules = this.rules.filter(
-      (r) => !(r.from === rule.from && r.to === rule.to && r.priority === rule.priority),
+      (r) => !(r.from === rule.from && r.to === rule.to && r.priority === rule.priority)
     );
     this.rules.push(rule);
     this.rules.sort(byPriorityDesc);

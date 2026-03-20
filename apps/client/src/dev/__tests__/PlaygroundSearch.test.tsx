@@ -51,9 +51,7 @@ function renderSearch({
   return {
     onOpenChange,
     onSelect,
-    ...render(
-      <PlaygroundSearch open={open} onOpenChange={onOpenChange} onSelect={onSelect} />
-    ),
+    ...render(<PlaygroundSearch open={open} onOpenChange={onOpenChange} onSelect={onSelect} />),
   };
 }
 

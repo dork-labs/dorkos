@@ -46,23 +46,23 @@ status: ideation
 
 **Primary Components/Modules:**
 
-| File | Role |
-|------|------|
-| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Renders assistant message content parts (text, tool calls, approvals, questions); Bug 1 site — line 121 uses `key={\`text-${i}\`}` |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Processes SSE events and builds the `parts` array; Bug 1 source — `text_delta` branch never assigns an ID to new text parts |
-| `apps/client/src/layers/features/chat/model/use-task-state.ts` | TanStack Query hook for session task list; Bug 2 site — missing `enabled: !!sessionId` guard on lines 48-53 |
-| `apps/client/src/layers/entities/session/model/use-session-status.ts` | TanStack Query hook for session metadata (model, permission mode); Bug 2 site — missing `enabled: !!sessionId` guard on lines 52-56 |
-| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` | Main chat UI container; Bug 2 source — lines 37, 114 coerce `null` to `''` (`sessionId ?? ''`) before passing to the hooks above |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Core chat logic hook; Bug 3 source — line 379 adds optimistic user message before Relay confirms; line 293-300 has partial sync_update guard |
+| File                                                                          | Role                                                                                                                                         |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Renders assistant message content parts (text, tool calls, approvals, questions); Bug 1 site — line 121 uses `key={\`text-${i}\`}`           |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts`          | Processes SSE events and builds the `parts` array; Bug 1 source — `text_delta` branch never assigns an ID to new text parts                  |
+| `apps/client/src/layers/features/chat/model/use-task-state.ts`                | TanStack Query hook for session task list; Bug 2 site — missing `enabled: !!sessionId` guard on lines 48-53                                  |
+| `apps/client/src/layers/entities/session/model/use-session-status.ts`         | TanStack Query hook for session metadata (model, permission mode); Bug 2 site — missing `enabled: !!sessionId` guard on lines 52-56          |
+| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`                       | Main chat UI container; Bug 2 source — lines 37, 114 coerce `null` to `''` (`sessionId ?? ''`) before passing to the hooks above             |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`              | Core chat logic hook; Bug 3 source — line 379 adds optimistic user message before Relay confirms; line 293-300 has partial sync_update guard |
 
 **Shared Dependencies:**
 
-| Path | Role |
-|------|------|
-| `packages/shared/src/schemas.ts` | `TextPartSchema`, `MessagePartSchema`, `ToolCallPartSchema` — wire protocol types |
-| `packages/shared/src/types.ts` | Re-exports `MessagePart` |
-| `apps/client/src/layers/features/chat/model/chat-types.ts` | `ChatMessage`, `ToolCallState`, `ChatStatus` — client-only message types |
-| `apps/client/src/layers/shared/model/TransportContext.tsx` | `useTransport()` — DI for Transport abstraction |
+| Path                                                       | Role                                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `packages/shared/src/schemas.ts`                           | `TextPartSchema`, `MessagePartSchema`, `ToolCallPartSchema` — wire protocol types |
+| `packages/shared/src/types.ts`                             | Re-exports `MessagePart`                                                          |
+| `apps/client/src/layers/features/chat/model/chat-types.ts` | `ChatMessage`, `ToolCallState`, `ChatStatus` — client-only message types          |
+| `apps/client/src/layers/shared/model/TransportContext.tsx` | `useTransport()` — DI for Transport abstraction                                   |
 
 **Data Flow:**
 
@@ -111,7 +111,7 @@ executeSubmission → setMessages([...prev, userMessage])  ← optimistic user i
 
 - **Evidence:**
   - `stream-event-handler.ts:139`: `currentPartsRef.current = [...parts, { type: 'text', text }]` — no `id` field on the new object
-  - `AssistantMessageContent.tsx:121`: `key={\`text-${i}\`}` — index `i` is unstable when parts array changes
+  - `AssistantMessageContent.tsx:121`: `key={\`text-${i}\`}`— index`i` is unstable when parts array changes
   - `TextPartSchema` (schemas.ts:323-328): `{ type, text }` only — no `id` on the wire
   - Self-test log: "74 baseline errors on page load, ~160 per streaming response"
 
@@ -182,7 +182,7 @@ executeSubmission → setMessages([...prev, userMessage])  ← optimistic user i
 
 ### Bug 1 — Stable Keys for Streaming Text Parts
 
-1. **Positional `_partId` counter (Recommended):** Assign `_partId: \`text-part-${parts.length}\`` in the `text_delta` else branch of `stream-event-handler.ts`. Use `part._partId ?? \`text-${i}\`` as the key in `AssistantMessageContent`. Counter string is cheaper than UUID, assigned exactly once at creation, never changes through the part's lifetime.
+1. **Positional `_partId` counter (Recommended):** Assign `_partId: \`text-part-${parts.length}\`` in the `text_delta` else branch of `stream-event-handler.ts`. Use `part._partId ?? \`text-${i}\``as the key in`AssistantMessageContent`. Counter string is cheaper than UUID, assigned exactly once at creation, never changes through the part's lifetime.
 2. **`crypto.randomUUID()` per text part:** Same mechanics, UUID instead of counter. No correctness benefit here; trivially more expensive.
 3. **Composite key (index + content-length):** One-liner but wrong — key changes on every delta, forcing React to unmount/remount `StreamingText` on every event.
 
@@ -213,8 +213,8 @@ executeSubmission → setMessages([...prev, userMessage])  ← optimistic user i
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Stable key strategy for streaming text parts | Positional `_partId` counter string, assigned once at text part creation in `stream-event-handler.ts`; used as React key in `AssistantMessageContent` | Cheapest stable ID; never changes through a part's lifetime; `_partId` is a client-only convention not added to the wire-protocol `TextPartSchema`; history-loaded parts gracefully fall back to index key |
-| 2 | Session ID guard pattern | Change hook signatures to `string \| null`; add `enabled: !!sessionId` to both `useTaskState` and `useSessionStatus`; remove `?? ''` coercions in `ChatPanel.tsx` | Matches the existing `enabled: sessionId !== null` pattern in `use-chat-session.ts:186`; TypeScript enforces caller updates at compile time; semantically correct (null = "not yet assigned") |
-| 3 | Optimistic user message UX approach | Remove `setMessages(..., userMessage)` from executeSubmission; add `pendingUserContent: string \| null` state; thread through `ChatPanel` → `MessageList` to render a distinct "pending" bubble outside the JSONL-sourced message array | Eliminates both Part A (delivery-failure consistency) and Part B (mid-stream race) simultaneously; preserves immediate visual feedback; makes the architectural boundary explicit: `messages` = JSONL-sourced, `pendingUserContent` = ephemeral UI state |
+| #   | Decision                                     | Choice                                                                                                                                                                                                                                  | Rationale                                                                                                                                                                                                                                                |
+| --- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Stable key strategy for streaming text parts | Positional `_partId` counter string, assigned once at text part creation in `stream-event-handler.ts`; used as React key in `AssistantMessageContent`                                                                                   | Cheapest stable ID; never changes through a part's lifetime; `_partId` is a client-only convention not added to the wire-protocol `TextPartSchema`; history-loaded parts gracefully fall back to index key                                               |
+| 2   | Session ID guard pattern                     | Change hook signatures to `string \| null`; add `enabled: !!sessionId` to both `useTaskState` and `useSessionStatus`; remove `?? ''` coercions in `ChatPanel.tsx`                                                                       | Matches the existing `enabled: sessionId !== null` pattern in `use-chat-session.ts:186`; TypeScript enforces caller updates at compile time; semantically correct (null = "not yet assigned")                                                            |
+| 3   | Optimistic user message UX approach          | Remove `setMessages(..., userMessage)` from executeSubmission; add `pendingUserContent: string \| null` state; thread through `ChatPanel` → `MessageList` to render a distinct "pending" bubble outside the JSONL-sourced message array | Eliminates both Part A (delivery-failure consistency) and Part B (mid-stream race) simultaneously; preserves immediate visual feedback; makes the architectural boundary explicit: `messages` = JSONL-sourced, `pendingUserContent` = ephemeral UI state |

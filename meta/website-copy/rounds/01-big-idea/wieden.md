@@ -28,7 +28,7 @@ Nike did not sell shoes. Nike sold the person you become when you stop making ex
 
 No product screenshot above the fold. Just the line and a terminal clock frozen at 2:47am with a blinking cursor. The implication: your agent was ready. You were not.
 
-Below it, one sentence: *The operating system for AI agents that work when you don't.*
+Below it, one sentence: _The operating system for AI agents that work when you don't._
 
 Then the install command. Nothing else.
 
@@ -39,6 +39,7 @@ A short scroll section that names the enemy. Not competitor products. The workfl
 > You hired the most capable engineer on earth. Then you chained it to your laptop lid.
 
 Three cards. Each one a moment of waste:
+
 - **The 3am Build** — CI red for four hours. The fix was three lines. Your agent knew. Your terminal was closed.
 - **The Goldfish** — Every session starts from zero. No memory of yesterday. No memory of five minutes ago.
 - **The Tab Graveyard** — Ten agents. Ten terminals. No communication. No coordination. Just you, alt-tabbing like it is 2005.
@@ -61,7 +62,7 @@ Not a feature list. A narrative. Show what DorkOS does as a timeline of a develo
 - **2:51am** — Fix committed. PR opened. Tests green.
 - **7:00am** — You open DorkOS. Three PRs merged. Status: all clear.
 
-The section header: *You slept. They shipped.*
+The section header: _You slept. They shipped._
 
 **5. The CTA**
 
@@ -71,7 +72,7 @@ Do not beg. Do not explain. One line:
 npm install -g dorkos
 ```
 
-And beneath it: *One person. Ten agents. Ship around the clock.*
+And beneath it: _One person. Ten agents. Ship around the clock._
 
 ## The Line
 
@@ -87,7 +88,7 @@ If you need a secondary line for contexts where the primary feels too compressed
 
 ## What to Kill
 
-**"Your AI Never Sleeps."** — Kill it. It centers the AI. Nobody cares that the AI does not sleep. They care that *they* can. The shift from "your AI never sleeps" to "you slept, they shipped" is the shift from feature to identity. From what the product does to who you become.
+**"Your AI Never Sleeps."** — Kill it. It centers the AI. Nobody cares that the AI does not sleep. They care that _they_ can. The shift from "your AI never sleeps" to "you slept, they shipped" is the shift from feature to identity. From what the product does to who you become.
 
 **"We solved this for applications fifty years ago. We called it an operating system."** — Keep it, but bury it. It is clever. Too clever for a headline. It belongs in a blog post or a deep-scroll explainer section for the architect persona. It earns a nod, not a feeling. And the homepage needs to earn a feeling.
 

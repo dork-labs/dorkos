@@ -38,7 +38,7 @@ function buildTitle({
   const badgePrefix =
     isTabHidden && pulseBadgeCount && pulseBadgeCount > 0 ? `(${pulseBadgeCount}) ` : '';
   const emoji = agentEmoji ?? hashToEmoji(cwd);
-  const label = agentName ?? (cwd.split('/').filter(Boolean).pop() ?? cwd);
+  const label = agentName ?? cwd.split('/').filter(Boolean).pop() ?? cwd;
   let title = `${badgePrefix}${prefix}${emoji} ${label}`;
   if (activeForm) {
     const truncated =
@@ -66,9 +66,23 @@ export function useDocumentTitle({
   const wasStreamingRef = useRef(isStreaming);
 
   // Single ref to keep visibility handler in sync with latest prop values
-  const optionsRef = useRef({ cwd, activeForm, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount });
+  const optionsRef = useRef({
+    cwd,
+    activeForm,
+    isWaitingForUser,
+    agentName,
+    agentEmoji,
+    pulseBadgeCount,
+  });
   useEffect(() => {
-    optionsRef.current = { cwd, activeForm, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount };
+    optionsRef.current = {
+      cwd,
+      activeForm,
+      isWaitingForUser,
+      agentName,
+      agentEmoji,
+      pulseBadgeCount,
+    };
   }, [cwd, activeForm, isWaitingForUser, agentName, agentEmoji, pulseBadgeCount]);
 
   // Track tab visibility and rebuild title on return (clears 🏁 and badge)

@@ -23,6 +23,7 @@ Data layer, presentation mode hook, and global CSS additions.
 ### Task 1: Create `story-data.ts`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/lib/story-data.ts`
 
 - [ ] **Step 1: Create the data file**
@@ -32,53 +33,102 @@ Data layer, presentation mode hook, and global CSS additions.
 
 /** Boot card displayed in the MondayMorningSection grid. */
 export interface BootCard {
-  id: string
-  label: string
-  value: string
-  detail: string
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
   /** Design token color name for the border accent. */
-  color: 'orange' | 'blue' | 'purple' | 'green' | 'gray'
+  color: 'orange' | 'blue' | 'purple' | 'green' | 'gray';
   /** Whether the card has an urgent/flagged treatment. */
-  urgent?: boolean
+  urgent?: boolean;
 }
 
 /** One step in the LifeOS -> DorkOS evolution timeline. */
 export interface EvolutionStep {
-  step: number
-  product: string
-  duration: string
-  description: string
+  step: number;
+  product: string;
+  duration: string;
+  description: string;
   /** What limitation drove the next step. Null for the final step. */
-  ceiling: string | null
+  ceiling: string | null;
   /** Design token color for the step number circle. */
-  color: 'orange' | 'charcoal'
+  color: 'orange' | 'charcoal';
 }
 
 /** One line in the "platforms will just be prompts" equation. */
 export interface EquationItem {
-  lhs: string
-  rhs: string
+  lhs: string;
+  rhs: string;
 }
 
 /** One card in the FutureVisionSection. */
 export interface FutureCard {
-  id: string
-  label: string
-  title: string
-  description: string
-  color: 'orange' | 'blue' | 'green'
+  id: string;
+  label: string;
+  title: string;
+  description: string;
+  color: 'orange' | 'blue' | 'green';
 }
 
 export const bootCards: BootCard[] = [
-  { id: 'health', label: 'Health', value: 'Synced', detail: 'HRV · sleep · steps', color: 'orange' },
-  { id: 'companies', label: 'Companies', value: '4 loaded', detail: 'tasks · projects', color: 'blue' },
-  { id: 'overdue', label: '⚑ Overdue', value: '15 days', detail: 'flagged for you', color: 'orange', urgent: true },
-  { id: 'calendar', label: 'Calendar', value: '3 preps', detail: 'meetings identified', color: 'purple' },
-  { id: 'family', label: 'Family', value: 'Liam · Thu', detail: 'therapy · brief outdated', color: 'blue' },
-  { id: 'energy', label: 'Energy', value: '4 dims', detail: 'phys · mental · emo · spirit', color: 'green' },
-  { id: 'coaching', label: 'Coaching', value: 'Fear check', detail: 'priorities → 3', color: 'orange' },
-  { id: 'output', label: 'Output', value: 'Ready', detail: 'calendar · habits · audio', color: 'gray' },
-]
+  {
+    id: 'health',
+    label: 'Health',
+    value: 'Synced',
+    detail: 'HRV · sleep · steps',
+    color: 'orange',
+  },
+  {
+    id: 'companies',
+    label: 'Companies',
+    value: '4 loaded',
+    detail: 'tasks · projects',
+    color: 'blue',
+  },
+  {
+    id: 'overdue',
+    label: '⚑ Overdue',
+    value: '15 days',
+    detail: 'flagged for you',
+    color: 'orange',
+    urgent: true,
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    value: '3 preps',
+    detail: 'meetings identified',
+    color: 'purple',
+  },
+  {
+    id: 'family',
+    label: 'Family',
+    value: 'Liam · Thu',
+    detail: 'therapy · brief outdated',
+    color: 'blue',
+  },
+  {
+    id: 'energy',
+    label: 'Energy',
+    value: '4 dims',
+    detail: 'phys · mental · emo · spirit',
+    color: 'green',
+  },
+  {
+    id: 'coaching',
+    label: 'Coaching',
+    value: 'Fear check',
+    detail: 'priorities → 3',
+    color: 'orange',
+  },
+  {
+    id: 'output',
+    label: 'Output',
+    value: 'Ready',
+    detail: 'calendar · habits · audio',
+    color: 'gray',
+  },
+];
 
 export const evolutionSteps: EvolutionStep[] = [
   {
@@ -113,14 +163,14 @@ export const evolutionSteps: EvolutionStep[] = [
     ceiling: null,
     color: 'charcoal',
   },
-]
+];
 
 export const equationItems: EquationItem[] = [
   { lhs: '50+ skills', rhs: 'text files' },
   { lhs: '~100 coaching Qs', rhs: 'one markdown doc' },
   { lhs: 'board of advisors', rhs: 'configuration' },
   { lhs: 'automated hooks', rhs: 'small scripts' },
-]
+];
 
 export const futureCards: FutureCard[] = [
   {
@@ -144,7 +194,7 @@ export const futureCards: FutureCard[] = [
     description: 'HTTP 402. Agents negotiate, purchase, settle. The economy reshapes.',
     color: 'green',
   },
-]
+];
 ```
 
 - [ ] **Step 2: Verify TypeScript compiles**
@@ -167,6 +217,7 @@ git commit -m "feat(site/story): add story-data types and content"
 ### Task 2: `use-presentation-mode` hook + test
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/lib/use-presentation-mode.ts`
 - Create: `apps/site/src/layers/features/marketing/lib/__tests__/use-presentation-mode.test.ts`
 
@@ -177,45 +228,45 @@ git commit -m "feat(site/story): add story-data types and content"
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook } from '@testing-library/react'
-import { usePresentationMode } from '../use-presentation-mode'
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { usePresentationMode } from '../use-presentation-mode';
 
 vi.mock('next/navigation', () => ({
   useSearchParams: vi.fn(),
-}))
+}));
 
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation';
 
 describe('usePresentationMode', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   it('returns false when ?present param is absent', () => {
-    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as any)
-    const { result } = renderHook(() => usePresentationMode())
-    expect(result.current).toBe(false)
-  })
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as any);
+    const { result } = renderHook(() => usePresentationMode());
+    expect(result.current).toBe(false);
+  });
 
   it('returns true when ?present=true', () => {
-    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('present=true') as any)
-    const { result } = renderHook(() => usePresentationMode())
-    expect(result.current).toBe(true)
-  })
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('present=true') as any);
+    const { result } = renderHook(() => usePresentationMode());
+    expect(result.current).toBe(true);
+  });
 
   it('returns false when ?present=false', () => {
-    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('present=false') as any)
-    const { result } = renderHook(() => usePresentationMode())
-    expect(result.current).toBe(false)
-  })
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('present=false') as any);
+    const { result } = renderHook(() => usePresentationMode());
+    expect(result.current).toBe(false);
+  });
 
   it('returns false when ?present has an unexpected value', () => {
-    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('present=1') as any)
-    const { result } = renderHook(() => usePresentationMode())
-    expect(result.current).toBe(false)
-  })
-})
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('present=1') as any);
+    const { result } = renderHook(() => usePresentationMode());
+    expect(result.current).toBe(false);
+  });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -230,17 +281,17 @@ Expected: FAIL with "Cannot find module '../use-presentation-mode'"
 
 ```typescript
 // apps/site/src/layers/features/marketing/lib/use-presentation-mode.ts
-'use client'
+'use client';
 
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation';
 
 /**
  * Returns true when the page is in presentation mode (?present=true).
  * Used by PresentationShell to activate full-screen snap navigation.
  */
 export function usePresentationMode(): boolean {
-  const params = useSearchParams()
-  return params.get('present') === 'true'
+  const params = useSearchParams();
+  return params.get('present') === 'true';
 }
 ```
 
@@ -265,6 +316,7 @@ git commit -m "feat(site/story): add usePresentationMode hook"
 ### Task 3: Add presentation mode CSS to `globals.css`
 
 **Files:**
+
 - Modify: `apps/site/src/app/globals.css`
 
 - [ ] **Step 1: Append the presentation mode styles**
@@ -343,8 +395,13 @@ Find the end of `globals.css` and add:
 
 /* Cursor blink for terminal art (used in VillainSection -- included here for reuse) */
 @keyframes tab-pulse-urgent {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 0.9; }
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 ```
 
@@ -370,22 +427,23 @@ git commit -m "feat(site/story): add presentation mode CSS"
 ### Task 4: `PresentationShell`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/PresentationShell.tsx`
 
 - [ ] **Step 1: Create the component**
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/PresentationShell.tsx
-'use client'
+'use client';
 
-import { useEffect, useRef, useState } from 'react'
-import { usePresentationMode } from '../lib/use-presentation-mode'
+import { useEffect, useRef, useState } from 'react';
+import { usePresentationMode } from '../lib/use-presentation-mode';
 
 /** Section IDs navigated by keyboard in presentation mode. FutureVisionSection is excluded. */
-const PRESENTATION_SECTION_IDS = ['hero', 'morning', 'timeline', 'prompts', 'close'] as const
+const PRESENTATION_SECTION_IDS = ['hero', 'morning', 'timeline', 'prompts', 'close'] as const;
 
 interface PresentationShellProps {
-  children: React.ReactNode
+  children: React.ReactNode;
 }
 
 /**
@@ -395,57 +453,59 @@ interface PresentationShellProps {
  * - Renders progress dots in the bottom-right corner
  */
 export function PresentationShell({ children }: PresentationShellProps) {
-  const isPresent = usePresentationMode()
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const isPresent = usePresentationMode();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Track which section is in view via IntersectionObserver
   useEffect(() => {
-    if (!isPresent || !containerRef.current) return
+    if (!isPresent || !containerRef.current) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            const slideId = entry.target.getAttribute('data-slide')
-            const idx = PRESENTATION_SECTION_IDS.indexOf(slideId as typeof PRESENTATION_SECTION_IDS[number])
-            if (idx !== -1) setCurrentIndex(idx)
+            const slideId = entry.target.getAttribute('data-slide');
+            const idx = PRESENTATION_SECTION_IDS.indexOf(
+              slideId as (typeof PRESENTATION_SECTION_IDS)[number]
+            );
+            if (idx !== -1) setCurrentIndex(idx);
           }
         }
       },
-      { threshold: 0.5 },
-    )
+      { threshold: 0.5 }
+    );
 
-    const slides = containerRef.current.querySelectorAll('[data-slide]')
-    slides.forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
-  }, [isPresent])
+    const slides = containerRef.current.querySelectorAll('[data-slide]');
+    slides.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [isPresent]);
 
   // Keyboard navigation
   useEffect(() => {
-    if (!isPresent) return
+    if (!isPresent) return;
 
     const scrollToIndex = (idx: number) => {
-      const clamped = Math.max(0, Math.min(idx, PRESENTATION_SECTION_IDS.length - 1))
+      const clamped = Math.max(0, Math.min(idx, PRESENTATION_SECTION_IDS.length - 1));
       const target = containerRef.current?.querySelector(
-        `[data-slide="${PRESENTATION_SECTION_IDS[clamped]}"]`,
-      )
-      target?.scrollIntoView({ behavior: 'smooth' })
-    }
+        `[data-slide="${PRESENTATION_SECTION_IDS[clamped]}"]`
+      );
+      target?.scrollIntoView({ behavior: 'smooth' });
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === ' ') {
-        e.preventDefault()
-        scrollToIndex(currentIndex + 1)
+        e.preventDefault();
+        scrollToIndex(currentIndex + 1);
       } else if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        scrollToIndex(currentIndex - 1)
+        e.preventDefault();
+        scrollToIndex(currentIndex - 1);
       }
-    }
+    };
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isPresent, currentIndex])
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPresent, currentIndex]);
 
   return (
     <div
@@ -463,15 +523,15 @@ export function PresentationShell({ children }: PresentationShellProps) {
               className={i === currentIndex ? 'dot dot-active' : 'dot'}
               aria-label={`Go to slide ${i + 1}`}
               onClick={() => {
-                const target = containerRef.current?.querySelector(`[data-slide="${id}"]`)
-                target?.scrollIntoView({ behavior: 'smooth' })
+                const target = containerRef.current?.querySelector(`[data-slide="${id}"]`);
+                target?.scrollIntoView({ behavior: 'smooth' });
               }}
             />
           ))}
         </nav>
       )}
     </div>
-  )
+  );
 }
 ```
 
@@ -495,6 +555,7 @@ git commit -m "feat(site/story): add PresentationShell with keyboard nav and pro
 ### Task 5: `StoryHero`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/story/StoryHero.tsx`
 
 - [ ] **Step 1: Create the directory and component**
@@ -505,21 +566,21 @@ mkdir -p apps/site/src/layers/features/marketing/ui/story
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/story/StoryHero.tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants';
 
 interface StoryHeroProps {
   /** data-slide value used by PresentationShell for keyboard navigation. */
-  slideId?: string
+  slideId?: string;
 }
 
 /** Opening title card. Sets the "Thursday afternoon" frame for the whole page. */
 export function StoryHero({ slideId = 'hero' }: StoryHeroProps) {
   return (
     <section
-      className="relative flex min-h-[80vh] flex-col items-center justify-center bg-charcoal px-8 py-20 text-center"
+      className="bg-charcoal relative flex min-h-[80vh] flex-col items-center justify-center px-8 py-20 text-center"
       data-slide={slideId}
     >
       <motion.div
@@ -531,33 +592,33 @@ export function StoryHero({ slideId = 'hero' }: StoryHeroProps) {
       >
         <motion.div
           variants={REVEAL}
-          className="mb-6 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
+          className="text-brand-orange mb-6 font-mono text-[9px] tracking-[0.2em] uppercase"
         >
           Origin Story
         </motion.div>
 
         <motion.p
           variants={REVEAL}
-          className="mb-6 text-[clamp(22px,3.5vw,40px)] font-light leading-[1.4] text-cream-white"
+          className="text-cream-white mb-6 text-[clamp(22px,3.5vw,40px)] leading-[1.4] font-light"
         >
           What if the most powerful thing you could do with AI was get Thursday afternoon back?
         </motion.p>
 
         <motion.div
           variants={REVEAL}
-          className="mx-auto mb-8 h-px w-8 bg-brand-orange"
+          className="bg-brand-orange mx-auto mb-8 h-px w-8"
           aria-hidden="true"
         />
 
         <motion.p
           variants={REVEAL}
-          className="font-mono text-[10px] tracking-[0.1em] text-warm-gray-light uppercase"
+          className="text-warm-gray-light font-mono text-[10px] tracking-[0.1em] uppercase"
         >
           Dorian Collier &mdash; 144 Studio &mdash; Austin TX
         </motion.p>
       </motion.div>
     </section>
-  )
+  );
 }
 ```
 
@@ -581,21 +642,22 @@ git commit -m "feat(site/story): add StoryHero section"
 ### Task 6: `MondayMorningSection`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/story/MondayMorningSection.tsx`
 
 - [ ] **Step 1: Create the component**
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/story/MondayMorningSection.tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../../lib/motion-variants'
-import { bootCards } from '../../lib/story-data'
-import type { BootCard } from '../../lib/story-data'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../../lib/motion-variants';
+import { bootCards } from '../../lib/story-data';
+import type { BootCard } from '../../lib/story-data';
 
 interface MondayMorningSectionProps {
-  slideId?: string
+  slideId?: string;
 }
 
 const BORDER_COLOR: Record<BootCard['color'], string> = {
@@ -604,7 +666,7 @@ const BORDER_COLOR: Record<BootCard['color'], string> = {
   purple: 'border-brand-purple',
   green: 'border-brand-green',
   gray: 'border-warm-gray/20',
-}
+};
 
 const LABEL_COLOR: Record<BootCard['color'], string> = {
   orange: 'text-brand-orange',
@@ -612,7 +674,7 @@ const LABEL_COLOR: Record<BootCard['color'], string> = {
   purple: 'text-brand-purple',
   green: 'text-brand-green',
   gray: 'text-warm-gray-light',
-}
+};
 
 /** The "Monday Morning" boot dashboard -- 8 cards that appear before you touch anything. */
 export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSectionProps) {
@@ -632,17 +694,17 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
         >
           <motion.div
             variants={REVEAL}
-            className="mb-3 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
+            className="text-brand-orange mb-3 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
             A Monday Morning
           </motion.div>
           <motion.h2
             variants={REVEAL}
-            className="mb-2 text-[clamp(22px,3vw,36px)] font-semibold tracking-tight text-cream-white"
+            className="text-cream-white mb-2 text-[clamp(22px,3vw,36px)] font-semibold tracking-tight"
           >
             Before you touched anything.
           </motion.h2>
-          <motion.p variants={REVEAL} className="text-sm text-warm-gray">
+          <motion.p variants={REVEAL} className="text-warm-gray text-sm">
             While you slept, the system ran.
           </motion.p>
         </motion.div>
@@ -660,15 +722,19 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
               key={card.id}
               variants={REVEAL}
               transition={{ delay: i * 0.08, ...SPRING }}
-              className={`rounded-md border bg-charcoal p-3 ${BORDER_COLOR[card.color]}`}
+              className={`bg-charcoal rounded-md border p-3 ${BORDER_COLOR[card.color]}`}
             >
-              <div className={`mb-1 font-mono text-[8px] tracking-[0.1em] uppercase ${LABEL_COLOR[card.color]}`}>
+              <div
+                className={`mb-1 font-mono text-[8px] tracking-[0.1em] uppercase ${LABEL_COLOR[card.color]}`}
+              >
                 {card.label}
               </div>
-              <div className={`mb-1 font-mono text-[13px] font-medium ${card.urgent ? 'text-brand-orange' : 'text-cream-white'}`}>
+              <div
+                className={`mb-1 font-mono text-[13px] font-medium ${card.urgent ? 'text-brand-orange' : 'text-cream-white'}`}
+              >
                 {card.value}
               </div>
-              <div className="font-mono text-[8px] text-warm-gray-light">{card.detail}</div>
+              <div className="text-warm-gray-light font-mono text-[8px]">{card.detail}</div>
             </motion.div>
           ))}
         </motion.div>
@@ -679,15 +745,15 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
           whileInView="visible"
           viewport={VIEWPORT}
           variants={REVEAL}
-          className="border-t border-warm-gray/10 pt-5 text-center"
+          className="border-warm-gray/10 border-t pt-5 text-center"
         >
-          <p className="text-[15px] font-semibold italic text-cream-white">
+          <p className="text-cream-white text-[15px] font-semibold italic">
             &ldquo;This isn&apos;t ChatGPT. This is a personal operating system.&rdquo;
           </p>
         </motion.div>
       </div>
     </section>
-  )
+  );
 }
 ```
 
@@ -711,27 +777,28 @@ git commit -m "feat(site/story): add MondayMorningSection boot dashboard"
 ### Task 7: `HowItBuiltSection`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/story/HowItBuiltSection.tsx`
 
 - [ ] **Step 1: Create the component**
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/story/HowItBuiltSection.tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants'
-import { evolutionSteps } from '../../lib/story-data'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants';
+import { evolutionSteps } from '../../lib/story-data';
 
 interface HowItBuiltSectionProps {
-  slideId?: string
+  slideId?: string;
 }
 
 /** 4-step evolution timeline: LifeOS -> DorkOS -> Pulse -> Mesh. */
 export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionProps) {
   return (
     <section
-      className="flex min-h-screen flex-col justify-center bg-cream-primary px-8 py-16"
+      className="bg-cream-primary flex min-h-screen flex-col justify-center px-8 py-16"
       data-slide={slideId}
     >
       <div className="mx-auto w-full max-w-2xl">
@@ -745,13 +812,13 @@ export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionPro
         >
           <motion.div
             variants={REVEAL}
-            className="mb-3 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
+            className="text-brand-orange mb-3 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
             Two Months of Evenings
           </motion.div>
           <motion.h2
             variants={REVEAL}
-            className="text-[clamp(20px,2.8vw,32px)] font-semibold tracking-tight text-charcoal"
+            className="text-charcoal text-[clamp(20px,2.8vw,32px)] font-semibold tracking-tight"
           >
             Each step hit a ceiling. Each ceiling became the next build.
           </motion.h2>
@@ -769,19 +836,21 @@ export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionPro
             <motion.div key={step.step} variants={REVEAL} className="flex gap-4">
               {/* Step number */}
               <div
-                className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold text-cream-white ${step.color === 'orange' ? 'bg-brand-orange' : 'bg-charcoal'}`}
+                className={`text-cream-white mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold ${step.color === 'orange' ? 'bg-brand-orange' : 'bg-charcoal'}`}
               >
                 {step.step}
               </div>
 
               {/* Content */}
               <div className="min-w-0">
-                <div className={`mb-0.5 font-mono text-[9px] tracking-[0.1em] uppercase ${step.color === 'orange' ? 'text-brand-orange' : 'text-warm-gray'}`}>
+                <div
+                  className={`mb-0.5 font-mono text-[9px] tracking-[0.1em] uppercase ${step.color === 'orange' ? 'text-brand-orange' : 'text-warm-gray'}`}
+                >
                   {step.product} &mdash; {step.duration}
                 </div>
-                <p className="mb-1 text-[14px] font-medium text-charcoal">{step.description}</p>
+                <p className="text-charcoal mb-1 text-[14px] font-medium">{step.description}</p>
                 {step.ceiling && (
-                  <p className="font-mono text-[10px] text-warm-gray-light">
+                  <p className="text-warm-gray-light font-mono text-[10px]">
                     Ceiling hit: {step.ceiling}
                   </p>
                 )}
@@ -796,15 +865,16 @@ export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionPro
           whileInView="visible"
           viewport={VIEWPORT}
           variants={REVEAL}
-          className="mt-8 border-t border-cream-tertiary pt-6"
+          className="border-cream-tertiary mt-8 border-t pt-6"
         >
-          <p className="text-[13px] italic leading-relaxed text-warm-gray">
-            &ldquo;Total calendar time from &lsquo;I want a to-do list&rsquo; to &lsquo;my agents coordinate while I sleep&rsquo; &mdash;&mdash; about two months of evenings.&rdquo;
+          <p className="text-warm-gray text-[13px] leading-relaxed italic">
+            &ldquo;Total calendar time from &lsquo;I want a to-do list&rsquo; to &lsquo;my agents
+            coordinate while I sleep&rsquo; &mdash;&mdash; about two months of evenings.&rdquo;
           </p>
         </motion.div>
       </div>
     </section>
-  )
+  );
 }
 ```
 
@@ -828,27 +898,28 @@ git commit -m "feat(site/story): add HowItBuiltSection timeline"
 ### Task 8: `JustPromptsSection`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/story/JustPromptsSection.tsx`
 
 - [ ] **Step 1: Create the component**
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/story/JustPromptsSection.tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../../lib/motion-variants'
-import { equationItems } from '../../lib/story-data'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../../lib/motion-variants';
+import { equationItems } from '../../lib/story-data';
 
 interface JustPromptsSectionProps {
-  slideId?: string
+  slideId?: string;
 }
 
 /** Equation reveal: strips away the magic and shows what LifeOS actually is. */
 export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionProps) {
   return (
     <section
-      className="film-grain flex min-h-screen flex-col justify-center bg-charcoal px-8 py-16 text-center"
+      className="film-grain bg-charcoal flex min-h-screen flex-col justify-center px-8 py-16 text-center"
       data-slide={slideId}
     >
       <div className="mx-auto w-full max-w-xl">
@@ -862,17 +933,17 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
         >
           <motion.div
             variants={REVEAL}
-            className="mb-4 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
+            className="text-brand-orange mb-4 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
             Here&apos;s the Thing
           </motion.div>
           <motion.h2
             variants={REVEAL}
-            className="mb-2 text-[clamp(22px,3vw,36px)] font-bold tracking-tight text-cream-white"
+            className="text-cream-white mb-2 text-[clamp(22px,3vw,36px)] font-bold tracking-tight"
           >
             Platforms will just be prompts.
           </motion.h2>
-          <motion.p variants={REVEAL} className="text-[13px] text-warm-gray">
+          <motion.p variants={REVEAL} className="text-warm-gray text-[13px]">
             All open source. Here&apos;s what it actually is.
           </motion.p>
         </motion.div>
@@ -892,11 +963,11 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
               transition={{ delay: i * 0.15, ...SPRING }}
               className="flex items-center justify-center gap-4"
             >
-              <span className="min-w-[160px] text-right font-mono text-[14px] font-medium text-cream-white">
+              <span className="text-cream-white min-w-[160px] text-right font-mono text-[14px] font-medium">
                 {item.lhs}
               </span>
-              <span className="text-[20px] font-light text-brand-orange">=</span>
-              <span className="min-w-[160px] text-left font-mono text-[14px] text-warm-gray">
+              <span className="text-brand-orange text-[20px] font-light">=</span>
+              <span className="text-warm-gray min-w-[160px] text-left font-mono text-[14px]">
                 {item.rhs}
               </span>
             </motion.div>
@@ -909,18 +980,19 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
           whileInView="visible"
           viewport={VIEWPORT}
           variants={STAGGER}
-          className="border-t border-warm-gray/10 pt-7"
+          className="border-warm-gray/10 border-t pt-7"
         >
-          <motion.p variants={REVEAL} className="mb-2 text-[16px] font-medium text-cream-white">
+          <motion.p variants={REVEAL} className="text-cream-white mb-2 text-[16px] font-medium">
             Platforms will just be prompts.
           </motion.p>
-          <motion.p variants={REVEAL} className="text-[14px] leading-relaxed text-warm-gray">
-            Code isn&apos;t the scarce thing anymore. Knowing what to ask &mdash;&mdash; and what to remember &mdash;&mdash; is.
+          <motion.p variants={REVEAL} className="text-warm-gray text-[14px] leading-relaxed">
+            Code isn&apos;t the scarce thing anymore. Knowing what to ask &mdash;&mdash; and what to
+            remember &mdash;&mdash; is.
           </motion.p>
         </motion.div>
       </div>
     </section>
-  )
+  );
 }
 ```
 
@@ -944,26 +1016,27 @@ git commit -m "feat(site/story): add JustPromptsSection equation reveal"
 ### Task 9: `CloseSection`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/story/CloseSection.tsx`
 
 - [ ] **Step 1: Create the component**
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/story/CloseSection.tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants';
 
 interface CloseSectionProps {
-  slideId?: string
+  slideId?: string;
 }
 
 /** Minimal close. Breathing room. The line people leave with. */
 export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
   return (
     <section
-      className="flex min-h-screen flex-col items-center justify-center bg-charcoal px-8 py-16 text-center"
+      className="bg-charcoal flex min-h-screen flex-col items-center justify-center px-8 py-16 text-center"
       data-slide={slideId}
     >
       <motion.div
@@ -975,7 +1048,7 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
       >
         <motion.p
           variants={REVEAL}
-          className="mb-8 text-[clamp(14px,1.8vw,18px)] leading-[1.7] text-warm-gray"
+          className="text-warm-gray mb-8 text-[clamp(14px,1.8vw,18px)] leading-[1.7]"
         >
           Anyone has access to the same AI. Not everyone has thought hard about what they actually
           want.
@@ -983,13 +1056,13 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
 
         <motion.div
           variants={REVEAL}
-          className="mx-auto mb-8 h-px w-8 bg-brand-orange"
+          className="bg-brand-orange mx-auto mb-8 h-px w-8"
           aria-hidden="true"
         />
 
         <motion.p
           variants={REVEAL}
-          className="mb-10 text-[clamp(18px,2.5vw,28px)] font-light leading-[1.5] text-cream-white"
+          className="text-cream-white mb-10 text-[clamp(18px,2.5vw,28px)] leading-[1.5] font-light"
         >
           I built this so the machine could handle the obligations.
           <br />
@@ -998,13 +1071,13 @@ export function CloseSection({ slideId = 'close' }: CloseSectionProps) {
 
         <motion.p
           variants={REVEAL}
-          className="font-mono text-[10px] tracking-[0.1em] text-warm-gray-light uppercase"
+          className="text-warm-gray-light font-mono text-[10px] tracking-[0.1em] uppercase"
         >
           Fundamentals First &mdash; 2026
         </motion.p>
       </motion.div>
     </section>
-  )
+  );
 }
 ```
 
@@ -1028,28 +1101,29 @@ git commit -m "feat(site/story): add CloseSection"
 ### Task 10: `FutureVisionSection`
 
 **Files:**
+
 - Create: `apps/site/src/layers/features/marketing/ui/story/FutureVisionSection.tsx`
 
 - [ ] **Step 1: Create the component**
 
 ```tsx
 // apps/site/src/layers/features/marketing/ui/story/FutureVisionSection.tsx
-'use client'
+'use client';
 
-import { motion } from 'motion/react'
-import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants'
-import { futureCards } from '../../lib/story-data'
-import type { FutureCard } from '../../lib/story-data'
+import { motion } from 'motion/react';
+import { REVEAL, STAGGER, VIEWPORT } from '../../lib/motion-variants';
+import { futureCards } from '../../lib/story-data';
+import type { FutureCard } from '../../lib/story-data';
 
 interface FutureVisionSectionProps {
-  slideId?: string
+  slideId?: string;
 }
 
 const LABEL_COLOR: Record<FutureCard['color'], string> = {
   orange: 'text-brand-orange',
   blue: 'text-brand-blue',
   green: 'text-brand-green',
-}
+};
 
 /**
  * Permanent-page-only section. Hidden in ?present=true via CSS.
@@ -1057,11 +1131,7 @@ const LABEL_COLOR: Record<FutureCard['color'], string> = {
  */
 export function FutureVisionSection({ slideId = 'vision' }: FutureVisionSectionProps) {
   return (
-    <section
-      className="bg-cream-secondary px-8 py-16"
-      data-future-vision
-      data-slide={slideId}
-    >
+    <section className="bg-cream-secondary px-8 py-16" data-future-vision data-slide={slideId}>
       <div className="mx-auto max-w-3xl">
         <motion.div
           initial="hidden"
@@ -1072,13 +1142,13 @@ export function FutureVisionSection({ slideId = 'vision' }: FutureVisionSectionP
         >
           <motion.div
             variants={REVEAL}
-            className="mb-3 font-mono text-[9px] tracking-[0.2em] text-brand-orange uppercase"
+            className="text-brand-orange mb-3 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
             Where This Is Going
           </motion.div>
           <motion.h2
             variants={REVEAL}
-            className="text-[clamp(20px,2.5vw,28px)] font-semibold tracking-tight text-charcoal"
+            className="text-charcoal text-[clamp(20px,2.5vw,28px)] font-semibold tracking-tight"
           >
             The next layer is already building.
           </motion.h2>
@@ -1092,22 +1162,20 @@ export function FutureVisionSection({ slideId = 'vision' }: FutureVisionSectionP
           className="grid grid-cols-1 gap-4 sm:grid-cols-3"
         >
           {futureCards.map((card) => (
-            <motion.div
-              key={card.id}
-              variants={REVEAL}
-              className="rounded-lg bg-cream-primary p-5"
-            >
-              <div className={`mb-2 font-mono text-[9px] tracking-[0.1em] uppercase ${LABEL_COLOR[card.color]}`}>
+            <motion.div key={card.id} variants={REVEAL} className="bg-cream-primary rounded-lg p-5">
+              <div
+                className={`mb-2 font-mono text-[9px] tracking-[0.1em] uppercase ${LABEL_COLOR[card.color]}`}
+              >
                 {card.label}
               </div>
-              <h3 className="mb-2 text-[13px] font-semibold text-charcoal">{card.title}</h3>
-              <p className="text-[11px] leading-relaxed text-warm-gray">{card.description}</p>
+              <h3 className="text-charcoal mb-2 text-[13px] font-semibold">{card.title}</h3>
+              <p className="text-warm-gray text-[11px] leading-relaxed">{card.description}</p>
             </motion.div>
           ))}
         </motion.div>
       </div>
     </section>
-  )
+  );
 }
 ```
 
@@ -1135,6 +1203,7 @@ Connect everything to the barrel, page, and layout.
 ### Task 11: Update the marketing barrel `index.ts`
 
 **Files:**
+
 - Modify: `apps/site/src/layers/features/marketing/index.ts`
 
 - [ ] **Step 1: Add story exports to the barrel**
@@ -1143,32 +1212,27 @@ After the existing `// UI components — chrome` block, add a new story block:
 
 ```typescript
 // UI components — story page
-export { PresentationShell } from './ui/PresentationShell'
-export { StoryHero } from './ui/story/StoryHero'
-export { MondayMorningSection } from './ui/story/MondayMorningSection'
-export { HowItBuiltSection } from './ui/story/HowItBuiltSection'
-export { JustPromptsSection } from './ui/story/JustPromptsSection'
-export { CloseSection } from './ui/story/CloseSection'
-export { FutureVisionSection } from './ui/story/FutureVisionSection'
+export { PresentationShell } from './ui/PresentationShell';
+export { StoryHero } from './ui/story/StoryHero';
+export { MondayMorningSection } from './ui/story/MondayMorningSection';
+export { HowItBuiltSection } from './ui/story/HowItBuiltSection';
+export { JustPromptsSection } from './ui/story/JustPromptsSection';
+export { CloseSection } from './ui/story/CloseSection';
+export { FutureVisionSection } from './ui/story/FutureVisionSection';
 ```
 
 After the existing `// Data` block, add:
 
 ```typescript
-export {
-  bootCards,
-  evolutionSteps,
-  equationItems,
-  futureCards,
-} from './lib/story-data'
-export type { BootCard, EvolutionStep, EquationItem, FutureCard } from './lib/story-data'
+export { bootCards, evolutionSteps, equationItems, futureCards } from './lib/story-data';
+export type { BootCard, EvolutionStep, EquationItem, FutureCard } from './lib/story-data';
 ```
 
 After the `// Motion` line, add the hook export:
 
 ```typescript
 // Hooks
-export { usePresentationMode } from './lib/use-presentation-mode'
+export { usePresentationMode } from './lib/use-presentation-mode';
 ```
 
 - [ ] **Step 2: Verify TypeScript compiles**
@@ -1191,6 +1255,7 @@ git commit -m "feat(site/story): export story components and data from marketing
 ### Task 12: Story page layout and page files
 
 **Files:**
+
 - Create: `apps/site/src/app/(marketing)/story/layout.tsx`
 - Create: `apps/site/src/app/(marketing)/story/page.tsx`
 
@@ -1198,8 +1263,8 @@ git commit -m "feat(site/story): export story components and data from marketing
 
 ```typescript
 // apps/site/src/app/(marketing)/story/layout.tsx
-import type { Metadata } from 'next'
-import { siteConfig } from '@/config/site'
+import type { Metadata } from 'next';
+import { siteConfig } from '@/config/site';
 
 export const metadata: Metadata = {
   title: `The Story | ${siteConfig.name}`,
@@ -1215,10 +1280,10 @@ export const metadata: Metadata = {
   alternates: {
     canonical: '/story',
   },
-}
+};
 
 export default function StoryLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return children;
 }
 ```
 
@@ -1226,8 +1291,8 @@ export default function StoryLayout({ children }: { children: React.ReactNode })
 
 ```tsx
 // apps/site/src/app/(marketing)/story/page.tsx
-import { Suspense } from 'react'
-import { siteConfig } from '@/config/site'
+import { Suspense } from 'react';
+import { siteConfig } from '@/config/site';
 import {
   PresentationShell,
   StoryHero,
@@ -1238,7 +1303,7 @@ import {
   FutureVisionSection,
   MarketingHeader,
   MarketingFooter,
-} from '@/layers/features/marketing'
+} from '@/layers/features/marketing';
 
 // Reuse the same social links defined on the homepage
 const socialLinks = [
@@ -1251,7 +1316,7 @@ const socialLinks = [
       </svg>
     ),
   },
-]
+];
 
 /**
  * The DorkOS origin story -- Dorian's personal arc from LifeOS to multi-agent coordination.
@@ -1279,7 +1344,7 @@ export default function StoryPage() {
         </div>
       </PresentationShell>
     </Suspense>
-  )
+  );
 }
 ```
 
@@ -1300,6 +1365,7 @@ dotenv -- turbo dev --filter=@dorkos/site
 Open http://localhost:6244/story -- verify all 6 sections render with correct content and animations.
 
 Open http://localhost:6244/story?present=true -- verify:
+
 - Fixed fullscreen container active
 - Sections snap to viewport on scroll
 - ArrowRight/Space advances slides
@@ -1344,12 +1410,13 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 ## Quick Reference
 
-| URL | Behavior |
-|---|---|
-| `dorkos.ai/story` | Normal reading mode, continuous scroll |
+| URL                            | Behavior                                         |
+| ------------------------------ | ------------------------------------------------ |
+| `dorkos.ai/story`              | Normal reading mode, continuous scroll           |
 | `dorkos.ai/story?present=true` | Presentation mode: snap, keyboard nav, no chrome |
 
 **Keyboard nav (presentation mode):**
+
 - `ArrowRight` or `Space` → next slide
 - `ArrowLeft` → previous slide
 

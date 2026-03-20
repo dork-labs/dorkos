@@ -39,9 +39,7 @@ export interface DeadLetterQueueOptions {
 }
 
 /** Result of a reject operation. */
-export type RejectResult =
-  | { ok: true; messageId: string }
-  | { ok: false; error: string };
+export type RejectResult = { ok: true; messageId: string } | { ok: false; error: string };
 
 /** A dead letter entry with full metadata. */
 export interface DeadLetterEntry {
@@ -134,7 +132,7 @@ export class DeadLetterQueue {
   async reject(
     endpointHash: string,
     envelope: RelayEnvelope,
-    reason: string,
+    reason: string
   ): Promise<RejectResult> {
     // Write to Maildir failed/ directory with sidecar
     const failResult = await this.maildirStore.failDirect(endpointHash, envelope, reason);
@@ -149,9 +147,7 @@ export class DeadLetterQueue {
       endpointHash,
       status: 'failed',
       createdAt: envelope.createdAt,
-      expiresAt: envelope.budget.ttl
-        ? new Date(envelope.budget.ttl).toISOString()
-        : null,
+      expiresAt: envelope.budget.ttl ? new Date(envelope.budget.ttl).toISOString() : null,
     });
 
     return { ok: true, messageId: envelope.id };
@@ -259,7 +255,7 @@ export class DeadLetterQueue {
    */
   private async buildDeadLetterEntry(
     endpointHash: string,
-    messageId: string,
+    messageId: string
   ): Promise<DeadLetterEntry> {
     const deadLetter = await this.maildirStore.readDeadLetter(endpointHash, messageId);
     const envelope = await this.maildirStore.readEnvelope(endpointHash, 'failed', messageId);
@@ -340,7 +336,7 @@ export class DeadLetterQueue {
   private async isOlderThan(
     endpointHash: string,
     messageId: string,
-    cutoffTime: number,
+    cutoffTime: number
   ): Promise<boolean> {
     const deadLetter = await this.maildirStore.readDeadLetter(endpointHash, messageId);
     if (!deadLetter) {

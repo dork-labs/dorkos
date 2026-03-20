@@ -7,8 +7,14 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
     on: vi.fn(),
     off: vi.fn(),
     status: {
-      enabled: false, connected: false, url: null, port: null, startedAt: null,
-      authEnabled: false, tokenConfigured: false, domain: null,
+      enabled: false,
+      connected: false,
+      url: null,
+      port: null,
+      startedAt: null,
+      authEnabled: false,
+      tokenConfigured: false,
+      domain: null,
     },
   },
 }));
@@ -35,17 +41,13 @@ describe('CORS with tunnel origin', () => {
 
   it('accepts requests from localhost origins', async () => {
     const origin = `http://localhost:${env.DORKOS_PORT}`;
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', origin);
+    const res = await request(app).get('/api/health').set('Origin', origin);
 
     expect(res.headers['access-control-allow-origin']).toBe(origin);
   });
 
   it('rejects requests from unknown origins', async () => {
-    const res = await request(app)
-      .get('/api/health')
-      .set('Origin', 'https://evil.example.com');
+    const res = await request(app).get('/api/health').set('Origin', 'https://evil.example.com');
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
@@ -71,8 +73,14 @@ describe('CORS with tunnel origin', () => {
 
   it('rejects tunnel origin when tunnel is disconnected', async () => {
     (tunnelManager as unknown as Record<string, unknown>).status = {
-      enabled: false, connected: false, url: null, port: null, startedAt: null,
-      authEnabled: false, tokenConfigured: false, domain: null,
+      enabled: false,
+      connected: false,
+      url: null,
+      port: null,
+      startedAt: null,
+      authEnabled: false,
+      tokenConfigured: false,
+      domain: null,
     };
 
     const res = await request(app)

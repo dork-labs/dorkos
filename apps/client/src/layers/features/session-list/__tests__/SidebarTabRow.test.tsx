@@ -36,7 +36,11 @@ const defaultProps = {
   onTabChange: vi.fn(),
   schedulesBadge: 0,
   connectionsStatus: 'none' as const,
-  visibleTabs: ['sessions', 'schedules', 'connections'] as ('sessions' | 'schedules' | 'connections')[],
+  visibleTabs: ['sessions', 'schedules', 'connections'] as (
+    | 'sessions'
+    | 'schedules'
+    | 'connections'
+  )[],
 };
 
 describe('SidebarTabRow', () => {
@@ -80,10 +84,7 @@ describe('SidebarTabRow', () => {
   });
 
   it('renders schedules badge when schedulesBadge > 0', () => {
-    render(
-      <SidebarTabRow {...defaultProps} schedulesBadge={3} />,
-      { wrapper: Wrapper },
-    );
+    render(<SidebarTabRow {...defaultProps} schedulesBadge={3} />, { wrapper: Wrapper });
 
     // Badge should show the count
     expect(screen.getByText('3')).toBeInTheDocument();
@@ -105,7 +106,7 @@ describe('SidebarTabRow', () => {
   it('renders connections status dot with correct color for each status', () => {
     const { container, rerender } = render(
       <SidebarTabRow {...defaultProps} connectionsStatus="ok" />,
-      { wrapper: Wrapper },
+      { wrapper: Wrapper }
     );
 
     // Check for green dot (ok)
@@ -115,7 +116,7 @@ describe('SidebarTabRow', () => {
     rerender(
       <Wrapper>
         <SidebarTabRow {...defaultProps} connectionsStatus="partial" />
-      </Wrapper>,
+      </Wrapper>
     );
     dot = container.querySelector('.bg-amber-500');
     expect(dot).toBeInTheDocument();
@@ -123,39 +124,31 @@ describe('SidebarTabRow', () => {
     rerender(
       <Wrapper>
         <SidebarTabRow {...defaultProps} connectionsStatus="error" />
-      </Wrapper>,
+      </Wrapper>
     );
     dot = container.querySelector('.bg-red-500');
     expect(dot).toBeInTheDocument();
   });
 
   it('hides connections status dot when status is none', () => {
-    render(
-      <SidebarTabRow {...defaultProps} connectionsStatus="none" />,
-      { wrapper: Wrapper },
-    );
+    render(<SidebarTabRow {...defaultProps} connectionsStatus="none" />, { wrapper: Wrapper });
 
     // No status dots should be present on the connections tab
-    const connectionsTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-connections')!;
+    const connectionsTab = screen
+      .getAllByRole('tab')
+      .find((t) => t.id === 'sidebar-tab-connections')!;
     const dots = connectionsTab.querySelectorAll('.rounded-full.size-1\\.5');
     expect(dots).toHaveLength(0);
   });
 
   it('only renders visible tabs', () => {
-    render(
-      <SidebarTabRow
-        {...defaultProps}
-        visibleTabs={['sessions', 'connections']}
-      />,
-      { wrapper: Wrapper },
-    );
+    render(<SidebarTabRow {...defaultProps} visibleTabs={['sessions', 'connections']} />, {
+      wrapper: Wrapper,
+    });
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(2);
-    expect(tabs.map((t) => t.id)).toEqual([
-      'sidebar-tab-sessions',
-      'sidebar-tab-connections',
-    ]);
+    expect(tabs.map((t) => t.id)).toEqual(['sidebar-tab-sessions', 'sidebar-tab-connections']);
   });
 
   it('arrow key navigation moves focus between tabs', () => {

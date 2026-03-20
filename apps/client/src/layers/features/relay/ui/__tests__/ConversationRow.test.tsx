@@ -299,7 +299,7 @@ describe('ConversationRow', () => {
           sessionStrategy: 'per-chat',
           chatId: 'chat-123',
           channelType: 'dm',
-        }),
+        })
       );
     });
 
@@ -311,17 +311,23 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={conversation} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('combobox')).toBeInTheDocument();
+      });
 
       fireEvent.click(screen.getByRole('combobox'));
-      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
-      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+      });
 
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
 
       expect(mockMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ adapterId: 'my-telegram-bot' }),
+        expect.objectContaining({ adapterId: 'my-telegram-bot' })
       );
     });
 
@@ -332,12 +338,18 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={conversation} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('combobox')).toBeInTheDocument();
+      });
 
       fireEvent.click(screen.getByRole('combobox'));
-      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
-      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+      });
 
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
 
@@ -345,7 +357,7 @@ describe('ConversationRow', () => {
         expect.objectContaining({
           chatId: undefined,
           channelType: undefined,
-        }),
+        })
       );
     });
   });
@@ -356,7 +368,9 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={makeConversation()} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByText('More options...')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByText('More options...')).toBeInTheDocument();
+      });
 
       fireEvent.click(screen.getByText('More options...'));
 
@@ -374,7 +388,9 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={conversation} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByText('More options...')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByText('More options...')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByText('More options...'));
 
       await waitFor(() => {
@@ -389,10 +405,14 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={makeConversation()} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByText('More options...')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByText('More options...')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByText('More options...'));
 
-      await waitFor(() => { expect(screen.getByTestId('binding-dialog')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByTestId('binding-dialog')).toBeInTheDocument();
+      });
 
       fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
 
@@ -401,7 +421,7 @@ describe('ConversationRow', () => {
       });
 
       expect(mockMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ adapterId: 'adapter-1', agentId: 'agent-1' }),
+        expect.objectContaining({ adapterId: 'adapter-1', agentId: 'agent-1' })
       );
     });
 
@@ -410,10 +430,14 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={makeConversation()} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByText('More options...')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByText('More options...')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByText('More options...'));
 
-      await waitFor(() => { expect(screen.getByTestId('binding-dialog')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByTestId('binding-dialog')).toBeInTheDocument();
+      });
 
       fireEvent.click(screen.getByRole('button', { name: /close/i }));
 
@@ -436,16 +460,20 @@ describe('ConversationRow', () => {
 
       // Open popover and select an agent to trigger quick route
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('combobox')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('combobox'));
-      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
-      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+      });
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
 
-      expect(mockMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ adapterId: 'tg-bot-1' }),
-      );
+      expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ adapterId: 'tg-bot-1' }));
     });
 
     it('infers platform from relay.human.<platform>.<chatId> subject', async () => {
@@ -456,16 +484,20 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={conversation} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('combobox')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('combobox'));
-      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
-      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+      });
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
 
-      expect(mockMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ adapterId: 'slack' }),
-      );
+      expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ adapterId: 'slack' }));
     });
 
     it('returns empty string for unrecognized subject patterns', async () => {
@@ -476,16 +508,20 @@ describe('ConversationRow', () => {
       render(<ConversationRow conversation={conversation} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
-      await waitFor(() => { expect(screen.getByRole('combobox')).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('combobox')).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('combobox'));
-      await waitFor(() => { expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument(); });
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Alpha Agent' })).toBeInTheDocument();
+      });
       fireEvent.click(screen.getByRole('option', { name: 'Alpha Agent' }));
-      await waitFor(() => { expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled(); });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /create binding/i })).not.toBeDisabled();
+      });
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
 
-      expect(mockMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ adapterId: '' }),
-      );
+      expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ adapterId: '' }));
     });
   });
 

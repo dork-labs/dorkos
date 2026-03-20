@@ -241,7 +241,7 @@ function removeQueuedReaction(
   messageTs: string,
   pendingReactions: PendingReactions | undefined,
   wasQueued: boolean,
-  logger: RelayLogger,
+  logger: RelayLogger
 ): void {
   if (!wasQueued) return;
   if (pendingReactions) {
@@ -257,7 +257,9 @@ function removeQueuedReaction(
     .catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('no_reaction')) {
-        logger.warn(`inbound: failed to remove queued typing reaction from ${channelId}:${messageTs}: ${msg}`);
+        logger.warn(
+          `inbound: failed to remove queued typing reaction from ${channelId}:${messageTs}: ${msg}`
+        );
       }
     });
 }
@@ -284,7 +286,7 @@ export async function handleInboundMessage(
   callbacks: AdapterInboundCallbacks,
   logger: RelayLogger = noopLogger,
   typingIndicator: 'none' | 'reaction' = 'none',
-  pendingReactions?: PendingReactions,
+  pendingReactions?: PendingReactions
 ): Promise<void> {
   // Skip bot's own messages (echo prevention)
   if (event.user === botUserId) {
@@ -342,17 +344,15 @@ export async function handleInboundMessage(
             if (queue.length === 0) pendingReactions.delete(event.channel);
           }
         }
-        logger.warn(`inbound: failed to add typing reaction to ${event.channel}:${event.ts}: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(
+          `inbound: failed to add typing reaction to ${event.channel}:${event.ts}: ${err instanceof Error ? err.message : String(err)}`
+        );
       });
   }
 
-  const senderName = event.user
-    ? await resolveUserName(client, event.user)
-    : 'unknown';
+  const senderName = event.user ? await resolveUserName(client, event.user) : 'unknown';
 
-  const channelName = isGroup
-    ? await resolveChannelName(client, event.channel)
-    : undefined;
+  const channelName = isGroup ? await resolveChannelName(client, event.channel) : undefined;
 
   const payload: StandardPayload = {
     content,
@@ -387,15 +387,27 @@ export async function handleInboundMessage(
       callbacks.recordError(new Error(`Publish rejected: ${reason}`));
       logger.warn(`inbound publish rejected for ${event.channel}: ${reason}`);
       // Clean up the eagerly-added reaction since nothing will process this message
-      removeQueuedReaction(client, event.channel, event.ts, pendingReactions, reactionQueued, logger);
+      removeQueuedReaction(
+        client,
+        event.channel,
+        event.ts,
+        pendingReactions,
+        reactionQueued,
+        logger
+      );
       return;
     }
 
     callbacks.trackInbound();
-    logger.debug(`inbound from ${senderName} in ${event.channel}: "${content.slice(0, 80)}${content.length > 80 ? '\u2026' : ''}" (${content.length} chars) \u2192 ${subject}`);
+    logger.debug(
+      `inbound from ${senderName} in ${event.channel}: "${content.slice(0, 80)}${content.length > 80 ? '\u2026' : ''}" (${content.length} chars) \u2192 ${subject}`
+    );
   } catch (err) {
     callbacks.recordError(err);
-    logger.warn(`inbound publish failed for ${event.channel}:`, err instanceof Error ? err.message : String(err));
+    logger.warn(
+      `inbound publish failed for ${event.channel}:`,
+      err instanceof Error ? err.message : String(err)
+    );
     // Clean up the eagerly-added reaction since nothing will process this message
     removeQueuedReaction(client, event.channel, event.ts, pendingReactions, reactionQueued, logger);
   }

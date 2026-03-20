@@ -1,9 +1,21 @@
 ---
-title: "Pulse Template Gallery UX — Patterns, File Location, Schema, and Interaction Design"
+title: 'Pulse Template Gallery UX — Patterns, File Location, Schema, and Interaction Design'
 date: 2026-03-11
 type: external-best-practices
 status: active
-tags: [pulse, templates, template-gallery, ux, onboarding, empty-state, create-dialog, cron, scheduler, calm-tech]
+tags:
+  [
+    pulse,
+    templates,
+    template-gallery,
+    ux,
+    onboarding,
+    empty-state,
+    create-dialog,
+    cron,
+    scheduler,
+    calm-tech,
+  ]
 feature_slug: pulse-template-gallery
 searches_performed: 14
 sources_count: 22
@@ -30,6 +42,7 @@ Template galleries in developer tools split into two distinct archetypes: the **
 Production tools use two fundamentally different patterns depending on context:
 
 **The Standalone Gallery** (Vercel, Railway, Raycast templates page):
+
 - Wide card grid (typically 3–4 columns)
 - Large preview image or icon, name, brief description
 - Category/tag filtering, sometimes search
@@ -38,6 +51,7 @@ Production tools use two fundamentally different patterns depending on context:
 - Not appropriate for an inline creation dialog
 
 **The In-Form Picker** (GitHub Actions, Linear, VS Code, Zapier):
+
 - Compact list or small card grid
 - Name + one-line description
 - No images — metadata only
@@ -52,6 +66,7 @@ The key insight: **the gallery archetype is determined by whether a form exists 
 #### GitHub Actions — The Gold Standard for Developer Tool Templates
 
 GitHub Actions' workflow template picker appears when clicking "New Workflow" in the Actions tab. The UX:
+
 - Compact card grid (2-column on most viewports) inside the page — not a modal
 - Each card: icon (SVG), name, description (2 lines max), category badges
 - Category filters at the top: CI, Deployment, Security, Automation, Pages
@@ -60,6 +75,7 @@ GitHub Actions' workflow template picker appears when clicking "New Workflow" in
 - The user edits the YAML before committing — they always land in edit mode, never "applied and done"
 
 Template metadata schema (`.properties.json`):
+
 ```json
 {
   "name": "Node.js CI",
@@ -77,6 +93,7 @@ Key behavior: `filePatterns` makes templates context-aware — the Node.js templ
 Zapier Zap templates are defined as "ready-made Zaps with apps and core fields pre-selected." The critical pattern: **templates are simply pre-filled URLs**. A template is a set of field values encoded into a URL that opens the Zap editor with those fields already populated. The user then completes any empty fields and publishes.
 
 This produces the smoothest template-to-creation flow possible:
+
 1. User clicks a template in a gallery or via a link
 2. The creation form opens with relevant fields filled
 3. User reviews, edits if needed, saves
@@ -119,6 +136,7 @@ Recommended pattern: The onboarding "gallery" state shows 3–5 curated starter 
 
 **Surface 2: Empty state (no schedules exist)**
 Pattern: NN/Group's empty state guidelines — provide a "pull revelation" that shows what the module does and offers a direct task pathway. The empty state is NOT the place for a full gallery. It's the place for:
+
 - A single-paragraph explanation of what Pulse does
 - 2–3 featured/popular template cards (compact, horizontal, pill-style)
 - A primary CTA: "Create schedule" button that opens `CreateScheduleDialog`
@@ -129,6 +147,7 @@ The small template cards in the empty state are teasers — clicking one opens `
 Pattern: GitHub Actions / Linear in-form picker. Inside `CreateScheduleDialog`, above the form fields, show a compact template picker. This is the "start from template" shortcut before the user fills anything in.
 
 The picker should be:
+
 - Collapsed by default (a "Start from template..." button or `ToggleGroup`)
 - When expanded: a compact horizontal scroll of template chips (pill buttons) or a small 2-column grid
 - Selecting a template: pre-fills the form fields, collapses the picker, and focuses the `name` field for editing
@@ -161,12 +180,12 @@ For power users, show the raw cron expression prominently — they can assess a 
 
 **Evaluated options:**
 
-| Path | Assessment |
-|---|---|
-| `~/.dork/pulse/templates.json` | Recommended — per-feature, scoped, predictable |
-| `~/.dork/templates/pulse.json` | Reasonable — explicit templates directory, future-proof |
-| `~/.dork/config/pulse-templates.json` | Acceptable — but mixes config with data |
-| `~/.dork/config.json` (embedded) | Rejected — conflates runtime config with user-defined content |
+| Path                                  | Assessment                                                    |
+| ------------------------------------- | ------------------------------------------------------------- |
+| `~/.dork/pulse/templates.json`        | Recommended — per-feature, scoped, predictable                |
+| `~/.dork/templates/pulse.json`        | Reasonable — explicit templates directory, future-proof       |
+| `~/.dork/config/pulse-templates.json` | Acceptable — but mixes config with data                       |
+| `~/.dork/config.json` (embedded)      | Rejected — conflates runtime config with user-defined content |
 
 **Recommendation: `~/.dork/pulse/templates.json`**
 
@@ -272,7 +291,9 @@ export const PulseTemplateSchema = z.object({
   cwdHint: z.string().nullable().default(null),
 
   // Category for grouping in the picker. Keep this list small (3-5 values max).
-  category: z.enum(['maintenance', 'reporting', 'monitoring', 'productivity', 'custom']).default('custom'),
+  category: z
+    .enum(['maintenance', 'reporting', 'monitoring', 'productivity', 'custom'])
+    .default('custom'),
 
   // Source distinguishes factory from user templates at runtime.
   // Not stored in the user's JSON file (implied by which list they came from).
@@ -314,9 +335,11 @@ export const BUILTIN_PULSE_TEMPLATES: PulseTemplate[] = [
   {
     id: 'builtin:daily-digest',
     name: 'Daily Digest',
-    description: 'Summarize what happened today across your project — recent commits, open PRs, and any issues that need attention.',
-    cron: '0 18 * * 1-5',  // 6pm weekdays
-    prompt: 'Review the recent activity in this project. Summarize commits from today, any open pull requests, and issues that were updated. Write a brief status digest.',
+    description:
+      'Summarize what happened today across your project — recent commits, open PRs, and any issues that need attention.',
+    cron: '0 18 * * 1-5', // 6pm weekdays
+    prompt:
+      'Review the recent activity in this project. Summarize commits from today, any open pull requests, and issues that were updated. Write a brief status digest.',
     permissionMode: 'default',
     category: 'reporting',
     source: 'builtin',
@@ -325,9 +348,11 @@ export const BUILTIN_PULSE_TEMPLATES: PulseTemplate[] = [
   {
     id: 'builtin:overnight-sweep',
     name: 'Overnight Sweep',
-    description: 'Run a nightly code health check — look for obvious issues, outdated dependencies, and anything that should be addressed.',
-    cron: '0 2 * * *',  // 2am daily
-    prompt: 'Review the codebase for any obvious code quality issues, outdated dependencies, or TODOs that have been sitting for more than a week. Provide a concise summary with prioritized action items.',
+    description:
+      'Run a nightly code health check — look for obvious issues, outdated dependencies, and anything that should be addressed.',
+    cron: '0 2 * * *', // 2am daily
+    prompt:
+      'Review the codebase for any obvious code quality issues, outdated dependencies, or TODOs that have been sitting for more than a week. Provide a concise summary with prioritized action items.',
     permissionMode: 'default',
     category: 'maintenance',
     source: 'builtin',
@@ -336,9 +361,11 @@ export const BUILTIN_PULSE_TEMPLATES: PulseTemplate[] = [
   {
     id: 'builtin:weekly-report',
     name: 'Weekly Report',
-    description: 'Generate a weekly summary of progress, blockers, and what\'s next. Good for async standups and stakeholder updates.',
-    cron: '0 9 * * 1',  // Monday 9am
-    prompt: 'Generate a weekly progress report for this project. Include: what was completed last week, current blockers, and the plan for this week. Keep it concise and factual.',
+    description:
+      "Generate a weekly summary of progress, blockers, and what's next. Good for async standups and stakeholder updates.",
+    cron: '0 9 * * 1', // Monday 9am
+    prompt:
+      'Generate a weekly progress report for this project. Include: what was completed last week, current blockers, and the plan for this week. Keep it concise and factual.',
     permissionMode: 'default',
     category: 'reporting',
     source: 'builtin',
@@ -347,9 +374,11 @@ export const BUILTIN_PULSE_TEMPLATES: PulseTemplate[] = [
   {
     id: 'builtin:test-run',
     name: 'Scheduled Tests',
-    description: 'Run the test suite on a schedule and report any failures. Useful for catching regressions in long-running branches.',
-    cron: '0 6 * * *',  // 6am daily
-    prompt: 'Run the test suite for this project. If any tests fail, describe the failures and suggest possible fixes. If all tests pass, confirm with a brief summary.',
+    description:
+      'Run the test suite on a schedule and report any failures. Useful for catching regressions in long-running branches.',
+    cron: '0 6 * * *', // 6am daily
+    prompt:
+      'Run the test suite for this project. If any tests fail, describe the failures and suggest possible fixes. If all tests pass, confirm with a brief summary.',
     permissionMode: 'acceptEdits',
     category: 'monitoring',
     source: 'builtin',
@@ -358,9 +387,11 @@ export const BUILTIN_PULSE_TEMPLATES: PulseTemplate[] = [
   {
     id: 'builtin:hourly-check',
     name: 'Health Check',
-    description: 'A frequent lightweight check for monitoring purposes. Good for watching a specific file, endpoint, or metric.',
-    cron: '0 * * * *',  // Hourly
-    prompt: 'Perform a quick health check on this project. Look for any obvious signs of problems: failed processes, error logs, or unexpected file changes. Report findings concisely.',
+    description:
+      'A frequent lightweight check for monitoring purposes. Good for watching a specific file, endpoint, or metric.',
+    cron: '0 * * * *', // Hourly
+    prompt:
+      'Perform a quick health check on this project. Look for any obvious signs of problems: failed processes, error logs, or unexpected file changes. Report findings concisely.',
     permissionMode: 'default',
     category: 'monitoring',
     source: 'builtin',
@@ -369,9 +400,11 @@ export const BUILTIN_PULSE_TEMPLATES: PulseTemplate[] = [
   {
     id: 'builtin:monthly-cleanup',
     name: 'Monthly Cleanup',
-    description: 'Run a monthly maintenance pass — clean up stale branches, archive completed tasks, and tidy the project structure.',
-    cron: '0 9 1 * *',  // 1st of month at 9am
-    prompt: 'Perform a monthly project cleanup. Look for: stale git branches that can be deleted, completed TODO items that can be removed, outdated documentation that should be updated, and any obvious tech debt to document.',
+    description:
+      'Run a monthly maintenance pass — clean up stale branches, archive completed tasks, and tidy the project structure.',
+    cron: '0 9 1 * *', // 1st of month at 9am
+    prompt:
+      'Perform a monthly project cleanup. Look for: stale git branches that can be deleted, completed TODO items that can be removed, outdated documentation that should be updated, and any obvious tech debt to document.',
     permissionMode: 'default',
     category: 'maintenance',
     source: 'builtin',

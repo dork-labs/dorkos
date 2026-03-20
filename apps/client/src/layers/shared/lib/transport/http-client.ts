@@ -12,7 +12,10 @@ export async function fetchJSON<T>(baseUrl: string, url: string, opts?: RequestI
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: res.statusText }));
-    const err = new Error(error.error || `HTTP ${res.status}`) as Error & { code?: string; status?: number };
+    const err = new Error(error.error || `HTTP ${res.status}`) as Error & {
+      code?: string;
+      status?: number;
+    };
     err.code = error.code;
     err.status = res.status;
     throw err;
@@ -26,7 +29,7 @@ export async function fetchJSON<T>(baseUrl: string, url: string, opts?: RequestI
  * @returns The query string prefixed with `?`, or empty string if no params.
  */
 export function buildQueryString(
-  params: Record<string, string | number | boolean | undefined>,
+  params: Record<string, string | number | boolean | undefined>
 ): string {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

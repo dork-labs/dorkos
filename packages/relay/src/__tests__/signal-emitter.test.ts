@@ -284,10 +284,7 @@ describe('SignalEmitter', () => {
       // The signal-emitter module should not import fs, fs/promises, or path.
       // We verify this by reading the source and checking for fs imports.
       const fs = await import('node:fs/promises');
-      const source = await fs.readFile(
-        new URL('../signal-emitter.ts', import.meta.url),
-        'utf8',
-      );
+      const source = await fs.readFile(new URL('../signal-emitter.ts', import.meta.url), 'utf8');
 
       // Should not contain any filesystem imports
       expect(source).not.toMatch(/from\s+['"](?:node:)?fs(?:\/promises)?['"]/);

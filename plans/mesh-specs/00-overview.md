@@ -7,9 +7,9 @@ totalSpecs: 4
 parallelizable: [[3, 4]]
 estimatedPhases:
   - specs: [1, 2]
-    description: "Core library + server/client integration — minimum viable Mesh"
+    description: 'Core library + server/client integration — minimum viable Mesh'
   - specs: [3, 4]
-    description: "Network topology + observability — can run in parallel"
+    description: 'Network topology + observability — can run in parallel'
 ---
 
 # Mesh Spec Sequence — Overview
@@ -29,12 +29,12 @@ Mesh is the agent discovery and network topology layer for DorkOS. It's being bu
   Spec 3: Topology    Spec 4: Observability    ← CAN RUN IN PARALLEL
 ```
 
-| Spec | Title | Prompt File | Blocked By | Parallel With | Risk | Complexity |
-|---|---|---|---|---|---|---|
-| 1 | Mesh Core Library | `01-mesh-core-library.md` | — | — | High | High |
-| 2 | Server & Client Integration | `02-mesh-server-client-integration.md` | Spec 1 | — | Medium | Medium |
-| 3 | Network Topology | `03-mesh-network-topology.md` | Spec 2 | **Spec 4** | Medium | High |
-| 4 | Observability & Lifecycle | `04-mesh-observability-lifecycle.md` | Spec 2 | **Spec 3** | Medium | Medium |
+| Spec | Title                       | Prompt File                            | Blocked By | Parallel With | Risk   | Complexity |
+| ---- | --------------------------- | -------------------------------------- | ---------- | ------------- | ------ | ---------- |
+| 1    | Mesh Core Library           | `01-mesh-core-library.md`              | —          | —             | High   | High       |
+| 2    | Server & Client Integration | `02-mesh-server-client-integration.md` | Spec 1     | —             | Medium | Medium     |
+| 3    | Network Topology            | `03-mesh-network-topology.md`          | Spec 2     | **Spec 4**    | Medium | High       |
+| 4    | Observability & Lifecycle   | `04-mesh-observability-lifecycle.md`   | Spec 2     | **Spec 3**    | Medium | Medium     |
 
 ## Dependency on Relay
 
@@ -56,24 +56,24 @@ These decisions are baked into the spec sequence:
 
 Each spec file includes YAML frontmatter with these fields:
 
-| Field | Purpose |
-|---|---|
-| `spec` | Spec number (1-4) |
-| `order` | Execution order (3 and 4 share order 3 — they're parallel) |
-| `status` | `not-started` / `ideating` / `specified` / `in-progress` / `complete` |
-| `blockedBy` | Spec numbers that must be complete before starting |
-| `blocks` | Spec numbers that this spec blocks |
-| `parallelWith` | Spec numbers that can run simultaneously with this one |
-| `litepaperPhase` | Which litepaper roadmap phase this implements |
-| `complexity` | `low` / `medium` / `high` |
-| `risk` | `low` / `medium` / `high` — architectural risk level |
-| `estimatedFiles` | Approximate number of files created/modified |
-| `newPackages` | New workspace packages created (if any) |
-| `primaryWorkspaces` | Which monorepo workspaces are affected |
-| `touchesServer` | Whether `apps/server` is modified |
-| `touchesClient` | Whether `apps/client` is modified |
-| `verification` | Checklist of conditions that prove the spec is complete |
-| `notes` | Key things to know before starting |
+| Field               | Purpose                                                               |
+| ------------------- | --------------------------------------------------------------------- |
+| `spec`              | Spec number (1-4)                                                     |
+| `order`             | Execution order (3 and 4 share order 3 — they're parallel)            |
+| `status`            | `not-started` / `ideating` / `specified` / `in-progress` / `complete` |
+| `blockedBy`         | Spec numbers that must be complete before starting                    |
+| `blocks`            | Spec numbers that this spec blocks                                    |
+| `parallelWith`      | Spec numbers that can run simultaneously with this one                |
+| `litepaperPhase`    | Which litepaper roadmap phase this implements                         |
+| `complexity`        | `low` / `medium` / `high`                                             |
+| `risk`              | `low` / `medium` / `high` — architectural risk level                  |
+| `estimatedFiles`    | Approximate number of files created/modified                          |
+| `newPackages`       | New workspace packages created (if any)                               |
+| `primaryWorkspaces` | Which monorepo workspaces are affected                                |
+| `touchesServer`     | Whether `apps/server` is modified                                     |
+| `touchesClient`     | Whether `apps/client` is modified                                     |
+| `verification`      | Checklist of conditions that prove the spec is complete               |
+| `notes`             | Key things to know before starting                                    |
 
 ## How to Use
 

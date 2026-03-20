@@ -8,23 +8,23 @@ Software development is in a genuine structural shift. AI coding agents have mov
 
 ## Key Data Points
 
-| Stat | Source |
-|---|---|
-| 84% of developers use AI tools (up from 76% in 2024) | Stack Overflow 2025 |
-| Only 33% trust AI output (down from 44%) | Stack Overflow 2025 |
-| 50% average self-reported productivity boost at Anthropic | Anthropic internal study |
-| 27% of Claude-assisted work = tasks that wouldn't have been done otherwise | Anthropic |
-| 67% increase in merged PRs per engineer per day post-Claude Code | Anthropic |
-| 25% of YC W25 batch has 95% AI-generated codebases | TechCrunch/YC |
-| YC W25 = fastest growing, most profitable batch in fund history | CNBC |
-| Pieter Levels: $3M/year revenue, zero employees | Multiple |
-| Cursor hit $200M ARR faster than any product in history | Today in AI |
-| AI Engineer roles up 143% since 2024 | Multiple |
-| Entry-level developer hiring down 20-27% | Stanford, BLS, SignalFire |
+| Stat                                                                       | Source                    |
+| -------------------------------------------------------------------------- | ------------------------- |
+| 84% of developers use AI tools (up from 76% in 2024)                       | Stack Overflow 2025       |
+| Only 33% trust AI output (down from 44%)                                   | Stack Overflow 2025       |
+| 50% average self-reported productivity boost at Anthropic                  | Anthropic internal study  |
+| 27% of Claude-assisted work = tasks that wouldn't have been done otherwise | Anthropic                 |
+| 67% increase in merged PRs per engineer per day post-Claude Code           | Anthropic                 |
+| 25% of YC W25 batch has 95% AI-generated codebases                         | TechCrunch/YC             |
+| YC W25 = fastest growing, most profitable batch in fund history            | CNBC                      |
+| Pieter Levels: $3M/year revenue, zero employees                            | Multiple                  |
+| Cursor hit $200M ARR faster than any product in history                    | Today in AI               |
+| AI Engineer roles up 143% since 2024                                       | Multiple                  |
+| Entry-level developer hiring down 20-27%                                   | Stanford, BLS, SignalFire |
 
 ## The Counter-Narrative (Honest)
 
-- METR study: experienced devs were 19% *slower* with AI on familiar codebases — but *thought* they were 20% faster
+- METR study: experienced devs were 19% _slower_ with AI on familiar codebases — but _thought_ they were 20% faster
 - The reconciliation: AI amplifies most on unfamiliar terrain, not where experts are already fast
 - Every "developer replacement" technology in 56 years has expanded the market for developers, not shrunk it
 

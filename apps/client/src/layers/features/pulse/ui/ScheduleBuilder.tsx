@@ -245,7 +245,9 @@ function getCronPreview(cron: string): string {
 /** Frequency-based schedule builder with cron escape hatch. */
 export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
   const parsed = parseCronToSimple(value);
-  const [mode, setMode] = useState<ScheduleMode>(parsed ? 'simple' : (value.trim() ? 'cron' : 'simple'));
+  const [mode, setMode] = useState<ScheduleMode>(
+    parsed ? 'simple' : value.trim() ? 'cron' : 'simple'
+  );
   const [config, setConfig] = useState<SimpleConfig>(parsed ?? DEFAULT_CONFIG);
   const prevValueRef = useRef(value);
 
@@ -323,12 +325,14 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
           placeholder="0 9 * * 1-5"
         />
         {value.trim() && (
-          <p className={cn(
-            'text-xs',
-            getCronPreview(value) === 'Invalid cron expression'
-              ? 'text-destructive'
-              : 'text-muted-foreground'
-          )}>
+          <p
+            className={cn(
+              'text-xs',
+              getCronPreview(value) === 'Invalid cron expression'
+                ? 'text-destructive'
+                : 'text-muted-foreground'
+            )}
+          >
             {getCronPreview(value)}
           </p>
         )}
@@ -458,9 +462,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
       </AnimatePresence>
 
       {/* Preview */}
-      <p className="text-muted-foreground text-xs">
-        {getSimplePreview(config)}
-      </p>
+      <p className="text-muted-foreground text-xs">{getSimplePreview(config)}</p>
 
       {/* Escape hatch to cron mode */}
       <button

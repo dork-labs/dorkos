@@ -1,9 +1,21 @@
 ---
-title: "Top Navigation Header Design — Agent Identity, Command Palette Trigger, and 10x Elevation"
+title: 'Top Navigation Header Design — Agent Identity, Command Palette Trigger, and 10x Elevation'
 date: 2026-03-10
 type: external-best-practices
 status: active
-tags: [header, top-nav, agent-identity, command-palette, micro-interactions, progressive-disclosure, developer-tool-ux, linear, vscode, motion]
+tags:
+  [
+    header,
+    top-nav,
+    agent-identity,
+    command-palette,
+    micro-interactions,
+    progressive-disclosure,
+    developer-tool-ux,
+    linear,
+    vscode,
+    motion,
+  ]
 feature_slug: update-top-nav
 searches_performed: 7
 sources_count: 22
@@ -25,7 +37,7 @@ Several highly relevant prior reports exist and this research builds on them wit
 
 The DorkOS top nav header (`apps/client/src/App.tsx`, line 208) is currently a single-line `<header className="flex h-9 shrink-0 items-center gap-2 border-b px-2">` containing only a `<SidebarTrigger>`. The required additions are: (1) an agent identity chip that shows the active agent name and opens agent settings on click, and (2) a command palette trigger icon with a tooltip showing Cmd+K. The "10x" factor is making the header feel like a **control surface** — the place where the operator knows at a glance what agent is running and can instantly reach any part of the system.
 
-The strongest industry precedents are Linear (workspace identity chip in sidebar header), VS Code (status bar as ambient context layer), and Arc Browser (space identity without consuming header real estate). The clearest finding: developer tool headers that feel premium are *not* cluttered — they are extremely minimal but every element is doing real work.
+The strongest industry precedents are Linear (workspace identity chip in sidebar header), VS Code (status bar as ambient context layer), and Arc Browser (space identity without consuming header real estate). The clearest finding: developer tool headers that feel premium are _not_ cluttered — they are extremely minimal but every element is doing real work.
 
 ---
 
@@ -44,36 +56,42 @@ This means the data pipeline for the agent identity chip is **already complete**
 ### 2. Industry Header Pattern Analysis
 
 **VS Code**:
+
 - The title bar shows breadcrumbs (`file > class > method`) at ~20px height
 - The status bar (bottom, 22px) is the ambient context layer — language, line number, git branch, errors
-- The top header is intentionally *non-content* space — it's for window controls
+- The top header is intentionally _non-content_ space — it's for window controls
 - Key insight: VS Code separates navigation hierarchy (breadcrumbs) from ambient context (status bar). DorkOS's header can serve both roles at 36px because there's only one level of context: the agent.
 
 **Linear**:
+
 - Each workspace has a unique icon + color identity
 - The workspace name appears in the sidebar header (top-left), not the top nav bar
 - The top nav bar is empty or minimal — just tabs for views (Issues, Cycles, Projects)
-- Key insight: Linear puts identity in the *sidebar header*, not the top bar. DorkOS uses a floating sidebar variant — the top bar is the right place for identity since the sidebar header may be obscured.
+- Key insight: Linear puts identity in the _sidebar header_, not the top bar. DorkOS uses a floating sidebar variant — the top bar is the right place for identity since the sidebar header may be obscured.
 - Linear's 2024 personalized sidebar redesign added team icons with color applied to the background — this is the chip pattern.
 
 **Arc Browser**:
+
 - "Spaces" have color identity (subtle tinted chrome)
 - The top bar shows the space name only when needed (URL bar area)
 - Progressive disclosure: the identity is always visible but never dominant
 - Key insight: Color tinting of the header chrome itself signals identity without adding text clutter.
 
 **Raycast**:
-- The search bar *is* the header — the entire interface is the command palette
+
+- The search bar _is_ the header — the entire interface is the command palette
 - Every feature is accessible via Cmd+K or a typed shortcut
 - No persistent header elements beyond the search input
 - Key insight: For a keyboard-first developer tool, the command palette trigger should feel like the second most important element in the header (after the agent identity).
 
 **Warp Terminal**:
+
 - The header shows session name + shell path as ambient context
 - Click on session name opens session configuration
 - Key insight: This is almost exactly the pattern DorkOS needs — a clickable identity element that opens configuration.
 
 **GitHub Desktop**:
+
 - Header: `[Current Repository ▾] [Current Branch ▾] [Fetch origin]`
 - Each clickable dropdown is a context-switching affordance
 - The header reads left-to-right as: "where are you > what state > what actions"
@@ -97,6 +115,7 @@ The chip should follow this anatomy:
 **When no agent is configured**: Show a muted "No agent" state with a dashed border — a clear call-to-action to configure one. This is Warp's pattern for unnamed sessions.
 
 **Interaction states**:
+
 - Default: chip with color dot + name + chevron
 - Hover: subtle `bg-accent` background fill, chevron brightens
 - Active/pressed: slight scale-down (0.97)
@@ -109,11 +128,13 @@ The chip should follow this anatomy:
 **Should it be an icon, a search bar, or a button with text?**
 
 The research is definitive for developer tools:
+
 - **Search bar**: Used by tools that need discoverability (consumer apps, GitHub's search). Too much horizontal space. Wrong for DorkOS.
 - **Text button** (`Search... ⌘K`): Used by Notion, Vercel. Appropriate when users need to learn the shortcut. Adds ~120px of width to the header.
 - **Icon button with tooltip**: Used by VS Code (magnifying glass in some views), GitHub (search icon in the header). Minimal footprint. The tooltip teaches the shortcut on hover.
 
 For DorkOS at `h-9`, the **icon button with tooltip** is correct. Reasons:
+
 1. Kai knows keyboard shortcuts. He will learn Cmd+K after one tooltip hover.
 2. A search bar in the header adds visual weight that competes with the agent identity chip.
 3. The DorkOS brand is minimal and technical — text buttons feel consumer-grade.
@@ -121,9 +142,11 @@ For DorkOS at `h-9`, the **icon button with tooltip** is correct. Reasons:
 **Icon choice**: A magnifying glass icon (search) is universally understood. Some tools use a slash `/` icon or a sparkle ✦ for AI-specific command palettes. For DorkOS, `Search` from lucide-react is correct — it's neutral, recognized, and pairs naturally with `⌘K` in the tooltip. Avoid the `Command` icon (looks like a key, not a search).
 
 **Tooltip pattern**:
+
 ```
 Search ⌘K
 ```
+
 The tooltip text should be exactly this — the action verb followed by the keyboard shortcut in a `<Kbd>` component. This matches how VS Code's tooltips read ("Open Palettes Cmd+Shift+P") and how DorkOS already uses `<Kbd>` in the sidebar trigger tooltip.
 
 **Placement**: Right-aligned in the header (`ml-auto`). Left-to-right reading order is: sidebar trigger → [agent chip] → [spacer] → [search icon]. The search icon on the right mirrors VS Code's global search placement.
@@ -137,6 +160,7 @@ The complete header layout for the standalone path:
 ```
 
 Breakdown:
+
 - `SidebarTrigger` — existing, stays at left
 - `AgentIdentityChip` — new, immediately after trigger with `gap-2`
 - Spacer (`flex-1`) — pushes search to the right
@@ -160,11 +184,13 @@ This is extremely simple. The complexity lives in the two new components, not in
 **What to show immediately**: Agent name + color dot + chevron. Nothing else.
 
 **What to show on hover**:
+
 - Agent chip: background fill (shows it's interactive)
 - Tooltip on chip: full agent name if truncated, "Click to configure"
 - Tooltip on search icon: "Search ⌘K"
 
 **What to show on click**:
+
 - Agent chip click: opens full `AgentDialog` (configure name, color, persona, tools)
 - Search icon click: opens `CommandPaletteDialog`
 
@@ -177,6 +203,7 @@ This is extremely simple. The complexity lives in the two new components, not in
 These are the specific motion details that separate a "functional" header from a "crafted" one:
 
 **Agent chip hover**:
+
 ```tsx
 <motion.button
   whileHover={{ backgroundColor: 'var(--accent)' }}
@@ -184,9 +211,11 @@ These are the specific motion details that separate a "functional" header from a
   transition={{ type: 'spring', stiffness: 600, damping: 40 }}
 >
 ```
+
 The spring transition makes the hover feel physical rather than linear. Duration should be under 100ms for hover states in a header — anything longer interrupts the scanning flow.
 
 **Color dot pulse (when agent is actively streaming)**:
+
 ```tsx
 <motion.span
   animate={isStreaming ? { opacity: [1, 0.4, 1] } : { opacity: 1 }}
@@ -195,9 +224,11 @@ The spring transition makes the hover feel physical rather than linear. Duration
   style={{ backgroundColor: agentVisual.color }}
 />
 ```
+
 This subtle breathing animation is borrowed from Linear's status indicators — active/running states pulse gently. It does not flash aggressively. It is barely perceptible but unmistakably alive. Critically, it only pulses when `isStreaming` is true.
 
 **Search icon hover**:
+
 ```tsx
 <motion.div
   whileHover={{ scale: 1.1 }}
@@ -206,9 +237,11 @@ This subtle breathing animation is borrowed from Linear's status indicators — 
   <Search className="size-4" />
 </motion.div>
 ```
+
 A 10% scale up on hover is the standard affordance signal for icon buttons. Subtle enough not to distract, visible enough to confirm interactivity.
 
 **Agent switching animation (when selectedCwd changes)**:
+
 ```tsx
 <AnimatePresence mode="wait">
   <motion.span
@@ -222,22 +255,25 @@ A 10% scale up on hover is the standard affordance signal for icon buttons. Subt
   </motion.span>
 </AnimatePresence>
 ```
+
 When the user switches agents (via the command palette or directory picker), the name in the header swaps with a micro-slide. This confirms the switch visually without a toast or banner.
 
 **Color dot transition**:
+
 ```tsx
 <motion.span
   animate={{ backgroundColor: agentVisual.color }}
   transition={{ duration: 0.3, ease: 'easeOut' }}
 />
 ```
+
 When switching agents, the color dot smoothly transitions to the new agent's color. This is Jony Ive's "material transition" principle — color should flow, not snap.
 
 ### 8. The 10x Factor — What Would Steve Jobs and Jony Ive Do?
 
 This is the central design question. The baseline requirement (agent name + search icon) is the floor. The 10x is the ceiling.
 
-**What most tools miss**: The header is treated as chrome — a container for navigation elements. In the best tools, the header is part of the *content*. It tells you something real about the state of the world at a glance.
+**What most tools miss**: The header is treated as chrome — a container for navigation elements. In the best tools, the header is part of the _content_. It tells you something real about the state of the world at a glance.
 
 **The 10x insight for DorkOS**: The header is the **agent's identity plate**. Every time you look at the top of the screen, you should know exactly which agent you're talking to, whether it's thinking, and where you can go. The header should feel like the display panel on a piece of precision equipment — minimal, informative, and beautiful in its restraint.
 
@@ -255,7 +291,7 @@ Instead of just the dot being colored, apply an extremely subtle color tint to t
 >
 ```
 
-This is the Arc Browser Spaces pattern — the entire chrome tints to the space/context color. At 30% mix with the border color, it's barely perceptible but unmistakably purposeful. When the agent changes, the border color transitions smoothly. This makes the header feel *alive* — it's not just showing data, it's *embodying* the agent.
+This is the Arc Browser Spaces pattern — the entire chrome tints to the space/context color. At 30% mix with the border color, it's barely perceptible but unmistakably purposeful. When the agent changes, the border color transitions smoothly. This makes the header feel _alive_ — it's not just showing data, it's _embodying_ the agent.
 
 Evaluation: **High impact, minimal implementation cost.** This is the single highest-signal change possible. Jobs would love this — it's the kind of detail nobody would consciously notice but everyone would feel.
 
@@ -276,10 +312,14 @@ When `isStreaming` is true, add a very subtle shimmer or scan line to the header
 ```tsx
 <motion.div
   className="absolute bottom-0 left-0 h-px"
-  animate={isStreaming ? {
-    width: ['0%', '100%'],
-    opacity: [0.6, 0],
-  } : { width: '0%', opacity: 0 }}
+  animate={
+    isStreaming
+      ? {
+          width: ['0%', '100%'],
+          opacity: [0.6, 0],
+        }
+      : { width: '0%', opacity: 0 }
+  }
   transition={{
     duration: 2,
     repeat: Infinity,
@@ -325,11 +365,13 @@ apps/client/src/layers/features/top-nav/
 ### The Current Header: What Works and What Doesn't
 
 **What works**:
+
 - `h-9` (36px) is the correct height — it matches VS Code's tab bar and Linear's top bar. It's compact enough to not feel heavy.
 - Border-bottom creates the correct visual separation from content without using a shadow (which would feel too heavy for a developer tool).
 - `SidebarTrigger` placement at `-ml-0.5` is correctly aligned.
 
 **What doesn't work**:
+
 - The header contains zero information. Looking at it tells you nothing about where you are or what is running.
 - There is no affordance to reach the command palette via mouse.
 - First-time users have no way to discover Cmd+K.
@@ -340,6 +382,7 @@ apps/client/src/layers/features/top-nav/
 An alternative to the chip pattern is a breadcrumb: `Agent / Session Title`. This is the VS Code breadcrumb pattern.
 
 **Why the chip wins for DorkOS**:
+
 - DorkOS has one level of context (agent), not a hierarchy. Breadcrumbs are for hierarchy.
 - A chip is more obviously clickable than a breadcrumb label.
 - The chip has a visual anchor (the color dot) that the breadcrumb lacks.
@@ -366,6 +409,7 @@ The only exception would be if header width is severely constrained (mobile). On
 The Automattic/wp-calypso GitHub issue (#89581) "Make the command palette shortcut easier to learn about" reveals a real UX challenge: even when Cmd+K exists and works, users don't discover it.
 
 Best solutions from that discussion and industry practice:
+
 1. **Icon button in the header with tooltip** — the pattern recommended here. On hover, the tooltip shows `Search ⌘K`. This passively teaches the shortcut.
 2. **Shortcut hint in an empty state** — when no session is active, a subtle `⌘K to open command palette` hint in the center of the chat area.
 3. **Onboarding step** — DorkOS already has an `OnboardingFlow`. Adding a step that demonstrates Cmd+K is the most reliable way to teach it.
@@ -377,6 +421,7 @@ The icon button approach (option 1) is the ongoing passive educator. The onboard
 The agent color is user-chosen (stored in `agent.json`). When rendering the color dot or the tinted border, the color may have insufficient contrast on either light or dark background.
 
 Mitigation:
+
 - The color dot is small (6px) and decorative — it is not the primary text label. Screen readers use the text name. The dot is `aria-hidden`.
 - The tinted border is extremely subtle (30% mix) and purely decorative. It does not convey information that is not also conveyed by the agent name text.
 - Use `aria-hidden` on the color dot and the decorative border element.
@@ -421,8 +466,10 @@ export function AgentIdentityChip({ agent, visual, isStreaming }: AgentIdentityC
           <motion.span
             aria-hidden
             animate={isStreaming ? { opacity: [1, 0.4, 1] } : { opacity: 1 }}
-            transition={isStreaming ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } : undefined}
-            className="size-1.5 rounded-full shrink-0"
+            transition={
+              isStreaming ? { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } : undefined
+            }
+            className="size-1.5 shrink-0 rounded-full"
             style={{ backgroundColor: visual.color }}
           />
 
@@ -434,21 +481,16 @@ export function AgentIdentityChip({ agent, visual, isStreaming }: AgentIdentityC
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 3 }}
               transition={{ duration: 0.1, ease: 'easeOut' }}
-              className="max-w-[160px] truncate font-medium leading-none"
+              className="max-w-[160px] truncate leading-none font-medium"
             >
               {agent?.name ?? 'No agent'}
             </motion.span>
           </AnimatePresence>
 
-          <ChevronDown
-            aria-hidden
-            className="text-muted-foreground size-3 shrink-0"
-          />
+          <ChevronDown aria-hidden className="text-muted-foreground size-3 shrink-0" />
         </motion.button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {agent ? 'Agent settings' : 'Configure agent'}
-      </TooltipContent>
+      <TooltipContent side="bottom">{agent ? 'Agent settings' : 'Configure agent'}</TooltipContent>
     </Tooltip>
   );
 }
@@ -496,11 +538,7 @@ export function CommandPaletteTrigger() {
 // In App.tsx, standalone path:
 <header className="relative flex h-9 shrink-0 items-center gap-2 border-b px-2">
   <SidebarTrigger className="-ml-0.5" />
-  <AgentIdentityChip
-    agent={currentAgent}
-    visual={agentVisual}
-    isStreaming={isStreaming}
-  />
+  <AgentIdentityChip agent={currentAgent} visual={agentVisual} isStreaming={isStreaming} />
   <div className="flex-1" />
   <CommandPaletteTrigger />
 
@@ -542,32 +580,32 @@ The `transition-colors duration-300` handles smooth color transitions when the a
 
 ### Agent Identity: Chip vs. Breadcrumb vs. Plain Text
 
-| Approach | Pros | Cons |
-|---|---|---|
-| **Chip (recommended)** | Visual identity (color dot), obvious click affordance, works with agent's color system | Takes ~180px horizontal space |
-| Breadcrumb | Familiar pattern, hierarchical | No color identity, less obviously clickable, wrong concept (no hierarchy) |
-| Plain text label | Minimal | No interactivity signal, boring |
-| Nothing | Zero clutter | Users don't know what agent is active when sidebar is closed |
+| Approach               | Pros                                                                                   | Cons                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Chip (recommended)** | Visual identity (color dot), obvious click affordance, works with agent's color system | Takes ~180px horizontal space                                             |
+| Breadcrumb             | Familiar pattern, hierarchical                                                         | No color identity, less obviously clickable, wrong concept (no hierarchy) |
+| Plain text label       | Minimal                                                                                | No interactivity signal, boring                                           |
+| Nothing                | Zero clutter                                                                           | Users don't know what agent is active when sidebar is closed              |
 
 ### Command Palette Trigger: Icon vs. Search Bar vs. Text Button
 
-| Approach | Pros | Cons |
-|---|---|---|
-| **Icon button (recommended)** | Minimal, keyboard-first users learn from one tooltip hover | Less discoverable for new users |
-| Search bar | Maximum discoverability | Wide, heavy, consumer-grade feel |
-| Text button ("Search... ⌘K") | Teaches shortcut passively, Notion/Vercel use this | ~120px wide, takes real estate, feels less minimal |
-| Nothing (keyboard-only) | Zero chrome | Completely undiscoverable by mouse users |
+| Approach                      | Pros                                                       | Cons                                               |
+| ----------------------------- | ---------------------------------------------------------- | -------------------------------------------------- |
+| **Icon button (recommended)** | Minimal, keyboard-first users learn from one tooltip hover | Less discoverable for new users                    |
+| Search bar                    | Maximum discoverability                                    | Wide, heavy, consumer-grade feel                   |
+| Text button ("Search... ⌘K")  | Teaches shortcut passively, Notion/Vercel use this         | ~120px wide, takes real estate, feels less minimal |
+| Nothing (keyboard-only)       | Zero chrome                                                | Completely undiscoverable by mouse users           |
 
 ### 10x Features: Prioritized
 
-| Feature | Impact | Cost | Ship? |
-|---|---|---|---|
-| Color dot pulse when streaming | High | Low | Yes |
-| Name slide animation on agent switch | High | Low | Yes |
-| Streaming scan line at header bottom | High (brand) | Low-Medium | Yes |
-| Tinted border via `color-mix` | Medium-High | Very Low | Yes |
-| Session count badge on hover | Medium | Low | Optional |
-| Cmd+comma shortcut hint on chip hover | Medium DX | Low | Yes |
+| Feature                               | Impact       | Cost       | Ship?    |
+| ------------------------------------- | ------------ | ---------- | -------- |
+| Color dot pulse when streaming        | High         | Low        | Yes      |
+| Name slide animation on agent switch  | High         | Low        | Yes      |
+| Streaming scan line at header bottom  | High (brand) | Low-Medium | Yes      |
+| Tinted border via `color-mix`         | Medium-High  | Very Low   | Yes      |
+| Session count badge on hover          | Medium       | Low        | Optional |
+| Cmd+comma shortcut hint on chip hover | Medium DX    | Low        | Yes      |
 
 ---
 

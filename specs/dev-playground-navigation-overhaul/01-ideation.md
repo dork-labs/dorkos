@@ -56,6 +56,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/client/src/dev/DevPlayground.tsx` — Shell layout, sidebar, routing state, theme toggle
 - `apps/client/src/dev/PlaygroundSection.tsx` — Section card with anchor ID generation
 - `apps/client/src/dev/pages/TokensPage.tsx` — Design tokens page (8 sections, inline)
@@ -64,7 +65,8 @@ status: ideation
 - `apps/client/src/dev/showcases/*.tsx` — 10 showcase files with ~48 total sections
 
 **Shared dependencies:**
-- `@/layers/shared/ui` — Sidebar*, ScrollArea, Command*, Button, Badge, Kbd (* = key for this feature)
+
+- `@/layers/shared/ui` — Sidebar*, ScrollArea, Command*, Button, Badge, Kbd (\* = key for this feature)
 - `@/layers/shared/lib` — cn() utility
 - `@/layers/shared/model` — useTheme hook
 - `lucide-react` — Icons
@@ -75,10 +77,12 @@ status: ideation
 Static showcase components → PlaygroundSection (anchor IDs) → DevPlayground (page routing) → Browser URL
 
 **Feature flags/config:**
+
 - Dev playground is gated by `import.meta.env.DEV` — only loaded in development
 - No feature flags needed
 
 **Potential blast radius:**
+
 - Direct: `DevPlayground.tsx` (restructure), `PlaygroundSection.tsx` (add scroll-mt)
 - New files: ~5 new files (TOC, search, landing page, scrollspy hook, registry)
 - Showcase files: Minor additions (export TOC/search metadata constants)
@@ -99,6 +103,7 @@ Research file: `research/20260316_dev_playground_navigation_overhaul.md`
 ### Potential Solutions
 
 **1. Right-side Scrollspy TOC (IntersectionObserver)**
+
 - Description: Sticky right-side TOC that highlights the current section as you scroll, using IntersectionObserver with negative rootMargin
 - Pros:
   - Best-in-class pattern (used by Radix, Tailwind, shadcn docs)
@@ -112,6 +117,7 @@ Research file: `research/20260316_dev_playground_navigation_overhaul.md`
 - Maintenance: Low (static section list, no runtime DOM queries)
 
 **2. Cmd+K Search (cmdk CommandDialog)**
+
 - Description: Fuzzy search over all ~48 component sections with keyboard shortcut and visible trigger button
 - Pros:
   - cmdk already installed (shadcn Command component)
@@ -124,6 +130,7 @@ Research file: `research/20260316_dev_playground_navigation_overhaul.md`
 - Maintenance: Low (add entries when adding new showcases)
 
 **3. Landing Page (Category Card Grid)**
+
 - Description: Default `/dev` page with category cards showing page name, description, and section count
 - Pros:
   - Provides visual inventory of everything available
@@ -140,8 +147,8 @@ Research file: `research/20260316_dev_playground_navigation_overhaul.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | TOC placement | Right-side sticky TOC | Best-in-class pattern used by Radix, Tailwind, shadcn docs. Left sidebar stays at page level; right TOC handles section-level navigation. Research confirms this as the standard for design system galleries. |
-| 2 | Page structure | Keep mega-pages + TOC + search | ~48 sections across 2 pages is well within the range where mega-page + TOC works (shadcn has 50+ on one page). Avoids routing complexity. Existing anchor IDs make this trivial. |
-| 3 | Landing page content | Category cards with section counts | Clean, informative, low maintenance. Quick-jump chips would need manual curation. "Less, but better." |
+| #   | Decision             | Choice                             | Rationale                                                                                                                                                                                                     |
+| --- | -------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | TOC placement        | Right-side sticky TOC              | Best-in-class pattern used by Radix, Tailwind, shadcn docs. Left sidebar stays at page level; right TOC handles section-level navigation. Research confirms this as the standard for design system galleries. |
+| 2   | Page structure       | Keep mega-pages + TOC + search     | ~48 sections across 2 pages is well within the range where mega-page + TOC works (shadcn has 50+ on one page). Avoids routing complexity. Existing anchor IDs make this trivial.                              |
+| 3   | Landing page content | Category cards with section counts | Clean, informative, low maintenance. Quick-jump chips would need manual curation. "Less, but better."                                                                                                         |

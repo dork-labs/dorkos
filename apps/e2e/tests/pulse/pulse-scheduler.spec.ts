@@ -44,7 +44,7 @@ test.describe('Pulse — Scheduler Dialog @smoke', () => {
     const presets = ['5m', '15m', '1h', '6h', 'Daily', '9am', 'Weekdays', 'Weekly', 'Monthly'];
     for (const preset of presets) {
       await expect(
-        pulsePage.createDialog.getByRole('button', { name: preset, exact: true }),
+        pulsePage.createDialog.getByRole('button', { name: preset, exact: true })
       ).toBeVisible();
     }
   });

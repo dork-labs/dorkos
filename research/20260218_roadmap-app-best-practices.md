@@ -1,5 +1,5 @@
 ---
-title: "Roadmap App Best Practices Research"
+title: 'Roadmap App Best Practices Research'
 date: 2026-02-18
 type: external-best-practices
 status: active
@@ -88,16 +88,17 @@ await db.write(); // atomic rename swap internally
 
 **What views matter most for a developer roadmap tool:**
 
-| View | Use Case | Complexity to Build |
-|---|---|---|
-| Kanban (by status) | Day-to-day workflow, "what's in progress?" | Low — many ready-made components |
-| MoSCoW Priority Grid | Sprint/release planning sessions | Low — CSS grid with 4 columns |
-| Table/List | Bulk editing, search, sorting | Low — shadcn Table + TanStack Table |
-| Timeline/Gantt | Date-based planning, milestone tracking | Medium-High — requires date handling |
+| View                 | Use Case                                   | Complexity to Build                  |
+| -------------------- | ------------------------------------------ | ------------------------------------ |
+| Kanban (by status)   | Day-to-day workflow, "what's in progress?" | Low — many ready-made components     |
+| MoSCoW Priority Grid | Sprint/release planning sessions           | Low — CSS grid with 4 columns        |
+| Table/List           | Bulk editing, search, sorting              | Low — shadcn Table + TanStack Table  |
+| Timeline/Gantt       | Date-based planning, milestone tracking    | Medium-High — requires date handling |
 
 **MoSCoW Priority Grid**: This is a 2x2 (or 4-column) grid with drag-and-drop between quadrants. No specialized library is required — a simple CSS Grid with `@hello-pangea/dnd` drop targets per quadrant covers the full pattern. This is the highest-value custom view to build since no off-the-shelf solution precisely matches MoSCoW + status combinations.
 
 **Recommendation for view priority order**:
+
 1. Table view (fastest to build, most functional)
 2. Kanban by status (most visual, highest perceived value)
 3. MoSCoW priority grid (unique to your domain)
@@ -112,6 +113,7 @@ await db.write(); // atomic rename swap internally
 Kibo UI is a custom shadcn/ui registry with 41+ production-ready components. Acquired by Shadcnblocks in October 2025. MIT licensed. Ships components as source code (like shadcn/ui itself), so fully customizable.
 
 Relevant components:
+
 - **Kanban** — drag-and-drop board with columns and cards
 - **Gantt** — project timeline with hierarchical task tracking
 - **Calendar** — grid displaying features by end date
@@ -120,6 +122,7 @@ Relevant components:
 - **Status** — status badge primitive (maps well to your status field)
 
 Install:
+
 ```bash
 npx kibo-ui add kanban
 npx kibo-ui add gantt
@@ -170,6 +173,7 @@ DELETE /api/roadmap/items/:id      # Delete item
 Server-side filtering is recommended for larger datasets, but for a JSON-file backend with hundreds of items, client-side filtering via TanStack Query + a selector function is simpler and avoids unnecessary API complexity.
 
 If you implement server-side:
+
 ```
 GET /api/roadmap/items?status=in-progress&priority=must&sort=-createdAt
 ```
@@ -185,6 +189,7 @@ Body: { ids: string[], patch: Partial<RoadmapItem> }
 ```
 
 For reorder (drag-and-drop persistence):
+
 ```
 PATCH /api/roadmap/items/reorder
 Body: { orderedIds: string[] }
@@ -217,11 +222,12 @@ For a **single-user tool**, the recommendation is: **no WebSocket/SSE needed**.
 TanStack Query's default behavior: when the browser tab regains focus and the cached data is stale (past `staleTime`), it automatically re-fetches. This is sufficient for a roadmap tool where you switch tabs to do other work, come back, and see fresh data.
 
 Configuration:
+
 ```ts
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,        // 30 seconds — data considered fresh
+      staleTime: 30_000, // 30 seconds — data considered fresh
       refetchOnWindowFocus: true, // re-fetch on tab focus (default)
     },
   },
@@ -238,17 +244,17 @@ const queryClient = new QueryClient({
 
 ## Recommended Stack
 
-| Concern | Recommendation | Rationale |
-|---|---|---|
-| Data storage | `lowdb` (JSON adapter) | Zero deps, git-diffable, atomic writes, lodash API |
-| API layer | Express CRUD routes with Zod validation | Consistent with DorkOS patterns |
-| Filtering/sorting | Client-side via TanStack Query selectors | Simpler for small datasets |
-| Kanban view | Kibo UI `kanban` component | shadcn-compatible, MIT, React 19 |
-| Gantt view | Kibo UI `gantt` component | Same ecosystem |
-| MoSCoW grid view | Custom CSS Grid + `@hello-pangea/dnd` | No off-the-shelf match for this exact pattern |
-| Table view | shadcn/ui `Table` + TanStack Table | Already in DorkOS design system |
-| Real-time | TanStack Query `refetchOnWindowFocus` | Single-user, no overhead |
-| Drag-and-drop (custom) | `@hello-pangea/dnd` | React 19 certified, accessible |
+| Concern                | Recommendation                           | Rationale                                          |
+| ---------------------- | ---------------------------------------- | -------------------------------------------------- |
+| Data storage           | `lowdb` (JSON adapter)                   | Zero deps, git-diffable, atomic writes, lodash API |
+| API layer              | Express CRUD routes with Zod validation  | Consistent with DorkOS patterns                    |
+| Filtering/sorting      | Client-side via TanStack Query selectors | Simpler for small datasets                         |
+| Kanban view            | Kibo UI `kanban` component               | shadcn-compatible, MIT, React 19                   |
+| Gantt view             | Kibo UI `gantt` component                | Same ecosystem                                     |
+| MoSCoW grid view       | Custom CSS Grid + `@hello-pangea/dnd`    | No off-the-shelf match for this exact pattern      |
+| Table view             | shadcn/ui `Table` + TanStack Table       | Already in DorkOS design system                    |
+| Real-time              | TanStack Query `refetchOnWindowFocus`    | Single-user, no overhead                           |
+| Drag-and-drop (custom) | `@hello-pangea/dnd`                      | React 19 certified, accessible                     |
 
 ### Data Schema Additions to Consider
 
@@ -261,12 +267,12 @@ interface RoadmapItem {
   description?: string;
   priority: 'must' | 'should' | 'could' | 'wont';
   status: 'not-started' | 'in-progress' | 'completed' | 'at-risk' | 'on-hold';
-  order: number;           // for drag-and-drop persistence
-  startDate?: string;      // ISO 8601 — enables Gantt view
-  endDate?: string;        // ISO 8601 — enables Gantt view
-  tags?: string[];         // enables tag-based filtering
-  createdAt: string;       // ISO 8601
-  updatedAt: string;       // ISO 8601
+  order: number; // for drag-and-drop persistence
+  startDate?: string; // ISO 8601 — enables Gantt view
+  endDate?: string; // ISO 8601 — enables Gantt view
+  tags?: string[]; // enables tag-based filtering
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
 }
 ```
 
@@ -295,6 +301,7 @@ The core question for a roadmap tool is: **do you need queries, or just a list?*
 A roadmap typically has a flat or minimally nested structure. The operations are: list all items (with optional client-side filter), create one item, update one item, delete one item, reorder items. None of these require JOIN operations or complex SQL. This strongly favors keeping the JSON file.
 
 SQLite's main advantages (transactions, concurrent write safety, efficient partial reads) are less relevant when:
+
 - There is one writer (the Express server process)
 - The dataset is small (<10,000 items for a personal roadmap)
 - You want the data to be human-readable and git-tracked
@@ -328,6 +335,7 @@ This single export is a singleton — all route handlers share the same in-memor
 The most insightful view for a developer roadmap is a **dual-axis board**: columns = MoSCoW priority (Must/Should/Could/Won't), swimlanes = status groups (Not Started / In Progress / Done). This combines both dimensions without requiring a separate Gantt view.
 
 However, this is a custom layout that no off-the-shelf component provides. It would be built with:
+
 - CSS Grid (4 columns × n rows)
 - `@hello-pangea/dnd` `Droppable` per cell
 - Cards moving both horizontally (priority change) and vertically (status change)
@@ -345,10 +353,9 @@ The recommended pattern for a tool of this scale:
    ```ts
    useQuery({
      queryKey: ['roadmap-items'],
-     queryFn: () => fetch('/api/roadmap/items').then(r => r.json()),
-     select: (data) => data
-       .filter(item => item.status !== 'completed')
-       .sort((a, b) => a.order - b.order),
+     queryFn: () => fetch('/api/roadmap/items').then((r) => r.json()),
+     select: (data) =>
+       data.filter((item) => item.status !== 'completed').sort((a, b) => a.order - b.order),
    });
    ```
 3. Add server-side filtering only if the dataset grows large enough that network payload becomes a concern.

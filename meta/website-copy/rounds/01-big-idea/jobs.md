@@ -12,11 +12,11 @@ Not metaphorically. Literally. You schedule them. They report back. They talk to
 
 Every developer who lands on this site already has an AI coding agent. That battle is over. They chose Claude Code or Cursor or Copilot. What they do not have — what nobody has given them — is the answer to a question they have only recently started asking:
 
-*Why does my most powerful tool forget everything the moment I close the terminal?*
+_Why does my most powerful tool forget everything the moment I close the terminal?_
 
 That is the tension. And the resolution is not a feature list. It is a conceptual leap. The same leap that happened when computers went from calculators to operating systems. When phones went from making calls to running apps. The object did not change. The relationship to the object changed.
 
-DorkOS does not make agents smarter. It makes agents *operational*. That word — operational — is the whole thing. An agent that runs when you tell it to, stops when you close the lid, and forgets everything in between is a tool. An agent that runs on a schedule, communicates with other agents, remembers context across sessions, and reports what it did while you slept — that is something else entirely.
+DorkOS does not make agents smarter. It makes agents _operational_. That word — operational — is the whole thing. An agent that runs when you tell it to, stops when you close the lid, and forgets everything in between is a tool. An agent that runs on a schedule, communicates with other agents, remembers context across sessions, and reports what it did while you slept — that is something else entirely.
 
 The website should make the visitor feel that shift in their bones before a single feature is explained.
 
@@ -72,7 +72,7 @@ The tagline beneath it, or the resolution after the scroll:
 
 > **DorkOS: the operating system for autonomous AI agents.**
 
-"Your AI Never Sleeps" is strong as a secondary line — it belongs on the Pulse section or as a pull quote — but it should not be the primary headline. It describes a feature. The headline above describes the *problem*, and problems are what create desire.
+"Your AI Never Sleeps" is strong as a secondary line — it belongs on the Pulse section or as a pull quote — but it should not be the primary headline. It describes a feature. The headline above describes the _problem_, and problems are what create desire.
 
 ---
 

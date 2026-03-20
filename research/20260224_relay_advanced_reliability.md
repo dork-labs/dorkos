@@ -1,5 +1,5 @@
 ---
-title: "Relay Advanced Reliability — Research Report"
+title: 'Relay Advanced Reliability — Research Report'
 date: 2026-02-24
 type: internal-architecture
 status: active
@@ -148,12 +148,12 @@ The TypeScript wrapper caches the prepared statement and compares `cnt >= limit`
 
 **Sensible defaults for local agent systems:**
 
-| Parameter      | Default          | Rationale                                              |
-|----------------|------------------|--------------------------------------------------------|
-| `windowSecs`   | 60               | One-minute sliding window                             |
-| `maxPerWindow` | 100              | 100 messages/min per sender (~1.67/sec sustained)     |
-| `burstCapacity`| N/A (no burst)   | Sliding window log naturally handles burst vs. sustained |
-| Per-sender     | Yes (required)   | Prevents one misbehaving agent from flooding others   |
+| Parameter       | Default        | Rationale                                                |
+| --------------- | -------------- | -------------------------------------------------------- |
+| `windowSecs`    | 60             | One-minute sliding window                                |
+| `maxPerWindow`  | 100            | 100 messages/min per sender (~1.67/sec sustained)        |
+| `burstCapacity` | N/A (no burst) | Sliding window log naturally handles burst vs. sustained |
+| Per-sender      | Yes (required) | Prevents one misbehaving agent from flooding others      |
 
 A monitoring agent legitimately generating ~10 telemetry messages per second would hit 600 messages/min
 and needs a higher per-sender override. The config should support per-sender overrides keyed by subject
@@ -197,6 +197,7 @@ Importantly, **budget enforcement failures** (hop count, TTL expiry) are not cir
 **Per-endpoint granularity** is recommended over per-sender-endpoint pair for the relay's local context.
 
 Reasons:
+
 - The failure modes being detected are endpoint health issues (broken handler, full filesystem), not
   sender-specific relationship problems. If endpoint `relay.agent.backend` fails, it fails for all
   senders, not just one
@@ -224,13 +225,13 @@ In-memory implementation: a `Map<string, CircuitBreakerState>` where the key is 
 
 **Sensible defaults:**
 
-| Parameter             | Default  | Rationale                                                    |
-|-----------------------|----------|--------------------------------------------------------------|
-| `failureThreshold`    | 5        | Five consecutive delivery failures                          |
-| `failureWindowMs`     | 30_000   | Within a 30-second window (consecutive failures is simpler) |
-| `cooldownMs`          | 30_000   | 30 seconds before half-open probe                           |
-| `halfOpenProbeCount`  | 1        | Single probe in half-open state                             |
-| `successToClose`      | 2        | Two consecutive successes to close from half-open           |
+| Parameter            | Default | Rationale                                                   |
+| -------------------- | ------- | ----------------------------------------------------------- |
+| `failureThreshold`   | 5       | Five consecutive delivery failures                          |
+| `failureWindowMs`    | 30_000  | Within a 30-second window (consecutive failures is simpler) |
+| `cooldownMs`         | 30_000  | 30 seconds before half-open probe                           |
+| `halfOpenProbeCount` | 1       | Single probe in half-open state                             |
+| `successToClose`     | 2       | Two consecutive successes to close from half-open           |
 
 These align with industry consensus (5 failures, 30-second cooldown) documented across Resilience4J,
 .NET Polly, and opossum default configurations.
@@ -243,8 +244,8 @@ type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 interface CircuitBreakerState {
   state: CircuitState;
   consecutiveFailures: number;
-  openedAt: number | null;    // timestamp when OPEN state was entered
-  halfOpenProbes: number;     // successful probes in HALF_OPEN
+  openedAt: number | null; // timestamp when OPEN state was entered
+  halfOpenProbes: number; // successful probes in HALF_OPEN
 }
 ```
 
@@ -298,6 +299,7 @@ backpressure reasons (not DLQ'd, just dropped).
 metric in the `PublishResult`. Callers can throttle themselves based on this signal.
 
 Both approaches should be implemented:
+
 - Reactive: Hard reject at `>= maxMailboxSize` (required for protection)
 - Proactive: Return `mailboxPressure: number` (0–1 ratio) in `PublishResult` so callers can
   adapt their send rate voluntarily (useful for cooperative agents)
@@ -329,11 +331,11 @@ export interface PublishResult {
 
 **Sensible defaults:**
 
-| Parameter          | Default | Rationale                                             |
-|--------------------|---------|-------------------------------------------------------|
-| `maxMailboxSize`   | 1000    | 1,000 unprocessed messages signals a stalled agent   |
-| `pressureWarningAt`| 0.8     | Report pressure signal when mailbox is 80% full      |
-| `enabled`          | true    | Default on; agents can opt out per-endpoint          |
+| Parameter           | Default | Rationale                                          |
+| ------------------- | ------- | -------------------------------------------------- |
+| `maxMailboxSize`    | 1000    | 1,000 unprocessed messages signals a stalled agent |
+| `pressureWarningAt` | 0.8     | Report pressure signal when mailbox is 80% full    |
+| `enabled`           | true    | Default on; agents can opt out per-endpoint        |
 
 For a local system with reasonably small messages (JSON payloads), 1,000 messages in `new/` is a
 clear signal of a stuck or crashed agent. Active agents should process messages in milliseconds.
@@ -350,23 +352,23 @@ injected into `RelayOptions`:
 ```typescript
 interface RateLimitConfig {
   enabled: boolean;
-  windowSecs: number;         // default: 60
-  maxPerWindow: number;       // default: 100
+  windowSecs: number; // default: 60
+  maxPerWindow: number; // default: 100
   perSenderOverrides?: Record<string, number>; // subject prefix → limit override
 }
 
 interface CircuitBreakerConfig {
   enabled: boolean;
-  failureThreshold: number;   // default: 5
-  cooldownMs: number;         // default: 30_000
+  failureThreshold: number; // default: 5
+  cooldownMs: number; // default: 30_000
   halfOpenProbeCount: number; // default: 1
-  successToClose: number;     // default: 2
+  successToClose: number; // default: 2
 }
 
 interface BackpressureConfig {
   enabled: boolean;
-  maxMailboxSize: number;     // default: 1000
-  pressureWarningAt: number;  // default: 0.8 (80%)
+  maxMailboxSize: number; // default: 1000
+  pressureWarningAt: number; // default: 0.8 (80%)
 }
 
 interface ReliabilityConfig {
@@ -384,7 +386,7 @@ interface RelayOptions {
   maxHops?: number;
   defaultTtlMs?: number;
   defaultCallBudget?: number;
-  reliability?: ReliabilityConfig;  // new
+  reliability?: ReliabilityConfig; // new
 }
 ```
 
@@ -394,6 +396,7 @@ Config hot-reload is achievable without a restart using `chokidar`, which is alr
 in the relay package (`package.json` shows `"chokidar": "^4.0.0"`).
 
 Pattern:
+
 1. Accept a `configPath?: string` in `RelayOptions` pointing to a JSON file with `ReliabilityConfig`
 2. On startup, load and validate the JSON config
 3. Watch the file with chokidar; on `change`, reload and validate; swap the internal config reference
@@ -405,6 +408,7 @@ values). Invalid files should be ignored with a warning log, keeping the previou
 
 The in-flight rate limit and circuit breaker state are unaffected by config hot-reload — only the
 thresholds change. This means:
+
 - A rate limit threshold lowered mid-operation takes effect on the next check
 - A circuit breaker cooldown change takes effect on the next state transition
 - No state needs to be flushed or reset

@@ -18,6 +18,7 @@
 **Batch 1 (parallel):**
 
 **Task #1 — Fix Bug #1: stream-event-handler.ts done handler** ✅
+
 - File: `apps/client/src/layers/features/chat/model/stream-event-handler.ts`
 - In the `done` case, inside `if (doneData.sessionId && doneData.sessionId !== sessionId)`, added three lines before `onSessionIdChangeRef.current?.(doneData.sessionId)`:
   - `currentPartsRef.current = [];` — resets streaming accumulator
@@ -26,6 +27,7 @@
 - Added 4-line comment block explaining the ID-mismatch dedup failure root cause
 
 **Task #2 — Fix Bug #3: use-session-status.ts model priority chain** ✅
+
 - File: `apps/client/src/layers/entities/session/model/use-session-status.ts`
 - Changed line 69 from:
   `const model = localModel ?? streamingStatus?.model ?? session?.model ?? DEFAULT_MODEL;`
@@ -57,5 +59,6 @@ _(None)_
 **Batch 1** ran two agents in parallel and both completed cleanly. No TypeScript interface changes were needed — `setMessages` was already in `StreamEventDeps`. The `isStreaming` gate is a one-line change that preserves `streamingStatus.contextTokens`/`costUsd` behavior.
 
 **Batch 2** ran two agents in parallel:
+
 - Task #3 (session-status tests): Added `import type { SessionStatusEvent } from '@dorkos/shared/types'` and two regression tests. All 5 tests in the file pass.
 - Task #4 (stream-event-handler-remap tests): Created new file following the exact `createMinimalDeps()` factory pattern from `stream-event-handler-part-id.test.ts`. Both tests pass, including the `invocationCallOrder` assertion verifying `setMessages([])` fires before `onSessionIdChange`. The existing 3 tests in `stream-event-handler-part-id.test.ts` also continue to pass.

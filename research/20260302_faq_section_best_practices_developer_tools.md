@@ -1,5 +1,5 @@
 ---
-title: "FAQ Section Best Practices for Developer Tool Marketing Pages"
+title: 'FAQ Section Best Practices for Developer Tool Marketing Pages'
 date: 2026-03-02
 type: external-best-practices
 status: active
@@ -24,26 +24,31 @@ FAQs on developer tool marketing pages serve a single job: neutralize the last o
 The strongest FAQ sections for open-source/self-hosted dev tools cluster around five concern categories, in rough order of developer anxiety:
 
 **Data & privacy**
+
 - Does the tool phone home?
 - What data leaves my machine?
 - Is telemetry opt-in or opt-out?
 
 **Self-hosting & installation**
+
 - What are the prerequisites? (Node version, OS, Claude Code dependency)
 - How hard is it to set up?
 - Can I run this air-gapped / offline?
 
 **Licensing & openness**
+
 - What license is the codebase under?
 - Can I use this commercially?
 - Is there a paid tier? What's the business model?
 
 **Dependency & lock-in risk**
+
 - This requires Claude Code — what happens if Anthropic changes the API?
 - Can I switch AI models?
 - Who owns my session data and configuration?
 
 **Community & maintenance**
+
 - Is this actively maintained?
 - How do I contribute? Report bugs?
 - Is there a roadmap?

@@ -1,29 +1,29 @@
 ---
-title: "Mesh Network Topology"
+title: 'Mesh Network Topology'
 spec: 3
 order: 3
 status: in-progress
 blockedBy: [2]
 blocks: []
 parallelWith: [4]
-litepaperPhase: "Phase 2 — Network Topology"
+litepaperPhase: 'Phase 2 — Network Topology'
 complexity: high
 risk: medium
 estimatedFiles: 10-15
 newPackages: []
-primaryWorkspaces: ["packages/mesh", "packages/relay", "apps/server", "apps/client"]
+primaryWorkspaces: ['packages/mesh', 'packages/relay', 'apps/server', 'apps/client']
 touchesServer: true
 touchesClient: true
 verification:
-  - "Agents in the same project namespace can message each other through Relay (default-allow)"
-  - "Agents in different projects are blocked by default (default-deny cross-project)"
-  - "Cross-project access can be explicitly allowlisted via Mesh configuration"
-  - "Budget policies per agent are enforced by Relay (maxHops, callBudget from manifest)"
+  - 'Agents in the same project namespace can message each other through Relay (default-allow)'
+  - 'Agents in different projects are blocked by default (default-deny cross-project)'
+  - 'Cross-project access can be explicitly allowlisted via Mesh configuration'
+  - 'Budget policies per agent are enforced by Relay (maxHops, callBudget from manifest)'
   - "Invisible boundaries — unauthorized agents get 'not found', not 'forbidden'"
   - "MCP tool mesh_query_topology returns the agent's view of the network (filtered by access)"
-  - "Client topology configuration UI allows editing cross-project access rules"
-  - "ACL changes take effect without restarting Mesh or Relay"
-  - "All existing Relay tests still pass (no regressions)"
+  - 'Client topology configuration UI allows editing cross-project access rules'
+  - 'ACL changes take effect without restarting Mesh or Relay'
+  - 'All existing Relay tests still pass (no regressions)'
 notes: >
   Can run in PARALLEL with Spec 4 (Observability & Lifecycle) — they're
   independent additions to the Spec 2 foundation. This spec deepens the
@@ -104,12 +104,14 @@ OUT OF SCOPE:
 ## Context for Review
 
 This spec deepens the Mesh-Relay integration from basic registration to full network policy. The /ideate exploration agent should focus on:
+
 - Relay's `AccessControl` class — how rules are stored, evaluated, and matched
 - Relay's `BudgetEnforcer` — how budget constraints are checked before delivery
 - The `addAccessRule()` method on `RelayCore` — how Mesh should call it
 - The existing Mesh code from Spec 1 — where namespace and ACL logic fits in
 
 The /ideate research agent should investigate:
+
 - Network namespace patterns in container orchestration (Kubernetes network policies, Docker networks)
 - Service mesh access control (Istio authorization policies, Consul intentions)
 - Zero-trust network patterns adapted for agent systems

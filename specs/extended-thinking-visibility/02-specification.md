@@ -69,7 +69,7 @@ Add `thinking_delta` to the `StreamEventTypeSchema` enum (line 30):
 ```typescript
 export const StreamEventTypeSchema = z
   .enum([
-    'thinking_delta',  // NEW
+    'thinking_delta', // NEW
     'text_delta',
     'tool_call_start',
     // ... existing types
@@ -103,7 +103,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   TextPartSchema,
   ToolCallPartSchema,
   SubagentPartSchema,
-  ThinkingPartSchema,  // NEW
+  ThinkingPartSchema, // NEW
 ]);
 ```
 
@@ -129,7 +129,7 @@ At line 85, before the existing `tool_use` check:
 if (contentBlock?.type === 'thinking') {
   toolState.inThinking = true;
   toolState.thinkingStartMs = Date.now();
-  return;  // No event emitted on start — first delta triggers creation
+  return; // No event emitted on start — first delta triggers creation
 }
 ```
 
@@ -251,7 +251,7 @@ The `ContentBlock` interface (line 36) needs a `thinking` field:
 export interface ContentBlock {
   type: string;
   text?: string;
-  thinking?: string;  // NEW: thinking content from SDK JSONL
+  thinking?: string; // NEW: thinking content from SDK JSONL
   name?: string;
   // ... rest unchanged
 }
@@ -396,6 +396,7 @@ Thinking blocks are intentionally subtle — muted background, small text, colla
 ### Unit Tests
 
 **`sdk-event-mapper.test.ts`** — Test that thinking blocks are correctly mapped:
+
 - `content_block_start(thinking)` sets `toolState.inThinking = true`
 - `content_block_delta(thinking_delta)` yields `{ type: 'thinking_delta', data: { text } }` when `inThinking`
 - `content_block_delta(thinking_delta)` is ignored when not `inThinking`
@@ -404,12 +405,14 @@ Thinking blocks are intentionally subtle — muted background, small text, colla
 - text_delta while `inThinking = false` still works normally (no regression)
 
 **`stream-event-handler.test.ts`** — Test client-side state accumulation:
+
 - First `thinking_delta` creates a new `ThinkingPart` with `isStreaming: true`
 - Subsequent `thinking_delta` events append to existing `ThinkingPart`
 - First `text_delta` after thinking marks `ThinkingPart.isStreaming = false` and sets `elapsedMs`
 - Parts array ordering: thinking part precedes text part
 
 **`transcript-parser.test.ts`** — Test JSONL parsing:
+
 - Assistant message with `{ type: 'thinking', thinking: '...' }` content block produces a `ThinkingPart`
 - Thinking blocks appear before text blocks in the parts array
 - Messages without thinking blocks are unaffected (no regression)
@@ -418,6 +421,7 @@ Thinking blocks are intentionally subtle — muted background, small text, colla
 ### Component Tests
 
 **`ThinkingBlock.test.tsx`**:
+
 - Renders "Thinking..." label when `isStreaming = true`
 - Renders "Thought for Xs" chip when `isStreaming = false` with `elapsedMs`
 - Content is visible when streaming
@@ -428,6 +432,7 @@ Thinking blocks are intentionally subtle — muted background, small text, colla
 - Long content (10,000+ chars) renders with `max-h-64 overflow-y-auto`
 
 **`AssistantMessageContent.test.tsx`** — Integration:
+
 - Message with thinking part renders a `ThinkingBlock`
 - Message with thinking + text parts renders both in correct order
 - Messages without thinking parts are unaffected

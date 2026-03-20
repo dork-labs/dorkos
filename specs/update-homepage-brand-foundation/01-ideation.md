@@ -81,6 +81,7 @@ status: ideation
 ### Evil Martians (100 Dev Tool Landing Pages Study)
 
 Best-performing section structure:
+
 1. Nav (logo + docs + GitHub + CTA)
 2. Hero (centered, headline + sub + CTA + product visual)
 3. Credibility signal (immediately after hero)
@@ -114,6 +115,7 @@ Key findings: No salesy BS. Clever and simple wins. Curated testimonials (not au
 ## 5) Current vs. Proposed Section Comparison
 
 ### Current Homepage (5 sections):
+
 1. **Hero** — "Claude Code / in your browser." + npm install CTA
 2. **Features** — 6 feature cards (3x2 grid)
 3. **About** — "DorkOS is an open-source web UI..." + 4 philosophy items
@@ -122,16 +124,16 @@ Key findings: No salesy BS. Clever and simple wins. Curated testimonials (not au
 
 ### Proposed Homepage (8 sections):
 
-| # | Section | Component | Status |
-|---|---|---|---|
-| 1 | **Hero** | `Hero.tsx` (modified) | Rewrite copy |
-| 2 | **Credibility Bar** | `CredibilityBar.tsx` (new) | New section |
-| 3 | **The Problem** | `ProblemSection.tsx` (new) | New section |
-| 4 | **How It Works** | `HowItWorksSection.tsx` (new) | New section |
-| 5 | **Features** | `ProjectsGrid.tsx` (modified) | Reduce to 4 cards |
-| 6 | **What DorkOS Is Not** | `NotSection.tsx` (new) | New section |
-| 7 | **About / Origin** | `AboutSection.tsx` (modified) | Merge + rewrite |
-| 8 | **Contact** | `ContactSection.tsx` (unchanged) | Keep |
+| #   | Section                | Component                        | Status            |
+| --- | ---------------------- | -------------------------------- | ----------------- |
+| 1   | **Hero**               | `Hero.tsx` (modified)            | Rewrite copy      |
+| 2   | **Credibility Bar**    | `CredibilityBar.tsx` (new)       | New section       |
+| 3   | **The Problem**        | `ProblemSection.tsx` (new)       | New section       |
+| 4   | **How It Works**       | `HowItWorksSection.tsx` (new)    | New section       |
+| 5   | **Features**           | `ProjectsGrid.tsx` (modified)    | Reduce to 4 cards |
+| 6   | **What DorkOS Is Not** | `NotSection.tsx` (new)           | New section       |
+| 7   | **About / Origin**     | `AboutSection.tsx` (modified)    | Merge + rewrite   |
+| 8   | **Contact**            | `ContactSection.tsx` (unchanged) | Keep              |
 
 ### Detailed Copy for Each Section
 
@@ -140,12 +142,14 @@ Key findings: No salesy BS. Clever and simple wins. Curated testimonials (not au
 #### Section 1: HERO (rewrite)
 
 **Current:**
+
 - Label: "Open Source"
 - H1: "Claude Code / in your browser."
 - Subhead: "A web UI for Claude Code. Chat interface, tool approval, and session management built on the Agent SDK."
 - CTA: "npm install -g dorkos"
 
 **Proposed:**
+
 - Label: "Open Source" (keep)
 - H1: **"Own Your AI."**
 - Subhead: "Remote access to Claude Code from any browser. One npm install. Runs on your machine. No cloud. No middleman."
@@ -199,15 +203,19 @@ Three steps. Rule of Three (Jobs). Ogilvy specificity (port numbers, file paths,
 **Label:** "How It Works"
 
 **Step 1: Install**
+
 ```
 npm install -g dorkos
 ```
+
 One command. No config files. No Docker. No cloud account.
 
 **Step 2: Run**
+
 ```
 dorkos --dir ~/projects
 ```
+
 Server starts at localhost:4242. Add `--tunnel` for remote access from anywhere.
 
 **Step 3: Work**
@@ -265,12 +273,12 @@ Merge current AboutSection and OriginSection into a single tighter section.
 
 **Philosophy grid (rewritten from brand foundation's "We Believe"):**
 
-| # | Title | Description |
-|---|---|---|
-| 01 | Your Machine | Your AI runs on your hardware. Your sessions stay local. No cloud dependency. |
-| 02 | Open Source | MIT licensed. Read every line of code that touches your AI sessions. |
-| 03 | Power Users | Built for developers who ship. Not a toy. Not a wrapper. A runtime. |
-| 04 | Autonomy | Full control is the default. Unrestricted permissions by design. |
+| #   | Title        | Description                                                                   |
+| --- | ------------ | ----------------------------------------------------------------------------- |
+| 01  | Your Machine | Your AI runs on your hardware. Your sessions stay local. No cloud dependency. |
+| 02  | Open Source  | MIT licensed. Read every line of code that touches your AI sessions.          |
+| 03  | Power Users  | Built for developers who ship. Not a toy. Not a wrapper. A runtime.           |
+| 04  | Autonomy     | Full control is the default. Unrestricted permissions by design.              |
 
 **Origin paragraph (one paragraph, not three):**
 "DorkOS exists because Claude Code deserved a browser interface. Built on the Agent SDK, it reads the same JSONL session files as the CLI. No separate backend. No data duplication. One source of truth."
@@ -290,24 +298,28 @@ The email reveal mechanism is distinctive and well-executed. No changes needed.
 ### Additional Changes
 
 **Site Config (`config/site.ts`):**
+
 - Update `description` from "A web UI for Claude Code" to "Remote access to Claude Code. On your machine."
 
 **Footer:**
+
 - Change "v1.0 · System Online" to actual version or remove — it's inaccurate and breaking trust (Ogilvy: specificity is believability).
 
 **Nav:**
+
 - Update links to match new section IDs: features, about, contact, docs
 
 **Marketing Layout Metadata:**
+
 - Update OG description to match new site description
 
 ## 6) Decisions (Resolved)
 
-| # | Question | Decision |
-|---|---|---|
-| 1 | Credibility bar content | **Static text** — "Built on Claude Agent SDK · Open Source · MIT Licensed". No API calls. Add dynamic counts later when stars are meaningful. |
-| 2 | Terminal demo in "How It Works" | **Animated terminal (termynal)** — Lightweight terminal animation for the 3-step install/run/work flow. Creates the Jobs "holy smokes" moment. |
-| 3 | Social proof / testimonials | **Skip for now** — No testimonials section until we have real, curated developer quotes. None > fake. |
-| 4 | Footer version | **Show real npm version** — Display actual version (e.g., "v0.2.0"). Ogilvy: specificity is believability. |
-| 5 | Problem section tone | **Direct "you" address** — "Every AI coding interface you've used..." Makes the reader the protagonist. |
-| 6 | Site structure | **Single page** — One scrolling page. DorkOS is one product with one install. Go multi-page when Pulse/Relay/Wing ship. |
+| #   | Question                        | Decision                                                                                                                                       |
+| --- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Credibility bar content         | **Static text** — "Built on Claude Agent SDK · Open Source · MIT Licensed". No API calls. Add dynamic counts later when stars are meaningful.  |
+| 2   | Terminal demo in "How It Works" | **Animated terminal (termynal)** — Lightweight terminal animation for the 3-step install/run/work flow. Creates the Jobs "holy smokes" moment. |
+| 3   | Social proof / testimonials     | **Skip for now** — No testimonials section until we have real, curated developer quotes. None > fake.                                          |
+| 4   | Footer version                  | **Show real npm version** — Display actual version (e.g., "v0.2.0"). Ogilvy: specificity is believability.                                     |
+| 5   | Problem section tone            | **Direct "you" address** — "Every AI coding interface you've used..." Makes the reader the protagonist.                                        |
+| 6   | Site structure                  | **Single page** — One scrolling page. DorkOS is one product with one install. Go multi-page when Pulse/Relay/Wing ship.                        |

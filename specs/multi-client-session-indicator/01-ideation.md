@@ -47,24 +47,28 @@ status: ideation
 **Primary Components/Modules:**
 
 Server-side:
+
 - `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` — SSE connection manager. Has `registerClient()`, `getClientCount()`, broadcasts to all connected clients per session.
 - `apps/server/src/routes/sessions.ts` — HTTP route handler for SSE stream and message sending. Reads `X-Client-Id` header.
 - `apps/server/src/services/runtimes/claude-code/session-lock.ts` — Write lock manager per session/client.
 - `packages/shared/src/schemas.ts` — Zod schemas for all StreamEvent types including `sync_connected`.
 
 Client-side:
+
 - `apps/client/src/layers/features/status/ui/StatusLine.tsx` — Compound component for animated status bar items.
 - `apps/client/src/layers/features/status/ui/CostItem.tsx` — Reference 15-line status bar item component.
 - `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx` — Composition layer that wires data into StatusLine items.
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts` — SSE listener for sync events.
 
 **Shared Dependencies:**
+
 - `@dorkos/shared/schemas` — StreamEvent types
 - `@dorkos/shared/types` — Transport interface (already accepts `clientId`)
 - `lucide-react` — Icons (`Users`, `Lock`)
 - `motion` — Animations (via StatusLine's existing AnimatePresence)
 
 **Data Flow:**
+
 ```
 Client connects → GET /api/sessions/:id/stream
   → SessionBroadcaster.registerClient(sessionId, res, clientId)
@@ -82,6 +86,7 @@ Client disconnects → response close event
 **Feature Flags/Config:** None needed. Visibility controlled by existing `StatusLine.Item` `visible` prop (`visible={clientCount > 1}`).
 
 **Potential Blast Radius:**
+
 - Direct: ~5 files (broadcaster, sessions route, schemas, ChatStatusSection, new ClientsItem component)
 - Indirect: None — StatusLine is designed for extension, schemas are additive
 - Tests: SessionBroadcaster tests (new count/broadcast behavior), new ClientsItem component test, integration test for presence_update SSE
@@ -97,6 +102,7 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 **Potential solutions:**
 
 **1. Status Bar Badge (StatusLine.Item)**
+
 - A new `StatusLine.Item` with `itemKey="clients"` and `visible={clientCount > 1}`. Shows a count badge (e.g., "2 clients" with a Users icon). Hidden in the common single-client case. Follows the exact pattern of CostItem and GitStatusItem.
 - Pros: Follows established pattern exactly; animate-in/out is free via existing AnimatePresence; zero noise when solo; cleanly separates count from lock state
 - Cons: Small target; less noticeable on first encounter
@@ -104,6 +110,7 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 - Maintenance: Low
 
 **2. Session Header Indicator**
+
 - Small pill near the session title in the chat header area.
 - Pros: More visually prominent
 - Cons: No dedicated chat header component exists; would require touching multiple components; sidebar items already dense
@@ -111,6 +118,7 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 - Maintenance: Medium
 
 **3. Tooltip/Popover with Details (Enhancement of #1)**
+
 - The badge from Approach 1 opens a popover on click listing each client type and its connection duration.
 - Pros: Progressive disclosure — detail on demand
 - Cons: Additional state; touch interaction awkward on small targets
@@ -118,6 +126,7 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 - Maintenance: Low
 
 **4. Toast Notification on Connect/Disconnect**
+
 - Ephemeral toast when a client joins or leaves the session.
 - Pros: Cannot be missed
 - Cons: NN/g classifies toasts as inappropriate for system-generated events outside the user's task; Obsidian plugin reconnections cause noisy churn
@@ -125,6 +134,7 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 - Maintenance: Low — but wrong UX
 
 **5. Inline Message Annotation**
+
 - Annotate each message with its originating client.
 - Pros: Full audit trail
 - Cons: Visual clutter on every message; requires tracking message origin in JSONL; high complexity
@@ -132,11 +142,13 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 - Maintenance: High
 
 **Security considerations:**
+
 - Exposing client type labels is acceptable for a single-user tool
 - Do NOT expose raw client UUIDs in UI
 - Client type is inferred from ID prefix convention, not verified identity
 
 **Performance considerations:**
+
 - `presence_update` events fire only on connect/disconnect, not per-message — negligible throughput
 - Piggybacks on the already-open sync SSE stream
 - Heartbeat: 30-second `:\n\n` comment writes to detect ghost connections; 60-second idle TTL before removing from count
@@ -146,9 +158,9 @@ Research report: `research/20260316_multi_client_session_indicator.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Indicator placement | Status bar badge (`StatusLine.Item`) | Follows existing CostItem/GitStatusItem pattern exactly. AnimatePresence for free. Hidden when solo — zero noise in the common case. "Less, but better." |
-| 2 | Client type visibility | Count + types on hover (popover) | Badge shows "2 clients"; tooltip/popover shows "Web browser, Obsidian plugin". Requires client ID prefix convention (`web-xxx`, `obsidian-xxx`, `mcp-xxx`) tracked in SessionBroadcaster. Progressive disclosure. |
-| 3 | Message arrival cue | Subtle badge pulse | The client count badge briefly pulses when a `sync_update` arrives from another client's message. Low-key but noticeable — provides "someone else is here" awareness without over-notification. |
-| 4 | Lock state integration | Amber lock icon when locked | When another client holds the write lock, badge shifts to amber with a Lock icon ("Locked by another client"). Explains why send might fail with SESSION_LOCKED before it happens. Single indicator for both count and lock state. |
+| #   | Decision               | Choice                               | Rationale                                                                                                                                                                                                                          |
+| --- | ---------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Indicator placement    | Status bar badge (`StatusLine.Item`) | Follows existing CostItem/GitStatusItem pattern exactly. AnimatePresence for free. Hidden when solo — zero noise in the common case. "Less, but better."                                                                           |
+| 2   | Client type visibility | Count + types on hover (popover)     | Badge shows "2 clients"; tooltip/popover shows "Web browser, Obsidian plugin". Requires client ID prefix convention (`web-xxx`, `obsidian-xxx`, `mcp-xxx`) tracked in SessionBroadcaster. Progressive disclosure.                  |
+| 3   | Message arrival cue    | Subtle badge pulse                   | The client count badge briefly pulses when a `sync_update` arrives from another client's message. Low-key but noticeable — provides "someone else is here" awareness without over-notification.                                    |
+| 4   | Lock state integration | Amber lock icon when locked          | When another client holds the write lock, badge shifts to amber with a Lock icon ("Locked by another client"). Explains why send might fail with SESSION_LOCKED before it happens. Single indicator for both count and lock state. |

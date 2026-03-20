@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, FolderOpen, Trash2 } from 'lucide-react';
-import { useCreateSchedule, useUpdateSchedule, useDeleteSchedule, usePulsePresetDialog } from '@/layers/entities/pulse';
+import {
+  useCreateSchedule,
+  useUpdateSchedule,
+  useDeleteSchedule,
+  usePulsePresetDialog,
+} from '@/layers/entities/pulse';
 import type { PulsePreset } from '@/layers/entities/pulse';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
@@ -46,7 +51,11 @@ const DEFAULT_MAX_RUNTIME_MIN = 10;
 const MAX_NAME_LENGTH = 100;
 const MAX_RUNTIME_MIN = 720;
 
-function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | null, initialAgentId?: string) {
+function buildInitialState(
+  editSchedule?: PulseSchedule,
+  preset?: PulsePreset | null,
+  initialAgentId?: string
+) {
   if (editSchedule) {
     return {
       name: editSchedule.name,
@@ -58,7 +67,9 @@ function buildInitialState(editSchedule?: PulseSchedule, preset?: PulsePreset | 
       permissionMode: (editSchedule.permissionMode === 'bypassPermissions'
         ? 'bypassPermissions'
         : 'acceptEdits') as PermissionMode,
-      maxRuntimeMin: editSchedule.maxRuntime ? editSchedule.maxRuntime / 60_000 : DEFAULT_MAX_RUNTIME_MIN,
+      maxRuntimeMin: editSchedule.maxRuntime
+        ? editSchedule.maxRuntime / 60_000
+        : DEFAULT_MAX_RUNTIME_MIN,
     };
   }
   if (preset) {
@@ -99,14 +110,22 @@ interface FormState {
 type DialogStep = 'preset-picker' | 'form';
 
 /** Create or edit a Pulse schedule using ResponsiveDialog with progressive disclosure. */
-export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initialPreset, initialAgentId }: Props) {
+export function CreateScheduleDialog({
+  open,
+  onOpenChange,
+  editSchedule,
+  initialPreset,
+  initialAgentId,
+}: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const deleteSchedule = useDeleteSchedule();
   const { data: agentsData } = useMeshAgentPaths();
   const agents = agentsData?.agents ?? [];
 
-  const [form, setForm] = useState<FormState>(() => buildInitialState(editSchedule, undefined, initialAgentId));
+  const [form, setForm] = useState<FormState>(() =>
+    buildInitialState(editSchedule, undefined, initialAgentId)
+  );
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
   const [step, setStep] = useState<DialogStep>(() => (editSchedule ? 'form' : 'preset-picker'));
   const [appliedPreset, setAppliedPreset] = useState<PulsePreset | null>(null);
@@ -136,7 +155,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
     }
     if (editSchedule) {
       setForm(buildInitialState(editSchedule));
-      setScheduleTarget(editSchedule.agentId ? 'agent' : (editSchedule.cwd ? 'directory' : 'agent'));
+      setScheduleTarget(editSchedule.agentId ? 'agent' : editSchedule.cwd ? 'directory' : 'agent');
       setLocalEnabled(editSchedule.enabled);
       setStep('form');
     } else if (initialPreset) {
@@ -256,11 +275,14 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
         {step === 'preset-picker' && (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="space-y-4 px-4 py-5">
-              <p className="text-sm text-muted-foreground">Start from a template</p>
+              <p className="text-muted-foreground text-sm">Start from a template</p>
               <PresetGallery onSelect={handleSelectPreset} selectedId={appliedPreset?.id} />
               <button
                 type="button"
-                onClick={() => { setAppliedPreset(null); setStep('form'); }}
+                onClick={() => {
+                  setAppliedPreset(null);
+                  setStep('form');
+                }}
                 className="text-muted-foreground hover:text-foreground w-full text-center text-sm transition-colors"
               >
                 Start from scratch
@@ -271,7 +293,11 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
 
         {/* Step 2: Form (existing) */}
         {step === 'form' && (
-          <form onSubmit={handleSubmit} id="schedule-form" className="min-h-0 flex-1 overflow-y-auto">
+          <form
+            onSubmit={handleSubmit}
+            id="schedule-form"
+            className="min-h-0 flex-1 overflow-y-auto"
+          >
             <div className="space-y-5 px-4 py-5">
               {/* ── Agent ── */}
               {scheduleTarget === 'agent' ? (
@@ -307,7 +333,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
                   <div className="flex gap-2">
                     <div
                       className={cn(
-                        'flex-1 truncate rounded-md border px-3 py-2 text-sm font-mono',
+                        'flex-1 truncate rounded-md border px-3 py-2 font-mono text-sm',
                         form.cwd ? 'text-foreground' : 'text-muted-foreground'
                       )}
                     >
@@ -354,10 +380,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
 
               <div className="space-y-1.5">
                 <Label>Schedule *</Label>
-                <ScheduleBuilder
-                  value={form.cron}
-                  onChange={(cron) => updateField('cron', cron)}
-                />
+                <ScheduleBuilder value={form.cron} onChange={(cron) => updateField('cron', cron)} />
               </div>
 
               {/* ── Timezone ── */}
@@ -371,7 +394,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
 
               {/* ── Advanced settings (collapsed by default) ── */}
               <details className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-sm">
                   <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
                   Advanced settings
                 </summary>
@@ -429,7 +452,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="mr-auto text-destructive hover:text-destructive"
+                className="text-destructive hover:text-destructive mr-auto"
                 onClick={() => setDeleteConfirmOpen(true)}
               >
                 <Trash2 className="mr-1.5 size-4" />
@@ -439,12 +462,7 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              size="sm"
-              form="schedule-form"
-              disabled={!isValid || isPending}
-            >
+            <Button type="submit" size="sm" form="schedule-form" disabled={!isValid || isPending}>
               {isPending ? 'Saving...' : editSchedule ? 'Save' : 'Create'}
             </Button>
           </ResponsiveDialogFooter>
@@ -461,8 +479,8 @@ export function CreateScheduleDialog({ open, onOpenChange, editSchedule, initial
             <DialogHeader>
               <DialogTitle>Delete schedule</DialogTitle>
               <DialogDescription>
-                Delete &ldquo;{editSchedule.name}&rdquo;? This will also remove all run history. This
-                action cannot be undone.
+                Delete &ldquo;{editSchedule.name}&rdquo;? This will also remove all run history.
+                This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

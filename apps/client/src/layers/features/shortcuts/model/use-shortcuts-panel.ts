@@ -14,9 +14,7 @@ export function useShortcutsPanel(): void {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const inInput =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable;
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       if (e.key === '?' && !inInput) {
         e.preventDefault();

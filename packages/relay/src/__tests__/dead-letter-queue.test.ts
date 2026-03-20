@@ -47,14 +47,9 @@ async function backdateSidecar(
   mailboxesDir: string,
   endpointHash: string,
   messageId: string,
-  failedAt: string,
+  failedAt: string
 ): Promise<void> {
-  const reasonPath = path.join(
-    mailboxesDir,
-    endpointHash,
-    'failed',
-    `${messageId}.reason.json`,
-  );
+  const reasonPath = path.join(mailboxesDir, endpointHash, 'failed', `${messageId}.reason.json`);
   const data = await fs.readFile(reasonPath, 'utf-8');
   const deadLetter: DeadLetter = JSON.parse(data);
   deadLetter.failedAt = failedAt;

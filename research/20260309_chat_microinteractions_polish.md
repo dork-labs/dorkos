@@ -1,5 +1,5 @@
 ---
-title: "Chat Microinteractions Polish — Animation Best Practices"
+title: 'Chat Microinteractions Polish — Animation Best Practices'
 date: 2026-03-09
 type: external-best-practices
 status: active
@@ -56,6 +56,7 @@ Spring physics is the right choice for UI animations because it responds to inte
 ```
 
 **Rule of thumb:**
+
 - Spring: interactive elements, list items arriving, anything the user "caused"
 - Duration/ease: ambient crossfades, loading states, background transitions
 
@@ -64,12 +65,14 @@ Spring physics is the right choice for UI animations because it responds to inte
 Research on how ChatGPT, Claude.ai, and the Vercel AI SDK handle streaming reveals a clear consensus: **the container animates in once, the text does not animate character-by-character in production apps.**
 
 **What the major apps actually do:**
+
 - The AI message _container_ fades and slides in (same as any received message) the moment the first token arrives
 - Text tokens are appended directly to the DOM without per-character animation
 - A blinking cursor shows during streaming — this is the only "animation" on the text itself
 - The cursor disappears when `completedTyping` / `isStreaming` goes false
 
 **Why character-by-character typewriter animation is avoided:**
+
 1. It creates artificial slowness — the user reads slower than tokens arrive
 2. It introduces a visual queue of pending text that feels wrong during real streaming
 3. It is inaccessible (forces users to wait for text that already exists)
@@ -88,8 +91,13 @@ Research on how ChatGPT, Claude.ai, and the Vercel AI SDK handle streaming revea
 }
 
 @keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 ```
 
@@ -190,6 +198,7 @@ This means the cursor blink, color transitions, and opacity fades all still work
 ### Current State Audit
 
 **MessageItem.tsx (line 147–151):**
+
 ```typescript
 <motion.div
   initial={isNew ? { opacity: 0, y: 8 } : false}
@@ -197,43 +206,49 @@ This means the cursor blink, color transitions, and opacity fades all still work
   transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
 >
 ```
+
 - Good: `isNew` gate prevents history items from animating
 - Good: `y: 8` is a subtle offset — not dramatic
 - Improvement: Switch to spring physics. `duration: 0.2` is fine but spring feels more alive
 - Improvement: User messages (`isUser === true`) could use a slightly different variant (e.g., `y: 10, scale: 0.98`)
 
 **SessionItem.tsx (line 64–66):**
+
 ```typescript
 const Wrapper = isNew ? motion.div : 'div';
 ```
+
 - This is the right pattern — only newly created sessions animate in
 - Missing: `whileTap` for click feedback
 - Missing: `layoutId` on the active background highlight
 
 **MessageList.tsx:**
+
 - Uses TanStack Virtual — `AnimatePresence` cannot wrap this
 - No session-switch transition — the list just instantly replaces
 - This is the most noticeable gap
 
 **AutoHideToolCall (MessageItem.tsx line 51–72):**
+
 ```typescript
 exit={{ height: 0, opacity: 0 }}
 transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
 ```
+
 - This is well-implemented — the auto-hide exit animation is smooth
 
 ### Recommended Changes Summary
 
-| Area | Current | Recommended |
-|------|---------|-------------|
-| MessageItem entry spring | `duration: 0.2, ease cubic` | `type: 'spring', stiffness: 320, damping: 28` |
-| User message distinct animation | Same as AI | Add `scale: 0.97` in initial for user messages |
-| Session switch | Instant replace | `AnimatePresence mode="wait"` with 150ms opacity crossfade at ChatPanel level |
-| Sidebar item click | No feedback | `whileTap={{ scale: 0.98 }}` on session item wrapper |
-| Sidebar active indicator | CSS background class | `layoutId="active-session-bg"` sliding background element |
-| Sidebar hover | Already Tailwind CSS | Keep as-is (Tailwind `transition-colors` is correct here) |
-| Streaming cursor | Already implemented | No change needed |
-| Reduced motion | Already `reducedMotion="user"` | No change needed |
+| Area                            | Current                        | Recommended                                                                   |
+| ------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| MessageItem entry spring        | `duration: 0.2, ease cubic`    | `type: 'spring', stiffness: 320, damping: 28`                                 |
+| User message distinct animation | Same as AI                     | Add `scale: 0.97` in initial for user messages                                |
+| Session switch                  | Instant replace                | `AnimatePresence mode="wait"` with 150ms opacity crossfade at ChatPanel level |
+| Sidebar item click              | No feedback                    | `whileTap={{ scale: 0.98 }}` on session item wrapper                          |
+| Sidebar active indicator        | CSS background class           | `layoutId="active-session-bg"` sliding background element                     |
+| Sidebar hover                   | Already Tailwind CSS           | Keep as-is (Tailwind `transition-colors` is correct here)                     |
+| Streaming cursor                | Already implemented            | No change needed                                                              |
+| Reduced motion                  | Already `reducedMotion="user"` | No change needed                                                              |
 
 ### Implementation Notes for DorkOS
 

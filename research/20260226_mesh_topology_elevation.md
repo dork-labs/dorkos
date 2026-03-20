@@ -1,5 +1,5 @@
 ---
-title: "Mesh Topology Elevation — Research Findings"
+title: 'Mesh Topology Elevation — Research Findings'
 date: 2026-02-26
 type: external-best-practices
 status: active
@@ -26,14 +26,14 @@ The current topology is a solid foundation: dagre LR layout, agent nodes with he
 
 ### What Exists
 
-| Component | File | Current capability |
-|---|---|---|
-| `TopologyGraph` | `TopologyGraph.tsx` | dagre LR, Controls (no-interactive), legend, `fitView`, lazy-loaded |
-| `AgentNode` | `AgentNode.tsx` | Health dot (green/amber/zinc), name, runtime badge, up-to-2 capability badges, namespace left-border accent |
-| `NamespaceHubNode` | `NamespaceHubNode.tsx` | Pill shape, namespace name, agent count badge, namespace color |
-| `NamespaceEdge` | `NamespaceEdge.tsx` | Plain bezier, `--color-border`, 1px stroke |
-| `CrossNamespaceEdge` | `CrossNamespaceEdge.tsx` | Dashed bezier, blue, `animated: true` dashes, `EdgeLabelRenderer` label |
-| `TopologyLegend` | `TopologyLegend.tsx` | Bottom-left Panel, edge type legend + namespace colors |
+| Component            | File                     | Current capability                                                                                          |
+| -------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `TopologyGraph`      | `TopologyGraph.tsx`      | dagre LR, Controls (no-interactive), legend, `fitView`, lazy-loaded                                         |
+| `AgentNode`          | `AgentNode.tsx`          | Health dot (green/amber/zinc), name, runtime badge, up-to-2 capability badges, namespace left-border accent |
+| `NamespaceHubNode`   | `NamespaceHubNode.tsx`   | Pill shape, namespace name, agent count badge, namespace color                                              |
+| `NamespaceEdge`      | `NamespaceEdge.tsx`      | Plain bezier, `--color-border`, 1px stroke                                                                  |
+| `CrossNamespaceEdge` | `CrossNamespaceEdge.tsx` | Dashed bezier, blue, `animated: true` dashes, `EdgeLabelRenderer` label                                     |
+| `TopologyLegend`     | `TopologyLegend.tsx`     | Bottom-left Panel, edge type legend + namespace colors                                                      |
 
 ### What Is Missing
 
@@ -75,6 +75,7 @@ const showDetail = useStore((s) => s.transform[2] >= 0.75);
 ```
 
 This enables LOD rendering in custom nodes:
+
 - Zoomed out (< 0.6): compact pill — just a colored dot + name, ~32px tall
 - Normal (0.6–1.2): current layout — dot, name, runtime badge, 2 capability badges
 - Zoomed in (> 1.2): expanded — add description excerpt, adapter icons, last-seen timestamp
@@ -93,14 +94,14 @@ This is how Kiali and Grafana node graph handle high node counts without overwhe
 
 ### 4. Edge Enhancement Options
 
-| Pattern | Description | Complexity |
-|---|---|---|
-| `smoothstep` path | Orthogonal with rounded corners — cleaner than bezier for hub-spoke | Low |
-| `animated: true` dashes | Already used on cross-namespace. Add custom CSS `strokeDashoffset` animation for direction/speed control | Low |
-| SVG `animateMotion` particle | Animate a small circle along the path to show data flow direction | Medium |
-| Edge width by activity | Vary `strokeWidth` proportional to message count from Relay metrics | Medium |
-| `EdgeToolbar` on select | Floating unscaled button bar — "Revoke access", "View trace", "Copy rule" | Low |
-| Deny-rule edges | Currently, deny rules produce NO edge. Add a red dashed `deny` edge type | Low |
+| Pattern                      | Description                                                                                              | Complexity |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- | ---------- |
+| `smoothstep` path            | Orthogonal with rounded corners — cleaner than bezier for hub-spoke                                      | Low        |
+| `animated: true` dashes      | Already used on cross-namespace. Add custom CSS `strokeDashoffset` animation for direction/speed control | Low        |
+| SVG `animateMotion` particle | Animate a small circle along the path to show data flow direction                                        | Medium     |
+| Edge width by activity       | Vary `strokeWidth` proportional to message count from Relay metrics                                      | Medium     |
+| `EdgeToolbar` on select      | Floating unscaled button bar — "Revoke access", "View trace", "Copy rule"                                | Low        |
+| Deny-rule edges              | Currently, deny rules produce NO edge. Add a red dashed `deny` edge type                                 | Low        |
 
 The SVG `animateMotion` particle pattern (a circle moving along the edge path) is the signature feature of Kiali's traffic animation — it immediately communicates directionality and activity level. It is natively supported in React Flow's `animating-edges` example using `<animateMotion>` on an SVG element.
 
@@ -108,6 +109,7 @@ The SVG `animateMotion` particle pattern (a circle moving along the edge path) i
 
 **Arc/Ring Health Indicator (Grafana Node Graph pattern)**:
 Grafana's node graph wraps each circle node in colored arc segments. For DorkOS rect nodes, the ring maps to a small `24×24` SVG circle in the node:
+
 - Full green arc = `active`
 - Partial amber arc (~60%) = `inactive`
 - Minimal gray arc (~20%) = `stale`
@@ -123,7 +125,9 @@ function HealthRing({ status }: { status: 'active' | 'inactive' | 'stale' }) {
     <svg width="24" height="24" className="shrink-0">
       <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-border)" strokeWidth="2" />
       <circle
-        cx="12" cy="12" r="10"
+        cx="12"
+        cy="12"
+        r="10"
         fill="none"
         stroke={COLOR[status]}
         strokeWidth="2"
@@ -153,19 +157,22 @@ When `onSelectAgent` fires, use `useReactFlow().setCenter(x, y, { zoom: 1.4, dur
 ```typescript
 const { setCenter, getNode } = useReactFlow();
 
-const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-  if (node.type === 'agent') {
-    const n = getNode(node.id);
-    if (n) {
-      setCenter(
-        n.position.x + (n.measured?.width ?? AGENT_NODE_WIDTH) / 2,
-        n.position.y + (n.measured?.height ?? AGENT_NODE_HEIGHT) / 2,
-        { zoom: 1.4, duration: 350 }
-      );
+const handleNodeClick = useCallback(
+  (_: React.MouseEvent, node: Node) => {
+    if (node.type === 'agent') {
+      const n = getNode(node.id);
+      if (n) {
+        setCenter(
+          n.position.x + (n.measured?.width ?? AGENT_NODE_WIDTH) / 2,
+          n.position.y + (n.measured?.height ?? AGENT_NODE_HEIGHT) / 2,
+          { zoom: 1.4, duration: 350 }
+        );
+      }
+      onSelectAgent?.(node.id);
     }
-    onSelectAgent?.(node.id);
-  }
-}, [onSelectAgent, setCenter, getNode]);
+  },
+  [onSelectAgent, setCenter, getNode]
+);
 ```
 
 Note: `useReactFlow()` requires the calling component to be a descendant of `<ReactFlowProvider>`. The cleanest fix is wrapping `TopologyGraph` at its usage site in `MeshPanel` with `<ReactFlowProvider>`, then extracting an inner component that uses the hook.
@@ -179,6 +186,7 @@ For a sidebar panel (not full-screen), set `panOnScroll={true}` and `zoomOnScrol
 ### 7. Performance
 
 React Flow optimization props:
+
 - `onlyRenderVisibleElements` — only renders nodes currently in the viewport. Set to `true`.
 - `nodesDraggable={false}` and `nodesConnectable={false}` for read-only topology (avoids unnecessary event handlers)
 - `NODE_TYPES` and `EDGE_TYPES` already correctly defined outside the component (referentially stable — do not move inside)
@@ -189,12 +197,7 @@ At 50–100 nodes (realistic for a multi-team DorkOS deployment), performance re
 ### 8. Background Component
 
 ```tsx
-<Background
-  variant={BackgroundVariant.Dots}
-  gap={20}
-  size={1}
-  color="var(--color-border)"
-/>
+<Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border)" />
 ```
 
 `Dots` at `gap={20}`, `size={1}` creates a very subtle dot grid. The `--color-border` CSS variable is already correctly themed for light/dark mode in the project's Tailwind CSS 4 setup.
@@ -202,6 +205,7 @@ At 50–100 nodes (realistic for a multi-team DorkOS deployment), performance re
 ### 9. Deny-Rule Edges
 
 Currently, `deny` access rules produce zero visual output — the code has `if (rule.action !== 'allow') continue;`. A red dashed edge between namespace hubs for deny rules would:
+
 - Make the ACL policy visible at a glance
 - Make "deny" feel like an intentional, visible action (not invisible absence)
 - Help operators debug misconfigured namespace isolation
@@ -231,6 +235,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 ### Kiali (Istio Service Mesh)
 
 **What makes it great**:
+
 - Four graph modes (workload / app / versioned app / service) for different abstraction levels
 - Traffic animation: circles for successful requests, red diamonds for errors — density encodes rate
 - Color coding: edges AND nodes encode health state
@@ -239,6 +244,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 - Find/hide filtering for large graphs
 
 **Applicable to DorkOS**:
+
 - Traffic animation on cross-namespace edges (particle = Relay message activity)
 - Double-click for drilldown (more deliberate than single-click)
 - Namespace-based graph modes (hub view vs. flat agent view)
@@ -246,12 +252,14 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 ### Datadog APM Service Map
 
 **What makes it great**:
+
 - Nodes = services with monitor health embedded directly (no separate panel needed to see status)
 - Edges = request rate, error rate, latency revealed on hover
 - Grouping by team or application as colored region backgrounds
 - Highlighted edges for highest throughput paths
 
 **Applicable to DorkOS**:
+
 - Embed message count or last-active timestamp directly on nodes (zoom-dependent)
 - On edge hover: show access rule details inline via `EdgeToolbar` or `EdgeLabelRenderer` tooltip
 - When Relay metrics are available: vary edge stroke width by message throughput
@@ -259,6 +267,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 ### Grafana Node Graph Panel
 
 **What makes it great**:
+
 - Arc segments around node circles: each arc encodes a health metric as a proportion
 - Nodes have configurable main stat and secondary stat displayed inside the circle
 - Edge thickness encodes traffic volume
@@ -266,6 +275,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 - Grid layout fallback for accessibility
 
 **Applicable to DorkOS**:
+
 - Health arc ring (SVG `strokeDasharray` technique) on AgentNode
 - Main stat inside node body (last message count at high zoom)
 - Edge thickness variation based on Relay activity
@@ -273,22 +283,26 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 ### Headlamp / Kubernetes Dashboard
 
 **What makes it great**:
+
 - Application-centric grouping across namespaces (Projects feature)
 - Map view + list view as complementary views of the same data
 - Real-time status without page refresh
 
 **Applicable to DorkOS**:
+
 - The existing Topology (graph) + Agents (list) tab pattern already implements this correctly
 - Add auto-refresh polling or SSE-based topology updates
 
 ### Figma / FigJam Canvas Patterns
 
 **What users love**:
+
 - Minimap as navigation anchor
 - Fit-to-selection (not just fit-all)
 - Selection box for multi-select
 
 **Applicable to DorkOS**:
+
 - Fit-to-selection: when user clicks a namespace hub, `fitView({ nodes: [hubNode, ...agentNodes], duration: 300 })`
 
 ---
@@ -300,6 +314,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 **Description**: Add `<Background>` dots, `<MiniMap>` with namespace colors, and `colorMode="system"` to `ReactFlow`. Also add `onlyRenderVisibleElements`, `nodesDraggable={false}`, `nodesConnectable={false}`, `panOnScroll={true}`, `zoomOnScroll={false}`.
 
 **Visual outcome**:
+
 - Dot grid provides spatial reference — users know where they are relative to the canvas
 - MiniMap shows full topology at a glance when user is panned or zoomed in
 - Dark mode works correctly without CSS variable mismatches
@@ -314,6 +329,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 **UX Impact**: High — grounding the canvas is fundamental; users without a reference grid feel spatially lost
 
 **Implementation sketch**:
+
 ```tsx
 <ReactFlow
   colorMode="system"
@@ -343,6 +359,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 **Description**: Use `useStore((s) => s.transform[2])` inside `AgentNode` to render three detail levels.
 
 **Visual outcome**:
+
 - Zoomed out (< 0.6): compact 32px pill — colored dot + truncated name only (no badges)
 - Default (0.6–1.2): current design
 - Zoomed in (> 1.2): full card — adds description line, adapter icons, last-seen, budget limits
@@ -356,6 +373,7 @@ At the top-right corner, this gives users a bird's-eye view of the entire topolo
 **UX Impact**: Very high for graphs with 10+ agents
 
 **Key code pattern** (from React Flow docs):
+
 ```typescript
 // Inside AgentNodeComponent
 const isCompact = useStore((s) => s.transform[2] < 0.6);
@@ -513,29 +531,29 @@ For smart fitView: track previous agent count with `useRef`; only call `fitView(
 
 These can be shipped in a single focused session. No structural changes required.
 
-| # | Enhancement | Files changed | Effort | UX Impact |
-|---|---|---|---|---|
-| 1 | `<Background>` dots + `colorMode="system"` + read-only props | `TopologyGraph.tsx` | 30 min | High |
-| 2 | `<MiniMap>` with namespace colors | `TopologyGraph.tsx` | 1 hr | High |
-| 3 | `DenyEdge` type + legend update | New `DenyEdge.tsx`, `TopologyGraph.tsx`, `TopologyLegend.tsx` | 1 hr | High |
-| 4 | `onlyRenderVisibleElements` + performance props | `TopologyGraph.tsx` | 15 min | Medium |
-| 5 | Auto-refresh polling (15s) + smart fitView | `use-mesh-topology.ts`, `TopologyGraph.tsx` | 45 min | Medium |
+| #   | Enhancement                                                  | Files changed                                                 | Effort | UX Impact |
+| --- | ------------------------------------------------------------ | ------------------------------------------------------------- | ------ | --------- |
+| 1   | `<Background>` dots + `colorMode="system"` + read-only props | `TopologyGraph.tsx`                                           | 30 min | High      |
+| 2   | `<MiniMap>` with namespace colors                            | `TopologyGraph.tsx`                                           | 1 hr   | High      |
+| 3   | `DenyEdge` type + legend update                              | New `DenyEdge.tsx`, `TopologyGraph.tsx`, `TopologyLegend.tsx` | 1 hr   | High      |
+| 4   | `onlyRenderVisibleElements` + performance props              | `TopologyGraph.tsx`                                           | 15 min | Medium    |
+| 5   | Auto-refresh polling (15s) + smart fitView                   | `use-mesh-topology.ts`, `TopologyGraph.tsx`                   | 45 min | Medium    |
 
 ### Tier 2 — Core Elevation (1–2 days total)
 
-| # | Enhancement | Files changed | Effort | UX Impact |
-|---|---|---|---|---|
-| 6 | Fly-to selection (`ReactFlowProvider` + `setCenter`) | `MeshPanel.tsx`, `TopologyGraph.tsx` | 2 hr | Very High |
-| 7 | `NodeToolbar` on select (Copy ID, secondary actions) | `AgentNode.tsx` | 1.5 hr | Medium–High |
-| 8 | Contextual zoom LOD in `AgentNode` | `AgentNode.tsx` | 3–4 hr | Very High |
-| 9 | Health arc SVG ring replacing dot indicator | `AgentNode.tsx` | 2–3 hr | High |
+| #   | Enhancement                                          | Files changed                        | Effort | UX Impact   |
+| --- | ---------------------------------------------------- | ------------------------------------ | ------ | ----------- |
+| 6   | Fly-to selection (`ReactFlowProvider` + `setCenter`) | `MeshPanel.tsx`, `TopologyGraph.tsx` | 2 hr   | Very High   |
+| 7   | `NodeToolbar` on select (Copy ID, secondary actions) | `AgentNode.tsx`                      | 1.5 hr | Medium–High |
+| 8   | Contextual zoom LOD in `AgentNode`                   | `AgentNode.tsx`                      | 3–4 hr | Very High   |
+| 9   | Health arc SVG ring replacing dot indicator          | `AgentNode.tsx`                      | 2–3 hr | High        |
 
 ### Tier 3 — Signature Delight (3–4 days total)
 
-| # | Enhancement | Files changed | Effort | UX Impact |
-|---|---|---|---|---|
-| 10 | Animated SVG particle on allow-rule edges | `CrossNamespaceEdge.tsx` | 3–4 hr | Very High (visual signature) |
-| 11 | Namespace group node containers (ELK.js) | `TopologyGraph.tsx`, new `NamespaceGroupNode.tsx` | 8–12 hr | Very High (structural) |
+| #   | Enhancement                               | Files changed                                     | Effort  | UX Impact                    |
+| --- | ----------------------------------------- | ------------------------------------------------- | ------- | ---------------------------- |
+| 10  | Animated SVG particle on allow-rule edges | `CrossNamespaceEdge.tsx`                          | 3–4 hr  | Very High (visual signature) |
+| 11  | Namespace group node containers (ELK.js)  | `TopologyGraph.tsx`, new `NamespaceGroupNode.tsx` | 8–12 hr | Very High (structural)       |
 
 ### What NOT to Add (Calm Tech Violations)
 
@@ -574,6 +592,7 @@ Option A is cleaner and matches the React Flow documentation pattern.
 ### dagre → ELK.js Migration Path
 
 If namespace group containers (Tier 3, item 11) are pursued:
+
 1. Install `elkjs` and `web-worker` packages
 2. Replace `applyDagreLayout` with an async `applyElkLayout` function
 3. Handle async layout with `useState` + `useEffect`
@@ -585,10 +604,12 @@ The migration is self-contained: all layout logic lives in the `applyDagreLayout
 ### `animateMotion` and Path IDs
 
 React Flow renders edge SVG paths without exposing `id` attributes on the `<path>` element. To use `<mpath href="#id">`, you need to:
+
 1. Render a duplicate hidden `<path>` with a stable `id` based on `props.id`
 2. Or use `keyPoints`/`keyTimes` on `<animateMotion>` directly with `path` attribute instead of `<mpath>`
 
 The `path` attribute approach is simpler:
+
 ```tsx
 <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
 ```
@@ -598,6 +619,7 @@ The `path` attribute approach is simpler:
 ### `colorMode` and Tailwind CSS 4
 
 React Flow's `colorMode="system"` adds a `dark` class to the `.react-flow__renderer` wrapper div (not to `html`). This means:
+
 - React Flow's internal CSS variables respond to dark mode correctly
 - Tailwind classes on custom nodes (which use `html.dark`) are unaffected — they already work via the existing Tailwind dark mode setup
 

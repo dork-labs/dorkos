@@ -64,10 +64,12 @@
 Executed 13 tasks in 7 parallel batches. Two-layer fix approach:
 
 **Layer 1 — Synchronous state resets (P1):**
+
 - `streamReadyRef` unconditionally reset before each `waitForStreamReady()` call
 - `statusRef.current` set synchronously alongside `setStatus('streaming')` to close timing window
 
 **Layer 2 — Per-message correlation ID (P2):**
+
 - Full pipeline: client generates UUID → POST body → relay envelope → adapter echo → SSE event → client filter
 - Late-arriving events from previous messages are discarded via correlationId mismatch
 - Backward compatible: missing correlationId passes through unfiltered

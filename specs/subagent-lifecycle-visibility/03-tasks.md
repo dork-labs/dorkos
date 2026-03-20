@@ -15,6 +15,7 @@
 Add the three subagent lifecycle event schemas (`SubagentStartedEventSchema`, `SubagentProgressEventSchema`, `SubagentDoneEventSchema`), the `SubagentPartSchema` message part type, and all type re-exports to the shared package.
 
 **Files:**
+
 - `packages/shared/src/schemas.ts` — Add 3 enum values to `StreamEventTypeSchema`, 3 event schemas, 3 event schemas to `StreamEventSchema` data union, `SubagentPartSchema` + add to `MessagePartSchema` discriminated union
 - `packages/shared/src/types.ts` — Add 4 type re-exports (`SubagentStartedEvent`, `SubagentProgressEvent`, `SubagentDoneEvent`, `SubagentPart`)
 
@@ -27,6 +28,7 @@ Add the three subagent lifecycle event schemas (`SubagentStartedEventSchema`, `S
 Add three mapping branches to `sdk-event-mapper.ts` for `task_started`, `task_progress`, `task_notification` system subtypes. Add SDK scenario builders and create a dedicated mapper test file.
 
 **Files:**
+
 - `apps/server/src/services/runtimes/claude-code/sdk-event-mapper.ts` — 3 new mapping branches after `system/init` check
 - `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts` — 3 new builders (`sdkTaskStarted`, `sdkTaskProgress`, `sdkTaskNotification`)
 - `apps/server/src/services/runtimes/claude-code/__tests__/sdk-event-mapper.test.ts` — NEW: 6 test cases for mapper
@@ -43,6 +45,7 @@ Add three mapping branches to `sdk-event-mapper.ts` for `task_started`, `task_pr
 Add three switch cases (`subagent_started`, `subagent_progress`, `subagent_done`) to the client's stream event handler. Add `findSubagentPart` helper. Update `deriveFromParts` to skip SubagentParts.
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/model/stream-event-handler.ts` — New imports, `findSubagentPart` helper, 3 switch cases, `deriveFromParts` update
 
 ---
@@ -54,6 +57,7 @@ Add three switch cases (`subagent_started`, `subagent_progress`, `subagent_done`
 Create the `SubagentBlock` collapsible inline component with `formatDuration`, `buildToolSummary` helpers, status icons, AnimatePresence expand/collapse, and `toolStatus` CVA integration.
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/ui/SubagentBlock.tsx` — NEW: Full component implementation
 
 ---
@@ -65,6 +69,7 @@ Create the `SubagentBlock` collapsible inline component with `formatDuration`, `
 Add SubagentBlock rendering branch in the `AssistantMessageContent` parts iteration, before the `AutoHideToolCall` fallback.
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` — Import + dispatch branch for `part.type === 'subagent'`
 
 ---
@@ -76,6 +81,7 @@ Add SubagentBlock rendering branch in the `AssistantMessageContent` parts iterat
 Create component tests covering running/complete/error states, tool summary formatting, expand/collapse behavior, lastToolName visibility rules, and formatDuration via rendered output.
 
 **Files:**
+
 - `apps/client/src/layers/features/chat/ui/__tests__/SubagentBlock.test.tsx` — NEW: ~12 test cases
 
 ---
@@ -89,6 +95,7 @@ Create component tests covering running/complete/error states, tool summary form
 Run `pnpm typecheck`, `pnpm lint`, `pnpm test -- --run`. Update `contributing/api-reference.md` to include the three new event types in the SSE events list.
 
 **Files:**
+
 - `contributing/api-reference.md` — Add `subagent_started`, `subagent_progress`, `subagent_done` to event types list
 
 ---
@@ -113,9 +120,9 @@ Run `pnpm typecheck`, `pnpm lint`, `pnpm test -- --run`. Update `contributing/ap
 
 ## Summary
 
-| Phase | Tasks | Parallel Opportunities |
-|-------|-------|----------------------|
-| P1: Schema + Server | 2 | None (1.2 depends on 1.1) |
-| P2: Client Integration | 4 | 2.1 ∥ 2.2; 2.3 ∥ 2.4 |
-| P3: Verification | 1 | None (final gate) |
-| **Total** | **7** | **2 parallel pairs** |
+| Phase                  | Tasks | Parallel Opportunities    |
+| ---------------------- | ----- | ------------------------- |
+| P1: Schema + Server    | 2     | None (1.2 depends on 1.1) |
+| P2: Client Integration | 4     | 2.1 ∥ 2.2; 2.3 ∥ 2.4      |
+| P3: Verification       | 1     | None (final gate)         |
+| **Total**              | **7** | **2 parallel pairs**      |

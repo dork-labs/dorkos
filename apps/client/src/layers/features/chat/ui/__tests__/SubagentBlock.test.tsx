@@ -106,9 +106,7 @@ describe('SubagentBlock', () => {
 
   it('shows lastToolName when status is running and expanded', () => {
     render(
-      <SubagentBlock
-        part={{ ...basePart, status: 'running', lastToolName: 'Bash', toolUses: 1 }}
-      />
+      <SubagentBlock part={{ ...basePart, status: 'running', lastToolName: 'Bash', toolUses: 1 }} />
     );
     const button = screen.getByRole('button');
     fireEvent.click(button);
@@ -133,7 +131,9 @@ describe('SubagentBlock', () => {
 
   it('shows summary when expanded', () => {
     render(
-      <SubagentBlock part={{ ...basePart, status: 'complete', summary: 'Task finished successfully.' }} />
+      <SubagentBlock
+        part={{ ...basePart, status: 'complete', summary: 'Task finished successfully.' }}
+      />
     );
     const button = screen.getByRole('button');
     fireEvent.click(button);

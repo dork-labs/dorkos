@@ -8,6 +8,7 @@ description: Methodology for writing and maintaining DorkOS browser tests
 ## 1. When to Write a Browser Test vs Unit Test
 
 **Browser test (Playwright):**
+
 - Cross-component flows (sidebar click updates chat panel)
 - SSE streaming verification (message send → streaming indicator → response rendered)
 - Real API calls through the full stack (client → Express → Agent SDK)
@@ -15,6 +16,7 @@ description: Methodology for writing and maintaining DorkOS browser tests
 - Browser-specific behavior (keyboard shortcuts, focus management)
 
 **Unit test (Vitest):**
+
 - Individual component rendering and props
 - Hook logic and state transitions
 - Service functions and data transformations
@@ -73,16 +75,18 @@ import { test, expect } from '../../fixtures';
 Priority order:
 
 1. **`getByRole()`** — Best: semantic, resilient to UI changes
+
    ```typescript
-   page.getByRole('button', { name: /send/i })
-   page.getByRole('textbox', { name: /message/i })
-   page.getByRole('tab', { name: /settings/i })
+   page.getByRole('button', { name: /send/i });
+   page.getByRole('textbox', { name: /message/i });
+   page.getByRole('tab', { name: /settings/i });
    ```
 
 2. **`data-testid`** — Good: stable contract between test and implementation
+
    ```typescript
-   page.locator('[data-testid="chat-panel"]')
-   page.locator('[data-testid="message-item"][data-role="assistant"]')
+   page.locator('[data-testid="chat-panel"]');
+   page.locator('[data-testid="message-item"][data-role="assistant"]');
    ```
 
 3. **CSS class** — Last resort: fragile, breaks on styling changes. Avoid unless no other option.
@@ -97,9 +101,12 @@ Instead:
 - **Element disappearance**: `locator.waitFor({ state: 'hidden' })`
 - **Streaming responses**: Wait for inference indicator lifecycle
   ```typescript
-  await page.locator('[data-testid="inference-indicator-streaming"]')
-    .waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-  await page.locator('[data-testid="inference-indicator-streaming"]')
+  await page
+    .locator('[data-testid="inference-indicator-streaming"]')
+    .waitFor({ state: 'visible', timeout: 10_000 })
+    .catch(() => {});
+  await page
+    .locator('[data-testid="inference-indicator-streaming"]')
     .waitFor({ state: 'hidden', timeout: 60_000 });
   ```
 - **Navigation**: `await expect(page).toHaveURL(/session=/)`
@@ -203,7 +210,7 @@ For browser tests that don't need real Claude API responses, use the `chromium-m
 ```typescript
 const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
 await request.post(`http://localhost:${MOCK_PORT}/api/test/scenario`, {
-  data: { name: 'simple-text' },  // or 'tool-call', 'todo-write', 'error'
+  data: { name: 'simple-text' }, // or 'tool-call', 'todo-write', 'error'
 });
 ```
 

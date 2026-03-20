@@ -1,7 +1,7 @@
 ---
 number: 106
 slug: upload-files
-title: "File Uploads in Chat"
+title: 'File Uploads in Chat'
 status: draft
 created: 2026-03-09
 authors: [Claude Code]
@@ -47,13 +47,14 @@ Claude Code agents already have filesystem tools (`Read`, `cat`, `bash`) that ca
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose | Package |
-|---|---|---|---|
-| `react-dropzone` | ^14.x | Cross-browser drag-and-drop file selection | `apps/client` |
-| `multer` | ^1.x | Express multipart/form-data middleware | `apps/server` |
-| `@types/multer` | ^1.x | TypeScript types for multer | `apps/server` (dev) |
+| Dependency       | Version | Purpose                                    | Package             |
+| ---------------- | ------- | ------------------------------------------ | ------------------- |
+| `react-dropzone` | ^14.x   | Cross-browser drag-and-drop file selection | `apps/client`       |
+| `multer`         | ^1.x    | Express multipart/form-data middleware     | `apps/server`       |
+| `@types/multer`  | ^1.x    | TypeScript types for multer                | `apps/server` (dev) |
 
 Existing dependencies leveraged:
+
 - `motion` (^12.x) — drag overlay animation
 - `lucide-react` — `Paperclip`, `X`, `Loader2` icons
 - `@tanstack/react-query` — `useMutation` for upload
@@ -206,9 +207,10 @@ router.post('/', async (req, res) => {
     upload.array('files', uploadConfig.maxFiles)(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
-          const message = err.code === 'LIMIT_FILE_SIZE'
-            ? `File too large (max ${uploadConfig.maxFileSize / 1024 / 1024}MB)`
-            : err.message;
+          const message =
+            err.code === 'LIMIT_FILE_SIZE'
+              ? `File too large (max ${uploadConfig.maxFileSize / 1024 / 1024}MB)`
+              : err.message;
           return res.status(400).json({ error: message, code: err.code });
         }
         return res.status(400).json({ error: err.message });
@@ -457,17 +459,11 @@ export function useFileUpload() {
     mutationFn: async (files: PendingFile[]) => {
       if (!selectedCwd) throw new Error('No working directory selected');
 
-      setPendingFiles((prev) =>
-        prev.map((f) => ({ ...f, status: 'uploading' as const }))
-      );
+      setPendingFiles((prev) => prev.map((f) => ({ ...f, status: 'uploading' as const })));
 
       const onProgress = (progress: UploadProgress) => {
         setPendingFiles((prev) =>
-          prev.map((f) =>
-            f.status === 'uploading'
-              ? { ...f, progress: progress.percentage }
-              : f
-          )
+          prev.map((f) => (f.status === 'uploading' ? { ...f, progress: progress.percentage } : f))
         );
       };
 
@@ -531,26 +527,30 @@ In `ChatPanel.tsx`, the `handleSubmit` flow is modified to upload files first, t
 // In ChatPanel
 const fileUpload = useFileUpload();
 
-const transformContent = useCallback(async (content: string) => {
-  if (!fileUpload.hasPendingFiles) return content;
+const transformContent = useCallback(
+  async (content: string) => {
+    if (!fileUpload.hasPendingFiles) return content;
 
-  const paths = await fileUpload.uploadAndGetPaths();
-  fileUpload.clearFiles();
+    const paths = await fileUpload.uploadAndGetPaths();
+    fileUpload.clearFiles();
 
-  if (paths.length === 0) return content;
+    if (paths.length === 0) return content;
 
-  // Convert absolute paths to relative paths from cwd
-  const relativePaths = paths.map((p) => {
-    const cwdPrefix = selectedCwd ? selectedCwd + '/' : '';
-    return p.startsWith(cwdPrefix) ? p.slice(cwdPrefix.length) : p;
-  });
+    // Convert absolute paths to relative paths from cwd
+    const relativePaths = paths.map((p) => {
+      const cwdPrefix = selectedCwd ? selectedCwd + '/' : '';
+      return p.startsWith(cwdPrefix) ? p.slice(cwdPrefix.length) : p;
+    });
 
-  const fileSection = relativePaths.length === 1
-    ? `Please read the following uploaded file:\n- ${relativePaths[0]}`
-    : `Please read the following uploaded files:\n${relativePaths.map((p) => `- ${p}`).join('\n')}`;
+    const fileSection =
+      relativePaths.length === 1
+        ? `Please read the following uploaded file:\n- ${relativePaths[0]}`
+        : `Please read the following uploaded files:\n${relativePaths.map((p) => `- ${p}`).join('\n')}`;
 
-  return `${fileSection}\n\n${content}`;
-}, [fileUpload, selectedCwd]);
+    return `${fileSection}\n\n${content}`;
+  },
+  [fileUpload, selectedCwd]
+);
 ```
 
 The `transformContent` callback is passed to `useChatSession({ transformContent })`. The hook already supports this — see `use-chat-session.ts` line 386:
@@ -665,7 +665,7 @@ export function FileChipBar({ files, onRemove }: FileChipBarProps) {
             {file.status === 'uploading' ? (
               <Loader2 className="text-muted-foreground size-3 animate-spin" />
             ) : file.status === 'error' ? (
-              <AlertCircle className="size-3 text-destructive" />
+              <AlertCircle className="text-destructive size-3" />
             ) : (
               <FileIcon className="text-muted-foreground size-3" />
             )}
@@ -673,9 +673,7 @@ export function FileChipBar({ files, onRemove }: FileChipBarProps) {
             <span className="max-w-32 truncate">{file.file.name}</span>
 
             {file.status === 'uploading' && (
-              <span className="text-muted-foreground tabular-nums">
-                {file.progress}%
-              </span>
+              <span className="text-muted-foreground tabular-nums">{file.progress}%</span>
             )}
 
             <button
@@ -700,30 +698,32 @@ Add a paperclip button to `ChatInput.tsx`. New prop: `onAttach?: (files: File[])
 
 ```tsx
 // Inside ChatInput, before the textarea in the flex container:
-{onAttach && (
-  <>
-    <input
-      ref={fileInputRef}
-      type="file"
-      className="hidden"
-      multiple
-      onChange={(e) => {
-        const files = Array.from(e.target.files ?? []);
-        if (files.length > 0) onAttach(files);
-        e.target.value = ''; // Reset so same file can be re-selected
-      }}
-    />
-    <button
-      type="button"
-      onClick={() => fileInputRef.current?.click()}
-      disabled={isDisabled}
-      className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50"
-      aria-label="Attach file"
-    >
-      <Paperclip className="size-4" />
-    </button>
-  </>
-)}
+{
+  onAttach && (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        multiple
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          if (files.length > 0) onAttach(files);
+          e.target.value = ''; // Reset so same file can be re-selected
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isDisabled}
+        className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50"
+        aria-label="Attach file"
+      >
+        <Paperclip className="size-4" />
+      </button>
+    </>
+  );
+}
 ```
 
 The button sits left of the textarea. The hidden file input is invisible but triggered by the button click.
@@ -767,6 +767,7 @@ The button sits left of the textarea. The hidden file input is invisible but tri
 ### Unit Tests
 
 **`apps/server/src/services/core/__tests__/upload-handler.test.ts`**
+
 - Sanitizes filenames correctly (strips `..`, `/`, null bytes, special chars)
 - Generates unique filenames with UUID prefix
 - Creates upload directory recursively
@@ -775,6 +776,7 @@ The button sits left of the textarea. The hidden file input is invisible but tri
 - Allows all types when allowedTypes is `['*/*']`
 
 **`apps/server/src/routes/__tests__/uploads.test.ts`**
+
 - Returns 400 when cwd is missing
 - Returns 400 when no files provided
 - Returns 403 when cwd fails boundary validation
@@ -783,6 +785,7 @@ The button sits left of the textarea. The hidden file input is invisible but tri
 - Respects maxFiles config limit
 
 **`apps/client/src/layers/features/chat/model/__tests__/use-file-upload.test.ts`**
+
 - `addFiles` adds files to pending state
 - `removeFile` removes a specific file by id
 - `clearFiles` empties the pending list
@@ -792,6 +795,7 @@ The button sits left of the textarea. The hidden file input is invisible but tri
 - Error state is set when upload fails
 
 **`apps/client/src/layers/features/chat/ui/__tests__/FileChipBar.test.tsx`**
+
 - Renders file chips for each pending file
 - Shows spinner icon during upload
 - Shows error icon on failed upload
@@ -800,6 +804,7 @@ The button sits left of the textarea. The hidden file input is invisible but tri
 - Shows progress percentage during upload
 
 **`apps/client/src/layers/features/chat/ui/__tests__/ChatInputContainer.test.tsx`**
+
 - Renders drag overlay when isDragActive (mock useDropzone)
 - Hides drag overlay when not dragging
 - Renders file chips when pendingFiles is non-empty

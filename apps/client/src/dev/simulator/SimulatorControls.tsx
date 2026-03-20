@@ -47,7 +47,7 @@ export function SimulatorControls({
     (value: number[]) => {
       sim.seekTo(value[0]);
     },
-    [sim],
+    [sim]
   );
 
   return (
@@ -70,21 +70,11 @@ export function SimulatorControls({
 
         {/* Transport buttons */}
         <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            onClick={sim.reset}
-            aria-label="Reset"
-          >
+          <Button variant="outline" size="icon-sm" onClick={sim.reset} aria-label="Reset">
             <RotateCcw className="size-3.5" />
           </Button>
           {isPlaying ? (
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={sim.pause}
-              aria-label="Pause"
-            >
+            <Button variant="outline" size="icon-sm" onClick={sim.pause} aria-label="Pause">
               <Pause className="size-3.5" />
             </Button>
           ) : (
@@ -148,7 +138,7 @@ export function SimulatorControls({
             sim.phase === 'idle' && 'bg-muted text-muted-foreground',
             sim.phase === 'playing' && 'bg-green-500/15 text-green-600 dark:text-green-400',
             sim.phase === 'paused' && 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400',
-            sim.phase === 'done' && 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+            sim.phase === 'done' && 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
           )}
         >
           {sim.phase}

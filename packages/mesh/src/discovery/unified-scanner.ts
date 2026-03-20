@@ -50,7 +50,7 @@ export async function* unifiedScan(
   options: UnifiedScanOptions,
   strategies: DiscoveryStrategy[],
   registry: RegistryLike,
-  denialList: DenialListLike,
+  denialList: DenialListLike
 ): AsyncGenerator<ScanEvent> {
   const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
   const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
@@ -113,7 +113,9 @@ export async function* unifiedScan(
       // Read directory entries — catch permission errors gracefully
       let entries: import('node:fs').Dirent<string>[];
       try {
-        entries = (await fs.readdir(dir, { withFileTypes: true })) as import('node:fs').Dirent<string>[];
+        entries = (await fs.readdir(dir, {
+          withFileTypes: true,
+        })) as import('node:fs').Dirent<string>[];
       } catch (err: unknown) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code === 'EACCES' || code === 'EPERM') {

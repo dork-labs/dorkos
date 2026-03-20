@@ -1,5 +1,5 @@
 ---
-title: "Turborepo + dotenv-cli: Environment Variable Handling Research"
+title: 'Turborepo + dotenv-cli: Environment Variable Handling Research'
 date: 2026-02-22
 type: implementation
 status: active
@@ -32,17 +32,17 @@ The `"dev": "dotenv -- turbo dev"` pattern appears in Turborepo's own older hand
 - The issue tracker shows this as a persistent pain point: [Discussion #7056](https://github.com/vercel/turborepo/discussions/7056), [Issue #8454](https://github.com/vercel/turborepo/issues/8454), [Discussion #8905](https://github.com/vercel/turborepo/discussions/8905).
 - Turborepo maintainers closed Issue #8454 as "not planned" — they consider strict mode the correct default and expect teams to explicitly declare vars.
 
-**DorkOS current situation**: Because the `dev` task has `cache: false` and `persistent: true`, Turborepo's caching engine is not involved and does not filter env vars by hash key. This means dotenv-cli vars *do* reach the server/client dev processes in practice. However, this is not guaranteed to be the documented behavior — it is a side effect of the caching being disabled.
+**DorkOS current situation**: Because the `dev` task has `cache: false` and `persistent: true`, Turborepo's caching engine is not involved and does not filter env vars by hash key. This means dotenv-cli vars _do_ reach the server/client dev processes in practice. However, this is not guaranteed to be the documented behavior — it is a side effect of the caching being disabled.
 
 ### 2. The Three Configuration Axes in turbo.json
 
 Turborepo provides three independent mechanisms, frequently confused with each other:
 
-| Config Key | Scope | Affects Cache Hash? | Purpose |
-|---|---|---|---|
-| `env` / `globalEnv` | Task / Global | **Yes** | Variables that should bust cache when they change |
-| `passThroughEnv` / `globalPassThroughEnv` | Task / Global | **No** | Variables that must be available at runtime but should not affect caching |
-| `envMode` | Global | N/A | `strict` (default) = filter to declared vars only; `loose` = pass all vars through |
+| Config Key                                | Scope         | Affects Cache Hash? | Purpose                                                                            |
+| ----------------------------------------- | ------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| `env` / `globalEnv`                       | Task / Global | **Yes**             | Variables that should bust cache when they change                                  |
+| `passThroughEnv` / `globalPassThroughEnv` | Task / Global | **No**              | Variables that must be available at runtime but should not affect caching          |
+| `envMode`                                 | Global        | N/A                 | `strict` (default) = filter to declared vars only; `loose` = pass all vars through |
 
 **The core rule**: In `strict` mode (default since Turborepo 2.0), only vars declared in `env`, `globalEnv`, `passThroughEnv`, or `globalPassThroughEnv` reach task processes. All others are silently filtered out regardless of whether dotenv-cli loaded them.
 
@@ -74,6 +74,7 @@ This is the correct behavior for most workflows — developers can override indi
 This is frequently misunderstood: **Turborepo has no `.env` loading capability**. The `globalDotEnv` and `dotEnv` configuration keys in `turbo.json` exist only to tell Turborepo to **watch those files for changes** and include their contents in the **cache hash calculation**. They do not cause Turborepo to actually inject the variables into task environments.
 
 The actual loading must be done by:
+
 - The app's framework (Vite, Next.js, etc. load their own `.env.*` files)
 - dotenv-cli wrapping the turbo command
 - dotenvx
@@ -97,10 +98,12 @@ Turborepo's official guidance: "We recommend placing your `.env` files into the 
 ```
 
 **What works correctly**:
+
 - `npm run dev`: dotenv-cli loads `.env`, passes vars to turbo. Because `dev` is `cache:false/persistent`, the caching machinery does not filter vars. The server process receives them.
 - The `.env.example` documents exactly which vars exist, which is good hygiene.
 
 **What has risk**:
+
 - `npm run build` / `npm run test`: dotenv-cli loads vars into the turbo invocation environment, but turbo 2.x strict mode will only pass declared vars to child processes. The `build` task declares `DORKOS_PORT`, `VITE_*` etc. in `env` — these are covered. But any vars from `.env` that are NOT in the `env` array will be silently dropped.
 - `npm run test` / `npm run typecheck`: No `env` declarations at all. In strict mode, custom vars from `.env` will not be available to test processes unless they are declared.
 - **The `turbo` binary at version `^2.8.7` is running in strict mode by default** — this is the current version in DorkOS.

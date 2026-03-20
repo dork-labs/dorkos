@@ -40,7 +40,7 @@ export interface EndpointManagementDeps {
  */
 export async function executeRegisterEndpoint(
   subject: string,
-  deps: EndpointManagementDeps,
+  deps: EndpointManagementDeps
 ): Promise<EndpointInfo> {
   const info = await deps.endpointRegistry.registerEndpoint(subject);
   await deps.maildirStore.ensureMaildir(info.hash);
@@ -57,7 +57,7 @@ export async function executeRegisterEndpoint(
  */
 export async function executeUnregisterEndpoint(
   subject: string,
-  deps: EndpointManagementDeps,
+  deps: EndpointManagementDeps
 ): Promise<boolean> {
   const endpoint = deps.endpointRegistry.getEndpoint(subject);
   if (endpoint) {
@@ -85,10 +85,7 @@ export function executeListEndpoints(deps: EndpointManagementDeps): EndpointInfo
  * @param deps - Injected dependencies
  * @returns The indexed message, or null if not found
  */
-export function executeGetMessage(
-  id: string,
-  deps: EndpointManagementDeps,
-): IndexedMessage | null {
+export function executeGetMessage(id: string, deps: EndpointManagementDeps): IndexedMessage | null {
   return deps.sqliteIndex.getMessage(id);
 }
 
@@ -100,14 +97,16 @@ export function executeGetMessage(
  * @returns Object with messages array and optional nextCursor
  */
 export function executeListMessages(
-  filters: {
-    subject?: string;
-    status?: string;
-    from?: string;
-    cursor?: string;
-    limit?: number;
-  } | undefined,
-  deps: EndpointManagementDeps,
+  filters:
+    | {
+        subject?: string;
+        status?: string;
+        from?: string;
+        cursor?: string;
+        limit?: number;
+      }
+    | undefined,
+  deps: EndpointManagementDeps
 ): { messages: IndexedMessage[]; nextCursor?: string } {
   return deps.sqliteIndex.queryMessages({
     subject: filters?.subject,
@@ -130,7 +129,7 @@ export function executeListMessages(
 export function executeReadInbox(
   subject: string,
   options: { status?: string; cursor?: string; limit?: number } | undefined,
-  deps: EndpointManagementDeps,
+  deps: EndpointManagementDeps
 ): { messages: IndexedMessage[]; nextCursor?: string } {
   const endpoint = deps.endpointRegistry.getEndpoint(subject);
   if (!endpoint) {
@@ -157,7 +156,7 @@ export function executeReadInbox(
  */
 export async function executeGetDeadLetters(
   options: ListDeadOptions | undefined,
-  deps: EndpointManagementDeps,
+  deps: EndpointManagementDeps
 ): Promise<DeadLetterEntry[]> {
   return deps.deadLetterQueue.listDead(options);
 }
@@ -173,10 +172,7 @@ export async function executeGetDeadLetters(
  * @param rule - The access rule to add (from, to, action, priority)
  * @param deps - Injected dependencies
  */
-export function executeAddAccessRule(
-  rule: RelayAccessRule,
-  deps: EndpointManagementDeps,
-): void {
+export function executeAddAccessRule(rule: RelayAccessRule, deps: EndpointManagementDeps): void {
   deps.accessControl.addRule(rule);
 }
 
@@ -190,7 +186,7 @@ export function executeAddAccessRule(
 export function executeRemoveAccessRule(
   from: string,
   to: string,
-  deps: EndpointManagementDeps,
+  deps: EndpointManagementDeps
 ): void {
   deps.accessControl.removeRule(from, to);
 }

@@ -1,4 +1,9 @@
-import { createUserMessage, createAssistantMessage, createToolCall, createHookState } from '../../mock-chat-data';
+import {
+  createUserMessage,
+  createAssistantMessage,
+  createToolCall,
+  createHookState,
+} from '../../mock-chat-data';
 import { buildStreamingTextSteps } from '../sim-helpers';
 import type { SimScenario } from '../sim-types';
 import type { SubagentPart } from '@dorkos/shared/types';
@@ -14,7 +19,8 @@ const ASST_MSG = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const INTRO_TEXT = "I'll start by exploring the codebase to understand the current auth implementation, then refactor it and add comprehensive test coverage. Let me begin with a search to find all auth-related files.\n\n";
+const INTRO_TEXT =
+  "I'll start by exploring the codebase to understand the current auth implementation, then refactor it and add comprehensive test coverage. Let me begin with a search to find all auth-related files.\n\n";
 
 const GREP_TOOL = createToolCall({
   toolCallId: 'sim-mt-grep',
@@ -45,7 +51,8 @@ const SUBAGENT_PART: SubagentPart = {
   toolUses: 0,
 };
 
-const POST_READ_TEXT = "\n\nI can see the auth module uses an older pattern with shared secrets. Let me also check the session middleware to understand the full authentication flow.\n\n";
+const POST_READ_TEXT =
+  '\n\nI can see the auth module uses an older pattern with shared secrets. Let me also check the session middleware to understand the full authentication flow.\n\n';
 
 const WRITE_TOOL = createToolCall({
   toolCallId: 'sim-mt-write',
@@ -69,7 +76,8 @@ const BASH_TOOL = createToolCall({
   status: 'pending',
 });
 
-const MIDDLE_TEXT = '\n\nThe subagent found good patterns for token rotation. Based on the research, I\'ll refactor the auth module to use RS256 with key rotation and write comprehensive tests. Let me create the test file first.\n\n';
+const MIDDLE_TEXT =
+  "\n\nThe subagent found good patterns for token rotation. Based on the research, I'll refactor the auth module to use RS256 with key rotation and write comprehensive tests. Let me create the test file first.\n\n";
 
 const SUMMARY_TEXT =
   "Refactoring complete. The auth module now uses RS256 with rotating keys instead of shared HS256 secrets. Here's what changed:\n\n- Replaced `jwt.sign()` with asymmetric RS256 signing\n- Added automatic key rotation every 24 hours\n- Updated the session middleware to validate against the key registry\n- Added 8 comprehensive tests covering token generation, validation, rotation, and edge cases\n\nAll 8 tests pass and the linting hook confirmed clean code.";
@@ -89,23 +97,42 @@ export const multiToolChain: SimScenario = {
 
     // Grep
     { type: 'append_tool_call', messageId: 'sim-mt-asst', toolCall: GREP_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-mt-asst', toolCallId: 'sim-mt-grep', patch: { status: 'running' }, delayMs: 1200 },
     {
       type: 'update_tool_call',
       messageId: 'sim-mt-asst',
       toolCallId: 'sim-mt-grep',
-      patch: { status: 'complete', result: 'src/services/auth.ts:12\nsrc/middleware/session.ts:8\nsrc/routes/login.ts:24' },
+      patch: { status: 'running' },
+      delayMs: 1200,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-mt-asst',
+      toolCallId: 'sim-mt-grep',
+      patch: {
+        status: 'complete',
+        result: 'src/services/auth.ts:12\nsrc/middleware/session.ts:8\nsrc/routes/login.ts:24',
+      },
       delayMs: 400,
     },
 
     // Read
     { type: 'append_tool_call', messageId: 'sim-mt-asst', toolCall: READ_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-mt-asst', toolCallId: 'sim-mt-read', patch: { status: 'running' }, delayMs: 1400 },
     {
       type: 'update_tool_call',
       messageId: 'sim-mt-asst',
       toolCallId: 'sim-mt-read',
-      patch: { status: 'complete', result: 'export function authenticate(token: string) {\n  // legacy implementation\n  return jwt.verify(token, SECRET);\n}' },
+      patch: { status: 'running' },
+      delayMs: 1400,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-mt-asst',
+      toolCallId: 'sim-mt-read',
+      patch: {
+        status: 'complete',
+        result:
+          'export function authenticate(token: string) {\n  // legacy implementation\n  return jwt.verify(token, SECRET);\n}',
+      },
       delayMs: 600,
     },
 
@@ -116,12 +143,22 @@ export const multiToolChain: SimScenario = {
 
     // Read 2
     { type: 'append_tool_call', messageId: 'sim-mt-asst', toolCall: READ2_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-mt-asst', toolCallId: 'sim-mt-read2', patch: { status: 'running' }, delayMs: 1400 },
     {
       type: 'update_tool_call',
       messageId: 'sim-mt-asst',
       toolCallId: 'sim-mt-read2',
-      patch: { status: 'complete', result: 'export function sessionMiddleware(req, res, next) {\n  const token = req.headers.authorization?.split(" ")[1];\n  if (!token) return res.status(401).json({ error: "Unauthorized" });\n  req.user = authenticate(token);\n  next();\n}' },
+      patch: { status: 'running' },
+      delayMs: 1400,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-mt-asst',
+      toolCallId: 'sim-mt-read2',
+      patch: {
+        status: 'complete',
+        result:
+          'export function sessionMiddleware(req, res, next) {\n  const token = req.headers.authorization?.split(" ")[1];\n  if (!token) return res.status(401).json({ error: "Unauthorized" });\n  req.user = authenticate(token);\n  next();\n}',
+      },
       delayMs: 600,
     },
 
@@ -135,7 +172,13 @@ export const multiToolChain: SimScenario = {
 
     // Write with hook
     { type: 'append_tool_call', messageId: 'sim-mt-asst', toolCall: WRITE_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-mt-asst', toolCallId: 'sim-mt-write', patch: { status: 'running' }, delayMs: 800 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-mt-asst',
+      toolCallId: 'sim-mt-write',
+      patch: { status: 'running' },
+      delayMs: 800,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-mt-asst',
@@ -158,14 +201,21 @@ export const multiToolChain: SimScenario = {
 
     // Bash test
     { type: 'append_tool_call', messageId: 'sim-mt-asst', toolCall: BASH_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-mt-asst', toolCallId: 'sim-mt-bash', patch: { status: 'running' }, delayMs: 3000 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-mt-asst',
+      toolCallId: 'sim-mt-bash',
+      patch: { status: 'running' },
+      delayMs: 3000,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-mt-asst',
       toolCallId: 'sim-mt-bash',
       patch: {
         status: 'complete',
-        result: '✓ src/services/auth.test.ts (8 tests) 67ms\n\nTest Files  1 passed (1)\nTests       8 passed (8)',
+        result:
+          '✓ src/services/auth.test.ts (8 tests) 67ms\n\nTest Files  1 passed (1)\nTests       8 passed (8)',
       },
       delayMs: 600,
     },

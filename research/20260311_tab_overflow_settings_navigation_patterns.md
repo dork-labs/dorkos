@@ -1,9 +1,10 @@
 ---
-title: "Tab Overflow & Settings Navigation Patterns"
+title: 'Tab Overflow & Settings Navigation Patterns'
 date: 2026-03-11
 type: external-best-practices
 status: active
-tags: [tabs, navigation, settings, overflow, sidebar, mobile, desktop, ux, apple-hig, material-design]
+tags:
+  [tabs, navigation, settings, overflow, sidebar, mobile, desktop, ux, apple-hig, material-design]
 searches_performed: 14
 sources_count: 28
 ---
@@ -20,15 +21,15 @@ When there are too many tabs to fit in a row — the specific case being six set
 
 Every major design system specifies a small maximum for tabs before alternatives are required:
 
-| System | Hard Limit | Source |
-|--------|-----------|--------|
-| Apple HIG (iOS Tab Bar) | 5 tabs on iPhone | HIG: Tab Bars |
-| Apple HIG (Segmented Control) | 5 segments on iPhone | HIG: Segmented Controls |
-| Apple HIG (macOS Toolbar-style Settings) | No longer recommended — Apple now uses sidebars | macOS Ventura redesign |
-| Material Design 3 | 5 tabs maximum for fixed tabs; scrollable for more | M3 Tabs spec |
-| PatternFly | "Keep to a minimum" — overflow menu for excess | PatternFly Tabs guidelines |
-| General UX consensus | 5–7 tabs before considering alternatives | NN/g, Eleken, LogRocket |
-| Android Settings pattern | **Tabs explicitly prohibited** for settings | Android Design: Settings |
+| System                                   | Hard Limit                                         | Source                     |
+| ---------------------------------------- | -------------------------------------------------- | -------------------------- |
+| Apple HIG (iOS Tab Bar)                  | 5 tabs on iPhone                                   | HIG: Tab Bars              |
+| Apple HIG (Segmented Control)            | 5 segments on iPhone                               | HIG: Segmented Controls    |
+| Apple HIG (macOS Toolbar-style Settings) | No longer recommended — Apple now uses sidebars    | macOS Ventura redesign     |
+| Material Design 3                        | 5 tabs maximum for fixed tabs; scrollable for more | M3 Tabs spec               |
+| PatternFly                               | "Keep to a minimum" — overflow menu for excess     | PatternFly Tabs guidelines |
+| General UX consensus                     | 5–7 tabs before considering alternatives           | NN/g, Eleken, LogRocket    |
+| Android Settings pattern                 | **Tabs explicitly prohibited** for settings        | Android Design: Settings   |
 
 Six tabs is at or above the threshold where all systems recommend reassessing the pattern.
 
@@ -58,6 +59,7 @@ The key phrase is **browsing context**. Material Design's own guidance calls scr
 When horizontal tabs overflow their container, two systems handle this with an overflow button:
 
 **PatternFly's "More Tabs" overflow menu:**
+
 - The last tab position becomes a "..." or "More" button.
 - Clicking it reveals a dropdown with the hidden tabs.
 - Selecting a hidden tab brings it into the visible strip and replaces the previously selected visible tab.
@@ -65,10 +67,12 @@ When horizontal tabs overflow their container, two systems handle this with an o
 - This is used in enterprise-grade software (Red Hat admin consoles, OpenShift).
 
 **Ant Design's 3-dots overflow:**
+
 - Triggered on hover (not click), which is a UX weakness — hover is not a reliable affordance.
 - Community has requested click-trigger behavior.
 
 **Trade-offs of the overflow menu pattern:**
+
 - Pros: Preserves familiar horizontal tab strip; no layout change required.
 - Cons: Hidden tabs are "second-class citizens" — users who don't know they exist never discover them. The "More" button is a secondary disclosure step. For settings, this is particularly bad because Appearance and Advanced should feel equally discoverable — not one hidden behind a dropdown. The pattern was designed for "browsing" tabs (where you may add/remove tabs dynamically), not for static settings categories.
 
@@ -90,18 +94,21 @@ The pattern is near-universal in professional desktop software. The reason: a ve
 ### 6. Mobile-Specific Patterns
 
 **iOS Settings pattern** (the gold standard for mobile settings):
+
 - Top level: vertically scrollable list of labeled rows, grouped by category with section dividers.
 - Tapping a row pushes a new screen (drill-down navigation with back button).
 - Zero horizontal scrolling. Zero tabs.
 - Scales from 10 settings to 200+ with identical UX.
 
 **Android Settings** (explicit guidance in Android developer documentation):
+
 - "Create a settings section by using the list or list-detail layout."
 - "Don't use tabs for settings organization" — this is a hard "don't" in the official docs.
 - On larger screens: list-detail (master-detail) layout where the sidebar list remains visible alongside the detail pane.
 - On small screens: full-screen list, drill-down to detail.
 
 **Why not scrollable tabs on mobile for settings?**
+
 - Scrollable tabs are not self-revealing. Users often do not know more tabs exist.
 - Settings categories benefit from being equally discoverable. A horizontally scrolled tab bar hides items off the edge and requires swipe gesture discovery.
 - The fade indicator only communicates overflow if the user looks for it — which they often don't in a settings context.
@@ -110,6 +117,7 @@ The pattern is near-universal in professional desktop software. The reason: a ve
 ### 7. Scrollable Tabs with Fade Indicators — When They Work
 
 The fade gradient/scroll indicator pattern is well-suited for:
+
 - **Browsing contexts**: Media categories, playlist tabs, sports leagues.
 - **User-generated tabs**: Browser tabs, document tabs, where count is dynamic and large.
 - **Context where discovery of new tabs is expected**: A streaming app where you scroll to find more genres.
@@ -119,6 +127,7 @@ The CSS implementation uses `mask-image: linear-gradient()` or `background: line
 Libraries: `react-gradient-scroll-indicator` (npm), CSS-only with scroll shadows (CSS-Tricks technique).
 
 **This pattern is explicitly inappropriate for settings** because:
+
 1. Settings categories are static and finite — users need to see all of them upfront.
 2. The "there's more to the right" implication of a fade works against settings discoverability.
 3. On desktop, the fade is subtle and easy to miss without a touch swipe.
@@ -130,6 +139,7 @@ Libraries: `react-gradient-scroll-indicator` (npm), CSS-only with scroll shadows
 ### The Six-Tab Problem
 
 The specific case: six settings categories in a dialog that must work on both desktop and mobile:
+
 - Appearance
 - Preferences
 - Status Bar
@@ -199,6 +209,7 @@ Settings UI — how many categories?
 **How it works**: The dialog becomes a two-column layout. Left column: vertical list of category names (~180–220px). Right column: content for the selected category. Clicking a category name switches the content pane.
 
 **Desktop**: This is the macOS System Settings model, GitHub Settings model, VS Code model, Linear Settings model. It is the dominant pattern in professional desktop software precisely because:
+
 - All categories are visible at once.
 - The list naturally accommodates 3 or 30 items with zero overflow.
 - Search can be added above the list.
@@ -218,6 +229,7 @@ Settings UI — how many categories?
 **How it works**: Rather than 6 top-level tabs, group the 6 items into 2–3 logical groups, with a segmented control handling the group switch, and secondary navigation within each group.
 
 **Example grouping for the 6 settings:**
+
 - Group 1: "Interface" → Appearance, Preferences, Status Bar (use segmented control or sub-tabs)
 - Group 2: "System" → Server, Tools, Advanced
 
@@ -271,14 +283,14 @@ This is precisely how macOS System Settings (sidebar on Mac, list on iPhone) and
 
 The six categories for DorkOS settings:
 
-| Category | Who primarily needs it | Frequency of change |
-|----------|----------------------|-------------------|
-| Appearance | All users | Rare |
-| Preferences | All users | Rare |
-| Status Bar | Most users | Rare |
-| Server | Power users / Kai | Occasional |
-| Tools | Power users | Rare |
-| Advanced | Expert users / Priya | Rare |
+| Category    | Who primarily needs it | Frequency of change |
+| ----------- | ---------------------- | ------------------- |
+| Appearance  | All users              | Rare                |
+| Preferences | All users              | Rare                |
+| Status Bar  | Most users             | Rare                |
+| Server      | Power users / Kai      | Occasional          |
+| Tools       | Power users            | Rare                |
+| Advanced    | Expert users / Priya   | Rare                |
 
 This distribution confirms the sidebar is correct: all categories have similar access frequency, so hiding any of them creates a discoverability problem. The sidebar gives all six equal visual weight with equal discoverability.
 
@@ -299,16 +311,16 @@ A responsive settings dialog can be built with shadcn `Dialog` + a two-column la
 <DialogContent className="max-w-3xl p-0">
   <div className="flex h-[600px]">
     {/* Left nav */}
-    <nav className="w-44 border-r flex flex-col gap-1 p-3">
+    <nav className="flex w-44 flex-col gap-1 border-r p-3">
       {SETTINGS_TABS.map((tab) => (
         <button
           key={tab.id}
           onClick={() => setActiveTab(tab.id)}
           className={cn(
-            "w-full text-left px-3 py-2 text-sm rounded-md",
+            'w-full rounded-md px-3 py-2 text-left text-sm',
             activeTab === tab.id
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              ? 'bg-accent text-accent-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
         >
           {tab.label}
@@ -316,9 +328,7 @@ A responsive settings dialog can be built with shadcn `Dialog` + a two-column la
       ))}
     </nav>
     {/* Right content */}
-    <div className="flex-1 overflow-y-auto p-6">
-      {renderActiveTab()}
-    </div>
+    <div className="flex-1 overflow-y-auto p-6">{renderActiveTab()}</div>
   </div>
 </DialogContent>
 ```
@@ -348,11 +358,7 @@ For reference, the correct implementation for contexts where scrollable tabs wit
 /* Mask-based scroll shadow */
 .tab-container {
   overflow-x: auto;
-  mask-image: linear-gradient(
-    to right,
-    black calc(100% - 60px),
-    transparent 100%
-  );
+  mask-image: linear-gradient(to right, black calc(100% - 60px), transparent 100%);
 }
 
 /* Dynamic: show/hide fade based on scroll position via JS */
@@ -374,15 +380,15 @@ The fade is updated on `scroll` event: show when `scrollLeft + clientWidth < scr
 
 ## Trade-Off Summary
 
-| Pattern | Discoverability | Mobile | Desktop | Appropriate for Settings? |
-|---------|----------------|--------|---------|--------------------------|
-| Horizontal tabs (6) | Low (overflow) | Poor | Acceptable | Marginal |
-| Scrollable tabs + fade | Very low | Poor | Poor | No |
-| Overflow "More" menu | Low (hidden tabs) | Acceptable | Acceptable | No |
-| Left sidebar | High | N/A (use list-drilldown) | Excellent | Yes |
-| Full-screen list + drilldown | High | Excellent | Poor | Mobile only |
-| Responsive sidebar + list | High | Excellent | Excellent | Yes (recommended) |
-| Segmented control | High | Good (≤5) | Good (≤5) | Only if ≤5 categories |
+| Pattern                      | Discoverability   | Mobile                   | Desktop    | Appropriate for Settings? |
+| ---------------------------- | ----------------- | ------------------------ | ---------- | ------------------------- |
+| Horizontal tabs (6)          | Low (overflow)    | Poor                     | Acceptable | Marginal                  |
+| Scrollable tabs + fade       | Very low          | Poor                     | Poor       | No                        |
+| Overflow "More" menu         | Low (hidden tabs) | Acceptable               | Acceptable | No                        |
+| Left sidebar                 | High              | N/A (use list-drilldown) | Excellent  | Yes                       |
+| Full-screen list + drilldown | High              | Excellent                | Poor       | Mobile only               |
+| Responsive sidebar + list    | High              | Excellent                | Excellent  | Yes (recommended)         |
+| Segmented control            | High              | Good (≤5)                | Good (≤5)  | Only if ≤5 categories     |
 
 ---
 

@@ -15,16 +15,31 @@ vi.mock('@xyflow/react', () => ({
   ReactFlow: (props: Record<string, unknown>) => {
     capturedReactFlowProps = props;
     const nodes = props.nodes as Array<{ id: string; type: string; data: Record<string, unknown> }>;
-    const edges = props.edges as Array<{ id: string; type: string; source: string; target: string }>;
+    const edges = props.edges as Array<{
+      id: string;
+      type: string;
+      source: string;
+      target: string;
+    }>;
     return (
       <div data-testid="react-flow">
         {nodes?.map((n) => (
           <div key={n.id} data-testid={`node-${n.id}`} data-type={n.type}>
-            {String((n.data as Record<string, unknown>).label ?? (n.data as Record<string, unknown>).adapterName ?? n.id)}
+            {String(
+              (n.data as Record<string, unknown>).label ??
+                (n.data as Record<string, unknown>).adapterName ??
+                n.id
+            )}
           </div>
         ))}
         {edges?.map((e) => (
-          <div key={e.id} data-testid={`edge-${e.id}`} data-type={e.type} data-source={e.source} data-target={e.target} />
+          <div
+            key={e.id}
+            data-testid={`edge-${e.id}`}
+            data-type={e.type}
+            data-source={e.source}
+            data-target={e.target}
+          />
         ))}
       </div>
     );
@@ -89,14 +104,13 @@ vi.mock('../BindingEdge', () => ({
   BindingEdge: () => <div data-testid="binding-edge" />,
 }));
 vi.mock('../BindingDialog', () => ({
-  BindingDialog: (props: { open: boolean; adapterName: string; agentName: string }) => (
+  BindingDialog: (props: { open: boolean; adapterName: string; agentName: string }) =>
     props.open ? (
       <div data-testid="binding-dialog">
         <span data-testid="dialog-adapter">{props.adapterName}</span>
         <span data-testid="dialog-agent">{props.agentName}</span>
       </div>
-    ) : null
-  ),
+    ) : null,
 }));
 
 // Mock namespace-colors
@@ -138,15 +152,36 @@ const mockTopologyData = {
 const mockAdapters = [
   {
     config: { id: 'cca-1', type: 'claude-code', enabled: true, config: {} },
-    status: { id: 'cca-1', type: 'claude-code', displayName: 'Claude Code', state: 'connected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 },
+    status: {
+      id: 'cca-1',
+      type: 'claude-code',
+      displayName: 'Claude Code',
+      state: 'connected',
+      messageCount: { inbound: 0, outbound: 0 },
+      errorCount: 0,
+    },
   },
   {
     config: { id: 'tg-1', type: 'telegram', enabled: true, label: '@support_bot', config: {} },
-    status: { id: 'tg-1', type: 'telegram', displayName: 'Telegram Bot', state: 'connected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 },
+    status: {
+      id: 'tg-1',
+      type: 'telegram',
+      displayName: 'Telegram Bot',
+      state: 'connected',
+      messageCount: { inbound: 0, outbound: 0 },
+      errorCount: 0,
+    },
   },
   {
     config: { id: 'wh-1', type: 'webhook', enabled: true, config: {} },
-    status: { id: 'wh-1', type: 'webhook', displayName: 'Webhook Inbound', state: 'disconnected', messageCount: { inbound: 0, outbound: 0 }, errorCount: 0 },
+    status: {
+      id: 'wh-1',
+      type: 'webhook',
+      displayName: 'Webhook Inbound',
+      state: 'disconnected',
+      messageCount: { inbound: 0, outbound: 0 },
+      errorCount: 0,
+    },
   },
 ];
 
@@ -190,14 +225,16 @@ import { TopologyGraph } from '../TopologyGraph';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function setupDefaults(overrides: {
-  topology?: unknown;
-  relayEnabled?: boolean;
-  adapters?: unknown[];
-  bindings?: unknown[];
-  topologyLoading?: boolean;
-  topologyError?: boolean;
-} = {}) {
+function setupDefaults(
+  overrides: {
+    topology?: unknown;
+    relayEnabled?: boolean;
+    adapters?: unknown[];
+    bindings?: unknown[];
+    topologyLoading?: boolean;
+    topologyError?: boolean;
+  } = {}
+) {
   mockUseTopology.mockReturnValue({
     data: overrides.topology ?? mockTopologyData,
     isLoading: overrides.topologyLoading ?? false,
@@ -403,7 +440,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.getByText('Add adapters from the Relay panel to connect them to agents'),
+        screen.getByText('Add adapters from the Relay panel to connect them to agents')
       ).toBeInTheDocument();
     });
 
@@ -416,7 +453,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.getByText('Drag from an adapter to an agent to create a binding'),
+        screen.getByText('Drag from an adapter to an agent to create a binding')
       ).toBeInTheDocument();
     });
 
@@ -429,10 +466,10 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.queryByText('Add adapters from the Relay panel to connect them to agents'),
+        screen.queryByText('Add adapters from the Relay panel to connect them to agents')
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByText('Drag from an adapter to an agent to create a binding'),
+        screen.queryByText('Drag from an adapter to an agent to create a binding')
       ).not.toBeInTheDocument();
     });
   });
@@ -474,7 +511,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; data: Record<string, unknown> }>;
+      const nodes = capturedReactFlowProps.nodes as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const tgNode = nodes.find((n) => n.id === 'adapter:tg-1');
       const whNode = nodes.find((n) => n.id === 'adapter:wh-1');
 
@@ -490,7 +530,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; data: Record<string, unknown> }>;
+      const nodes = capturedReactFlowProps.nodes as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const tgNode = nodes.find((n) => n.id === 'adapter:tg-1');
       const whNode = nodes.find((n) => n.id === 'adapter:wh-1');
 
@@ -539,7 +582,12 @@ describe('TopologyGraph', () => {
     };
 
     it('creates namespace-group nodes for multi-namespace topologies', async () => {
-      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      setupDefaults({
+        topology: multiNamespaceTopology,
+        relayEnabled: false,
+        adapters: [],
+        bindings: [],
+      });
       render(<TopologyGraph />);
 
       await waitFor(() => {
@@ -551,14 +599,23 @@ describe('TopologyGraph', () => {
     });
 
     it('sets parentId on agent nodes in multi-namespace topologies', async () => {
-      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      setupDefaults({
+        topology: multiNamespaceTopology,
+        relayEnabled: false,
+        adapters: [],
+        bindings: [],
+      });
       render(<TopologyGraph />);
 
       await waitFor(() => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; parentId?: string; extent?: string }>;
+      const nodes = capturedReactFlowProps.nodes as Array<{
+        id: string;
+        parentId?: string;
+        extent?: string;
+      }>;
       const prodAgent = nodes.find((n) => n.id === 'agent-prod-1');
       const stgAgent = nodes.find((n) => n.id === 'agent-stg-1');
 
@@ -591,14 +648,21 @@ describe('TopologyGraph', () => {
       });
 
       const nodes = capturedReactFlowProps.nodes as Array<{ id: string; parentId?: string }>;
-      const agentNodes = nodes.filter((n) => !n.id.startsWith('group:') && !n.id.startsWith('adapter:'));
+      const agentNodes = nodes.filter(
+        (n) => !n.id.startsWith('group:') && !n.id.startsWith('adapter:')
+      );
       for (const agent of agentNodes) {
         expect(agent.parentId).toBe('group:default');
       }
     });
 
     it('creates no spoke edges — agents are visually inside groups', async () => {
-      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      setupDefaults({
+        topology: multiNamespaceTopology,
+        relayEnabled: false,
+        adapters: [],
+        bindings: [],
+      });
       render(<TopologyGraph />);
 
       await waitFor(() => {
@@ -612,7 +676,12 @@ describe('TopologyGraph', () => {
     });
 
     it('creates cross-namespace edges connecting group nodes', async () => {
-      setupDefaults({ topology: multiNamespaceTopology, relayEnabled: false, adapters: [], bindings: [] });
+      setupDefaults({
+        topology: multiNamespaceTopology,
+        relayEnabled: false,
+        adapters: [],
+        bindings: [],
+      });
       render(<TopologyGraph />);
 
       await waitFor(() => {
@@ -746,7 +815,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; data: Record<string, unknown> }>;
+      const nodes = capturedReactFlowProps.nodes as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const ghostNode = nodes.find((n) => n.id === 'ghost-adapter');
       expect(ghostNode?.data.isGhost).toBe(true);
       expect(ghostNode?.data.adapterName).toBe('Add Adapter');
@@ -762,7 +834,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; data: Record<string, unknown> }>;
+      const nodes = capturedReactFlowProps.nodes as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const tgNode = nodes.find((n) => n.id === 'adapter:tg-1');
       expect(tgNode?.data.label).toBe('@support_bot');
     });
@@ -775,7 +850,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const nodes = capturedReactFlowProps.nodes as Array<{ id: string; data: Record<string, unknown> }>;
+      const nodes = capturedReactFlowProps.nodes as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const whNode = nodes.find((n) => n.id === 'adapter:wh-1');
       expect(whNode?.data.label).toBeUndefined();
     });
@@ -784,11 +862,13 @@ describe('TopologyGraph', () => {
   describe('binding edge filter data', () => {
     it('passes chatId and channelType to binding edge data', async () => {
       setupDefaults({
-        bindings: [{
-          ...mockBindings[0],
-          chatId: '12345',
-          channelType: 'private',
-        }],
+        bindings: [
+          {
+            ...mockBindings[0],
+            chatId: '12345',
+            channelType: 'private',
+          },
+        ],
       });
       render(<TopologyGraph />);
 
@@ -796,7 +876,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const edges = capturedReactFlowProps.edges as Array<{ id: string; data: Record<string, unknown> }>;
+      const edges = capturedReactFlowProps.edges as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const bindingEdge = edges.find((e) => e.id === 'binding:bind-1');
       expect(bindingEdge?.data?.chatId).toBe('12345');
       expect(bindingEdge?.data?.channelType).toBe('private');
@@ -810,7 +893,10 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      const edges = capturedReactFlowProps.edges as Array<{ id: string; data: Record<string, unknown> }>;
+      const edges = capturedReactFlowProps.edges as Array<{
+        id: string;
+        data: Record<string, unknown>;
+      }>;
       const bindingEdge = edges.find((e) => e.id === 'binding:bind-1');
       expect(bindingEdge?.data?.chatId).toBeUndefined();
       expect(bindingEdge?.data?.channelType).toBeUndefined();

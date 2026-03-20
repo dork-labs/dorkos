@@ -58,7 +58,7 @@ function applyFilters(
   conversations: RelayConversation[],
   sourceFilter: SourceFilter,
   statusFilter: StatusFilter,
-  searchFilter: string,
+  searchFilter: string
 ): RelayConversation[] {
   return conversations.filter((conv) => {
     if (sourceFilter !== 'all' && getSourceCategory(conv.subject) !== sourceFilter) return false;
@@ -123,7 +123,12 @@ export function ActivityFeed({
 
   const hasActiveFilters = sourceFilter !== 'all' || statusFilter !== 'all' || searchFilter !== '';
 
-  const filteredConversations = applyFilters(conversations, sourceFilter, statusFilter, searchFilter);
+  const filteredConversations = applyFilters(
+    conversations,
+    sourceFilter,
+    statusFilter,
+    searchFilter
+  );
 
   function clearFilters() {
     setSourceFilter('all');
@@ -137,9 +142,9 @@ export function ActivityFeed({
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-lg border p-3">
             <div className="flex items-center gap-2">
-              <div className="size-4 animate-pulse rounded bg-muted" />
-              <div className="h-4 w-40 animate-pulse rounded bg-muted" />
-              <div className="ml-auto h-3 w-16 animate-pulse rounded bg-muted" />
+              <div className="bg-muted size-4 animate-pulse rounded" />
+              <div className="bg-muted h-4 w-40 animate-pulse rounded" />
+              <div className="bg-muted ml-auto h-3 w-16 animate-pulse rounded" />
             </div>
           </div>
         ))}
@@ -149,144 +154,142 @@ export function ActivityFeed({
 
   return (
     <>
-    <MetricsSummary enabled={enabled} />
-    <div className="flex flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SourceFilter)}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All sources</SelectItem>
-            <SelectItem value="chat">Chat messages</SelectItem>
-            <SelectItem value="pulse">Pulse jobs</SelectItem>
-            <SelectItem value="system">System</SelectItem>
-          </SelectContent>
-        </Select>
+      <MetricsSummary enabled={enabled} />
+      <div className="flex flex-col gap-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SourceFilter)}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="chat">Chat messages</SelectItem>
+              <SelectItem value="pulse">Pulse jobs</SelectItem>
+              <SelectItem value="system">System</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="delivered">Delivered</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-          </SelectContent>
-        </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <Button
-          variant={showFailures ? 'secondary' : 'ghost'}
-          size="sm"
-          className="relative"
-          onClick={() => {
-            setShowFailures(!showFailures);
-            setUserToggled(true);
-          }}
-          aria-pressed={showFailures}
-          aria-label="Show dead letters"
-        >
-          <AlertTriangle className="mr-1 size-3.5" />
-          Dead Letters
-          {deadLetterGroups.length > 0 && !showFailures && userToggled && (
-            <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-red-500" />
-          )}
-        </Button>
-
-        <Input
-          className="h-9 w-44"
-          placeholder="Filter by agent or message..."
-          value={searchFilter}
-          onChange={(e) => setSearchFilter(e.target.value)}
-          aria-label="Search conversations"
-        />
-
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear filters
+          <Button
+            variant={showFailures ? 'secondary' : 'ghost'}
+            size="sm"
+            className="relative"
+            onClick={() => {
+              setShowFailures(!showFailures);
+              setUserToggled(true);
+            }}
+            aria-pressed={showFailures}
+            aria-label="Show dead letters"
+          >
+            <AlertTriangle className="mr-1 size-3.5" />
+            Dead Letters
+            {deadLetterGroups.length > 0 && !showFailures && userToggled && (
+              <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-red-500" />
+            )}
           </Button>
+
+          <Input
+            className="h-9 w-44"
+            placeholder="Filter by agent or message..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            aria-label="Search conversations"
+          />
+
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          )}
+
+          <div className="ml-auto">
+            <ComposeMessageDialog />
+          </div>
+        </div>
+
+        {showFailures && (
+          <div ref={deadLetterRef}>
+            <DeadLetterSection enabled={enabled} />
+          </div>
         )}
 
-        <div className="ml-auto">
-          <ComposeMessageDialog />
-        </div>
-      </div>
-
-      {showFailures && (
-        <div ref={deadLetterRef}>
-          <DeadLetterSection enabled={enabled} />
-        </div>
-      )}
-
-      {filteredConversations.length === 0 && !hasActiveFilters ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-          {/* Ghost preview rows — faded placeholders showing what conversations will look like */}
-          <div className="mb-2 w-full max-w-sm select-none opacity-20 pointer-events-none">
-            <div className="space-y-2">
-              <div className="rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <div className="size-4 rounded bg-muted" />
-                  <div className="h-3 w-32 rounded bg-muted" />
-                  <div className="ml-auto h-3 w-12 rounded bg-muted" />
+        {filteredConversations.length === 0 && !hasActiveFilters ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            {/* Ghost preview rows — faded placeholders showing what conversations will look like */}
+            <div className="pointer-events-none mb-2 w-full max-w-sm opacity-20 select-none">
+              <div className="space-y-2">
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-muted size-4 rounded" />
+                    <div className="bg-muted h-3 w-32 rounded" />
+                    <div className="bg-muted ml-auto h-3 w-12 rounded" />
+                  </div>
                 </div>
-              </div>
-              <div className="rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <div className="size-4 rounded bg-muted" />
-                  <div className="h-3 w-44 rounded bg-muted" />
-                  <div className="ml-auto h-3 w-12 rounded bg-muted" />
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-muted size-4 rounded" />
+                    <div className="bg-muted h-3 w-44 rounded" />
+                    <div className="bg-muted ml-auto h-3 w-12 rounded" />
+                  </div>
                 </div>
-              </div>
-              <div className="rounded-lg border p-3">
-                <div className="flex items-center gap-2">
-                  <div className="size-4 rounded bg-muted" />
-                  <div className="h-3 w-24 rounded bg-muted" />
-                  <div className="ml-auto h-3 w-12 rounded bg-muted" />
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-muted size-4 rounded" />
+                    <div className="bg-muted h-3 w-24 rounded" />
+                    <div className="bg-muted ml-auto h-3 w-12 rounded" />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <Inbox className="size-10 text-muted-foreground/50" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium">No activity yet</p>
-            <p className="text-sm text-muted-foreground">
-              Messages will appear here as your agents communicate
-            </p>
+            <Inbox className="text-muted-foreground/50 size-10" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">No activity yet</p>
+              <p className="text-muted-foreground text-sm">
+                Messages will appear here as your agents communicate
+              </p>
+            </div>
           </div>
-        </div>
-      ) : filteredConversations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-          <Search className="size-10 text-muted-foreground/50" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium">No messages match your filters</p>
-            <p className="text-sm text-muted-foreground">
-              Try adjusting your filter criteria.
-            </p>
+        ) : filteredConversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <Search className="text-muted-foreground/50 size-10" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">No messages match your filters</p>
+              <p className="text-muted-foreground text-sm">Try adjusting your filter criteria.</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear filters
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <AnimatePresence mode="popLayout">
-            {/* eslint-disable-next-line react-hooks/refs -- initialIdsRef is a stable snapshot set once on first data load */}
-            {filteredConversations.map((conv) => {
-              const isNew = initialIdsRef.current !== null && !initialIdsRef.current.has(conv.id);
-              const animProps = isNew ? NEW_ITEM_ANIMATION : HISTORY_ITEM_ANIMATION;
+        ) : (
+          <div className="space-y-2">
+            <AnimatePresence mode="popLayout">
+              {/* eslint-disable-next-line react-hooks/refs -- initialIdsRef is a stable snapshot set once on first data load */}
+              {filteredConversations.map((conv) => {
+                const isNew = initialIdsRef.current !== null && !initialIdsRef.current.has(conv.id);
+                const animProps = isNew ? NEW_ITEM_ANIMATION : HISTORY_ITEM_ANIMATION;
 
-              return (
-                <motion.div key={conv.id} {...animProps}>
-                  <ConversationRow conversation={conv} />
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      )}
-    </div>
+                return (
+                  <motion.div key={conv.id} {...animProps}>
+                    <ConversationRow conversation={conv} />
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
     </>
-  )
+  );
 }

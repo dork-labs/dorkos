@@ -11,9 +11,7 @@ import type {
 } from '@dorkos/shared/types';
 
 /** Collect all events yielded by the mapper for a single message. */
-async function collectEvents(
-  ...args: Parameters<typeof mapSdkMessage>
-): Promise<StreamEvent[]> {
+async function collectEvents(...args: Parameters<typeof mapSdkMessage>): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
   for await (const event of mapSdkMessage(...args)) {
     events.push(event);
@@ -267,7 +265,9 @@ describe('sdk-event-mapper result messages', () => {
   });
 
   it('error_max_structured_output_retries maps to output_format_error', async () => {
-    const msg = makeResultMessage('error_max_structured_output_retries', ['Failed to produce valid JSON']);
+    const msg = makeResultMessage('error_max_structured_output_retries', [
+      'Failed to produce valid JSON',
+    ]);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     const err = events[1].data as ErrorEvent;
@@ -420,7 +420,15 @@ describe('sdk-event-mapper hook lifecycle events', () => {
 
   it('hook_response (tool-contextual, success) yields hook_response', async () => {
     const toolState = makeToolState();
-    const msg = sdkHookResponse('hook-1', 'pre-commit', 'PostToolUse', 'success', 0, 'all good', '');
+    const msg = sdkHookResponse(
+      'hook-1',
+      'pre-commit',
+      'PostToolUse',
+      'success',
+      0,
+      'all good',
+      ''
+    );
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     expect(events).toHaveLength(1);

@@ -21,6 +21,7 @@ Build `@dorkos/relay` -- a pure TypeScript library implementing the foundational
 **Can run parallel with**: Nothing (blocks all other tasks)
 
 **Technical Requirements**:
+
 - Create `packages/relay/` directory with `src/` and `src/__tests__/` subdirectories
 - Create `package.json`, `tsconfig.json`, `vitest.config.ts`
 - Add `packages/relay` to root `vitest.workspace.ts`
@@ -29,6 +30,7 @@ Build `@dorkos/relay` -- a pure TypeScript library implementing the foundational
 **Implementation Steps**:
 
 1. Create `packages/relay/package.json`:
+
 ```json
 {
   "name": "@dorkos/relay",
@@ -61,6 +63,7 @@ Build `@dorkos/relay` -- a pure TypeScript library implementing the foundational
 ```
 
 2. Create `packages/relay/tsconfig.json`:
+
 ```json
 {
   "extends": "@dorkos/typescript-config/node.json",
@@ -80,6 +83,7 @@ Build `@dorkos/relay` -- a pure TypeScript library implementing the foundational
 6. Run `npm install` from repo root to link the new workspace package.
 
 **Acceptance Criteria**:
+
 - [ ] `packages/relay/package.json` exists with correct name, type, exports, dependencies
 - [ ] `packages/relay/tsconfig.json` extends `@dorkos/typescript-config/node.json`
 - [ ] `packages/relay/vitest.config.ts` exists
@@ -100,6 +104,7 @@ Build `@dorkos/relay` -- a pure TypeScript library implementing the foundational
 **Can run parallel with**: Nothing until complete (blocks 1.3, 1.4, 1.5)
 
 **Technical Requirements**:
+
 - Create relay-schemas.ts with all Zod schemas and type exports
 - Update packages/shared/package.json to add the new export path
 - Update packages/shared/src/types.ts to re-export all relay types
@@ -107,6 +112,7 @@ Build `@dorkos/relay` -- a pure TypeScript library implementing the foundational
 **Implementation Steps**:
 
 1. Create `packages/shared/src/relay-schemas.ts`:
+
 ```typescript
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
@@ -218,6 +224,7 @@ export type RelayAccessRule = z.infer<typeof RelayAccessRuleSchema>;
 ```
 
 2. Update `packages/shared/package.json` exports -- add after the existing `"./roadmap-schemas"` entry:
+
 ```json
 "./relay-schemas": {
   "types": "./src/relay-schemas.ts",
@@ -226,6 +233,7 @@ export type RelayAccessRule = z.infer<typeof RelayAccessRuleSchema>;
 ```
 
 3. Update `packages/shared/src/types.ts` -- add re-exports at the end of the file:
+
 ```typescript
 export type {
   Performative,
@@ -242,6 +250,7 @@ export type {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `packages/shared/src/relay-schemas.ts` exists with all 12 schemas (Performative, SignalType, ChannelType, RelayBudget, RelayEnvelope, Attachment, ResponseContext, StandardPayload, Signal, RelayAccessRule + types)
 - [ ] `packages/shared/package.json` has `"./relay-schemas"` export path
 - [ ] `packages/shared/src/types.ts` re-exports all 10 relay types
@@ -258,14 +267,21 @@ export type {
 **Can run parallel with**: Task 1.4, Task 1.5
 
 **Technical Requirements**:
+
 - Import shared types from `@dorkos/shared/relay-schemas`
 - Define all internal interfaces and type aliases
 
 **Implementation Steps**:
 
 1. Create `packages/relay/src/types.ts`:
+
 ```typescript
-import type { RelayEnvelope, RelayBudget, Signal, RelayAccessRule } from '@dorkos/shared/relay-schemas';
+import type {
+  RelayEnvelope,
+  RelayBudget,
+  Signal,
+  RelayAccessRule,
+} from '@dorkos/shared/relay-schemas';
 
 export type MessageHandler = (envelope: RelayEnvelope) => void | Promise<void>;
 export type SignalHandler = (subject: string, signal: Signal) => void;
@@ -323,6 +339,7 @@ export interface PublishOptions {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `packages/relay/src/types.ts` exists with all type definitions
 - [ ] Imports from `@dorkos/shared/relay-schemas` resolve correctly
 - [ ] All types are exported: MessageHandler, SignalHandler, Unsubscribe, EndpointInfo, SubscriptionInfo, BudgetResult, AccessResult, DeadLetter, RelayMetrics, RelayOptions, PublishOptions
@@ -339,6 +356,7 @@ export interface PublishOptions {
 **Can run parallel with**: Task 1.3, Task 1.5
 
 **Technical Requirements**:
+
 - Pure functions, no state, ~50-80 lines
 - Two exported functions: `validateSubject` and `matchesPattern`
 - Dot-delimited hierarchical subjects
@@ -358,6 +376,7 @@ export function matchesPattern(subject: string, pattern: string): boolean;
 ```
 
 **Validation rules:**
+
 - Subject must be non-empty string
 - No whitespace characters
 - Dot-delimited tokens; no empty tokens (no consecutive dots, no leading/trailing dots)
@@ -367,6 +386,7 @@ export function matchesPattern(subject: string, pattern: string): boolean;
 - `*` and `>` must be standalone tokens (not `foo*` or `>bar`)
 
 **Matching algorithm (linear token scan):**
+
 ```
 1. Split both subject and pattern by '.'
 2. For each pattern token at index i:
@@ -389,6 +409,7 @@ export function matchesPattern(subject: string, pattern: string): boolean;
 - Case sensitivity (subjects are case-sensitive)
 
 **Acceptance Criteria**:
+
 - [ ] `validateSubject('foo.bar.baz')` succeeds
 - [ ] `validateSubject('foo.*.baz', true)` succeeds
 - [ ] `validateSubject('foo.*')` throws (wildcards not allowed by default)
@@ -411,6 +432,7 @@ export function matchesPattern(subject: string, pattern: string): boolean;
 **Can run parallel with**: Task 1.3, Task 1.4
 
 **Technical Requirements**:
+
 - Pure functions for budget validation -- budgets can only shrink, never grow
 - Import `RelayBudget` and `RelayEnvelope` from `@dorkos/shared/relay-schemas`
 - Import `BudgetResult` from local `types.ts`
@@ -429,14 +451,15 @@ export function createDefaultBudget(overrides?: Partial<RelayBudget>): RelayBudg
 
 **Enforcement checks (in order):**
 
-| # | Check | Rejection Reason |
-|---|---|---|
-| 1 | `budget.hopCount >= budget.maxHops` | `"max hops exceeded (${hopCount}/${maxHops})"` |
-| 2 | `budget.ancestorChain.includes(currentEndpoint)` | `"cycle detected: ${currentEndpoint} already in chain"` |
-| 3 | `Date.now() > budget.ttl` | `"message expired (TTL)"` |
-| 4 | `budget.callBudgetRemaining <= 0` | `"call budget exhausted"` |
+| #   | Check                                            | Rejection Reason                                        |
+| --- | ------------------------------------------------ | ------------------------------------------------------- |
+| 1   | `budget.hopCount >= budget.maxHops`              | `"max hops exceeded (${hopCount}/${maxHops})"`          |
+| 2   | `budget.ancestorChain.includes(currentEndpoint)` | `"cycle detected: ${currentEndpoint} already in chain"` |
+| 3   | `Date.now() > budget.ttl`                        | `"message expired (TTL)"`                               |
+| 4   | `budget.callBudgetRemaining <= 0`                | `"call budget exhausted"`                               |
 
 When allowed, return updated budget:
+
 - `hopCount` incremented by 1
 - `currentEndpoint` appended to `ancestorChain`
 - `callBudgetRemaining` decremented by 1
@@ -456,6 +479,7 @@ Default budget: `{ hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() +
 - Edge: TTL exactly at current time
 
 **Acceptance Criteria**:
+
 - [ ] `enforceBudget` rejects when hop count >= maxHops
 - [ ] `enforceBudget` rejects when cycle detected in ancestorChain
 - [ ] `enforceBudget` rejects when TTL expired
@@ -478,6 +502,7 @@ Default budget: `{ hopCount: 0, maxHops: 5, ancestorChain: [], ttl: Date.now() +
 **Can run parallel with**: Nothing (blocks 2.2 and 2.3)
 
 **Technical Requirements**:
+
 - Atomic delivery: write to `tmp/`, rename to `new/` (POSIX atomic rename)
 - ULID message IDs via `monotonicFactory()` from `ulidx`
 - File permissions: `0o600` for files, `0o700` for directories
@@ -521,6 +546,7 @@ export class MaildirStore {
 ```
 
 **Delivery flow:**
+
 1. Generate ULID via `monotonicFactory()` -- serves as filename
 2. Serialize envelope to JSON
 3. Write to `tmp/{ulid}` using `fs.open()` with flags `'wx'` (`O_CREAT | O_EXCL | O_WRONLY`) and `mode: 0o600`
@@ -528,6 +554,7 @@ export class MaildirStore {
 5. Return ULID as message ID
 
 **Failure message format (written to `failed/`):**
+
 ```json
 {
   "envelope": { "..." },
@@ -551,6 +578,7 @@ export class MaildirStore {
 - Cleanup temp dirs in `afterEach`
 
 **Acceptance Criteria**:
+
 - [ ] `deliver()` writes atomically (tmp -> new rename)
 - [ ] `claim()` moves from new/ to cur/
 - [ ] `complete()` removes from cur/
@@ -572,6 +600,7 @@ export class MaildirStore {
 **Can run parallel with**: Nothing (blocks 2.3)
 
 **Technical Requirements**:
+
 - Use `better-sqlite3` with WAL mode
 - SQLite config: `WAL`, `synchronous=NORMAL`, `busy_timeout=5000`, `temp_store=MEMORY`, `foreign_keys=ON`
 - Schema migration via `PRAGMA user_version`
@@ -610,7 +639,15 @@ export class SqliteIndex {
     this.migrate();
   }
 
-  insertMessage(msg: { id: string; subject: string; fromSubject: string; status: string; endpointHash: string; createdAt: number; expiresAt?: number }): void;
+  insertMessage(msg: {
+    id: string;
+    subject: string;
+    fromSubject: string;
+    status: string;
+    endpointHash: string;
+    createdAt: number;
+    expiresAt?: number;
+  }): void;
   updateStatus(id: string, status: string): void;
   getBySubject(subject: string, limit?: number): MessageRow[];
   getByEndpoint(endpointHash: string, limit?: number): MessageRow[];
@@ -622,6 +659,7 @@ export class SqliteIndex {
 ```
 
 **Schema (Migration V1):**
+
 ```sql
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -641,6 +679,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_expires ON messages(expires_at) WHERE ex
 **Rebuild:** Scan all `mailboxes/*/new/`, `mailboxes/*/cur/`, `mailboxes/*/failed/` directories. Read each JSON file. Drop and recreate the messages table. Reinsert all messages with appropriate status.
 
 **Metrics aggregation:**
+
 ```typescript
 getMetrics(): RelayMetrics {
   const total = this.db.prepare('SELECT COUNT(*) as count FROM messages').get();
@@ -662,6 +701,7 @@ getMetrics(): RelayMetrics {
 - Cleanup temp files in `afterEach`
 
 **Acceptance Criteria**:
+
 - [ ] `insertMessage` + `getBySubject` round-trips correctly
 - [ ] `updateStatus` changes message status
 - [ ] `deleteExpired` removes expired messages and returns count
@@ -682,6 +722,7 @@ getMetrics(): RelayMetrics {
 **Can run parallel with**: Phase 3 tasks (after this completes)
 
 **Technical Requirements**:
+
 - Composes MaildirStore and SqliteIndex (injected via constructor)
 - Reject writes to `failed/` directory with reason metadata
 - List and purge capabilities
@@ -712,6 +753,7 @@ export class DeadLetterQueue {
 ```
 
 **Behavior:**
+
 - `reject()` writes `{ envelope, reason, failedAt: new Date().toISOString() }` as JSON to `mailboxes/{hash}/failed/{ulid}`. Also inserts/updates SQLite index with `status = 'dlq'`.
 - `listDead()` reads from `failed/` directories (optionally filtered by endpoint hash). Parses each file to reconstruct `DeadLetter` objects.
 - `purge()` removes files older than threshold and deletes corresponding SQLite rows. Returns count of purged messages.
@@ -725,6 +767,7 @@ export class DeadLetterQueue {
 - Integration with real MaildirStore and SqliteIndex (using temp dirs)
 
 **Acceptance Criteria**:
+
 - [ ] `reject()` writes to `failed/` with `{ envelope, reason, failedAt }` wrapper
 - [ ] `reject()` updates SQLite index with status='dlq'
 - [ ] `listDead()` returns all dead letters when no filter
@@ -745,6 +788,7 @@ export class DeadLetterQueue {
 **Can run parallel with**: Task 3.3, Task 3.4
 
 **Technical Requirements**:
+
 - Deterministic endpoint hash via SHA-256: `crypto.createHash('sha256').update(subject).digest('hex').slice(0, 12)`
 - Creates Maildir directory structure on registration
 - In-memory map of endpoints
@@ -777,6 +821,7 @@ export class EndpointRegistry {
 **Endpoint hash:** `crypto.createHash('sha256').update(subject).digest('hex').slice(0, 12)` -- deterministic, filesystem-safe, short enough for directory names.
 
 **On register:**
+
 1. Validate subject via `validateSubject(subject)` (no wildcards)
 2. Compute hash
 3. Create `mailboxes/{hash}/tmp/`, `mailboxes/{hash}/new/`, `mailboxes/{hash}/cur/`, `mailboxes/{hash}/failed/` with `mode: 0o700`
@@ -784,10 +829,11 @@ export class EndpointRegistry {
 5. Return EndpointInfo
 
 **On unregister:**
+
 1. Remove from memory map
 2. Do NOT delete Maildir directories (messages may still exist)
 
-2. Create `packages/relay/src/__tests__/endpoint-registry.test.ts` with these test cases:
+3. Create `packages/relay/src/__tests__/endpoint-registry.test.ts` with these test cases:
 
 - Register creates Maildir directories (tmp/, new/, cur/, failed/)
 - Get returns registered endpoint info
@@ -798,6 +844,7 @@ export class EndpointRegistry {
 - Subject validation rejects invalid subjects
 
 **Acceptance Criteria**:
+
 - [ ] `registerEndpoint()` creates Maildir directories with 0o700 mode
 - [ ] `getEndpoint()` returns EndpointInfo with correct hash and maildirPath
 - [ ] `listEndpoints()` returns all registered endpoints
@@ -817,6 +864,7 @@ export class EndpointRegistry {
 **Can run parallel with**: Task 3.3, Task 3.4
 
 **Technical Requirements**:
+
 - Pattern-based subscriptions with wildcard support
 - In-memory handler storage
 - Persistence of subscription patterns to `subscriptions.json`
@@ -845,12 +893,14 @@ export class SubscriptionRegistry {
 ```
 
 **Behavior:**
+
 - `subscribe()`: validate pattern with `validateSubject(pattern, true)` (wildcards allowed), generate ULID for subscription ID, store handler in-memory `Map<id, { pattern, handler }>`, persist pattern to `subscriptions.json`, return unsubscribe function
 - `getSubscribers(subject)`: iterate all subscriptions, use `matchesPattern(subject, sub.pattern)` to find matches, return their handlers
 - Unsubscribe function: remove handler from memory, update `subscriptions.json`
 - On construction: read `subscriptions.json` to restore patterns (handlers must be re-registered by consumers)
 
 **subscriptions.json format:**
+
 ```json
 [
   { "id": "01HXYZ...", "pattern": "relay.agent.*", "createdAt": "2026-02-24T..." },
@@ -868,6 +918,7 @@ export class SubscriptionRegistry {
 - Non-matching patterns don't return handlers
 
 **Acceptance Criteria**:
+
 - [ ] `subscribe()` stores handler and returns unsubscribe function
 - [ ] `getSubscribers()` returns only handlers matching the subject
 - [ ] Wildcard patterns (`*`, `>`) work correctly in subscriptions
@@ -886,6 +937,7 @@ export class SubscriptionRegistry {
 **Can run parallel with**: Task 3.1, Task 3.2, Task 3.4
 
 **Technical Requirements**:
+
 - Priority-ordered rules, first match wins
 - Default-allow when no rules match
 - Rules persisted in `access-rules.json`
@@ -929,12 +981,14 @@ export class AccessControl {
 ```
 
 **Evaluation algorithm:**
+
 1. Sort rules by priority (highest first)
 2. For each rule: check if `matchesPattern(from, rule.from)` AND `matchesPattern(to, rule.to)`
 3. First match wins -- return `{ allowed: rule.action === 'allow', matchedRule: rule }`
 4. No match -- return `{ allowed: true }` (default-allow)
 
 **Persistence:**
+
 - Rules stored in `access-rules.json` as a JSON array
 - Hot-reloaded via chokidar when file changes on disk
 - `addRule()`/`removeRule()` write back to file atomically (write tmp + rename)
@@ -952,6 +1006,7 @@ export class AccessControl {
 - Close stops chokidar watcher
 
 **Acceptance Criteria**:
+
 - [ ] `checkAccess()` returns `{ allowed: true }` when allow rule matches
 - [ ] `checkAccess()` returns `{ allowed: false }` when deny rule matches
 - [ ] Higher priority rules evaluated first
@@ -973,6 +1028,7 @@ export class AccessControl {
 **Can run parallel with**: Task 3.1, Task 3.2, Task 3.3
 
 **Technical Requirements**:
+
 - Extends Node.js EventEmitter with typed events
 - Pattern-based signal filtering using `matchesPattern()`
 - Never touches disk (verify with spy on fs in tests)
@@ -1007,7 +1063,7 @@ export class SignalEmitter extends EventEmitter<RelaySignalEvents> {
 
   /** Subscribe to signals matching a pattern. Returns unsubscribe function. */
   onSignal(pattern: string, handler: SignalHandler): Unsubscribe {
-    validateSubject(pattern, true);  // Allow wildcards
+    validateSubject(pattern, true); // Allow wildcards
     const listener = (subject: string, signal: Signal) => {
       if (matchesPattern(subject, pattern)) {
         handler(subject, signal);
@@ -1030,6 +1086,7 @@ export class SignalEmitter extends EventEmitter<RelaySignalEvents> {
 - Invalid subject throws on emit
 
 **Acceptance Criteria**:
+
 - [ ] `emitSignal()` delivers to matching `onSignal()` handlers
 - [ ] Pattern matching filters correctly (non-matching patterns don't fire)
 - [ ] Unsubscribe function prevents further delivery
@@ -1051,6 +1108,7 @@ export class SignalEmitter extends EventEmitter<RelaySignalEvents> {
 **Can run parallel with**: Nothing (blocks 4.2)
 
 **Technical Requirements**:
+
 - Composes: EndpointRegistry, SubscriptionRegistry, MaildirStore, SqliteIndex, DeadLetterQueue, AccessControl, SignalEmitter, budget-enforcer
 - Publish pipeline: validate -> access check -> budget check -> deliver to matching endpoints -> index -> return ID
 - Push delivery via chokidar: watch `new/` directories, fire handlers, claim + complete
@@ -1076,8 +1134,13 @@ import { AccessControl } from './access-control.js';
 import { SignalEmitter } from './signal-emitter.js';
 import type { RelayEnvelope, RelayBudget, Signal } from '@dorkos/shared/relay-schemas';
 import type {
-  RelayOptions, PublishOptions, MessageHandler, SignalHandler,
-  Unsubscribe, EndpointInfo, DeadLetter
+  RelayOptions,
+  PublishOptions,
+  MessageHandler,
+  SignalHandler,
+  Unsubscribe,
+  EndpointInfo,
+  DeadLetter,
 } from './types.js';
 
 export class RelayCore {
@@ -1141,6 +1204,7 @@ export class RelayCore {
 ```
 
 **Publish pipeline:**
+
 ```
 1. validateSubject(subject)               -- reject invalid subjects
 2. accessControl.checkAccess(from, to)    -- reject unauthorized
@@ -1154,18 +1218,20 @@ export class RelayCore {
 ```
 
 **Subscribe delivery (push via chokidar):**
+
 - When an endpoint is registered via `registerEndpoint()`, start watching its `new/` directory via chokidar
 - On file creation event: read envelope, find matching subscription handlers via `subscriptionRegistry.getSubscribers()`, invoke them
 - After all handlers return: `maildirStore.claim()` then `maildirStore.complete()`
 - On handler error: `maildirStore.fail()` with error reason
 
 **Graceful shutdown (`close()`):**
+
 1. Stop all chokidar watchers (iterate `this.watchers` map)
 2. Close AccessControl (stops its watcher)
 3. Close SQLite database (with WAL checkpoint)
 4. Clear subscription handlers
 
-2. Create `packages/relay/src/__tests__/relay-core.test.ts` with integration tests:
+5. Create `packages/relay/src/__tests__/relay-core.test.ts` with integration tests:
 
 - **Full publish -> subscribe flow**: Register endpoint, subscribe to pattern, publish message, verify subscriber handler is called with correct envelope
 - **Budget enforcement integration**: Publish with expired TTL or exceeded hop count, verify message rejected and appears in DLQ
@@ -1177,6 +1243,7 @@ export class RelayCore {
 - **Index rebuild**: Deliver messages, call `rebuildIndex()`, verify index contents match Maildir
 
 **Acceptance Criteria**:
+
 - [ ] Full publish -> subscribe flow works end-to-end
 - [ ] Budget enforcement rejects over-limit messages
 - [ ] Budget enforcement detects cycles
@@ -1199,6 +1266,7 @@ export class RelayCore {
 **Can run parallel with**: Nothing (final task)
 
 **Technical Requirements**:
+
 - Export all public types and classes from barrel
 - Verify `npm run typecheck` passes across entire monorepo
 - Verify `npm test` passes across entire monorepo
@@ -1251,17 +1319,20 @@ export type {
 ```
 
 2. Verify full monorepo:
+
 ```bash
 npm run typecheck   # All packages type-check
 npm test -- --run   # All tests pass
 ```
 
 3. Verify the relay package specifically:
+
 ```bash
 npx vitest run --project @dorkos/relay   # All relay tests pass
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `packages/relay/src/index.ts` exports all public APIs
 - [ ] `import { RelayCore } from '@dorkos/relay'` resolves correctly
 - [ ] `npm run typecheck` passes across entire monorepo
@@ -1316,10 +1387,10 @@ Task 1.1 (scaffolding)
 
 ## Summary
 
-| Phase | Tasks | Description |
-|-------|-------|-------------|
-| Phase 1: Foundation | 5 tasks | Package setup, schemas, types, subject matcher, budget enforcer |
-| Phase 2: Storage | 3 tasks | Maildir store, SQLite index, dead letter queue |
-| Phase 3: Routing + Access | 4 tasks | Endpoint registry, subscription registry, access control, signal emitter |
-| Phase 4: Composition | 2 tasks | RelayCore class, barrel export + verification |
-| **Total** | **14 tasks** | |
+| Phase                     | Tasks        | Description                                                              |
+| ------------------------- | ------------ | ------------------------------------------------------------------------ |
+| Phase 1: Foundation       | 5 tasks      | Package setup, schemas, types, subject matcher, budget enforcer          |
+| Phase 2: Storage          | 3 tasks      | Maildir store, SQLite index, dead letter queue                           |
+| Phase 3: Routing + Access | 4 tasks      | Endpoint registry, subscription registry, access control, signal emitter |
+| Phase 4: Composition      | 2 tasks      | RelayCore class, barrel export + verification                            |
+| **Total**                 | **14 tasks** |                                                                          |

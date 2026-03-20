@@ -51,6 +51,7 @@ Client (?dir=/some/path)
 ### Evidence
 
 From self-test `test-results/chat-self-test/20260310-065059.md`:
+
 - Agent reported CWD `/Users/doriancollier/Keep/dork-os/core/apps` when URL was `?dir=/Users/doriancollier/Keep/temp/empty`
 - JSONL created in `~/.claude/projects/-Users-doriancollier-Keep-dork-os-core-apps/` (server CWD), not the specified dir
 
@@ -127,8 +128,8 @@ const agentCwd = context?.agent?.directory;
 const log = this.deps.logger ?? console;
 log.debug?.(
   `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
-  `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-  `resolvedCwd=${agentCwd ?? '(deferred to session)'}`,
+    `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
+    `resolvedCwd=${agentCwd ?? '(deferred to session)'}`
 );
 
 this.deps.agentManager.ensureSession(ccaSessionKey, {
@@ -159,9 +160,9 @@ const effectiveCwd = payloadCwd ?? agentCwd;
 const log = this.deps.logger ?? console;
 log.debug?.(
   `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
-  `payloadCwd=${payloadCwd ?? '(none)'}, ` +
-  `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
-  `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}`,
+    `payloadCwd=${payloadCwd ?? '(none)'}, ` +
+    `context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +
+    `resolvedCwd=${effectiveCwd ?? '(deferred to session)'}`
 );
 
 this.deps.agentManager.ensureSession(ccaSessionKey, {
@@ -185,20 +186,20 @@ inline is minimal, readable, and doesn't disturb the established control flow.
 
 ### Fallback Precedence
 
-| Source | Condition | `effectiveCwd` |
-|--------|-----------|----------------|
-| Payload `cwd` | Web client sends `?dir=` | `/user/specified/path` |
-| `context.agent.directory` | Mesh-registered agent | Agent's project dir |
-| `undefined` | Neither present | SDK uses session stored CWD or `process.cwd()` |
+| Source                    | Condition                | `effectiveCwd`                                 |
+| ------------------------- | ------------------------ | ---------------------------------------------- |
+| Payload `cwd`             | Web client sends `?dir=` | `/user/specified/path`                         |
+| `context.agent.directory` | Mesh-registered agent    | Agent's project dir                            |
+| `undefined`               | Neither present          | SDK uses session stored CWD or `process.cwd()` |
 
 This exactly mirrors the Pulse path minus the final `this.config.defaultCwd` fallback.
 
 ### Files Changed
 
-| File | Change |
-|------|--------|
-| `packages/relay/src/adapters/claude-code-adapter.ts` | Inline `payloadCwd` extraction; update debug log; replace `agentCwd` with `effectiveCwd` in `ensureSession` and `sendMessage` |
-| `packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts` | New test case: cwd from payload |
+| File                                                                | Change                                                                                                                        |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `packages/relay/src/adapters/claude-code-adapter.ts`                | Inline `payloadCwd` extraction; update debug log; replace `agentCwd` with `effectiveCwd` in `ensureSession` and `sendMessage` |
+| `packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts` | New test case: cwd from payload                                                                                               |
 
 ---
 
@@ -233,7 +234,7 @@ it('passes cwd from relay payload to ensureSession and sendMessage when no agent
   expect(result.success).toBe(true);
   expect(agentManager.ensureSession).toHaveBeenCalledWith(
     'session-abc',
-    expect.objectContaining({ cwd: '/my/project' }),
+    expect.objectContaining({ cwd: '/my/project' })
   );
   const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
   expect(sendArgs[2]).toEqual(expect.objectContaining({ cwd: '/my/project' }));
@@ -254,7 +255,7 @@ it('prefers payload cwd over agent context directory', async () => {
 
   expect(agentManager.ensureSession).toHaveBeenCalledWith(
     'session-abc',
-    expect.objectContaining({ cwd: '/payload/path' }),
+    expect.objectContaining({ cwd: '/payload/path' })
   );
 });
 
@@ -271,7 +272,7 @@ it('falls back to agent context directory when payload has no cwd', async () => 
 
   expect(agentManager.ensureSession).toHaveBeenCalledWith(
     'session-abc',
-    expect.objectContaining({ cwd: '/projects/myapp' }),
+    expect.objectContaining({ cwd: '/projects/myapp' })
   );
 });
 ```

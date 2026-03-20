@@ -80,6 +80,7 @@ N/A — not a bug fix.
 **Potential Solutions:**
 
 **1. GitHub Actions — Bare Runner Smoke Test**
+
 - Description: Build + pack tarball in one job, install from tarball on a bare Ubuntu runner in a second job
 - Pros: Fast (~2 min), tests real OS, Node version matrix (20, 22), minimal config
 - Cons: Runner has pre-installed packages that may mask missing deps
@@ -87,6 +88,7 @@ N/A — not a bug fix.
 - Maintenance: Low
 
 **2. Docker Smoke Test**
+
 - Description: Single-stage Dockerfile using `node:20-slim`, installs tarball with native addon build tools, runs verify commands
 - Pros: Fully isolated clean room, reproducible, parameterizable via build args (Node version, mock Claude), runnable locally
 - Cons: Requires Docker Desktop locally, slower than bare runner (~30-60s build)
@@ -94,6 +96,7 @@ N/A — not a bug fix.
 - Maintenance: Low
 
 **3. Combined (Recommended)**
+
 - Description: Both bare runner (Node matrix) + Docker (clean room) in the same workflow, running in parallel after a shared build job
 - Pros: Best coverage — matrix tests Node compatibility, Docker validates clean install
 - Cons: More CI minutes (but runs in parallel so wall time is similar)
@@ -106,10 +109,10 @@ N/A — not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Include auto-publish job | No — smoke tests only | Keep it simple. User publishes manually. Can add publish automation later |
-| 2 | Node version matrix | 20 + 22 | Node 18 is EOL. 2 versions keeps CI fast while covering LTS + Current |
-| 3 | Dockerfile location | Repo root | Single file, easiest to run locally (`docker build .`), CI references it directly |
-| 4 | Docker Compose | No | Single container smoke test doesn't need orchestration. Build args handle variants |
-| 5 | Multiple test configs | Build args in single Dockerfile | `NODE_VERSION` and `MOCK_CLAUDE` args allow testing different setups without multiple Dockerfiles |
+| #   | Decision                 | Choice                          | Rationale                                                                                         |
+| --- | ------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1   | Include auto-publish job | No — smoke tests only           | Keep it simple. User publishes manually. Can add publish automation later                         |
+| 2   | Node version matrix      | 20 + 22                         | Node 18 is EOL. 2 versions keeps CI fast while covering LTS + Current                             |
+| 3   | Dockerfile location      | Repo root                       | Single file, easiest to run locally (`docker build .`), CI references it directly                 |
+| 4   | Docker Compose           | No                              | Single container smoke test doesn't need orchestration. Build args handle variants                |
+| 5   | Multiple test configs    | Build args in single Dockerfile | `NODE_VERSION` and `MOCK_CLAUDE` args allow testing different setups without multiple Dockerfiles |

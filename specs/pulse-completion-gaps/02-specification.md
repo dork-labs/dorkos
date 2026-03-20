@@ -118,6 +118,7 @@ const stream = this.agentManager.sendMessage(sessionId, schedule.prompt, {
 In `apps/server/src/services/__tests__/scheduler-service.test.ts`, update the mock `sendMessage` to accept and optionally verify the new `systemPromptAppend` opt.
 
 **Files modified:**
+
 - `apps/server/src/services/scheduler-service.ts` — Interface + `executeRun()` call
 - `apps/server/src/services/agent-manager.ts` — `sendMessage()` signature + append merge
 - `apps/server/src/services/__tests__/scheduler-service.test.ts` — Mock update
@@ -155,12 +156,14 @@ In the non-`pending_approval` action div (around lines 105-115), add between "Ru
 ```
 
 Key details:
+
 - `e.stopPropagation()` prevents the row's expand/collapse toggle
 - `aria-label` for accessibility (icon-only button)
 - Placed in the non-`pending_approval` branch only
 - No changes to `CreateScheduleDialog` — it already handles edit mode
 
 **Files modified:**
+
 - `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx` — Import + button addition
 
 ---
@@ -216,6 +219,7 @@ export function createMockRun(overrides: Partial<PulseRun> = {}): PulseRun {
 **File: `apps/client/src/layers/entities/pulse/__tests__/use-schedules.test.ts`**
 
 Test cases for each of the 5 hooks:
+
 - `useSchedules`: Fetches schedules via transport, handles loading/error states
 - `useCreateSchedule`: Calls `transport.createSchedule()`, invalidates schedules query key
 - `useUpdateSchedule`: Calls `transport.updateSchedule(id, input)`, invalidates schedules query key
@@ -225,6 +229,7 @@ Test cases for each of the 5 hooks:
 **File: `apps/client/src/layers/entities/pulse/__tests__/use-runs.test.ts`**
 
 Test cases for each of the 3 hooks:
+
 - `useRuns`: Fetches runs via transport, passes opts through, 10s refetch interval configured
 - `useRun`: Fetches single run, disabled when `id` is null
 - `useCancelRun`: Calls `transport.cancelRun(id)`, invalidates runs query key
@@ -251,6 +256,7 @@ Each test creates its own wrapper (no shared `QueryClient`). All use `retry: fal
 **File: `apps/client/src/layers/features/pulse/__tests__/PulsePanel.test.tsx`**
 
 Test cases:
+
 - Renders schedule list when data is available
 - Shows loading state initially
 - "New Schedule" button opens create dialog
@@ -264,6 +270,7 @@ Test cases:
 **File: `apps/client/src/layers/features/pulse/__tests__/CreateScheduleDialog.test.tsx`**
 
 Test cases:
+
 - Renders "New Schedule" title in create mode
 - Renders "Edit Schedule" title when `editSchedule` is provided
 - Pre-fills form fields in edit mode
@@ -275,6 +282,7 @@ Test cases:
 **File: `apps/client/src/layers/features/pulse/__tests__/RunHistoryPanel.test.tsx`**
 
 Test cases:
+
 - Renders run list with status indicators
 - Shows duration for completed runs
 - Cancel button visible only for running jobs
@@ -305,6 +313,7 @@ apps/client/src/layers/features/pulse/__tests__/
 ```
 
 **Files modified:**
+
 - `packages/test-utils/src/mock-factories.ts` — Add `createMockSchedule()`, `createMockRun()`
 - 5 new test files (listed above)
 
@@ -354,36 +363,43 @@ function makePulseDeps(
 #### 4b. Handler test suites
 
 **`createListSchedulesHandler`:**
+
 - Returns all schedules when Pulse enabled
 - Filters to `enabled_only` when flag set
 - Returns error when `pulseStore` undefined (requirePulse guard)
 - Handles empty schedule list
 
 **`createCreateScheduleHandler`:**
+
 - Creates schedule and sets `pending_approval` status
 - Returns created schedule with approval note
 - Returns error when Pulse disabled
 
 **`createUpdateScheduleHandler`:**
+
 - Updates existing schedule
 - Returns error for non-existent ID (store returns null)
 - Handles `permissionMode` string conversion
 - Returns error when Pulse disabled
 
 **`createDeleteScheduleHandler`:**
+
 - Deletes existing schedule, returns success
 - Returns error for non-existent ID (store returns false)
 - Returns error when Pulse disabled
 
 **`createGetRunHistoryHandler`:**
+
 - Returns runs with default limit (20)
 - Respects custom limit parameter
 - Returns error when Pulse disabled
 
 **`requirePulse()` guard** (tested implicitly across all handlers):
+
 - Every handler tested with `makeMockDeps()` (no `pulseStore`) → `isError: true`, error contains "not enabled"
 
 **Files modified:**
+
 - `apps/server/src/services/__tests__/mcp-tool-server.test.ts` — New imports, helpers, and test suites
 
 ---

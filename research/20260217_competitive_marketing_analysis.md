@@ -1,5 +1,5 @@
 ---
-title: "Competitive Marketing Analysis: OpenClaw vs. Codex vs. DorkOS"
+title: 'Competitive Marketing Analysis: OpenClaw vs. Codex vs. DorkOS'
 date: 2026-02-17
 type: strategic
 status: active
@@ -181,6 +181,7 @@ Features are organized around **roles and outcomes**, not technical capabilities
 **CTA:** `npm install -g dorkos`
 
 **Section structure:**
+
 1. Hero
 2. CredibilityBar (GitHub + npm links)
 3. ProblemSection (cloud-shaming: "Every AI coding interface you've used lives in someone else's cloud...")
@@ -214,7 +215,7 @@ DorkOS has a name with personality ("Dork" is self-aware and signals "built by a
 
 #### 3. No Social Proof Layer (OpenClaw does this much better)
 
-The ProjectsGrid section exists but shows what *could* be built, not what *real users* are building. There are no testimonials, no GitHub star count prominently displayed, no community texture.
+The ProjectsGrid section exists but shows what _could_ be built, not what _real users_ are building. There are no testimonials, no GitHub star count prominently displayed, no community texture.
 
 **Opportunity:** Add a minimal social proof element. Even 3 developer quotes ("I use DorkOS to review Claude's tool calls from my iPad while my Mac runs sessions unattended") would add enormous credibility. GitHub stars should be visible.
 
@@ -245,22 +246,26 @@ This is accurate and developer-legible but leads with mechanism, not desire. Com
 These are observations from the research, not a task list:
 
 **Copy improvements (high impact, low effort):**
-- Add outcome language to hero subhead — lead with what users *gain*, not just what DorkOS *is*
+
+- Add outcome language to hero subhead — lead with what users _gain_, not just what DorkOS _is_
 - Make the "Claude Code only" specificity explicit — it's a trust signal, not a limitation
 - Surface GitHub stars count prominently (even 1 social proof number changes credibility perception)
 
 **Section additions (medium effort):**
+
 - 3 real developer testimonials (even from early users or the creator's own use case)
 - Obsidian plugin as a featured differentiator with its own visual treatment
 - A "What becomes possible" or "Real use cases" section showing specific workflows
 
 **Positioning refinements:**
+
 - "Own Your AI" is strong — keep it
 - The NotSection is excellent — keep it
 - ProblemSection could be sharper: name the alternatives (Cursor, GitHub Copilot, Codex) by category rather than dancing around them
 - The "lobster way" lesson: DorkOS's "dork" identity could be leaned into more — it's an asset if owned
 
 **Things DorkOS should NOT copy:**
+
 - Codex's glassmorphic/enterprise aesthetic (conflicts with DorkOS's authentic indie character)
 - OpenClaw's mascot approach (too similar, and DorkOS is a different product category)
 - Codex's breadth messaging ("also makes slide decks") — DorkOS's narrow focus is a strength

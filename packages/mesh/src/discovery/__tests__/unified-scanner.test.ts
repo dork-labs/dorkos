@@ -75,14 +75,14 @@ async function collectAll(
   strategies: DiscoveryStrategy[] = [],
   registry: RegistryLike = noopRegistry,
   denialList: DenialListLike = noopDenialList,
-  options: Partial<import('../types.js').UnifiedScanOptions> = {},
+  options: Partial<import('../types.js').UnifiedScanOptions> = {}
 ): Promise<ScanEvent[]> {
   const events: ScanEvent[] = [];
   for await (const event of unifiedScan(
     { root, timeout: 10_000, ...options },
     strategies,
     registry,
-    denialList,
+    denialList
   )) {
     events.push(event);
   }
@@ -181,9 +181,15 @@ describe('unifiedScan', () => {
       await fs.writeFile(path.join(level2, 'CLAUDE.md'), '# Deep', 'utf-8');
 
       // maxDepth: 1 means we descend 1 level from root, so l2 (depth 2) is excluded
-      const events = await collectAll(root, [makeClaudeMdStrategy()], noopRegistry, noopDenialList, {
-        maxDepth: 1,
-      });
+      const events = await collectAll(
+        root,
+        [makeClaudeMdStrategy()],
+        noopRegistry,
+        noopDenialList,
+        {
+          maxDepth: 1,
+        }
+      );
       const candidates = events.filter((e) => e.type === 'candidate');
       expect(candidates).toHaveLength(0);
     });
@@ -194,9 +200,15 @@ describe('unifiedScan', () => {
       await fs.mkdir(level1);
       await fs.writeFile(path.join(level1, 'CLAUDE.md'), '# L1', 'utf-8');
 
-      const events = await collectAll(root, [makeClaudeMdStrategy()], noopRegistry, noopDenialList, {
-        maxDepth: 1,
-      });
+      const events = await collectAll(
+        root,
+        [makeClaudeMdStrategy()],
+        noopRegistry,
+        noopDenialList,
+        {
+          maxDepth: 1,
+        }
+      );
       const candidates = events.filter((e) => e.type === 'candidate');
       expect(candidates).toHaveLength(1);
     });
@@ -208,8 +220,8 @@ describe('unifiedScan', () => {
       // Create 150 directories to trigger at least 1 progress event
       await Promise.all(
         Array.from({ length: 150 }, (_, i) =>
-          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true }),
-        ),
+          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true })
+        )
       );
 
       const events = await collectAll(root, [], noopRegistry, noopDenialList, { maxDepth: 1 });
@@ -224,8 +236,8 @@ describe('unifiedScan', () => {
       // Create many dirs to ensure the scan does not finish instantly
       await Promise.all(
         Array.from({ length: 50 }, (_, i) =>
-          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true }),
-        ),
+          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true })
+        )
       );
 
       const events = await collectAll(root, [], noopRegistry, noopDenialList, {
@@ -247,15 +259,18 @@ describe('unifiedScan', () => {
       // so with timeout:1ms and 200 dirs, the flag will be set before all are processed.
       await Promise.all(
         Array.from({ length: 200 }, (_, i) =>
-          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true }),
-        ),
+          fs.mkdir(path.join(root, `dir-${i}`), { recursive: true })
+        )
       );
 
       const events = await collectAll(root, [], noopRegistry, noopDenialList, {
         timeout: 1,
         maxDepth: 5,
       });
-      const complete = events.find((e) => e.type === 'complete') as Extract<ScanEvent, { type: 'complete' }>;
+      const complete = events.find((e) => e.type === 'complete') as Extract<
+        ScanEvent,
+        { type: 'complete' }
+      >;
       expect(complete).toBeDefined();
       expect(complete.data.timedOut).toBe(true);
     });
@@ -336,10 +351,9 @@ describe('unifiedScan', () => {
           const err = Object.assign(new Error('EACCES'), { code: 'EACCES' });
           throw err;
         }
-        return realReaddir(
-          dirPath as string,
-          opts as { withFileTypes: true },
-        ) as ReturnType<typeof fs.readdir>;
+        return realReaddir(dirPath as string, opts as { withFileTypes: true }) as ReturnType<
+          typeof fs.readdir
+        >;
       });
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
@@ -347,8 +361,8 @@ describe('unifiedScan', () => {
       expect(candidates.length).toBeGreaterThanOrEqual(1);
       expect(
         candidates.some(
-          (c) => (c as Extract<ScanEvent, { type: 'candidate' }>).data.path === accessible,
-        ),
+          (c) => (c as Extract<ScanEvent, { type: 'candidate' }>).data.path === accessible
+        )
       ).toBe(true);
     });
   });
@@ -363,7 +377,10 @@ describe('unifiedScan', () => {
     it('complete event has timedOut: false when scan finishes normally', async () => {
       const root = await makeTempDir();
       const events = await collectAll(root);
-      const complete = events.find((e) => e.type === 'complete') as Extract<ScanEvent, { type: 'complete' }>;
+      const complete = events.find((e) => e.type === 'complete') as Extract<
+        ScanEvent,
+        { type: 'complete' }
+      >;
       expect(complete.data.timedOut).toBe(false);
     });
   });

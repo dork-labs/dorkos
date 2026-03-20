@@ -59,6 +59,7 @@ the relay block completes. `AdapterManagerDeps` has no `meshCore` field.
 ### Bug 2 — Wrong method name on the interface
 
 `AdapterManagerDeps.meshCore` is typed as:
+
 ```typescript
 meshCore?: {
   getAgent(id: string): { manifest: Record<string, unknown> } | undefined;
@@ -121,13 +122,13 @@ Beyond the three critical bugs, the ClaudeCodeAdapter pipeline has additional re
 
 ## Technical Dependencies
 
-| Dependency | Version | Notes |
-|------------|---------|-------|
-| `@dorkos/mesh` | workspace | `MeshCore.getProjectPath()` exists at line 460 |
-| `@dorkos/relay` | workspace | `ClaudeCodeAdapter`, `AgentManagerLike` interface |
-| `@dorkos/shared` | workspace | `AgentManifest` Zod schema |
-| `@anthropic-ai/claude-agent-sdk` | current | `query()` concurrency constraint |
-| Node.js `fs/promises` | built-in | Atomic file writes (tmp + rename) |
+| Dependency                       | Version   | Notes                                             |
+| -------------------------------- | --------- | ------------------------------------------------- |
+| `@dorkos/mesh`                   | workspace | `MeshCore.getProjectPath()` exists at line 460    |
+| `@dorkos/relay`                  | workspace | `ClaudeCodeAdapter`, `AgentManagerLike` interface |
+| `@dorkos/shared`                 | workspace | `AgentManifest` Zod schema                        |
+| `@anthropic-ai/claude-agent-sdk` | current   | `query()` concurrency constraint                  |
+| Node.js `fs/promises`            | built-in  | Atomic file writes (tmp + rename)                 |
 
 ---
 
@@ -135,11 +136,11 @@ Beyond the three critical bugs, the ClaudeCodeAdapter pipeline has additional re
 
 ### ID Glossary (for this spec and the codebase going forward)
 
-| Term | Type | Purpose | Example |
-|------|------|---------|---------|
-| **agentId** | Mesh ULID | Routing key; extracted from relay subject; stable across restarts | `01JN4M2X5SZMHXP3EZFM9DWRXFK` |
-| **sdkSessionId** | SDK UUID | Conversation thread; assigned by Claude SDK on first message; maps to JSONL file | `550e8400-e29b-41d4-a716-446655440000` |
-| **ccaSessionKey** | string | CCA's internal session lookup key; equals agentId until Phase 2, then equals sdkSessionId after first message | — |
+| Term              | Type      | Purpose                                                                                                       | Example                                |
+| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| **agentId**       | Mesh ULID | Routing key; extracted from relay subject; stable across restarts                                             | `01JN4M2X5SZMHXP3EZFM9DWRXFK`          |
+| **sdkSessionId**  | SDK UUID  | Conversation thread; assigned by Claude SDK on first message; maps to JSONL file                              | `550e8400-e29b-41d4-a716-446655440000` |
+| **ccaSessionKey** | string    | CCA's internal session lookup key; equals agentId until Phase 2, then equals sdkSessionId after first message | —                                      |
 
 ---
 
@@ -225,6 +226,7 @@ Note: The variable is renamed from `sessionId` to `agentId` as part of Phase 5 n
 #### 1d. Fix `RELAY_TOOLS_CONTEXT` doc label — `apps/server/src/services/core/context-builder.ts`
 
 **Problem:** Lines 25 and 27 reference `{theirSessionId}` in two places:
+
 ```
 relay.agent.{sessionId}          — activate a specific agent session
 mesh_inspect(agentId) to get their relay endpoint (relay.agent.{theirSessionId})
@@ -232,6 +234,7 @@ relay_send(subject="relay.agent.{theirSessionId}", ...)
 ```
 
 **Fix:**
+
 - Line 17: Rename column label `relay.agent.{sessionId}` → `relay.agent.{agentId}`
 - Line 25: Change `{theirSessionId}` → `{theirAgentId}`
 - Line 27: Change `{theirSessionId}` → `{theirAgentId}`
@@ -260,8 +263,8 @@ JSON-file-backed store following the `BindingStore` atomic-write pattern.
 
 export interface AgentSessionRecord {
   sdkSessionId: string;
-  createdAt: string;   // ISO timestamp when first created
-  updatedAt: string;   // ISO timestamp of last update
+  createdAt: string; // ISO timestamp when first created
+  updatedAt: string; // ISO timestamp of last update
 }
 
 export class AgentSessionStore {
@@ -272,19 +275,20 @@ export class AgentSessionStore {
     this.filePath = join(relayDir, 'agent-sessions.json');
   }
 
-  async init(): Promise<void>;  // Load from disk; non-fatal if file missing
+  async init(): Promise<void>; // Load from disk; non-fatal if file missing
 
-  get(agentId: string): string | undefined;  // Returns sdkSessionId or undefined
+  get(agentId: string): string | undefined; // Returns sdkSessionId or undefined
 
-  set(agentId: string, sdkSessionId: string): void;  // Update in-memory + persist
+  set(agentId: string, sdkSessionId: string): void; // Update in-memory + persist
 
-  delete(agentId: string): void;  // Remove mapping + persist
+  delete(agentId: string): void; // Remove mapping + persist
 
-  private async persist(): Promise<void>;  // Atomic tmp+rename write
+  private async persist(): Promise<void>; // Atomic tmp+rename write
 }
 ```
 
 Storage format (`~/.dork/relay/agent-sessions.json`):
+
 ```json
 {
   "01JN4M2X5SZMHXP3EZFM9DWRXFK": {
@@ -303,11 +307,13 @@ Storage format (`~/.dork/relay/agent-sessions.json`):
 #### 2c. Integrate session mapping in CCA — `packages/relay/src/adapters/claude-code-adapter.ts`
 
 **Add to `AgentManagerLike` interface:**
+
 ```typescript
 getSdkSessionId(sessionId: string): string | undefined;
 ```
 
 **Add to `ClaudeCodeAdapterDeps`:**
+
 ```typescript
 agentSessionStore?: AgentSessionStoreLike;  // minimal: get(agentId), set(agentId, sdkId)
 ```
@@ -323,7 +329,7 @@ const ccaSessionKey = persistedSdkId ?? agentId;
 
 this.deps.agentManager.ensureSession(ccaSessionKey, {
   permissionMode: 'default',
-  hasStarted: !!persistedSdkId,  // true only if we have a persisted SDK session
+  hasStarted: !!persistedSdkId, // true only if we have a persisted SDK session
   ...(agentCwd ? { cwd: agentCwd } : {}),
 });
 ```
@@ -360,10 +366,13 @@ The `agentId` is always available (from the subject). The `sdkSessionId` should 
 #### 3b. Update trace span `toEndpoint` format
 
 Change from:
+
 ```typescript
 toEndpoint: `agent:${sessionId}`,
 ```
+
 To:
+
 ```typescript
 toEndpoint: `agent:${agentId}/${sdkSessionId ?? agentId}`,
 ```
@@ -419,14 +428,14 @@ Audit all relay-related files for `sessionId` variables that actually hold Mesh 
 
 #### Files to audit and fix
 
-| File | Variables/comments to rename |
-|------|------------------------------|
-| `packages/relay/src/adapters/claude-code-adapter.ts` | `extractSessionId()` → `extractAgentId()`; internal `sessionId` local → `agentId`; `toEndpoint: agent:${sessionId}` → use agentId |
-| `packages/relay/src/adapter-delivery.ts` | Check for any `sessionId` in comments referring to relay subjects |
-| `apps/server/src/services/relay/adapter-manager.ts` | `const sessionId = segments[2]` → `const agentId = segments[2]` (Phase 1c already does this) |
-| `apps/server/src/services/core/context-builder.ts` | `relay.agent.{sessionId}` → `relay.agent.{agentId}` in RELAY_TOOLS_CONTEXT |
-| `apps/server/src/services/core/mcp-tools/relay-tools.ts` | Review any comments explaining relay subjects |
-| `apps/server/src/services/core/interactive-handlers.ts` | Check for sessionId/agentId in relay context |
+| File                                                     | Variables/comments to rename                                                                                                      |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/relay/src/adapters/claude-code-adapter.ts`     | `extractSessionId()` → `extractAgentId()`; internal `sessionId` local → `agentId`; `toEndpoint: agent:${sessionId}` → use agentId |
+| `packages/relay/src/adapter-delivery.ts`                 | Check for any `sessionId` in comments referring to relay subjects                                                                 |
+| `apps/server/src/services/relay/adapter-manager.ts`      | `const sessionId = segments[2]` → `const agentId = segments[2]` (Phase 1c already does this)                                      |
+| `apps/server/src/services/core/context-builder.ts`       | `relay.agent.{sessionId}` → `relay.agent.{agentId}` in RELAY_TOOLS_CONTEXT                                                        |
+| `apps/server/src/services/core/mcp-tools/relay-tools.ts` | Review any comments explaining relay subjects                                                                                     |
+| `apps/server/src/services/core/interactive-handlers.ts`  | Check for sessionId/agentId in relay context                                                                                      |
 
 #### Add glossary comment block to CCA
 
@@ -465,15 +474,19 @@ Agent A calls relay_send(subject="relay.agent.{agentBId}", ...)
 No external HTTP API changes. The fix is entirely in the server-internal adapter pipeline.
 
 **`AgentManagerLike` interface** (in `packages/relay/src/adapters/claude-code-adapter.ts`) gains:
+
 ```typescript
 getSdkSessionId(sessionId: string): string | undefined;
 ```
 
 **`AdapterManagerDeps`** gains:
+
 ```typescript
 meshCore?: AdapterMeshCoreLike;
 ```
+
 where `AdapterMeshCoreLike` is:
+
 ```typescript
 interface AdapterMeshCoreLike {
   getProjectPath(agentId: string): string | undefined;
@@ -481,6 +494,7 @@ interface AdapterMeshCoreLike {
 ```
 
 **`ClaudeCodeAdapterDeps`** gains an optional:
+
 ```typescript
 agentSessionStore?: AgentSessionStoreLike;
 ```
@@ -491,22 +505,22 @@ agentSessionStore?: AgentSessionStoreLike;
 
 ### Files to modify
 
-| File | Phase | Change type |
-|------|-------|-------------|
-| `apps/server/src/index.ts` | 1a | Init reorder: meshCore before adapterManager |
-| `apps/server/src/services/relay/adapter-manager.ts` | 1b, 1c, 2b | Fix types + buildContext + wire AgentSessionStore |
-| `apps/server/src/services/core/context-builder.ts` | 1d, 3c | Doc labels + dual-ID guidance |
-| `packages/relay/src/adapters/claude-code-adapter.ts` | 2c, 3a, 3b, 4a, 4b, 5 | Session store + traceability + queue + naming |
-| `packages/relay/src/adapter-delivery.ts` | 5 | Naming audit only |
-| `apps/server/src/services/core/mcp-tools/relay-tools.ts` | 5 | Naming audit only |
+| File                                                     | Phase                 | Change type                                       |
+| -------------------------------------------------------- | --------------------- | ------------------------------------------------- |
+| `apps/server/src/index.ts`                               | 1a                    | Init reorder: meshCore before adapterManager      |
+| `apps/server/src/services/relay/adapter-manager.ts`      | 1b, 1c, 2b            | Fix types + buildContext + wire AgentSessionStore |
+| `apps/server/src/services/core/context-builder.ts`       | 1d, 3c                | Doc labels + dual-ID guidance                     |
+| `packages/relay/src/adapters/claude-code-adapter.ts`     | 2c, 3a, 3b, 4a, 4b, 5 | Session store + traceability + queue + naming     |
+| `packages/relay/src/adapter-delivery.ts`                 | 5                     | Naming audit only                                 |
+| `apps/server/src/services/core/mcp-tools/relay-tools.ts` | 5                     | Naming audit only                                 |
 
 ### Files to create
 
-| File | Phase | Purpose |
-|------|-------|---------|
-| `apps/server/src/services/relay/agent-session-store.ts` | 2a | Persistent agentId→SDK UUID mapping |
-| `apps/server/src/services/relay/__tests__/agent-session-store.test.ts` | 2a | Unit tests |
-| `apps/server/src/routes/__tests__/relay-conversations.test.ts` | Pre-existing untracked | Existing test file (already in git status) |
+| File                                                                   | Phase                  | Purpose                                    |
+| ---------------------------------------------------------------------- | ---------------------- | ------------------------------------------ |
+| `apps/server/src/services/relay/agent-session-store.ts`                | 2a                     | Persistent agentId→SDK UUID mapping        |
+| `apps/server/src/services/relay/__tests__/agent-session-store.test.ts` | 2a                     | Unit tests                                 |
+| `apps/server/src/routes/__tests__/relay-conversations.test.ts`         | Pre-existing untracked | Existing test file (already in git status) |
 
 ---
 
@@ -521,6 +535,7 @@ now correctly invoke the target agent's project context.
 persona, project-scoped tools, and correct working directory.
 
 The relay context block received by Agent B will now include:
+
 ```
 <relay_context>
 From: agent:01JN4M2X...
@@ -537,11 +552,13 @@ Session-ID: 550e8400-e29b-41d4-a716-446655440000
 ### Unit Tests
 
 **`packages/mesh/src/__tests__/mesh-core.test.ts`** (or create if missing)
+
 - `getProjectPath()` returns the project path for a known agent ULID
 - `getProjectPath()` returns `undefined` for an unknown ULID
 - `getProjectPath()` returns `undefined` when agent has no projectPath set
 
 **`apps/server/src/services/relay/__tests__/adapter-manager.test.ts`** (existing)
+
 - `buildContext()` returns valid `AdapterContext` with correct `directory` when meshCore resolves a path
 - `buildContext()` returns `undefined` when agentId not found in Mesh
 - `buildContext()` returns `undefined` when meshCore is not injected (backward compat)
@@ -549,6 +566,7 @@ Session-ID: 550e8400-e29b-41d4-a716-446655440000
 - `buildContext()` returns `undefined` for non-agent subjects (`relay.human.*`)
 
 **`apps/server/src/services/relay/__tests__/agent-session-store.test.ts`** (new)
+
 - `get()` returns `undefined` for unknown agentId
 - `set()` + `get()` round-trip stores and retrieves sdkSessionId
 - `init()` loads persisted data from disk on startup
@@ -560,6 +578,7 @@ Session-ID: 550e8400-e29b-41d4-a716-446655440000
 ### Integration Tests
 
 **`packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts`** (existing, extend)
+
 - `handleAgentMessage()` passes `cwd` matching `context.agent.directory` to `ensureSession()`
   (currently exists as a regression test, verify it covers the directory field correctly)
 - `handleAgentMessage()` uses persisted SDK session UUID from store when available
@@ -569,6 +588,7 @@ Session-ID: 550e8400-e29b-41d4-a716-446655440000
 - Concurrent `deliver()` calls to DIFFERENT agentIds run in parallel (no cross-agent blocking)
 
 **`packages/relay/src/__tests__/relay-cca-roundtrip.test.ts`** (existing)
+
 - Verify CWD is correctly propagated end-to-end through the full pipeline
 
 ### Regression Tests
@@ -583,6 +603,7 @@ Session-ID: 550e8400-e29b-41d4-a716-446655440000
 ### Test Documentation Convention
 
 Each test should include a purpose comment:
+
 ```typescript
 it('uses persisted SDK session ID to resume existing conversation', async () => {
   // Purpose: verifies that agentSessionStore.get() is consulted before ensureSession(),

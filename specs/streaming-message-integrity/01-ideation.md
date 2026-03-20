@@ -66,6 +66,7 @@ status: ideation
   - Zod schemas from `@dorkos/shared/schemas`
 
 - **Data flow:**
+
   ```
   User submits → executeSubmission → transport.sendMessage(SSE) → streamEventHandler
     → ensureAssistantMessage → updateAssistantMessage → setMessages (React state)
@@ -161,12 +162,12 @@ Three-phase implementation:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Transcript parser fix scope | Include in this spec | The parser gap causes data loss when loading past sessions — same problem domain. Fixing it alongside the streaming integrity fix provides complete coverage. |
-| 2 | `_streaming` tag structure | Simple boolean flag | The bounded set (0-2 messages) and position-from-end matching make richer metadata unnecessary. If server-echo ID is implemented (Phase 3), the tag is removed entirely. Follows existing `_partId` underscore convention. |
-| 3 | Server-echo ID scope | Include in this spec | Research confirms this is the industry-standard approach (Slack `client_msg_id` → `ts` remap). Including it as Phase 3 provides the complete fix — content/position matching is an interim bridge, not the end state. |
-| 4 | Event sourcing | Not included | Confirmed as correct long-term architecture but not justified for these bugs. Complexity cost (event log, reducer, projection) far exceeds the benefit for a two-bug fix. |
+| #   | Decision                    | Choice               | Rationale                                                                                                                                                                                                                  |
+| --- | --------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Transcript parser fix scope | Include in this spec | The parser gap causes data loss when loading past sessions — same problem domain. Fixing it alongside the streaming integrity fix provides complete coverage.                                                              |
+| 2   | `_streaming` tag structure  | Simple boolean flag  | The bounded set (0-2 messages) and position-from-end matching make richer metadata unnecessary. If server-echo ID is implemented (Phase 3), the tag is removed entirely. Follows existing `_partId` underscore convention. |
+| 3   | Server-echo ID scope        | Include in this spec | Research confirms this is the industry-standard approach (Slack `client_msg_id` → `ts` remap). Including it as Phase 3 provides the complete fix — content/position matching is an interim bridge, not the end state.      |
+| 4   | Event sourcing              | Not included         | Confirmed as correct long-term architecture but not justified for these bugs. Complexity cost (event log, reducer, projection) far exceeds the benefit for a two-bug fix.                                                  |
 
 ---
 
@@ -212,15 +213,15 @@ Three-phase implementation:
 
 ## Key Files
 
-| File | Role | Changes Needed |
-|---|---|---|
-| `apps/client/src/layers/features/chat/model/chat-types.ts` | ChatMessage type | Add `_streaming?: boolean` |
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Session hook | Remove post-stream reset (lines 434, 439); rewrite seed effect Branch 2 with tagged dedup; tag user/assistant messages |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | SSE handler | Remove `setMessages([])` in remap case (line 265); accept server-echo IDs in done event |
-| `apps/client/src/layers/features/chat/model/stream-event-helpers.ts` | Helpers | Add `_streaming: true` to ensureAssistantMessage |
-| `apps/server/src/services/runtimes/claude-code/transcript-parser.ts` | JSONL parser | Extract error, subagent, hook parts from JSONL blocks |
-| `packages/shared/src/schemas.ts` | Schemas | Already defines all part types — no changes needed |
-| Server SSE endpoint | Done event payload | Include JSONL-assigned message IDs for server-echo |
+| File                                                                 | Role               | Changes Needed                                                                                                         |
+| -------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/model/chat-types.ts`           | ChatMessage type   | Add `_streaming?: boolean`                                                                                             |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`     | Session hook       | Remove post-stream reset (lines 434, 439); rewrite seed effect Branch 2 with tagged dedup; tag user/assistant messages |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | SSE handler        | Remove `setMessages([])` in remap case (line 265); accept server-echo IDs in done event                                |
+| `apps/client/src/layers/features/chat/model/stream-event-helpers.ts` | Helpers            | Add `_streaming: true` to ensureAssistantMessage                                                                       |
+| `apps/server/src/services/runtimes/claude-code/transcript-parser.ts` | JSONL parser       | Extract error, subagent, hook parts from JSONL blocks                                                                  |
+| `packages/shared/src/schemas.ts`                                     | Schemas            | Already defines all part types — no changes needed                                                                     |
+| Server SSE endpoint                                                  | Done event payload | Include JSONL-assigned message IDs for server-echo                                                                     |
 
 ---
 

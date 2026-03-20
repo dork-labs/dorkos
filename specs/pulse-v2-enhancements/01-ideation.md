@@ -38,6 +38,7 @@ status: specified
 ## 2) Pre-reading Log
 
 ### Existing Pulse Components
+
 - `features/pulse/ui/CronPresets.tsx` (42 lines): 9 preset pills, `{ value, onChange }` props — identical API needed for the visual builder
 - `features/pulse/ui/CreateScheduleDialog.tsx` (~280 lines): ResponsiveDialog form with progressive disclosure, CronPresets at line ~158, cwd as plain text input at line ~186
 - `features/pulse/ui/ScheduleRow.tsx` (~230 lines): Status dot, toggle, dropdown actions, uses `sonner` toast for Run Now/Approve feedback
@@ -46,21 +47,25 @@ status: specified
 - `features/pulse/ui/TimezoneCombobox.tsx` (~120 lines): Command-based combobox pattern — reference for searchable selects
 
 ### DirectoryPicker
+
 - `features/session-list/ui/DirectoryPicker.tsx` (~230 lines): Browse/recent views, breadcrumb navigation, hidden files toggle. Selection writes to global state via `setSelectedCwd()` in two places: `handleSelect()` (browse mode) and `handleRecentSelect()` (recent mode)
 - `features/session-list/ui/SessionSidebar.tsx` (~270 lines): Only consumer of DirectoryPicker — mounts it with `open`/`onOpenChange` props
 
 ### Notification Infrastructure
+
 - `shared/ui/sonner.tsx` (~40 lines): Theme-aware Toaster with custom Lucide icons, already mounted in App.tsx
 - `entities/pulse/model/use-runs.ts` (66 lines): `useRuns()` with 10s refetch, `useActiveRunCount()` for sidebar green dot, `useCancelRun()` mutation
 - `features/session-list/ui/SessionSidebar.tsx` lines 215-216: Animated green dot on HeartPulse button when `activeRunCount > 0`
 - `shared/lib/favicon-utils.ts`: Existing utility file for favicon manipulation
 
 ### Shared UI Available
+
 - `shared/ui/select.tsx`: Shadcn Select wrapper — base for visual builder dropdowns
 - `shared/ui/command.tsx` (~130 lines): cmdk wrapper — already used by TimezoneCombobox
 - `shared/ui/tooltip.tsx`: Radix Tooltip — already mounted via TooltipProvider in App.tsx
 
 ### Research
+
 - `research/20260221_pulse_scheduler_ux_redesign.md`: Original 14-source UX research; deferred these 3 items
 - `research/20260221_pulse_v2_enhancements.md`: New research on cron builder libraries, DirectoryPicker patterns, calm notification approaches
 
@@ -70,26 +75,26 @@ status: specified
 
 ### Primary Components/Modules
 
-| File | Role | Lines | Change Type |
-|------|------|-------|-------------|
-| `features/pulse/ui/CreateScheduleDialog.tsx` | Schedule create/edit form | ~280 | Modify: add CronVisualBuilder toggle, mount DirectoryPicker |
-| `features/pulse/ui/CronPresets.tsx` | Preset pill buttons | 42 | Unchanged |
-| `features/pulse/ui/CronVisualBuilder.tsx` | **NEW**: 5-field dropdown cron builder | ~150 | New file |
-| `features/session-list/ui/DirectoryPicker.tsx` | Directory browser modal | ~230 | Modify: add `onSelect` callback prop |
-| `features/session-list/ui/SessionSidebar.tsx` | Sidebar with Pulse button | ~270 | Modify: add `onSelect` handler, completion badge |
-| `entities/pulse/model/use-completed-run-badge.ts` | **NEW**: Track completed runs since last view | ~60 | New file |
-| `entities/pulse/index.ts` | Entity barrel exports | 13 | Modify: export new hook |
+| File                                              | Role                                          | Lines | Change Type                                                 |
+| ------------------------------------------------- | --------------------------------------------- | ----- | ----------------------------------------------------------- |
+| `features/pulse/ui/CreateScheduleDialog.tsx`      | Schedule create/edit form                     | ~280  | Modify: add CronVisualBuilder toggle, mount DirectoryPicker |
+| `features/pulse/ui/CronPresets.tsx`               | Preset pill buttons                           | 42    | Unchanged                                                   |
+| `features/pulse/ui/CronVisualBuilder.tsx`         | **NEW**: 5-field dropdown cron builder        | ~150  | New file                                                    |
+| `features/session-list/ui/DirectoryPicker.tsx`    | Directory browser modal                       | ~230  | Modify: add `onSelect` callback prop                        |
+| `features/session-list/ui/SessionSidebar.tsx`     | Sidebar with Pulse button                     | ~270  | Modify: add `onSelect` handler, completion badge            |
+| `entities/pulse/model/use-completed-run-badge.ts` | **NEW**: Track completed runs since last view | ~60   | New file                                                    |
+| `entities/pulse/index.ts`                         | Entity barrel exports                         | 13    | Modify: export new hook                                     |
 
 ### Shared Dependencies (Reuse As-Is)
 
-| Component | From | Use For |
-|-----------|------|---------|
-| `Select` | `shared/ui/select.tsx` | Visual builder field dropdowns |
-| `Label` | `shared/ui/label.tsx` | Field labels in visual builder |
-| `cn()` | `shared/lib/utils.ts` | Class merging |
-| `cronstrue` | npm (already installed) | Cron preview (already used) |
-| `sonner` | npm (already installed) | Run completion toasts |
-| `ResponsiveDialog` | `shared/ui/responsive-dialog.tsx` | DirectoryPicker container |
+| Component          | From                              | Use For                        |
+| ------------------ | --------------------------------- | ------------------------------ |
+| `Select`           | `shared/ui/select.tsx`            | Visual builder field dropdowns |
+| `Label`            | `shared/ui/label.tsx`             | Field labels in visual builder |
+| `cn()`             | `shared/lib/utils.ts`             | Class merging                  |
+| `cronstrue`        | npm (already installed)           | Cron preview (already used)    |
+| `sonner`           | npm (already installed)           | Run completion toasts          |
+| `ResponsiveDialog` | `shared/ui/responsive-dialog.tsx` | DirectoryPicker container      |
 
 ### Data Flow
 
@@ -141,29 +146,30 @@ N/A — these are feature enhancements, not bug fixes.
 
 **Library Assessment:**
 
-| Library | Verdict |
-|---------|---------|
-| `react-js-cron` | Disqualified — requires antd dependency |
-| `cron-builder-ui` | 2 commits, 1 star — effectively unmaintained |
-| `neocron` | Tailwind v3 peer dep — mismatch with v4 |
+| Library                | Verdict                                             |
+| ---------------------- | --------------------------------------------------- |
+| `react-js-cron`        | Disqualified — requires antd dependency             |
+| `cron-builder-ui`      | 2 commits, 1 star — effectively unmaintained        |
+| `neocron`              | Tailwind v3 peer dep — mismatch with v4             |
 | `react-cron-generator` | Legacy API, jQuery-era — incompatible with React 19 |
 
 **Recommendation: Build custom.** The implementation surface is small (5 Select components + a `parseCron`/`assembleCron` utility). All needed primitives (`Select`, `Label`) exist in the shadcn/ui inventory. No external dependency needed.
 
 **Architecture Decision:**
+
 - **Augment, don't replace.** Preset pills remain the default entry point (handle 80% of cases). The visual builder appears as a "Custom schedule" expansion below the presets.
 - **Same API**: `CronVisualBuilder` takes `{ value: string, onChange: (cron: string) => void }` — identical to `CronPresets`. The dialog shares a single `cron` state value across both input modes.
 - **Two-way binding**: When the visual builder is open and a preset is clicked, parse the preset cron back into the 5 fields. When fields change, assemble and fire `onChange`.
 
 **V2 Field Scope (single-value per field):**
 
-| Field | Options | Wildcard |
-|-------|---------|----------|
-| Minute | `*`, 0, 5, 10, 15, 20, 30, 45 | "Every minute" |
-| Hour | `*`, 0–23 | "Every hour" |
-| Day of Month | `*`, 1–31 | "Every day" |
-| Month | `*`, Jan–Dec | "Every month" |
-| Day of Week | `*`, Sun–Sat | "Every weekday" |
+| Field        | Options                       | Wildcard        |
+| ------------ | ----------------------------- | --------------- |
+| Minute       | `*`, 0, 5, 10, 15, 20, 30, 45 | "Every minute"  |
+| Hour         | `*`, 0–23                     | "Every hour"    |
+| Day of Month | `*`, 1–31                     | "Every day"     |
+| Month        | `*`, Jan–Dec                  | "Every month"   |
+| Day of Week  | `*`, Sun–Sat                  | "Every weekday" |
 
 Multi-value selectors (e.g., "Mon AND Wed", "1,15") are V3 scope.
 
@@ -174,12 +180,14 @@ Multi-value selectors (e.g., "Mon AND Wed", "1,15") are V3 scope.
 When `onSelect` prop is provided, it replaces the `setSelectedCwd()` call. When omitted, the component continues to write to global state (backward compatible). This is the React controlled/uncontrolled duality pattern.
 
 **Change surface:**
+
 - Add `onSelect?: (path: string) => void` to props
 - Modify `handleSelect()` and `handleRecentSelect()` — 2 call sites, single conditional branch each
 - SessionSidebar: zero changes (omits `onSelect`, existing behavior preserved)
 - CreateScheduleDialog: mount DirectoryPicker with `onSelect={(path) => updateField('cwd', path)}`
 
 **FSD Layer Compliance:**
+
 - DirectoryPicker lives in `features/session-list/` — cannot be imported by `features/pulse/` directly
 - Solution: CreateScheduleDialog accepts a `directoryPicker` render prop or the DirectoryPicker is passed down from the parent (PulsePanel/SessionSidebar level where both features are accessible)
 - Alternative: Move DirectoryPicker to `shared/ui/` since it's now used by multiple features — this is the cleaner FSD approach if a component needs cross-feature reuse
@@ -189,6 +197,7 @@ When `onSelect` prop is provided, it replaces the `setSelectedCwd()` call. When 
 **Three-layer ambient notification system (from quietest to loudest):**
 
 **Layer 1 — Sidebar amber dot (always on, zero interruption)**
+
 - HeartPulse button gets a second dot state: static amber dot for "completed runs not yet viewed"
 - States: (no dot) → green pulse (running) → amber static (completed unseen) → both possible
 - `useCompletedRunBadge()` hook tracks runs transitioning from `running` → terminal
@@ -196,6 +205,7 @@ When `onSelect` prop is provided, it replaces the `setSelectedCwd()` call. When 
 - Calm Tech alignment: 10/10
 
 **Layer 2 — Sonner toast (opt-in via setting, low interruption)**
+
 - Fire a brief Sonner toast when a run completes: schedule name + outcome + "View history" action
 - Auto-dismisses in 6 seconds, non-modal, non-blocking
 - Only fires for runs that transition during current session (not on initial load)
@@ -203,12 +213,14 @@ When `onSelect` prop is provided, it replaces the `setSelectedCwd()` call. When 
 - Calm Tech alignment: 8/10
 
 **Layer 3 — Tab title badge (background tab awareness)**
+
 - When tab is hidden and runs complete, prepend count: `"(2) DorkOS"`
 - Clear on `visibilitychange` (tab regains focus)
 - Implement in `shared/lib/favicon-utils.ts` as `updateTabBadge(count)`
 - Calm Tech alignment: 9/10
 
 **Explicitly NOT implementing:**
+
 - Browser Notification API — requires permission prompt, system-level disruption, violates "check history, don't push"
 - Favicon/PWA badging API — only works for installed PWAs, limited reach
 

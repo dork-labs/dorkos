@@ -188,18 +188,12 @@ describe('CapabilitiesTab', () => {
     });
 
     it('shows Overridden: Off label when agent explicitly disables pulse', () => {
-      const view = renderTab(
-        { ...baseAgent, enabledToolGroups: { pulse: false } },
-        onUpdate
-      );
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { pulse: false } }, onUpdate);
       expect(view.getByText('Overridden: Off')).toBeInTheDocument();
     });
 
     it('shows Overridden: On label when agent explicitly enables a domain', () => {
-      const view = renderTab(
-        { ...baseAgent, enabledToolGroups: { mesh: true } },
-        onUpdate
-      );
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { mesh: true } }, onUpdate);
       expect(view.getByText('Overridden: On')).toBeInTheDocument();
     });
 
@@ -215,15 +209,10 @@ describe('CapabilitiesTab', () => {
     });
 
     it('Reset button clears the per-agent override', () => {
-      const view = renderTab(
-        { ...baseAgent, enabledToolGroups: { pulse: false } },
-        onUpdate
-      );
+      const view = renderTab({ ...baseAgent, enabledToolGroups: { pulse: false } }, onUpdate);
       const resetBtn = view.getByLabelText('Reset Pulse (Scheduling) to default');
       fireEvent.click(resetBtn);
-      expect(onUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ enabledToolGroups: {} })
-      );
+      expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ enabledToolGroups: {} }));
     });
 
     it('shows disabled switch when server has relay off', () => {

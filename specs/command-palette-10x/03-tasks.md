@@ -1,4 +1,5 @@
 # Task Breakdown: 10x Command Palette UX
+
 Generated: 2026-03-03
 Source: specs/command-palette-10x/02-specification.md
 Last Decompose: 2026-03-03
@@ -14,12 +15,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ## Phase 1: Search & Frecency Foundation
 
 ### Task 1.1: Install fuse.js and create use-palette-search hook
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 1.2, 1.3
 
 **Technical Requirements**:
+
 - Install `fuse.js@^7.0.0` in `apps/client/`
 - Create `use-palette-search.ts` with Fuse.js integration
 - Fuse options: `includeMatches: true`, `threshold: 0.3`, `distance: 100`, `minMatchCharLength: 1`
@@ -28,6 +31,7 @@ All changes are client-side within `features/command-palette/`. No server change
 - Memoize Fuse instance per item list change
 
 **Implementation Steps**:
+
 1. Install fuse.js dependency
 2. Create hook with `parsePrefix()` for `@` / `>` detection
 3. Filter items by prefix before passing to Fuse
@@ -35,6 +39,7 @@ All changes are client-side within `features/command-palette/`. No server change
 5. Write 11 unit tests (parsePrefix + usePaletteSearch)
 
 **Acceptance Criteria**:
+
 - [ ] fuse.js@^7.0.0 in apps/client package.json
 - [ ] Prefix parsing handles @, >, and no-prefix
 - [ ] Fuse instance memoized (not recreated per keystroke)
@@ -43,23 +48,27 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 1.2: Create HighlightedText component for fuzzy match rendering
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 1.1, 1.3
 
 **Technical Requirements**:
+
 - Build React nodes from Fuse.js `[start, endInclusive]` index pairs
 - Matched characters wrapped in `<mark>` with `font-semibold`
 - All content via React.createElement (no raw HTML injection)
 - Plain `<span>` fallback when no indices
 
 **Implementation Steps**:
+
 1. Create `HighlightedText.tsx` in `features/command-palette/ui/`
 2. Iterate index pairs, split text into matched/unmatched spans
 3. Write 9 unit tests covering edge cases
 
 **Acceptance Criteria**:
+
 - [ ] Renders `<mark>` for matched ranges
 - [ ] Renders plain `<span>` with no indices
 - [ ] Full text content preserved
@@ -68,12 +77,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 1.3: Upgrade frecency to Slack bucket algorithm
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: None
 **Can run parallel with**: Task 1.1, 1.2
 
 **Technical Requirements**:
+
 - New storage key `dorkos:agent-frecency-v2` (old data ignored, no migration)
 - 6 time buckets: 4h (100), 24h (80), 3d (60), 1w (40), 1mo (20), 90d (10), beyond (0)
 - Formula: `totalCount * bucketSum / min(timestamps.length, 10)`
@@ -81,12 +92,14 @@ All changes are client-side within `features/command-palette/`. No server change
 - Preserve `useSyncExternalStore` pattern and public API
 
 **Implementation Steps**:
+
 1. Replace `use-agent-frecency.ts` with bucket algorithm
 2. Change `FrecencyEntry` to `FrecencyRecord` with `timestamps: number[]`
 3. Export `calcFrecencyScore` for testability
 4. Write 15+ unit tests for bucket scoring and hook behavior
 
 **Acceptance Criteria**:
+
 - [ ] Bucket scores correct for each time window
 - [ ] Timestamps capped at 10 entries
 - [ ] New storage key, old key untouched
@@ -95,12 +108,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 1.4: Integrate Fuse.js search into CommandPaletteDialog
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 1.1, 1.2
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Set `shouldFilter={false}` on `<Command>` (disable cmdk built-in filter)
 - Drive all filtering via `usePaletteSearch` hook
 - Add `searchableItems` field to `PaletteItems` return type
@@ -109,6 +124,7 @@ All changes are client-side within `features/command-palette/`. No server change
 - Update `AgentCommandItem` to accept `nameIndices` prop
 
 **Implementation Steps**:
+
 1. Add `searchableItems` builder to `usePaletteItems`
 2. Remove cmdk `filter` prop, add `shouldFilter={false}`
 3. Group search results by type for rendering
@@ -116,6 +132,7 @@ All changes are client-side within `features/command-palette/`. No server change
 5. Update existing tests for new mock shapes
 
 **Acceptance Criteria**:
+
 - [ ] All filtering via Fuse.js (not cmdk built-in)
 - [ ] `@` and `>` prefixes work correctly
 - [ ] Match highlighting renders `<mark>` elements
@@ -127,18 +144,21 @@ All changes are client-side within `features/command-palette/`. No server change
 ## Phase 2: Sub-menu & Preview Panel
 
 ### Task 2.1: Add previousCwd to Zustand store
+
 **Size**: Small
 **Priority**: Medium
 **Dependencies**: Task 1.4
 **Can run parallel with**: Task 2.2
 
 **Technical Requirements**:
+
 - Add `previousCwd: string | null` to app-store (initial: null)
 - Add `setPreviousCwd` action
 - Set `previousCwd` before agent switches in `handleAgentSelect`
 - No-op guard when switching to same CWD
 
 **Acceptance Criteria**:
+
 - [ ] previousCwd added to store
 - [ ] Set on agent switch (before CWD change)
 - [ ] Additive change only
@@ -146,22 +166,26 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 2.2: Create use-preview-data hook
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: Task 1.4
 **Can run parallel with**: Task 2.1
 
 **Technical Requirements**:
+
 - Aggregate session count, recent sessions (max 3), mesh health
 - `useDeferredValue` on agentId for debounced preview
 - Filter sessions by agent CWD
 - Return nullable health
 
 **Implementation Steps**:
+
 1. Create `use-preview-data.ts` with entity hook consumption
 2. Write 6 unit tests
 
 **Acceptance Criteria**:
+
 - [ ] Returns correct session count per agent CWD
 - [ ] Max 3 recent sessions
 - [ ] Health nullable when unavailable
@@ -170,12 +194,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 2.3: Create AgentPreviewPanel component
+
 **Size**: Large
 **Priority**: Medium
 **Dependencies**: Task 2.2
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Right-side panel showing agent identity, CWD, persona, sessions, health
 - Spring-based width animation via `motion.div`
 - Dialog width transitions: 480px to 720px
@@ -183,12 +209,14 @@ All changes are client-side within `features/command-palette/`. No server change
 - Conditional render inside `<AnimatePresence>`
 
 **Implementation Steps**:
+
 1. Create `AgentPreviewPanel.tsx` with all content sections
 2. Integrate into `CommandPaletteDialog` with flex-row layout
 3. Track selected agent via cmdk value state
 4. Add width transition to dialog content
 
 **Acceptance Criteria**:
+
 - [ ] Panel shows for agent items, hidden for others
 - [ ] Spring animation on panel entrance/exit
 - [ ] Dialog width expands when preview shown
@@ -197,12 +225,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 2.4: Implement sub-menu drill-down with cmdk pages
+
 **Size**: Large
 **Priority**: Medium
 **Dependencies**: Task 2.1, 2.3
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - cmdk `pages` stack: `useState<string[]>([])`, last element is current page
 - `AgentSubMenu.tsx` with Open Here, Open in New Tab, New Session, Recent Sessions
 - Enter on agent pushes `'agent-actions'` page
@@ -213,6 +243,7 @@ All changes are client-side within `features/command-palette/`. No server change
 - Reset pages/selectedAgent on palette close
 
 **Implementation Steps**:
+
 1. Create `AgentSubMenu.tsx` with actions and recent sessions
 2. Add pages stack state to `CommandPaletteDialog`
 3. Implement keyboard navigation (Escape, Backspace, Cmd+Enter)
@@ -221,6 +252,7 @@ All changes are client-side within `features/command-palette/`. No server change
 6. Wire up page content rendering
 
 **Acceptance Criteria**:
+
 - [ ] Sub-menu opens on Enter
 - [ ] Cmd+Enter opens new tab (fast path)
 - [ ] Backspace/Escape go back
@@ -232,12 +264,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ## Phase 3: Micro-interactions & Polish
 
 ### Task 3.1: Add sliding selection indicator with layoutId
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: Task 2.4
 **Can run parallel with**: Task 3.2, 3.3
 
 **Technical Requirements**:
+
 - `motion.div` with `layoutId="cmd-palette-selection"` behind selected item
 - `position: absolute, inset-0` for indicator, `position: relative, z-10` for content
 - Spring: `stiffness: 500, damping: 40`
@@ -245,6 +279,7 @@ All changes are client-side within `features/command-palette/`. No server change
 - Track selection via cmdk `value` / `onValueChange`
 
 **Acceptance Criteria**:
+
 - [ ] Indicator slides between items on arrow keys
 - [ ] Does not interfere with cmdk navigation
 - [ ] Respects prefers-reduced-motion
@@ -252,12 +287,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 3.2: Add dialog entrance, stagger, page transition, and hover animations
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: Task 2.4
 **Can run parallel with**: Task 3.1, 3.3
 
 **Technical Requirements**:
+
 - Dialog entrance: spring scale 0.96->1, fade, y -8->0 (500/35 spring)
 - Dialog exit: opacity 0, scale 0.96, y -8, 120ms
 - Stagger on open + page transitions only (not per-keystroke), 40ms per item, max 8 items
@@ -266,6 +303,7 @@ All changes are client-side within `features/command-palette/`. No server change
 - Update test mocks for `motion/react`
 
 **Acceptance Criteria**:
+
 - [ ] Dialog animates on open/close
 - [ ] Stagger limited to open + page transitions
 - [ ] Page transitions directional
@@ -275,12 +313,14 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 3.3: Create PaletteFooter and add contextual suggestions
+
 **Size**: Medium
 **Priority**: Medium
 **Dependencies**: Task 2.4
 **Can run parallel with**: Task 3.1, 3.2
 
 **Technical Requirements**:
+
 - `PaletteFooter.tsx` with dynamic `<kbd>` hints based on page/selection state
 - Mac vs non-Mac modifier key detection
 - Three suggestion rules: Continue session (<1h), Active Pulse runs, Switch back to previous agent
@@ -288,6 +328,7 @@ All changes are client-side within `features/command-palette/`. No server change
 - `handleSuggestionAction` dispatcher for action string prefixes
 
 **Acceptance Criteria**:
+
 - [ ] Footer shows correct context-aware hints
 - [ ] Suggestions computed from session/Pulse/previousCwd state
 - [ ] Max 3 suggestions
@@ -296,18 +337,21 @@ All changes are client-side within `features/command-palette/`. No server change
 ---
 
 ### Task 3.4: Update barrel exports and write integration tests
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 3.1, 3.2, 3.3
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - Update `index.ts` exports: add `usePaletteSearch`, `SearchableItem`, `SearchResult`
 - Integration tests for: preview panel, sub-menu, breadcrumb, Escape/Backspace, search highlighting, `@`/`>` prefixes, footer hints, contextual suggestions
 - Update all existing test mocks for new dependencies
 - Update `AgentCommandItem` tests for new props
 
 **Acceptance Criteria**:
+
 - [ ] Barrel exports complete
 - [ ] Full integration test coverage
 - [ ] All existing tests updated and passing
@@ -318,17 +362,20 @@ All changes are client-side within `features/command-palette/`. No server change
 ## Phase 4: Documentation
 
 ### Task 4.1: Update documentation for new palette features
+
 **Size**: Small
 **Priority**: Low
 **Dependencies**: Task 3.4
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - `contributing/keyboard-shortcuts.md`: 5 new shortcuts (Cmd+Enter, > prefix, Backspace, Escape in sub-menu, Enter for drill-down)
 - `contributing/animations.md`: layoutId selection indicator pattern and stagger-on-open pattern
 - `decisions/0063`: update status from `proposed` to `accepted`
 
 **Acceptance Criteria**:
+
 - [ ] Keyboard shortcuts documented
 - [ ] Animation patterns documented
 - [ ] ADR status updated

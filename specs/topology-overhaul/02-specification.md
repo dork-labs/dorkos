@@ -66,9 +66,7 @@ The topology visualization has several UX issues:
 
 ```typescript
 // Line 76 area — filter before iterating
-const externalAdapters = adapters?.filter(
-  (a) => a.config.type !== 'claude-code',
-) ?? [];
+const externalAdapters = adapters?.filter((a) => a.config.type !== 'claude-code') ?? [];
 
 if (relayEnabled && externalAdapters.length > 0) {
   for (const adapter of externalAdapters) {
@@ -90,12 +88,16 @@ The `AgentNodeData` interface (lines 20-42) already has a `runtime` field (line 
 **DefaultCard (line 139):** Add runtime badge below the agent name, above capability badges:
 
 ```tsx
-{/* Runtime badge — visible at default and expanded LOD */}
-{d.runtime && (
-  <span className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-    {d.runtime}
-  </span>
-)}
+{
+  /* Runtime badge — visible at default and expanded LOD */
+}
+{
+  d.runtime && (
+    <span className="bg-muted text-muted-foreground inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium">
+      {d.runtime}
+    </span>
+  );
+}
 ```
 
 **ExpandedCard (line 186):** Same badge, rendered in the expanded layout.
@@ -119,6 +121,7 @@ const useGroups = namespaces.length >= 1;
 ```
 
 The downstream code already handles this correctly:
+
 - Lines 111-123: Group node creation iterates `namespaces` — works with 1 or more
 - Lines 164-167: Agent nodes get `parentId` and `extent: 'parent'` when groups are used
 - `elk-layout.ts` lines 56-76: ELK compound layout nesting works with any number of groups
@@ -162,8 +165,8 @@ export interface AdapterNodeData {
   adapterType: string;
   adapterStatus: 'running' | 'stopped' | 'error';
   bindingCount: number;
-  label?: string;      // Area 5
-  isGhost?: boolean;    // NEW
+  label?: string; // Area 5
+  isGhost?: boolean; // NEW
 }
 ```
 
@@ -173,18 +176,19 @@ export interface AdapterNodeData {
 if (d.isGhost) {
   return (
     <div
-      className="flex items-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 bg-card/40 px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
+      className="border-muted-foreground/30 bg-card/40 flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 opacity-40 transition-opacity hover:opacity-70"
       style={{ width: ADAPTER_NODE_WIDTH, height: ADAPTER_NODE_HEIGHT }}
       onClick={onGhostClick}
     >
-      <Plus className="size-4 text-muted-foreground" />
-      <span className="text-sm text-muted-foreground">Add Adapter</span>
+      <Plus className="text-muted-foreground size-4" />
+      <span className="text-muted-foreground text-sm">Add Adapter</span>
     </div>
   );
 }
 ```
 
 Ghost nodes have:
+
 - Dashed border (`border-dashed`) with low-contrast color
 - Reduced opacity (40%, rising to 70% on hover)
 - `Plus` icon instead of platform icon
@@ -237,7 +241,12 @@ import {
   edges={layoutedEdges}
   // ...existing props
 >
-  <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--muted-foreground) / 0.15)" />
+  <Background
+    variant={BackgroundVariant.Dots}
+    gap={16}
+    size={1}
+    color="hsl(var(--muted-foreground) / 0.15)"
+  />
   <MiniMap
     nodeColor={(node) => {
       if (node.type === 'adapter') return 'hsl(var(--muted-foreground) / 0.4)';
@@ -247,12 +256,13 @@ import {
       return data.namespaceColor ?? 'hsl(var(--primary))';
     }}
     maskColor="hsl(var(--background) / 0.8)"
-    className="!bottom-2 !right-2"
+    className="!right-2 !bottom-2"
   />
 </ReactFlow>
 ```
 
 **MiniMap node coloring:**
+
 - Adapter nodes: neutral muted gray
 - Namespace group nodes: transparent (they're containers, not meaningful in the minimap)
 - Agent nodes: namespace accent color (falls back to primary)
@@ -269,12 +279,8 @@ import {
 
 ```tsx
 <div className="flex flex-col">
-  <span className="text-sm font-medium">
-    {d.label || d.adapterName}
-  </span>
-  <span className="text-xs text-muted-foreground">
-    {d.label ? d.adapterName : ''}
-  </span>
+  <span className="text-sm font-medium">{d.label || d.adapterName}</span>
+  <span className="text-muted-foreground text-xs">{d.label ? d.adapterName : ''}</span>
 </div>
 ```
 
@@ -307,8 +313,8 @@ The `AdapterListItem.config` (from `transport.ts` line 51) contains the full `Ad
 export interface BindingEdgeData {
   label?: string;
   sessionStrategy?: string;
-  chatId?: string;        // NEW
-  channelType?: string;   // NEW
+  chatId?: string; // NEW
+  channelType?: string; // NEW
   onDelete?: (edgeId: string) => void;
 }
 ```
@@ -316,21 +322,25 @@ export interface BindingEdgeData {
 **Label display (lines 87-111 area):** When `chatId` or `channelType` are present, render badges below the label text:
 
 ```tsx
-{/* Filter badges — only shown when chatId or channelType present */}
-{(d.chatId || d.channelType) && (
-  <div className="mt-0.5 flex items-center gap-1">
-    {d.chatId && (
-      <span className="rounded bg-muted px-1 py-px text-[9px] text-muted-foreground">
-        {d.chatId}
-      </span>
-    )}
-    {d.channelType && (
-      <span className="rounded bg-muted px-1 py-px text-[9px] text-muted-foreground">
-        {d.channelType}
-      </span>
-    )}
-  </div>
-)}
+{
+  /* Filter badges — only shown when chatId or channelType present */
+}
+{
+  (d.chatId || d.channelType) && (
+    <div className="mt-0.5 flex items-center gap-1">
+      {d.chatId && (
+        <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
+          {d.chatId}
+        </span>
+      )}
+      {d.channelType && (
+        <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
+          {d.channelType}
+        </span>
+      )}
+    </div>
+  );
+}
 ```
 
 Badges use the same visibility rules as the label: only shown when hovered/selected AND zoom >= 0.7 (line 60-61 condition).
@@ -388,6 +398,7 @@ The `AdapterBinding` type (lines 243-258 of `relay-adapter-schemas.ts`) already 
 ### Unit Tests
 
 **build-topology-elements.test.ts:**
+
 - CCA adapter filtered out: pass adapters including `type: 'claude-code'` → no adapter node created for it
 - CCA binding edges excluded: binding referencing CCA adapter → no edge created (source node doesn't exist)
 - External adapters still create nodes: Telegram adapter → node created
@@ -400,6 +411,7 @@ The `AdapterBinding` type (lines 243-258 of `relay-adapter-schemas.ts`) already 
 - Binding chatId/channelType passed through to edge data
 
 **AdapterNode.test.tsx:**
+
 - Ghost node renders with dashed border and Plus icon
 - Ghost node has no output handle
 - Ghost node click fires callback
@@ -408,12 +420,14 @@ The `AdapterBinding` type (lines 243-258 of `relay-adapter-schemas.ts`) already 
 - Type name shown as secondary text when label present
 
 **AgentNode.test.tsx:**
+
 - Runtime badge renders at default LOD
 - Runtime badge renders at expanded LOD
 - Runtime badge hidden at compact LOD
 - Runtime badge hidden when `runtime` is undefined
 
 **BindingEdge.test.tsx (new tests):**
+
 - chatId badge rendered when present
 - channelType badge rendered when present
 - Both badges rendered when both present
@@ -421,6 +435,7 @@ The `AdapterBinding` type (lines 243-258 of `relay-adapter-schemas.ts`) already 
 - Badges follow same visibility rules as label (zoom >= 0.7)
 
 **TopologyGraph.test.tsx:**
+
 - MiniMap component renders
 - Background component renders
 
@@ -482,10 +497,10 @@ No external documentation changes needed. These are visual improvements to an ex
 ## Open Questions
 
 1. ~~**CCA adapter type identifier**~~ (RESOLVED)
-**Answer:** `'claude-code'` — defined in `AdapterTypeSchema` at line 16 of `relay-adapter-schemas.ts`.
+   **Answer:** `'claude-code'` — defined in `AdapterTypeSchema` at line 16 of `relay-adapter-schemas.ts`.
 
 2. ~~**Ghost node click target**~~ (RESOLVED)
-**Answer:** Opens the `AdapterSetupWizard` / adapter catalog. The callback is provided by `TopologyGraph` via props on the adapter node data.
+   **Answer:** Opens the `AdapterSetupWizard` / adapter catalog. The callback is provided by `TopologyGraph` via props on the adapter node data.
 
 ## Related ADRs
 
@@ -507,5 +522,6 @@ No external documentation changes needed. These are visual improvements to an ex
 ## Changelog
 
 ### 2026-03-11 — Initial Draft
+
 - Full specification covering 6 areas of topology improvement
 - Based on brainstorming session decisions and existing research reports

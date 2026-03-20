@@ -21,9 +21,7 @@ export function PollingItem({ enabled, onToggle }: PollingItemProps) {
         </button>
       </HoverCardTrigger>
       <HoverCardContent side="top" align="center" className="w-64 p-3">
-        <p className="text-sm font-medium">
-          Background refresh {enabled ? 'on' : 'off'}
-        </p>
+        <p className="text-sm font-medium">Background refresh {enabled ? 'on' : 'off'}</p>
         <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
           {enabled
             ? 'Messages are checked for updates periodically, even when no one is typing. Useful if agents run in the background. Turn off to reduce network usage.'

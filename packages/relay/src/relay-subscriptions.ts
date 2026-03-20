@@ -32,7 +32,7 @@ export interface SubscriptionDeps {
 export function executeSubscribe(
   pattern: string,
   handler: MessageHandler,
-  deps: SubscriptionDeps,
+  deps: SubscriptionDeps
 ): Unsubscribe {
   return deps.subscriptionRegistry.subscribe(pattern, handler);
 }
@@ -44,11 +44,7 @@ export function executeSubscribe(
  * @param signalData - The signal payload
  * @param deps - Injected dependencies
  */
-export function executeSignal(
-  subject: string,
-  signalData: Signal,
-  deps: SubscriptionDeps,
-): void {
+export function executeSignal(subject: string, signalData: Signal, deps: SubscriptionDeps): void {
   deps.signalEmitter.emit(subject, signalData);
 }
 
@@ -63,7 +59,7 @@ export function executeSignal(
 export function executeOnSignal(
   pattern: string,
   handler: SignalHandler,
-  deps: SubscriptionDeps,
+  deps: SubscriptionDeps
 ): Unsubscribe {
   return deps.signalEmitter.subscribe(pattern, handler);
 }

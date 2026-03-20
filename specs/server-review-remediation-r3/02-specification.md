@@ -76,7 +76,7 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
 router.patch('/:id', async (req, res) => {
   // ... existing validation ...
   const cwd = (req.query.cwd as string) || vaultRoot;
-  if (!(await assertBoundary(cwd, res))) return;  // ADD THIS
+  if (!(await assertBoundary(cwd, res))) return; // ADD THIS
   const session = await transcriptReader.getSession(cwd, req.params.id);
   // ...
 });
@@ -85,10 +85,11 @@ router.patch('/:id', async (req, res) => {
 **Stream route (line ~313):** Add `assertBoundary` before registering client:
 
 ```typescript
-router.get('/:id/stream', async (req, res) => {  // Make async
+router.get('/:id/stream', async (req, res) => {
+  // Make async
   const sessionId = req.params.id;
   const cwd = (req.query.cwd as string) || vaultRoot;
-  if (!(await assertBoundary(cwd, res))) return;  // ADD THIS
+  if (!(await assertBoundary(cwd, res))) return; // ADD THIS
   // ...
   sessionBroadcaster.registerClient(sessionId, cwd, res, clientId);
 });
@@ -109,7 +110,7 @@ function deepMerge(
 ): Record<string, unknown> {
   const result = { ...target };
   for (const [key, sourceValue] of Object.entries(source)) {
-    if (DANGEROUS_KEYS.has(key)) continue;  // ADD THIS
+    if (DANGEROUS_KEYS.has(key)) continue; // ADD THIS
     // ... rest unchanged ...
   }
   return result;
@@ -146,7 +147,7 @@ import type { McpToolDeps } from './types.js';
 
 export function registerPulseTools(
   server: ReturnType<typeof import('@anthropic-ai/claude-agent-sdk').createSdkMcpServer>,
-  deps: McpToolDeps,
+  deps: McpToolDeps
 ): void {
   if (!deps.pulseStore) return;
   // ... tool registrations ...
@@ -208,7 +209,7 @@ Add to the existing `SESSIONS` section:
 export const SESSIONS = {
   TIMEOUT_MS: 30 * 60 * 1000,
   HEALTH_CHECK_INTERVAL_MS: 5 * 60 * 1000,
-  MAX_CONCURRENT: 50,  // ADD THIS
+  MAX_CONCURRENT: 50, // ADD THIS
 } as const;
 ```
 
@@ -340,6 +341,7 @@ export const DEFAULT_CWD: string = env.DORKOS_DEFAULT_CWD ?? path.resolve(thisDi
 ```
 
 **Update consumers:**
+
 - `routes/sessions.ts`: Replace `__dirname` + `vaultRoot` with `import { DEFAULT_CWD } from '../lib/resolve-root.js'`. Remove `fileURLToPath` import. (Fixes M1)
 - `routes/relay.ts`: Replace inline `vaultRoot` computation with `DEFAULT_CWD` import
 - `routes/commands.ts`: Replace `defaultRoot` computation with `DEFAULT_CWD` import
@@ -392,7 +394,7 @@ export function sendError(
   status: number,
   error: string,
   code: string,
-  extra?: Record<string, unknown>,
+  extra?: Record<string, unknown>
 ): void {
   res.status(status).json({ error, code, ...extra });
 }
@@ -418,21 +420,27 @@ Replace the three `as` assertions with Zod parsing. Add schemas near the top of 
 ```typescript
 import { z } from 'zod';
 
-const SchedulerConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  maxConcurrentRuns: z.number().default(5),
-  timezone: z.string().nullable().default(null),
-  retentionCount: z.number().default(100),
-}).default({});
+const SchedulerConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    maxConcurrentRuns: z.number().default(5),
+    timezone: z.string().nullable().default(null),
+    retentionCount: z.number().default(100),
+  })
+  .default({});
 
-const RelayConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  dataDir: z.string().nullable().optional(),
-}).default({});
+const RelayConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    dataDir: z.string().nullable().optional(),
+  })
+  .default({});
 
-const MeshConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-}).default({});
+const MeshConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default({});
 ```
 
 Then:
@@ -501,7 +509,9 @@ const sdkOptions = {
 describe('errorHandler in production', () => {
   const originalEnv = process.env.NODE_ENV;
 
-  afterEach(() => { process.env.NODE_ENV = originalEnv; });
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
+  });
 
   it('hides error message in production', () => {
     process.env.NODE_ENV = 'production';
@@ -541,8 +551,7 @@ describe('session routes boundary validation', () => {
   });
 
   it('GET /:id/stream rejects cwd outside boundary', async () => {
-    const res = await request(app)
-      .get('/api/sessions/test-id/stream?cwd=/etc/passwd');
+    const res = await request(app).get('/api/sessions/test-id/stream?cwd=/etc/passwd');
     expect(res.status).toBe(403);
   });
 });
@@ -629,21 +638,25 @@ No documentation changes needed. Internal server hardening only.
 ## Implementation Phases
 
 ### Phase 1: Security (C1, C2, I4)
+
 - Error handler production guard
 - Boundary checks on PATCH and stream routes
 - Prototype pollution guard in deepMerge
 
 ### Phase 2: File Splits (C3, C4)
+
 - Split mcp-tool-server.ts into 8 domain modules
 - Extract adapter-error.ts and adapter-config.ts from adapter-manager.ts
 
 ### Phase 3: Performance & Reliability (I1, I2, I5, I6)
+
 - Session Map cap with MAX_CONCURRENT constant
 - Reverse lookup index for findSession
 - SSE connection limits in SessionBroadcaster
 - Keepalive race condition fix
 
 ### Phase 4: Code Quality (I7, M1-M4, M6, M7)
+
 - Centralize vault root to lib/resolve-root.ts
 - UUID validation helper in route-utils.ts
 - Standardized sendError helper
@@ -652,6 +665,7 @@ No documentation changes needed. Internal server hardening only.
 - Replace Record<string, unknown> casts
 
 ### Phase 5: Testing (M8)
+
 - Error handler production mode test
 - Boundary validation tests
 - Prototype pollution test

@@ -99,6 +99,7 @@ Delete the entire `useCallback` that implements staleness detection.
 #### 1.5 Remove relay EventSource effect (lines ~259-324)
 
 Delete the entire `useEffect` that:
+
 - Opens persistent EventSource when `relayEnabled`
 - Listens for `stream_ready`, `relay_message`, `sync_update`
 - Handles correlationId filtering
@@ -107,6 +108,7 @@ Delete the entire `useEffect` that:
 #### 1.6 Simplify the "legacy" SSE EventSource effect (lines ~326-343)
 
 **Before:**
+
 ```typescript
 // Legacy-path EventSource: closes during streaming since SSE is embedded in POST.
 // No-op when relay is enabled — the relay effect above handles sync updates.
@@ -118,6 +120,7 @@ useEffect(() => {
 ```
 
 **After:**
+
 ```typescript
 // Persistent SSE connection for session sync updates.
 // Closes during streaming since SSE events arrive inline on the POST response.
@@ -144,6 +147,7 @@ Changes: remove `relayEnabled` guard, remove from dependency array, rename comme
 #### 1.7 Remove relay branch from `executeSubmission` (lines ~406-427)
 
 **Before (relay branch + else):**
+
 ```typescript
 if (relayEnabled) {
   const correlationId = crypto.randomUUID();
@@ -158,7 +162,8 @@ if (relayEnabled) {
   resetStalenessTimer();
 } else {
   await transport.sendMessage(
-    targetSessionId, finalContent,
+    targetSessionId,
+    finalContent,
     (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
     abortController.signal,
     selectedCwd ?? undefined
@@ -169,13 +174,14 @@ if (relayEnabled) {
 ```
 
 **After (direct SSE only):**
+
 ```typescript
 await transport.sendMessage(
   targetSessionId,
   finalContent,
   (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
   abortController.signal,
-  selectedCwd ?? undefined,
+  selectedCwd ?? undefined
 );
 setPendingUserContent(null);
 setStatus('idle');
@@ -184,6 +190,7 @@ setStatus('idle');
 #### 1.8 Remove `relayEnabled` from refetch logic (line ~190)
 
 **Before:**
+
 ```typescript
 refetchInterval: () => {
   if (isStreaming || relayEnabled) return false;
@@ -192,6 +199,7 @@ refetchInterval: () => {
 ```
 
 **After:**
+
 ```typescript
 refetchInterval: () => {
   if (isStreaming) return false;
@@ -222,6 +230,7 @@ Delete the entire function (~40 lines) that registers a console endpoint and pub
 #### 2.3 Remove relay dispatch in POST `/messages` (lines ~232-255)
 
 Delete the entire `if (isRelayEnabled() && relayCore)` block that:
+
 - Calls `publishViaRelay()`
 - Returns `202` receipt
 - Logs relay dispatch timing
@@ -264,6 +273,7 @@ Delete the entire method that injects RelayCore for relay subscription fan-in.
 #### 3.3 Remove relay subscription in `registerClient()` (lines ~119-131)
 
 Delete:
+
 - `if (this.relay && clientId) { this.subscribeToRelay(res, clientId); }`
 - `if (this.relay && clientId) { res.write(\`event: stream_ready\n...\`); }`
 
@@ -304,6 +314,7 @@ In `apps/server/src/index.ts`, remove the line that calls `broadcaster.setRelay(
 #### 5.2 Update session-broadcaster tests
 
 In `apps/server/src/services/runtimes/claude-code/__tests__/session-broadcaster.test.ts` (or similar path):
+
 - Remove tests for `stream_ready` event emission
 - Remove tests for `relay_message` event forwarding
 - Remove tests for `subscribeToRelay()` / `unsubscribeFromRelay()`
@@ -313,6 +324,7 @@ In `apps/server/src/services/runtimes/claude-code/__tests__/session-broadcaster.
 #### 5.3 Update remaining test files
 
 Any test file that mocks `relayEnabled` or references the relay message path in the context of chat:
+
 - Remove `relayEnabled` mock setups
 - Remove assertions about relay-specific behavior
 - Keep relay mocks that test relay UI features (adapter management, ConnectionsView)
@@ -353,12 +365,14 @@ No visible change to the user. Messages send and stream identically — the dire
 ### Deleted Tests
 
 The deleted relay test files test code paths that no longer exist. No replacement tests needed — the direct SSE path already has test coverage in:
+
 - `use-chat-session.test.ts` (existing client tests)
 - `sessions.test.ts` (existing server route tests)
 
 ## Performance Considerations
 
 **Positive impact only.** Removing the relay message path eliminates:
+
 - One extra network hop (relay bus round-trip)
 - `stream_ready` handshake delay (up to 5 seconds polling)
 - Staleness timer overhead
@@ -411,25 +425,25 @@ None — all decisions were resolved during ideation (see Section 6 of `01-ideat
 
 ## Files Modified
 
-| File | Change |
-|------|--------|
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | Remove relay branching, refs, effects, staleness timer (~150 lines) |
-| `apps/server/src/routes/sessions.ts` | Remove `publishViaRelay()`, relay 202 path, `stream_ready`, imports (~80 lines) |
+| File                                                                   | Change                                                                           |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`       | Remove relay branching, refs, effects, staleness timer (~150 lines)              |
+| `apps/server/src/routes/sessions.ts`                                   | Remove `publishViaRelay()`, relay 202 path, `stream_ready`, imports (~80 lines)  |
 | `apps/server/src/services/runtimes/claude-code/session-broadcaster.ts` | Remove `setRelay()`, `subscribeToRelay()`, relay fan-in, relay maps (~120 lines) |
-| `apps/server/src/index.ts` | Remove `broadcaster.setRelay(relayCore)` call (~1 line) |
+| `apps/server/src/index.ts`                                             | Remove `broadcaster.setRelay(relayCore)` call (~1 line)                          |
 
 ## Files Deleted
 
-| File | Reason |
-|------|--------|
-| `apps/client/src/layers/features/chat/model/__tests__/use-chat-session-relay.test.ts` | Tests relay chat path that no longer exists |
-| `apps/server/src/routes/__tests__/sessions-relay.test.ts` | Tests relay dispatch path that no longer exists |
-| `apps/server/src/routes/__tests__/sessions-relay-correlation.test.ts` | Tests correlation ID filtering that no longer exists |
+| File                                                                                  | Reason                                               |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `apps/client/src/layers/features/chat/model/__tests__/use-chat-session-relay.test.ts` | Tests relay chat path that no longer exists          |
+| `apps/server/src/routes/__tests__/sessions-relay.test.ts`                             | Tests relay dispatch path that no longer exists      |
+| `apps/server/src/routes/__tests__/sessions-relay-correlation.test.ts`                 | Tests correlation ID filtering that no longer exists |
 
 ## Files Updated (Tests)
 
-| File | Change |
-|------|--------|
+| File                                                                                  | Change                                                     |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `apps/server/src/services/runtimes/claude-code/__tests__/session-broadcaster.test.ts` | Remove relay subscription tests, keep sync/broadcast tests |
 
 ## Acceptance Criteria

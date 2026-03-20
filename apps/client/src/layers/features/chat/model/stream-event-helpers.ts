@@ -8,7 +8,10 @@ import type { ToolCallState } from './chat-types';
 import type { StreamEventDeps, StreamHandlerHelpers } from './stream-event-types';
 
 /** Derive flat content and toolCalls from parts for backward compat. */
-export function deriveFromParts(parts: MessagePart[]): { content: string; toolCalls: ToolCallState[] } {
+export function deriveFromParts(parts: MessagePart[]): {
+  content: string;
+  toolCalls: ToolCallState[];
+} {
   const textSegments: string[] = [];
   const toolCalls: ToolCallState[] = [];
   for (const part of parts) {

@@ -55,6 +55,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary Components/Modules:**
+
 - `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` — Main panel orchestrator (tabs, disabled gate, data loading)
 - `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx` — React Flow visualization with dagre layout
 - `apps/client/src/layers/features/mesh/ui/TopologyPanel.tsx` — Access control (namespaces + ACL rules)
@@ -63,6 +64,7 @@ status: ideation
 - `apps/client/src/layers/features/mesh/ui/AgentHealthDetail.tsx` — Agent health side panel
 
 **Shared Dependencies:**
+
 - `@/layers/shared/ui` — Badge, Tabs, TabsList, TabsTrigger, TabsContent, DirectoryPicker
 - `@/layers/shared/model` — useTransport, useAppStore (recentCwds)
 - `@/layers/entities/mesh` — All 13 mesh entity hooks
@@ -74,10 +76,12 @@ status: ideation
 User clicks "Scan" → `useDiscoverAgents` mutation → `transport.discoverMeshAgents(roots, maxDepth)` → POST `/api/mesh/discover` → `meshCore.discover()` → returns `DiscoveryCandidate[]` → rendered as `CandidateCard` list
 
 **Feature Flags/Config:**
+
 - `DORKOS_MESH_ENABLED` env var → `mesh-state.ts` → `useMeshEnabled()` entity hook
 - `~/.dork/config.json` — will need `meshScanRoots?: string[]` added
 
 **Potential Blast Radius:**
+
 - Direct: 6 UI files in `features/mesh/ui/`, config schema, config route
 - Indirect: DirectoryPicker (reused, not modified), entity hooks (may need config hook)
 - Tests: `MeshPanel.test.tsx` needs updates for new conditional rendering logic
@@ -91,6 +95,7 @@ N/A — not a bug fix.
 ### Potential Solutions
 
 **1. Wizard-Driven Setup**
+
 - Description: Step-by-step modal flow on first visit (pick dirs → review candidates → set rules → done)
 - Pros: Complete coverage, forces important decisions upfront
 - Cons: Engineers reject hand-holding (Linear research confirms), high implementation cost, can't re-trigger if skipped
@@ -98,48 +103,54 @@ N/A — not a bug fix.
 - Score: Not recommended for this developer audience
 
 **2. Smart Defaults Only (Auto-Scan)**
+
 - Description: Auto-detect CWD, run silent scan on first load, show results without user input
 - Pros: Maximum "magic," zero friction, fast path to populated state
 - Cons: Silent filesystem scanning feels invasive for a security tool, violates user consent norms
 - Score: Rejected — smart defaults for input fields only, not auto-scanning
 
 **3. Contextual Guidance Only**
+
 - Description: Improve each tab's empty state with better copy, icons, CTAs. No pre-filling or persistence.
 - Pros: Lowest risk, respects user intent, incremental shipping
 - Cons: Doesn't solve root problem (blank Discovery input), no persistence means repeated friction
 - Score: Necessary but not sufficient
 
 **4. Hybrid — Smart Defaults + Contextual Guidance (RECOMMENDED)**
+
 - Description: Pre-fill Discovery with boundary root, persist custom roots in server config, improve all empty states with contextual guidance, hide complexity until it's relevant
 - Pros: Respects user intent, eliminates blank-slate problem, teaches as users explore, low-medium complexity
 - Cons: Smart defaults may not match every setup, config schema addition needed
 - Score: Recommended
 
 ### Security Considerations
+
 - Server boundary in `lib/boundary.ts` enforces 403 for out-of-scope paths — UI should make boundary visible upfront
 - Chip/tag input should normalize paths before sending (strip traversal, resolve `~`)
 - Custom scan roots persisted in config should be validated on read
 
 ### Recommendation
+
 **Approach 4**: Hybrid smart defaults + contextual guidance, with progressive disclosure of the full tabbed interface. The Discovery tab is the sole entry point when no agents exist.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | What to show when zero agents exist | Hide tab bar entirely; show Discovery content full-bleed | All other tabs would be empty — the tab bar is visual noise. Discovery is the only actionable content. Progressive disclosure at the layout level. |
-| 2 | Default scan root | Server boundary (home directory) | The boundary already represents the user's configured scope. It's the natural "where to look" default. Custom roots are an advanced feature. |
-| 3 | Custom root persistence | Server config (`~/.dork/config.json`) | Changing roots is an advanced action that should survive browser clearing. Add `meshScanRoots?: string[]` to UserConfigSchema. |
-| 4 | Discovery input pattern | Chip/tag input + DirectoryPicker button | Chips for quick management, folder button opens the existing DirectoryPicker for browsing. Best of both worlds. |
-| 5 | Topology empty state | Hidden when zero agents | Since the entire tab bar is hidden when no agents exist, Topology naturally hides too. After agents exist, Topology shows with the React Flow graph. |
-| 6 | Stats header visibility | Hidden when zero agents | MeshStatsHeader has nothing to show (0/0/0) — hide it alongside the tab bar. |
-| 7 | Re-collapse behavior | Return to Discovery-only when agents drop to 0 | If all agents are unregistered, the interface should collapse back to the simplified Discovery view. |
+| #   | Decision                            | Choice                                                   | Rationale                                                                                                                                            |
+| --- | ----------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | What to show when zero agents exist | Hide tab bar entirely; show Discovery content full-bleed | All other tabs would be empty — the tab bar is visual noise. Discovery is the only actionable content. Progressive disclosure at the layout level.   |
+| 2   | Default scan root                   | Server boundary (home directory)                         | The boundary already represents the user's configured scope. It's the natural "where to look" default. Custom roots are an advanced feature.         |
+| 3   | Custom root persistence             | Server config (`~/.dork/config.json`)                    | Changing roots is an advanced action that should survive browser clearing. Add `meshScanRoots?: string[]` to UserConfigSchema.                       |
+| 4   | Discovery input pattern             | Chip/tag input + DirectoryPicker button                  | Chips for quick management, folder button opens the existing DirectoryPicker for browsing. Best of both worlds.                                      |
+| 5   | Topology empty state                | Hidden when zero agents                                  | Since the entire tab bar is hidden when no agents exist, Topology naturally hides too. After agents exist, Topology shows with the React Flow graph. |
+| 6   | Stats header visibility             | Hidden when zero agents                                  | MeshStatsHeader has nothing to show (0/0/0) — hide it alongside the tab bar.                                                                         |
+| 7   | Re-collapse behavior                | Return to Discovery-only when agents drop to 0           | If all agents are unregistered, the interface should collapse back to the simplified Discovery view.                                                 |
 
 ### Progressive Disclosure Architecture
 
 The Mesh panel has two visual modes:
 
 **Mode A — Zero agents (first-time / post-unregister-all):**
+
 ```
 ┌──────────────────────────────────────┐
 │  [No tab bar]  [No stats header]     │
@@ -158,6 +169,7 @@ The Mesh panel has two visual modes:
 ```
 
 **Mode B — Agents registered (full interface):**
+
 ```
 ┌──────────────────────────────────────┐
 │  [Stats: 3 agents · 2 active · 1 …] │
@@ -171,6 +183,7 @@ The Mesh panel has two visual modes:
 ### Tab-by-Tab Empty States (Mode B — agents exist but specific tab is empty)
 
 **Agents tab** (if somehow empty while others exist):
+
 ```
 [Users icon]
 No agents registered yet
@@ -179,6 +192,7 @@ Run a discovery scan to find compatible agents.
 ```
 
 **Denied tab** (healthy empty — no CTA needed):
+
 ```
 [Shield + checkmark icon]
 No blocked paths
@@ -187,6 +201,7 @@ preventing those agents from joining the mesh.
 ```
 
 **Access tab** (< 2 namespaces):
+
 ```
 [Shield icon]
 Cross-project access requires multiple namespaces
@@ -197,6 +212,7 @@ which namespaces can communicate with each other.
 ### Discovery Tab UX Details
 
 **Scan root input:**
+
 - Chip/tag input pre-populated with boundary path (e.g., `~/`)
 - Removable chips (X button on each)
 - Folder icon button opens `DirectoryPicker` dialog
@@ -204,12 +220,14 @@ which namespaces can communicate with each other.
 - "Advanced" disclosure: scan depth slider (1-5, default 3)
 
 **Default behavior:**
+
 - On mount: pre-populate with boundary root
 - If `meshScanRoots` exists in config: use those instead
 - After scan: show results inline (candidates list with register/deny actions)
 - "No agents found": suggest scanning with greater depth or different directories
 
 **Persistence:**
+
 - Custom roots saved to `~/.dork/config.json` → `meshScanRoots: string[]`
 - Requires adding `meshScanRoots` to `UserConfigSchema` in `packages/shared/src/config-schema.ts`
 - New server endpoint or extend existing PATCH `/api/config` to handle the field

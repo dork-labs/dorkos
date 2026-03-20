@@ -77,14 +77,20 @@ export class SchedulerService {
   private relay: RelayCore | null;
   private meshCore: MeshCore | null;
 
-  constructor(store: PulseStore, agentManager: SchedulerAgentManager, config: SchedulerConfig, relay?: RelayCore | null, meshCore?: MeshCore | null);
+  constructor(
+    store: PulseStore,
+    agentManager: SchedulerAgentManager,
+    config: SchedulerConfig,
+    relay?: RelayCore | null,
+    meshCore?: MeshCore | null
+  );
   constructor(deps: SchedulerDeps);
   constructor(
     storeOrDeps: PulseStore | SchedulerDeps,
     agentManager?: SchedulerAgentManager,
     config?: SchedulerConfig,
     relay?: RelayCore | null,
-    meshCore?: MeshCore | null,
+    meshCore?: MeshCore | null
   ) {
     if ('store' in storeOrDeps && 'agentManager' in storeOrDeps && 'config' in storeOrDeps) {
       // SchedulerDeps object form
@@ -222,7 +228,7 @@ export class SchedulerService {
       if (!projectPath) {
         throw new Error(
           `Agent ${schedule.agentId} not found in registry -- schedule ${schedule.id} cannot run. ` +
-          'The agent may have been unregistered. Re-link the schedule to a valid agent or directory.'
+            'The agent may have been unregistered. Re-link the schedule to a valid agent or directory.'
         );
       }
       return projectPath;
@@ -315,7 +321,9 @@ export class SchedulerService {
       this.store.updateRun(run.id, {
         status: 'running',
       });
-      logger.info(`relay dispatch for run ${run.id} delivered to ${result.deliveredTo} endpoint(s)`);
+      logger.info(
+        `relay dispatch for run ${run.id} delivered to ${result.deliveredTo} endpoint(s)`
+      );
     }
   }
 

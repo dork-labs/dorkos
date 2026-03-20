@@ -41,7 +41,7 @@ export class TestModeRuntime implements AgentRuntime {
 
   updateSession(
     sessionId: string,
-    opts: { permissionMode?: PermissionMode; model?: string },
+    opts: { permissionMode?: PermissionMode; model?: string }
   ): boolean {
     const existing = this._sessions.get(sessionId);
     if (!existing) return false;
@@ -52,7 +52,7 @@ export class TestModeRuntime implements AgentRuntime {
   async *sendMessage(
     sessionId: string,
     content: string,
-    _opts?: MessageOpts,
+    _opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
     const scenario = scenarioStore.getScenario(sessionId);
     yield* scenario(content);
@@ -66,7 +66,7 @@ export class TestModeRuntime implements AgentRuntime {
     _sessionId: string,
     _projectDir: string,
     callback: (event: StreamEvent) => void,
-    clientId?: string,
+    clientId?: string
   ): () => void {
     if (!this._relay || !clientId) return () => {};
     // Subscribe to relay.human.console.{clientId} and forward events to the callback.
@@ -111,7 +111,7 @@ export class TestModeRuntime implements AgentRuntime {
   async readFromOffset(
     _projectDir: string,
     _id: string,
-    _offset: number,
+    _offset: number
   ): Promise<{ content: string; newOffset: number }> {
     return { content: '', newOffset: 0 };
   }
@@ -165,11 +165,7 @@ export class TestModeRuntime implements AgentRuntime {
     return false;
   }
 
-  submitAnswers(
-    _id: string,
-    _toolCallId: string,
-    _answers: Record<string, string>,
-  ): boolean {
+  submitAnswers(_id: string, _toolCallId: string, _answers: Record<string, string>): boolean {
     return false;
   }
 }

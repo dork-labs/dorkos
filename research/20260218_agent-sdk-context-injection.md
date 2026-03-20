@@ -1,5 +1,5 @@
 ---
-title: "Claude Agent SDK — Context Injection & Runtime Context Best Practices"
+title: 'Claude Agent SDK — Context Injection & Runtime Context Best Practices'
 date: 2026-02-18
 type: implementation
 status: archived
@@ -63,6 +63,7 @@ This is the cleanest way to add dynamic runtime context. It preserves all built-
 `appendSystemPrompt` as a standalone option no longer exists in the current SDK. It was replaced by the `append` property inside the preset object form of `systemPrompt`. The migration guide from Claude Code SDK to Claude Agent SDK confirms this is a breaking change.
 
 Mapping:
+
 - **Old (Claude Code SDK):** `appendSystemPrompt: "my instructions"`
 - **New (Claude Agent SDK):** `systemPrompt: { type: "preset", preset: "claude_code", append: "my instructions" }`
 
@@ -80,13 +81,14 @@ type SettingSource = "user" | "project" | "local";
 
 Controls which on-disk config files are loaded:
 
-| Source | File location | Description |
-|--------|--------------|-------------|
-| `"user"` | `~/.claude/settings.json` | Global user settings |
-| `"project"` | `.claude/settings.json` | Shared project settings (git-tracked) |
-| `"local"` | `.claude/settings.local.json` | Local project settings (gitignored) |
+| Source      | File location                 | Description                           |
+| ----------- | ----------------------------- | ------------------------------------- |
+| `"user"`    | `~/.claude/settings.json`     | Global user settings                  |
+| `"project"` | `.claude/settings.json`       | Shared project settings (git-tracked) |
+| `"local"`   | `.claude/settings.local.json` | Local project settings (gitignored)   |
 
 **Critical behavior:** When `settingSources` is omitted, **no** filesystem settings are loaded, including **no CLAUDE.md files**. To load CLAUDE.md, you must:
+
 1. Include `settingSources: ["project"]`
 2. Also use `systemPrompt: { type: "preset", preset: "claude_code" }` — the preset is required for CLAUDE.md to be fully utilized
 
@@ -105,6 +107,7 @@ return { systemMessage: "Current date: 2026-02-18. Git status: clean." };
 ```
 
 **`additionalContext` (inside `hookSpecificOutput`):** Adds context to specific hook events. Supported in:
+
 - `PreToolUse`
 - `PostToolUse`
 - `UserPromptSubmit`
@@ -119,15 +122,15 @@ const injectRuntimeContext: HookCallback = async (input, toolUseID, { signal }) 
   return {
     hookSpecificOutput: {
       hookEventName: input.hook_event_name, // "SessionStart"
-      additionalContext: `Session started at ${now}. Working directory: ${input.cwd}.`
-    }
+      additionalContext: `Session started at ${now}. Working directory: ${input.cwd}.`,
+    },
   };
 };
 
 // Wire it up in options:
 options: {
   hooks: {
-    SessionStart: [{ hooks: [injectRuntimeContext] }]
+    SessionStart: [{ hooks: [injectRuntimeContext] }];
   }
 }
 ```
@@ -138,9 +141,9 @@ TypeScript UserPromptSubmit hook example (fires on every user message):
 const prependContext: HookCallback = async (input, toolUseID, { signal }) => {
   return {
     hookSpecificOutput: {
-      hookEventName: "UserPromptSubmit",
-      additionalContext: `Current date: ${new Date().toISOString()}`
-    }
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: `Current date: ${new Date().toISOString()}`,
+    },
   };
 };
 ```
@@ -156,8 +159,8 @@ interface ReadMcpResourceOutput {
   contents: Array<{
     uri: string;
     mimeType?: string;
-    text?: string;    // Textual context content
-    blob?: string;    // Binary content (base64)
+    text?: string; // Textual context content
+    blob?: string; // Binary content (base64)
   }>;
   server: string;
 }
@@ -175,12 +178,13 @@ The current `AgentManager.sendMessage()` builds `sdkOptions` without any `system
 const sdkOptions: Options = {
   cwd: effectiveCwd,
   includePartialMessages: true,
-  settingSources: ['project', 'user'],  // loads CLAUDE.md
+  settingSources: ['project', 'user'], // loads CLAUDE.md
   ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
 };
 ```
 
 This means:
+
 - **No `systemPrompt` is set** — SDK uses minimal system prompt (not the full Claude Code system prompt)
 - **No runtime context is injected** (no date, no git status, no env metadata in the prompt)
 - `settingSources: ['project', 'user']` is set correctly to load CLAUDE.md files
@@ -192,29 +196,32 @@ This means:
 
 ### Approach Comparison for Runtime Context Injection
 
-| Approach | When injected | Persists? | Per-turn? | Recommended for |
-|----------|--------------|-----------|-----------|-----------------|
-| `systemPrompt` plain string | Session start | Whole session | No | Full custom agent behavior |
-| `systemPrompt.append` (preset) | Session start | Whole session | No | Adding static/dynamic context at session start |
-| `SessionStart` hook + `additionalContext` | Session init | Whole session | No | Dynamic context at session start (date, git branch) |
-| `UserPromptSubmit` hook + `additionalContext` | Each user message | Per-turn | Yes | Frequently-changing context (live git status) |
-| `systemMessage` (from any hook) | Hook fire time | Varies | Varies | One-off injections |
-| CLAUDE.md file | Session start | Whole session | No | Project conventions, team guidelines |
-| MCP resource (pull) | When agent requests | N/A | On demand | Rich contextual data the agent requests when needed |
-| Prompt prepending (in the `prompt` string itself) | First turn / per turn | First message | Optional | One-time task context, lowest coupling |
+| Approach                                          | When injected         | Persists?     | Per-turn? | Recommended for                                     |
+| ------------------------------------------------- | --------------------- | ------------- | --------- | --------------------------------------------------- |
+| `systemPrompt` plain string                       | Session start         | Whole session | No        | Full custom agent behavior                          |
+| `systemPrompt.append` (preset)                    | Session start         | Whole session | No        | Adding static/dynamic context at session start      |
+| `SessionStart` hook + `additionalContext`         | Session init          | Whole session | No        | Dynamic context at session start (date, git branch) |
+| `UserPromptSubmit` hook + `additionalContext`     | Each user message     | Per-turn      | Yes       | Frequently-changing context (live git status)       |
+| `systemMessage` (from any hook)                   | Hook fire time        | Varies        | Varies    | One-off injections                                  |
+| CLAUDE.md file                                    | Session start         | Whole session | No        | Project conventions, team guidelines                |
+| MCP resource (pull)                               | When agent requests   | N/A           | On demand | Rich contextual data the agent requests when needed |
+| Prompt prepending (in the `prompt` string itself) | First turn / per turn | First message | Optional  | One-time task context, lowest coupling              |
 
 ### Best Practice: Static vs Dynamic Context
 
 **Static context** (project conventions, coding standards, team guidelines):
+
 - Use CLAUDE.md files with `settingSources: ['project']`
 - Or include in `systemPrompt.append` if you need programmatic control
 
 **Dynamic context** (date/time, git status, working directory state):
+
 - Use `SessionStart` hook with `additionalContext` for once-per-session injection
 - Use `UserPromptSubmit` hook with `additionalContext` for per-turn injection
 - The `SessionStart` hook is TypeScript-only in the Agent SDK
 
 **Environment metadata:**
+
 - The `env` option passes process env vars to the subprocess
 - To surface env values in the model's context, explicitly include them in `systemPrompt.append` or hook `additionalContext`
 
@@ -224,16 +231,16 @@ From the `SDKSystemMessage` type, Claude Code automatically includes in the sess
 
 ```typescript
 type SDKSystemMessage = {
-  type: "system";
-  subtype: "init";
-  cwd: string;          // Current working directory
-  tools: string[];      // Available tool names
-  model: string;        // Model being used
+  type: 'system';
+  subtype: 'init';
+  cwd: string; // Current working directory
+  tools: string[]; // Available tool names
+  model: string; // Model being used
   permissionMode: PermissionMode;
-  mcp_servers: { name: string; status: string; }[];
+  mcp_servers: { name: string; status: string }[];
   slash_commands: string[];
   output_style: string;
-}
+};
 ```
 
 The `claude_code` preset system prompt also includes "Context about the current working directory and environment" automatically. When running with the full preset, some date/time and environment context is likely already in the system prompt. Without the preset, only minimal tool instructions are present.
@@ -243,23 +250,23 @@ The `claude_code` preset system prompt also includes "Context about the current 
 ```typescript
 interface Options {
   // Context injection
-  systemPrompt?: string | { type: "preset"; preset: "claude_code"; append?: string };
-  settingSources?: ("user" | "project" | "local")[];
+  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
+  settingSources?: ('user' | 'project' | 'local')[];
   env?: Record<string, string>;
   hooks?: {
-    SessionStart?: HookCallbackMatcher[];      // TypeScript only — inject once per session
-    UserPromptSubmit?: HookCallbackMatcher[];   // Inject per user message
+    SessionStart?: HookCallbackMatcher[]; // TypeScript only — inject once per session
+    UserPromptSubmit?: HookCallbackMatcher[]; // Inject per user message
     PreToolUse?: HookCallbackMatcher[];
     PostToolUse?: HookCallbackMatcher[];
   };
 
   // Execution context
-  cwd?: string;                                // Working directory (default: process.cwd())
+  cwd?: string; // Working directory (default: process.cwd())
   mcpServers?: Record<string, McpServerConfig>; // MCP servers (can expose context resources)
-  agents?: Record<string, AgentDefinition>;    // Subagents with custom prompts
+  agents?: Record<string, AgentDefinition>; // Subagents with custom prompts
 
   // Session management
-  resume?: string;                             // Resume existing session by ID
+  resume?: string; // Resume existing session by ID
   model?: string;
   permissionMode?: PermissionMode;
 }
@@ -269,19 +276,19 @@ interface Options {
 
 Top-level fields (outside `hookSpecificOutput`):
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `systemMessage` | `string` | Injected into conversation for Claude to see. Works on any hook. |
-| `continue` | `boolean` | Whether agent continues (default: true) |
+| Field           | Type      | Description                                                      |
+| --------------- | --------- | ---------------------------------------------------------------- |
+| `systemMessage` | `string`  | Injected into conversation for Claude to see. Works on any hook. |
+| `continue`      | `boolean` | Whether agent continues (default: true)                          |
 
 Inside `hookSpecificOutput`:
 
-| Field | Type | Supported hooks | Description |
-|-------|------|-----------------|-------------|
-| `hookEventName` | `string` | All | Required. Use `input.hook_event_name` |
-| `additionalContext` | `string` | PreToolUse, PostToolUse, UserPromptSubmit, SessionStart (TS), SubagentStart (TS) | Context appended to conversation |
-| `permissionDecision` | `'allow' \| 'deny' \| 'ask'` | PreToolUse | Controls tool execution |
-| `updatedInput` | `object` | PreToolUse | Modified tool input |
+| Field                | Type                         | Supported hooks                                                                  | Description                           |
+| -------------------- | ---------------------------- | -------------------------------------------------------------------------------- | ------------------------------------- |
+| `hookEventName`      | `string`                     | All                                                                              | Required. Use `input.hook_event_name` |
+| `additionalContext`  | `string`                     | PreToolUse, PostToolUse, UserPromptSubmit, SessionStart (TS), SubagentStart (TS) | Context appended to conversation      |
+| `permissionDecision` | `'allow' \| 'deny' \| 'ask'` | PreToolUse                                                                       | Controls tool execution               |
+| `updatedInput`       | `object`                     | PreToolUse                                                                       | Modified tool input                   |
 
 ---
 
@@ -318,14 +325,18 @@ This also fixes the potential issue where CLAUDE.md files are loaded but the min
 
 ```typescript
 sdkOptions.hooks = {
-  SessionStart: [{
-    hooks: [async (input) => ({
-      hookSpecificOutput: {
-        hookEventName: input.hook_event_name,
-        additionalContext: `Date: ${new Date().toISOString()}\nCWD: ${input.cwd}`
-      }
-    })]
-  }]
+  SessionStart: [
+    {
+      hooks: [
+        async (input) => ({
+          hookSpecificOutput: {
+            hookEventName: input.hook_event_name,
+            additionalContext: `Date: ${new Date().toISOString()}\nCWD: ${input.cwd}`,
+          },
+        }),
+      ],
+    },
+  ],
 };
 ```
 
@@ -336,7 +347,7 @@ sdkOptions.hooks = {
 const contextPrefix = `[Date: ${new Date().toISOString()} | CWD: ${effectiveCwd}]\n\n`;
 const agentQuery = query({
   prompt: makeUserPrompt(contextPrefix + content),
-  options: sdkOptions
+  options: sdkOptions,
 });
 ```
 
@@ -359,13 +370,13 @@ const agentQuery = query({
 
 ## Sources
 
-| Source | URL |
-|--------|-----|
-| Agent SDK TypeScript Reference | https://platform.claude.com/docs/en/agent-sdk/typescript |
-| Modifying system prompts | https://platform.claude.com/docs/en/agent-sdk/modifying-system-prompts |
-| Hooks reference | https://platform.claude.com/docs/en/agent-sdk/hooks |
-| Agent SDK overview | https://platform.claude.com/docs/en/agent-sdk/overview |
-| DorkOS agent-manager.ts | apps/server/src/services/agent-manager.ts |
+| Source                         | URL                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| Agent SDK TypeScript Reference | https://platform.claude.com/docs/en/agent-sdk/typescript               |
+| Modifying system prompts       | https://platform.claude.com/docs/en/agent-sdk/modifying-system-prompts |
+| Hooks reference                | https://platform.claude.com/docs/en/agent-sdk/hooks                    |
+| Agent SDK overview             | https://platform.claude.com/docs/en/agent-sdk/overview                 |
+| DorkOS agent-manager.ts        | apps/server/src/services/agent-manager.ts                              |
 
 ## Search Methodology
 

@@ -1,5 +1,5 @@
 ---
-title: "Adapter & Binding Configuration UX Patterns"
+title: 'Adapter & Binding Configuration UX Patterns'
 date: 2026-03-11
 type: external-best-practices
 status: active
@@ -104,6 +104,7 @@ The most common pattern for "message comes in, route to team/agent":
 **Gmail Filters**: "If [from/to/subject/contains] matches X, then [label/archive/forward/delete]." The UX is a simple form with condition fields and action checkboxes. Rules are evaluated top-to-bottom; first match wins. - [Create rules to filter your emails](https://support.google.com/mail/answer/6579?hl=en)
 
 **Key Gmail UX patterns**:
+
 - Create filter from search: users can right-click a message and "Filter messages like this" — pre-populating the condition from the message's attributes
 - Condition fields are AND-combined (all must match)
 - Actions are multi-select checkboxes (multiple actions per rule)
@@ -371,15 +372,15 @@ RelayPanel with contextual filter:
 
 Across every platform studied, there's a clear separation between "connecting" (authentication/credentials) and "configuring" (routing/behavior). This maps directly to DorkOS's adapter (connection) and binding (configuration) model:
 
-| Platform | Connection Concept | Configuration Concept |
-|---|---|---|
-| Zapier | Connection (OAuth/API key) | Zap step configuration |
-| n8n | Credential | Workflow node settings |
-| Make.com | Connection | Scenario module settings |
-| Intercom | Channel (Messenger/email/SMS) | Workflow routing rules |
-| Zendesk | Channel | Omnichannel routing config |
-| Discord | Bot (token + permissions) | Channel permissions |
-| Home Assistant | Integration | Automation/entity config |
+| Platform       | Connection Concept            | Configuration Concept      |
+| -------------- | ----------------------------- | -------------------------- |
+| Zapier         | Connection (OAuth/API key)    | Zap step configuration     |
+| n8n            | Credential                    | Workflow node settings     |
+| Make.com       | Connection                    | Scenario module settings   |
+| Intercom       | Channel (Messenger/email/SMS) | Workflow routing rules     |
+| Zendesk        | Channel                       | Omnichannel routing config |
+| Discord        | Bot (token + permissions)     | Channel permissions        |
+| Home Assistant | Integration                   | Automation/entity config   |
 
 DorkOS's existing adapter/binding split is architecturally correct and aligns with industry patterns. The key UX insight: never force users to do both in a single flow. Connect first, configure second. Each can be done independently and at different times.
 
@@ -388,11 +389,13 @@ DorkOS's existing adapter/binding split is architecturally correct and aligns wi
 Two competing visual metaphors exist for routing configuration:
 
 **Wiring Board** (React Flow canvas, already designed in prior research):
+
 - Pros: Immediate visual understanding of the full topology. Drag-to-connect is intuitive. Shows the complete picture at a glance.
 - Cons: Doesn't scale well beyond ~20 nodes. Harder to express conditional routing. Mobile/small-screen challenges.
 - Best for: DorkOS's primary use case (1:1 adapter-to-agent bindings with small topology).
 
 **Rules List** (Gmail filters, Zendesk routing rules):
+
 - Pros: Scales to hundreds of rules. Easy to express conditions. Familiar to developers. Sortable/searchable.
 - Cons: No visual overview of the topology. Harder to spot gaps in routing. Less "delightful."
 - Best for: Complex conditional routing with many rules.
@@ -422,6 +425,7 @@ Each level is only revealed when the user's setup has grown complex enough to ne
 ## Sources & Evidence
 
 ### Multi-Instance Adapter Patterns
+
 - [App connections on Zapier](https://help.zapier.com/hc/en-us/articles/36818633398157-App-connections-on-Zapier) — Auto-numbering of multiple connections
 - [Add a connection label - Zapier](https://docs.zapier.com/platform/build/connection-label) — Template-based connection labels from API data
 - [BEST PRACTICE: Label App Connections](https://community.zapier.com/tips-and-inspiration-5/best-practice-label-app-connections-when-there-are-multiple-accounts-for-1-app-13922) — Community best practices for connection naming
@@ -433,6 +437,7 @@ Each level is only revealed when the user's setup has grown complex enough to ne
 - [Can I connect more than one account to a service? - IFTTT](https://help.ifttt.com/hc/en-us/articles/115010396468-Can-I-connect-more-than-one-account-to-a-service) — IFTTT per-Applet account selection
 
 ### Routing/Binding Configuration
+
 - [Route customer conversations to the right team - Intercom](https://www.intercom.com/help/en/articles/9630589-route-customer-conversations-to-the-right-team) — Workflow-based conversation routing
 - [Workload management explained - Intercom](https://www.intercom.com/help/en/articles/6560715-automatically-route-conversations-to-teammates) — Balanced assignment and round-robin
 - [Managing your omnichannel routing configuration - Zendesk](https://support.zendesk.com/hc/en-us/articles/4828787357210-Managing-your-omnichannel-routing-configuration) — Omnichannel routing configuration
@@ -443,6 +448,7 @@ Each level is only revealed when the user's setup has grown complex enough to ne
 - [Create a rule-based chatbot - HubSpot](https://knowledge.hubspot.com/chatflows/create-a-bot) — HubSpot chatbot If/Then routing
 
 ### Progressive Disclosure
+
 - [Progressive Disclosure - NN/g](https://www.nngroup.com/articles/progressive-disclosure/) — Nielsen Norman Group foundational article
 - [Disclosure controls - Apple HIG](https://developer.apple.com/design/human-interface-guidelines/disclosure-controls) — Apple's disclosure control guidelines
 - [The craft of SwiftUI API design: Progressive disclosure - WWDC22](https://developer.apple.com/videos/play/wwdc2022/10059/) — Apple's philosophy on progressive disclosure in APIs
@@ -453,10 +459,12 @@ Each level is only revealed when the user's setup has grown complex enough to ne
 - [Modifying a GitHub App registration - GitHub Docs](https://docs.github.com/en/apps/maintaining-github-apps/modifying-a-github-app-registration) — GitHub App post-install setup URL
 
 ### Sidebar Filtering
+
 - [Filter UX Design Patterns & Best Practices - Pencil & Paper](https://www.pencilandpaper.io/articles/ux-pattern-analysis-enterprise-filtering) — Enterprise filtering patterns
 - [Custom Views - Linear Docs](https://linear.app/docs/custom-views) — Linear contextual views and saved filters
 
 ### Existing DorkOS Research (Incorporated)
+
 - `research/20260228_adapter_agent_routing.md` — Binding table architecture, React Flow topology, session mapping
 - `research/20260227_adapter_catalog_patterns.md` — ConfigField descriptors, AdapterManifest, setup wizard
 - `research/20260301_ftue_best_practices_deep_dive.md` — Progressive disclosure philosophy, FTUE frameworks

@@ -181,7 +181,7 @@ The `ListRunsQuerySchema` in `packages/shared/src/schemas.ts` currently only sup
 export const ListRunsQuerySchema = z
   .object({
     scheduleId: z.string().optional(),
-    status: PulseRunStatusSchema.optional(),  // NEW
+    status: PulseRunStatusSchema.optional(), // NEW
     limit: z.coerce.number().int().min(1).max(500).optional().default(50),
     offset: z.coerce.number().int().min(0).optional().default(0),
   })
@@ -235,20 +235,18 @@ Add a local state filter in `RunHistoryPanel`:
 ```tsx
 const [statusFilter, setStatusFilter] = useState<string>('all');
 
-const { data: runs = [], isLoading } = useRuns(
-  {
-    scheduleId,
-    limit: 20,
-    ...(statusFilter !== 'all' && { status: statusFilter }),
-  },
-);
+const { data: runs = [], isLoading } = useRuns({
+  scheduleId,
+  limit: 20,
+  ...(statusFilter !== 'all' && { status: statusFilter }),
+});
 ```
 
 Render a shadcn `<Select>` above the run list:
 
 ```tsx
 <div className="mb-2 flex items-center justify-between">
-  <span className="text-xs font-medium text-muted-foreground">Run History</span>
+  <span className="text-muted-foreground text-xs font-medium">Run History</span>
   <Select value={statusFilter} onValueChange={setStatusFilter}>
     <SelectTrigger className="h-6 w-[120px] text-xs">
       <SelectValue />
@@ -301,14 +299,16 @@ useEffect(() => {
 Render a "Load more" button below the list when the current page is full:
 
 ```tsx
-{runs.length === LIMIT && (
-  <button
-    onClick={() => setOffset((prev) => prev + LIMIT)}
-    className="w-full py-2 text-center text-xs text-muted-foreground hover:text-foreground"
-  >
-    Load more...
-  </button>
-)}
+{
+  runs.length === LIMIT && (
+    <button
+      onClick={() => setOffset((prev) => prev + LIMIT)}
+      className="text-muted-foreground hover:text-foreground w-full py-2 text-center text-xs"
+    >
+      Load more...
+    </button>
+  );
+}
 ```
 
 ### Phase 4: Performance & Polish
@@ -346,7 +346,11 @@ function RunTimestamp({ iso }: { iso: string }) {
   if (diffMs < sevenDays) {
     // Relative with absolute tooltip
     const absolute = date.toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
     });
     return (
       <time dateTime={iso} title={absolute}>
@@ -357,7 +361,11 @@ function RunTimestamp({ iso }: { iso: string }) {
 
   // Absolute with relative tooltip
   const absolute = date.toLocaleString('en-US', {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
   });
   return (
     <time dateTime={iso} title={formatRelativeTime(iso)}>
@@ -375,23 +383,28 @@ Add `title` attribute to truncated output summary and error text:
 
 ```tsx
 // Output summary
-{run.outputSummary && (
-  <span className="truncate text-muted-foreground" title={run.outputSummary}>
-    {firstLine(run.outputSummary)}
-  </span>
-)}
+{
+  run.outputSummary && (
+    <span className="text-muted-foreground truncate" title={run.outputSummary}>
+      {firstLine(run.outputSummary)}
+    </span>
+  );
+}
 
 // Error message
-{run.status === 'failed' && run.error && (
-  <span className="truncate text-destructive" title={run.error}>
-    {firstLine(run.error)}
-  </span>
-)}
+{
+  run.status === 'failed' && run.error && (
+    <span className="text-destructive truncate" title={run.error}>
+      {firstLine(run.error)}
+    </span>
+  );
+}
 ```
 
 #### 4D. Skeleton Loading State
 
 First, add the Skeleton component to the client app. Run:
+
 ```bash
 npx shadcn@latest add skeleton
 ```
@@ -437,14 +450,14 @@ Add icons before the trigger text in `RunRow`:
 import { Clock, Play } from 'lucide-react';
 
 // In RunRow render:
-<span className="flex items-center gap-1 truncate text-muted-foreground">
+<span className="text-muted-foreground flex items-center gap-1 truncate">
   {run.trigger === 'scheduled' ? (
     <Clock className="h-3 w-3 shrink-0" />
   ) : (
     <Play className="h-3 w-3 shrink-0" />
   )}
   <span className="capitalize">{run.trigger}</span>
-</span>
+</span>;
 ```
 
 ## User Experience
@@ -481,6 +494,7 @@ import { Clock, Play } from 'lucide-react';
 ### Unit Tests — RunHistoryPanel
 
 **New test: navigation sets directory when schedule has different cwd**
+
 ```typescript
 it('navigates to schedule directory before setting session', async () => {
   const mockSetDirectory = vi.fn();
@@ -505,6 +519,7 @@ it('navigates to schedule directory before setting session', async () => {
 ```
 
 **New test: navigation skips directory when same cwd**
+
 ```typescript
 it('does not change directory when schedule cwd matches current', async () => {
   const mockSetDirectory = vi.fn();
@@ -525,6 +540,7 @@ it('does not change directory when schedule cwd matches current', async () => {
 ```
 
 **New test: cancel shows error toast on failure**
+
 ```typescript
 it('shows error toast when cancel fails', async () => {
   const mockCancelRun = { mutate: vi.fn(), isPending: false };
@@ -549,6 +565,7 @@ it('shows error toast when cancel fails', async () => {
 ```
 
 **New test: status filter changes query params**
+
 ```typescript
 it('filters runs by status', async () => {
   render(
@@ -571,6 +588,7 @@ it('filters runs by status', async () => {
 ```
 
 **New test: keyboard navigation**
+
 ```typescript
 it('activates run via keyboard Enter', async () => {
   render(
@@ -588,6 +606,7 @@ it('activates run via keyboard Enter', async () => {
 ```
 
 **New test: skeleton loading state**
+
 ```typescript
 it('shows skeleton rows while loading', () => {
   vi.mocked(useRuns).mockReturnValue({
@@ -610,12 +629,14 @@ it('shows skeleton rows while loading', () => {
 ### Existing Tests — Verify Non-Regression
 
 Update existing test mocks to pass `scheduleCwd` prop:
+
 ```typescript
 // All existing renders need scheduleCwd
 <RunHistoryPanel scheduleId="sched-1" scheduleCwd={null} />
 ```
 
 Update `ScheduleRow.test.tsx` mock to accept `scheduleCwd`:
+
 ```typescript
 vi.mock('../ui/RunHistoryPanel', () => ({
   RunHistoryPanel: ({ scheduleId, scheduleCwd }: { scheduleId: string; scheduleCwd: string | null }) => (
@@ -629,6 +650,7 @@ vi.mock('../ui/RunHistoryPanel', () => ({
 **`scheduler-service.test.ts`** — No changes needed (session ID logic is unchanged).
 
 **`pulse-store.test.ts`** — Add test for status filtering:
+
 ```typescript
 it('filters runs by status', () => {
   // Create runs with different statuses
@@ -664,6 +686,7 @@ it('filters runs by status', () => {
 ## Implementation Phases
 
 ### Phase 1: Bug Fixes (Critical)
+
 1. Add `scheduleCwd` prop to `RunHistoryPanel`
 2. Update `ScheduleRow` to pass `schedule.cwd`
 3. Import and use `useDirectoryState` in `RunHistoryPanel`
@@ -672,12 +695,14 @@ it('filters runs by status', () => {
 6. Add new navigation tests
 
 ### Phase 2: Accessibility & Feedback
+
 7. Add `role="button"`, `tabIndex={0}`, `aria-label` to RunRow
 8. Add `focus-visible:ring-2` style
 9. Add toast callbacks to cancel mutation
 10. Import `toast` from `sonner`
 
 ### Phase 3: Filtering & Pagination
+
 11. Add `status` field to `ListRunsQuerySchema`
 12. Update `pulse-store.ts` `listRuns` for status filtering
 13. Update `routes/pulse.ts` to pass status param
@@ -687,6 +712,7 @@ it('filters runs by status', () => {
 17. Reset offset when filter changes
 
 ### Phase 4: Performance & Polish
+
 18. Change `refetchInterval` to function form in `useRuns()`
 19. Add `RunTimestamp` component with 7-day threshold
 20. Add `title` attributes to truncated text

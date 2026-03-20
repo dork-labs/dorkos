@@ -57,14 +57,14 @@ Designers and developers reviewing components must scroll through the entire pag
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `cmdk` | ^1.1.1 | Command palette (already installed) |
-| `motion/react` | ^12.33.0 | Animations (already installed) |
-| `lucide-react` | installed | Icons (already installed) |
-| shadcn `Command` | `@/layers/shared/ui` | CommandDialog wrapper (already available) |
-| shadcn `Sidebar` | `@/layers/shared/ui` | Sidebar components (already used) |
-| `IntersectionObserver` | Web API | Scrollspy detection (no library needed) |
+| Dependency             | Version              | Purpose                                   |
+| ---------------------- | -------------------- | ----------------------------------------- |
+| `cmdk`                 | ^1.1.1               | Command palette (already installed)       |
+| `motion/react`         | ^12.33.0             | Animations (already installed)            |
+| `lucide-react`         | installed            | Icons (already installed)                 |
+| shadcn `Command`       | `@/layers/shared/ui` | CommandDialog wrapper (already available) |
+| shadcn `Sidebar`       | `@/layers/shared/ui` | Sidebar components (already used)         |
+| `IntersectionObserver` | Web API              | Scrollspy detection (no library needed)   |
 
 **No new packages to install.**
 
@@ -119,62 +119,350 @@ export interface PlaygroundSection {
 
 /** Section definitions for the Components page. */
 export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
-  { id: 'button', title: 'Button', page: 'components', category: 'Actions', keywords: ['btn', 'click', 'primary', 'secondary', 'destructive', 'ghost', 'brand'] },
-  { id: 'badge', title: 'Badge', page: 'components', category: 'Actions', keywords: ['label', 'tag', 'status', 'pill'] },
-  { id: 'hoverbordergradient', title: 'HoverBorderGradient', page: 'components', category: 'Actions', keywords: ['gradient', 'animated', 'aceternity'] },
-  { id: 'kbd', title: 'Kbd', page: 'components', category: 'Actions', keywords: ['keyboard', 'shortcut', 'key', 'hint'] },
-  { id: 'input', title: 'Input', page: 'components', category: 'Forms', keywords: ['text', 'field', 'form'] },
-  { id: 'textarea', title: 'Textarea', page: 'components', category: 'Forms', keywords: ['multiline', 'text', 'form'] },
-  { id: 'switch', title: 'Switch', page: 'components', category: 'Forms', keywords: ['toggle', 'boolean', 'form'] },
-  { id: 'select', title: 'Select', page: 'components', category: 'Forms', keywords: ['dropdown', 'picker', 'form'] },
-  { id: 'tabs', title: 'Tabs', page: 'components', category: 'Forms', keywords: ['tab', 'panel', 'tabbed'] },
-  { id: 'skeleton', title: 'Skeleton', page: 'components', category: 'Feedback', keywords: ['loading', 'placeholder', 'shimmer'] },
-  { id: 'separator', title: 'Separator', page: 'components', category: 'Feedback', keywords: ['divider', 'line', 'hr'] },
-  { id: 'tooltip', title: 'Tooltip', page: 'components', category: 'Feedback', keywords: ['hover', 'hint', 'popover'] },
-  { id: 'navigationlayout', title: 'NavigationLayout', page: 'components', category: 'Navigation', keywords: ['nav', 'sidebar', 'vertical', 'settings'] },
-  { id: 'dialog', title: 'Dialog', page: 'components', category: 'Overlays', keywords: ['modal', 'popup', 'window'] },
-  { id: 'alertdialog', title: 'AlertDialog', page: 'components', category: 'Overlays', keywords: ['confirm', 'destructive', 'warning'] },
-  { id: 'popover', title: 'Popover', page: 'components', category: 'Overlays', keywords: ['floating', 'panel', 'dropdown'] },
-  { id: 'dropdownmenu', title: 'DropdownMenu', page: 'components', category: 'Overlays', keywords: ['context', 'menu', 'actions'] },
+  {
+    id: 'button',
+    title: 'Button',
+    page: 'components',
+    category: 'Actions',
+    keywords: ['btn', 'click', 'primary', 'secondary', 'destructive', 'ghost', 'brand'],
+  },
+  {
+    id: 'badge',
+    title: 'Badge',
+    page: 'components',
+    category: 'Actions',
+    keywords: ['label', 'tag', 'status', 'pill'],
+  },
+  {
+    id: 'hoverbordergradient',
+    title: 'HoverBorderGradient',
+    page: 'components',
+    category: 'Actions',
+    keywords: ['gradient', 'animated', 'aceternity'],
+  },
+  {
+    id: 'kbd',
+    title: 'Kbd',
+    page: 'components',
+    category: 'Actions',
+    keywords: ['keyboard', 'shortcut', 'key', 'hint'],
+  },
+  {
+    id: 'input',
+    title: 'Input',
+    page: 'components',
+    category: 'Forms',
+    keywords: ['text', 'field', 'form'],
+  },
+  {
+    id: 'textarea',
+    title: 'Textarea',
+    page: 'components',
+    category: 'Forms',
+    keywords: ['multiline', 'text', 'form'],
+  },
+  {
+    id: 'switch',
+    title: 'Switch',
+    page: 'components',
+    category: 'Forms',
+    keywords: ['toggle', 'boolean', 'form'],
+  },
+  {
+    id: 'select',
+    title: 'Select',
+    page: 'components',
+    category: 'Forms',
+    keywords: ['dropdown', 'picker', 'form'],
+  },
+  {
+    id: 'tabs',
+    title: 'Tabs',
+    page: 'components',
+    category: 'Forms',
+    keywords: ['tab', 'panel', 'tabbed'],
+  },
+  {
+    id: 'skeleton',
+    title: 'Skeleton',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['loading', 'placeholder', 'shimmer'],
+  },
+  {
+    id: 'separator',
+    title: 'Separator',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['divider', 'line', 'hr'],
+  },
+  {
+    id: 'tooltip',
+    title: 'Tooltip',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['hover', 'hint', 'popover'],
+  },
+  {
+    id: 'navigationlayout',
+    title: 'NavigationLayout',
+    page: 'components',
+    category: 'Navigation',
+    keywords: ['nav', 'sidebar', 'vertical', 'settings'],
+  },
+  {
+    id: 'dialog',
+    title: 'Dialog',
+    page: 'components',
+    category: 'Overlays',
+    keywords: ['modal', 'popup', 'window'],
+  },
+  {
+    id: 'alertdialog',
+    title: 'AlertDialog',
+    page: 'components',
+    category: 'Overlays',
+    keywords: ['confirm', 'destructive', 'warning'],
+  },
+  {
+    id: 'popover',
+    title: 'Popover',
+    page: 'components',
+    category: 'Overlays',
+    keywords: ['floating', 'panel', 'dropdown'],
+  },
+  {
+    id: 'dropdownmenu',
+    title: 'DropdownMenu',
+    page: 'components',
+    category: 'Overlays',
+    keywords: ['context', 'menu', 'actions'],
+  },
 ];
 
 /** Section definitions for the Chat page. */
 export const CHAT_SECTIONS: PlaygroundSection[] = [
-  { id: 'usermessagecontent', title: 'UserMessageContent', page: 'chat', category: 'Messages', keywords: ['user', 'message', 'bubble', 'input'] },
-  { id: 'assistantmessagecontent', title: 'AssistantMessageContent', page: 'chat', category: 'Messages', keywords: ['assistant', 'ai', 'response', 'markdown'] },
-  { id: 'messageitem', title: 'MessageItem', page: 'chat', category: 'Messages', keywords: ['message', 'grouping', 'position'] },
-  { id: 'toolcallcard', title: 'ToolCallCard', page: 'chat', category: 'Tools', keywords: ['tool', 'call', 'function', 'pending', 'running', 'complete', 'error'] },
-  { id: 'toolcallcard-—-extended-labels', title: 'ToolCallCard — Extended Labels', page: 'chat', category: 'Tools', keywords: ['tool', 'label', 'taskget', 'notebookedit'] },
-  { id: 'toolcallcard-—-hook-lifecycle', title: 'ToolCallCard — Hook Lifecycle', page: 'chat', category: 'Tools', keywords: ['hook', 'lifecycle', 'pre', 'post'] },
-  { id: 'subagentblock', title: 'SubagentBlock', page: 'chat', category: 'Tools', keywords: ['subagent', 'task', 'agent', 'running'] },
-  { id: 'errormessageblock', title: 'ErrorMessageBlock', page: 'chat', category: 'Tools', keywords: ['error', 'max_turns', 'budget', 'retry'] },
-  { id: 'thinkingblock', title: 'ThinkingBlock', page: 'chat', category: 'Tools', keywords: ['thinking', 'extended', 'reasoning'] },
-  { id: 'toolapproval', title: 'ToolApproval', page: 'chat', category: 'Tools', keywords: ['approval', 'permission', 'approve', 'deny', 'countdown'] },
-  { id: 'chatinput', title: 'ChatInput', page: 'chat', category: 'Input', keywords: ['input', 'message', 'compose', 'send'] },
-  { id: 'filechipbar', title: 'FileChipBar', page: 'chat', category: 'Input', keywords: ['file', 'upload', 'attachment', 'chip'] },
-  { id: 'queuepanel', title: 'QueuePanel', page: 'chat', category: 'Input', keywords: ['queue', 'pending', 'messages'] },
-  { id: 'shortcutchips', title: 'ShortcutChips', page: 'chat', category: 'Input', keywords: ['shortcut', 'slash', 'command', 'chip'] },
-  { id: 'promptsuggestionchips', title: 'PromptSuggestionChips', page: 'chat', category: 'Input', keywords: ['prompt', 'suggestion', 'chip', 'hint'] },
-  { id: 'streamingtext', title: 'StreamingText', page: 'chat', category: 'Status', keywords: ['streaming', 'text', 'markdown', 'cursor'] },
-  { id: 'inferenceindicator', title: 'InferenceIndicator', page: 'chat', category: 'Status', keywords: ['inference', 'streaming', 'timer', 'rate', 'limit'] },
-  { id: 'systemstatuszone', title: 'SystemStatusZone', page: 'chat', category: 'Status', keywords: ['system', 'status', 'permission', 'truncated'] },
-  { id: 'transporterrorbanner', title: 'TransportErrorBanner', page: 'chat', category: 'Status', keywords: ['transport', 'error', 'connection', 'retry'] },
-  { id: 'tasklistpanel', title: 'TaskListPanel', page: 'chat', category: 'Status', keywords: ['task', 'list', 'todo', 'progress'] },
-  { id: 'clientsitem', title: 'ClientsItem', page: 'chat', category: 'Status', keywords: ['clients', 'multi', 'session', 'indicator'] },
-  { id: 'celebrationoverlay', title: 'CelebrationOverlay', page: 'chat', category: 'Misc', keywords: ['celebration', 'confetti', 'success'] },
-  { id: 'draghandle', title: 'DragHandle', page: 'chat', category: 'Misc', keywords: ['drag', 'handle', 'pill', 'collapse'] },
+  {
+    id: 'usermessagecontent',
+    title: 'UserMessageContent',
+    page: 'chat',
+    category: 'Messages',
+    keywords: ['user', 'message', 'bubble', 'input'],
+  },
+  {
+    id: 'assistantmessagecontent',
+    title: 'AssistantMessageContent',
+    page: 'chat',
+    category: 'Messages',
+    keywords: ['assistant', 'ai', 'response', 'markdown'],
+  },
+  {
+    id: 'messageitem',
+    title: 'MessageItem',
+    page: 'chat',
+    category: 'Messages',
+    keywords: ['message', 'grouping', 'position'],
+  },
+  {
+    id: 'toolcallcard',
+    title: 'ToolCallCard',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['tool', 'call', 'function', 'pending', 'running', 'complete', 'error'],
+  },
+  {
+    id: 'toolcallcard-—-extended-labels',
+    title: 'ToolCallCard — Extended Labels',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['tool', 'label', 'taskget', 'notebookedit'],
+  },
+  {
+    id: 'toolcallcard-—-hook-lifecycle',
+    title: 'ToolCallCard — Hook Lifecycle',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['hook', 'lifecycle', 'pre', 'post'],
+  },
+  {
+    id: 'subagentblock',
+    title: 'SubagentBlock',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['subagent', 'task', 'agent', 'running'],
+  },
+  {
+    id: 'errormessageblock',
+    title: 'ErrorMessageBlock',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['error', 'max_turns', 'budget', 'retry'],
+  },
+  {
+    id: 'thinkingblock',
+    title: 'ThinkingBlock',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['thinking', 'extended', 'reasoning'],
+  },
+  {
+    id: 'toolapproval',
+    title: 'ToolApproval',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['approval', 'permission', 'approve', 'deny', 'countdown'],
+  },
+  {
+    id: 'chatinput',
+    title: 'ChatInput',
+    page: 'chat',
+    category: 'Input',
+    keywords: ['input', 'message', 'compose', 'send'],
+  },
+  {
+    id: 'filechipbar',
+    title: 'FileChipBar',
+    page: 'chat',
+    category: 'Input',
+    keywords: ['file', 'upload', 'attachment', 'chip'],
+  },
+  {
+    id: 'queuepanel',
+    title: 'QueuePanel',
+    page: 'chat',
+    category: 'Input',
+    keywords: ['queue', 'pending', 'messages'],
+  },
+  {
+    id: 'shortcutchips',
+    title: 'ShortcutChips',
+    page: 'chat',
+    category: 'Input',
+    keywords: ['shortcut', 'slash', 'command', 'chip'],
+  },
+  {
+    id: 'promptsuggestionchips',
+    title: 'PromptSuggestionChips',
+    page: 'chat',
+    category: 'Input',
+    keywords: ['prompt', 'suggestion', 'chip', 'hint'],
+  },
+  {
+    id: 'streamingtext',
+    title: 'StreamingText',
+    page: 'chat',
+    category: 'Status',
+    keywords: ['streaming', 'text', 'markdown', 'cursor'],
+  },
+  {
+    id: 'inferenceindicator',
+    title: 'InferenceIndicator',
+    page: 'chat',
+    category: 'Status',
+    keywords: ['inference', 'streaming', 'timer', 'rate', 'limit'],
+  },
+  {
+    id: 'systemstatuszone',
+    title: 'SystemStatusZone',
+    page: 'chat',
+    category: 'Status',
+    keywords: ['system', 'status', 'permission', 'truncated'],
+  },
+  {
+    id: 'transporterrorbanner',
+    title: 'TransportErrorBanner',
+    page: 'chat',
+    category: 'Status',
+    keywords: ['transport', 'error', 'connection', 'retry'],
+  },
+  {
+    id: 'tasklistpanel',
+    title: 'TaskListPanel',
+    page: 'chat',
+    category: 'Status',
+    keywords: ['task', 'list', 'todo', 'progress'],
+  },
+  {
+    id: 'clientsitem',
+    title: 'ClientsItem',
+    page: 'chat',
+    category: 'Status',
+    keywords: ['clients', 'multi', 'session', 'indicator'],
+  },
+  {
+    id: 'celebrationoverlay',
+    title: 'CelebrationOverlay',
+    page: 'chat',
+    category: 'Misc',
+    keywords: ['celebration', 'confetti', 'success'],
+  },
+  {
+    id: 'draghandle',
+    title: 'DragHandle',
+    page: 'chat',
+    category: 'Misc',
+    keywords: ['drag', 'handle', 'pill', 'collapse'],
+  },
 ];
 
 /** Section definitions for the Tokens page. */
 export const TOKENS_SECTIONS: PlaygroundSection[] = [
-  { id: 'semantic-colors', title: 'Semantic Colors', page: 'tokens', category: 'Colors', keywords: ['color', 'palette', 'background', 'foreground', 'primary'] },
-  { id: 'status-colors', title: 'Status Colors', page: 'tokens', category: 'Colors', keywords: ['status', 'success', 'error', 'warning', 'info'] },
-  { id: 'sidebar-colors', title: 'Sidebar Colors', page: 'tokens', category: 'Colors', keywords: ['sidebar', 'nav', 'color'] },
-  { id: 'typography', title: 'Typography', page: 'tokens', category: 'Type', keywords: ['font', 'text', 'size', 'weight', 'family'] },
-  { id: 'spacing', title: 'Spacing', page: 'tokens', category: 'Layout', keywords: ['space', 'gap', 'padding', 'margin', 'grid'] },
-  { id: 'border-radius', title: 'Border Radius', page: 'tokens', category: 'Shape', keywords: ['radius', 'rounded', 'corner'] },
-  { id: 'shadows', title: 'Shadows', page: 'tokens', category: 'Shape', keywords: ['shadow', 'elevation', 'depth'] },
-  { id: 'icon-&-button-sizes', title: 'Icon & Button Sizes', page: 'tokens', category: 'Sizing', keywords: ['icon', 'button', 'size', 'height'] },
+  {
+    id: 'semantic-colors',
+    title: 'Semantic Colors',
+    page: 'tokens',
+    category: 'Colors',
+    keywords: ['color', 'palette', 'background', 'foreground', 'primary'],
+  },
+  {
+    id: 'status-colors',
+    title: 'Status Colors',
+    page: 'tokens',
+    category: 'Colors',
+    keywords: ['status', 'success', 'error', 'warning', 'info'],
+  },
+  {
+    id: 'sidebar-colors',
+    title: 'Sidebar Colors',
+    page: 'tokens',
+    category: 'Colors',
+    keywords: ['sidebar', 'nav', 'color'],
+  },
+  {
+    id: 'typography',
+    title: 'Typography',
+    page: 'tokens',
+    category: 'Type',
+    keywords: ['font', 'text', 'size', 'weight', 'family'],
+  },
+  {
+    id: 'spacing',
+    title: 'Spacing',
+    page: 'tokens',
+    category: 'Layout',
+    keywords: ['space', 'gap', 'padding', 'margin', 'grid'],
+  },
+  {
+    id: 'border-radius',
+    title: 'Border Radius',
+    page: 'tokens',
+    category: 'Shape',
+    keywords: ['radius', 'rounded', 'corner'],
+  },
+  {
+    id: 'shadows',
+    title: 'Shadows',
+    page: 'tokens',
+    category: 'Shape',
+    keywords: ['shadow', 'elevation', 'depth'],
+  },
+  {
+    id: 'icon-&-button-sizes',
+    title: 'Icon & Button Sizes',
+    page: 'tokens',
+    category: 'Sizing',
+    keywords: ['icon', 'button', 'size', 'height'],
+  },
 ];
 
 /** Complete registry of all playground sections for search. */
@@ -223,7 +511,7 @@ export function useTocScrollspy(sectionIds: string[]): string | null {
         // Bottom 60% exclusion prevents rapid flickering as sections scroll through.
         rootMargin: '-48px 0px -60% 0px',
         threshold: 0,
-      },
+      }
     );
 
     for (const id of sectionIds) {
@@ -305,9 +593,7 @@ export function TocSidebar({ sections, activeId }: TocSidebarProps) {
 
 ```tsx
 <div className="flex gap-6">
-  <main className="min-w-0 flex-1">
-    {/* existing page content */}
-  </main>
+  <main className="min-w-0 flex-1">{/* existing page content */}</main>
   <TocSidebar sections={PAGE_SECTIONS} activeId={activeId} />
 </div>
 ```
@@ -398,7 +684,7 @@ useEffect(() => {
 ```tsx
 <button
   onClick={() => setSearchOpen(true)}
-  className="flex items-center gap-2 rounded-md border px-3 py-1 text-xs text-muted-foreground hover:bg-accent"
+  className="text-muted-foreground hover:bg-accent flex items-center gap-2 rounded-md border px-3 py-1 text-xs"
 >
   <Search className="size-3" />
   Search components...
@@ -431,7 +717,12 @@ A simple category card grid at `/dev`:
 
 ```typescript
 import { Palette, Component, MessageSquare } from 'lucide-react';
-import { TOKENS_SECTIONS, COMPONENTS_SECTIONS, CHAT_SECTIONS, type Page } from '../playground-registry';
+import {
+  TOKENS_SECTIONS,
+  COMPONENTS_SECTIONS,
+  CHAT_SECTIONS,
+  type Page,
+} from '../playground-registry';
 
 interface OverviewPageProps {
   onNavigate: (page: Page) => void;
@@ -441,7 +732,7 @@ const CATEGORIES = [
   {
     page: 'tokens' as Page,
     label: 'Design Tokens',
-    description: "Color palette, typography, spacing, and shape tokens.",
+    description: 'Color palette, typography, spacing, and shape tokens.',
     icon: Palette,
     sections: TOKENS_SECTIONS,
   },
@@ -469,6 +760,7 @@ Each card displays the page name, description, section count, and a link. The se
 Each page (Components, Chat, Tokens) receives a flex wrapper for the right TOC:
 
 **Before (`ComponentsPage.tsx`):**
+
 ```tsx
 <main className="mx-auto max-w-4xl space-y-8 p-6">
   <ButtonShowcases />
@@ -477,9 +769,10 @@ Each page (Components, Chat, Tokens) receives a flex wrapper for the right TOC:
 ```
 
 **After:**
+
 ```tsx
 <div className="flex gap-6 p-6">
-  <main className="mx-auto min-w-0 max-w-4xl flex-1 space-y-8">
+  <main className="mx-auto max-w-4xl min-w-0 flex-1 space-y-8">
     <ButtonShowcases />
     ...
   </main>
@@ -498,11 +791,13 @@ const activeId = useTocScrollspy(COMPONENTS_SECTIONS.map((s) => s.id));
 One-line addition for scroll offset:
 
 **Before:**
+
 ```tsx
 <section id={anchorId} className="rounded-xl border border-border bg-card p-6">
 ```
 
 **After:**
+
 ```tsx
 <section id={anchorId} className="scroll-mt-14 rounded-xl border border-border bg-card p-6">
 ```
@@ -642,6 +937,7 @@ At viewports below 1280px, the right TOC is hidden. The search (Cmd+K) remains a
 ## Security Considerations
 
 No security implications — this is a dev-only tool that:
+
 - Is tree-shaken from production builds
 - Has no user data, no authentication, no external API calls
 - Uses only browser APIs (IntersectionObserver, history.pushState)

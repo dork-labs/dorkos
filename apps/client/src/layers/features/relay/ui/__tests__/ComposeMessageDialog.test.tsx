@@ -101,15 +101,14 @@ describe('ComposeMessageDialog', () => {
       fireEvent.change(within(dialog).getByPlaceholderText('e.g. relay.test.ping'), {
         target: { value: 'relay.test.ping' },
       });
-      fireEvent.change(
-        within(dialog).getByPlaceholderText(/plain text or json/i),
-        { target: { value: 'plain text' } },
-      );
+      fireEvent.change(within(dialog).getByPlaceholderText(/plain text or json/i), {
+        target: { value: 'plain text' },
+      });
       fireEvent.click(within(dialog).getByRole('button', { name: /send/i }));
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ payload: { content: 'plain text' } }),
+          expect.objectContaining({ payload: { content: 'plain text' } })
         );
       });
     });
@@ -121,15 +120,14 @@ describe('ComposeMessageDialog', () => {
       fireEvent.change(within(dialog).getByPlaceholderText('e.g. relay.test.ping'), {
         target: { value: 'relay.test.ping' },
       });
-      fireEvent.change(
-        within(dialog).getByPlaceholderText(/plain text or json/i),
-        { target: { value: '{"key":"value"}' } },
-      );
+      fireEvent.change(within(dialog).getByPlaceholderText(/plain text or json/i), {
+        target: { value: '{"key":"value"}' },
+      });
       fireEvent.click(within(dialog).getByRole('button', { name: /send/i }));
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ payload: { key: 'value' } }),
+          expect.objectContaining({ payload: { key: 'value' } })
         );
       });
     });
@@ -148,7 +146,7 @@ describe('ComposeMessageDialog', () => {
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ from: 'relay.agent.mybot', subject: 'relay.test.ping' }),
+          expect.objectContaining({ from: 'relay.agent.mybot', subject: 'relay.test.ping' })
         );
       });
     });

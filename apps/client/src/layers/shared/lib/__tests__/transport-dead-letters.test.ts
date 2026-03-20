@@ -16,7 +16,7 @@ describe('HttpTransport.listRelayDeadLetters', () => {
   it('calls GET /relay/dead-letters with no filters', async () => {
     const mockDeadLetters = [{ id: 'dl-1', subject: 'test.subject' }];
     vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify(mockDeadLetters), { status: 200 }),
+      new Response(JSON.stringify(mockDeadLetters), { status: 200 })
     );
 
     const transport = new HttpTransport(BASE_URL);
@@ -24,7 +24,7 @@ describe('HttpTransport.listRelayDeadLetters', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       `${BASE_URL}/relay/dead-letters`,
-      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } }),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
     );
     expect(result).toEqual(mockDeadLetters);
   });
@@ -37,7 +37,7 @@ describe('HttpTransport.listRelayDeadLetters', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       `${BASE_URL}/relay/dead-letters?endpointHash=abc123`,
-      expect.anything(),
+      expect.anything()
     );
   });
 
@@ -47,15 +47,12 @@ describe('HttpTransport.listRelayDeadLetters', () => {
     const transport = new HttpTransport(BASE_URL);
     await transport.listRelayDeadLetters({});
 
-    expect(fetch).toHaveBeenCalledWith(
-      `${BASE_URL}/relay/dead-letters`,
-      expect.anything(),
-    );
+    expect(fetch).toHaveBeenCalledWith(`${BASE_URL}/relay/dead-letters`, expect.anything());
   });
 
   it('throws when the server responds with an error', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Relay not enabled' }), { status: 503 }),
+      new Response(JSON.stringify({ error: 'Relay not enabled' }), { status: 503 })
     );
 
     const transport = new HttpTransport(BASE_URL);

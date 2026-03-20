@@ -16,7 +16,9 @@ describe('matchesPattern', () => {
     });
 
     it('matches identical multi-token subjects', () => {
-      expect(matchesPattern('relay.agent.myproject.backend', 'relay.agent.myproject.backend')).toBe(true);
+      expect(matchesPattern('relay.agent.myproject.backend', 'relay.agent.myproject.backend')).toBe(
+        true
+      );
     });
 
     it('does not match different single-token subjects', () => {
@@ -49,15 +51,21 @@ describe('matchesPattern', () => {
   describe('* wildcard (single token)', () => {
     it('matches any single token', () => {
       expect(matchesPattern('relay.agent.myproject.backend', 'relay.agent.myproject.*')).toBe(true);
-      expect(matchesPattern('relay.agent.myproject.frontend', 'relay.agent.myproject.*')).toBe(true);
+      expect(matchesPattern('relay.agent.myproject.frontend', 'relay.agent.myproject.*')).toBe(
+        true
+      );
     });
 
     it('matches `*` at the start of a pattern', () => {
-      expect(matchesPattern('relay.agent.myproject.backend', '*.agent.myproject.backend')).toBe(true);
+      expect(matchesPattern('relay.agent.myproject.backend', '*.agent.myproject.backend')).toBe(
+        true
+      );
     });
 
     it('matches `*` in the middle of a pattern', () => {
-      expect(matchesPattern('relay.agent.myproject.backend', 'relay.*.myproject.backend')).toBe(true);
+      expect(matchesPattern('relay.agent.myproject.backend', 'relay.*.myproject.backend')).toBe(
+        true
+      );
     });
 
     it('matches multiple `*` wildcards in a single pattern', () => {
@@ -114,7 +122,9 @@ describe('matchesPattern', () => {
 
     it('does NOT match zero remaining tokens', () => {
       // pattern `relay.agent.myproject.backend.>` requires at least one token after `backend`
-      expect(matchesPattern('relay.agent.myproject.backend', 'relay.agent.myproject.backend.>')).toBe(false);
+      expect(
+        matchesPattern('relay.agent.myproject.backend', 'relay.agent.myproject.backend.>')
+      ).toBe(false);
     });
 
     it('matches when combined with * wildcards', () => {

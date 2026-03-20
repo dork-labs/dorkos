@@ -1,9 +1,20 @@
 ---
-title: "Agent Tools Elevation — Per-Agent Config, UI Indicators, NL Orchestration, Agent-First Scheduling"
+title: 'Agent Tools Elevation — Per-Agent Config, UI Indicators, NL Orchestration, Agent-First Scheduling'
 date: 2026-03-04
 type: internal-architecture
 status: active
-tags: [agent-tools, mcp, per-agent-config, tool-acl, context-injection, scheduling, agent-manifest, sidebar-ui, orchestration]
+tags:
+  [
+    agent-tools,
+    mcp,
+    per-agent-config,
+    tool-acl,
+    context-injection,
+    scheduling,
+    agent-manifest,
+    sidebar-ui,
+    orchestration,
+  ]
 feature_slug: agent-tools-elevation
 searches_performed: 6
 sources_count: 22
@@ -13,6 +24,7 @@ sources_count: 22
 
 **Research depth:** Deep Research
 **Prior research consulted:**
+
 - `research/20260303_agent_tool_context_injection.md` — static XML context injection patterns (directly applicable to Goal 3)
 - `research/mcp-tool-injection-patterns.md` — MCP tool architecture, `createDorkOsToolServer`, tool grouping by domain
 - `research/20260218_agent-sdk-context-injection.md` — `systemPrompt.append`, SDK context mechanisms
@@ -42,15 +54,18 @@ The industry pattern from MCP gateway research (Integrate.io, Traefik Hub, MintM
 ```typescript
 // Zod schema addition to AgentManifestSchema
 enabledToolGroups: z.object({
-  pulse: z.boolean().optional(),    // undefined = inherit from server feature flag
-  relay: z.boolean().optional(),    // undefined = inherit from isRelayEnabled()
-  mesh: z.boolean().optional(),     // undefined = inherit (mesh is always-on)
-  adapter: z.boolean().optional(),  // undefined = inherit
-  binding: z.boolean().optional(),  // undefined = inherit
-  trace: z.boolean().optional(),    // undefined = inherit
-}).default({}).openapi({
-  description: 'Per-domain tool group enable/disable. Undefined = use server feature flag default.',
+  pulse: z.boolean().optional(), // undefined = inherit from server feature flag
+  relay: z.boolean().optional(), // undefined = inherit from isRelayEnabled()
+  mesh: z.boolean().optional(), // undefined = inherit (mesh is always-on)
+  adapter: z.boolean().optional(), // undefined = inherit
+  binding: z.boolean().optional(), // undefined = inherit
+  trace: z.boolean().optional(), // undefined = inherit
 })
+  .default({})
+  .openapi({
+    description:
+      'Per-domain tool group enable/disable. Undefined = use server feature flag default.',
+  });
 ```
 
 This follows the "optional field with explicit default" pattern validated by JSON schema evolution best practices. Existing manifests without this field parse as `{}` (all groups inherit from server defaults). No migration needed.
@@ -71,23 +86,20 @@ const toolFilter = buildAllowedTools(manifest?.enabledToolGroups);
 // ['mcp__dorkos__ping', 'mcp__dorkos__get_server_info', 'mcp__dorkos__mesh_*']
 // based on which groups are enabled for this agent
 
-sdkOptions.allowedTools = [
-  ...(sdkOptions.allowedTools ?? []),
-  ...toolFilter,
-];
+sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...toolFilter];
 ```
 
 The `allowedTools` wildcard pattern `mcp__dorkos__mesh_*` covers all mesh tools. Each domain maps to a wildcard prefix:
 
-| Domain group | `allowedTools` wildcard |
-|---|---|
-| Core | `mcp__dorkos__ping`, `mcp__dorkos__get_server_info`, `mcp__dorkos__get_session_count`, `mcp__dorkos__agent_get_current` |
-| Pulse | `mcp__dorkos__list_schedules`, `mcp__dorkos__create_schedule`, etc. |
-| Relay | `mcp__dorkos__relay_*` |
-| Mesh | `mcp__dorkos__mesh_*` |
-| Adapter | `mcp__dorkos__relay_list_adapters`, etc. |
-| Binding | `mcp__dorkos__binding_*` |
-| Trace | `mcp__dorkos__relay_get_trace`, `mcp__dorkos__relay_get_metrics` |
+| Domain group | `allowedTools` wildcard                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Core         | `mcp__dorkos__ping`, `mcp__dorkos__get_server_info`, `mcp__dorkos__get_session_count`, `mcp__dorkos__agent_get_current` |
+| Pulse        | `mcp__dorkos__list_schedules`, `mcp__dorkos__create_schedule`, etc.                                                     |
+| Relay        | `mcp__dorkos__relay_*`                                                                                                  |
+| Mesh         | `mcp__dorkos__mesh_*`                                                                                                   |
+| Adapter      | `mcp__dorkos__relay_list_adapters`, etc.                                                                                |
+| Binding      | `mcp__dorkos__binding_*`                                                                                                |
+| Trace        | `mcp__dorkos__relay_get_trace`, `mcp__dorkos__relay_get_metrics`                                                        |
 
 Core tools are always enabled (ping, get_server_info are diagnostic and harmless). Other groups are enabled unless explicitly disabled in the manifest.
 
@@ -97,13 +109,14 @@ Core tools are always enabled (ping, get_server_info are diagnostic and harmless
 
 ### 2. Agent-Scoped Tool Status UI Indicators
 
-The sidebar currently shows `AgentContextChips` in `SessionSidebar`. These chips indicate connectivity status (Relay, Mesh) at the application level, not the per-agent level. Goal 2 is to make these chips reflect what tools are actually enabled for the *current agent*, not just whether the feature is globally enabled.
+The sidebar currently shows `AgentContextChips` in `SessionSidebar`. These chips indicate connectivity status (Relay, Mesh) at the application level, not the per-agent level. Goal 2 is to make these chips reflect what tools are actually enabled for the _current agent_, not just whether the feature is globally enabled.
 
 **Carbon Design System status indicator pattern**: The most relevant industry precedent is the Carbon Design System's pattern for status indicators in multi-entity UIs: "When multiple statuses are consolidated, use the highest-attention indicator to represent the group." Applied to DorkOS: an agent with Relay disabled should show the Relay chip as off/dimmed, even if the server's Relay feature flag is on.
 
 **Progressive disclosure pattern (chip → tooltip → panel)**:
 
 The chip shows a 3-state indicator:
+
 - **Active**: tool group enabled for this agent and server feature flag is on
 - **Disabled by agent**: tool group explicitly disabled in agent manifest (dimmed chip with strikethrough or muted color)
 - **Disabled by server**: server feature flag is off for this group (chip hidden entirely — don't show a chip for a feature that isn't running)
@@ -111,6 +124,7 @@ The chip shows a 3-state indicator:
 This is the same pattern used by GitHub Copilot's agent capability indicators (green = on, gray = off, no icon = not applicable).
 
 **Tooltip content on hover** (progressive disclosure):
+
 ```
 Relay — enabled for this agent
 3 active sessions using relay tools
@@ -144,7 +158,7 @@ The most recently completed research (`20260303_agent_tool_context_injection.md`
 
 **What's already specced**: Static `<relay_tools>` and `<mesh_tools>` XML blocks injected via `context-builder.ts`. These document subject naming conventions, workflow sequences, and cross-tool patterns.
 
-**What this feature adds**: Making the injected context *agent-aware*. When an agent has specific tools disabled via `enabledToolGroups`, the context blocks should reflect that.
+**What this feature adds**: Making the injected context _agent-aware_. When an agent has specific tools disabled via `enabledToolGroups`, the context blocks should reflect that.
 
 **Two approaches for agent-aware context injection:**
 
@@ -156,7 +170,7 @@ Always include blocks, but add a note when a domain is disabled: `<relay_tools>N
 
 **Recommendation**: Option A. Omitting the block is the right behavior — don't document tools the agent can't use.
 
-**Additional context that elevates orchestration**: The prior research identified the relay subject hierarchy as the most critical missing context. For the elevation feature, add *peer agent context* — a list of currently registered mesh agents and their relay addresses. This is what enables natural language like "ask the API agent to check the endpoint."
+**Additional context that elevates orchestration**: The prior research identified the relay subject hierarchy as the most critical missing context. For the elevation feature, add _peer agent context_ — a list of currently registered mesh agents and their relay addresses. This is what enables natural language like "ask the API agent to check the endpoint."
 
 **Peer agent context block:**
 
@@ -176,7 +190,7 @@ Use mesh_list() for current agent registry, mesh_inspect(agentId) for relay endp
 - **Embed current registry snapshot at session start**: Call `meshCore.listAgents()` inside `buildSystemPromptAppend()` and format as the `<peer_agents>` block. This is a one-time async call per session, not per message.
 - **Instruct agent to call `mesh_list()` when needed**: Keep context block static ("use mesh_list() to find available agents") and let the agent pull live data via the MCP tool.
 
-**Recommendation**: Hybrid. The `<peer_agents>` block lists agents *at session start* (best effort, may be stale after an hour). The instruction to call `mesh_list()` covers the dynamic case. This matches how Claude Code injects `<git_status>` — accurate at session start, not live-updating.
+**Recommendation**: Hybrid. The `<peer_agents>` block lists agents _at session start_ (best effort, may be stale after an hour). The instruction to call `mesh_list()` covers the dynamic case. This matches how Claude Code injects `<git_status>` — accurate at session start, not live-updating.
 
 **Workflow recipes in context**: Beyond subject hierarchy docs, add short "recipes" for common multi-tool workflows:
 
@@ -200,6 +214,7 @@ This recipe is 5 numbered steps covering 5 distinct tool calls. Without this, th
 ### 4. Agent-First Scheduling (Agent → CWD Resolution)
 
 Currently `PulseSchedule` has:
+
 - `cwd: string | null` — the working directory where the scheduled agent runs
 
 Goal: Allow scheduling by agent identity rather than by CWD path. The agent's registered CWD (`projectPath` in `AgentManifest`) is the resolved working directory.
@@ -208,7 +223,7 @@ Goal: Allow scheduling by agent identity rather than by CWD path. The agent's re
 
 ```typescript
 // In shared types / DB schema, add to PulseSchedule:
-agentId: z.string().optional()  // ULID of a registered Mesh agent
+agentId: z.string().optional(); // ULID of a registered Mesh agent
 // cwd remains — when agentId is set, cwd is derived from the agent's projectPath
 // when agentId is not set, cwd is used directly (backward compatible)
 ```
@@ -219,7 +234,8 @@ agentId: z.string().optional()  // ULID of a registered Mesh agent
 async function resolveEffectiveCwd(schedule: PulseSchedule): Promise<string> {
   if (schedule.agentId) {
     const agent = await meshCore.getAgent(schedule.agentId);
-    if (!agent) throw new Error(`Agent ${schedule.agentId} not found — schedule ${schedule.id} cannot run`);
+    if (!agent)
+      throw new Error(`Agent ${schedule.agentId} not found — schedule ${schedule.id} cannot run`);
     return agent.projectPath;
   }
   return schedule.cwd ?? defaultCwd;
@@ -321,7 +337,7 @@ export function buildAgentAllowedTools(
       'mcp__dorkos__create_schedule',
       'mcp__dorkos__update_schedule',
       'mcp__dorkos__delete_schedule',
-      'mcp__dorkos__get_run_history',
+      'mcp__dorkos__get_run_history'
     );
   }
 
@@ -330,7 +346,7 @@ export function buildAgentAllowedTools(
       'mcp__dorkos__relay_send',
       'mcp__dorkos__relay_inbox',
       'mcp__dorkos__relay_list_endpoints',
-      'mcp__dorkos__relay_register_endpoint',
+      'mcp__dorkos__relay_register_endpoint'
     );
   }
 
@@ -343,7 +359,7 @@ export function buildAgentAllowedTools(
       'mcp__dorkos__mesh_unregister',
       'mcp__dorkos__mesh_status',
       'mcp__dorkos__mesh_inspect',
-      'mcp__dorkos__mesh_query_topology',
+      'mcp__dorkos__mesh_query_topology'
     );
   }
 
@@ -352,7 +368,7 @@ export function buildAgentAllowedTools(
       'mcp__dorkos__relay_list_adapters',
       'mcp__dorkos__relay_enable_adapter',
       'mcp__dorkos__relay_disable_adapter',
-      'mcp__dorkos__relay_reload_adapters',
+      'mcp__dorkos__relay_reload_adapters'
     );
   }
 
@@ -360,15 +376,12 @@ export function buildAgentAllowedTools(
     allowed.push(
       'mcp__dorkos__binding_list',
       'mcp__dorkos__binding_create',
-      'mcp__dorkos__binding_delete',
+      'mcp__dorkos__binding_delete'
     );
   }
 
   if (enabledToolGroups.trace !== false && deps.relayEnabled) {
-    allowed.push(
-      'mcp__dorkos__relay_get_trace',
-      'mcp__dorkos__relay_get_metrics',
-    );
+    allowed.push('mcp__dorkos__relay_get_trace', 'mcp__dorkos__relay_get_metrics');
   }
 
   return allowed;
@@ -380,16 +393,13 @@ export function buildAgentAllowedTools(
 ```typescript
 // Load agent manifest for tool filtering (non-blocking — failure allows all tools)
 const manifest = await readManifest(effectiveCwd).catch(() => null);
-const agentAllowedTools = buildAgentAllowedTools(
-  manifest?.enabledToolGroups,
-  { relayEnabled: isRelayEnabled(), pulseEnabled: isPulseEnabled() }
-);
+const agentAllowedTools = buildAgentAllowedTools(manifest?.enabledToolGroups, {
+  relayEnabled: isRelayEnabled(),
+  pulseEnabled: isPulseEnabled(),
+});
 
 if (agentAllowedTools) {
-  sdkOptions.allowedTools = [
-    ...(sdkOptions.allowedTools ?? []),
-    ...agentAllowedTools,
-  ];
+  sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...agentAllowedTools];
 }
 ```
 
@@ -457,23 +467,27 @@ export function useAgentToolStatus() {
   return {
     relay: relayEnabled && agent?.enabledToolGroups?.relay !== false,
     pulse: pulseEnabled && agent?.enabledToolGroups?.pulse !== false,
-    mesh: agent?.enabledToolGroups?.mesh !== false,  // mesh is always-on
+    mesh: agent?.enabledToolGroups?.mesh !== false, // mesh is always-on
     adapter: relayEnabled && agent?.enabledToolGroups?.adapter !== false,
     binding: relayEnabled && agent?.enabledToolGroups?.binding !== false,
     trace: relayEnabled && agent?.enabledToolGroups?.trace !== false,
     // reason for disabled state (for tooltip)
-    relayDisabledReason: !relayEnabled ? 'server' : agent?.enabledToolGroups?.relay === false ? 'agent' : null,
+    relayDisabledReason: !relayEnabled
+      ? 'server'
+      : agent?.enabledToolGroups?.relay === false
+        ? 'agent'
+        : null,
   };
 }
 ```
 
 **AgentContextChips chip states:**
 
-| State | Visual | Tooltip |
-|---|---|---|
-| `enabled` (global + agent) | Colored chip, normal opacity | "Relay — enabled for {agent-name}" |
-| `disabled-by-agent` | Muted chip, `line-through` label or `[off]` suffix | "Relay — disabled for this agent" |
-| `disabled-by-server` | Chip hidden | — |
+| State                      | Visual                                             | Tooltip                            |
+| -------------------------- | -------------------------------------------------- | ---------------------------------- |
+| `enabled` (global + agent) | Colored chip, normal opacity                       | "Relay — enabled for {agent-name}" |
+| `disabled-by-agent`        | Muted chip, `line-through` label or `[off]` suffix | "Relay — disabled for this agent"  |
+| `disabled-by-server`       | Chip hidden                                        | —                                  |
 
 The chip being hidden when server-disabled is cleaner than showing a permanently-grayed indicator. When a user is confused why they don't see a Relay chip, they check Settings (which already shows the global feature flags).
 
@@ -500,9 +514,9 @@ export async function buildSystemPromptAppend(cwd: string): Promise<string> {
       buildEnvBlock(cwd),
       buildGitBlock(cwd),
       buildAgentBlock(cwd, manifest),
-      buildRelayToolsBlock(manifest),      // now manifest-aware
-      buildMeshToolsBlock(manifest),       // now manifest-aware
-      buildPeerAgentsBlock(meshCore),      // new
+      buildRelayToolsBlock(manifest), // now manifest-aware
+      buildMeshToolsBlock(manifest), // now manifest-aware
+      buildPeerAgentsBlock(meshCore), // new
     ]);
 
   return [envResult, gitResult, agentResult, relayResult, meshResult, peerResult]
@@ -517,7 +531,7 @@ export async function buildSystemPromptAppend(cwd: string): Promise<string> {
 ```typescript
 function buildRelayToolsBlock(manifest: AgentManifest | null): string {
   if (!isRelayEnabled()) return '';
-  if (manifest?.enabledToolGroups?.relay === false) return '';  // agent opted out
+  if (manifest?.enabledToolGroups?.relay === false) return ''; // agent opted out
 
   return `<relay_tools>
 DorkOS Relay lets agents exchange messages via a pub/sub subject hierarchy.
@@ -627,19 +641,21 @@ const { data: agents } = useRegisteredAgents();
 <RadioGroup value={scheduleTarget} onValueChange={setScheduleTarget}>
   <RadioGroupItem value="agent">Run for agent</RadioGroupItem>
   <RadioGroupItem value="directory">Run in directory</RadioGroupItem>
-</RadioGroup>
+</RadioGroup>;
 
-{scheduleTarget === 'agent' && (
-  <AgentCombobox
-    agents={agents ?? []}
-    value={selectedAgentId}
-    onValueChange={setSelectedAgentId}
-  />
-)}
+{
+  scheduleTarget === 'agent' && (
+    <AgentCombobox
+      agents={agents ?? []}
+      value={selectedAgentId}
+      onValueChange={setSelectedAgentId}
+    />
+  );
+}
 
-{scheduleTarget === 'directory' && (
-  <DirectoryPicker value={cwd} onChange={setCwd} />
-)}
+{
+  scheduleTarget === 'directory' && <DirectoryPicker value={cwd} onChange={setCwd} />;
+}
 ```
 
 **`AgentCombobox` component**: A shadcn Command-based combobox showing agent name + colored dot + project path. Uses `useRegisteredAgents()` data. Searches by name or path. Follows the same pattern as `DirectoryPicker` but for agents.
@@ -648,22 +664,22 @@ const { data: agents } = useRegisteredAgents();
 
 ```tsx
 // ScheduleRow enhancement
-const agentForSchedule = schedule.agentId
-  ? agents?.find((a) => a.id === schedule.agentId)
-  : null;
+const agentForSchedule = schedule.agentId ? agents?.find((a) => a.id === schedule.agentId) : null;
 
 // Display
-{agentForSchedule ? (
-  <div className="flex items-center gap-1.5">
-    <AgentDot color={agentForSchedule.color} />
-    <span className="font-medium">{agentForSchedule.name}</span>
-  </div>
-) : (
-  <div className="flex items-center gap-1.5">
-    <FolderOpen className="size-3.5 text-muted-foreground" />
-    <span className="font-mono text-sm">{schedule.cwd ?? 'default'}</span>
-  </div>
-)}
+{
+  agentForSchedule ? (
+    <div className="flex items-center gap-1.5">
+      <AgentDot color={agentForSchedule.color} />
+      <span className="font-medium">{agentForSchedule.name}</span>
+    </div>
+  ) : (
+    <div className="flex items-center gap-1.5">
+      <FolderOpen className="text-muted-foreground size-3.5" />
+      <span className="font-mono text-sm">{schedule.cwd ?? 'default'}</span>
+    </div>
+  );
+}
 ```
 
 ---
@@ -672,41 +688,41 @@ const agentForSchedule = schedule.agentId
 
 ### Goal 1: Per-Agent Tool Enable/Disable
 
-| Solution | Approach | Risk | Effort |
-|---|---|---|---|
-| **A (Recommended)** | `enabledToolGroups` in manifest + `allowedTools` per session | Low | Medium |
-| B | Dynamic MCP server per session | High (resource leaks) | High |
-| C | Tool-level boolean flags in manifest | Low (but verbose schema) | Medium |
+| Solution            | Approach                                                     | Risk                     | Effort |
+| ------------------- | ------------------------------------------------------------ | ------------------------ | ------ |
+| **A (Recommended)** | `enabledToolGroups` in manifest + `allowedTools` per session | Low                      | Medium |
+| B                   | Dynamic MCP server per session                               | High (resource leaks)    | High   |
+| C                   | Tool-level boolean flags in manifest                         | Low (but verbose schema) | Medium |
 
 **Recommendation**: Solution A. `allowedTools` is the SDK's intended mechanism for per-session tool filtering. The manifest field is purely a data store — the filter is computed per session by `agent-manager.ts`.
 
 ### Goal 2: Agent-Scoped UI Indicators
 
-| Solution | Approach | Risk | Effort |
-|---|---|---|---|
-| **A (Recommended)** | `useAgentToolStatus()` hook + chip 3-state | Low | Low |
-| B | Per-chip tooltip showing manifest state | Low | Low |
-| C | Full tool status panel in agent settings only | Low | Low |
+| Solution            | Approach                                      | Risk | Effort |
+| ------------------- | --------------------------------------------- | ---- | ------ |
+| **A (Recommended)** | `useAgentToolStatus()` hook + chip 3-state    | Low  | Low    |
+| B                   | Per-chip tooltip showing manifest state       | Low  | Low    |
+| C                   | Full tool status panel in agent settings only | Low  | Low    |
 
 **Recommendation**: Solution A as the primary (chip state), with Solution C as the secondary (full tool toggles in the AgentDialog Tools tab).
 
 ### Goal 3: Natural Language Orchestration
 
-| Solution | Approach | Risk | Effort |
-|---|---|---|---|
-| **A (Recommended)** | Agent-aware context blocks + peer agents block | Low | Low |
-| B | MCP resource endpoint for tool docs | Low | Medium |
-| C | Extended tool descriptions only | Low | Very Low |
+| Solution            | Approach                                       | Risk | Effort   |
+| ------------------- | ---------------------------------------------- | ---- | -------- |
+| **A (Recommended)** | Agent-aware context blocks + peer agents block | Low  | Low      |
+| B                   | MCP resource endpoint for tool docs            | Low  | Medium   |
+| C                   | Extended tool descriptions only                | Low  | Very Low |
 
 **Recommendation**: Solution A, extending `context-builder.ts` to be manifest-aware and adding the `<peer_agents>` block. Solution C is already implemented (tool descriptions exist) — it's the system prompt context blocks that are the gap.
 
 ### Goal 4: Agent-First Scheduling
 
-| Solution | Approach | Risk | Effort |
-|---|---|---|---|
-| **A (Recommended)** | `agentId` optional field + graceful fallback | Low | Medium |
-| B | Replace CWD with agent entirely | High (breaks existing schedules) | High |
-| C | Agent display alias with CWD unchanged | Low | Low |
+| Solution            | Approach                                     | Risk                             | Effort |
+| ------------------- | -------------------------------------------- | -------------------------------- | ------ |
+| **A (Recommended)** | `agentId` optional field + graceful fallback | Low                              | Medium |
+| B                   | Replace CWD with agent entirely              | High (breaks existing schedules) | High   |
+| C                   | Agent display alias with CWD unchanged       | Low                              | Low    |
 
 **Recommendation**: Solution A. Additive optional field — backward compatible by design. Existing CWD-based schedules are untouched.
 
@@ -745,9 +761,11 @@ const agentForSchedule = schedule.agentId
 **Sequencing by impact/effort ratio:**
 
 ### Phase 1: Context Injection Enhancement (1-2 days)
-*Highest impact, builds on already-specced work*
+
+_Highest impact, builds on already-specced work_
 
 Extend `context-builder.ts` to:
+
 - Add agent-awareness to `buildRelayToolsBlock()` and `buildMeshToolsBlock()` (skip blocks if agent has opted out)
 - Add `buildPeerAgentsBlock()` with `meshCore.listAgents()` at session start
 - Add workflow recipes to relay block
@@ -755,7 +773,8 @@ Extend `context-builder.ts` to:
 Files: `apps/server/src/services/core/context-builder.ts` (modify)
 
 ### Phase 2: Per-Agent Tool Config Schema + Server Filtering (2-3 days)
-*Unlocks the UI work, defines the contract*
+
+_Unlocks the UI work, defines the contract_
 
 - Add `enabledToolGroups` to `AgentManifestSchema` and `UpdateAgentRequestSchema`
 - Add `buildAgentAllowedTools()` utility
@@ -765,7 +784,8 @@ Files: `apps/server/src/services/core/context-builder.ts` (modify)
 Files: `packages/shared/src/mesh-schemas.ts`, new `apps/server/src/services/core/tool-filter.ts`, `apps/server/src/services/core/agent-manager.ts`
 
 ### Phase 3: UI — Agent Settings Tools Tab (1-2 days)
-*User-facing control for Phase 2*
+
+_User-facing control for Phase 2_
 
 - Add Tools tab to `AgentDialog`
 - Toggle switches per domain group
@@ -774,7 +794,8 @@ Files: `packages/shared/src/mesh-schemas.ts`, new `apps/server/src/services/core
 Files: `apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx` (new), `AgentDialog.tsx` (modify)
 
 ### Phase 4: Sidebar Tool Status Chips (1 day)
-*Glanceable per-agent status*
+
+_Glanceable per-agent status_
 
 - Add `useAgentToolStatus()` hook to `entities/agent/`
 - Update `AgentContextChips` to use hook instead of global feature flags
@@ -783,7 +804,8 @@ Files: `apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx` (new), `
 Files: `entities/agent/model/use-agent-tool-status.ts` (new), `features/session-list/ui/AgentContextChips.tsx` (modify)
 
 ### Phase 5: Agent-First Scheduling (2-3 days)
-*Completes the agent-identity vision*
+
+_Completes the agent-identity vision_
 
 - Add `agentId` column to DB schema + Drizzle migration
 - Add `agentId` to `PulseSchedule` shared type
@@ -817,6 +839,7 @@ Files: `packages/db/src/schema.ts`, migration file, `packages/shared/src/types.t
 ## Sources and Evidence
 
 Prior DorkOS research (all highly relevant, directly cited above):
+
 - `research/20260303_agent_tool_context_injection.md` — XML block structure, token budgets, static vs dynamic injection decision
 - `research/mcp-tool-injection-patterns.md` — MCP architecture, `createSdkMcpServer`, tool grouping by domain, `allowedTools` wildcard syntax
 - `research/20260218_agent-sdk-context-injection.md` — `systemPrompt.append`, SDK option shapes, hook-based injection limitations
@@ -824,6 +847,7 @@ Prior DorkOS research (all highly relevant, directly cited above):
 - `research/20260303_command_palette_10x_elevation.md` — sidebar chip/status patterns, progressive disclosure, 3-state indicators
 
 External sources:
+
 - [MCP Gateways and AI Agent Security Tools 2026 — Integrate.io](https://www.integrate.io/blog/best-mcp-gateways-and-ai-agent-security-tools/) — default-allow vs default-deny patterns, per-agent ACL industry practice
 - [Traefik Hub Triple Gate Pattern — MintMCP Blog](https://www.mintmcp.com/blog/enterprise-ai-infrastructure-mcp) — Task-Based Access Control (TBAC) for dynamic agent authorization
 - [Carbon Design System Status Indicator Pattern](https://carbondesignsystem.com/patterns/status-indicator-pattern/) — "highest-attention consolidation" for multi-entity status chips; 3-state indicator design

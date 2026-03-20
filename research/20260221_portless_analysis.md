@@ -1,5 +1,5 @@
 ---
-title: "Portless: Comprehensive Analysis"
+title: 'Portless: Comprehensive Analysis'
 date: 2026-02-21
 type: internal-architecture
 status: active
@@ -45,6 +45,7 @@ portless <name> <command> [args...]
 ```
 
 This does three things:
+
 1. Starts the proxy daemon on port 1355 (auto-starts if not running)
 2. Finds a free port in the 4000-4999 range and injects it as `PORT`
 3. Registers a route: `<name>.localhost:1355` -> that random port
@@ -65,6 +66,7 @@ app:4012  api:4087  docs:4231
 ```
 
 State (route table, PIDs, port files) is stored at:
+
 - `~/.portless/` (user-space, port >= 1024)
 - `/tmp/portless/` (root, port < 1024)
 - Overridable via `PORTLESS_STATE_DIR`
@@ -74,6 +76,7 @@ File-based route watching with fallback polling (added v0.3.0) allows the proxy 
 ### Setup and Configuration
 
 **Installation (global only, not a project dependency):**
+
 ```bash
 npm install -g portless
 ```
@@ -81,6 +84,7 @@ npm install -g portless
 The tool explicitly blocks `npx portless` and `pnpm dlx portless` (blocked in v0.2.2) to enforce global-only installation, preventing version drift within a project.
 
 **Basic dev script integration:**
+
 ```json
 {
   "scripts": {
@@ -90,6 +94,7 @@ The tool explicitly blocks `npx portless` and `pnpm dlx portless` (blocked in v0
 ```
 
 **HTTPS/HTTP2:**
+
 ```bash
 portless proxy start --https
 sudo portless trust    # Installs CA into system trust store
@@ -98,6 +103,7 @@ sudo portless trust    # Installs CA into system trust store
 HTTP/2 multiplexing is significant for Vite-style unbundled dev servers that serve hundreds of small files per page load.
 
 **Custom proxy port:**
+
 ```bash
 portless proxy start -p 80    # requires sudo
 portless proxy start -p 8080
@@ -105,14 +111,15 @@ portless proxy start -p 8080
 
 **Environment variables:**
 
-| Variable | Effect |
-|----------|--------|
+| Variable                        | Effect                           |
+| ------------------------------- | -------------------------------- |
 | `PORTLESS=0` or `PORTLESS=skip` | Bypass proxy for this invocation |
-| `PORTLESS_HTTPS=1` | Enable HTTPS by default |
-| `PORTLESS_STATE_DIR=<path>` | Override state storage directory |
-| `PORTLESS_PORT` | Override proxy port |
+| `PORTLESS_HTTPS=1`              | Enable HTTPS by default          |
+| `PORTLESS_STATE_DIR=<path>`     | Override state storage directory |
+| `PORTLESS_PORT`                 | Override proxy port              |
 
 **Custom TLS certificates:**
+
 ```bash
 portless proxy start --cert ./cert.pem --key ./key.pem
 ```
@@ -133,6 +140,7 @@ Portless has no native "monorepo mode" — the pattern is simply convention-base
 ```
 
 This gives you stable URLs:
+
 - `http://myapp.localhost:1355` (client)
 - `http://api.myapp.localhost:1355` (server)
 - `http://docs.myapp.localhost:1355` (web/docs)
@@ -150,6 +158,7 @@ This is a stated primary use case. The marketing site explicitly calls out:
 > "AI coding agents guess or hardcode the wrong port, especially in monorepos"
 
 The tool ships `skills/portless/SKILL.md` — a structured prompt file that teaches AI agents how to use Portless. The SKILL.md covers:
+
 - Installation
 - Core command syntax
 - Multi-app subdomain patterns
@@ -193,18 +202,18 @@ For DorkOS specifically: agents running in a Portless-configured monorepo would 
 
 ## Limitations
 
-| Limitation | Status |
-|-----------|--------|
-| Windows support | Not supported, open issue #15 |
-| Docker / Docker Compose | No guidance, open issue #30 |
-| App-specific port selection | Not supported, open issue #11 |
-| Config file (gitignored per-checkout names) | Not supported, open issue #8 |
-| Port 443 HTTPS | Broken, open issue #29 |
-| Wildcard certificate on macOS | Broken, open issue #28 |
-| `npx`/`pnpm dlx` invocation | Explicitly blocked since v0.2.2 |
-| Vite support (explicit) | Open issue #12 (likely works via `PORT`, but unverified edge cases) |
-| Parallel checkouts with unique names | Requires workaround (issue #8) |
-| Non-Node.js processes that ignore `PORT` | Must use `PORTLESS_PORT` or manual port specification |
+| Limitation                                  | Status                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| Windows support                             | Not supported, open issue #15                                       |
+| Docker / Docker Compose                     | No guidance, open issue #30                                         |
+| App-specific port selection                 | Not supported, open issue #11                                       |
+| Config file (gitignored per-checkout names) | Not supported, open issue #8                                        |
+| Port 443 HTTPS                              | Broken, open issue #29                                              |
+| Wildcard certificate on macOS               | Broken, open issue #28                                              |
+| `npx`/`pnpm dlx` invocation                 | Explicitly blocked since v0.2.2                                     |
+| Vite support (explicit)                     | Open issue #12 (likely works via `PORT`, but unverified edge cases) |
+| Parallel checkouts with unique names        | Requires workaround (issue #8)                                      |
+| Non-Node.js processes that ignore `PORT`    | Must use `PORTLESS_PORT` or manual port specification               |
 
 ---
 
@@ -213,6 +222,7 @@ For DorkOS specifically: agents running in a Portless-configured monorepo would 
 ### Lightweight Local Proxy Alternatives
 
 **Caddy**
+
 - Production-grade reverse proxy with automatic HTTPS via Let's Encrypt or local CA
 - `Caddyfile` syntax is simple: one file maps `api.myapp.localhost` -> `localhost:3000`
 - Requires manual configuration per service; not a drop-in CLI wrapper
@@ -220,18 +230,21 @@ For DorkOS specifically: agents running in a Portless-configured monorepo would 
 - Works on Windows, macOS, Linux
 
 **Traefik**
+
 - Service-discovery-based reverse proxy, excellent for Docker Compose / Kubernetes
 - Reads labels from `docker-compose.yml` to auto-configure routes
 - More complex setup than Portless; overkill for simple local dev without containers
 - Handles the Docker case that Portless cannot
 
 **Nginx / nginx-proxy**
+
 - Low-level, highly flexible, requires manual config
 - `docker-compose` with `jwilder/nginx-proxy` auto-routes containers by `VIRTUAL_HOST` env var — conceptually similar to Portless but container-oriented
 
 ### Certificate Management
 
 **mkcert** (FiloSottile)
+
 - Creates locally-trusted development certificates for any hostname or IP
 - Pairs with Caddy or custom `/etc/hosts` entries for named local URLs
 - More manual than Portless's `--https` flag but more stable and battle-tested
@@ -240,6 +253,7 @@ For DorkOS specifically: agents running in a Portless-configured monorepo would 
 ### Named Localhost Tunnels (different use case)
 
 **ngrok** / **LocalCan** / **Pinggy**
+
 - These expose local dev servers to the public internet via a tunnel, not just the local network
 - Solve a different problem (external access, webhooks) but also provide stable named URLs
 - Paid features required for persistent subdomains
@@ -247,25 +261,27 @@ For DorkOS specifically: agents running in a Portless-configured monorepo would 
 ### Environment-Level Solutions
 
 **direnv + `.envrc`**
+
 - Assign a fixed port per project via `export PORT=4001` in a gitignored `.envrc`
 - Zero tooling overhead, works everywhere including Windows and Docker
 - Does not solve the named-URL problem, only the port-collision problem
 
 **Docker Compose with fixed port mappings**
+
 - Define fixed host ports in `docker-compose.yml` per service
 - Stable, reproducible, works across platforms
 - Requires Docker; adds container overhead for non-containerized apps
 
 ### Summary Comparison
 
-| Tool | Named URLs | Auto-certs | Docker | Windows | Config File | Complexity |
-|------|-----------|-----------|--------|---------|-------------|-----------|
-| **Portless** | Yes (.localhost:1355) | Yes (buggy) | No | No | No | Low |
-| **Caddy** | Yes (manual) | Yes (stable) | Yes | Yes | Yes | Medium |
-| **Traefik** | Yes (labels) | Yes | Yes | Yes | Yes | High |
-| **mkcert + /etc/hosts** | Manual | Yes | Manual | Yes | No | Medium |
-| **direnv + PORT** | No | No | No | Partial | Yes (.envrc) | Low |
-| **Docker Compose** | No (ports) | No | Yes | Yes | Yes | Medium |
+| Tool                    | Named URLs            | Auto-certs   | Docker | Windows | Config File  | Complexity |
+| ----------------------- | --------------------- | ------------ | ------ | ------- | ------------ | ---------- |
+| **Portless**            | Yes (.localhost:1355) | Yes (buggy)  | No     | No      | No           | Low        |
+| **Caddy**               | Yes (manual)          | Yes (stable) | Yes    | Yes     | Yes          | Medium     |
+| **Traefik**             | Yes (labels)          | Yes          | Yes    | Yes     | Yes          | High       |
+| **mkcert + /etc/hosts** | Manual                | Yes          | Manual | Yes     | No           | Medium     |
+| **direnv + PORT**       | No                    | No           | No     | Partial | Yes (.envrc) | Low        |
+| **Docker Compose**      | No (ports)            | No           | Yes    | Yes     | Yes          | Medium     |
 
 ---
 

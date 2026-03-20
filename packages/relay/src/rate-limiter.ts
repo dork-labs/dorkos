@@ -42,7 +42,7 @@ const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
 export function checkRateLimit(
   sender: string,
   countInWindow: number,
-  config: RateLimitConfig = DEFAULT_RATE_LIMIT_CONFIG,
+  config: RateLimitConfig = DEFAULT_RATE_LIMIT_CONFIG
 ): RateLimitResult {
   if (!config.enabled) {
     return { allowed: true };

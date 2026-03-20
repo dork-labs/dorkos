@@ -66,7 +66,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
     try {
       const result = ResolveAgentsRequestSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+        return res
+          .status(400)
+          .json({ error: 'Validation failed', details: result.error.flatten() });
       }
       const agents: Record<string, AgentManifest | null> = {};
       await Promise.all(
@@ -77,7 +79,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
           } catch {
             agents[p] = null;
           }
-        }),
+        })
       );
       return res.json({ agents });
     } catch (err) {
@@ -92,7 +94,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
     try {
       const result = CreateAgentRequestSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+        return res
+          .status(400)
+          .json({ error: 'Validation failed', details: result.error.flatten() });
       }
       const { path: agentPath, name, description, runtime } = result.data;
       await validateBoundary(agentPath);
@@ -100,7 +104,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       // Check if agent already exists
       const existing = await readManifest(agentPath);
       if (existing) {
-        return res.status(409).json({ error: 'Agent already exists at this path', agent: existing });
+        return res
+          .status(409)
+          .json({ error: 'Agent already exists at this path', agent: existing });
       }
 
       const manifest: AgentManifest = {
@@ -120,7 +126,11 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       await writeManifest(agentPath, manifest);
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
-      try { await meshCore?.syncFromDisk(agentPath); } catch { /* non-fatal */ }
+      try {
+        await meshCore?.syncFromDisk(agentPath);
+      } catch {
+        /* non-fatal */
+      }
 
       return res.status(201).json(manifest);
     } catch (err) {
@@ -144,7 +154,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
       const result = UpdateAgentRequestSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+        return res
+          .status(400)
+          .json({ error: 'Validation failed', details: result.error.flatten() });
       }
 
       const existing = await readManifest(agentPath);
@@ -156,7 +168,11 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       await writeManifest(agentPath, updated);
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
-      try { await meshCore?.syncFromDisk(agentPath); } catch { /* non-fatal */ }
+      try {
+        await meshCore?.syncFromDisk(agentPath);
+      } catch {
+        /* non-fatal */
+      }
 
       return res.json(updated);
     } catch (err) {

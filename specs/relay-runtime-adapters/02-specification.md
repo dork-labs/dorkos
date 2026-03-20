@@ -54,13 +54,13 @@ The solution is to extend the existing `RelayAdapter` interface with `AdapterCon
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@anthropic-ai/claude-agent-sdk` | existing | Agent SDK session creation |
-| `@dorkos/relay` | workspace | Core message bus, `RelayAdapter` interface |
-| `@dorkos/shared` | workspace | Zod schemas, shared types |
-| `better-sqlite3` | existing | Trace storage (existing `TraceStore`) |
-| Node.js `import()` | native | Dynamic plugin loading (no new deps) |
+| Dependency                       | Version   | Purpose                                    |
+| -------------------------------- | --------- | ------------------------------------------ |
+| `@anthropic-ai/claude-agent-sdk` | existing  | Agent SDK session creation                 |
+| `@dorkos/relay`                  | workspace | Core message bus, `RelayAdapter` interface |
+| `@dorkos/shared`                 | workspace | Zod schemas, shared types                  |
+| `better-sqlite3`                 | existing  | Trace storage (existing `TraceStore`)      |
+| Node.js `import()`               | native    | Dynamic plugin loading (no new deps)       |
 
 No new external dependencies required.
 
@@ -135,7 +135,11 @@ export interface RelayAdapter {
   stop(): Promise<void>;
 
   /** Updated: receives AdapterContext and returns structured DeliveryResult */
-  deliver(subject: string, envelope: RelayEnvelope, context?: AdapterContext): Promise<DeliveryResult>;
+  deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    context?: AdapterContext
+  ): Promise<DeliveryResult>;
 
   getStatus(): AdapterStatus;
 }
@@ -173,15 +177,17 @@ export const PluginSourceSchema = z
     /** Local file path (absolute or relative to config dir) */
     path: z.string().optional(),
   })
-  .refine(
-    (data) => data.package || data.path,
-    { message: 'Plugin source must specify either package or path' },
-  )
+  .refine((data) => data.package || data.path, {
+    message: 'Plugin source must specify either package or path',
+  })
   .openapi('PluginSource');
 
 export const AdapterConfigSchema = z
   .object({
-    id: z.string().min(1).regex(/^[a-z0-9-]+$/),
+    id: z
+      .string()
+      .min(1)
+      .regex(/^[a-z0-9-]+$/),
     type: AdapterTypeSchema,
     enabled: z.boolean().default(true),
     /** Built-in adapter flag — when true, adapter is loaded from @dorkos/relay */
@@ -226,7 +232,7 @@ export interface AdapterPluginModule {
 export async function loadAdapters(
   configs: PluginAdapterConfig[],
   builtinMap: Map<string, (config: Record<string, unknown>) => RelayAdapter>,
-  configDir: string,
+  configDir: string
 ): Promise<RelayAdapter[]> {
   const adapters: RelayAdapter[] = [];
 
@@ -242,14 +248,14 @@ export async function loadAdapters(
         adapter = factory(entry.config);
       } else if (entry.plugin?.package) {
         // npm package
-        const mod = await import(entry.plugin.package) as AdapterPluginModule;
+        const mod = (await import(entry.plugin.package)) as AdapterPluginModule;
         adapter = validateAndCreate(mod, entry);
       } else if (entry.plugin?.path) {
         // Local file
         const absPath = isAbsolute(entry.plugin.path)
           ? entry.plugin.path
           : resolve(configDir, entry.plugin.path);
-        const mod = await import(pathToFileURL(absPath).href) as AdapterPluginModule;
+        const mod = (await import(pathToFileURL(absPath).href)) as AdapterPluginModule;
         adapter = validateAndCreate(mod, entry);
       }
 
@@ -281,11 +287,14 @@ function validateAndCreate(mod: unknown, entry: PluginAdapterConfig): RelayAdapt
 function validateAdapterShape(obj: unknown, id: string): asserts obj is RelayAdapter {
   const a = obj as Record<string, unknown>;
   if (typeof a.id !== 'string') throw new Error(`Adapter '${id}': missing 'id' property`);
-  if (typeof a.subjectPrefix !== 'string') throw new Error(`Adapter '${id}': missing 'subjectPrefix'`);
+  if (typeof a.subjectPrefix !== 'string')
+    throw new Error(`Adapter '${id}': missing 'subjectPrefix'`);
   if (typeof a.start !== 'function') throw new Error(`Adapter '${id}': missing 'start()' method`);
   if (typeof a.stop !== 'function') throw new Error(`Adapter '${id}': missing 'stop()' method`);
-  if (typeof a.deliver !== 'function') throw new Error(`Adapter '${id}': missing 'deliver()' method`);
-  if (typeof a.getStatus !== 'function') throw new Error(`Adapter '${id}': missing 'getStatus()' method`);
+  if (typeof a.deliver !== 'function')
+    throw new Error(`Adapter '${id}': missing 'deliver()' method`);
+  if (typeof a.getStatus !== 'function')
+    throw new Error(`Adapter '${id}': missing 'getStatus()' method`);
 }
 ```
 
@@ -313,6 +322,7 @@ export default function createSlackAdapter(config: Record<string, unknown>): Rel
 #### `packages/relay/src/adapters/claude-code-adapter.ts`
 
 The adapter handles two subject patterns:
+
 - `relay.agent.>` — agent-directed messages
 - `relay.system.pulse.>` — Pulse scheduler dispatch
 
@@ -345,12 +355,12 @@ export interface ClaudeCodeAdapterConfig {
 export interface AgentManagerLike {
   ensureSession(
     sessionId: string,
-    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean },
+    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean }
   ): void;
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: string; cwd?: string },
+    opts?: { permissionMode?: string; cwd?: string }
   ): AsyncGenerator<StreamEvent>;
 }
 
@@ -393,6 +403,7 @@ deliver(subject, envelope, context?)
 ```
 
 **Error handling:**
+
 - Semaphore full → `DeliveryResult { success: false, error: 'Adapter at capacity' }`
 - TTL expired → abort session, dead letter, `DeliveryResult { success: false, deadLettered: true }`
 - Session failure → dead letter with error details
@@ -441,6 +452,7 @@ if (meshCore && subject.startsWith('relay.agent.')) {
 ```
 
 When Mesh is not available, the adapter falls back to:
+
 1. Envelope metadata (sender may include agent directory)
 2. Static config (`defaultCwd` in adapter config)
 
@@ -449,12 +461,14 @@ When Mesh is not available, the adapter falls back to:
 #### Remove MessageReceiver
 
 Delete `apps/server/src/services/relay/message-receiver.ts` and all references to it in:
+
 - Server startup/initialization code
 - Any imports or dependency injection
 
 #### Update AdapterManager
 
 The `AdapterManager` gains:
+
 1. A built-in adapter map (telegram, webhook, claude-code)
 2. Support for the `plugin` type using the plugin loader
 3. `MeshCore` injection for `AdapterContext` enrichment
@@ -553,6 +567,7 @@ This feature has no direct UI changes. It affects:
 ### Unit Tests
 
 **`packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts`:**
+
 - Delivers agent message → calls AgentManager with correct cwd and formatted prompt
 - Formats `<relay_context>` XML block with sender, budget, reply-to
 - Enforces concurrency semaphore — rejects when at capacity
@@ -565,6 +580,7 @@ This feature has no direct UI changes. It affects:
 - Works with Mesh (uses context.agent from enriched AdapterContext)
 
 **`packages/relay/src/__tests__/adapter-plugin-loader.test.ts`:**
+
 - Loads built-in adapters from provided map
 - Loads plugin from npm package name (mock dynamic import)
 - Loads plugin from local file path (mock dynamic import)
@@ -575,9 +591,11 @@ This feature has no direct UI changes. It affects:
 - Continues loading after individual failures
 
 **`packages/relay/src/__tests__/adapter-registry.test.ts`:**
+
 - (Existing tests) Verify deliver() passes AdapterContext through to matched adapter
 
 **`apps/server/src/services/relay/__tests__/adapter-manager.test.ts`:**
+
 - (Existing tests) Updated for async createAdapter and new config types
 - Creates ClaudeCodeAdapter from 'claude-code' config type
 - Creates plugin adapter from 'plugin' config type

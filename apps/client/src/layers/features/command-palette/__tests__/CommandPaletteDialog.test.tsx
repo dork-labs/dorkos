@@ -86,9 +86,15 @@ vi.mock('../model/use-preview-data', () => ({
 // Mock motion/react to render plain elements (avoids animation-related test issues)
 vi.mock('motion/react', () => ({
   motion: {
-    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
+    div: ({
+      children,
+      ...props
+    }: React.HTMLAttributes<HTMLDivElement> & { children?: React.ReactNode }) =>
       React.createElement('div', props, children),
-    span: ({ children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { children?: React.ReactNode }) =>
+    span: ({
+      children,
+      ...props
+    }: React.HTMLAttributes<HTMLSpanElement> & { children?: React.ReactNode }) =>
       React.createElement('span', props, children),
   },
   AnimatePresence: ({ children }: { children?: React.ReactNode }) => children,
@@ -131,7 +137,13 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ],
     searchableItems: [
-      ...mockAgents.map((a) => ({ id: a.id, name: a.name, type: 'agent', keywords: [a.projectPath], data: a })),
+      ...mockAgents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        type: 'agent',
+        keywords: [a.projectPath],
+        data: a,
+      })),
       { id: 'pulse', name: 'Pulse Scheduler', type: 'feature', data: {} },
       { id: 'relay', name: 'Relay Messaging', type: 'feature', data: {} },
       { id: 'mesh', name: 'Mesh Network', type: 'feature', data: {} },
@@ -248,7 +260,7 @@ describe('CommandPaletteDialog', () => {
     mockGlobalPaletteOpen = false;
     render(<CommandPaletteDialog />);
     expect(
-      screen.queryByPlaceholderText('Search agents, features, commands...'),
+      screen.queryByPlaceholderText('Search agents, features, commands...')
     ).not.toBeInTheDocument();
   });
 

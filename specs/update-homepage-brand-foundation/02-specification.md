@@ -23,54 +23,54 @@ All changes are within the FSD marketing feature module at `apps/web/src/layers/
 
 ### New Components (4)
 
-| Component | File | Purpose |
-|---|---|---|
-| `CredibilityBar` | `ui/CredibilityBar.tsx` | Static credibility signals after hero |
-| `ProblemSection` | `ui/ProblemSection.tsx` | Antagonist framing (cloud vs. local) |
+| Component           | File                       | Purpose                                        |
+| ------------------- | -------------------------- | ---------------------------------------------- |
+| `CredibilityBar`    | `ui/CredibilityBar.tsx`    | Static credibility signals after hero          |
+| `ProblemSection`    | `ui/ProblemSection.tsx`    | Antagonist framing (cloud vs. local)           |
 | `HowItWorksSection` | `ui/HowItWorksSection.tsx` | 3-step install/run/work with animated terminal |
-| `NotSection` | `ui/NotSection.tsx` | "What DorkOS Is Not" tribe-building section |
+| `NotSection`        | `ui/NotSection.tsx`        | "What DorkOS Is Not" tribe-building section    |
 
 ### Modified Components (5)
 
-| Component | File | Changes |
-|---|---|---|
-| `Hero` | `ui/Hero.tsx` | New headline "Own Your AI.", new subhead, remove taglineLine1/Line2 split |
-| `ProjectsGrid` | `ui/ProjectsGrid.tsx` | Layout change from 3-col to 2-col (4 cards) |
-| `ProjectCard` | `ui/ProjectCard.tsx` | Remove status/type badges |
-| `AboutSection` | `ui/AboutSection.tsx` | Merge with OriginSection content, new philosophy items |
-| `MarketingFooter` | `ui/MarketingFooter.tsx` | Real version number instead of "v1.0 · System Online" |
+| Component         | File                     | Changes                                                                   |
+| ----------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `Hero`            | `ui/Hero.tsx`            | New headline "Own Your AI.", new subhead, remove taglineLine1/Line2 split |
+| `ProjectsGrid`    | `ui/ProjectsGrid.tsx`    | Layout change from 3-col to 2-col (4 cards)                               |
+| `ProjectCard`     | `ui/ProjectCard.tsx`     | Remove status/type badges                                                 |
+| `AboutSection`    | `ui/AboutSection.tsx`    | Merge with OriginSection content, new philosophy items                    |
+| `MarketingFooter` | `ui/MarketingFooter.tsx` | Real version number instead of "v1.0 · System Online"                     |
 
 ### Removed Components (1)
 
-| Component | File | Reason |
-|---|---|---|
+| Component       | File                   | Reason                           |
+| --------------- | ---------------------- | -------------------------------- |
 | `OriginSection` | `ui/OriginSection.tsx` | Content merged into AboutSection |
 
 ### Modified Data Files (3)
 
-| File | Changes |
-|---|---|
-| `lib/projects.ts` | Reduce from 6 to 4 projects, update descriptions |
-| `lib/philosophy.ts` | Rewrite 4 items to match brand foundation "We Believe" values |
-| `lib/types.ts` | Remove `ProjectStatus` and `ProjectType` from `Project` interface (badges removed) |
+| File                | Changes                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `lib/projects.ts`   | Reduce from 6 to 4 projects, update descriptions                                   |
+| `lib/philosophy.ts` | Rewrite 4 items to match brand foundation "We Believe" values                      |
+| `lib/types.ts`      | Remove `ProjectStatus` and `ProjectType` from `Project` interface (badges removed) |
 
 ### Modified Config Files (2)
 
-| File | Changes |
-|---|---|
-| `config/site.ts` | Update `description` to "Remote access to Claude Code. On your machine." |
-| `app/(marketing)/layout.tsx` | Update OG metadata to match new description |
+| File                         | Changes                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `config/site.ts`             | Update `description` to "Remote access to Claude Code. On your machine." |
+| `app/(marketing)/layout.tsx` | Update OG metadata to match new description                              |
 
 ### Modified Page File (1)
 
-| File | Changes |
-|---|---|
+| File                       | Changes                                                        |
+| -------------------------- | -------------------------------------------------------------- |
 | `app/(marketing)/page.tsx` | New section ordering, add new components, remove OriginSection |
 
 ### New Dependency (1)
 
-| Package | Purpose | Size |
-|---|---|---|
+| Package                  | Purpose                                | Size               |
+| ------------------------ | -------------------------------------- | ------------------ |
 | `termynal` or equivalent | Animated terminal demo in How It Works | Lightweight (~5KB) |
 
 **Note:** If termynal has compatibility issues with React/Next.js SSR, implement a custom terminal animation component using CSS keyframes (no external dependency). The animation is simple: type out 3 commands with a blinking cursor. A ~50-line React component with CSS can achieve this.
@@ -82,28 +82,30 @@ All changes are within the FSD marketing feature module at `apps/web/src/layers/
 **Component:** `Hero.tsx` (modified)
 
 **Props change:**
+
 ```typescript
 // Before
 interface HeroProps {
-  label?: string
-  taglineLine1: string
-  taglineLine2: string
-  subhead: string
-  bylineText: string
-  bylineHref: string
+  label?: string;
+  taglineLine1: string;
+  taglineLine2: string;
+  subhead: string;
+  bylineText: string;
+  bylineHref: string;
 }
 
 // After
 interface HeroProps {
-  label?: string
-  headline: string
-  subhead: string
-  ctaText: string
-  ctaHref: string
+  label?: string;
+  headline: string;
+  subhead: string;
+  ctaText: string;
+  ctaHref: string;
 }
 ```
 
 **Content:**
+
 - Label: "Open Source" (unchanged)
 - Headline (h1): "Own Your AI."
 - Subhead: "Remote access to Claude Code from any browser. One npm install. Runs on your machine. No cloud. No middleman."
@@ -112,11 +114,13 @@ interface HeroProps {
 - Product screenshot: Keep unchanged (`/images/dorkos-screenshot.png`)
 
 **Design notes:**
+
 - Headline is a single line (no line break like current taglineLine1/Line2 split)
 - The "." in "Own Your AI." is intentional — it's a declarative statement, not a question
 - Keep all existing visual effects (graph paper bg, radial glow, scan lines, responsive clamp sizing)
 
 **Acceptance criteria:**
+
 - [ ] Headline reads "Own Your AI." in brand-orange
 - [ ] Subhead is one paragraph, no line breaks, max-w-[500px]
 - [ ] `npm install -g dorkos` CTA with blinking cursor
@@ -130,11 +134,13 @@ interface HeroProps {
 **Component:** `CredibilityBar.tsx` (new)
 
 **Content:**
+
 ```
 Built on the Claude Agent SDK  ·  Open Source  ·  MIT Licensed
 ```
 
 **Design:**
+
 - Horizontal centered bar
 - Background: `bg-cream-secondary` (subtle contrast from hero)
 - Typography: `font-mono text-2xs tracking-[0.1em] text-warm-gray-light`
@@ -143,6 +149,7 @@ Built on the Claude Agent SDK  ·  Open Source  ·  MIT Licensed
 - No links, no icons — pure text credibility
 
 **Acceptance criteria:**
+
 - [ ] Renders three static text items separated by middle dots
 - [ ] Visually distinct from hero (different background)
 - [ ] Monospace, small, understated
@@ -154,6 +161,7 @@ Built on the Claude Agent SDK  ·  Open Source  ·  MIT Licensed
 **Component:** `ProblemSection.tsx` (new)
 
 **Content:**
+
 ```
 Every AI coding interface you've used lives in someone else's cloud.
 Their servers. Their logs. Their uptime. Their rules.
@@ -164,6 +172,7 @@ Your sessions, your transcripts, your infrastructure.
 ```
 
 **Design:**
+
 - Background: `bg-cream-tertiary`
 - Centered text, max-w-[600px]
 - Engineering bracket corners (same as current OriginSection aesthetic)
@@ -174,6 +183,7 @@ Your sessions, your transcripts, your infrastructure.
 - No section label — the content speaks for itself
 
 **Acceptance criteria:**
+
 - [ ] Two paragraphs with "DorkOS is different." as visual separator
 - [ ] Corner bracket decorations (reuse from OriginSection)
 - [ ] Direct "you" address in opening line
@@ -188,24 +198,31 @@ Your sessions, your transcripts, your infrastructure.
 **Content:**
 
 **Step 1: Install**
+
 ```
 npm install -g dorkos
 ```
+
 One command. No config files. No Docker. No cloud account.
 
 **Step 2: Run**
+
 ```
 dorkos --dir ~/projects
 ```
+
 Server starts at localhost:4242. Add `--tunnel` for remote access from anywhere.
 
 **Step 3: Work**
+
 ```
 Full Claude Code in your browser.
 ```
+
 Tool approvals, session history, slash commands. JSONL transcripts stored at `~/.claude/projects/`. Always local.
 
 **Design:**
+
 - Background: `bg-cream-primary`
 - Section label: "How It Works" (mono, 2xs, brand-orange, uppercase — same style as current "Features" label)
 - Three-column grid on desktop (`lg:grid-cols-3`), stacks on mobile
@@ -214,6 +231,7 @@ Tool approvals, session history, slash commands. JSONL transcripts stored at `~/
 - Code blocks use existing `font-mono` styling with a dark-on-cream aesthetic (not full dark terminal)
 
 **Terminal animation spec:**
+
 - Typing speed: ~50ms per character
 - Cursor: blinking block cursor (reuse `cursor-blink` animation from globals.css)
 - Trigger: Starts when section enters viewport (IntersectionObserver, threshold 0.3)
@@ -222,6 +240,7 @@ Tool approvals, session history, slash commands. JSONL transcripts stored at `~/
 - Fallback: if JS disabled, shows complete text (progressive enhancement)
 
 **Acceptance criteria:**
+
 - [ ] Three steps in a grid (3-col desktop, 1-col mobile)
 - [ ] Each step has a number, code block, and description
 - [ ] Terminal animation types out commands on scroll
@@ -241,24 +260,28 @@ export const projects: Project[] = [
   {
     id: 'chat-interface',
     title: 'Chat Interface',
-    description: 'Rich markdown, streaming responses, and syntax highlighting. Claude Code in a real browser UI.',
+    description:
+      'Rich markdown, streaming responses, and syntax highlighting. Claude Code in a real browser UI.',
   },
   {
     id: 'tool-approval',
     title: 'Tool Approval',
-    description: 'Review and approve every tool call before it executes. Full control over what Claude does on your machine.',
+    description:
+      'Review and approve every tool call before it executes. Full control over what Claude does on your machine.',
   },
   {
     id: 'session-management',
     title: 'Session Management',
-    description: 'Browse, resume, and sync sessions across devices. Works with CLI-started sessions. One source of truth.',
+    description:
+      'Browse, resume, and sync sessions across devices. Works with CLI-started sessions. One source of truth.',
   },
   {
     id: 'slash-commands',
     title: 'Slash Commands',
-    description: 'Discover and run commands from .claude/commands/ with a searchable palette. Your workflows, surfaced.',
+    description:
+      'Discover and run commands from .claude/commands/ with a searchable palette. Your workflows, surfaced.',
   },
-]
+];
 ```
 
 **Type changes in `types.ts`:**
@@ -266,23 +289,26 @@ export const projects: Project[] = [
 ```typescript
 // Remove ProjectStatus and ProjectType
 export interface Project {
-  id: string
-  title: string
-  description: string
-  href?: string
+  id: string;
+  title: string;
+  description: string;
+  href?: string;
 }
 ```
 
 **ProjectCard changes:**
+
 - Remove status badge and type badge
 - Simpler card: title + description only
 - Keep hover effect and optional href link
 
 **ProjectsGrid changes:**
+
 - Change desktop grid from `lg:grid-cols-3` to `lg:grid-cols-2` (4 cards = 2x2)
 - Keep section label "Features"
 
 **Acceptance criteria:**
+
 - [ ] 4 feature cards (Chat Interface, Tool Approval, Session Management, Slash Commands)
 - [ ] No status or type badges on cards
 - [ ] 2-column grid on desktop, 1-column on mobile
@@ -295,6 +321,7 @@ export interface Project {
 **Component:** `NotSection.tsx` (new)
 
 **Content:**
+
 ```
 DorkOS is not a hosted service.
 Not a model aggregator.
@@ -304,6 +331,7 @@ It's infrastructure you run, own, and control.
 ```
 
 **Design:**
+
 - Background: `bg-cream-white`
 - Centered, generous vertical padding (`py-32`)
 - Negation lines: large text (`text-2xl md:text-3xl`), `text-warm-gray`, `font-light`
@@ -312,6 +340,7 @@ It's infrastructure you run, own, and control.
 - No section label, no decorations — the whitespace is the design
 
 **Acceptance criteria:**
+
 - [ ] Three negation lines in warm-gray
 - [ ] Final affirmation line in charcoal or brand-orange (visually distinct)
 - [ ] Large typography, generous spacing
@@ -324,6 +353,7 @@ It's infrastructure you run, own, and control.
 **Component:** `AboutSection.tsx` (modified)
 
 **Content restructure:**
+
 - Lead text: "DorkOS is open source infrastructure for Claude Code by Dork Labs."
 - Description: "DorkOS exists because Claude Code deserved a browser interface. Built on the Agent SDK, it reads the same JSONL session files as the CLI. No separate backend. No data duplication. One source of truth."
 - Philosophy grid: 4 items (rewritten — see below)
@@ -353,15 +383,17 @@ export const philosophyItems: PhilosophyItem[] = [
     title: 'Autonomy',
     description: 'Full control is the default. Unrestricted permissions by design.',
   },
-]
+];
 ```
 
 **OriginSection removal:**
+
 - Delete `OriginSection.tsx` file
 - Remove export from `index.ts` barrel
 - Origin content ("DorkOS exists because...") absorbed into AboutSection description
 
 **Acceptance criteria:**
+
 - [ ] Single "About" section replaces old About + Origin
 - [ ] Lead text is shorter and sharper
 - [ ] Philosophy grid reflects brand foundation "We Believe" values
@@ -385,7 +417,7 @@ export const siteConfig = {
   name: 'DorkOS',
   description: 'Remote access to Claude Code. On your machine.',
   // ... rest unchanged
-}
+};
 ```
 
 #### Marketing Layout (`app/(marketing)/layout.tsx`)
@@ -409,13 +441,14 @@ export const siteConfig = {
     { label: 'about', href: '#about' },
     { label: 'contact', href: '#contact' },
     { label: 'docs', href: '/docs' },
-  ]
+  ];
   ```
   (These are already correct — no change needed since we're keeping the same section IDs.)
 
 #### Page Orchestration (`page.tsx`)
 
 New section order:
+
 ```tsx
 <Hero ... />
 <CredibilityBar />
@@ -430,23 +463,26 @@ New section order:
 #### Barrel Export (`index.ts`)
 
 Add new exports, remove OriginSection:
+
 ```typescript
-export { CredibilityBar } from './ui/CredibilityBar'
-export { ProblemSection } from './ui/ProblemSection'
-export { HowItWorksSection } from './ui/HowItWorksSection'
-export { NotSection } from './ui/NotSection'
+export { CredibilityBar } from './ui/CredibilityBar';
+export { ProblemSection } from './ui/ProblemSection';
+export { HowItWorksSection } from './ui/HowItWorksSection';
+export { NotSection } from './ui/NotSection';
 // Remove: export { OriginSection } from './ui/OriginSection'
 ```
 
 ## Implementation Phases
 
 ### Phase 1: Content & Data Updates (low risk)
+
 1. Update `config/site.ts` description
 2. Update `projects.ts` — reduce to 4 items, update descriptions
 3. Update `philosophy.ts` — rewrite 4 items
 4. Update `types.ts` — simplify `Project` interface
 
 ### Phase 2: Modify Existing Components (medium risk)
+
 5. Rewrite `Hero.tsx` — new headline, subhead, simplified props
 6. Modify `ProjectCard.tsx` — remove badges
 7. Modify `ProjectsGrid.tsx` — change to 2-column grid
@@ -455,12 +491,14 @@ export { NotSection } from './ui/NotSection'
 10. Update `MarketingFooter.tsx` — real version number
 
 ### Phase 3: New Sections (medium risk)
+
 11. Create `CredibilityBar.tsx`
 12. Create `ProblemSection.tsx`
 13. Create `NotSection.tsx`
 14. Create `HowItWorksSection.tsx` (with terminal animation)
 
 ### Phase 4: Assembly & Polish (low risk)
+
 15. Update `page.tsx` — new section ordering
 16. Update `index.ts` — barrel exports
 17. Update `layout.tsx` — verify OG metadata
@@ -470,17 +508,17 @@ export { NotSection } from './ui/NotSection'
 
 All copy in this spec is final and implementation-ready. Sources:
 
-| Section | Copy source |
-|---|---|
-| Hero headline | Brand foundation Section 9 (Taglines) |
-| Hero subhead | Brand foundation Section 10 (Website Hero) |
-| Problem section | Research report (Jobs antagonist principle) |
-| How It Works | Brand foundation Section 4 (Product Architecture) + Ogilvy specificity |
-| Features descriptions | Rewritten from current — tightened with voice examples table |
-| Not section | Brand foundation Section 6 (What DorkOS Is Not) |
-| Philosophy items | Brand foundation Section 5 (We Believe) |
-| About lead text | Brand foundation Section 1 (Executive Summary) |
-| About origin paragraph | Current OriginSection, condensed to one paragraph |
+| Section                | Copy source                                                            |
+| ---------------------- | ---------------------------------------------------------------------- |
+| Hero headline          | Brand foundation Section 9 (Taglines)                                  |
+| Hero subhead           | Brand foundation Section 10 (Website Hero)                             |
+| Problem section        | Research report (Jobs antagonist principle)                            |
+| How It Works           | Brand foundation Section 4 (Product Architecture) + Ogilvy specificity |
+| Features descriptions  | Rewritten from current — tightened with voice examples table           |
+| Not section            | Brand foundation Section 6 (What DorkOS Is Not)                        |
+| Philosophy items       | Brand foundation Section 5 (We Believe)                                |
+| About lead text        | Brand foundation Section 1 (Executive Summary)                         |
+| About origin paragraph | Current OriginSection, condensed to one paragraph                      |
 
 ## Banned Words
 

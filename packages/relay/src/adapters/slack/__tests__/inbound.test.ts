@@ -110,7 +110,7 @@ describe('handleInboundMessage', () => {
         content: 'Hello agent!',
         channelType: 'dm',
       }),
-      { from: 'relay.human.slack.bot', replyTo: 'relay.human.slack.D67890' },
+      { from: 'relay.human.slack.bot', replyTo: 'relay.human.slack.D67890' }
     );
   });
 
@@ -121,7 +121,7 @@ describe('handleInboundMessage', () => {
     expect(relay.publish).toHaveBeenCalledWith(
       'relay.human.slack.group.C12345',
       expect.objectContaining({ channelType: 'group' }),
-      expect.any(Object),
+      expect.any(Object)
     );
   });
 
@@ -177,7 +177,7 @@ describe('handleInboundMessage', () => {
           teamId: 'T123',
         }),
       }),
-      expect.any(Object),
+      expect.any(Object)
     );
   });
 
@@ -185,7 +185,7 @@ describe('handleInboundMessage', () => {
     (relay.publish as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
     const event = createEvent();
     await expect(
-      handleInboundMessage(event, client, relay, 'UBOTID', callbacks),
+      handleInboundMessage(event, client, relay, 'UBOTID', callbacks)
     ).resolves.toBeUndefined();
     expect(callbacks.recordError).toHaveBeenCalled();
   });
@@ -202,7 +202,7 @@ describe('handleInboundMessage', () => {
     expect(relay.publish).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(Object),
-      expect.objectContaining({ from: `${SUBJECT_PREFIX}.bot` }),
+      expect.objectContaining({ from: `${SUBJECT_PREFIX}.bot` })
     );
   });
 
@@ -239,7 +239,16 @@ describe('handleInboundMessage', () => {
       const event = createEvent({ ts: '1234.5678' });
       const pendingReactions = new Map<string, string[]>();
 
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, undefined, 'reaction', pendingReactions);
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'reaction',
+        pendingReactions
+      );
 
       // Wait a tick for the fire-and-forget promise to resolve
       await new Promise((r) => setTimeout(r, 10));
@@ -255,7 +264,16 @@ describe('handleInboundMessage', () => {
       const event = createEvent({ ts: '1234.5678' });
       const pendingReactions = new Map<string, string[]>();
 
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, undefined, 'reaction', pendingReactions);
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'reaction',
+        pendingReactions
+      );
       await new Promise((r) => setTimeout(r, 10));
 
       expect(pendingReactions.get('D67890')).toEqual(['1234.5678']);
@@ -288,7 +306,7 @@ describe('handleInboundMessage', () => {
       await new Promise((r) => setTimeout(r, 10));
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('failed to add typing reaction'),
+        expect.stringContaining('failed to add typing reaction')
       );
     });
 
@@ -297,7 +315,16 @@ describe('handleInboundMessage', () => {
       const event = createEvent({ ts: '1234.5678' });
       const pendingReactions = new Map<string, string[]>();
 
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, undefined, 'reaction', pendingReactions);
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'reaction',
+        pendingReactions
+      );
       await new Promise((r) => setTimeout(r, 10));
 
       // Should not track a reaction that failed to add

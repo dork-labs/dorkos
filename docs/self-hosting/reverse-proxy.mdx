@@ -8,7 +8,8 @@ description: Configure nginx or Caddy as a reverse proxy for DorkOS
 DorkOS uses Server-Sent Events (SSE) for real-time streaming. Reverse proxy configuration must account for SSE's long-lived connections and disable response buffering.
 
 <Callout type="warn">
-  Standard proxy settings will break SSE streaming. The configurations below include the required SSE-specific directives.
+  Standard proxy settings will break SSE streaming. The configurations below include the required
+  SSE-specific directives.
 </Callout>
 
 ## Proxy Configuration
@@ -27,6 +28,7 @@ dorkos.example.com {
 ```
 
 `flush_interval -1` disables response buffering, which is required for SSE streams.
+
 </Tab>
 
 <Tab value="nginx">
@@ -55,7 +57,9 @@ server {
         proxy_set_header Connection '';
         chunked_transfer_encoding off;
     }
+
 }
+
 ```
 </Tab>
 
@@ -109,20 +113,23 @@ server {
 Point your domain's DNS to the server and Caddy obtains and renews certificates automatically — no additional configuration needed.
 
 ```
+
 dorkos.example.com {
-    reverse_proxy localhost:4242 {
-        flush_interval -1
-    }
+reverse_proxy localhost:4242 {
+flush_interval -1
 }
-```
+}
+
+````
 </Tab>
 
 <Tab value="nginx + certbot">
 ```bash
 sudo certbot --nginx -d dorkos.example.com
-```
+````
 
 Certbot modifies your nginx config to add SSL directives and sets up automatic renewal.
+
 </Tab>
 
 </Tabs>

@@ -18,7 +18,13 @@ function createWrapper(relayEnabled: boolean) {
       workingDirectory: '/test',
       nodeVersion: 'v20.0.0',
       claudeCliPath: null,
-      tunnel: { enabled: false, connected: false, url: null, authEnabled: false, tokenConfigured: false },
+      tunnel: {
+        enabled: false,
+        connected: false,
+        url: null,
+        authEnabled: false,
+        tokenConfigured: false,
+      },
       relay: { enabled: relayEnabled },
     }),
   });

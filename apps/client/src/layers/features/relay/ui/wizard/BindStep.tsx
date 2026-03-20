@@ -45,17 +45,17 @@ export function BindStep({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         Bind this adapter to an agent so incoming messages are routed automatically. You can skip
         this and bind later from the Bindings tab.
       </p>
 
       {agentOptions.length === 0 ? (
-        <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="text-muted-foreground rounded-md border border-dashed px-4 py-6 text-center text-sm">
           No agents registered yet. You can bind this adapter later from the Adapters tab.
         </div>
       ) : agentOptions.length === 1 ? (
-        <div className="rounded-md border bg-accent/30 px-4 py-3 text-sm">
+        <div className="bg-accent/30 rounded-md border px-4 py-3 text-sm">
           Will bind to <span className="font-medium">{agentOptions[0]!.name}</span>
         </div>
       ) : (
@@ -99,7 +99,7 @@ export function BindStep({
           href={`https://t.me/${botUsername}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
+          className="text-primary inline-flex items-center gap-1.5 text-sm underline-offset-4 hover:underline"
         >
           Message @{botUsername} in Telegram
         </a>

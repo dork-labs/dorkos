@@ -26,25 +26,53 @@ export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
 };
 
 /** Display order for groups in the reference panel. */
-export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = [
-  'navigation',
-  'sessions',
-  'chat',
-  'global',
-];
+export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'sessions', 'chat', 'global'];
 
 /** All keyboard shortcuts in the application. Single source of truth. */
 export const SHORTCUTS = {
   // Navigation
-  COMMAND_PALETTE: { id: 'command-palette', key: 'mod+k', label: 'Command palette', group: 'navigation' },
-  TOGGLE_SIDEBAR: { id: 'toggle-sidebar', key: 'mod+b', label: 'Toggle sidebar', group: 'navigation' },
-  SHORTCUTS_PANEL: { id: 'shortcuts-panel', key: '?', label: 'Keyboard shortcuts', group: 'navigation' },
+  COMMAND_PALETTE: {
+    id: 'command-palette',
+    key: 'mod+k',
+    label: 'Command palette',
+    group: 'navigation',
+  },
+  TOGGLE_SIDEBAR: {
+    id: 'toggle-sidebar',
+    key: 'mod+b',
+    label: 'Toggle sidebar',
+    group: 'navigation',
+  },
+  SHORTCUTS_PANEL: {
+    id: 'shortcuts-panel',
+    key: '?',
+    label: 'Keyboard shortcuts',
+    group: 'navigation',
+  },
 
   // Sessions
   NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },
-  TAB_SESSIONS: { id: 'tab-sessions', key: 'mod+1', label: 'Sessions tab', group: 'sessions', scope: 'sidebar' },
-  TAB_SCHEDULES: { id: 'tab-schedules', key: 'mod+2', label: 'Schedules tab', group: 'sessions', scope: 'sidebar' },
-  TAB_CONNECTIONS: { id: 'tab-connections', key: 'mod+3', label: 'Connections tab', group: 'sessions', scope: 'sidebar' },
+  TAB_SESSIONS: {
+    id: 'tab-sessions',
+    key: 'mod+1',
+    label: 'Sessions tab',
+    group: 'sessions',
+    scope: 'sidebar',
+  },
+  TAB_SCHEDULES: {
+    id: 'tab-schedules',
+    key: 'mod+2',
+    label: 'Schedules tab',
+    group: 'sessions',
+    scope: 'sidebar',
+  },
+  TAB_CONNECTIONS: {
+    id: 'tab-connections',
+    key: 'mod+3',
+    label: 'Connections tab',
+    group: 'sessions',
+    scope: 'sidebar',
+  },
 
   // Chat (interactive tool shortcuts)
   APPROVE_TOOL: { id: 'approve-tool', key: 'enter', label: 'Approve tool', group: 'chat' },
@@ -82,7 +110,11 @@ export function formatShortcutKey(def: ShortcutDef | string): string {
 }
 
 /** Group all shortcuts by their category, in display order. */
-export function getShortcutsGrouped(): { group: ShortcutGroup; label: string; shortcuts: ShortcutDef[] }[] {
+export function getShortcutsGrouped(): {
+  group: ShortcutGroup;
+  label: string;
+  shortcuts: ShortcutDef[];
+}[] {
   const map = new Map<ShortcutGroup, ShortcutDef[]>();
 
   for (const shortcut of Object.values(SHORTCUTS)) {
@@ -91,11 +123,9 @@ export function getShortcutsGrouped(): { group: ShortcutGroup; label: string; sh
     map.set(shortcut.group, list);
   }
 
-  return SHORTCUT_GROUP_ORDER
-    .filter((g) => map.has(g))
-    .map((g) => ({
-      group: g,
-      label: SHORTCUT_GROUP_LABELS[g],
-      shortcuts: map.get(g)!,
-    }));
+  return SHORTCUT_GROUP_ORDER.filter((g) => map.has(g)).map((g) => ({
+    group: g,
+    label: SHORTCUT_GROUP_LABELS[g],
+    shortcuts: map.get(g)!,
+  }));
 }

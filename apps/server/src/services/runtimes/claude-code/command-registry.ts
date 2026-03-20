@@ -109,8 +109,11 @@ class CommandRegistryService {
    * @returns Partial command fields, or `null` if the file could not be read.
    */
   private async parseCommandFile(
-    filePath: string,
-  ): Promise<Pick<CommandEntry, 'description' | 'argumentHint' | 'allowedTools' | 'filePath'> | null> {
+    filePath: string
+  ): Promise<Pick<
+    CommandEntry,
+    'description' | 'argumentHint' | 'allowedTools' | 'filePath'
+  > | null> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
 

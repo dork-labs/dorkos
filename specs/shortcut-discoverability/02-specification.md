@@ -75,13 +75,13 @@ export { isMac } from './platform';
 
 **Replacements** — remove inline `const isMac = ...` from:
 
-| File | Current line |
-|------|-------------|
-| `AgentSidebar.tsx` | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
+| File                        | Current line                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `AgentSidebar.tsx`          | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
 | `CommandPaletteTrigger.tsx` | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
-| `App.tsx` | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
-| `SidebarTabRow.tsx` | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
-| `PaletteFooter.tsx` | `const isMac = typeof navigator !== 'undefined' && navigator.platform?.includes('Mac');` |
+| `App.tsx`                   | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
+| `SidebarTabRow.tsx`         | `const isMac = typeof navigator !== 'undefined' && /Mac\|iPhone\|iPad/.test(navigator.platform);` |
+| `PaletteFooter.tsx`         | `const isMac = typeof navigator !== 'undefined' && navigator.platform?.includes('Mac');`          |
 
 Each file replaces with: `import { isMac } from '@/layers/shared/lib';`
 
@@ -120,12 +120,7 @@ export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
 };
 
 /** Display order for groups in the reference panel. */
-export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = [
-  'navigation',
-  'sessions',
-  'chat',
-  'global',
-];
+export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'sessions', 'chat', 'global'];
 ```
 
 **The `SHORTCUTS` constant** — all existing shortcuts:
@@ -133,15 +128,48 @@ export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = [
 ```typescript
 export const SHORTCUTS = {
   // Navigation
-  COMMAND_PALETTE: { id: 'command-palette', key: 'mod+k', label: 'Command palette', group: 'navigation' },
-  TOGGLE_SIDEBAR: { id: 'toggle-sidebar', key: 'mod+b', label: 'Toggle sidebar', group: 'navigation' },
-  SHORTCUTS_PANEL: { id: 'shortcuts-panel', key: '?', label: 'Keyboard shortcuts', group: 'navigation' },
+  COMMAND_PALETTE: {
+    id: 'command-palette',
+    key: 'mod+k',
+    label: 'Command palette',
+    group: 'navigation',
+  },
+  TOGGLE_SIDEBAR: {
+    id: 'toggle-sidebar',
+    key: 'mod+b',
+    label: 'Toggle sidebar',
+    group: 'navigation',
+  },
+  SHORTCUTS_PANEL: {
+    id: 'shortcuts-panel',
+    key: '?',
+    label: 'Keyboard shortcuts',
+    group: 'navigation',
+  },
 
   // Sessions
   NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },
-  TAB_SESSIONS: { id: 'tab-sessions', key: 'mod+1', label: 'Sessions tab', group: 'sessions', scope: 'sidebar' },
-  TAB_SCHEDULES: { id: 'tab-schedules', key: 'mod+2', label: 'Schedules tab', group: 'sessions', scope: 'sidebar' },
-  TAB_CONNECTIONS: { id: 'tab-connections', key: 'mod+3', label: 'Connections tab', group: 'sessions', scope: 'sidebar' },
+  TAB_SESSIONS: {
+    id: 'tab-sessions',
+    key: 'mod+1',
+    label: 'Sessions tab',
+    group: 'sessions',
+    scope: 'sidebar',
+  },
+  TAB_SCHEDULES: {
+    id: 'tab-schedules',
+    key: 'mod+2',
+    label: 'Schedules tab',
+    group: 'sessions',
+    scope: 'sidebar',
+  },
+  TAB_CONNECTIONS: {
+    id: 'tab-connections',
+    key: 'mod+3',
+    label: 'Connections tab',
+    group: 'sessions',
+    scope: 'sidebar',
+  },
 
   // Chat (interactive tool shortcuts)
   APPROVE_TOOL: { id: 'approve-tool', key: 'enter', label: 'Approve tool', group: 'chat' },
@@ -187,7 +215,11 @@ export function formatShortcutKey(def: ShortcutDef | string): string {
 
 ```typescript
 /** Group all shortcuts by their category, in display order. */
-export function getShortcutsGrouped(): { group: ShortcutGroup; label: string; shortcuts: ShortcutDef[] }[] {
+export function getShortcutsGrouped(): {
+  group: ShortcutGroup;
+  label: string;
+  shortcuts: ShortcutDef[];
+}[] {
   const map = new Map<ShortcutGroup, ShortcutDef[]>();
 
   for (const shortcut of Object.values(SHORTCUTS)) {
@@ -196,13 +228,11 @@ export function getShortcutsGrouped(): { group: ShortcutGroup; label: string; sh
     map.set(shortcut.group, list);
   }
 
-  return SHORTCUT_GROUP_ORDER
-    .filter((g) => map.has(g))
-    .map((g) => ({
-      group: g,
-      label: SHORTCUT_GROUP_LABELS[g],
-      shortcuts: map.get(g)!,
-    }));
+  return SHORTCUT_GROUP_ORDER.filter((g) => map.has(g)).map((g) => ({
+    group: g,
+    label: SHORTCUT_GROUP_LABELS[g],
+    shortcuts: map.get(g)!,
+  }));
 }
 ```
 
@@ -227,7 +257,9 @@ export {
 Replace the current Tooltip-wrapped button:
 
 ```tsx
-{/* BEFORE — tooltip pattern */}
+{
+  /* BEFORE — tooltip pattern */
+}
 <Tooltip>
   <TooltipTrigger asChild>
     <SidebarMenuButton onClick={handleNewSession} className="...">
@@ -237,13 +269,15 @@ Replace the current Tooltip-wrapped button:
   <TooltipContent side="right">
     New session <Kbd>{isMac ? '⇧⌘N' : 'Ctrl+Shift+N'}</Kbd>
   </TooltipContent>
-</Tooltip>
+</Tooltip>;
 ```
 
 With an inline hint:
 
 ```tsx
-{/* AFTER — inline hint pattern */}
+{
+  /* AFTER — inline hint pattern */
+}
 <SidebarMenuButton
   onClick={handleNewSession}
   className="group border-border text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98] disabled:opacity-50"
@@ -255,10 +289,11 @@ With an inline hint:
   <Kbd className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
     {formatShortcutKey(SHORTCUTS.NEW_SESSION)}
   </Kbd>
-</SidebarMenuButton>
+</SidebarMenuButton>;
 ```
 
 Key changes:
+
 - Remove `Tooltip`/`TooltipTrigger`/`TooltipContent` wrapper
 - Remove `Tooltip`, `TooltipTrigger`, `TooltipContent` imports (if no longer used elsewhere in file)
 - Add `group` to button className (enables `group-hover` on children)
@@ -332,9 +367,7 @@ export function useShortcutsPanel(): void {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const inInput =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable;
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       if (e.key === '?' && !inInput) {
         e.preventDefault();
@@ -381,15 +414,12 @@ export function ShortcutsPanel() {
         <ResponsiveDialogBody className="space-y-6">
           {groups.map(({ group, label, shortcuts }) => (
             <div key={group}>
-              <h3 className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">
+              <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
                 {label}
               </h3>
               <div className="space-y-1">
                 {shortcuts.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between py-1.5 text-sm"
-                  >
+                  <div key={s.id} className="flex items-center justify-between py-1.5 text-sm">
                     <span>{s.label}</span>
                     <Kbd>{formatShortcutKey(s)}</Kbd>
                   </div>
@@ -405,6 +435,7 @@ export function ShortcutsPanel() {
 ```
 
 Design:
+
 - `sm:max-w-md` (448px) — compact, scannable
 - Group headers: uppercase, muted, small, with tracking
 - Each row: label left, `Kbd` right
@@ -446,7 +477,7 @@ useShortcutsPanel(); // Register ? key handler
 Add to the Navigation shortcuts table:
 
 ```markdown
-| `?`                              | Open keyboard shortcuts panel |
+| `?` | Open keyboard shortcuts panel |
 ```
 
 Add a new section documenting the registry:
@@ -491,6 +522,7 @@ The registry is the single source of truth. Do not define shortcut display strin
 ### Unit Tests
 
 **`shared/lib/__tests__/shortcuts.test.ts`:**
+
 - `formatShortcutKey` returns correct Mac symbols (`⇧⌘N`) when `isMac` is true
 - `formatShortcutKey` returns correct Windows strings (`Ctrl+Shift+N`) when `isMac` is false
 - `getShortcutsGrouped` returns all groups in the correct order
@@ -498,12 +530,14 @@ The registry is the single source of truth. Do not define shortcut display strin
 - Every shortcut in `SHORTCUTS` has a non-empty `id`, `key`, `label`, and `group`
 
 **`features/shortcuts/__tests__/use-shortcuts-panel.test.ts`:**
+
 - Pressing `?` toggles `shortcutsPanelOpen` in the store
 - Pressing `?` while an input is focused does NOT toggle the panel
 - Pressing `?` while a textarea is focused does NOT toggle the panel
 - Pressing `?` while a contentEditable element is focused does NOT toggle the panel
 
 **`features/shortcuts/__tests__/ShortcutsPanel.test.tsx`:**
+
 - Renders all shortcut groups when open
 - Each shortcut row displays label and formatted key
 - Does not render when `shortcutsPanelOpen` is false
@@ -573,23 +607,23 @@ None — all decisions were resolved during ideation.
 
 ### New Files (3)
 
-| File | Purpose |
-|------|---------|
-| `layers/shared/lib/shortcuts.ts` | SHORTCUTS registry, formatShortcutKey, getShortcutsGrouped |
-| `layers/features/shortcuts/ui/ShortcutsPanel.tsx` | `?` reference panel modal |
-| `layers/features/shortcuts/model/use-shortcuts-panel.ts` | `?` key handler hook |
-| `layers/features/shortcuts/index.ts` | Feature barrel |
+| File                                                     | Purpose                                                    |
+| -------------------------------------------------------- | ---------------------------------------------------------- |
+| `layers/shared/lib/shortcuts.ts`                         | SHORTCUTS registry, formatShortcutKey, getShortcutsGrouped |
+| `layers/features/shortcuts/ui/ShortcutsPanel.tsx`        | `?` reference panel modal                                  |
+| `layers/features/shortcuts/model/use-shortcuts-panel.ts` | `?` key handler hook                                       |
+| `layers/features/shortcuts/index.ts`                     | Feature barrel                                             |
 
 ### Modified Files (9)
 
-| File | Change |
-|------|--------|
-| `layers/shared/lib/platform.ts` | Add `isMac` export |
-| `layers/shared/lib/index.ts` | Re-export `isMac`, shortcuts utilities |
-| `layers/shared/model/app-store.ts` | Add `shortcutsPanelOpen` state |
-| `layers/features/session-list/ui/AgentSidebar.tsx` | Inline Kbd hint, remove tooltip, use shared isMac |
-| `layers/features/top-nav/ui/CommandPaletteTrigger.tsx` | Use shared isMac |
-| `layers/features/session-list/ui/SidebarTabRow.tsx` | Use shared isMac |
-| `layers/features/command-palette/ui/PaletteFooter.tsx` | Use shared isMac |
-| `layers/app/App.tsx` | Mount ShortcutsPanel, use shared isMac |
-| `contributing/keyboard-shortcuts.md` | Add `?` shortcut, document registry |
+| File                                                   | Change                                            |
+| ------------------------------------------------------ | ------------------------------------------------- |
+| `layers/shared/lib/platform.ts`                        | Add `isMac` export                                |
+| `layers/shared/lib/index.ts`                           | Re-export `isMac`, shortcuts utilities            |
+| `layers/shared/model/app-store.ts`                     | Add `shortcutsPanelOpen` state                    |
+| `layers/features/session-list/ui/AgentSidebar.tsx`     | Inline Kbd hint, remove tooltip, use shared isMac |
+| `layers/features/top-nav/ui/CommandPaletteTrigger.tsx` | Use shared isMac                                  |
+| `layers/features/session-list/ui/SidebarTabRow.tsx`    | Use shared isMac                                  |
+| `layers/features/command-palette/ui/PaletteFooter.tsx` | Use shared isMac                                  |
+| `layers/app/App.tsx`                                   | Mount ShortcutsPanel, use shared isMac            |
+| `contributing/keyboard-shortcuts.md`                   | Add `?` shortcut, document registry               |

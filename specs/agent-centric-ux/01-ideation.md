@@ -55,37 +55,38 @@ status: ideation
 
 **Primary components/modules:**
 
-| File | Role | Change needed |
-|---|---|---|
-| `apps/client/src/layers/shared/ui/command.tsx` | Shadcn Command primitive (cmdk) | None — already installed |
-| `apps/client/src/layers/shared/ui/dialog.tsx` | Radix Dialog primitive | None — used by CommandDialog |
-| `apps/client/src/layers/shared/ui/responsive-dialog.tsx` | Dialog (desktop) / Drawer (mobile) wrapper | May wrap the command palette for mobile |
-| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Sidebar — sessions, agent header, panel state | Major redesign — agent-centric structure |
-| `apps/client/src/layers/features/session-list/ui/AgentHeader.tsx` | Sidebar agent identity header | Major redesign — prominent agent identity + switch affordance |
-| `apps/client/src/layers/features/session-list/ui/SessionItem.tsx` | Session row in sidebar | Minor — framed as "agent's session" |
-| `apps/client/src/layers/shared/ui/DirectoryPicker.tsx` | Directory browser dialog | Demoted — escape hatch, not primary switching |
-| `apps/client/src/App.tsx` | Root layout + global keyboard shortcuts | Mount global palette + Cmd+K handler |
-| `apps/client/src/layers/shared/model/app-store.ts` | Zustand store | Add `globalPaletteOpen` state |
-| `apps/client/src/layers/entities/mesh/` | Mesh entity hooks | Remove `useMeshEnabled()` gates |
-| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx` | Mesh panel UI | Remove disabled state gate |
-| `apps/server/src/index.ts` | Server entrypoint — Mesh init | Remove conditional gate |
-| `apps/server/src/services/mesh/mesh-state.ts` | Feature flag module | Remove or hard-code true |
-| `apps/server/src/env.ts` | Env var schema | Remove `DORKOS_MESH_ENABLED` |
-| `apps/server/src/routes/config.ts` | Config API | Always return `mesh.enabled: true` |
-| `packages/shared/src/config-schema.ts` | Config Zod schema | Remove `mesh.enabled` field |
+| File                                                                 | Role                                          | Change needed                                                 |
+| -------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
+| `apps/client/src/layers/shared/ui/command.tsx`                       | Shadcn Command primitive (cmdk)               | None — already installed                                      |
+| `apps/client/src/layers/shared/ui/dialog.tsx`                        | Radix Dialog primitive                        | None — used by CommandDialog                                  |
+| `apps/client/src/layers/shared/ui/responsive-dialog.tsx`             | Dialog (desktop) / Drawer (mobile) wrapper    | May wrap the command palette for mobile                       |
+| `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` | Sidebar — sessions, agent header, panel state | Major redesign — agent-centric structure                      |
+| `apps/client/src/layers/features/session-list/ui/AgentHeader.tsx`    | Sidebar agent identity header                 | Major redesign — prominent agent identity + switch affordance |
+| `apps/client/src/layers/features/session-list/ui/SessionItem.tsx`    | Session row in sidebar                        | Minor — framed as "agent's session"                           |
+| `apps/client/src/layers/shared/ui/DirectoryPicker.tsx`               | Directory browser dialog                      | Demoted — escape hatch, not primary switching                 |
+| `apps/client/src/App.tsx`                                            | Root layout + global keyboard shortcuts       | Mount global palette + Cmd+K handler                          |
+| `apps/client/src/layers/shared/model/app-store.ts`                   | Zustand store                                 | Add `globalPaletteOpen` state                                 |
+| `apps/client/src/layers/entities/mesh/`                              | Mesh entity hooks                             | Remove `useMeshEnabled()` gates                               |
+| `apps/client/src/layers/features/mesh/ui/MeshPanel.tsx`              | Mesh panel UI                                 | Remove disabled state gate                                    |
+| `apps/server/src/index.ts`                                           | Server entrypoint — Mesh init                 | Remove conditional gate                                       |
+| `apps/server/src/services/mesh/mesh-state.ts`                        | Feature flag module                           | Remove or hard-code true                                      |
+| `apps/server/src/env.ts`                                             | Env var schema                                | Remove `DORKOS_MESH_ENABLED`                                  |
+| `apps/server/src/routes/config.ts`                                   | Config API                                    | Always return `mesh.enabled: true`                            |
+| `packages/shared/src/config-schema.ts`                               | Config Zod schema                             | Remove `mesh.enabled` field                                   |
 
 **New files to create:**
 
-| File | Role |
-|---|---|
-| `apps/client/src/layers/features/command-palette/ui/CommandPaletteDialog.tsx` | Global Cmd+K command palette dialog |
-| `apps/client/src/layers/features/command-palette/ui/AgentCommandItem.tsx` | Agent result row with color, emoji, path |
+| File                                                                          | Role                                      |
+| ----------------------------------------------------------------------------- | ----------------------------------------- |
+| `apps/client/src/layers/features/command-palette/ui/CommandPaletteDialog.tsx` | Global Cmd+K command palette dialog       |
+| `apps/client/src/layers/features/command-palette/ui/AgentCommandItem.tsx`     | Agent result row with color, emoji, path  |
 | `apps/client/src/layers/features/command-palette/model/use-global-palette.ts` | Open/close state + Cmd+K keyboard binding |
 | `apps/client/src/layers/features/command-palette/model/use-agent-frecency.ts` | localStorage frecency tracking for agents |
-| `apps/client/src/layers/features/command-palette/model/use-palette-items.ts` | Assembles all command items from sources |
-| `apps/client/src/layers/features/command-palette/index.ts` | Barrel exports |
+| `apps/client/src/layers/features/command-palette/model/use-palette-items.ts`  | Assembles all command items from sources  |
+| `apps/client/src/layers/features/command-palette/index.ts`                    | Barrel exports                            |
 
 **Shared dependencies:**
+
 - `@/layers/shared/ui` — Command, Dialog, ResponsiveDialog components
 - `@/layers/shared/model` — app-store (Zustand), TransportContext, useIsMobile
 - `@/layers/shared/lib` — cn, hashToHslColor, hashToEmoji, shortenHomePath
@@ -106,6 +107,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 ```
 
 **Potential blast radius:**
+
 - Direct: ~20 files (new feature + sidebar + mesh flag removal + config)
 - Indirect: ~10 files (components checking meshEnabled, tests mocking it)
 - Tests: ~8 test files need updating (mesh hooks, MeshPanel, MeshStatsHeader, ConnectionsTab, env tests)
@@ -117,6 +119,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 ### Potential Solutions
 
 **1. Shadcn CommandDialog Pattern (Recommended)**
+
 - Description: Use the already-installed Shadcn Command component with CommandDialog wrapper. Mount at App.tsx level with global Cmd+K keyboard binding.
 - Pros: Already installed and unused; handles fuzzy filtering, keyboard nav, focus trapping automatically; the industry-standard pattern (Linear, GitHub, Vercel all use cmdk)
 - Cons: None significant — this is the obvious choice given the existing component
@@ -124,6 +127,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 - Maintenance: Low (Shadcn component is well-maintained)
 
 **2. Custom Command Palette (Not Recommended)**
+
 - Description: Build a custom palette from scratch using a Dialog + custom filtering
 - Pros: Full control
 - Cons: Significant effort for something cmdk already solves; the existing inline palette is already custom and mixing patterns adds confusion
@@ -131,6 +135,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 - Maintenance: High
 
 **3. Third-Party Command Palette Library (Not Recommended)**
+
 - Description: Use kbar, react-command-palette, or similar
 - Pros: Some have additional features (nested commands, breadcrumbs)
 - Cons: Adds a dependency when cmdk is already installed; different styling paradigm from Shadcn; less control
@@ -154,21 +159,22 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Mesh always-on | Remove feature flag entirely | Agents are central — the registry must always be available. ADR-0043 confirms the filesystem is canonical, so the SQLite index can always rebuild. Config default was already `true`. |
-| 2 | Mobile command palette trigger | Agent header tap opens palette as bottom drawer | Reuses existing touch point (users already tap the header area). No new permanent UI chrome. ResponsiveDialog pattern (Dialog desktop, Drawer mobile) already exists in the codebase. |
-| 3 | Sidebar redesign scope | Full agent-centric redesign | Agent as primary organizational unit. Sessions are "this agent's conversations." Agent identity header is prominent with switch affordance. Matches the "agents at the center of everything" vision. |
-| 4 | `@` prefix mode | Yes, single `@` prefix for agents | Natural "address to" metaphor. Low complexity — one prefix mode. Research confirms this is the sweet spot for DorkOS's scale vs. VS Code's many prefixes. |
-| 5 | FSD placement | New `features/command-palette/` module | Separate from existing `features/commands/` (inline slash palette). Follows FSD rules — feature can import from entities and shared. Mounted at App.tsx level. |
-| 6 | Keyboard shortcut | Cmd+K (Mac) / Ctrl+K (Windows/Linux) | Industry standard for web tools. Existing Cmd+B (sidebar toggle) is the reference pattern for implementation. No current Cmd+K binding exists. |
-| 7 | Zero-query state | Frecency-sorted recent agents + quick actions | Research unanimously recommends this over empty or full-list states. Personalized, fast for repeat actions. Uses localStorage for tracking. |
-| 8 | Existing CommandPalette | Keep as-is, separate concern | Inline slash palette in chat input serves a different purpose (contextual command completion). Two palettes, two triggers, two contexts. Research confirms this separation is correct. |
-| 9 | Directory picker fate | Demoted to secondary role | Accessible from command palette "Browse filesystem..." action or settings. No longer the primary switching mechanism. Covers the 5% edge case of navigating to a new, unregistered directory. |
+| #   | Decision                       | Choice                                          | Rationale                                                                                                                                                                                            |
+| --- | ------------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Mesh always-on                 | Remove feature flag entirely                    | Agents are central — the registry must always be available. ADR-0043 confirms the filesystem is canonical, so the SQLite index can always rebuild. Config default was already `true`.                |
+| 2   | Mobile command palette trigger | Agent header tap opens palette as bottom drawer | Reuses existing touch point (users already tap the header area). No new permanent UI chrome. ResponsiveDialog pattern (Dialog desktop, Drawer mobile) already exists in the codebase.                |
+| 3   | Sidebar redesign scope         | Full agent-centric redesign                     | Agent as primary organizational unit. Sessions are "this agent's conversations." Agent identity header is prominent with switch affordance. Matches the "agents at the center of everything" vision. |
+| 4   | `@` prefix mode                | Yes, single `@` prefix for agents               | Natural "address to" metaphor. Low complexity — one prefix mode. Research confirms this is the sweet spot for DorkOS's scale vs. VS Code's many prefixes.                                            |
+| 5   | FSD placement                  | New `features/command-palette/` module          | Separate from existing `features/commands/` (inline slash palette). Follows FSD rules — feature can import from entities and shared. Mounted at App.tsx level.                                       |
+| 6   | Keyboard shortcut              | Cmd+K (Mac) / Ctrl+K (Windows/Linux)            | Industry standard for web tools. Existing Cmd+B (sidebar toggle) is the reference pattern for implementation. No current Cmd+K binding exists.                                                       |
+| 7   | Zero-query state               | Frecency-sorted recent agents + quick actions   | Research unanimously recommends this over empty or full-list states. Personalized, fast for repeat actions. Uses localStorage for tracking.                                                          |
+| 8   | Existing CommandPalette        | Keep as-is, separate concern                    | Inline slash palette in chat input serves a different purpose (contextual command completion). Two palettes, two triggers, two contexts. Research confirms this separation is correct.               |
+| 9   | Directory picker fate          | Demoted to secondary role                       | Accessible from command palette "Browse filesystem..." action or settings. No longer the primary switching mechanism. Covers the 5% edge case of navigating to a new, unregistered directory.        |
 
 ### Change 1: Global Command Palette (Cmd+K)
 
 **Architecture:**
+
 - New `features/command-palette/` FSD module
 - `CommandPaletteDialog` wraps Shadcn `CommandDialog` (Radix Dialog + cmdk)
 - On mobile: uses `ResponsiveDialog` pattern — bottom Drawer instead of centered Dialog
@@ -177,25 +183,28 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 
 **Content groups (in order):**
 
-| Group | Source | Behavior |
-|---|---|---|
-| **Recent Agents** | `useAgentFrecency()` + `useMeshAgentPaths()` | Shown in zero-query state. Top 5 frecency-sorted. Active agent pinned first with checkmark. |
-| **All Agents** | `useMeshAgentPaths()` | Shown when searching or in `@` mode. Each shows: colored dot + emoji + name + abbreviated path. Active agent has `forceMount`. |
-| **Features** | Static list | Pulse Scheduler, Relay Messaging, Mesh Network, Settings. Each shows icon + name + keyboard shortcut hint. |
-| **Commands** | `useCommands()` | Slash commands from `.claude/commands/`. Shows `/namespace:command` + description. |
-| **Quick Actions** | Static list | New Session, Discover Agents, Browse Filesystem, Toggle Theme. |
+| Group             | Source                                       | Behavior                                                                                                                       |
+| ----------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Recent Agents** | `useAgentFrecency()` + `useMeshAgentPaths()` | Shown in zero-query state. Top 5 frecency-sorted. Active agent pinned first with checkmark.                                    |
+| **All Agents**    | `useMeshAgentPaths()`                        | Shown when searching or in `@` mode. Each shows: colored dot + emoji + name + abbreviated path. Active agent has `forceMount`. |
+| **Features**      | Static list                                  | Pulse Scheduler, Relay Messaging, Mesh Network, Settings. Each shows icon + name + keyboard shortcut hint.                     |
+| **Commands**      | `useCommands()`                              | Slash commands from `.claude/commands/`. Shows `/namespace:command` + description.                                             |
+| **Quick Actions** | Static list                                  | New Session, Discover Agents, Browse Filesystem, Toggle Theme.                                                                 |
 
 **`@` prefix mode:**
+
 - When input starts with `@`, filter to agents-only group
 - Strip `@` from the search term before filtering
 - Show all registered agents (not just recent)
 - Useful for large registries (10+ agents)
 
 **Agent item design:**
+
 ```
 [●] auth-service              ~/projects/auth-svc    ✓
      "Builds and deploys the auth API"
 ```
+
 - Colored dot from `agent.color` or `hashToHslColor(agent.id)`
 - Agent name (bold)
 - Abbreviated cwd path (muted, right-aligned)
@@ -204,6 +213,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 - `keywords` includes: cwd path, description, persona name
 
 **Keyboard interactions:**
+
 - `Cmd+K` / `Ctrl+K` — toggle palette open/close
 - Arrow keys — navigate items (with `loop` wrapping)
 - `Enter` — select item and close
@@ -212,6 +222,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 - `@` prefix — scope to agents only
 
 **Mobile interactions:**
+
 - Tap agent header in sidebar → opens palette as bottom Drawer
 - Same content groups and search behavior
 - Touch-friendly item heights (minimum 44px tap targets)
@@ -220,6 +231,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 ### Change 2: Full Agent-Centric Sidebar Redesign
 
 **Current sidebar structure:**
+
 ```
 ┌─────────────────────────┐
 │ AgentHeader (small)     │  ← Agent identity or directory path
@@ -236,6 +248,7 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 ```
 
 **Proposed agent-centric structure:**
+
 ```
 ┌─────────────────────────┐
 │ ┌─────────────────────┐ │
@@ -279,25 +292,25 @@ User selects agent → setSelectedCwd(agent.projectPath) → sidebar/sessions up
 
 **Server-side changes:**
 
-| File | Change |
-|---|---|
-| `apps/server/src/env.ts` | Remove `DORKOS_MESH_ENABLED` from Zod schema |
-| `apps/server/src/index.ts` | Remove `if (meshEnabled)` gates; always init MeshCore, mount routes, start reconciler |
-| `apps/server/src/services/mesh/mesh-state.ts` | Delete file (or hard-code `isEnabled = () => true` for minimal diff) |
-| `apps/server/src/routes/config.ts` | Return `mesh: { enabled: true, scanRoots }` unconditionally |
-| `packages/shared/src/config-schema.ts` | Remove `mesh.enabled` field from schema (keep `scanRoots`) |
-| `.env.example` | Remove `DORKOS_MESH_ENABLED` line |
+| File                                          | Change                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `apps/server/src/env.ts`                      | Remove `DORKOS_MESH_ENABLED` from Zod schema                                          |
+| `apps/server/src/index.ts`                    | Remove `if (meshEnabled)` gates; always init MeshCore, mount routes, start reconciler |
+| `apps/server/src/services/mesh/mesh-state.ts` | Delete file (or hard-code `isEnabled = () => true` for minimal diff)                  |
+| `apps/server/src/routes/config.ts`            | Return `mesh: { enabled: true, scanRoots }` unconditionally                           |
+| `packages/shared/src/config-schema.ts`        | Remove `mesh.enabled` field from schema (keep `scanRoots`)                            |
+| `.env.example`                                | Remove `DORKOS_MESH_ENABLED` line                                                     |
 
 **Client-side changes:**
 
-| File | Change |
-|---|---|
-| `entities/mesh/model/use-mesh-config.ts` | `useMeshEnabled()` returns `true` unconditionally (or remove hook entirely and update consumers) |
-| `shared/model/use-feature-enabled.ts` | Remove `'mesh'` from `Subsystem` union type |
-| `features/session-list/ui/SessionSidebar.tsx` | Remove mesh-disabled dimming/tooltip logic |
-| `features/mesh/ui/MeshPanel.tsx` | Remove `FeatureDisabledState` gate; always render panel body |
-| `features/mesh/ui/MeshStatsHeader.tsx` | Remove `!meshEnabled` early return |
-| `features/agent-settings/ui/ConnectionsTab.tsx` | Always show health data; remove "Enable Mesh" prompt |
+| File                                            | Change                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `entities/mesh/model/use-mesh-config.ts`        | `useMeshEnabled()` returns `true` unconditionally (or remove hook entirely and update consumers) |
+| `shared/model/use-feature-enabled.ts`           | Remove `'mesh'` from `Subsystem` union type                                                      |
+| `features/session-list/ui/SessionSidebar.tsx`   | Remove mesh-disabled dimming/tooltip logic                                                       |
+| `features/mesh/ui/MeshPanel.tsx`                | Remove `FeatureDisabledState` gate; always render panel body                                     |
+| `features/mesh/ui/MeshStatsHeader.tsx`          | Remove `!meshEnabled` early return                                                               |
+| `features/agent-settings/ui/ConnectionsTab.tsx` | Always show health data; remove "Enable Mesh" prompt                                             |
 
 **Error handling:** MeshCore initialization can still fail (e.g., SQLite write errors). The existing error handling in `index.ts` (try/catch around init, `setMeshInitError()`) should remain for graceful degradation — just remove the "disabled by config" path.
 

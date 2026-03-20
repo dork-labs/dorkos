@@ -33,13 +33,13 @@ Use the existing `useAgentAccess(agentId, enabled)` hook (exported from `@/layer
 
 **Behavior by state:**
 
-| State | Visible agents |
-|---|---|
-| No agent selected (`agentId` is null/undefined) | All registered agents, unfiltered |
-| Agent selected, access query loading | All registered agents (avoids flicker) |
-| Agent selected, access query resolved | Only agents present in the access response |
-| Agent selected, access query error | All registered agents (fail open, not fail closed) |
-| Mesh disabled | Section hidden (unchanged) |
+| State                                           | Visible agents                                     |
+| ----------------------------------------------- | -------------------------------------------------- |
+| No agent selected (`agentId` is null/undefined) | All registered agents, unfiltered                  |
+| Agent selected, access query loading            | All registered agents (avoids flicker)             |
+| Agent selected, access query resolved           | Only agents present in the access response         |
+| Agent selected, access query error              | All registered agents (fail open, not fail closed) |
+| Mesh disabled                                   | Section hidden (unchanged)                         |
 
 The filtered list is then sliced by the cap.
 

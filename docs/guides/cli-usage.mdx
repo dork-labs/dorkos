@@ -3,8 +3,8 @@ title: CLI Usage
 description: Command-line flags, subcommands, and configuration for the dorkos CLI
 ---
 
-import { Cards, Card } from 'fumadocs-ui/components/card'
-import { Callout } from 'fumadocs-ui/components/callout'
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
 
 # CLI Usage
 
@@ -25,15 +25,33 @@ The server starts on port 4242 and opens your browser automatically.
 
 ## Command-Line Flags
 
-<TypeTable type={{
-  "--port, -p": { type: "number", description: "Port for the server", default: "4242" },
-  "--dir, -d": { type: "string", description: "Default working directory", default: "Current directory" },
-  "--boundary, -b": { type: "string", description: "Restricts file access to this path and its children", default: "Home directory" },
-  "--tunnel, -t": { type: "boolean", description: "Enable ngrok tunnel for remote access", default: "false" },
-  "--pulse": { type: "boolean", description: "Enable the Pulse scheduler" },
-  "--no-pulse": { type: "boolean", description: "Disable the Pulse scheduler" },
-  "--log-level, -l": { type: "string", description: "Log verbosity: fatal, error, warn, info, debug, trace", default: "info" },
-}} />
+<TypeTable
+  type={{
+    '--port, -p': { type: 'number', description: 'Port for the server', default: '4242' },
+    '--dir, -d': {
+      type: 'string',
+      description: 'Default working directory',
+      default: 'Current directory',
+    },
+    '--boundary, -b': {
+      type: 'string',
+      description: 'Restricts file access to this path and its children',
+      default: 'Home directory',
+    },
+    '--tunnel, -t': {
+      type: 'boolean',
+      description: 'Enable ngrok tunnel for remote access',
+      default: 'false',
+    },
+    '--pulse': { type: 'boolean', description: 'Enable the Pulse scheduler' },
+    '--no-pulse': { type: 'boolean', description: 'Disable the Pulse scheduler' },
+    '--log-level, -l': {
+      type: 'string',
+      description: 'Log verbosity: fatal, error, warn, info, debug, trace',
+      default: 'info',
+    },
+  }}
+/>
 
 ### Examples
 
@@ -95,14 +113,24 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
 
 ## Environment Variables
 
-<TypeTable type={{
-  "ANTHROPIC_API_KEY": { type: "string", description: "Claude API key (required)" },
-  "DORKOS_PORT": { type: "number", description: "Server port", default: "4242" },
-  "DORKOS_DEFAULT_CWD": { type: "string", description: "Default working directory", default: "Current directory" },
-  "DORKOS_BOUNDARY": { type: "string", description: "Directory boundary for file access", default: "Home directory" },
-  "TUNNEL_ENABLED": { type: "boolean", description: "Enable ngrok tunnel", default: "false" },
-  "NGROK_AUTHTOKEN": { type: "string", description: "ngrok auth token (required for tunnels)" },
-}} />
+<TypeTable
+  type={{
+    ANTHROPIC_API_KEY: { type: 'string', description: 'Claude API key (required)' },
+    DORKOS_PORT: { type: 'number', description: 'Server port', default: '4242' },
+    DORKOS_DEFAULT_CWD: {
+      type: 'string',
+      description: 'Default working directory',
+      default: 'Current directory',
+    },
+    DORKOS_BOUNDARY: {
+      type: 'string',
+      description: 'Directory boundary for file access',
+      default: 'Home directory',
+    },
+    TUNNEL_ENABLED: { type: 'boolean', description: 'Enable ngrok tunnel', default: 'false' },
+    NGROK_AUTHTOKEN: { type: 'string', description: 'ngrok auth token (required for tunnels)' },
+  }}
+/>
 
 ## Config Precedence
 
@@ -114,7 +142,8 @@ Configuration is resolved in this order (highest priority first):
 4. Built-in defaults
 
 <Callout type="info">
-  Run `dorkos config` to view the resolved configuration and see which values come from which source.
+  Run `dorkos config` to view the resolved configuration and see which values come from which
+  source.
 </Callout>
 
 ## Docker

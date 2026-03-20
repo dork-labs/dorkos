@@ -305,7 +305,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       label: '',
       onClick: undefined,
     },
-  } satisfies Record<ButtonState, { icon: React.ElementType; className: string; label: string; onClick: (() => void) | undefined }>;
+  } satisfies Record<
+    ButtonState,
+    { icon: React.ElementType; className: string; label: string; onClick: (() => void) | undefined }
+  >;
 
   const config = buttonConfig[buttonState];
   const ButtonIcon = config.icon;
@@ -324,7 +327,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
       <div
         className={cn(
-          'border-input flex items-end gap-1.5 rounded-md border bg-background p-1.5 shadow-xs transition-[color,box-shadow]',
+          'border-input bg-background flex items-end gap-1.5 rounded-md border p-1.5 shadow-xs transition-[color,box-shadow]',
           isFocused && 'border-ring ring-ring/75 ring-[1px]',
           editingQueueItem && 'border-primary/40',
           !onAttach && 'pl-3'
@@ -404,14 +407,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             className={cn(
               'shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2',
               config.className,
-              (!showButton || (buttonState === 'send' && sessionBusy)) && 'pointer-events-none opacity-50'
+              (!showButton || (buttonState === 'send' && sessionBusy)) &&
+                'pointer-events-none opacity-50'
             )}
             aria-label={config.label}
           >
             <ButtonIcon className="size-(--size-icon-sm)" />
           </motion.button>
           {queueDepth > 0 && buttonState === 'queue' && (
-            <span className="bg-foreground text-background absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium">
+            <span className="bg-foreground text-background absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium">
               {queueDepth}
             </span>
           )}

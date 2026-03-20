@@ -86,6 +86,7 @@ This follows the existing pattern where `setGlobalPaletteOpen` manages the palet
 **File:** `apps/client/src/layers/features/top-nav/ui/AgentIdentityChip.tsx`
 
 **Changes:**
+
 - Replace `useAppStore((s) => s.setAgentDialogOpen)` with `useAppStore((s) => s.openGlobalPaletteWithSearch)`
 - Change click handler from `setAgentDialogOpen(true)` to `openGlobalPaletteWithSearch('@')`
 - Update tooltip text from "Agent settings" to "Switch agent"
@@ -98,6 +99,7 @@ This follows the existing pattern where `setGlobalPaletteOpen` manages the palet
 **Changes to `handleOpenChange`:**
 
 When the dialog opens (`open === true`), after bumping `staggerKey`:
+
 - Read `globalPaletteInitialSearch` from the store
 - If non-null, call `setSearch(initialSearch)` to pre-populate the input
 - Call `clearGlobalPaletteInitialSearch()` to consume the value (one-shot)
@@ -121,7 +123,7 @@ const handleOpenChange = useCallback(
       setSubMenuAgent(null);
     }
   },
-  [setGlobalPaletteOpen, clearGlobalPaletteInitialSearch],
+  [setGlobalPaletteOpen, clearGlobalPaletteInitialSearch]
 );
 ```
 
@@ -210,21 +212,21 @@ This button is always visible, regardless of whether an agent is registered. Whe
 
 ### Before
 
-| Surface | Action | Result |
-|---------|--------|--------|
-| AgentIdentityChip | Click | Opens AgentDialog |
-| Sidebar | Shows CWD + "K Switch" | Redundant with header |
-| Sidebar footer | Settings, Theme, Debug | No agent access |
-| AgentDialog | Shows agent config | No CWD context |
+| Surface           | Action                 | Result                |
+| ----------------- | ---------------------- | --------------------- |
+| AgentIdentityChip | Click                  | Opens AgentDialog     |
+| Sidebar           | Shows CWD + "K Switch" | Redundant with header |
+| Sidebar footer    | Settings, Theme, Debug | No agent access       |
+| AgentDialog       | Shows agent config     | No CWD context        |
 
 ### After
 
-| Surface | Action | Result |
-|---------|--------|--------|
-| AgentIdentityChip | Click | Opens command palette filtered to agents |
-| Sidebar | No AgentHeader | Cleaner, starts with New Session button |
-| Sidebar footer | Pencil icon | Opens AgentDialog (create or edit) |
-| AgentDialog | Shows agent config + CWD | Full context for agent configuration |
+| Surface           | Action                   | Result                                   |
+| ----------------- | ------------------------ | ---------------------------------------- |
+| AgentIdentityChip | Click                    | Opens command palette filtered to agents |
+| Sidebar           | No AgentHeader           | Cleaner, starts with New Session button  |
+| Sidebar footer    | Pencil icon              | Opens AgentDialog (create or edit)       |
+| AgentDialog       | Shows agent config + CWD | Full context for agent configuration     |
 
 ### Interaction Flow
 
@@ -237,29 +239,34 @@ This button is always visible, regardless of whether an agent is registered. Whe
 ### Unit Tests to Update
 
 **`AgentIdentityChip.test.tsx`** — Update existing tests:
+
 - Change assertion: click now calls `openGlobalPaletteWithSearch('@')` instead of `setAgentDialogOpen(true)`
 - Update tooltip text assertion from "Agent settings" to "Switch agent"
 - Update aria-label assertions
 - Add test: verify `openGlobalPaletteWithSearch` is called with `'@'` argument
 
 **`CommandPaletteDialog.test.tsx`** — Add new tests:
+
 - Test: palette opens with initial search when `globalPaletteInitialSearch` is set
 - Test: palette clears `globalPaletteInitialSearch` after consuming it
 - Test: palette opens with empty search when `globalPaletteInitialSearch` is null (regression)
 - Test: closing palette clears `globalPaletteInitialSearch`
 
 **`SidebarFooterBar.test.tsx`** — Add new tests:
+
 - Test: renders Edit Agent (Pencil) icon button
 - Test: clicking Edit Agent button calls `setAgentDialogOpen(true)`
 - Test: Edit Agent button has correct aria-label
 
 **`SessionSidebar.test.tsx`** — Update existing tests:
+
 - Remove any assertions about AgentHeader rendering
 - Remove any mocks for AgentHeader dependencies
 
 **`AgentHeader.test.tsx`** — Delete this file (component is deleted)
 
 **`AgentDialog.test.tsx`** — Add new tests:
+
 - Test: CWD path is displayed when agent exists
 - Test: CWD path is displayed when no agent registered
 - Test: PathBreadcrumb renders the projectPath

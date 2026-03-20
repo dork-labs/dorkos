@@ -194,7 +194,9 @@ describe('boundary module', () => {
     it('rejects when path violates the explicit boundary override', async () => {
       vi.mocked(fs.realpath).mockResolvedValueOnce('/home/user/project');
 
-      await expect(boundary.validateBoundary('/home/user/project', '/home/other')).rejects.toMatchObject({
+      await expect(
+        boundary.validateBoundary('/home/user/project', '/home/other')
+      ).rejects.toMatchObject({
         code: 'OUTSIDE_BOUNDARY',
       });
     });

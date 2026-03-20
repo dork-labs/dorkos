@@ -2,7 +2,8 @@ import { vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 const SESSION_ID = 'test-session-id';
-const BASE_UUID = '00000000-0000-4000-8000-000000000001' as `${string}-${string}-${string}-${string}-${string}`;
+const BASE_UUID =
+  '00000000-0000-4000-8000-000000000001' as `${string}-${string}-${string}-${string}-${string}`;
 
 function makeInit(sessionId = SESSION_ID): SDKMessage {
   return {
@@ -91,7 +92,7 @@ export async function* sdkSimpleText(text: string): AsyncGenerator<SDKMessage> {
 export async function* sdkToolCall(
   toolName: string,
   input: object,
-  responseText: string,
+  responseText: string
 ): AsyncGenerator<SDKMessage> {
   const toolCallId = 'tool-call-1';
   yield makeInit();
@@ -126,7 +127,11 @@ export async function* sdkToolCall(
   } as SDKMessage;
   yield {
     type: 'stream_event',
-    event: { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: responseText } },
+    event: {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'text_delta', text: responseText },
+    },
     parent_tool_use_id: null,
     session_id: SESSION_ID,
     uuid: BASE_UUID,
@@ -140,7 +145,7 @@ export async function* sdkToolCall(
  * @param tasks - Task items to create (id, content, status)
  */
 export async function* sdkTodoWrite(
-  tasks: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed' }>,
+  tasks: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed' }>
 ): AsyncGenerator<SDKMessage> {
   yield makeInit();
   yield {
@@ -199,7 +204,12 @@ export async function* sdkError(message: string): AsyncGenerator<SDKMessage> {
     result: message,
     stop_reason: 'error',
     total_cost_usd: 0,
-    usage: { input_tokens: 5, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    usage: {
+      input_tokens: 5,
+      output_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    },
     modelUsage: {},
     permission_denials: [],
     errors: [message],
@@ -230,7 +240,7 @@ export function sdkTaskProgress(
   taskId: string,
   toolUses: number,
   durationMs: number,
-  lastToolName?: string,
+  lastToolName?: string
 ): SDKMessage {
   return {
     type: 'system',
@@ -248,7 +258,7 @@ export function sdkTaskProgress(
 export function sdkTaskNotification(
   taskId: string,
   status: 'completed' | 'failed' | 'stopped',
-  summary: string,
+  summary: string
 ): SDKMessage {
   return {
     type: 'system',

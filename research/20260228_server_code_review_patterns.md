@@ -1,5 +1,5 @@
 ---
-title: "Server Code Review Patterns Research"
+title: 'Server Code Review Patterns Research'
 date: 2026-02-28
 type: implementation
 status: archived
@@ -29,9 +29,10 @@ codebase (`apps/server/src/`).
 ### 1. C1 — Express Error Handler Security
 
 **Current code** (`apps/server/src/middleware/error-handler.ts`):
+
 ```typescript
 res.status(500).json({
-  error: err.message || 'Internal Server Error',  // leaks internal message
+  error: err.message || 'Internal Server Error', // leaks internal message
   code: 'INTERNAL_ERROR',
 });
 ```
@@ -56,11 +57,13 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
 ```
 
 **Packages to consider**:
+
 - No package needed. The two-line check is sufficient and idiomatic.
 - `express-error-toolkit` does this automatically when `NODE_ENV=production`, but adds a
   dependency for one conditional — not worth it.
 
 **Trade-offs**:
+
 - Simpler alternative is to always return `'Internal Server Error'` regardless of env. The
   downside is slightly worse local development DX. The NODE_ENV gate is the Node.js ecosystem
   standard.
@@ -97,27 +100,36 @@ services/core/mcp-tools/
 ```
 
 Each domain module has the shape:
+
 ```typescript
 // pulse-tools.ts
 import type { McpToolDeps } from './types.js'; // shared deps type lives in a types.ts
 
-export function registerPulseTools(server: ReturnType<typeof createSdkMcpServer>, deps: McpToolDeps): void {
+export function registerPulseTools(
+  server: ReturnType<typeof createSdkMcpServer>,
+  deps: McpToolDeps
+): void {
   if (!deps.pulseStore) return; // feature guard stays in the domain module
 
-  server.tool('list_schedules', { enabled_only: z.boolean().optional() }, createListSchedulesHandler(deps));
+  server.tool(
+    'list_schedules',
+    { enabled_only: z.boolean().optional() },
+    createListSchedulesHandler(deps)
+  );
   server.tool('create_schedule', CreateScheduleSchema, createCreateScheduleHandler(deps));
   // ...
 }
 ```
 
 Composition root:
+
 ```typescript
 // index.ts (was mcp-tool-server.ts)
 export function createDorkOsToolServer(deps: McpToolDeps) {
   const server = createSdkMcpServer({ name: 'dorkos' });
   registerCoreTools(server, deps);
   registerAgentTools(server, deps);
-  registerPulseTools(server, deps);  // no-op when deps.pulseStore is undefined
+  registerPulseTools(server, deps); // no-op when deps.pulseStore is undefined
   registerRelayTools(server, deps);
   registerTraceTools(server, deps);
   registerMeshTools(server, deps);
@@ -180,7 +192,7 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
     ) {
       result[key as keyof T] = deepMerge(
         targetVal as Record<string, unknown>,
-        sourceVal as Record<string, unknown>,
+        sourceVal as Record<string, unknown>
       ) as T[keyof T];
     } else if (sourceVal !== undefined) {
       result[key as keyof T] = sourceVal;
@@ -191,6 +203,7 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
 ```
 
 **Packages to consider**:
+
 - `deepmerge` (npm) — popular, ~2M weekly downloads, handles prototype pollution via `isMergeableObject`. Use `deepmerge(target, source)`. Well-tested, actively maintained.
 - `ts-deepmerge` — had CVE-2022-25907 (fixed in v2+). Acceptable if using current version.
 - `@75lb/deep-merge` — had CVE-2024-38986 via lodash dependency. Avoid.
@@ -200,6 +213,7 @@ For a config-merge use case (which is the typical DorkOS pattern), this is the r
 If the usage is more complex, add `deepmerge` directly.
 
 **`Object.create(null)` vs key filtering**:
+
 - `Object.create(null)` creates a prototype-free object, solving pollution for the result, but
   does not prevent pollution of the shared `Object.prototype` during the merge itself.
 - Key filtering is the correct defense — block the dangerous keys before they are ever assigned.
@@ -281,6 +295,7 @@ private sessionMap = new LRUCache<string, string>({
 ```
 
 **Packages to consider**:
+
 - `bidirectional-map` (npm) — provides `.get()`, `.getKey()`, `.has()`, `.hasValue()`. Simple,
   but only supports 1:1 mappings. Fine for this use case.
 - Manual two-Map pattern (shown above) — ~15 extra lines, zero dependencies, more transparent.
@@ -337,6 +352,7 @@ browser user, but it protects against programmatic clients and Claude Code agent
 multiple connections to the same session.
 
 **Packages to consider**:
+
 - `bottleneck` — for rate limiting async work. Not the right fit here (this is resource
   budgeting, not rate limiting).
 - No package needed. The two-counter approach above is ~15 lines.
@@ -346,11 +362,12 @@ multiple connections to the same session.
 ### 6. M6 — API 404 Handler for SPA Catch-all
 
 **Current code** (`apps/server/src/app.ts`):
+
 ```typescript
 // In production:
 app.use(express.static(distPath));
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));  // catches /api/... misses too
+  res.sendFile(path.join(distPath, 'index.html')); // catches /api/... misses too
 });
 ```
 
@@ -392,6 +409,7 @@ app.use('/api', (_req, res) => {
 ```
 
 **Trade-offs**:
+
 - Place this handler after all `app.use('/api/...')` registrations, otherwise it will intercept
   legitimate routes.
 - Express 404 handling is not an error — `next(err)` is not called for 404s, so the
@@ -403,6 +421,7 @@ app.use('/api', (_req, res) => {
 ### 7. I7 — Centralized Path Resolution
 
 **Current code** (duplicated in at least 4 files):
+
 ```typescript
 // routes/sessions.ts, routes/commands.ts, routes/relay.ts, services/core/agent-manager.ts
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -427,7 +446,7 @@ import path from 'node:path';
  */
 export const SERVER_PACKAGE_ROOT: string = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../..',  // src/lib/ → src/ → apps/server/
+  '../..' // src/lib/ → src/ → apps/server/
 );
 
 /**
@@ -438,6 +457,7 @@ export const REPO_ROOT: string = path.resolve(SERVER_PACKAGE_ROOT, '../..');
 ```
 
 Then in every file that previously inlined the resolution:
+
 ```typescript
 // Before:
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -450,6 +470,7 @@ const vaultRoot = REPO_ROOT;
 
 **Node.js 20.11+ option**: `import.meta.dirname` is now available natively, removing the
 `fileURLToPath` call:
+
 ```typescript
 export const SERVER_PACKAGE_ROOT: string = path.resolve(import.meta.dirname, '../..');
 ```
@@ -458,6 +479,7 @@ Since DorkOS targets Node 20+, this is usable. However, keeping `fileURLToPath` 
 maximum compatibility.
 
 **Trade-offs**:
+
 - A `lib/resolve-root.ts` module is a single point of truth. If the server package moves, one
   file changes.
 - The alternative is setting `DORKOS_DEFAULT_CWD` in the startup process and reading it
@@ -478,6 +500,7 @@ system, it can cause unexpected errors or log noise.
 **UUID v4 regex vs Zod**:
 
 A UUID v4 regex is:
+
 ```
 /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 ```
@@ -506,10 +529,7 @@ This is 4 lines per route. If many routes share this pattern, extract a helper:
 import { z } from 'zod';
 
 /** Parse and validate a UUID route param. Returns null and sends 400 if invalid. */
-export function parseUuidParam(
-  paramValue: string,
-  res: Response,
-): string | null {
+export function parseUuidParam(paramValue: string, res: Response): string | null {
   const result = z.string().uuid().safeParse(paramValue);
   if (!result.success) {
     res.status(400).json({ error: 'Invalid ID format', code: 'INVALID_ID' });
@@ -520,6 +540,7 @@ export function parseUuidParam(
 ```
 
 Usage:
+
 ```typescript
 const sessionId = parseUuidParam(req.params.id, res);
 if (!sessionId) return;
@@ -527,6 +548,7 @@ if (!sessionId) return;
 ```
 
 **Packages to consider**:
+
 - `express-validator` — popular, but adds a new API surface and dependency for something Zod
   already handles.
 - `express-zod-safe` — wraps params/body/query validation cleanly with TypeScript types, worth
@@ -535,6 +557,7 @@ if (!sessionId) return;
   dependencies, consistent with existing patterns.
 
 **Trade-offs**:
+
 - UUID validation only prevents malformed IDs from reaching the file system. It does not prevent
   valid-format UUIDs that reference non-existent sessions — the service layer handles that.
 - Session IDs from the Claude Agent SDK are always UUID v4, so `z.string().uuid()` (which also
@@ -546,18 +569,18 @@ if (!sessionId) return;
 
 ### Dependency Summary
 
-| Finding | New Package Required | Recommendation |
-|---------|---------------------|----------------|
-| C1 — Error handler | None | `process.env.NODE_ENV !== 'production'` guard |
-| C3 — MCP tool server split | None | Domain registration modules pattern |
-| C4 — Adapter manager split | None | Responsibility-based module split |
-| I4 — Prototype pollution | None (or `deepmerge`) | Key-filter set + optional `deepmerge` |
-| I1 — Session map bounding | `lru-cache` | Replace `Map` with `LRUCache` |
-| I2 — Reverse lookup | None | Manual bidirectional Map pattern |
-| I5 — SSE connection limits | None | Two counters in `SessionBroadcaster` |
-| M6 — API 404 / SPA catch-all | None | Route order: `/api` 404 before `*` |
-| I7 — Path centralization | None | `lib/resolve-root.ts` singleton |
-| M2 — Session ID validation | None | `parseUuidParam` in `route-utils.ts` |
+| Finding                      | New Package Required  | Recommendation                                |
+| ---------------------------- | --------------------- | --------------------------------------------- |
+| C1 — Error handler           | None                  | `process.env.NODE_ENV !== 'production'` guard |
+| C3 — MCP tool server split   | None                  | Domain registration modules pattern           |
+| C4 — Adapter manager split   | None                  | Responsibility-based module split             |
+| I4 — Prototype pollution     | None (or `deepmerge`) | Key-filter set + optional `deepmerge`         |
+| I1 — Session map bounding    | `lru-cache`           | Replace `Map` with `LRUCache`                 |
+| I2 — Reverse lookup          | None                  | Manual bidirectional Map pattern              |
+| I5 — SSE connection limits   | None                  | Two counters in `SessionBroadcaster`          |
+| M6 — API 404 / SPA catch-all | None                  | Route order: `/api` 404 before `*`            |
+| I7 — Path centralization     | None                  | `lib/resolve-root.ts` singleton               |
+| M2 — Session ID validation   | None                  | `parseUuidParam` in `route-utils.ts`          |
 
 Only `lru-cache` is a net-new dependency. It is already the de facto Node.js standard for bounded
 in-memory caches and has zero runtime dependencies.
@@ -605,7 +628,7 @@ Suggested implementation order based on risk and impact:
 - [Using LRU Cache in Node.js and TypeScript — DEV Community](https://dev.to/shayy/using-lru-cache-in-nodejs-and-typescript-7d9)
 - [bidirectional-map — npm](https://www.npmjs.com/package/bidirectional-map)
 - [Express.js route validation with Zod — Medium](https://medium.com/@nik14gos/express-js-route-validation-with-zod-26cafe5f6b3d)
-- [__dirname is back in Node.js with ES modules — Sonar](https://www.sonarsource.com/blog/dirname-node-js-es-modules/)
+- [\_\_dirname is back in Node.js with ES modules — Sonar](https://www.sonarsource.com/blog/dirname-node-js-es-modules/)
 - [import.meta — MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/import.meta)
 
 ## Research Gaps & Limitations

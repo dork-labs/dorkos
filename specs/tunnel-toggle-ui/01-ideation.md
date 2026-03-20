@@ -20,12 +20,14 @@ status: ideation
 **Task brief:** Add a UI to toggle the ngrok tunnel on/off through the DorkOS interface, with a status bar widget showing connection state and a dialog containing a QR code for easily opening the public URL from a phone.
 
 **Assumptions:**
+
 - The existing `TunnelManager` service with `start()`/`stop()` is stable and correct
 - ngrok auth token can come from either `NGROK_AUTHTOKEN` env var or `~/.dork/config.json`
 - The tunnel toggle should persist across server restarts (saved to config)
 - QR code is the primary mechanism for desktop-to-mobile URL sharing
 
 **Out of scope:**
+
 - Custom ngrok domain management UI
 - Tunnel authentication credential management (beyond token)
 - Multiple simultaneous tunnels
@@ -48,6 +50,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/server/src/services/tunnel-manager.ts` — TunnelManager with start/stop lifecycle
 - `apps/server/src/routes/config.ts` — Config GET/PATCH endpoints
 - `packages/shared/src/transport.ts` — Transport interface (needs startTunnel/stopTunnel)
@@ -55,6 +58,7 @@ status: ideation
 - `apps/client/src/layers/features/status/ui/StatusLine.tsx` — Status bar container
 
 **Shared dependencies:**
+
 - `packages/shared/src/schemas.ts` — ServerConfigSchema (no changes needed)
 - `packages/shared/src/config-schema.ts` — UserConfigSchema (no changes needed)
 - `apps/client/src/layers/shared/model/app-store.ts` — Preferences store (add showStatusBarTunnel)
@@ -64,11 +68,13 @@ status: ideation
 User clicks toggle -> useTunnelControl hook -> transport.startTunnel() -> POST /api/tunnel/start -> tunnelManager.start() -> returns URL -> invalidate config query -> UI updates
 
 **Feature flags/config:**
+
 - `showStatusBarTunnel` (localStorage, defaults true) — controls status bar visibility
 - `tunnel.enabled` (server config) — persisted tunnel auto-start preference
 - `tunnel.authtoken` (server config, sensitive) — fallback when env var absent
 
 **Potential blast radius:**
+
 - Direct: ~10 new/modified files
 - Transport interface: 3 files (interface + 2 adapters)
 - No existing tests need modification (all new functionality)

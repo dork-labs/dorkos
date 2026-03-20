@@ -43,12 +43,14 @@ If a related ADR is found, ask the user if the new ADR supersedes it.
 ### Step 4: Write the ADR
 
 Create the ADR file at `decisions/NNNN-{slug}.md` where:
+
 - `NNNN` is the zero-padded number from manifest
 - `{slug}` is a kebab-case version of the title
 
 Use the template from `decisions/TEMPLATE.md`.
 
 **Frontmatter fields:**
+
 - `number`: From manifest
 - `title`: Short imperative title
 - `status`: `proposed` | `accepted` | `deprecated` | `superseded` (default: `accepted`)
@@ -57,6 +59,7 @@ Use the template from `decisions/TEMPLATE.md`.
 - `superseded-by`: `null` (unless superseding)
 
 **Content guidelines (invoke `writing-adrs` skill):**
+
 - Context: 2-5 sentences, problem-focused
 - Decision: 2-5 sentences, active voice ("We will...")
 - Consequences: Concrete positives and negatives
@@ -64,12 +67,14 @@ Use the template from `decisions/TEMPLATE.md`.
 ### Step 5: Update Manifest
 
 Update `decisions/manifest.json`:
+
 1. Increment `nextNumber`
 2. Add new entry to `decisions` array
 
 ### Step 6: Update Superseded ADR (if applicable)
 
 If this ADR supersedes another:
+
 1. Update the old ADR's frontmatter: `status: superseded`, `superseded-by: NNNN`
 2. Update the old ADR's Status section
 3. Update the old entry in `decisions/manifest.json`

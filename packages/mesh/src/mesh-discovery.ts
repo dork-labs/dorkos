@@ -7,11 +7,7 @@
  * @module mesh/mesh-discovery
  */
 import { monotonicFactory } from 'ulidx';
-import type {
-  AgentManifest,
-  AgentRuntime,
-  DiscoveryCandidate,
-} from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import type { DiscoveryStrategy } from './discovery-strategy.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { DenialList } from './denial-list.js';
@@ -50,14 +46,14 @@ export interface DiscoveryDeps {
 export async function* discover(
   roots: string[],
   deps: DiscoveryDeps,
-  options?: Omit<UnifiedScanOptions, 'root'>,
+  options?: Omit<UnifiedScanOptions, 'root'>
 ): AsyncGenerator<ScanEvent> {
   for (const root of roots) {
     for await (const event of unifiedScan(
       { ...options, root, logger: options?.logger ?? deps.logger },
       deps.strategies,
       deps.registry,
-      deps.denialList,
+      deps.denialList
     )) {
       if (event.type === 'auto-import') {
         // Auto-import: upsert into registry before yielding
@@ -87,7 +83,7 @@ export async function register(
   deps: DiscoveryDeps,
   overrides?: Partial<AgentManifest>,
   approver = DEFAULT_REGISTRAR,
-  scanRoot?: string,
+  scanRoot?: string
 ): Promise<AgentManifest> {
   const id = deps.generateUlid();
   const now = new Date().toISOString();
@@ -130,7 +126,7 @@ export async function registerByPath(
   partial: Partial<AgentManifest> & { name: string; runtime: AgentRuntime },
   deps: DiscoveryDeps,
   approver = DEFAULT_REGISTRAR,
-  scanRoot?: string,
+  scanRoot?: string
 ): Promise<AgentManifest> {
   const id = deps.generateUlid();
   const now = new Date().toISOString();
@@ -177,7 +173,7 @@ async function registerInternal(
   manifest: AgentManifest,
   namespace: string,
   scanRoot: string,
-  deps: DiscoveryDeps,
+  deps: DiscoveryDeps
 ): Promise<AgentManifest> {
   // Step 1: Write manifest to disk (atomic tmp+rename)
   await writeManifest(projectPath, manifest);
@@ -223,13 +219,9 @@ async function registerInternal(
 export async function upsertAutoImported(
   manifest: AgentManifest,
   projectPath: string,
-  deps: DiscoveryDeps,
+  deps: DiscoveryDeps
 ): Promise<void> {
-  const namespace = resolveNamespace(
-    projectPath,
-    deps.defaultScanRoot,
-    manifest.namespace,
-  );
+  const namespace = resolveNamespace(projectPath, deps.defaultScanRoot, manifest.namespace);
   const entry: AgentRegistryEntry = {
     ...manifest,
     projectPath,

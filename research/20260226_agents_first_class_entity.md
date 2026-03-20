@@ -1,5 +1,5 @@
 ---
-title: "Agents as First-Class Entity in DorkOS"
+title: 'Agents as First-Class Entity in DorkOS'
 date: 2026-02-26
 type: internal-architecture
 status: active
@@ -28,18 +28,19 @@ Across the agent framework ecosystem (LangGraph, CrewAI, AutoGen, Google A2A, Gi
 
 Every mature framework treats agent identity as a small, stable core plus extensible metadata:
 
-| Field | CrewAI | Google A2A Agent Card | GitHub Copilot Agents | OpenCode Agents | DorkOS AgentManifest |
-|---|---|---|---|---|---|
-| Stable ID | implicit (name key) | `id` (string) | filename | filename | `id` (ULID) |
-| Human name | `role` | `name` | frontmatter `name` | filename | `name` |
-| Purpose description | `goal` + `backstory` | `description` | frontmatter `description` | frontmatter `description` | `description` |
-| Capabilities/skills | `tools` list | `skills[]` + `capabilities{}` | `tools` list | `tools` list | `capabilities[]` (strings) |
-| Runtime/model | `llm` field | implied by endpoint | `model` field | `model` field | `runtime` enum |
-| Behavior config | `verbose`, `max_iter`, etc. | `extensions[]` | instructions body | permission | `behavior{}` + `budget{}` |
-| Filesystem anchor | YAML file path | `.well-known/agent.json` | `.github/agents/{name}.md` | `.opencode/agents/{name}.md` | `.dork/agent.json` |
-| Visual identity | none | none | none | none | none |
+| Field               | CrewAI                      | Google A2A Agent Card         | GitHub Copilot Agents      | OpenCode Agents              | DorkOS AgentManifest       |
+| ------------------- | --------------------------- | ----------------------------- | -------------------------- | ---------------------------- | -------------------------- |
+| Stable ID           | implicit (name key)         | `id` (string)                 | filename                   | filename                     | `id` (ULID)                |
+| Human name          | `role`                      | `name`                        | frontmatter `name`         | filename                     | `name`                     |
+| Purpose description | `goal` + `backstory`        | `description`                 | frontmatter `description`  | frontmatter `description`    | `description`              |
+| Capabilities/skills | `tools` list                | `skills[]` + `capabilities{}` | `tools` list               | `tools` list                 | `capabilities[]` (strings) |
+| Runtime/model       | `llm` field                 | implied by endpoint           | `model` field              | `model` field                | `runtime` enum             |
+| Behavior config     | `verbose`, `max_iter`, etc. | `extensions[]`                | instructions body          | permission                   | `behavior{}` + `budget{}`  |
+| Filesystem anchor   | YAML file path              | `.well-known/agent.json`      | `.github/agents/{name}.md` | `.opencode/agents/{name}.md` | `.dork/agent.json`         |
+| Visual identity     | none                        | none                          | none                       | none                         | none                       |
 
 DorkOS's `AgentManifest` is already more structured than most peers. The two gaps vs. the ecosystem are:
+
 - **No visual identity** (color, icon, emoji, avatar) — every tool that surfaces agents prominently in UI adds some visual differentiator
 - **No human-authored system prompt / persona text** — CrewAI's `backstory`, Copilot's markdown body, OpenCode's markdown body all give the agent a narrative voice that users recognize
 
@@ -65,6 +66,7 @@ Enterprise pattern: each agent gets an Entra identity (GUID), a display name, an
 ### 3. Agent Registry Patterns: Centralized vs. Local
 
 The academic literature (arxiv 2508.03095) identifies five registry approaches:
+
 1. **MCP Registry** — centralized publication of JSON descriptors, public marketplace model
 2. **Google A2A Agent Cards** — decentralized self-describing JSON at `.well-known/agent-card.json`, HTTP discovery
 3. **AGNTCY ADS** — distributed DHT (IPFS Kademlia), federated semantic routing
@@ -93,6 +95,7 @@ From WorkOS, Cerbos, and AWS Bedrock AgentCore research:
 The core tension for DorkOS is: **is a "working directory" also an "agent"?**
 
 Currently:
+
 - `?dir=` URL param tracks the working directory (the path Claude Code runs in)
 - `AgentManifest` tracks the registered agent for that directory
 - Sessions are grouped under a directory, not an agent
@@ -115,23 +118,27 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 **What it is**: Keep all current architecture. When a directory has a `.dork/agent.json`, display the agent's name and description in the UI instead of the raw path. The directory is still the primary entity; the agent manifest is surface-level display metadata.
 
 **Implementation scope**:
+
 - `SessionSidebar`: When `selectedCwd` maps to a registered agent, show agent name + optional description badge instead of PathBreadcrumb
 - `PulsePanel`: Show agent name alongside (or instead of) CWD in schedule rows
 - `session-list`: Group sessions under agent name header when applicable
 - No schema changes, no new entities, no routing changes
 
 **What changes for users**:
+
 - Directories with agent configs feel more intentional — they have names
 - Still falls back to raw path for unregistered directories
 - No behavioral changes — agents are still Mesh concepts, just visually promoted
 
 **Pros**:
+
 - Minimal risk, ship fast
 - No breaking changes to session or Pulse architecture
 - Incremental: can layer on more identity features afterward
 - Consistent with how Vercel/Replit show project names over git paths
 
 **Cons**:
+
 - Directory is still the primary navigation axis; agents are second-class
 - Does not address the deeper question of "starting a session with an agent"
 - The agent context (name, description, system prompt) is not injected into sessions
@@ -144,6 +151,7 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 **What it is**: An agent is a named entity that owns a working directory, has display identity (name, description, optional color/icon), and is the context frame for sessions. When you open DorkOS to a directory that has a `.dork/agent.json`, you are "talking to" that agent. Sessions belong to agents, not just directories.
 
 **Implementation scope**:
+
 - `AgentManifest` schema gains: `persona` (optional freeform system prompt append), `color` (optional hex/CSS color for visual differentiation), `icon` (optional emoji or named icon)
 - Server: `context-builder.ts` injects agent persona into `systemPrompt.append` when the session's CWD has a registered agent
 - Client: New `entities/agent/` FSD layer with `useCurrentAgent()` hook that reads agent for the current `selectedCwd`
@@ -153,12 +161,14 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 - Mesh stays as the registry backend — agents just get elevated in the UI layer
 
 **What changes for users**:
+
 - Opening a directory with an agent config feels like "switching to that agent"
 - Chat sessions have the agent's persona in context — the agent "knows" it is `my-api-bot` working in `~/projects/api`
 - The sidebar communicates "you are currently talking to X" clearly
 - Pulse schedules show "Run every day: backend-bot" not "Run every day: /home/dorian/projects/api"
 
 **Pros**:
+
 - Strong UX improvement without re-architecting sessions
 - Persona injection is a direct feature add to `context-builder.ts` — low complexity
 - Unregistered directories still work exactly as today (graceful degradation)
@@ -166,6 +176,7 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 - Agent color/icon makes the multi-project developer workflow significantly more scannable
 
 **Cons**:
+
 - Requires Zod schema extension (new fields in `AgentManifest`)
 - Requires a new client-side entity layer (`entities/agent/`)
 - `context-builder.ts` now has a new dependency on the Mesh registry
@@ -179,6 +190,7 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 **What it is**: Agents replace directories as the primary navigation concept. The URL param shifts from `?dir=` to `?agent=` (or the agent implicitly carries the directory). The sidebar lists agents, not directories. A directory without an agent config prompts you to create one. Sessions, Pulse schedules, and Relay endpoints are all scoped to agents.
 
 **Implementation scope**:
+
 - New `AgentStore` (Zustand) as the primary navigation state, replacing or wrapping `DirectoryState`
 - URL params: `?agent={agentId}` replaces `?dir=`; agent implies CWD
 - `SessionSidebar` becomes `AgentSidebar` — top section is an agent picker, bottom section is sessions for that agent
@@ -188,16 +200,19 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 - Agent creation wizard integrated into onboarding
 
 **What changes for users**:
+
 - Users navigate by agent identity, not by filesystem path
 - "Starting DorkOS on a new project" = "creating an agent" as the first step
 - Agents become the organizing principle across the entire product
 
 **Pros**:
+
 - The most coherent product vision — agents are truly first-class
 - Aligns with the DorkOS litepaper vision of being an "OS layer for agents"
 - Creates a stronger mental model: you work WITH agents, not IN directories
 
 **Cons**:
+
 - High complexity and risk — `?dir=` is woven through transport, sessions, Pulse, and server boundary checks
 - Requires migration path for existing users with sessions tied to raw directory paths
 - Forces unregistered directories into a degraded state (no agent = no session?)
@@ -211,6 +226,7 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 **What it is**: Instead of changing navigation, add a first-class Agent Profile section to Settings or as a sidebar panel. Users can view, create, and edit agent configs (`.dork/agent.json`) directly from the UI. The agent profile shows: name, description, capabilities, persona text, color, icon. This makes the manifest file a visible, editable object rather than an invisible background file.
 
 **Implementation scope**:
+
 - New `AgentProfilePanel` component (could live in Settings or as a new sidebar icon)
 - CRUD UI for `AgentManifest` fields including new `persona`, `color`, `icon` fields
 - "Initialize agent for this directory" one-click setup for directories without `.dork/agent.json`
@@ -218,18 +234,21 @@ The industry is moving toward agent-centric navigation. The strongest signal: Gi
 - The profile applies to the current working directory
 
 **What changes for users**:
+
 - Agents are no longer just Mesh registry abstractions — they have a visible, editable profile
 - Users understand what `.dork/agent.json` is and why it exists
 - Can set persona/instructions per-project without knowing JSON
 - Works as a complement to any of Approaches 1-3, not a replacement
 
 **Pros**:
+
 - Makes the invisible visible — the biggest current gap is that users don't know `.dork/agent.json` exists
 - Low navigation risk — doesn't change `?dir=` or session architecture
 - Directly useful: the persona text field lets Claude Code sessions know their context
 - Can be shipped incrementally as a new Settings tab
 
 **Cons**:
+
 - Does not change how agents are perceived in day-to-day use (sidebar, session list)
 - Risk of being a "settings graveyard" — powerful but hard to discover
 - Doesn't address the UX pattern of "knowing who you're talking to"
@@ -255,6 +274,7 @@ The reasoning:
 6. **Pulse integration**: `CreateScheduleDialog` should show the agent name when the selected CWD has a registered agent, and schedule rows in `PulsePanel` should render agent name + color badge instead of raw paths.
 
 **What to defer:**
+
 - Approach 3 (agent as navigation axis / `?agent=` URL params) — high risk, right direction, but not for beta
 - Agent capability enforcement (connecting `capabilities[]` to actual MCP tool access) — design first, build later
 - A2A interop via `toAgentCard()` — useful eventually, not urgent
@@ -265,9 +285,9 @@ The reasoning:
 // AgentManifest additions
 export const AgentManifestSchema = z.object({
   // ...existing fields...
-  persona: z.string().max(2000).optional(),  // System prompt append for sessions
-  color: z.string().optional(),              // CSS color string (e.g. "#6366f1")
-  icon: z.string().optional(),              // Emoji or Lucide icon name
+  persona: z.string().max(2000).optional(), // System prompt append for sessions
+  color: z.string().optional(), // CSS color string (e.g. "#6366f1")
+  icon: z.string().optional(), // Emoji or Lucide icon name
 });
 
 // UpdateAgentRequest additions
@@ -275,9 +295,9 @@ export const UpdateAgentRequestSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
   capabilities: z.array(z.string()).optional(),
-  persona: z.string().max(2000).optional(),  // new
-  color: z.string().optional(),              // new
-  icon: z.string().optional(),              // new
+  persona: z.string().max(2000).optional(), // new
+  color: z.string().optional(), // new
+  icon: z.string().optional(), // new
 });
 ```
 
@@ -311,18 +331,22 @@ layers/entities/agent/
 ### UX Pattern: AgentHeader in Sidebar
 
 When `useCurrentAgent()` returns an agent:
+
 ```
 [●] backend-bot                              [gear]
     REST API specialist for this project
 ```
+
 - `●` is the agent's `color` (or a deterministic color derived from agent ID)
 - Clicking `[gear]` opens AgentProfilePanel
 - Clicking the name/description shows agent details
 
 When no agent is registered for the current directory:
+
 ```
 [folder] /path/to/project                   [+ Agent]
 ```
+
 - `[+ Agent]` opens a "Create agent for this directory" flow (populates name from dirname, description blank, writes `.dork/agent.json`)
 
 ---

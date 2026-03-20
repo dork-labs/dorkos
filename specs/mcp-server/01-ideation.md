@@ -90,13 +90,13 @@ External agent → POST /mcp (JSON-RPC request)
 
 **Feature Flags/Config:**
 
-| Feature | Flag | Default |
-|---------|------|---------|
-| MCP Server | None (always-on) | Enabled |
-| API Key | `MCP_API_KEY` env var | Unset (open on localhost) |
-| Relay tools | `relay.enabled` | true |
-| Pulse tools | `scheduler.enabled` | true |
-| Mesh tools | Always-on | true |
+| Feature     | Flag                  | Default                   |
+| ----------- | --------------------- | ------------------------- |
+| MCP Server  | None (always-on)      | Enabled                   |
+| API Key     | `MCP_API_KEY` env var | Unset (open on localhost) |
+| Relay tools | `relay.enabled`       | true                      |
+| Pulse tools | `scheduler.enabled`   | true                      |
+| Mesh tools  | Always-on             | true                      |
 
 **Potential Blast Radius:**
 
@@ -169,9 +169,9 @@ MCP is a JSON-RPC 2.0 protocol for connecting AI agents to external tools and re
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Tool scope | All 28 tools | External agents get the same capabilities as internal agents. Tool filtering can be done client-side via MCP config. Avoids maintaining a separate allowlist. |
-| 2 | Authentication | Optional API key via `MCP_API_KEY` env var | When set, enforced as Bearer token on all `/mcp` requests. When unset, open on localhost. Fits the single-user self-hosted model without adding friction for local development. |
-| 3 | Session mode | Stateless (`sessionIdGenerator: undefined`) | DorkOS tools are pure request-response — no multi-step tool interactions. Eliminates session map, TTL cleanup, and state management entirely. |
-| 4 | Feature flag | Always-on (no flag) | MCP server is a core capability for an agent coordination platform. Like Mesh, it should be unconditionally available. Follows the "DorkOS is for agents" thesis. |
+| #   | Decision       | Choice                                      | Rationale                                                                                                                                                                       |
+| --- | -------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Tool scope     | All 28 tools                                | External agents get the same capabilities as internal agents. Tool filtering can be done client-side via MCP config. Avoids maintaining a separate allowlist.                   |
+| 2   | Authentication | Optional API key via `MCP_API_KEY` env var  | When set, enforced as Bearer token on all `/mcp` requests. When unset, open on localhost. Fits the single-user self-hosted model without adding friction for local development. |
+| 3   | Session mode   | Stateless (`sessionIdGenerator: undefined`) | DorkOS tools are pure request-response — no multi-step tool interactions. Eliminates session map, TTL cleanup, and state management entirely.                                   |
+| 4   | Feature flag   | Always-on (no flag)                         | MCP server is a core capability for an agent coordination platform. Like Mesh, it should be unconditionally available. Follows the "DorkOS is for agents" thesis.               |

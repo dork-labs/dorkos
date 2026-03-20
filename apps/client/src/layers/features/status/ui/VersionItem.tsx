@@ -25,7 +25,13 @@ const RELEASES_URL_BASE = 'https://github.com/dork-labs/dorkos/releases/tag/v';
  * with a subtle amber dot. For feature updates, shows `Upgrade available` with
  * an animated amber dot and accent color text.
  */
-export function VersionItem({ version, latestVersion, isDevMode, isDismissed, onDismiss }: VersionItemProps) {
+export function VersionItem({
+  version,
+  latestVersion,
+  isDevMode,
+  isDismissed,
+  onDismiss,
+}: VersionItemProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -53,7 +59,7 @@ export function VersionItem({ version, latestVersion, isDevMode, isDismissed, on
   if (!hasUpdate || isDismissed) {
     return (
       <span
-        className="cursor-default text-xs text-muted-foreground"
+        className="text-muted-foreground cursor-default text-xs"
         aria-label={`Version ${version}`}
       >
         v{version}
@@ -68,9 +74,7 @@ export function VersionItem({ version, latestVersion, isDevMode, isDismissed, on
           type="button"
           className={cn(
             'inline-flex cursor-pointer items-center gap-1.5 text-xs',
-            isFeature
-              ? 'text-amber-600 dark:text-amber-400'
-              : 'text-muted-foreground'
+            isFeature ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
           )}
           aria-label={
             isFeature
@@ -101,8 +105,7 @@ export function VersionItem({ version, latestVersion, isDevMode, isDismissed, on
 
           <div className="text-muted-foreground text-xs">
             v{version}
-            <span className="mx-1.5">&rarr;</span>
-            v{latestVersion}
+            <span className="mx-1.5">&rarr;</span>v{latestVersion}
           </div>
 
           <button
@@ -131,7 +134,7 @@ export function VersionItem({ version, latestVersion, isDevMode, isDismissed, on
                   exit={{ opacity: 0, scale: 0.8 }}
                   transition={{ duration: 0.15 }}
                 >
-                  <Clipboard className="size-3.5 text-muted-foreground" />
+                  <Clipboard className="text-muted-foreground size-3.5" />
                 </motion.span>
               )}
             </AnimatePresence>
@@ -142,7 +145,7 @@ export function VersionItem({ version, latestVersion, isDevMode, isDismissed, on
               href={`${RELEASES_URL_BASE}${latestVersion}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
             >
               What&apos;s new
               <ExternalLink className="size-3" />
@@ -152,7 +155,7 @@ export function VersionItem({ version, latestVersion, isDevMode, isDismissed, on
           <button
             type="button"
             onClick={() => onDismiss?.(latestVersion!)}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
           >
             Dismiss this version
           </button>
@@ -177,5 +180,3 @@ function AmberDot({ pulse }: { pulse: boolean }) {
     />
   );
 }
-
-

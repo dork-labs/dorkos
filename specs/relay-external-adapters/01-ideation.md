@@ -110,6 +110,7 @@ N/A — this is a new feature, not a bug fix.
 ### Telegram Bot Library
 
 **grammY** is the clear winner:
+
 - TypeScript-first with inline Bot API type hints
 - Built-in `@grammyjs/auto-retry` plugin handles 429 flood limits, 500 errors, and network failures automatically
 - Middleware error boundaries isolate handler failures
@@ -120,6 +121,7 @@ N/A — this is a new feature, not a bug fix.
 ### Long Polling vs Webhooks
 
 **Long polling as default**, webhook as opt-in config flag:
+
 - Long polling requires no public URL, no SSL cert, no ngrok dependency for Telegram specifically
 - grammY's `bot.stop()` drains updates before shutdown — no message loss on restart
 - `@grammyjs/auto-retry` handles network failures automatically
@@ -130,6 +132,7 @@ N/A — this is a new feature, not a bug fix.
 ### Webhook Adapter Security (Inbound)
 
 Four-layer defense:
+
 1. **HMAC-SHA256 signature verification** — `HMAC-SHA256(secret, "${timestamp}.${rawBody}")`, compare with `crypto.timingSafeEqual()` (timing-safe, not `===`)
 2. **Timestamp window** — Reject requests where `|now - timestamp| > 300s` (Stripe's standard 5-minute tolerance)
 3. **Nonce tracking** — `Map<string, expiresAt>` with 24h TTL, pruned every 5 minutes
@@ -177,9 +180,9 @@ Raw body must be captured before `bodyParser.json()` — use Express `verify` ca
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Where do adapter implementations live? | `packages/relay/src/adapters/` | Keeps adapters alongside the RelayAdapter interface they implement. Reusable by any consumer (server, CLI, Obsidian plugin). Follows the monorepo pattern where domain logic lives in packages/. Adapters import grammy/fetch as peer deps. |
-| 2 | How should ActivityFeedHero.tsx on the marketing site be updated? | Update simulated data to match Relay event format | Replace `ACTIVITY_POOL` with data shaped like real `RelayEnvelope` events (subjects, timestamps, payload types). Marketing site stays static/deployable on Vercel but the format matches what the real Console shows. Lowest risk. |
-| 3 | Which Telegram bot library? | grammY (`npm install grammy @grammyjs/auto-retry`) | Best TypeScript support, built-in auto-retry for 429/500/network errors, middleware error boundaries, inline Bot API docs. Active maintenance tracking latest Telegram API. 1.2M weekly downloads. |
-| 4 | Should server services be restructured into domain folders? | Yes — restructure as part of this spec | Currently at 24 services (exceeds 20+ threshold). Group into domain folders: `services/relay/`, `services/pulse/`, `services/session/`, `services/core/`. Prevents tech debt accumulation. Widens blast radius but creates cleaner structure for the 6+ new adapter-related service files. |
+| #   | Decision                                                          | Choice                                             | Rationale                                                                                                                                                                                                                                                                                  |
+| --- | ----------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Where do adapter implementations live?                            | `packages/relay/src/adapters/`                     | Keeps adapters alongside the RelayAdapter interface they implement. Reusable by any consumer (server, CLI, Obsidian plugin). Follows the monorepo pattern where domain logic lives in packages/. Adapters import grammy/fetch as peer deps.                                                |
+| 2   | How should ActivityFeedHero.tsx on the marketing site be updated? | Update simulated data to match Relay event format  | Replace `ACTIVITY_POOL` with data shaped like real `RelayEnvelope` events (subjects, timestamps, payload types). Marketing site stays static/deployable on Vercel but the format matches what the real Console shows. Lowest risk.                                                         |
+| 3   | Which Telegram bot library?                                       | grammY (`npm install grammy @grammyjs/auto-retry`) | Best TypeScript support, built-in auto-retry for 429/500/network errors, middleware error boundaries, inline Bot API docs. Active maintenance tracking latest Telegram API. 1.2M weekly downloads.                                                                                         |
+| 4   | Should server services be restructured into domain folders?       | Yes — restructure as part of this spec             | Currently at 24 services (exceeds 20+ threshold). Group into domain folders: `services/relay/`, `services/pulse/`, `services/session/`, `services/core/`. Prevents tech debt accumulation. Widens blast radius but creates cleaner structure for the 6+ new adapter-related service files. |

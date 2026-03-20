@@ -19,10 +19,10 @@ Format and display all non-draft ADRs as a markdown table, sorted by number:
 ```markdown
 ## Architecture Decision Records
 
-| # | Title | Status | Date | Spec |
-|---|-------|--------|------|------|
+| #    | Title                           | Status   | Date       | Spec                  |
+| ---- | ------------------------------- | -------- | ---------- | --------------------- |
 | 0001 | [Title](decisions/0001-slug.md) | accepted | 2026-02-06 | claude-code-webui-api |
-| 0002 | [Title](decisions/0002-slug.md) | accepted | 2026-02-15 | fsd-architecture |
+| 0002 | [Title](decisions/0002-slug.md) | accepted | 2026-02-15 | fsd-architecture      |
 ```
 
 ### Step 3: Display Draft ADRs (if any)
@@ -32,9 +32,9 @@ If any entries have `"status": "draft"`, show a separate section:
 ```markdown
 ### Draft ADRs (pending curation)
 
-| # | Title | Date | Extracted From |
-|---|-------|------|----------------|
-| 0006 | [Title](decisions/0006-slug.md) | 2026-02-18 | spec-slug |
+| #    | Title                           | Date       | Extracted From |
+| ---- | ------------------------------- | ---------- | -------------- |
+| 0006 | [Title](decisions/0006-slug.md) | 2026-02-18 | spec-slug      |
 
 Run `/adr:curate` to promote or archive these.
 ```

@@ -9,14 +9,11 @@ const DIRECTIONS: Direction[] = ['TOP', 'LEFT', 'BOTTOM', 'RIGHT'];
 const MOVING_MAP: Record<Direction, string> = {
   TOP: 'radial-gradient(20.7% 50% at 50% 0%, hsl(var(--brand) / 0.7) 0%, transparent 100%)',
   LEFT: 'radial-gradient(16.6% 43.1% at 0% 50%, hsl(var(--brand) / 0.7) 0%, transparent 100%)',
-  BOTTOM:
-    'radial-gradient(20.7% 50% at 50% 100%, hsl(var(--brand) / 0.7) 0%, transparent 100%)',
-  RIGHT:
-    'radial-gradient(16.2% 41.2% at 100% 50%, hsl(var(--brand) / 0.7) 0%, transparent 100%)',
+  BOTTOM: 'radial-gradient(20.7% 50% at 50% 100%, hsl(var(--brand) / 0.7) 0%, transparent 100%)',
+  RIGHT: 'radial-gradient(16.2% 41.2% at 100% 50%, hsl(var(--brand) / 0.7) 0%, transparent 100%)',
 };
 
-const HIGHLIGHT =
-  'radial-gradient(75% 181.2% at 50% 50%, hsl(var(--brand)) 0%, transparent 100%)';
+const HIGHLIGHT = 'radial-gradient(75% 181.2% at 50% 50%, hsl(var(--brand)) 0%, transparent 100%)';
 
 /**
  * Button with an animated gradient border that highlights on hover.
@@ -64,15 +61,15 @@ export function HoverBorderGradient({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={cn(
-        'relative flex h-min w-fit items-center justify-center overflow-visible rounded-md border border-transparent bg-muted/40 p-px transition duration-500 hover:bg-muted/20',
-        containerClassName,
+        'bg-muted/40 hover:bg-muted/20 relative flex h-min w-fit items-center justify-center overflow-visible rounded-md border border-transparent p-px transition duration-500',
+        containerClassName
       )}
       {...props}
     >
       <div
         className={cn(
-          'z-10 w-auto rounded-[inherit] bg-brand px-4 py-2 text-sm font-medium text-brand-foreground',
-          className,
+          'bg-brand text-brand-foreground z-10 w-auto rounded-[inherit] px-4 py-2 text-sm font-medium',
+          className
         )}
       >
         {children}
@@ -82,13 +79,11 @@ export function HoverBorderGradient({
         style={{ filter: 'blur(2px)' }}
         initial={{ background: MOVING_MAP[direction] }}
         animate={{
-          background: hovered
-            ? [MOVING_MAP[direction], HIGHLIGHT]
-            : MOVING_MAP[direction],
+          background: hovered ? [MOVING_MAP[direction], HIGHLIGHT] : MOVING_MAP[direction],
         }}
         transition={{ ease: 'linear', duration: reducedMotion ? 0 : (duration ?? 1) }}
       />
-      <div className="absolute inset-[2px] z-[1] flex-none rounded-[inherit] bg-brand" />
+      <div className="bg-brand absolute inset-[2px] z-[1] flex-none rounded-[inherit]" />
     </Tag>
   );
 }

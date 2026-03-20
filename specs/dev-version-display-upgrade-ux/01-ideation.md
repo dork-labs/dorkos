@@ -56,6 +56,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/server/src/lib/version.ts` — Version resolution (dev fallback is the bug)
 - `apps/server/src/services/core/update-checker.ts` — npm registry fetch (needs dev guard)
 - `apps/server/src/routes/config.ts` — API endpoint exposing version info
@@ -64,12 +65,14 @@ status: ideation
 - `apps/client/src/layers/features/settings/ui/ServerTab.tsx` — Settings version display
 
 **Shared dependencies:**
+
 - `packages/shared/src/schemas.ts` — Config response schema (needs `isDevMode` field)
 - `packages/shared/src/transport.ts` — Transport interface (`getConfig()`)
 - `apps/server/src/env.ts` — `DORKOS_VERSION` env var definition
 - `turbo.json` — `DORKOS_VERSION` passthrough
 
 **Data flow:**
+
 ```
 [Dev mode]
 tsx watch → version.ts (__CLI_VERSION__ undefined) → package.json (0.0.0) → config route → client
@@ -82,10 +85,12 @@ version.ts → isDevBuild() check → config route (isDevMode: true, latestVersi
 ```
 
 **Feature flags/config:**
+
 - `DORKOS_VERSION` env var (defined in turbo.json, unused)
 - `showStatusBarVersion` Zustand setting (controls visibility)
 
 **Potential blast radius:**
+
 - Direct: `version.ts`, `update-checker.ts`, `config.ts`, `VersionItem.tsx`, `StatusLine.tsx`, `ServerTab.tsx`, `schemas.ts`
 - Indirect: `env.ts`, `.env.example`, `turbo.json`
 - Tests: `VersionItem.test.tsx` (update), `update-checker.test.ts` (if exists), new tests needed
@@ -125,36 +130,42 @@ Full research report: `research/20260310_dev_version_display_upgrade_ux.md`
 **Potential solutions:**
 
 **1. Sentinel version `0.0.0-dev` + explicit `isDevBuild()` guard**
+
 - Used by Containerlab, Apache Superset
 - Pros: Self-documenting version string, simple logic
 - Cons: Still needs explicit code guard (semver comparison won't auto-suppress)
 - Complexity: Low
 
 **2. `NODE_ENV=development` detection only**
+
 - Standard Node.js convention
 - Pros: No package.json changes needed
 - Cons: `NODE_ENV` is unreliable across tools (Vite vs Express disagreement), doesn't appear in version string
 - Complexity: Low
 
 **3. Git-describe version (e.g., `1.2.3-14-gabcdef`)**
+
 - Used by GitHub CLI
 - Pros: Rich dev version info with exact commit
 - Cons: Requires git at runtime, regex detection needed, heavier
 - Complexity: Medium
 
 **4. Build-time injection for all environments**
+
 - Extend esbuild injection to dev mode
 - Pros: Single source of truth, DorkOS already does this for CLI
 - Cons: Requires build pipeline changes for dev, breaks tsx hot-reload simplicity
 - Complexity: Medium-High
 
 **5. Config flag (`NO_UPDATE_CHECK`)**
+
 - Used by Grafana
 - Pros: Explicit user control
 - Cons: Requires manual opt-out, developers forget
 - Complexity: Low
 
 **6. VS Code "quality channel" detection**
+
 - Separate `stable`/`insider`/`dev` channels
 - Pros: Most robust for multi-channel distribution
 - Cons: Architectural overhead, overkill for current needs
@@ -170,9 +181,9 @@ Full research report: `research/20260310_dev_version_display_upgrade_ux.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Dev mode UI treatment | DEV badge, no version number | Clean signal that you're running from source. No false upgrade prompts. Follows VS Code/Astro pattern where dev surfaces look intentionally different from production. |
-| 2 | Network behavior in dev | Skip npm registry fetch entirely | Don't phone home in dev. Faster, more private, avoids stale cache. GitHub CLI and Containerlab both take this approach. Return `latestVersion: null` from API. |
-| 3 | Testability mechanism | `DORKOS_VERSION_OVERRIDE` env var | When set, bypasses dev detection and uses the override value as the "current version". Enables manual QA of upgrade flow. Already have `DORKOS_VERSION` in turbo.json passthrough. Must be documented in `.env.example` and dev guides. |
-| 4 | Scope | Full UX overhaul of version display | Beyond fixing the dev bug, rethink the entire version display: settings page version section, changelog integration, dismiss/snooze for upgrade notifications. |
+| #   | Decision                | Choice                              | Rationale                                                                                                                                                                                                                               |
+| --- | ----------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Dev mode UI treatment   | DEV badge, no version number        | Clean signal that you're running from source. No false upgrade prompts. Follows VS Code/Astro pattern where dev surfaces look intentionally different from production.                                                                  |
+| 2   | Network behavior in dev | Skip npm registry fetch entirely    | Don't phone home in dev. Faster, more private, avoids stale cache. GitHub CLI and Containerlab both take this approach. Return `latestVersion: null` from API.                                                                          |
+| 3   | Testability mechanism   | `DORKOS_VERSION_OVERRIDE` env var   | When set, bypasses dev detection and uses the override value as the "current version". Enables manual QA of upgrade flow. Already have `DORKOS_VERSION` in turbo.json passthrough. Must be documented in `.env.example` and dev guides. |
+| 4   | Scope                   | Full UX overhaul of version display | Beyond fixing the dev bug, rethink the entire version display: settings page version section, changelog integration, dismiss/snooze for upgrade notifications.                                                                          |

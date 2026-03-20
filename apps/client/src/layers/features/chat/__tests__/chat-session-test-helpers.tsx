@@ -102,11 +102,11 @@ export function createSendMessageMock(events: StreamEvent[]) {
       _content: string,
       onEvent: (event: StreamEvent) => void,
       _signal?: AbortSignal,
-      _cwd?: string,
+      _cwd?: string
     ) => {
       for (const event of events) {
         onEvent(event);
       }
-    },
+    }
   );
 }

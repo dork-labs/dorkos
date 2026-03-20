@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
 /** Reusable Zod type for 'true'/'false' env flags → boolean. */
-const boolFlag = z.enum(['true', 'false']).default('false').transform(v => v === 'true');
+const boolFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
 
 const serverEnvSchema = z.object({
   // Runtime
@@ -20,7 +23,10 @@ const serverEnvSchema = z.object({
   DORKOS_PULSE_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime
-  DORKOS_TEST_RUNTIME: z.string().optional().transform(v => v === 'true'),
+  DORKOS_TEST_RUNTIME: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // Tunnel (ngrok integration — all optional)
   TUNNEL_ENABLED: boolFlag,
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
@@ -33,7 +39,7 @@ const result = serverEnvSchema.safeParse(process.env);
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
-  result.error.issues.forEach(i => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
   console.error('\n  Copy .env.example to .env\n');
   process.exit(1);
 }

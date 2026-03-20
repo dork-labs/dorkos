@@ -94,9 +94,9 @@ export const RelayProgressPayloadSchema = z
   .object({
     type: z.literal('progress'),
     step: z.number().int().min(1).describe('Monotonically increasing step counter'),
-    step_type: z.enum(['message', 'tool_result']).describe(
-      'message = assistant text block completed; tool_result = tool execution completed'
-    ),
+    step_type: z
+      .enum(['message', 'tool_result'])
+      .describe('message = assistant text block completed; tool_result = tool execution completed'),
     text: z.string().describe('Text content of this progress step'),
     done: z.literal(false),
   })
@@ -197,22 +197,24 @@ export function createRelayDispatchHandler(deps: McpToolDeps) {
 tool(
   'relay_dispatch',
   'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
-  'Unlike relay_query (which blocks), relay_dispatch returns { messageId, inboxSubject } at once. ' +
-  'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
-  'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
-  'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
+    'Unlike relay_query (which blocks), relay_dispatch returns { messageId, inboxSubject } at once. ' +
+    'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
+    'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
+    'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
   {
     to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
     payload: z.unknown().describe('Message payload'),
     from: z.string().describe('Sender subject identifier'),
-    budget: z.object({
-      maxHops: z.number().int().min(1).optional(),
-      ttl: z.number().int().optional(),
-      callBudgetRemaining: z.number().int().min(0).optional(),
-    }).optional(),
+    budget: z
+      .object({
+        maxHops: z.number().int().min(1).optional(),
+        ttl: z.number().int().optional(),
+        callBudgetRemaining: z.number().int().min(0).optional(),
+      })
+      .optional(),
   },
   createRelayDispatchHandler(deps)
-)
+);
 ```
 
 ### 3. New MCP Tool: `relay_unregister_endpoint` (`apps/server/src/services/core/mcp-tools/relay-tools.ts`)
@@ -226,7 +228,10 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
     try {
       const removed = await deps.relayCore!.unregisterEndpoint(args.subject);
       if (!removed) {
-        return jsonContent({ error: `Endpoint not found: ${args.subject}`, code: 'ENDPOINT_NOT_FOUND' }, true);
+        return jsonContent(
+          { error: `Endpoint not found: ${args.subject}`, code: 'ENDPOINT_NOT_FOUND' },
+          true
+        );
       }
       return jsonContent({ success: true, subject: args.subject });
     } catch (e) {
@@ -247,16 +252,19 @@ tool(
     subject: z.string().describe('Subject of the endpoint to unregister'),
   },
   createRelayUnregisterEndpointHandler(deps)
-)
+);
 ```
 
 ### 4. relay_query Timeout Raise (`relay-tools.ts`, line ~265)
 
 Change:
+
 ```typescript
 .max(120000)
 ```
+
 To:
+
 ```typescript
 .max(600000)
 ```
@@ -272,7 +280,7 @@ const RELAY_TOOLS = [
   'mcp__dorkos__relay_list_endpoints',
   'mcp__dorkos__relay_register_endpoint',
   'mcp__dorkos__relay_query',
-  'mcp__dorkos__relay_dispatch',           // NEW
+  'mcp__dorkos__relay_dispatch', // NEW
   'mcp__dorkos__relay_unregister_endpoint', // NEW
 ] as const;
 ```
@@ -280,6 +288,7 @@ const RELAY_TOOLS = [
 ### 6. mcp-tools/index.ts: Export New Handlers
 
 Add to the export line for relay-tools handlers:
+
 ```typescript
 export { ..., createRelayDispatchHandler, createRelayUnregisterEndpointHandler } from './relay-tools.js';
 ```
@@ -320,7 +329,13 @@ for await (const event of eventStream) {
       // Tool call starts signal end of prior text block — flush buffer as progress
       if (event.type === 'tool_call_start' && messageBuffer) {
         stepCounter++;
-        await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+        await this.publishDispatchProgress(
+          envelope,
+          stepCounter,
+          'message',
+          messageBuffer,
+          ccaSessionKey
+        );
         messageBuffer = '';
       }
       // tool_result events publish a progress step
@@ -328,7 +343,13 @@ for await (const event of eventStream) {
         stepCounter++;
         const data = event.data as { content?: string; tool_use_id?: string };
         const text = typeof data.content === 'string' ? data.content : JSON.stringify(data);
-        await this.publishDispatchProgress(envelope, stepCounter, 'tool_result', text, ccaSessionKey);
+        await this.publishDispatchProgress(
+          envelope,
+          stepCounter,
+          'tool_result',
+          text,
+          ccaSessionKey
+        );
       }
     } else if (isQueryInbox) {
       // Existing aggregated behavior: collect text_delta only
@@ -351,7 +372,13 @@ if (isDispatchInbox && envelope.replyTo && this.relay) {
   // Flush any remaining text buffer as a final message step
   if (messageBuffer) {
     stepCounter++;
-    await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+    await this.publishDispatchProgress(
+      envelope,
+      stepCounter,
+      'message',
+      messageBuffer,
+      ccaSessionKey
+    );
   }
   // Publish final agent_result with done: true and full collected text
   await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
@@ -384,7 +411,11 @@ private async publishDispatchProgress(
 **Update `publishAgentResult()` to include `done: true`:**
 
 ```typescript
-await this.relay.publish(originalEnvelope.replyTo, { type: 'agent_result', text, done: true }, opts);
+await this.relay.publish(
+  originalEnvelope.replyTo,
+  { type: 'agent_result', text, done: true },
+  opts
+);
 ```
 
 > This is additive — the `done: true` field is new. Existing `relay_query` consumers that check `payload.type === 'agent_result'` continue to work unchanged.
@@ -496,6 +527,7 @@ Agent A (polling): relay_inbox(endpoint_subject="relay.inbox.dispatch.{UUID}", s
 Agents interact exclusively through MCP tools. The new experience:
 
 **For long-running tasks (relay_dispatch):**
+
 ```
 # Fire and poll pattern
 result = relay_dispatch(
@@ -518,6 +550,7 @@ while True:
 ```
 
 **For medium-duration tasks (relay_query, now up to 10 min):**
+
 ```
 # Blocking call, up to 10 minutes
 result = relay_query(
@@ -659,16 +692,19 @@ it('publishes multiple progress events followed by agent_result for relay.inbox.
     (async function* () {
       yield { type: 'text_delta', data: { text: 'Thinking...' } } as StreamEvent;
       yield { type: 'tool_call_start', data: { tool_use_id: 'tu1', name: 'Read' } } as StreamEvent;
-      yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'file contents' } } as StreamEvent;
+      yield {
+        type: 'tool_result',
+        data: { tool_use_id: 'tu1', content: 'file contents' },
+      } as StreamEvent;
       yield { type: 'text_delta', data: { text: 'Analysis complete.' } } as StreamEvent;
       yield { type: 'done', data: {} } as StreamEvent;
-    })(),
+    })()
   );
 
   await relay.publish(
     'relay.agent.dispatch-target',
     { text: 'Analyze this' },
-    { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' },
+    { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' }
   );
 
   const types = receivedPayloads.map((p) => (p as Record<string, unknown>).type);
@@ -704,14 +740,14 @@ it('still publishes single agent_result for relay.inbox.query.* replyTo (backwar
   await relay.publish(
     'relay.agent.lifeOS-session',
     { text: 'question' },
-    { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' },
+    { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' }
   );
 
   // Still exactly one message, still agent_result, still no progress events
   expect(receivedPayloads).toHaveLength(1);
   expect(receivedPayloads[0]).toMatchObject({ type: 'agent_result' });
   const hasProgress = receivedPayloads.some(
-    (p) => (p as Record<string, unknown>).type === 'progress',
+    (p) => (p as Record<string, unknown>).type === 'progress'
   );
   expect(hasProgress).toBe(false);
 });
@@ -732,17 +768,17 @@ it('step_type field is "message" for text completions and "tool_result" for tool
       yield { type: 'tool_call_start', data: { tool_use_id: 'tu1', name: 'Bash' } } as StreamEvent;
       yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'output' } } as StreamEvent;
       yield { type: 'done', data: {} } as StreamEvent;
-    })(),
+    })()
   );
 
   await relay.publish(
     'relay.agent.target',
     { text: 'Do work' },
-    { from: 'relay.agent.src', replyTo: 'relay.inbox.dispatch.step-type-test' },
+    { from: 'relay.agent.src', replyTo: 'relay.inbox.dispatch.step-type-test' }
   );
 
   const progressEvents = receivedPayloads.filter(
-    (p) => (p as Record<string, unknown>).type === 'progress',
+    (p) => (p as Record<string, unknown>).type === 'progress'
   ) as Array<Record<string, unknown>>;
 
   const messageSteps = progressEvents.filter((p) => p.step_type === 'message');
@@ -828,6 +864,7 @@ it('step_type field is "message" for text completions and "tool_result" for tool
 All implementation decisions from the ideation have been resolved. No open questions remain.
 
 For future consideration:
+
 - **Endpoint type metadata**: Add `type: 'dispatch' | 'persistent'` field to relay_list_endpoints output so agents can filter dispatch inboxes. Deferred from this spec.
 - **Server-side TTL for dispatch inboxes**: Auto-expire after 30–60 min for agents that fail to clean up. Deferred from this spec.
 - **relay_query streaming**: If relay_query's timeout is raised further (>10 min), consider whether relay_query should also benefit from streaming progress. Requires rethinking the EventEmitter resolve-on-first-message pattern.

@@ -1,4 +1,5 @@
 # Task Breakdown: Roadmap Standalone App
+
 Generated: 2026-02-18
 Source: specs/roadmap-standalone-app/02-specification.md
 Last Decompose: 2026-02-18
@@ -12,6 +13,7 @@ Build a standalone roadmap visualization and management app at `apps/roadmap/` w
 ## Phase 1: Foundation
 
 ### Task 1.1: Scaffold `apps/roadmap/` Workspace
+
 **Description**: Create the workspace directory structure, package.json, TypeScript configs, and Vite config for the roadmap app.
 **Size**: Medium
 **Priority**: High
@@ -19,6 +21,7 @@ Build a standalone roadmap visualization and management app at `apps/roadmap/` w
 **Can run parallel with**: Task 1.2
 
 **Technical Requirements**:
+
 - Create `apps/roadmap/` directory with full structure
 - Register as Turborepo workspace
 - Use `@dorkos/typescript-config` presets
@@ -27,6 +30,7 @@ Build a standalone roadmap visualization and management app at `apps/roadmap/` w
 **Implementation Steps**:
 
 1. Create `apps/roadmap/package.json`:
+
 ```json
 {
   "name": "@dorkos/roadmap",
@@ -70,6 +74,7 @@ Build a standalone roadmap visualization and management app at `apps/roadmap/` w
 ```
 
 2. Create `apps/roadmap/tsconfig.json` extending `@dorkos/typescript-config/react`:
+
 ```json
 {
   "extends": "@dorkos/typescript-config/react",
@@ -81,6 +86,7 @@ Build a standalone roadmap visualization and management app at `apps/roadmap/` w
 ```
 
 3. Create `apps/roadmap/tsconfig.server.json` extending `@dorkos/typescript-config/node`:
+
 ```json
 {
   "extends": "@dorkos/typescript-config/node",
@@ -93,6 +99,7 @@ Build a standalone roadmap visualization and management app at `apps/roadmap/` w
 ```
 
 4. Create `apps/roadmap/vite.config.ts`:
+
 ```typescript
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -121,6 +128,7 @@ export default defineConfig({
 ```
 
 5. Create directory structure:
+
 ```
 apps/roadmap/src/
 ├── server/
@@ -142,27 +150,30 @@ apps/roadmap/src/
 ```
 
 6. Create `src/client/index.html` (Vite entry):
+
 ```html
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DorkOS Roadmap</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/main.tsx"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DorkOS Roadmap</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
 </html>
 ```
 
 7. Create `src/client/index.css` with Tailwind directives:
+
 ```css
-@import "tailwindcss";
+@import 'tailwindcss';
 ```
 
 8. Create `src/client/main.tsx`:
+
 ```typescript
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -179,6 +190,7 @@ createRoot(document.getElementById('root')!).render(
 9. Run `npm install` from the monorepo root.
 
 **Acceptance Criteria**:
+
 - [ ] `apps/roadmap/` exists with complete directory structure
 - [ ] `npm install` succeeds with no workspace resolution errors
 - [ ] `npx turbo typecheck --filter=@dorkos/roadmap` passes
@@ -188,6 +200,7 @@ createRoot(document.getElementById('root')!).render(
 ---
 
 ### Task 1.2: Add Roadmap Zod Schemas to Shared Package
+
 **Description**: Create `packages/shared/src/roadmap-schemas.ts` with all Zod schemas for the roadmap data model, and register the export in package.json.
 **Size**: Medium
 **Priority**: High
@@ -195,6 +208,7 @@ createRoot(document.getElementById('root')!).render(
 **Can run parallel with**: Task 1.1
 
 **Technical Requirements**:
+
 - All schemas must have `.openapi()` metadata for future OpenAPI generation
 - Schemas must match the existing `roadmap/schema.json` structure
 - Export inferred TypeScript types alongside schemas
@@ -228,78 +242,96 @@ export const HealthSchema = z
   .enum(['on-track', 'at-risk', 'off-track', 'blocked'])
   .openapi('Health');
 
-export const TimeHorizonSchema = z
-  .enum(['now', 'next', 'later'])
-  .openapi('TimeHorizon');
+export const TimeHorizonSchema = z.enum(['now', 'next', 'later']).openapi('TimeHorizon');
 
 // === Item Schema ===
 
-export const LinkedArtifactsSchema = z.object({
-  specSlug: z.string().optional(),
-  ideationPath: z.string().optional(),
-  specPath: z.string().optional(),
-  tasksPath: z.string().optional(),
-  implementationPath: z.string().optional(),
-}).openapi('LinkedArtifacts');
+export const LinkedArtifactsSchema = z
+  .object({
+    specSlug: z.string().optional(),
+    ideationPath: z.string().optional(),
+    specPath: z.string().optional(),
+    tasksPath: z.string().optional(),
+    implementationPath: z.string().optional(),
+  })
+  .openapi('LinkedArtifacts');
 
-export const IdeationContextSchema = z.object({
-  targetUsers: z.array(z.string()).optional(),
-  painPoints: z.array(z.string()).optional(),
-  successCriteria: z.array(z.string()).optional(),
-  constraints: z.array(z.string()).optional(),
-}).openapi('IdeationContext');
+export const IdeationContextSchema = z
+  .object({
+    targetUsers: z.array(z.string()).optional(),
+    painPoints: z.array(z.string()).optional(),
+    successCriteria: z.array(z.string()).optional(),
+    constraints: z.array(z.string()).optional(),
+  })
+  .openapi('IdeationContext');
 
-export const WorkflowStateSchema = z.object({
-  phase: z.enum([
-    'not-started', 'ideating', 'specifying', 'decomposing',
-    'implementing', 'testing', 'committing', 'releasing', 'completed',
-  ]).optional(),
-  specSlug: z.string().optional(),
-  tasksTotal: z.number().int().min(0).optional(),
-  tasksCompleted: z.number().int().min(0).optional(),
-  lastSession: z.string().datetime().optional(),
-  attempts: z.number().int().min(0).optional(),
-  blockers: z.array(z.string()).optional(),
-}).openapi('WorkflowState');
+export const WorkflowStateSchema = z
+  .object({
+    phase: z
+      .enum([
+        'not-started',
+        'ideating',
+        'specifying',
+        'decomposing',
+        'implementing',
+        'testing',
+        'committing',
+        'releasing',
+        'completed',
+      ])
+      .optional(),
+    specSlug: z.string().optional(),
+    tasksTotal: z.number().int().min(0).optional(),
+    tasksCompleted: z.number().int().min(0).optional(),
+    lastSession: z.string().datetime().optional(),
+    attempts: z.number().int().min(0).optional(),
+    blockers: z.array(z.string()).optional(),
+  })
+  .openapi('WorkflowState');
 
-export const RoadmapItemSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(3).max(200),
-  description: z.string().max(2000).optional(),
-  type: RoadmapItemTypeSchema,
-  moscow: MoscowSchema,
-  status: RoadmapStatusSchema,
-  health: HealthSchema,
-  timeHorizon: TimeHorizonSchema,
-  effort: z.number().min(0).optional(),
-  dependencies: z.array(z.string().uuid()).optional(),
-  labels: z.array(z.string()).optional(),
-  order: z.number().optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  linkedArtifacts: LinkedArtifactsSchema.optional(),
-  ideationContext: IdeationContextSchema.optional(),
-  workflowState: WorkflowStateSchema.optional(),
-}).openapi('RoadmapItem');
+export const RoadmapItemSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().min(3).max(200),
+    description: z.string().max(2000).optional(),
+    type: RoadmapItemTypeSchema,
+    moscow: MoscowSchema,
+    status: RoadmapStatusSchema,
+    health: HealthSchema,
+    timeHorizon: TimeHorizonSchema,
+    effort: z.number().min(0).optional(),
+    dependencies: z.array(z.string().uuid()).optional(),
+    labels: z.array(z.string()).optional(),
+    order: z.number().optional(),
+    startDate: z.string().datetime().optional(),
+    endDate: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    linkedArtifacts: LinkedArtifactsSchema.optional(),
+    ideationContext: IdeationContextSchema.optional(),
+    workflowState: WorkflowStateSchema.optional(),
+  })
+  .openapi('RoadmapItem');
 
 export type RoadmapItem = z.infer<typeof RoadmapItemSchema>;
 
 // === Request Schemas ===
 
-export const CreateItemRequestSchema = RoadmapItemSchema
-  .omit({ id: true, createdAt: true, updatedAt: true })
-  .openapi('CreateItemRequest');
+export const CreateItemRequestSchema = RoadmapItemSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).openapi('CreateItemRequest');
 
-export const UpdateItemRequestSchema = RoadmapItemSchema
-  .partial()
+export const UpdateItemRequestSchema = RoadmapItemSchema.partial()
   .omit({ id: true, createdAt: true })
   .openapi('UpdateItemRequest');
 
-export const ReorderRequestSchema = z.object({
-  orderedIds: z.array(z.string().uuid()),
-}).openapi('ReorderRequest');
+export const ReorderRequestSchema = z
+  .object({
+    orderedIds: z.array(z.string().uuid()),
+  })
+  .openapi('ReorderRequest');
 
 // === Meta Schema ===
 
@@ -308,39 +340,45 @@ export const TimeHorizonConfigSchema = z.object({
   description: z.string(),
 });
 
-export const RoadmapMetaSchema = z.object({
-  projectName: z.string().min(1).max(100),
-  projectSummary: z.string().max(500),
-  lastUpdated: z.string().datetime(),
-  timeHorizons: z.object({
-    now: TimeHorizonConfigSchema,
-    next: TimeHorizonConfigSchema,
-    later: TimeHorizonConfigSchema,
-  }),
-}).openapi('RoadmapMeta');
+export const RoadmapMetaSchema = z
+  .object({
+    projectName: z.string().min(1).max(100),
+    projectSummary: z.string().max(500),
+    lastUpdated: z.string().datetime(),
+    timeHorizons: z.object({
+      now: TimeHorizonConfigSchema,
+      next: TimeHorizonConfigSchema,
+      later: TimeHorizonConfigSchema,
+    }),
+  })
+  .openapi('RoadmapMeta');
 
 export type RoadmapMeta = z.infer<typeof RoadmapMetaSchema>;
 
 // === Health Stats ===
 
-export const HealthStatsSchema = z.object({
-  totalItems: z.number(),
-  mustHavePercent: z.number(),
-  inProgressCount: z.number(),
-  atRiskCount: z.number(),
-  blockedCount: z.number(),
-  completedCount: z.number(),
-}).openapi('HealthStats');
+export const HealthStatsSchema = z
+  .object({
+    totalItems: z.number(),
+    mustHavePercent: z.number(),
+    inProgressCount: z.number(),
+    atRiskCount: z.number(),
+    blockedCount: z.number(),
+    completedCount: z.number(),
+  })
+  .openapi('HealthStats');
 
 export type HealthStats = z.infer<typeof HealthStatsSchema>;
 ```
 
 2. Add export to `packages/shared/package.json` exports map:
+
 ```json
 "./roadmap-schemas": { "types": "./src/roadmap-schemas.ts", "default": "./dist/roadmap-schemas.js" }
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `packages/shared/src/roadmap-schemas.ts` exists with all schemas
 - [ ] Types are importable: `import { RoadmapItem } from '@dorkos/shared/roadmap-schemas'`
 - [ ] `npx turbo typecheck --filter=@dorkos/shared` passes
@@ -350,6 +388,7 @@ export type HealthStats = z.infer<typeof HealthStatsSchema>;
 ---
 
 ### Task 1.3: Implement RoadmapStore Service with lowdb
+
 **Description**: Create the data layer service that wraps lowdb for atomic JSON persistence of roadmap items.
 **Size**: Medium
 **Priority**: High
@@ -357,6 +396,7 @@ export type HealthStats = z.infer<typeof HealthStatsSchema>;
 **Can run parallel with**: None (depends on 1.1 + 1.2)
 
 **Technical Requirements**:
+
 - lowdb v7 with JSONFile adapter for atomic writes
 - All CRUD operations: list, get, create, update, delete, reorder
 - Health stats computation from items array
@@ -415,7 +455,7 @@ export class RoadmapStore {
   }
 
   getItem(id: string): RoadmapItem | undefined {
-    return this.db.data.items.find(item => item.id === id);
+    return this.db.data.items.find((item) => item.id === id);
   }
 
   async createItem(input: CreateItemInput): Promise<RoadmapItem> {
@@ -433,7 +473,7 @@ export class RoadmapStore {
   }
 
   async updateItem(id: string, patch: Partial<RoadmapItem>): Promise<RoadmapItem | null> {
-    const idx = this.db.data.items.findIndex(item => item.id === id);
+    const idx = this.db.data.items.findIndex((item) => item.id === id);
     if (idx === -1) return null;
 
     const now = new Date().toISOString();
@@ -444,7 +484,7 @@ export class RoadmapStore {
   }
 
   async deleteItem(id: string): Promise<boolean> {
-    const idx = this.db.data.items.findIndex(item => item.id === id);
+    const idx = this.db.data.items.findIndex((item) => item.id === id);
     if (idx === -1) return false;
 
     this.db.data.items.splice(idx, 1);
@@ -455,7 +495,7 @@ export class RoadmapStore {
 
   async reorder(orderedIds: string[]): Promise<void> {
     orderedIds.forEach((id, index) => {
-      const item = this.db.data.items.find(i => i.id === id);
+      const item = this.db.data.items.find((i) => i.id === id);
       if (item) item.order = index;
     });
     this.db.data.lastUpdated = new Date().toISOString();
@@ -464,7 +504,7 @@ export class RoadmapStore {
 
   getMeta(): RoadmapMeta & { health: HealthStats } {
     const items = this.db.data.items;
-    const mustHaves = items.filter(i => i.moscow === 'must-have');
+    const mustHaves = items.filter((i) => i.moscow === 'must-have');
     return {
       projectName: this.db.data.projectName,
       projectSummary: this.db.data.projectSummary,
@@ -473,10 +513,10 @@ export class RoadmapStore {
       health: {
         totalItems: items.length,
         mustHavePercent: items.length > 0 ? Math.round((mustHaves.length / items.length) * 100) : 0,
-        inProgressCount: items.filter(i => i.status === 'in-progress').length,
-        atRiskCount: items.filter(i => i.health === 'at-risk').length,
-        blockedCount: items.filter(i => i.health === 'blocked').length,
-        completedCount: items.filter(i => i.status === 'completed').length,
+        inProgressCount: items.filter((i) => i.status === 'in-progress').length,
+        atRiskCount: items.filter((i) => i.health === 'at-risk').length,
+        blockedCount: items.filter((i) => i.health === 'blocked').length,
+        completedCount: items.filter((i) => i.status === 'completed').length,
       },
     };
   }
@@ -523,7 +563,14 @@ describe('RoadmapStore', () => {
   });
 
   it('gets item by id', async () => {
-    const created = await store.createItem({ title: 'Find Me', type: 'feature', moscow: 'must-have', status: 'not-started', health: 'on-track', timeHorizon: 'now' });
+    const created = await store.createItem({
+      title: 'Find Me',
+      type: 'feature',
+      moscow: 'must-have',
+      status: 'not-started',
+      health: 'on-track',
+      timeHorizon: 'now',
+    });
     const found = store.getItem(created.id);
     expect(found?.title).toBe('Find Me');
   });
@@ -533,7 +580,14 @@ describe('RoadmapStore', () => {
   });
 
   it('updates an item', async () => {
-    const created = await store.createItem({ title: 'Original', type: 'feature', moscow: 'must-have', status: 'not-started', health: 'on-track', timeHorizon: 'now' });
+    const created = await store.createItem({
+      title: 'Original',
+      type: 'feature',
+      moscow: 'must-have',
+      status: 'not-started',
+      health: 'on-track',
+      timeHorizon: 'now',
+    });
     const updated = await store.updateItem(created.id, { title: 'Updated' });
     expect(updated?.title).toBe('Updated');
     expect(updated?.updatedAt).not.toBe(created.updatedAt);
@@ -545,7 +599,14 @@ describe('RoadmapStore', () => {
   });
 
   it('deletes an item', async () => {
-    const created = await store.createItem({ title: 'Delete Me', type: 'feature', moscow: 'must-have', status: 'not-started', health: 'on-track', timeHorizon: 'now' });
+    const created = await store.createItem({
+      title: 'Delete Me',
+      type: 'feature',
+      moscow: 'must-have',
+      status: 'not-started',
+      health: 'on-track',
+      timeHorizon: 'now',
+    });
     const deleted = await store.deleteItem(created.id);
     expect(deleted).toBe(true);
     expect(store.getItem(created.id)).toBeUndefined();
@@ -556,16 +617,44 @@ describe('RoadmapStore', () => {
   });
 
   it('reorders items by setting order field', async () => {
-    const a = await store.createItem({ title: 'A', type: 'feature', moscow: 'must-have', status: 'not-started', health: 'on-track', timeHorizon: 'now' });
-    const b = await store.createItem({ title: 'B', type: 'feature', moscow: 'must-have', status: 'not-started', health: 'on-track', timeHorizon: 'now' });
+    const a = await store.createItem({
+      title: 'A',
+      type: 'feature',
+      moscow: 'must-have',
+      status: 'not-started',
+      health: 'on-track',
+      timeHorizon: 'now',
+    });
+    const b = await store.createItem({
+      title: 'B',
+      type: 'feature',
+      moscow: 'must-have',
+      status: 'not-started',
+      health: 'on-track',
+      timeHorizon: 'now',
+    });
     await store.reorder([b.id, a.id]);
     expect(store.getItem(b.id)?.order).toBe(0);
     expect(store.getItem(a.id)?.order).toBe(1);
   });
 
   it('computes health stats correctly', async () => {
-    await store.createItem({ title: 'Must', type: 'feature', moscow: 'must-have', status: 'in-progress', health: 'at-risk', timeHorizon: 'now' });
-    await store.createItem({ title: 'Should', type: 'feature', moscow: 'should-have', status: 'completed', health: 'on-track', timeHorizon: 'next' });
+    await store.createItem({
+      title: 'Must',
+      type: 'feature',
+      moscow: 'must-have',
+      status: 'in-progress',
+      health: 'at-risk',
+      timeHorizon: 'now',
+    });
+    await store.createItem({
+      title: 'Should',
+      type: 'feature',
+      moscow: 'should-have',
+      status: 'completed',
+      health: 'on-track',
+      timeHorizon: 'next',
+    });
     const meta = store.getMeta();
     expect(meta.health.totalItems).toBe(2);
     expect(meta.health.mustHavePercent).toBe(50);
@@ -577,6 +666,7 @@ describe('RoadmapStore', () => {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] `RoadmapStore` class implements all CRUD operations (list, get, create, update, delete, reorder)
 - [ ] `getMeta()` returns project metadata with computed health stats
 - [ ] `createItem()` generates UUID v4 id and ISO timestamps
@@ -589,6 +679,7 @@ describe('RoadmapStore', () => {
 ---
 
 ### Task 1.4: Implement Express API Routes
+
 **Description**: Create the Express app factory and all route handlers for items CRUD, meta, files, and health check.
 **Size**: Large
 **Priority**: High
@@ -596,6 +687,7 @@ describe('RoadmapStore', () => {
 **Can run parallel with**: Task 1.5 (after 1.1 + 1.2 are done)
 
 **Technical Requirements**:
+
 - Express app factory pattern matching DorkOS `apps/server/src/app.ts`
 - Zod validation on all mutation endpoints (POST, PATCH)
 - Proper HTTP status codes: 201 for create, 204 for delete, 400 for validation, 404 for not found
@@ -630,10 +722,12 @@ export function createApp(store: RoadmapStore) {
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
   // Error handler
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  });
+  app.use(
+    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      console.error('Unhandled error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  );
 
   // Production: serve React SPA
   if (process.env.NODE_ENV === 'production') {
@@ -673,7 +767,11 @@ main().catch(console.error);
 
 ```typescript
 import { Router } from 'express';
-import { CreateItemRequestSchema, UpdateItemRequestSchema, ReorderRequestSchema } from '@dorkos/shared/roadmap-schemas';
+import {
+  CreateItemRequestSchema,
+  UpdateItemRequestSchema,
+  ReorderRequestSchema,
+} from '@dorkos/shared/roadmap-schemas';
 import type { RoadmapStore } from '../services/roadmap-store';
 
 export function createItemRoutes(store: RoadmapStore): Router {
@@ -800,6 +898,7 @@ export const logger = {
 ```
 
 7. Write route tests at `apps/roadmap/src/server/routes/__tests__/items-routes.test.ts`:
+
 - Test GET /items returns array
 - Test POST /items with valid body returns 201
 - Test POST /items with invalid body returns 400
@@ -812,25 +911,28 @@ export const logger = {
 - Test PATCH /items/reorder with valid body returns 200
 
 8. Write `apps/roadmap/src/server/routes/__tests__/files-routes.test.ts`:
+
 - Test GET /files/specs/valid-path returns content
 - Test GET /files/etc/passwd returns 403 (not in specs/)
 - Test GET /files/specs/../../../etc/passwd returns 403 (traversal)
 - Test GET /files/specs/nonexistent returns 404
 
 **Acceptance Criteria**:
+
 - [ ] All 8 API endpoints respond with correct status codes
 - [ ] POST /items validates request body with Zod, returns 400 on invalid input
 - [ ] PATCH /items/:id validates body and returns 404 for unknown IDs
 - [ ] DELETE /items/:id returns 204 on success, 404 on not found
 - [ ] PATCH /items/reorder accepts array of UUIDs and sets order
 - [ ] GET /meta returns project metadata + health stats
-- [ ] GET /files/* prevents path traversal (403 for non-specs/ paths)
+- [ ] GET /files/\* prevents path traversal (403 for non-specs/ paths)
 - [ ] GET /health returns `{ status: 'ok' }`
 - [ ] Route tests pass for all endpoints
 
 ---
 
 ### Task 1.5: React App Shell with TanStack Query and Zustand
+
 **Description**: Create the basic React app structure with TanStack Query client, Zustand store, shared utilities, and entity hooks for data fetching.
 **Size**: Medium
 **Priority**: High
@@ -838,6 +940,7 @@ export const logger = {
 **Can run parallel with**: Task 1.4
 
 **Technical Requirements**:
+
 - TanStack Query v5 with 30s staleTime and refetchOnWindowFocus
 - Zustand store for UI state (viewMode, editingItemId, viewingSpecPath, theme)
 - API client utility wrapping fetch for `/api/roadmap/*` endpoints
@@ -847,6 +950,7 @@ export const logger = {
 **Implementation Steps**:
 
 1. Create `apps/roadmap/src/client/layers/shared/lib/cn.ts`:
+
 ```typescript
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -857,11 +961,13 @@ export function cn(...inputs: ClassValue[]) {
 ```
 
 2. Create `apps/roadmap/src/client/layers/shared/lib/constants.ts`:
+
 ```typescript
 export const API_BASE = '/api/roadmap';
 ```
 
 3. Create `apps/roadmap/src/client/layers/shared/lib/api-client.ts`:
+
 ```typescript
 import { API_BASE } from './constants';
 
@@ -880,13 +986,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
-  patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  post: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+  patch: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: 'DELETE' }),
 };
 ```
 
 4. Create `apps/roadmap/src/client/layers/shared/model/app-store.ts`:
+
 ```typescript
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -924,6 +1033,7 @@ export const useAppStore = create<AppState>()(
 5. Create entity hooks at `apps/roadmap/src/client/layers/entities/roadmap-item/model/`:
 
 - `use-roadmap-items.ts`:
+
 ```typescript
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/layers/shared/lib/api-client';
@@ -938,6 +1048,7 @@ export function useRoadmapItems() {
 ```
 
 - `use-roadmap-meta.ts`:
+
 ```typescript
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/layers/shared/lib/api-client';
@@ -952,6 +1063,7 @@ export function useRoadmapMeta() {
 ```
 
 - `use-create-item.ts`:
+
 ```typescript
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/layers/shared/lib/api-client';
@@ -971,6 +1083,7 @@ export function useCreateItem() {
 ```
 
 - `use-update-item.ts`:
+
 ```typescript
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/layers/shared/lib/api-client';
@@ -990,6 +1103,7 @@ export function useUpdateItem() {
 ```
 
 - `use-delete-item.ts`:
+
 ```typescript
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/layers/shared/lib/api-client';
@@ -1007,6 +1121,7 @@ export function useDeleteItem() {
 ```
 
 - `use-reorder-items.ts`:
+
 ```typescript
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/layers/shared/lib/api-client';
@@ -1014,8 +1129,7 @@ import { api } from '@/layers/shared/lib/api-client';
 export function useReorderItems() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (orderedIds: string[]) =>
-      api.patch<void>('/items/reorder', { orderedIds }),
+    mutationFn: (orderedIds: string[]) => api.patch<void>('/items/reorder', { orderedIds }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['roadmap-items'] });
     },
@@ -1024,6 +1138,7 @@ export function useReorderItems() {
 ```
 
 - `index.ts` barrel:
+
 ```typescript
 export { useRoadmapItems } from './model/use-roadmap-items';
 export { useRoadmapMeta } from './model/use-roadmap-meta';
@@ -1034,6 +1149,7 @@ export { useReorderItems } from './model/use-reorder-items';
 ```
 
 6. Create `apps/roadmap/src/client/App.tsx`:
+
 ```typescript
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionConfig } from 'motion/react';
@@ -1062,6 +1178,7 @@ export function App() {
 ```
 
 **Acceptance Criteria**:
+
 - [ ] App renders in browser with TanStack Query provider
 - [ ] Zustand store persists viewMode across refreshes (localStorage)
 - [ ] API client correctly fetches from `/api/roadmap/*` endpoints
@@ -1072,6 +1189,7 @@ export function App() {
 ---
 
 ### Task 1.6: Health Bar and Table View
+
 **Description**: Implement the HealthBar header component and the TableView with TanStack Table for sorting and filtering.
 **Size**: Large
 **Priority**: High
@@ -1079,6 +1197,7 @@ export function App() {
 **Can run parallel with**: None
 
 **Technical Requirements**:
+
 - HealthBar: persistent header showing total items, must-have %, in-progress, at-risk+blocked, completed
 - Must-have % shows warning indicator if > 60%
 - TableView: TanStack Table v8 with sortable columns
@@ -1127,6 +1246,7 @@ export function HealthBar() {
 2. Create `apps/roadmap/src/client/layers/features/table-view/ui/TableColumns.tsx`:
 
 Define column definitions for TanStack Table:
+
 - title (sortable, clickable to edit)
 - type (badge, sortable)
 - moscow (badge with color coding, sortable)
@@ -1203,10 +1323,12 @@ export function TableView() {
 5. Update `App.tsx` to include HealthBar and TableView as the initial view.
 
 6. Write tests:
+
 - `HealthBar.test.tsx`: renders metrics from mock data, shows warning when must-have > 60%
 - `TableView.test.tsx`: renders rows, sorting interactions work
 
 **Acceptance Criteria**:
+
 - [ ] HealthBar displays total items, must-have %, in-progress, at-risk, blocked, completed counts
 - [ ] HealthBar shows warning icon when must-have % exceeds 60%
 - [ ] TableView renders all items as table rows with correct columns
@@ -1221,6 +1343,7 @@ export function TableView() {
 ## Phase 2: Board Views
 
 ### Task 2.1: Kanban View with Drag-and-Drop
+
 **Description**: Implement the Kanban board view using `@hello-pangea/dnd` with 4 columns (one per status). Drag between columns changes item status via API.
 **Size**: Large
 **Priority**: High
@@ -1228,6 +1351,7 @@ export function TableView() {
 **Can run parallel with**: Task 2.2
 
 **Technical Requirements**:
+
 - 4 columns: Not Started, In Progress, Completed, On Hold
 - Items appear as cards in their status column
 - Drag card between columns triggers PATCH to update status
@@ -1358,16 +1482,19 @@ export function KanbanView() {
 ```
 
 4. Create barrel `apps/roadmap/src/client/layers/features/kanban-view/index.ts`:
+
 ```typescript
 export { KanbanView } from './ui/KanbanView';
 ```
 
 5. Write `KanbanView.test.tsx`:
+
 - Renders 4 columns with correct status labels
 - Items appear in correct columns based on status
 - Mock DnD context for rendering tests
 
 **Acceptance Criteria**:
+
 - [ ] 4 status columns render: Not Started, In Progress, Completed, On Hold
 - [ ] Items appear in correct column based on their status
 - [ ] Dragging a card to a different column triggers PATCH with new status
@@ -1380,6 +1507,7 @@ export { KanbanView } from './ui/KanbanView';
 ---
 
 ### Task 2.2: MoSCoW Grid View with Drag-and-Drop
+
 **Description**: Implement the MoSCoW priority grid view with 4 columns (Must/Should/Could/Won't) and drag-and-drop to change priority.
 **Size**: Large
 **Priority**: High
@@ -1387,6 +1515,7 @@ export { KanbanView } from './ui/KanbanView';
 **Can run parallel with**: Task 2.1
 
 **Technical Requirements**:
+
 - 4-column CSS Grid layout: Must Have, Should Have, Could Have, Won't Have
 - Cards show: title, status badge, health indicator, type
 - Drag between columns triggers PATCH to update moscow field
@@ -1398,6 +1527,7 @@ export { KanbanView } from './ui/KanbanView';
 1. Create `apps/roadmap/src/client/layers/features/moscow-view/ui/MoscowCard.tsx`:
 
 Similar to KanbanCard but shows status instead of moscow (since moscow is already implied by column):
+
 ```typescript
 import { Draggable } from '@hello-pangea/dnd';
 import type { RoadmapItem } from '@dorkos/shared/roadmap-schemas';
@@ -1524,6 +1654,7 @@ export function MoscowView() {
 5. Write `MoscowView.test.tsx`: renders 4 columns, items sorted into correct columns.
 
 **Acceptance Criteria**:
+
 - [ ] 4 priority columns render: Must Have, Should Have, Could Have, Won't Have
 - [ ] Items appear in correct column based on their moscow value
 - [ ] Dragging a card to a different column triggers PATCH with new moscow value
@@ -1535,6 +1666,7 @@ export function MoscowView() {
 ---
 
 ### Task 2.3: Item Editor Dialog
+
 **Description**: Implement the ItemEditorDialog for creating and editing roadmap items, with form validation and all fields.
 **Size**: Large
 **Priority**: High
@@ -1542,6 +1674,7 @@ export function MoscowView() {
 **Can run parallel with**: Task 2.1, Task 2.2
 
 **Technical Requirements**:
+
 - shadcn Dialog component wrapping a form
 - Supports both create mode (editingItemId === 'new') and edit mode (editingItemId === uuid)
 - Required fields: title, type, moscow, status, health, timeHorizon
@@ -1680,6 +1813,7 @@ export function ItemEditorDialog() {
 4. Create barrel and integrate into App.tsx.
 
 5. Write `ItemEditorDialog.test.tsx`:
+
 - Renders form when editingItemId is set
 - Shows "New Item" title for new items
 - Shows "Edit Item" title for existing items
@@ -1687,6 +1821,7 @@ export function ItemEditorDialog() {
 - Delete button only shown in edit mode
 
 **Acceptance Criteria**:
+
 - [ ] Dialog opens when editingItemId is set in Zustand store
 - [ ] Create mode: empty form, "New Item" title, POST on submit
 - [ ] Edit mode: pre-filled form, "Edit Item" title, PATCH on submit
@@ -1701,6 +1836,7 @@ export function ItemEditorDialog() {
 ---
 
 ### Task 2.4: Dark/Light Theme Toggle
+
 **Description**: Implement dark/light mode toggle following the Calm Tech design system, with system preference detection.
 **Size**: Small
 **Priority**: Medium
@@ -1708,6 +1844,7 @@ export function ItemEditorDialog() {
 **Can run parallel with**: Task 2.1, Task 2.2, Task 2.3
 
 **Technical Requirements**:
+
 - Toggle button in the top-right corner of the HealthBar
 - Three modes: light, dark, system (follows OS preference)
 - Persisted in Zustand store (localStorage via persist middleware)
@@ -1745,6 +1882,7 @@ export function useTheme() {
 3. Add CSS variables to `index.css` for light and dark themes following the Calm Tech palette (neutral grays + blue accent), matching the existing DorkOS client `index.css` pattern.
 
 **Acceptance Criteria**:
+
 - [ ] Theme toggle button is visible in the header area
 - [ ] Clicking cycles through light, dark, system modes
 - [ ] Dark mode applies dark background and light text
@@ -1757,6 +1895,7 @@ export function useTheme() {
 ## Phase 3: Rich Features
 
 ### Task 3.1: Gantt View with Kibo UI
+
 **Description**: Implement the Gantt chart view using Kibo UI's gantt component, displaying items that have start and end dates.
 **Size**: Medium
 **Priority**: Medium
@@ -1764,6 +1903,7 @@ export function useTheme() {
 **Can run parallel with**: Task 3.2
 
 **Technical Requirements**:
+
 - Use Kibo UI `gantt` component (source-copied via registry, not npm)
 - Filter items to only those with both `startDate` and `endDate`
 - Items without dates show a prompt to add dates
@@ -1832,6 +1972,7 @@ function statusToColor(status: string): string {
 3. Create barrel export and integrate into App.tsx view switching.
 
 **Acceptance Criteria**:
+
 - [ ] Gantt chart renders items with startDate and endDate as horizontal bars
 - [ ] Items without dates are excluded with a count message
 - [ ] Empty state shows prompt when no items have dates
@@ -1842,6 +1983,7 @@ function statusToColor(status: string): string {
 ---
 
 ### Task 3.2: Spec Viewer Dialog
+
 **Description**: Implement a dialog that fetches and renders markdown content from linked spec files.
 **Size**: Medium
 **Priority**: Medium
@@ -1849,6 +1991,7 @@ function statusToColor(status: string): string {
 **Can run parallel with**: Task 3.1
 
 **Technical Requirements**:
+
 - Dialog triggered by `viewingSpecPath` in Zustand store
 - Fetches markdown content via `GET /api/roadmap/files/{path}`
 - Renders markdown using `react-markdown`
@@ -1909,6 +2052,7 @@ export function SpecViewerDialog() {
 3. Create barrel export and add to App.tsx.
 
 **Acceptance Criteria**:
+
 - [ ] Dialog opens when viewingSpecPath is set in Zustand store
 - [ ] Fetches markdown content from /api/roadmap/files/ endpoint
 - [ ] Renders markdown with proper formatting (headings, lists, code blocks)
@@ -1921,6 +2065,7 @@ export function SpecViewerDialog() {
 ---
 
 ### Task 3.3: Drag-and-Drop Reorder Persistence
+
 **Description**: Add reorder persistence so that drag-and-drop within the same column persists item order, and ensure the `order` field is used for sorting.
 **Size**: Small
 **Priority**: Medium
@@ -1928,6 +2073,7 @@ export function SpecViewerDialog() {
 **Can run parallel with**: Task 3.1, Task 3.2
 
 **Technical Requirements**:
+
 - When dragging within same column (same status/moscow), reorder items
 - Call PATCH /items/reorder with new ordered IDs for that column
 - Sort items by `order` field when displaying in columns
@@ -1936,6 +2082,7 @@ export function SpecViewerDialog() {
 **Implementation Steps**:
 
 1. Update `KanbanView.tsx` `handleDragEnd`:
+
 - If source.droppableId === destination.droppableId, reorder within column
 - Extract items for that column, splice the moved item, and call `useReorderItems` with the new order
 
@@ -1944,6 +2091,7 @@ export function SpecViewerDialog() {
 3. Sort items by `order` field (fallback to `createdAt`) in both views and table view.
 
 **Acceptance Criteria**:
+
 - [ ] Dragging within the same column reorders items
 - [ ] Reorder is persisted via PATCH /items/reorder endpoint
 - [ ] Items display in order field sequence
@@ -1955,6 +2103,7 @@ export function SpecViewerDialog() {
 ## Phase 4: Migration & Polish
 
 ### Task 4.1: Replace Python Scripts with Shell API Wrappers
+
 **Description**: Create shell script wrappers that call the Express API, replacing the 7 Python scripts.
 **Size**: Medium
 **Priority**: Medium
@@ -1962,6 +2111,7 @@ export function SpecViewerDialog() {
 **Can run parallel with**: Task 4.2, Task 4.3, Task 4.4
 
 **Technical Requirements**:
+
 - Shell scripts at `roadmap/scripts/` (`.sh` files replacing `.py`)
 - Each script checks server health before proceeding
 - Uses curl for API calls and jq for JSON processing
@@ -1972,6 +2122,7 @@ export function SpecViewerDialog() {
 Create the following shell scripts:
 
 1. `roadmap/scripts/update_status.sh`:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1995,6 +2146,7 @@ curl -sf -X PATCH "$API/items/$1" \
 ```
 
 2. `roadmap/scripts/update_workflow_state.sh`:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2017,6 +2169,7 @@ curl -sf -X PATCH "$API/items/$1" \
 ```
 
 3. `roadmap/scripts/link_spec.sh`:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2039,6 +2192,7 @@ curl -sf -X PATCH "$API/items/$1" \
 ```
 
 4. `roadmap/scripts/find_by_title.sh`:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2059,6 +2213,7 @@ curl -sf "$API/items" | jq --arg q "$1" '.[] | select(.title | test($q; "i"))'
 ```
 
 5. `roadmap/scripts/slugify.sh`:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2076,6 +2231,7 @@ echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g'
 7. Set executable permissions: `chmod +x roadmap/scripts/*.sh`
 
 **Acceptance Criteria**:
+
 - [ ] All 7 shell scripts created in `roadmap/scripts/`
 - [ ] Each script checks server health and prints error if not running
 - [ ] `update_status.sh` updates item status via PATCH
@@ -2087,6 +2243,7 @@ echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g'
 ---
 
 ### Task 4.2: Server and Client Test Suite
+
 **Description**: Write comprehensive test suites for server services/routes and client components/hooks.
 **Size**: Large
 **Priority**: High
@@ -2094,6 +2251,7 @@ echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g'
 **Can run parallel with**: Task 4.1, Task 4.3
 
 **Technical Requirements**:
+
 - Server tests: mock lowdb with in-memory adapter
 - Client tests: mock fetch, React Testing Library with jsdom
 - Add mock factories to `packages/test-utils/`
@@ -2120,7 +2278,9 @@ export function createMockRoadmapItem(overrides?: Partial<RoadmapItem>): Roadmap
   };
 }
 
-export function createMockRoadmapMeta(overrides?: Partial<RoadmapMeta & { health: HealthStats }>): RoadmapMeta & { health: HealthStats } {
+export function createMockRoadmapMeta(
+  overrides?: Partial<RoadmapMeta & { health: HealthStats }>
+): RoadmapMeta & { health: HealthStats } {
   return {
     projectName: 'Test Project',
     projectSummary: 'A test project',
@@ -2144,12 +2304,14 @@ export function createMockRoadmapMeta(overrides?: Partial<RoadmapMeta & { health
 ```
 
 2. Server test files:
+
 - `apps/roadmap/src/server/services/__tests__/roadmap-store.test.ts` (from Task 1.3)
 - `apps/roadmap/src/server/routes/__tests__/items-routes.test.ts` (from Task 1.4)
 - `apps/roadmap/src/server/routes/__tests__/meta-routes.test.ts`
 - `apps/roadmap/src/server/routes/__tests__/files-routes.test.ts`
 
 3. Client test files:
+
 - `apps/roadmap/src/client/__tests__/HealthBar.test.tsx`
 - `apps/roadmap/src/client/__tests__/TableView.test.tsx`
 - `apps/roadmap/src/client/__tests__/KanbanView.test.tsx`
@@ -2157,6 +2319,7 @@ export function createMockRoadmapMeta(overrides?: Partial<RoadmapMeta & { health
 - `apps/roadmap/src/client/__tests__/useRoadmapItems.test.ts`
 
 All client tests should use jsdom environment directive:
+
 ```typescript
 /**
  * @vitest-environment jsdom
@@ -2166,6 +2329,7 @@ All client tests should use jsdom environment directive:
 Mock fetch for API calls, wrap components in QueryClientProvider with a fresh QueryClient per test.
 
 **Acceptance Criteria**:
+
 - [ ] Mock factories added to `packages/test-utils/`
 - [ ] Server store tests cover all CRUD + health stats
 - [ ] Route tests cover all endpoints with status codes
@@ -2176,6 +2340,7 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 ---
 
 ### Task 4.3: Documentation Updates
+
 **Description**: Update project documentation to reflect the new roadmap app.
 **Size**: Small
 **Priority**: Medium
@@ -2183,6 +2348,7 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 **Can run parallel with**: Task 4.1, Task 4.2, Task 4.4
 
 **Technical Requirements**:
+
 - Update `CLAUDE.md` monorepo structure and commands
 - Update `roadmap/CLAUDE.md` to reflect API-based architecture
 - Update `contributing/architecture.md` with roadmap app section
@@ -2190,6 +2356,7 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 **Implementation Steps**:
 
 1. In `CLAUDE.md`:
+
 - Add `apps/roadmap/` to the monorepo structure tree
 - Add commands: `dotenv -- turbo dev --filter=@dorkos/roadmap` (roadmap dev server)
 - Add port info: roadmap server on port 4243
@@ -2197,17 +2364,20 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 - Add to `vitest.workspace.ts` listing
 
 2. In `roadmap/CLAUDE.md`:
+
 - Replace vanilla HTML/JS references with Express + React app description
 - Document API endpoints
 - Note that Python scripts are replaced by shell wrappers calling the API
 - Document the `apps/roadmap/` workspace path
 
 3. In `contributing/architecture.md`:
+
 - Add "Roadmap App" section describing the standalone Express + React architecture
 - Note it does NOT use the Transport interface (standalone HTTP only)
 - Document FSD layer structure for the roadmap client
 
 **Acceptance Criteria**:
+
 - [ ] `CLAUDE.md` updated with roadmap app info
 - [ ] `roadmap/CLAUDE.md` reflects new API-based architecture
 - [ ] `contributing/architecture.md` includes roadmap app section
@@ -2216,6 +2386,7 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 ---
 
 ### Task 4.4: Vitest Workspace and Monorepo Integration
+
 **Description**: Register the roadmap app in vitest.workspace.ts, turbo.json pipeline, and verify all monorepo commands work.
 **Size**: Small
 **Priority**: High
@@ -2223,6 +2394,7 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 **Can run parallel with**: Task 4.1, Task 4.3
 
 **Technical Requirements**:
+
 - Add `'apps/roadmap'` to `vitest.workspace.ts`
 - Verify `turbo.json` pipeline picks up new app (dev, build, test, typecheck, lint)
 - Verify `npm run dev` starts roadmap alongside other apps (if desired) or independently
@@ -2230,11 +2402,12 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 **Implementation Steps**:
 
 1. Update `vitest.workspace.ts`:
+
 ```typescript
 export default defineWorkspace([
   'apps/client',
   'apps/server',
-  'apps/roadmap',    // Add this
+  'apps/roadmap', // Add this
   'packages/cli',
   'packages/shared',
 ]);
@@ -2243,6 +2416,7 @@ export default defineWorkspace([
 2. Verify `turbo.json` already handles `apps/roadmap` via workspace detection (Turborepo auto-discovers workspaces with matching scripts).
 
 3. Test all commands:
+
 - `npm test` includes roadmap tests
 - `npm run build` builds roadmap app
 - `npm run typecheck` type-checks roadmap
@@ -2251,6 +2425,7 @@ export default defineWorkspace([
 4. Add roadmap to root `package.json` workspace patterns if not already captured by `apps/*`.
 
 **Acceptance Criteria**:
+
 - [ ] `vitest.workspace.ts` includes `'apps/roadmap'`
 - [ ] `npm test` runs roadmap tests alongside other apps
 - [ ] `npm run build` builds roadmap (server tsc + client vite)

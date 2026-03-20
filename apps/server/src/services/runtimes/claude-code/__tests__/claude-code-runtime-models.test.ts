@@ -88,8 +88,8 @@ describe('ClaudeCodeRuntime.getSupportedModels', () => {
 
     const models = await manager.getSupportedModels();
     expect(models).toEqual(customModels);
-    expect(models).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'claude-sonnet-4-5-20250929' }),
-    ]));
+    expect(models).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ value: 'claude-sonnet-4-5-20250929' })])
+    );
   });
 });

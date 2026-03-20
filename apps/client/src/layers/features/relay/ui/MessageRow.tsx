@@ -12,12 +12,13 @@ interface MessageRowProps {
   message: Record<string, unknown>;
 }
 
-const STATUS_CONFIG: Record<string, { icon: React.ElementType; className: string; label: string }> = {
-  new: { icon: Clock, className: 'text-muted-foreground', label: 'New' },
-  cur: { icon: Check, className: 'text-muted-foreground', label: 'Delivered' },
-  failed: { icon: AlertTriangle, className: 'text-destructive', label: 'Failed' },
-  dead_letter: { icon: MailX, className: 'text-amber-500', label: 'Dead Letter' },
-};
+const STATUS_CONFIG: Record<string, { icon: React.ElementType; className: string; label: string }> =
+  {
+    new: { icon: Clock, className: 'text-muted-foreground', label: 'New' },
+    cur: { icon: Check, className: 'text-muted-foreground', label: 'Delivered' },
+    failed: { icon: AlertTriangle, className: 'text-destructive', label: 'Failed' },
+    dead_letter: { icon: MailX, className: 'text-amber-500', label: 'Dead Letter' },
+  };
 
 const PREVIEW_MAX_LENGTH = 80;
 
@@ -42,34 +43,26 @@ export function MessageRow({ message }: MessageRowProps) {
   const StatusIcon = config.icon;
   const messageId = message.id as string;
 
-  const borderColor = getStatusBorderColor(
-    status === 'cur' ? 'delivered' : status,
-  );
+  const borderColor = getStatusBorderColor(status === 'cur' ? 'delivered' : status);
 
   const preview = extractPreview(message.payload);
 
   return (
     <div
       className={cn(
-        'w-full rounded-lg border border-l-2 text-left transition-colors hover:bg-muted/50 hover:shadow-sm',
+        'hover:bg-muted/50 w-full rounded-lg border border-l-2 text-left transition-colors hover:shadow-sm',
         borderColor,
-        expanded && 'bg-muted/30',
+        expanded && 'bg-muted/30'
       )}
     >
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="w-full p-3"
-      >
+      <button type="button" onClick={() => setExpanded(!expanded)} className="w-full p-3">
         <div className="flex items-center gap-2">
           <StatusIcon className={cn('size-4 shrink-0', config.className)} />
           <span className="min-w-0 flex-1 truncate text-sm">
             {resolveSubjectLabelLocal(message.subject as string)}
           </span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {message.from as string}
-          </span>
-          <span className="shrink-0 text-xs text-muted-foreground">
+          <span className="text-muted-foreground shrink-0 text-xs">{message.from as string}</span>
+          <span className="text-muted-foreground shrink-0 text-xs">
             {message.createdAt ? formatTimeAgo(message.createdAt as string) : ''}
           </span>
           <Badge variant="outline" className="shrink-0 text-xs">
@@ -77,9 +70,7 @@ export function MessageRow({ message }: MessageRowProps) {
           </Badge>
         </div>
         {preview && !expanded && (
-          <p className="mt-1 truncate text-left text-sm text-muted-foreground">
-            {preview}
-          </p>
+          <p className="text-muted-foreground mt-1 truncate text-left text-sm">{preview}</p>
         )}
       </button>
 
@@ -92,17 +83,17 @@ export function MessageRow({ message }: MessageRowProps) {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className="overflow-hidden"
           >
-            <div className="space-y-2 border-t px-3 pb-3 pt-3">
+            <div className="space-y-2 border-t px-3 pt-3 pb-3">
               <div>
-                <span className="text-xs font-medium text-muted-foreground">Payload</span>
-                <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 font-mono text-xs">
+                <span className="text-muted-foreground text-xs font-medium">Payload</span>
+                <pre className="bg-muted mt-1 max-h-40 overflow-auto rounded p-2 font-mono text-xs">
                   {String(JSON.stringify(message.payload, null, 2))}
                 </pre>
               </div>
               {message.budget != null && (
                 <div>
-                  <span className="text-xs font-medium text-muted-foreground">Budget</span>
-                  <pre className="mt-1 rounded bg-muted p-2 font-mono text-xs">
+                  <span className="text-muted-foreground text-xs font-medium">Budget</span>
+                  <pre className="bg-muted mt-1 rounded p-2 font-mono text-xs">
                     {String(JSON.stringify(message.budget, null, 2))}
                   </pre>
                 </div>
@@ -117,7 +108,7 @@ export function MessageRow({ message }: MessageRowProps) {
                       e.stopPropagation();
                       setShowTrace(!showTrace);
                     }}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs"
                   >
                     <Activity className="size-3.5" />
                     {showTrace ? 'Hide trace' : 'Show trace'}

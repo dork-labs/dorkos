@@ -35,16 +35,30 @@ export default defineConfig([
       'src/**/__tests__/**',
     ],
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [{
-          group: ['@anthropic-ai/claude-agent-sdk', '@anthropic-ai/claude-agent-sdk/*'],
-          message: 'Claude Agent SDK imports are confined to services/runtimes/claude-code/. Import from the AgentRuntime interface instead.',
-        }],
-        paths: [
-          { name: 'os', importNames: ['homedir'], message: "Use the resolved dorkHome parameter. See .claude/rules/dork-home.md" },
-          { name: 'node:os', importNames: ['homedir'], message: "Use the resolved dorkHome parameter. See .claude/rules/dork-home.md" },
-        ],
-      }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@anthropic-ai/claude-agent-sdk', '@anthropic-ai/claude-agent-sdk/*'],
+              message:
+                'Claude Agent SDK imports are confined to services/runtimes/claude-code/. Import from the AgentRuntime interface instead.',
+            },
+          ],
+          paths: [
+            {
+              name: 'os',
+              importNames: ['homedir'],
+              message: 'Use the resolved dorkHome parameter. See .claude/rules/dork-home.md',
+            },
+            {
+              name: 'node:os',
+              importNames: ['homedir'],
+              message: 'Use the resolved dorkHome parameter. See .claude/rules/dork-home.md',
+            },
+          ],
+        },
+      ],
     },
   },
 

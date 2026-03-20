@@ -15,6 +15,7 @@
 Restore full binding CRUD (create, edit, delete) to AdapterCard by integrating the existing `BindingDialog` component. Currently AdapterCard only displays binding rows read-only -- users cannot add, edit, or delete bindings from the adapter card.
 
 **Changes:**
+
 - **AdapterCard.tsx:** Add binding dialog state (`bindingDialogOpen`, `bindingDialogMode`, `editingBinding`, `showAllBindings`), import mutation hooks (`useCreateBinding`, `useUpdateBinding`, `useDeleteBinding`), add "Add Binding" to kebab menu, wrap each binding row in a clickable button for edit mode, add "+" button after rows, make "and X more" clickable to expand/collapse, replace "No agent bound" amber text with "Add binding" CTA button, render BindingDialog at bottom of component
 - **BindingDialog.tsx:** Extend with `onDelete?: (bindingId: string) => void` prop, add destructive "Delete" button with AlertDialog confirmation in footer when `mode === 'edit'`
 
@@ -29,6 +30,7 @@ Restore full binding CRUD (create, edit, delete) to AdapterCard by integrating t
 Fix the broken `handleFailedClick` in RelayPanel -- it sets `activeTab='activity'` and scrolls to `deadLetterRef`, but the `DeadLetterSection` only renders when `showFailures` is true (defaults to false). The scroll target doesn't exist in the DOM.
 
 **Changes:**
+
 - **ActivityFeed.tsx:** Add `autoShowFailures?: boolean` prop, add effect that sets `showFailures = true` when prop is true
 - **RelayPanel.tsx:** Add `autoShowFailures` state, update `handleFailedClick` to set it (with reset after 100ms), defer scroll to 150ms, pass prop to ActivityFeed
 
@@ -43,6 +45,7 @@ Fix the broken `handleFailedClick` in RelayPanel -- it sets `activeTab='activity
 Resolve the contradiction where the Activity tab shows no conversations while the health bar reports failures. Conversations are built from in-memory relay messages (lost on restart), while metrics may aggregate from persisted data.
 
 **Changes:**
+
 - **ActivityFeed.tsx:** Update empty state copy from "Waiting for messages" to "No activity yet" with description "Messages will appear here as your agents communicate". Remove the "Set up an adapter" CTA button (misleading when adapters are configured in Mode B). Keep ghost preview rows.
 
 **Tests:** Empty state renders correct text, no "Set up an adapter" button in Mode B
@@ -58,6 +61,7 @@ Resolve the contradiction where the Activity tab shows no conversations while th
 Two labeling fixes to reduce user confusion.
 
 **Changes:**
+
 - **ActivityFeed.tsx:** Rename toggle button text "Failures" to "Dead Letters", update aria-label to "Show dead letters", adjust badge dot styling from absolute to inline
 - **DialogHost.tsx:** Change dialog title from "Relay" to "Connections", update sr-only description to "Manage adapters and monitor message activity"
 
@@ -72,6 +76,7 @@ Two labeling fixes to reduce user confusion.
 Remove the dialog-on-dialog pattern (BarChart3 icon -> DeliveryMetricsDashboard dialog on top of relay dialog). Replace with an inline MetricsSummary row at the top of the Activity tab.
 
 **Changes:**
+
 - **Create MetricsSummary.tsx:** Compact row showing Total, Delivered, Failed, Dead Letter counts with color-coded values, plus average latency. Uses `useDeliveryMetrics` hook.
 - **ActivityFeed.tsx:** Import and render MetricsSummary above the filter bar
 - **RelayHealthBar.tsx:** Remove `metricsOpen` state, BarChart3 icon button, Dialog components, and DeliveryMetricsDashboard import
@@ -89,6 +94,7 @@ Remove the dialog-on-dialog pattern (BarChart3 icon -> DeliveryMetricsDashboard 
 Dead letters are hidden by default behind a toggle. Auto-show them when they exist, but respect the user's explicit close action.
 
 **Changes:**
+
 - **ActivityFeed.tsx:** Add `userToggled` state, add effect that auto-opens section when dead letters arrive (unless user toggled), update toggle onClick to set `userToggled = true`, update badge to only show when user manually closed section, make `autoShowFailures` prop reset `userToggled`
 
 **Tests:** Auto-show when dead letters arrive, user toggle prevents auto-show, badge logic, autoShowFailures resets state
@@ -104,6 +110,7 @@ Dead letters are hidden by default behind a toggle. Auto-show them when they exi
 The "Dismiss All" button permanently removes dead letters with one click. Add confirmation and rename to "Mark Resolved".
 
 **Changes:**
+
 - **DeadLetterSection.tsx:** Wrap dismiss button in AlertDialog with confirmation showing count, source, and reason. Rename "Dismiss All" to "Mark Resolved". Change button color from destructive to muted-foreground.
 
 **Tests:** DeadLetterSection.test.tsx -- dialog opens, cancel doesn't trigger mutation, confirm does
@@ -117,6 +124,7 @@ The "Dismiss All" button permanently removes dead letters with one click. Add co
 The route popover doesn't warn about existing bindings for the adapter, risking duplicates.
 
 **Changes:**
+
 - **ConversationRow.tsx:** Import `useBindings`, filter bindings by extracted adapter ID, show blue info note in popover with existing binding count before the agent selector
 
 **Tests:** Info note renders with correct count/pluralization, doesn't render when no bindings match
@@ -125,10 +133,10 @@ The route popover doesn't warn about existing bindings for the adapter, risking 
 
 ## Summary
 
-| Phase | Tasks | Sizes | Can Parallelize |
-|-------|-------|-------|-----------------|
-| P0 Critical | 1.1, 1.2, 1.3 | L, S, M | All three |
-| P1 UX | 2.1, 2.2, 2.3 | S, M, S | 2.1+2.2 (2.3 depends on 1.2) |
-| P2 Polish | 3.1, 3.2 | S, S | Both |
+| Phase       | Tasks         | Sizes   | Can Parallelize              |
+| ----------- | ------------- | ------- | ---------------------------- |
+| P0 Critical | 1.1, 1.2, 1.3 | L, S, M | All three                    |
+| P1 UX       | 2.1, 2.2, 2.3 | S, M, S | 2.1+2.2 (2.3 depends on 1.2) |
+| P2 Polish   | 3.1, 3.2      | S, S    | Both                         |
 
 **Note:** `BindingList.tsx` (mentioned in the spec as dead code to delete) does not exist in the codebase -- it was already removed. No action needed for that item.

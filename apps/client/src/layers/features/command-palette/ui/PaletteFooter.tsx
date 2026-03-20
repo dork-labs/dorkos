@@ -23,7 +23,7 @@ export function PaletteFooter({ page, hasAgentSelected }: PaletteFooterProps) {
   const modKey = isMac ? '\u2318' : 'Ctrl';
 
   return (
-    <div className="border-t px-3 py-1.5 flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
+    <div className="text-muted-foreground flex flex-shrink-0 items-center gap-3 border-t px-3 py-1.5 text-xs">
       <span className="inline-flex items-center gap-1">
         <kbd className={KBD_CLASS}>{'\u2191\u2193'}</kbd>
         Navigate

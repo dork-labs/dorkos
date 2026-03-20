@@ -178,10 +178,7 @@ describe('runCleanup', () => {
   });
 
   it('warns and exits when server is running', async () => {
-    fs.writeFileSync(
-      path.join(tmpDir, 'config.json'),
-      JSON.stringify({ server: { port: 9999 } })
-    );
+    fs.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify({ server: { port: 9999 } }));
 
     httpGetSpy.mockImplementation((_url: unknown, _opts: unknown, cb: unknown) => {
       const callback = cb as (res: { statusCode: number; resume: () => void }) => void;

@@ -42,7 +42,7 @@ status: ideation
 - `apps/server/src/services/relay/adapter-manager.ts`: `getAdapter()` returns raw config; `listAdapters()` properly masks sensitive fields.
 - `apps/server/src/services/relay/binding-router.ts`: `saveSessionMap()` failures silently lose session mappings.
 - `apps/server/src/services/relay/binding-store.ts`: writeGeneration counter can drift if chokidar coalesces events.
-- `apps/server/src/routes/relay.ts`: Conversations endpoint has O(n*m) dead-letter lookup; route params with dots don't parse correctly.
+- `apps/server/src/routes/relay.ts`: Conversations endpoint has O(n\*m) dead-letter lookup; route params with dots don't parse correctly.
 - `packages/shared/src/mesh-schemas.ts`: `unreachableCount` in MeshStatus but no `unreachable` in AgentHealthStatus enum. `UpdateAgentRequestSchema` manually re-lists fields from AgentManifestSchema.
 - `apps/client/src/layers/entities/mesh/model/use-mesh-discover.ts`: Missing cache invalidation after auto-import.
 - `research/20260301_code_remediation_patterns.md`: Research findings on chokidar self-write detection, Express dot-params, SSE backpressure, Zod derivation.
@@ -99,35 +99,39 @@ N/A — this is a code quality remediation, not a bug fix.
 **Potential Solutions:**
 
 **1. writeGeneration drift (BindingStore)**
+
 - **Approach A: mtime-based tracking** — Record file mtime after write, compare on change event. Most reliable for coalesced events.
 - **Approach B: awaitWriteFinish** — Use chokidar's built-in `awaitWriteFinish` option to wait for file size stabilization.
 - **Approach C: Debounce-based** — Ignore events within N ms of a write.
 - **Recommendation:** mtime-based. Records `stat.mtimeMs` after each `save()`, compares on change event. Handles coalesced events correctly and is deterministic.
 
 **2. Express route params with dots**
+
 - **Approach A: Regex constraint** — `/:subject([\\w]+(?:\\.[\\w]+)+)` captures multi-segment identifiers.
 - **Approach B: URL encoding** — Require clients to URL-encode dots.
 - **Approach C: Wildcard** — Use `/:subject(*)` to capture everything.
 - **Recommendation:** Regex constraint. Clean URLs, explicit validation, works with Express 4.
 
 **3. SSE backpressure**
+
 - **Approach A: Check `res.write()` + drain** — Standard Node.js backpressure pattern.
 - **Approach B: Ring buffer** — Drop old events for slow clients.
 - **Approach C: Close slow connections** — Terminate after buffer threshold.
 - **Recommendation:** Check `res.write()` return value. If false, pause subscription delivery until `drain` event. Lightweight, correct.
 
 **4. Zod schema consolidation**
+
 - **Approach A: Import z.infer types** — Replace duplicated TS interfaces with re-exports from Zod schemas.
 - **Approach B: Add sync tests** — Keep both, add assignability checks.
 - **Recommendation:** Import z.infer types. Single source of truth, eliminates drift.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Batch scope | All 36 in one pass | User preference — comprehensive remediation in a single effort |
-| 2 | Type duplication strategy | Import Zod-inferred types | Single source of truth; eliminates drift risk. Where relay needs narrower shapes, use Pick/Omit from Zod schemas. |
-| 3 | TopologyGraph.tsx splitting | Extract layout + node builders | Move `applyElkLayout` to `lib/elk-layout.ts` and node/edge building to `lib/build-topology-elements.ts`. Gets under 500 lines with minimal risk. |
+| #   | Decision                    | Choice                         | Rationale                                                                                                                                        |
+| --- | --------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Batch scope                 | All 36 in one pass             | User preference — comprehensive remediation in a single effort                                                                                   |
+| 2   | Type duplication strategy   | Import Zod-inferred types      | Single source of truth; eliminates drift risk. Where relay needs narrower shapes, use Pick/Omit from Zod schemas.                                |
+| 3   | TopologyGraph.tsx splitting | Extract layout + node builders | Move `applyElkLayout` to `lib/elk-layout.ts` and node/edge building to `lib/build-topology-elements.ts`. Gets under 500 lines with minimal risk. |
 
 ---
 
@@ -135,51 +139,51 @@ N/A — this is a code quality remediation, not a bug fix.
 
 ### Critical (4)
 
-| ID | Finding | File | Lines |
-|----|---------|------|-------|
-| C1 | Mesh routes bypass boundary validation (POST /discover, /agents, /deny, DELETE /denied) | `routes/mesh.ts` | 186, 225, 343, 358 |
-| C2 | `extractChatId` accepts chat ID 0 for empty group subjects | `telegram-adapter.ts` | 88-90 |
-| C3 | SubscriptionRegistry not cleared on RelayCore.close() | `relay-core.ts`, `subscription-registry.ts` | 682 |
-| C4 | BindingRouter session persist failure silently drops sessions | `binding-router.ts` | 176-189 |
+| ID  | Finding                                                                                 | File                                        | Lines              |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------ |
+| C1  | Mesh routes bypass boundary validation (POST /discover, /agents, /deny, DELETE /denied) | `routes/mesh.ts`                            | 186, 225, 343, 358 |
+| C2  | `extractChatId` accepts chat ID 0 for empty group subjects                              | `telegram-adapter.ts`                       | 88-90              |
+| C3  | SubscriptionRegistry not cleared on RelayCore.close()                                   | `relay-core.ts`, `subscription-registry.ts` | 682                |
+| C4  | BindingRouter session persist failure silently drops sessions                           | `binding-router.ts`                         | 176-189            |
 
 ### High (11)
 
-| ID | Finding | File | Lines |
-|----|---------|------|-------|
-| H1 | `getAdapter()` exposes raw config without sensitive field masking | `adapter-manager.ts` | 200-207 |
-| H2 | 8 types duplicated between `types.ts` and `relay-schemas.ts` (already drifted) | `types.ts`, `relay-schemas.ts` | various |
-| H3 | `extractOutboundContent` duplicated across telegram and claude-code adapters | `telegram-adapter.ts`, `claude-code-adapter.ts` | 115-128, 596-604 |
-| H4 | BindingStore `writeGeneration` counter can drift with coalesced events | `binding-store.ts` | 202-229 |
-| H5 | DeliveryPipeline dedup timers prevent clean shutdown | `delivery-pipeline.ts` | 213 |
-| H6 | Inconsistent status mutation across adapters (immutable vs in-place) | All 3 adapters | various |
-| H7 | O(n*m) dead-letter lookup in conversations endpoint | `routes/relay.ts` | 90-217 |
-| H8 | Two different `TraceStoreLike` interfaces with different shapes | `types.ts`, `claude-code-adapter.ts` | 210 |
-| H9 | SSE stream has no backpressure handling for slow clients | `routes/relay.ts` | 330 |
-| H10 | `AdapterDelivery` timer variable uses non-null assertion before assignment | `adapter-delivery.ts` | 50-89 |
-| H11 | Mesh registration endpoint lacks boundary validation (covered by C1) | `routes/mesh.ts` | 225 |
+| ID  | Finding                                                                        | File                                            | Lines            |
+| --- | ------------------------------------------------------------------------------ | ----------------------------------------------- | ---------------- |
+| H1  | `getAdapter()` exposes raw config without sensitive field masking              | `adapter-manager.ts`                            | 200-207          |
+| H2  | 8 types duplicated between `types.ts` and `relay-schemas.ts` (already drifted) | `types.ts`, `relay-schemas.ts`                  | various          |
+| H3  | `extractOutboundContent` duplicated across telegram and claude-code adapters   | `telegram-adapter.ts`, `claude-code-adapter.ts` | 115-128, 596-604 |
+| H4  | BindingStore `writeGeneration` counter can drift with coalesced events         | `binding-store.ts`                              | 202-229          |
+| H5  | DeliveryPipeline dedup timers prevent clean shutdown                           | `delivery-pipeline.ts`                          | 213              |
+| H6  | Inconsistent status mutation across adapters (immutable vs in-place)           | All 3 adapters                                  | various          |
+| H7  | O(n\*m) dead-letter lookup in conversations endpoint                           | `routes/relay.ts`                               | 90-217           |
+| H8  | Two different `TraceStoreLike` interfaces with different shapes                | `types.ts`, `claude-code-adapter.ts`            | 210              |
+| H9  | SSE stream has no backpressure handling for slow clients                       | `routes/relay.ts`                               | 330              |
+| H10 | `AdapterDelivery` timer variable uses non-null assertion before assignment     | `adapter-delivery.ts`                           | 50-89            |
+| H11 | Mesh registration endpoint lacks boundary validation (covered by C1)           | `routes/mesh.ts`                                | 225              |
 
 ### Medium (21)
 
-| ID | Finding | File | Lines |
-|----|---------|------|-------|
-| M1 | `register()` and `registerByPath()` share ~30 lines of identical logic | `mesh-core.ts` | 166-287 |
-| M2 | Destructure pattern `{ projectPath: _p, ... }` repeated 4x | `mesh-core.ts` | ~338, 400, 428, 441 |
-| M3 | DefaultCard/ExpandedCard in AgentNode are ~80% identical | `AgentNode.tsx` | 83-270 |
-| M4 | `getStatus()` fetches all agents twice | `mesh-core.ts` | 564-586 |
-| M5 | `useDiscoverAgents` doesn't invalidate cache after auto-import | `use-mesh-discover.ts` | 12 |
-| M6 | `callerNamespace` in AgentListQuerySchema silently ignored by `listWithHealth()` | `routes/mesh.ts` | 274 |
-| M7 | Inconsistent `Z` suffix naming on Zod-inferred types | `relay-schemas.ts` | various |
-| M8 | Webhook not deleted from Telegram on `stop()` | `telegram-adapter.ts` | 347-382 |
-| M9 | `unreachableCount` in MeshStatus but `unreachable` not in AgentHealthStatus enum | `mesh-schemas.ts` | 24-27, 287-299 |
-| M10 | TopologyGraph.tsx is 753 lines (must-split threshold is 500) | `TopologyGraph.tsx` | all |
-| M11 | Binding router test envelopes use wrong field names | `binding-router.test.ts` | 71, 85, 108 |
-| M12 | Pulse schedule matching uses fragile path-basename heuristic | `routes/mesh.ts` | 142-158 |
-| M13 | Route param `:subject` in relay routes only captures up to first dot | `routes/relay.ts` | 251 |
-| M14 | `UpdateAgentRequestSchema` manually re-lists fields instead of using `.pick().partial()` | `mesh-schemas.ts` | 202-212 |
-| M15 | Max polling-reconnect exhaustion doesn't set terminal state or log | `telegram-adapter.ts` | 510-539 |
-| M16 | Adapter error code `statusMap` duplicated across POST/DELETE/PATCH routes | `routes/relay.ts` | 438-464 |
-| M17 | `WatcherManager.stopWatcher` doesn't await `watcher.close()` | `watcher-manager.ts` | 93 |
-| M18 | `RelayBudgetSchema` allows negative TTL | `relay-schemas.ts` | 37-45 |
-| M19 | Topology polling at 15s may cause unnecessary load | `use-mesh-topology.ts` | 20 |
-| M20 | Missing test: caption-only Telegram messages | `telegram-adapter.test.ts` | — |
-| M21 | Missing test: `extractOutboundContent` fallback paths | `telegram-adapter.test.ts` | — |
+| ID  | Finding                                                                                  | File                       | Lines               |
+| --- | ---------------------------------------------------------------------------------------- | -------------------------- | ------------------- |
+| M1  | `register()` and `registerByPath()` share ~30 lines of identical logic                   | `mesh-core.ts`             | 166-287             |
+| M2  | Destructure pattern `{ projectPath: _p, ... }` repeated 4x                               | `mesh-core.ts`             | ~338, 400, 428, 441 |
+| M3  | DefaultCard/ExpandedCard in AgentNode are ~80% identical                                 | `AgentNode.tsx`            | 83-270              |
+| M4  | `getStatus()` fetches all agents twice                                                   | `mesh-core.ts`             | 564-586             |
+| M5  | `useDiscoverAgents` doesn't invalidate cache after auto-import                           | `use-mesh-discover.ts`     | 12                  |
+| M6  | `callerNamespace` in AgentListQuerySchema silently ignored by `listWithHealth()`         | `routes/mesh.ts`           | 274                 |
+| M7  | Inconsistent `Z` suffix naming on Zod-inferred types                                     | `relay-schemas.ts`         | various             |
+| M8  | Webhook not deleted from Telegram on `stop()`                                            | `telegram-adapter.ts`      | 347-382             |
+| M9  | `unreachableCount` in MeshStatus but `unreachable` not in AgentHealthStatus enum         | `mesh-schemas.ts`          | 24-27, 287-299      |
+| M10 | TopologyGraph.tsx is 753 lines (must-split threshold is 500)                             | `TopologyGraph.tsx`        | all                 |
+| M11 | Binding router test envelopes use wrong field names                                      | `binding-router.test.ts`   | 71, 85, 108         |
+| M12 | Pulse schedule matching uses fragile path-basename heuristic                             | `routes/mesh.ts`           | 142-158             |
+| M13 | Route param `:subject` in relay routes only captures up to first dot                     | `routes/relay.ts`          | 251                 |
+| M14 | `UpdateAgentRequestSchema` manually re-lists fields instead of using `.pick().partial()` | `mesh-schemas.ts`          | 202-212             |
+| M15 | Max polling-reconnect exhaustion doesn't set terminal state or log                       | `telegram-adapter.ts`      | 510-539             |
+| M16 | Adapter error code `statusMap` duplicated across POST/DELETE/PATCH routes                | `routes/relay.ts`          | 438-464             |
+| M17 | `WatcherManager.stopWatcher` doesn't await `watcher.close()`                             | `watcher-manager.ts`       | 93                  |
+| M18 | `RelayBudgetSchema` allows negative TTL                                                  | `relay-schemas.ts`         | 37-45               |
+| M19 | Topology polling at 15s may cause unnecessary load                                       | `use-mesh-topology.ts`     | 20                  |
+| M20 | Missing test: caption-only Telegram messages                                             | `telegram-adapter.test.ts` | —                   |
+| M21 | Missing test: `extractOutboundContent` fallback paths                                    | `telegram-adapter.test.ts` | —                   |

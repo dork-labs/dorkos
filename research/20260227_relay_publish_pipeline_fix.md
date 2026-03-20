@@ -1,5 +1,5 @@
 ---
-title: "Relay Publish Pipeline Fix: Message Bus Patterns and Adapter Delivery Research"
+title: 'Relay Publish Pipeline Fix: Message Bus Patterns and Adapter Delivery Research'
 date: 2026-02-27
 type: implementation
 status: archived
@@ -64,6 +64,7 @@ Production message buses consistently follow this principle:
 - **Kafka**: Dead Letter Queues are implemented at the consumer level, after all consumer groups have had a chance to process. Messages are only dead-lettered after retry exhaustion at the individual consumer level, not at the topic level. -- [Confluent Guide](https://www.confluent.io/learn/kafka-dead-letter-queue/)
 
 **Best practice from [OneUptime DLQ Patterns](https://oneuptime.com/blog/post/2026-02-09-dead-letter-queue-patterns/view)**: Dead-lettering should occur only after:
+
 1. All delivery mechanisms have been attempted
 2. Retry limits have been exhausted
 3. The message is definitively undeliverable
@@ -112,11 +113,13 @@ The publish pipeline should be restructured from its current 7-step linear flow 
 ```
 
 Pros:
+
 - Smallest code change (move adapter block before the early return check)
 - Adapter delivery stays non-fatal (try/catch preserved)
 - Easy to review and test
 
 Cons:
+
 - Dead-letter logic becomes slightly more complex (must check both Maildir and adapter delivery)
 - Pipeline still feels sequential -- adapter delivery is an afterthought
 
@@ -136,6 +139,7 @@ Cons:
 ```
 
 Pros:
+
 - Treats adapters and Maildir endpoints uniformly as "delivery targets"
 - Dead-lettering only happens when NO target exists (correct semantics)
 - Natural extension point for future delivery mechanisms
@@ -143,6 +147,7 @@ Pros:
 - Closer to how NATS and RabbitMQ model their delivery
 
 Cons:
+
 - Larger refactor than Solution A
 - Need to define a common delivery target interface
 - Adapter failures should still be non-fatal, which needs careful handling in the fan-out
@@ -160,11 +165,13 @@ Cons:
 ```
 
 Pros:
+
 - Clear two-phase model, easy to reason about
 - Adapter is explicitly the "alternate delivery path" (like RabbitMQ AE)
 - Dead-letter only when both phases fail
 
 Cons:
+
 - Still feels like adapters are "secondary" -- slightly misleading for subjects where adapters are the primary target
 
 #### Recommendation: Solution B (Unified Fan-Out)
@@ -176,9 +183,7 @@ Solution B is the cleanest long-term approach. Here is a concrete implementation
 
 // 5. Collect all delivery targets
 const maildirTargets = this.findMatchingEndpoints(subject);
-const adapterTarget = this.adapterRegistry
-  ? this.adapterRegistry.getBySubject(subject)
-  : undefined;
+const adapterTarget = this.adapterRegistry ? this.adapterRegistry.getBySubject(subject) : undefined;
 
 const hasTargets = maildirTargets.length > 0 || adapterTarget !== undefined;
 
@@ -224,6 +229,7 @@ return {
 ```
 
 **Important**: The `AdapterRegistryLike` interface currently lacks a `getBySubject()` method. It only has `deliver()`, which internally calls `getBySubject()`. To check for adapter presence without triggering delivery, either:
+
 1. Add a `hasMatch(subject: string): boolean` method to `AdapterRegistryLike`
 2. Use the adapter registry's `deliver()` return value (returns `false` if no adapter matched) and simply always call it
 
@@ -277,14 +283,14 @@ return {
 
 Based on research across Azure Service Bus, RabbitMQ, Kafka, and the EIP Dead Letter Channel pattern, here are the corrected DLQ semantics:
 
-| Scenario | Current Behavior | Correct Behavior |
-|---|---|---|
-| No Maildir, no adapter | DLQ + return | DLQ (correct) |
-| No Maildir, adapter matches | DLQ + return (SKIPS adapter) | Adapter delivery only, no DLQ |
-| Maildir matches, no adapter | Maildir delivery | Maildir delivery (correct) |
-| Maildir + adapter both match | Maildir + adapter delivery | Both deliver (correct, but currently unreachable if Maildir finds 0) |
-| Maildir matches, adapter fails | Maildir delivery (adapter error swallowed) | Maildir delivery, log adapter error (correct) |
-| No Maildir, adapter fails | DLQ (wrong path) | DLQ with reason "adapter delivery failed" |
+| Scenario                       | Current Behavior                           | Correct Behavior                                                     |
+| ------------------------------ | ------------------------------------------ | -------------------------------------------------------------------- |
+| No Maildir, no adapter         | DLQ + return                               | DLQ (correct)                                                        |
+| No Maildir, adapter matches    | DLQ + return (SKIPS adapter)               | Adapter delivery only, no DLQ                                        |
+| Maildir matches, no adapter    | Maildir delivery                           | Maildir delivery (correct)                                           |
+| Maildir + adapter both match   | Maildir + adapter delivery                 | Both deliver (correct, but currently unreachable if Maildir finds 0) |
+| Maildir matches, adapter fails | Maildir delivery (adapter error swallowed) | Maildir delivery, log adapter error (correct)                        |
+| No Maildir, adapter fails      | DLQ (wrong path)                           | DLQ with reason "adapter delivery failed"                            |
 
 ### Adapter System Improvements
 
@@ -382,6 +388,7 @@ The `AdapterManager` already supports hot-reload via chokidar. Improvements:
 Based on research into [ActiveMQ](https://activemq.apache.org/components/classic/documentation/message-redelivery-and-dlq-handling) and [Google Cloud Pub/Sub](https://cloud.google.com/pubsub/docs/handling-failures):
 
 When some delivery targets succeed and others fail:
+
 1. Do NOT dead-letter the message (it was partially delivered)
 2. Record the partial delivery in the index (e.g., `status: 'partial'`)
 3. Log the failure with the specific target that failed
@@ -404,6 +411,7 @@ The current relay code handles this correctly for Maildir endpoints (individual 
 ## Sources & Evidence
 
 ### Message Bus Architecture
+
 - [NATS Subject-Based Messaging](https://docs.nats.io/nats-concepts/subjects) - Subject matching with wildcards, fan-out delivery
 - [NATS JetStream Consumers](https://docs.nats.io/nats-concepts/jetstream/consumers) - Push vs pull consumers, interest-based retention
 - [NATS JetStream Model Deep Dive](https://docs.nats.io/using-nats/developer/develop_jetstream/model_deep_dive) - Interest policy retention behavior
@@ -413,27 +421,32 @@ The current relay code handles this correctly for Maildir endpoints (individual 
 - [Apache Kafka Dead Letter Queue Guide](https://www.confluent.io/learn/kafka-dead-letter-queue/) - Kafka DLQ patterns and implementation
 
 ### Dead Letter Queue Patterns
+
 - [Azure Service Bus Dead-Letter Queues](https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-dead-letter-queues) - "Hold messages that can't be delivered to any receiver"
 - [Dead Letter Channel - Enterprise Integration Patterns](https://www.enterpriseintegrationpatterns.com/patterns/messaging/DeadLetterChannel.html) - Canonical DLQ pattern definition
 - [Dead Letter Queue Patterns - OneUptime](https://oneuptime.com/blog/post/2026-02-09-dead-letter-queue-patterns/view) - DLQ implementation across Kafka, RabbitMQ, NATS
 - [Dead Letter Queue - Wikipedia](https://en.wikipedia.org/wiki/Dead_letter_queue) - General DLQ concepts
 
 ### Adapter and Plugin Patterns
+
 - [Channel Adapter - Enterprise Integration Patterns](https://www.enterpriseintegrationpatterns.com/patterns/messaging/ChannelAdapter.html) - Connecting applications to messaging systems via adapters
 - [Message Endpoint - Enterprise Integration Patterns](https://www.enterpriseintegrationpatterns.com/patterns/messaging/MessageEndpoint.html) - Application-to-messaging endpoint interface
 - [Message Broker - Enterprise Integration Patterns](https://www.enterpriseintegrationpatterns.com/patterns/messaging/MessageBroker.html) - Central routing and delivery patterns
 
 ### Resilience Patterns
+
 - [Circuit Breaker Pattern - AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/circuit-breaker.html) - Three-state circuit breaker (closed/open/half-open)
 - [Circuit Breaker Pattern - Microservices.io](https://microservices.io/patterns/reliability/circuit-breaker.html) - Pattern definition with adapter context
 - [MassTransit Middleware](https://masstransit.io/documentation/configuration/middleware) - Publish pipeline middleware and filter patterns
 - [MassTransit Observability](https://masstransit.io/documentation/configuration/observability) - Message observer patterns for monitoring
 
 ### Observability
+
 - [Understanding Distributed Tracing with a Message Bus - Honeycomb](https://www.honeycomb.io/blog/understanding-distributed-tracing-message-bus) - Trace context propagation, span links vs parent-child for fan-out
 - [Design Patterns: Event Bus](https://dzone.com/articles/design-patterns-event-bus) - Event bus priority ordering and subscriber management
 
 ### Graceful Shutdown
+
 - [Health Checks and Graceful Shutdown - Express.js](https://expressjs.com/en/advanced/healthcheck-graceful-shutdown.html) - Node.js shutdown patterns
 - [Graceful Shutdown Handler in Node.js - OneUptime](https://oneuptime.com/blog/post/2026-01-06-nodejs-graceful-shutdown-handler/view) - SIGTERM handling and connection draining
 

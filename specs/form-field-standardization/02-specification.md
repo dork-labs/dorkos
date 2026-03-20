@@ -51,15 +51,16 @@ Additionally, the `ContextBlockSection` in `agent-settings/ui/ContextTab.tsx` an
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Notes |
-|---|---|---|
-| Shadcn Field | Latest (via `pnpm dlx shadcn@latest add field`) | Copy-pasted, not npm dependency |
-| React | ^19.0.0 | Already installed |
-| Tailwind CSS | ^4.0.0 | Already installed; native `@container` support |
-| class-variance-authority | ^0.7.1 | Already installed; used by Shadcn primitives |
-| lucide-react | latest | Already installed; provides Eye/EyeOff icons |
+| Dependency               | Version                                         | Notes                                          |
+| ------------------------ | ----------------------------------------------- | ---------------------------------------------- |
+| Shadcn Field             | Latest (via `pnpm dlx shadcn@latest add field`) | Copy-pasted, not npm dependency                |
+| React                    | ^19.0.0                                         | Already installed                              |
+| Tailwind CSS             | ^4.0.0                                          | Already installed; native `@container` support |
+| class-variance-authority | ^0.7.1                                          | Already installed; used by Shadcn primitives   |
+| lucide-react             | latest                                          | Already installed; provides Eye/EyeOff icons   |
 
 **Shadcn configuration** (`apps/client/components.json`):
+
 - Style: `new-york`
 - Base color: `zinc`
 - Aliases: `components` → `@/layers/shared/ui`, `utils` → `@/layers/shared/lib/utils`
@@ -77,18 +78,18 @@ cd apps/client && pnpm dlx shadcn@latest add field
 
 This creates `apps/client/src/layers/shared/ui/field.tsx` with 10 exports:
 
-| Component | Purpose |
-|---|---|
-| `Field` | Core wrapper with `orientation` prop (`vertical` / `horizontal` / `responsive`) |
-| `FieldLabel` | `<label>` with `htmlFor` association |
-| `FieldDescription` | Helper text with `aria-describedby` |
-| `FieldError` | Error container with `role="alert"`; accepts `children` or `errors` array |
-| `FieldContent` | Flex-column grouper for label + description |
-| `FieldTitle` | Title variant of label inside `FieldContent` |
-| `FieldGroup` | Stacks multiple `Field` elements; container query root |
-| `FieldSet` | Semantic `<fieldset>` wrapper |
-| `FieldLegend` | `<legend>` for `FieldSet` |
-| `FieldSeparator` | Visual divider between fields |
+| Component          | Purpose                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `Field`            | Core wrapper with `orientation` prop (`vertical` / `horizontal` / `responsive`) |
+| `FieldLabel`       | `<label>` with `htmlFor` association                                            |
+| `FieldDescription` | Helper text with `aria-describedby`                                             |
+| `FieldError`       | Error container with `role="alert"`; accepts `children` or `errors` array       |
+| `FieldContent`     | Flex-column grouper for label + description                                     |
+| `FieldTitle`       | Title variant of label inside `FieldContent`                                    |
+| `FieldGroup`       | Stacks multiple `Field` elements; container query root                          |
+| `FieldSet`         | Semantic `<fieldset>` wrapper                                                   |
+| `FieldLegend`      | `<legend>` for `FieldSet`                                                       |
+| `FieldSeparator`   | Visual divider between fields                                                   |
 
 Add all exports to `apps/client/src/layers/shared/ui/index.ts`.
 
@@ -196,16 +197,12 @@ function PasswordInput({
 
   return (
     <div className="relative">
-      <Input
-        type={isVisible ? 'text' : 'password'}
-        className={cn('pr-10', className)}
-        {...props}
-      />
+      <Input type={isVisible ? 'text' : 'password'} className={cn('pr-10', className)} {...props} />
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="absolute right-0 top-0 h-full px-3"
+        className="absolute top-0 right-0 h-full px-3"
         onClick={toggleVisibility}
         aria-label={isVisible ? 'Hide password' : 'Show password'}
       >
@@ -219,7 +216,7 @@ export { PasswordInput };
 export type { PasswordInputProps };
 ```
 
-**Note on sentinel mode:** Sentinel behavior (clearing on focus, showing "Saved — enter a new one to replace") is a *consumer concern*, not a PasswordInput concern. The calling code passes `onFocus`, `placeholder`, and `value` props. PasswordInput just handles visibility toggling.
+**Note on sentinel mode:** Sentinel behavior (clearing on focus, showing "Saved — enter a new one to replace") is a _consumer concern_, not a PasswordInput concern. The calling code passes `onFocus`, `placeholder`, and `value` props. PasswordInput just handles visibility toggling.
 
 ### 6.4 Update Shared UI Barrel
 
@@ -250,6 +247,7 @@ export type { SettingRowProps } from './setting-row';
 Each migration follows the same mechanical pattern:
 
 **Before:**
+
 ```tsx
 <div className="flex items-center justify-between gap-4">
   <div className="min-w-0">
@@ -263,6 +261,7 @@ Each migration follows the same mechanical pattern:
 ```
 
 **After:**
+
 ```tsx
 <SettingRow
   label="Cross-client sync"
@@ -276,33 +275,33 @@ Each migration follows the same mechanical pattern:
 
 **Priority 1 — Settings feature:**
 
-| File | Patterns | Notes |
-|---|---|---|
-| `features/settings/ui/SettingsDialog.tsx` | 1 (delete private `SettingRow`) | Replace import, delete function at lines 338-356 |
-| `features/settings/ui/tabs/AdvancedTab.tsx` | 4 | Lines 31-42, 46-57, 66-80, 84-98 |
-| `features/settings/ui/tabs/ToolsTab.tsx` | 1 (`ToolBlockSection`) | Replace flex row inside the section component |
-| `features/settings/ui/tabs/PersonaTab.tsx` | 1 | Enable persona toggle row |
-| `features/settings/ui/TunnelDialog.tsx` | 1 | Auth toggle at bottom |
+| File                                        | Patterns                        | Notes                                            |
+| ------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| `features/settings/ui/SettingsDialog.tsx`   | 1 (delete private `SettingRow`) | Replace import, delete function at lines 338-356 |
+| `features/settings/ui/tabs/AdvancedTab.tsx` | 4                               | Lines 31-42, 46-57, 66-80, 84-98                 |
+| `features/settings/ui/tabs/ToolsTab.tsx`    | 1 (`ToolBlockSection`)          | Replace flex row inside the section component    |
+| `features/settings/ui/tabs/PersonaTab.tsx`  | 1                               | Enable persona toggle row                        |
+| `features/settings/ui/TunnelDialog.tsx`     | 1                               | Auth toggle at bottom                            |
 
 **Priority 2 — Agent settings feature:**
 
-| File | Patterns | Notes |
-|---|---|---|
-| `features/agent-settings/ui/ContextTab.tsx` | 1 (`ContextBlockSection`) | Replace flex row inside section component |
-| `features/agent-settings/ui/CapabilitiesTab.tsx` | 1+ (`ToolGroupRow`) | Replace flex row in the sub-component |
+| File                                             | Patterns                  | Notes                                     |
+| ------------------------------------------------ | ------------------------- | ----------------------------------------- |
+| `features/agent-settings/ui/ContextTab.tsx`      | 1 (`ContextBlockSection`) | Replace flex row inside section component |
+| `features/agent-settings/ui/CapabilitiesTab.tsx` | 1+ (`ToolGroupRow`)       | Replace flex row in the sub-component     |
 
 **Priority 3 — Relay feature:**
 
-| File | Patterns | Notes |
-|---|---|---|
+| File                                     | Patterns    | Notes                                     |
+| ---------------------------------------- | ----------- | ----------------------------------------- |
 | `features/relay/ui/ConfigFieldInput.tsx` | 0 (Phase 3) | Uses vertical layout — handled separately |
 
 **Priority 4 — Mesh and shared:**
 
-| File | Patterns | Notes |
-|---|---|---|
-| `features/mesh/ui/ServerTab.tsx` | 1+ | Tunnel manage row |
-| `shared/ui/tunnel-dialog.tsx` | 1 | Auth toggle |
+| File                             | Patterns | Notes             |
+| -------------------------------- | -------- | ----------------- |
+| `features/mesh/ui/ServerTab.tsx` | 1+       | Tunnel manage row |
+| `shared/ui/tunnel-dialog.tsx`    | 1        | Auth toggle       |
 
 **Important:** Some inline patterns have **additional elements** beyond label + description + control (e.g., conditional badges in `ToolBlockSection`, reset buttons in `IdentityTab`). For these, the `children` prop accommodates wrapping multiple elements:
 
@@ -322,6 +321,7 @@ For patterns that **don't match** the SettingRow shape (e.g., AdvancedTab danger
 Replace the manual layout wrapper in `ConfigFieldInput` with Shadcn Field:
 
 **Before (lines 221-252):**
+
 ```tsx
 return (
   <div className="space-y-2">
@@ -341,25 +341,22 @@ return (
 ```
 
 **After:**
+
 ```tsx
 return (
   <Field orientation="vertical">
     <FieldLabel
       htmlFor={fieldId}
       className={cn(
-        field.required && !isSentinel && 'after:ml-0.5 after:text-red-500 after:content-["*"]',
+        field.required && !isSentinel && 'after:ml-0.5 after:text-red-500 after:content-["*"]'
       )}
     >
       {field.label}
     </FieldLabel>
     {renderControl()}
-    {field.description && (
-      <FieldDescription>{field.description}</FieldDescription>
-    )}
+    {field.description && <FieldDescription>{field.description}</FieldDescription>}
     {field.helpMarkdown && (
-      <Collapsible>
-        {/* ... existing helpMarkdown collapsible unchanged ... */}
-      </Collapsible>
+      <Collapsible>{/* ... existing helpMarkdown collapsible unchanged ... */}</Collapsible>
     )}
     <FieldError errors={(error ?? patternError) ? [error ?? patternError] : []} />
   </Field>
@@ -410,12 +407,14 @@ case 'password': {
 **Extend `apps/client/src/dev/showcases/ComposedFormShowcases.tsx`** with two new sections:
 
 **SettingRow showcase:**
+
 - SettingRow with Switch control
 - SettingRow with Select control
 - SettingRow with destructive Button control
 - SettingRow with badge + Switch (compound children)
 
 **PasswordInput showcase:**
+
 - Default (hidden)
 - With `visibleByDefault={true}`
 - Sentinel mode demonstration (placeholder text, clears on focus)
@@ -444,6 +443,7 @@ case 'password': {
 This is an **internal refactoring** — end users see no change. The visual appearance of all settings rows, adapter wizard fields, and tunnel dialogs must remain pixel-identical before and after migration.
 
 Developers benefit from:
+
 - A single `<SettingRow>` import instead of 10+ lines of inline layout
 - Accessible form fields by default (no manual aria wiring)
 - `PasswordInput` reusable across any feature that needs a secret field
@@ -600,11 +600,11 @@ No open questions — all decisions were resolved during ideation (see Section 6
 
 ## 14. Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| ADR-0008 | Promote Shared Components for Cross-Feature Reuse | Defines the extraction pattern — components needed by >1 feature must be promoted to shared layer. SettingRow and PasswordInput follow this ADR directly. |
-| ADR-0063 | Use Shadcn CommandDialog for Global Agent Palette | Demonstrates successful Shadcn component integration pattern. |
-| ADR-0064 | Use Shadcn Sidebar for Standalone Layout | Shows controlled-mode pattern for bridging Shadcn state to Zustand. |
+| ADR      | Title                                             | Relevance                                                                                                                                                                                     |
+| -------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0008 | Promote Shared Components for Cross-Feature Reuse | Defines the extraction pattern — components needed by >1 feature must be promoted to shared layer. SettingRow and PasswordInput follow this ADR directly.                                     |
+| ADR-0063 | Use Shadcn CommandDialog for Global Agent Palette | Demonstrates successful Shadcn component integration pattern.                                                                                                                                 |
+| ADR-0064 | Use Shadcn Sidebar for Standalone Layout          | Shows controlled-mode pattern for bridging Shadcn state to Zustand.                                                                                                                           |
 | ADR-0097 | Adopt tailwind-variants for Multi-Slot Components | CVA remains for single-element Shadcn primitives (like Field sub-components); tailwind-variants for multi-slot feature components. SettingRow uses neither — it's a pure composition wrapper. |
 
 ## 15. References

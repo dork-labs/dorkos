@@ -69,9 +69,7 @@ describe('VersionItem', () => {
       fireEvent.click(screen.getByRole('button'));
       expect(screen.getByText('Update Available')).toBeInTheDocument();
       // Version transition text contains both versions separated by arrow
-      const versionDiv = screen.getByText((_, el) =>
-        el?.textContent === 'v1.2.3→v1.2.4'
-      );
+      const versionDiv = screen.getByText((_, el) => el?.textContent === 'v1.2.3→v1.2.4');
       expect(versionDiv).toBeInTheDocument();
     });
 
@@ -102,9 +100,7 @@ describe('VersionItem', () => {
 
     it('has feature aria-label', () => {
       render(<VersionItem version="1.2.3" latestVersion="1.3.0" />);
-      expect(
-        screen.getByLabelText('Feature update available: v1.3.0')
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Feature update available: v1.3.0')).toBeInTheDocument();
     });
 
     it('opens popover with version transition and "What\'s new" link', () => {

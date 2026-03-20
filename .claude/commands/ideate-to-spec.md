@@ -553,6 +553,7 @@ Read `decisions/manifest.json`. Check if any entries have `"extractedFrom": "{sl
 #### 7.0.2: Read Spec Documents
 
 Read both:
+
 1. `specs/{slug}/01-ideation.md`
 2. `specs/{slug}/02-specification.md`
 
@@ -560,15 +561,16 @@ Read both:
 
 Identify decision candidates by scanning for these signals (from the `writing-adrs` skill):
 
-| Signal | Pattern |
-|--------|---------|
-| Technology choices | "We chose X", "Using X instead of Y", library/framework selections |
-| Pattern adoption | Architectural patterns, design systems, data flow approaches |
-| Trade-off resolutions | "We decided to...", "The recommended approach is..." |
-| Rejected alternatives | "We considered X but...", "Option A vs Option B" |
-| Deliberate exclusions | "We will not...", "Out of scope because..." |
+| Signal                | Pattern                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| Technology choices    | "We chose X", "Using X instead of Y", library/framework selections |
+| Pattern adoption      | Architectural patterns, design systems, data flow approaches       |
+| Trade-off resolutions | "We decided to...", "The recommended approach is..."               |
+| Rejected alternatives | "We considered X but...", "Option A vs Option B"                   |
+| Deliberate exclusions | "We will not...", "Out of scope because..."                        |
 
 For each candidate, extract:
+
 - **Title**: Short imperative form (e.g., "Use SSE for Server-to-Client Streaming")
 - **Context**: 2-5 sentences from the spec's problem/research sections
 - **Decision**: 2-5 sentences from the spec's design/recommendation sections

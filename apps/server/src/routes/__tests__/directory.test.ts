@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-
 // Mock boundary module
 const mockGetBoundary = vi.fn();
 const mockValidateBoundary = vi.fn();

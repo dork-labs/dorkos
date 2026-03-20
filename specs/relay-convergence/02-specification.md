@@ -30,6 +30,7 @@ Today, DorkOS has three communication pathways:
 3. **External/Inter-agent → Relay** — Messages flow through RelayCore with budget envelopes
 
 Paths 1 and 2 bypass Relay entirely. This means:
+
 - Pulse dispatches have no delivery receipts, budget envelopes, or dead letter handling
 - Console messages don't appear in the unified Relay message log
 - No end-to-end message tracing across the system
@@ -60,14 +61,14 @@ The convergence eliminates these gaps by making Relay the universal transport fo
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `@dorkos/relay` | workspace | RelayCore message bus (no changes needed) |
-| `@dorkos/shared` | workspace | Zod schemas for trace types, extended StreamEvent |
-| `better-sqlite3` | existing | Trace storage in `~/.dork/relay/index.db` |
-| `croner` | existing | Cron scheduling (no changes to cron logic) |
-| `chokidar` | existing | File watching for session sync (unchanged) |
-| `@tanstack/react-query` | existing | Client data fetching for traces and metrics |
+| Dependency              | Version   | Purpose                                           |
+| ----------------------- | --------- | ------------------------------------------------- |
+| `@dorkos/relay`         | workspace | RelayCore message bus (no changes needed)         |
+| `@dorkos/shared`        | workspace | Zod schemas for trace types, extended StreamEvent |
+| `better-sqlite3`        | existing  | Trace storage in `~/.dork/relay/index.db`         |
+| `croner`                | existing  | Cron scheduling (no changes to cron logic)        |
+| `chokidar`              | existing  | File watching for session sync (unchanged)        |
+| `@tanstack/react-query` | existing  | Client data fetching for traces and metrics       |
 
 No new external dependencies required.
 
@@ -191,6 +192,7 @@ export class MessageReceiver {
 The `executeRun` method gains a Relay path controlled by `isRelayEnabled()`.
 
 **Current flow:**
+
 ```
 SchedulerService.executeRun()
   → agentManager.ensureSession()
@@ -199,6 +201,7 @@ SchedulerService.executeRun()
 ```
 
 **New flow (when Relay enabled):**
+
 ```
 SchedulerService.executeRun()
   → relay.publish('relay.system.pulse.{scheduleId}', envelope)
@@ -284,6 +287,7 @@ export interface PulseDispatchPayload {
 ### 3. Console Migration
 
 **Modified files:**
+
 - `apps/server/src/routes/sessions.ts` — POST handler
 - `apps/server/src/services/session/session-broadcaster.ts` — Fan-in Relay events
 - `apps/client/src/layers/features/chat/model/use-chat-session.ts` — Receipt+SSE protocol
@@ -331,7 +335,10 @@ router.post('/:id/messages', async (req, res) => {
         // ... existing SDK session ID tracking ...
       }
     } catch (err) {
-      sendSSEEvent(res, { type: 'error', data: { message: err instanceof Error ? err.message : 'Unknown error' } });
+      sendSSEEvent(res, {
+        type: 'error',
+        data: { message: err instanceof Error ? err.message : 'Unknown error' },
+      });
     } finally {
       agentManager.releaseLock(sessionId, clientId);
       endSSEStream(res);
@@ -374,13 +381,13 @@ export class SessionBroadcaster {
 
 **New SSE event types on `GET /api/sessions/:id/stream`:**
 
-| Event Type | Data | When |
-|---|---|---|
-| `sync_connected` | `{ sessionId }` | On initial connection (existing) |
-| `sync_update` | `{ sessionId, timestamp }` | JSONL file change (existing) |
-| `relay_message` | StreamEvent (text_delta, tool_call_*, etc.) | Agent response chunk via Relay |
-| `relay_receipt` | `{ messageId, traceId }` | Message accepted by Relay |
-| `message_delivered` | `{ messageId, subject, status }` | Delivery confirmation |
+| Event Type          | Data                                         | When                             |
+| ------------------- | -------------------------------------------- | -------------------------------- |
+| `sync_connected`    | `{ sessionId }`                              | On initial connection (existing) |
+| `sync_update`       | `{ sessionId, timestamp }`                   | JSONL file change (existing)     |
+| `relay_message`     | StreamEvent (text*delta, tool_call*\*, etc.) | Agent response chunk via Relay   |
+| `relay_receipt`     | `{ messageId, traceId }`                     | Message accepted by Relay        |
+| `message_delivered` | `{ messageId, subject, status }`             | Delivery confirmation            |
 
 #### Client-Side: use-chat-session.ts Protocol Change
 
@@ -468,16 +475,24 @@ export class TraceStore {
   }
 
   /** Record a new trace span when a message is published. */
-  insertSpan(span: TraceSpan): void { /* INSERT INTO message_traces */ }
+  insertSpan(span: TraceSpan): void {
+    /* INSERT INTO message_traces */
+  }
 
   /** Update span status (e.g., pending → delivered → processed). */
-  updateSpan(messageId: string, update: Partial<TraceSpan>): void { /* UPDATE */ }
+  updateSpan(messageId: string, update: Partial<TraceSpan>): void {
+    /* UPDATE */
+  }
 
   /** Get all spans for a trace (conversation thread). */
-  getTrace(traceId: string): TraceSpan[] { /* SELECT ... ORDER BY sent_at */ }
+  getTrace(traceId: string): TraceSpan[] {
+    /* SELECT ... ORDER BY sent_at */
+  }
 
   /** Get delivery metrics (aggregate queries). */
-  getMetrics(): DeliveryMetrics { /* COUNT, AVG queries */ }
+  getMetrics(): DeliveryMetrics {
+    /* COUNT, AVG queries */
+  }
 }
 ```
 
@@ -495,48 +510,52 @@ The trace is wired into RelayCore via a publish hook / event listener pattern �
 **Added to `relay-schemas.ts`:**
 
 ```typescript
-export const TraceSpanSchema = z.object({
-  messageId: z.string(),
-  traceId: z.string(),
-  spanId: z.string(),
-  parentSpanId: z.string().nullable(),
-  subject: z.string(),
-  fromEndpoint: z.string(),
-  toEndpoint: z.string(),
-  status: z.enum(['pending', 'delivered', 'processed', 'failed', 'dead_lettered']),
-  budgetHopsUsed: z.number().int().nullable(),
-  budgetTtlRemainingMs: z.number().int().nullable(),
-  sentAt: z.number().int(),
-  deliveredAt: z.number().int().nullable(),
-  processedAt: z.number().int().nullable(),
-  error: z.string().nullable(),
-}).openapi('TraceSpan');
+export const TraceSpanSchema = z
+  .object({
+    messageId: z.string(),
+    traceId: z.string(),
+    spanId: z.string(),
+    parentSpanId: z.string().nullable(),
+    subject: z.string(),
+    fromEndpoint: z.string(),
+    toEndpoint: z.string(),
+    status: z.enum(['pending', 'delivered', 'processed', 'failed', 'dead_lettered']),
+    budgetHopsUsed: z.number().int().nullable(),
+    budgetTtlRemainingMs: z.number().int().nullable(),
+    sentAt: z.number().int(),
+    deliveredAt: z.number().int().nullable(),
+    processedAt: z.number().int().nullable(),
+    error: z.string().nullable(),
+  })
+  .openapi('TraceSpan');
 
-export const DeliveryMetricsSchema = z.object({
-  totalMessages: z.number().int(),
-  deliveredCount: z.number().int(),
-  failedCount: z.number().int(),
-  deadLetteredCount: z.number().int(),
-  avgDeliveryLatencyMs: z.number().nullable(),
-  p95DeliveryLatencyMs: z.number().nullable(),
-  activeEndpoints: z.number().int(),
-  budgetRejections: z.object({
-    hopLimit: z.number().int(),
-    ttlExpired: z.number().int(),
-    cycleDetected: z.number().int(),
-    budgetExhausted: z.number().int(),
-  }),
-}).openapi('DeliveryMetrics');
+export const DeliveryMetricsSchema = z
+  .object({
+    totalMessages: z.number().int(),
+    deliveredCount: z.number().int(),
+    failedCount: z.number().int(),
+    deadLetteredCount: z.number().int(),
+    avgDeliveryLatencyMs: z.number().nullable(),
+    p95DeliveryLatencyMs: z.number().nullable(),
+    activeEndpoints: z.number().int(),
+    budgetRejections: z.object({
+      hopLimit: z.number().int(),
+      ttlExpired: z.number().int(),
+      cycleDetected: z.number().int(),
+      budgetExhausted: z.number().int(),
+    }),
+  })
+  .openapi('DeliveryMetrics');
 ```
 
 ### 5. Trace API Endpoints
 
 **Extended in:** `apps/server/src/routes/relay.ts`
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/relay/messages/:id/trace` | Full trace for a message (all spans sharing the traceId) |
-| `GET` | `/api/relay/metrics` | Aggregate delivery metrics |
+| Method | Path                            | Description                                              |
+| ------ | ------------------------------- | -------------------------------------------------------- |
+| `GET`  | `/api/relay/messages/:id/trace` | Full trace for a message (all spans sharing the traceId) |
+| `GET`  | `/api/relay/metrics`            | Aggregate delivery metrics                               |
 
 ```typescript
 // GET /api/relay/messages/:id/trace
@@ -562,10 +581,10 @@ router.get('/metrics', (_req, res) => {
 
 New tools for agent access to tracing:
 
-| Tool | Description |
-|---|---|
-| `relay_get_trace` | Get full trace for a message ID |
-| `relay_get_metrics` | Get delivery metrics snapshot |
+| Tool                | Description                     |
+| ------------------- | ------------------------------- |
+| `relay_get_trace`   | Get full trace for a message ID |
+| `relay_get_metrics` | Get delivery metrics snapshot   |
 
 ### 7. Message Trace UI
 
@@ -658,10 +677,10 @@ The existing `isRelayEnabled()` from `relay-state.ts` is the check point. No new
 
 **Behavior matrix:**
 
-| DORKOS_RELAY_ENABLED | Pulse Dispatch | Console Messages | Tracing | Trace UI |
-|---|---|---|---|---|
-| `false` | Direct AgentManager call | SSE stream on POST | Disabled | Hidden |
-| `true` | Via Relay publish | Via Relay (receipt + SSE) | Active | Visible |
+| DORKOS_RELAY_ENABLED | Pulse Dispatch           | Console Messages          | Tracing  | Trace UI |
+| -------------------- | ------------------------ | ------------------------- | -------- | -------- |
+| `false`              | Direct AgentManager call | SSE stream on POST        | Disabled | Hidden   |
+| `true`               | Via Relay publish        | Via Relay (receipt + SSE) | Active   | Visible  |
 
 **Fallback guarantee:** When Relay is disabled, both Pulse and Console operate exactly as they do today. No behavioral change.
 
@@ -688,6 +707,7 @@ The key addition is MessageReceiver starting its subscriptions after both RelayC
 ### Console Chat (Relay Enabled)
 
 From the user's perspective, chat behavior is identical:
+
 1. Type message, press Enter
 2. Message appears immediately in chat
 3. Agent response streams in word-by-word
@@ -698,6 +718,7 @@ The only visible difference: messages now have trace IDs and are visible in the 
 ### Message Trace UI
 
 Users can click any message in the Relay panel to see its delivery timeline:
+
 - When was it sent?
 - How long did budget checking take?
 - When was it delivered to the mailbox?
@@ -708,6 +729,7 @@ Users can click any message in the Relay panel to see its delivery timeline:
 ### Pulse Runs (Relay Enabled)
 
 Pulse scheduled runs work identically. The difference:
+
 - Each dispatch appears in the Relay activity feed
 - Failed dispatches land in the dead letter queue (visible in Relay panel)
 - Budget envelopes prevent runaway agent loops in complex multi-agent schedules
@@ -715,6 +737,7 @@ Pulse scheduled runs work identically. The difference:
 ### Delivery Metrics
 
 The Relay panel gains a metrics section showing system health:
+
 - DLQ depth (0 is healthy)
 - Delivery latency
 - Budget rejection counts
@@ -724,12 +747,14 @@ The Relay panel gains a metrics section showing system health:
 ### Unit Tests
 
 **scheduler-service.test.ts (modified):**
+
 - Test `executeRunViaRelay()` publishes correct envelope to Relay
 - Test fallback to `executeRunDirect()` when Relay disabled
 - Test PulseDispatchPayload contains all required fields
 - Mock RelayCore.publish() and verify envelope structure
 
 **trace-store.test.ts (new):**
+
 - Test span insertion and retrieval
 - Test trace grouping by traceId
 - Test status updates (pending → delivered → processed)
@@ -737,12 +762,14 @@ The Relay panel gains a metrics section showing system health:
 - Test partial index for dead_lettered status
 
 **message-receiver.test.ts (new):**
+
 - Test agent message handling: correct sessionId extraction, AgentManager called
 - Test Pulse message handling: schedule/run context reconstructed correctly
 - Test trace updates at each lifecycle stage
 - Test error handling when AgentManager throws
 
 **sessions.test.ts (modified):**
+
 - Test Relay path: POST returns 202 with receipt
 - Test legacy path: POST returns SSE stream (when Relay disabled)
 - Test endpoint registration on first message
@@ -751,18 +778,21 @@ The Relay panel gains a metrics section showing system health:
 ### Client Tests
 
 **use-chat-session.test.tsx (modified):**
+
 - Test receipt+SSE protocol: POST returns JSON, events arrive via EventSource
 - Test legacy protocol: SSE stream on POST (when Relay disabled)
 - Test `relay_message` event handler builds assistant message correctly
 - Test both protocols produce identical UI state
 
 **MessageTrace.test.tsx (new):**
+
 - Test timeline rendering from trace data
 - Test status badge colors
 - Test latency delta calculations
 - Test empty/error states
 
 **DeliveryMetrics.test.tsx (new):**
+
 - Test metrics display with various data
 - Test DLQ warning badge appears when depth > 0
 - Test loading and error states
@@ -792,12 +822,12 @@ The Relay panel gains a metrics section showing system health:
 
 ## Documentation Updates
 
-| Document | Changes |
-|---|---|
-| `CLAUDE.md` | Update Session Architecture section to describe Relay convergence. Update scheduler-service description. Add MessageReceiver and TraceStore to services list. Update SSE streaming protocol description. |
-| `contributing/architecture.md` | Add converged data flow diagram. Document receipt+SSE protocol. Document MessageReceiver service. |
-| `contributing/api-reference.md` | Document new/changed endpoints (POST /messages 202, GET /trace, GET /metrics). Document new SSE event types. |
-| `contributing/data-fetching.md` | Add useMessageTrace and useDeliveryMetrics patterns. |
+| Document                        | Changes                                                                                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`                     | Update Session Architecture section to describe Relay convergence. Update scheduler-service description. Add MessageReceiver and TraceStore to services list. Update SSE streaming protocol description. |
+| `contributing/architecture.md`  | Add converged data flow diagram. Document receipt+SSE protocol. Document MessageReceiver service.                                                                                                        |
+| `contributing/api-reference.md` | Document new/changed endpoints (POST /messages 202, GET /trace, GET /metrics). Document new SSE event types.                                                                                             |
+| `contributing/data-fetching.md` | Add useMessageTrace and useDeliveryMetrics patterns.                                                                                                                                                     |
 
 ## Implementation Phases
 
@@ -864,13 +894,13 @@ The Relay panel gains a metrics section showing system health:
 
 ## Related ADRs
 
-| ADR | Title | Relevance |
-|---|---|---|
-| 0010 | Use Maildir for Relay Message Storage | Message storage format used by Pulse dispatch and Console messages |
-| 0011 | Use NATS-Style Subject Matching | Subject hierarchy used for `relay.system.pulse.*` and `relay.human.console.*` |
-| 0013 | Use Hybrid Maildir + SQLite Storage | Trace storage extends the same SQLite index |
-| 0017 | Standardize Subsystem Integration Pattern | MessageReceiver follows the same integration pattern |
-| 0018 | Server-Side SSE Subject Filtering | SSE fan-in extends this pattern |
+| ADR  | Title                                     | Relevance                                                                     |
+| ---- | ----------------------------------------- | ----------------------------------------------------------------------------- |
+| 0010 | Use Maildir for Relay Message Storage     | Message storage format used by Pulse dispatch and Console messages            |
+| 0011 | Use NATS-Style Subject Matching           | Subject hierarchy used for `relay.system.pulse.*` and `relay.human.console.*` |
+| 0013 | Use Hybrid Maildir + SQLite Storage       | Trace storage extends the same SQLite index                                   |
+| 0017 | Standardize Subsystem Integration Pattern | MessageReceiver follows the same integration pattern                          |
+| 0018 | Server-Side SSE Subject Filtering         | SSE fan-in extends this pattern                                               |
 
 ## References
 

@@ -26,7 +26,7 @@ The unanimous verdict: **the existing design system wins.** The cream palette, I
 
 ### The Activity Feed Is the Crown Jewel — But Must Not Lead
 
-All five agents agree: the `ActivityFeedPanel` is the single most persuasive element on the current site. It proves the product is real. But with the new headline, the feed must become *proof*, not *premise*.
+All five agents agree: the `ActivityFeedPanel` is the single most persuasive element on the current site. It proves the product is real. But with the new headline, the feed must become _proof_, not _premise_.
 
 - **Current:** Feed sits beside the headline at equal visual weight. Eye goes to motion first.
 - **New:** Headline owns the viewport. Feed appears below or subordinate — resolving the tension the headline creates.
@@ -50,30 +50,30 @@ All agents converge on this order:
 
 ### What Gets Removed
 
-| Component | Reason |
-|---|---|
-| **CredibilityBar** | Premature reassurance. Its facts ("Open Source / MIT / Self-Hosted") move to the install moment where they convert. |
-| **UseCasesGrid** | Feature grid from 2019. Replaced entirely by the timeline narrative and villain cards. |
-| **SystemArchitecture** (standalone) | SVG diagram is an engineer's artifact, not a persuasion device. Module Reference table replaces it. |
-| **HowItWorksSection** (standalone) | Three numbered steps are documentation wearing a marketing hat. Absorbed into the Install Moment. |
+| Component                           | Reason                                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **CredibilityBar**                  | Premature reassurance. Its facts ("Open Source / MIT / Self-Hosted") move to the install moment where they convert. |
+| **UseCasesGrid**                    | Feature grid from 2019. Replaced entirely by the timeline narrative and villain cards.                              |
+| **SystemArchitecture** (standalone) | SVG diagram is an engineer's artifact, not a persuasion device. Module Reference table replaces it.                 |
+| **HowItWorksSection** (standalone)  | Three numbered steps are documentation wearing a marketing hat. Absorbed into the Install Moment.                   |
 
 ### What Gets Rebuilt
 
-| Component | Change |
-|---|---|
-| **ActivityFeedHero** → **Hero** | Gut and rebuild. Keep layout shell, responsive breakpoints, motion wrappers. Replace all content. Headline owns full width at top. Feed below, subordinate. |
-| **AboutSection** → **Identity Close** | Philosophy cards grid replaced with origin story + tribal declaration. Email reveal absorbed as postscript. |
-| **ContactSection** → Absorbed | Email reveal moves into Identity Close as a quiet line, not a standalone section. |
+| Component                             | Change                                                                                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ActivityFeedHero** → **Hero**       | Gut and rebuild. Keep layout shell, responsive breakpoints, motion wrappers. Replace all content. Headline owns full width at top. Feed below, subordinate. |
+| **AboutSection** → **Identity Close** | Philosophy cards grid replaced with origin story + tribal declaration. Email reveal absorbed as postscript.                                                 |
+| **ContactSection** → Absorbed         | Email reveal moves into Identity Close as a quiet line, not a standalone section.                                                                           |
 
 ### What's New
 
-| Component | Complexity | Notes |
-|---|---|---|
-| **Prelude** | Low | Repurpose `TerminalBlock` typing animation. Brief dark overlay that fades. |
-| **VillainSection** | Medium | 4 cards with scroll-triggered activation. Use existing REVEAL/STAGGER variants. Cards styled like system alerts (flatter than ModuleCards). |
-| **PivotSection** | Low | Centered text block. Single `motion.div` with REVEAL variant. Generous padding. |
-| **TimelineSection** | High | Vertical timeline with timestamps. Largest new build. Each entry is a `motion.div` with scroll activation. Asymmetric layout breaks centered symmetry. |
-| **InstallMoment** | Low | Terminal typing animation on a single command. 120-160px breathing room above/below. |
+| Component           | Complexity | Notes                                                                                                                                                  |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Prelude**         | Low        | Repurpose `TerminalBlock` typing animation. Brief dark overlay that fades.                                                                             |
+| **VillainSection**  | Medium     | 4 cards with scroll-triggered activation. Use existing REVEAL/STAGGER variants. Cards styled like system alerts (flatter than ModuleCards).            |
+| **PivotSection**    | Low        | Centered text block. Single `motion.div` with REVEAL variant. Generous padding.                                                                        |
+| **TimelineSection** | High       | Vertical timeline with timestamps. Largest new build. Each entry is a `motion.div` with scroll activation. Asymmetric layout breaks centered symmetry. |
+| **InstallMoment**   | Low        | Terminal typing animation on a single command. 120-160px breathing room above/below.                                                                   |
 
 ---
 
@@ -84,12 +84,14 @@ All agents converge on this order:
 This is the only substantive disagreement across the panel.
 
 **Keep it (Ogilvy + Wieden):**
+
 - The new copy is more emotionally driven. A moment of radical honesty prevents the page from feeling like it's selling too hard.
-- The developers who will adopt DorkOS are precisely the developers who will notice the *absence* of a privacy disclosure.
+- The developers who will adopt DorkOS are precisely the developers who will notice the _absence_ of a privacy disclosure.
 - The corner brackets + green eyebrow are a signature visual element.
 - Move it to between Module Reference and Install Moment. Tighten the copy.
 
 **Cut it (Jobs + Godin):**
+
 - The timeline grounds the product in specificity ("$4.20 in API calls"), which is more honest than any disclaimer.
 - "Open source. Self-hosted. Yours." at the install moment does the trust work in six words.
 - The honesty section inadvertently introduces doubt at a moment when the reader should be building trust.
@@ -125,21 +127,21 @@ This is the only substantive disagreement across the panel.
 
 ### Components Unchanged (Update Props Only)
 
-| Component | Changes |
-|---|---|
-| `MarketingNav` | Update link array for new section anchors |
-| `MarketingHeader` | No changes |
-| `MarketingFooter` | Update copy: add "You slept. They shipped." tagline, simplify |
-| `motion-variants.ts` | No changes — animation vocabulary already works |
+| Component            | Changes                                                       |
+| -------------------- | ------------------------------------------------------------- |
+| `MarketingNav`       | Update link array for new section anchors                     |
+| `MarketingHeader`    | No changes                                                    |
+| `MarketingFooter`    | Update copy: add "You slept. They shipped." tagline, simplify |
+| `motion-variants.ts` | No changes — animation vocabulary already works               |
 
 ### Existing Component Reuse
 
-| Existing | Reused In | How |
-|---|---|---|
-| `TerminalBlock` | Prelude, Install Moment | Typing animation, cursor blink |
-| `FeedItem` styling | Villain cards | Left border highlight, monospaced text, tight spacing |
-| `ModuleCard` hover | Subsystems table (optional) | Spotlight cursor tracking |
-| `ActivityFeedPanel` | Hero (repositioned) | Same component, new layout position |
+| Existing            | Reused In                   | How                                                   |
+| ------------------- | --------------------------- | ----------------------------------------------------- |
+| `TerminalBlock`     | Prelude, Install Moment     | Typing animation, cursor blink                        |
+| `FeedItem` styling  | Villain cards               | Left border highlight, monospaced text, tight spacing |
+| `ModuleCard` hover  | Subsystems table (optional) | Spotlight cursor tracking                             |
+| `ActivityFeedPanel` | Hero (repositioned)         | Same component, new layout position                   |
 
 ### Files to Delete (After Rebuild)
 
@@ -153,25 +155,25 @@ This is the only substantive disagreement across the panel.
 
 ## Summary Table
 
-| Element | Current | New | Agent Source |
-|---|---|---|---|
-| Headline | "Your AI Never Sleeps." | "Your agents are brilliant. They just can't do anything when you leave." | All 5 |
-| Eyebrow | "Autonomous by default" | "the operating system for autonomous AI agents" | Ogilvy |
-| Subhead/Tagline | Long product description | "You slept. They shipped." | All 5 |
-| Hero layout | 55/45 split (copy/feed) | Headline full-width top, feed below | 4 of 5 (Wieden/Godin/Jobs/Ive) |
-| Credibility Bar | Between hero and architecture | Removed — facts move to install moment | All 5 |
-| Use Cases Grid | 6 capability cards | Removed — replaced by villain cards + timeline | All 5 |
-| System Architecture | SVG + grouped module cards | Compact subsystems table | All 5 |
-| How It Works | 3 numbered steps | Absorbed into Install Moment | All 5 |
-| Honesty Section | Between How It Works and About | **Disputed** — keep & move (Ogilvy/Wieden) vs. cut (Jobs/Godin) | Split |
-| About Section | Product description + philosophy | Identity Close (origin story + tribal) | All 5 |
-| Contact Section | Standalone with email reveal | Email reveal absorbed into Identity Close | All 5 |
-| Activity Feed | Hero co-star | Hero subordinate — proof, not premise | All 5 |
-| Villain cards | N/A | New section after hero | All 5 |
-| Pivot | N/A | New section (OS metaphor) | All 5 |
-| Timeline | N/A | New section (biggest build) | All 5 |
-| Install Moment | CTA in hero | Dedicated section at peak desire | All 5 |
-| Footer | Current | Add tagline, simplify | All 5 |
-| Palette | Cream | Cream (unchanged) | All 5 |
-| Fonts | IBM Plex | IBM Plex (unchanged) | All 5 |
-| Motion | REVEAL/STAGGER/etc. | Same (unchanged) | All 5 |
+| Element             | Current                          | New                                                                      | Agent Source                   |
+| ------------------- | -------------------------------- | ------------------------------------------------------------------------ | ------------------------------ |
+| Headline            | "Your AI Never Sleeps."          | "Your agents are brilliant. They just can't do anything when you leave." | All 5                          |
+| Eyebrow             | "Autonomous by default"          | "the operating system for autonomous AI agents"                          | Ogilvy                         |
+| Subhead/Tagline     | Long product description         | "You slept. They shipped."                                               | All 5                          |
+| Hero layout         | 55/45 split (copy/feed)          | Headline full-width top, feed below                                      | 4 of 5 (Wieden/Godin/Jobs/Ive) |
+| Credibility Bar     | Between hero and architecture    | Removed — facts move to install moment                                   | All 5                          |
+| Use Cases Grid      | 6 capability cards               | Removed — replaced by villain cards + timeline                           | All 5                          |
+| System Architecture | SVG + grouped module cards       | Compact subsystems table                                                 | All 5                          |
+| How It Works        | 3 numbered steps                 | Absorbed into Install Moment                                             | All 5                          |
+| Honesty Section     | Between How It Works and About   | **Disputed** — keep & move (Ogilvy/Wieden) vs. cut (Jobs/Godin)          | Split                          |
+| About Section       | Product description + philosophy | Identity Close (origin story + tribal)                                   | All 5                          |
+| Contact Section     | Standalone with email reveal     | Email reveal absorbed into Identity Close                                | All 5                          |
+| Activity Feed       | Hero co-star                     | Hero subordinate — proof, not premise                                    | All 5                          |
+| Villain cards       | N/A                              | New section after hero                                                   | All 5                          |
+| Pivot               | N/A                              | New section (OS metaphor)                                                | All 5                          |
+| Timeline            | N/A                              | New section (biggest build)                                              | All 5                          |
+| Install Moment      | CTA in hero                      | Dedicated section at peak desire                                         | All 5                          |
+| Footer              | Current                          | Add tagline, simplify                                                    | All 5                          |
+| Palette             | Cream                            | Cream (unchanged)                                                        | All 5                          |
+| Fonts               | IBM Plex                         | IBM Plex (unchanged)                                                     | All 5                          |
+| Motion              | REVEAL/STAGGER/etc.              | Same (unchanged)                                                         | All 5                          |

@@ -11,11 +11,7 @@
  *
  * @module relay/circuit-breaker
  */
-import type {
-  CircuitBreakerState,
-  CircuitBreakerResult,
-  CircuitBreakerConfig,
-} from './types.js';
+import type { CircuitBreakerState, CircuitBreakerResult, CircuitBreakerConfig } from './types.js';
 
 const DEFAULT_CB_CONFIG: CircuitBreakerConfig = {
   enabled: true,

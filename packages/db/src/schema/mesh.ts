@@ -53,5 +53,5 @@ export const rateLimitBuckets = sqliteTable(
     bucketMinute: integer('bucket_minute').notNull(), // minutes since Unix epoch
     count: integer('count').notNull().default(0),
   },
-  (table) => [uniqueIndex('idx_rate_limit_agent_minute').on(table.agentId, table.bucketMinute)],
+  (table) => [uniqueIndex('idx_rate_limit_agent_minute').on(table.agentId, table.bucketMinute)]
 );

@@ -28,22 +28,18 @@ interface PulsePresetsStepProps {
 export function PulsePresetsStep({ onStepComplete, agents }: PulsePresetsStepProps) {
   const { data: presets, isLoading, isError } = usePulsePresets();
   const createSchedule = useCreateSchedule();
-  const [enabledPresets, setEnabledPresets] = useState<Set<string> | null>(
-    null
-  );
+  const [enabledPresets, setEnabledPresets] = useState<Set<string> | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   // Auto-resolve when exactly 1 agent
   const resolvedAgent =
-    agents.length === 1
-      ? agents[0]
-      : agents.find((a) => a.id === selectedAgentId) ?? null;
+    agents.length === 1 ? agents[0] : (agents.find((a) => a.id === selectedAgentId) ?? null);
 
   // Initialize enabledPresets with all preset IDs once data loads
   const resolvedEnabled = useMemo(
     () => enabledPresets ?? new Set(presets?.map((p) => p.id) ?? []),
-    [enabledPresets, presets],
+    [enabledPresets, presets]
   );
 
   const handleToggle = useCallback(
@@ -100,31 +96,30 @@ export function PulsePresetsStep({ onStepComplete, agents }: PulsePresetsStepPro
         <h2 className="text-2xl font-semibold tracking-tight">
           Want your agents to work while you sleep?
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Pulse runs automated tasks on a schedule — like a cron job for your agents.
         </p>
       </div>
 
       {/* Project picker — single agent shows read-only, 2+ shows Select */}
       {agents.length === 1 && (
-        <p className="text-center text-sm text-muted-foreground">
-          Scheduling for {agents[0].icon ? `${agents[0].icon} ` : ''}{agents[0].name}
+        <p className="text-muted-foreground text-center text-sm">
+          Scheduling for {agents[0].icon ? `${agents[0].icon} ` : ''}
+          {agents[0].name}
         </p>
       )}
 
       {agents.length >= 2 && (
         <div className="mx-auto max-w-xs">
-          <Select
-            value={selectedAgentId ?? ''}
-            onValueChange={setSelectedAgentId}
-          >
+          <Select value={selectedAgentId ?? ''} onValueChange={setSelectedAgentId}>
             <SelectTrigger>
               <SelectValue placeholder="Select a project..." />
             </SelectTrigger>
             <SelectContent>
               {agents.map((agent) => (
                 <SelectItem key={agent.id} value={agent.id}>
-                  {agent.icon ? `${agent.icon} ` : ''}{agent.name}
+                  {agent.icon ? `${agent.icon} ` : ''}
+                  {agent.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -132,16 +127,11 @@ export function PulsePresetsStep({ onStepComplete, agents }: PulsePresetsStepPro
         </div>
       )}
 
-      {isLoading && (
-        <p className="text-center text-sm text-muted-foreground">
-          Loading presets...
-        </p>
-      )}
+      {isLoading && <p className="text-muted-foreground text-center text-sm">Loading presets...</p>}
 
       {isError && (
-        <p className="text-center text-sm text-destructive">
-          Failed to load presets. You can skip this step and configure schedules
-          later.
+        <p className="text-destructive text-center text-sm">
+          Failed to load presets. You can skip this step and configure schedules later.
         </p>
       )}
 
@@ -172,7 +162,7 @@ export function PulsePresetsStep({ onStepComplete, agents }: PulsePresetsStepPro
               : 'Continue Without Schedules'}
         </Button>
         {agents.length >= 2 && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             You can put your other agents on autopilot anytime from Pulse.
           </p>
         )}

@@ -1,5 +1,5 @@
 ---
-title: "Hide Scrollbars When Idle — CSS, shadcn ScrollArea, and TanStack Virtual Compatibility"
+title: 'Hide Scrollbars When Idle — CSS, shadcn ScrollArea, and TanStack Virtual Compatibility'
 date: 2026-03-10
 type: external-best-practices
 status: active
@@ -44,6 +44,7 @@ macOS System Preferences → General → "Show scroll bars" set to "Automatic" m
 Any CSS that sets `::-webkit-scrollbar { width: Xpx }` with a non-zero width forces the scrollbar track to be rendered and visible. This is a common side-effect of Tailwind plugins or CSS resets that include scrollbar styling rules. If a global stylesheet defines `::-webkit-scrollbar { width: 6px; background: transparent; }`, Chrome on macOS will show the track permanently.
 
 **What to check in the DorkOS codebase:**
+
 - Search for `overflow-y: scroll` or `overflow: scroll` in component styles
 - Search for `::-webkit-scrollbar` in global CSS files
 - Check if shadcn/ui's CSS includes any scrollbar pseudo-element rules
@@ -64,6 +65,7 @@ scrollbar-width: none;
 ```
 
 **Tailwind v4 implementation (no plugin needed):**
+
 ```css
 /* In your global CSS file (e.g., index.css) */
 @utility scrollbar-hide {
@@ -94,7 +96,7 @@ This is Firefox-only in terms of the `scrollbar-color` auto-hide behavior. Chrom
   transition: background-color 0.3s;
 }
 .container:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(0,0,0,0.3);
+  background-color: rgba(0, 0, 0, 0.3);
 }
 ```
 
@@ -111,6 +113,7 @@ This makes the scrollbar thumb invisible until the user hovers the container. No
 ### shadcn ScrollArea Component Analysis
 
 shadcn ScrollArea wraps Radix UI ScrollArea primitive. Technically it:
+
 - Renders a `Root` container with `overflow: hidden`
 - Renders a `Viewport` div that has the actual native scroll behavior
 - Renders custom scrollbar elements positioned as overlays on top of content (they sit above content, take no layout space)
@@ -122,6 +125,7 @@ shadcn ScrollArea wraps Radix UI ScrollArea primitive. Technically it:
 **However, TanStack Virtual compatibility is broken by design:**
 
 The virtualized list needs to attach its own scroll listener and measure the scroll container. The standard pattern is:
+
 ```tsx
 const parentRef = useRef<HTMLDivElement>(null);
 const virtualizer = useVirtualizer({
@@ -134,6 +138,7 @@ return <div ref={parentRef} style={{ overflow: 'auto', height: '600px' }}>
 With Radix ScrollArea, `parentRef` must point to the `Viewport` element, not the `Root`. The shadcn `ScrollArea` component as shipped does not forward a ref to the viewport — it forwards to the root. This means `getScrollElement` returns the wrong element, and the virtualizer cannot correctly measure scroll position.
 
 **The workaround** is to create a custom `ScrollArea` variant that accepts a `viewPortRef` prop:
+
 ```tsx
 const ScrollArea = React.forwardRef<...>(({ viewPortRef, children, ...props }, ref) => (
   <ScrollAreaPrimitive.Root ref={ref} {...props}>
@@ -197,13 +202,16 @@ function VirtualMessageList({ messages }) {
   return (
     <div ref={parentRef} style={{ overflow: 'auto', height: '100%' }}>
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-        {virtualizer.getVirtualItems().map(item => (
-          <div key={item.key} style={{
-            position: 'absolute',
-            top: item.start,
-            height: item.size,
-            width: '100%',
-          }}>
+        {virtualizer.getVirtualItems().map((item) => (
+          <div
+            key={item.key}
+            style={{
+              position: 'absolute',
+              top: item.start,
+              height: item.size,
+              width: '100%',
+            }}
+          >
             {messages[item.index]}
           </div>
         ))}
@@ -260,6 +268,7 @@ Tailwind CSS v4 does not ship native `scrollbar-hide`, `scrollbar-thin`, or any 
 ```
 
 This creates a `scrollbar-hide` class that:
+
 - Works with all Tailwind variants (responsive, dark mode, hover, etc.)
 - Is tree-shaken — only included if used
 - Requires no additional npm dependencies
@@ -269,14 +278,14 @@ This creates a `scrollbar-hide` class that:
 
 ## Approach Comparison
 
-| Approach | TanStack Virtual | Cross-Browser | Auto-Hide | Performance | Complexity | Dep Size |
-|---|---|---|---|---|---|---|
-| **Pure CSS `scrollbar-hide`** | Works | Excellent | No (always hidden) | Zero overhead | Trivial | None |
-| **CSS hover-reveal** | Works | Good (Chrome/Firefox) | Hover-based | Minimal JS | Low | None |
-| **shadcn ScrollArea (simple lists)** | Not needed | Excellent | Yes (built-in) | Minimal | None (already used) | Already present |
-| **shadcn ScrollArea + viewPortRef (virtualized)** | Fragile workaround | Excellent | Yes | Moderate risk | Medium + maintenance | Already present |
-| **OverlayScrollbars** | First-class | Excellent | Yes (multiple modes) | Low (~15KB) | Low-Medium | ~15KB gzip |
-| **JS scroll event + timeout + CSS class** | Works | Excellent | Yes | Low, but DIY | Medium | None |
+| Approach                                          | TanStack Virtual   | Cross-Browser         | Auto-Hide            | Performance   | Complexity           | Dep Size        |
+| ------------------------------------------------- | ------------------ | --------------------- | -------------------- | ------------- | -------------------- | --------------- |
+| **Pure CSS `scrollbar-hide`**                     | Works              | Excellent             | No (always hidden)   | Zero overhead | Trivial              | None            |
+| **CSS hover-reveal**                              | Works              | Good (Chrome/Firefox) | Hover-based          | Minimal JS    | Low                  | None            |
+| **shadcn ScrollArea (simple lists)**              | Not needed         | Excellent             | Yes (built-in)       | Minimal       | None (already used)  | Already present |
+| **shadcn ScrollArea + viewPortRef (virtualized)** | Fragile workaround | Excellent             | Yes                  | Moderate risk | Medium + maintenance | Already present |
+| **OverlayScrollbars**                             | First-class        | Excellent             | Yes (multiple modes) | Low (~15KB)   | Low-Medium           | ~15KB gzip      |
+| **JS scroll event + timeout + CSS class**         | Works              | Excellent             | Yes                  | Low, but DIY  | Medium               | None            |
 
 ---
 
@@ -298,9 +307,7 @@ This creates a `scrollbar-hide` class that:
 ```
 
 ```tsx
-<div className="overflow-y-auto scrollbar-hide h-full">
-  {sessions.map(/* ... */)}
-</div>
+<div className="scrollbar-hide h-full overflow-y-auto">{sessions.map(/* ... */)}</div>
 ```
 
 First, audit whether `overflow: scroll` or a `::-webkit-scrollbar` global style is the root cause and fix that at the source. This may make the scrollbar auto-hide on macOS without any additional work.
@@ -310,6 +317,7 @@ First, audit whether `overflow: scroll` or a `::-webkit-scrollbar` global style 
 **Use OverlayScrollbars.** It is the only approach with documented, working, first-class compatibility with TanStack Virtual. The `autoHide: 'scroll'` option gives exactly the behavior requested — the scrollbar handle fades out after the user stops scrolling. It overlays the content (no layout shift), is accessibility-safe (native scroll behavior is preserved), and the ~15KB bundle cost is justified by the quality of the experience.
 
 Install:
+
 ```bash
 pnpm add overlayscrollbars overlayscrollbars-react
 ```
@@ -321,6 +329,7 @@ Use `useOverlayScrollbars` (not `OverlayScrollbarsComponent`) when you need to p
 ### Root-cause first approach (audit before adding dependencies)
 
 Before adding OverlayScrollbars, do this audit:
+
 1. Search for `overflow.*scroll` in component TSX/CSS files — change any `overflow-y: scroll` to `overflow-y: auto`
 2. Search for `::-webkit-scrollbar` in global styles — remove any non-zero `width` or `height` declarations
 3. If the macOS scrollbars auto-hide after this fix, the sidebar may need nothing more than `overflow-y: auto`

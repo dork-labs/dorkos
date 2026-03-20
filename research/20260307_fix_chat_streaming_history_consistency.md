@@ -1,5 +1,5 @@
 ---
-title: "Chat UI Streaming vs History Consistency: Tool Result Orphan & Auto-Scroll Disengagement"
+title: 'Chat UI Streaming vs History Consistency: Tool Result Orphan & Auto-Scroll Disengagement'
 date: 2026-03-07
 type: implementation
 status: active
@@ -18,6 +18,7 @@ Two distinct bugs in the DorkOS chat UI require targeted fixes. Bug 1 (tool_resu
 ## Bug 1: Tool Result Orphan — Root Cause Identified
 
 **What the code does today:**
+
 1. `tool_call_end` arrives → `existing.status = 'complete'` → `updateAssistantMessage()` re-renders `parts`
 2. `tool_result` arrives → `existing.result = tc.result; existing.status = 'complete'` → `updateAssistantMessage()` re-renders `parts`
 
@@ -30,6 +31,7 @@ The problem is in step 2. When `tool_result` triggers `updateAssistantMessage`, 
 ## Bug 2: Auto-Scroll Disengagement — Root Cause Identified
 
 **What the code does today:**
+
 - `handleScroll` fires on every `scroll` event (passive listener)
 - Computes `distanceFromBottom = scrollHeight - scrollTop - clientHeight`
 - Sets `isAtBottomRef.current = distanceFromBottom < 200`
@@ -148,6 +150,7 @@ A sentinel IntersectionObserver (Option B) is a valid and elegant alternative, b
 **File to change:** `apps/client/src/layers/features/chat/model/stream-event-handler.ts`, line 196 (`tool_result` case).
 
 **One-line change:**
+
 ```typescript
 // Before
 updateAssistantMessage(assistantId);
@@ -163,6 +166,7 @@ queueMicrotask(() => updateAssistantMessage(assistantId));
 **File to change:** `apps/client/src/layers/features/chat/ui/MessageList.tsx`, specifically the `handleScroll` callback and the scroll event effect.
 
 **Pattern:**
+
 ```typescript
 const isUserScrollingRef = useRef(false);
 const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -182,8 +186,7 @@ container.addEventListener('touchstart', onUserScroll, { passive: true });
 const handleScroll = useCallback(() => {
   const container = parentRef.current;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
   const isAtBottom = distanceFromBottom < 200;
   // Only flip to false when user explicitly scrolled; layout reflow cannot disengage
   if (isAtBottom || isUserScrollingRef.current) {

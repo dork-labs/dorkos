@@ -15,6 +15,7 @@ category: documentation
 Read `decisions/manifest.json` and filter for entries with `"status": "draft"`.
 
 If no drafts exist:
+
 1. Update `decisions/.last-curated` with current ISO timestamp
 2. Display: "No draft ADRs to curate."
 3. Exit.
@@ -26,12 +27,12 @@ For each draft ADR:
 1. Read the full ADR file at `decisions/NNNN-{slug}.md`
 2. Evaluate against these significance criteria (from the `writing-adrs` skill):
 
-| # | Criterion | How to Assess |
-|---|-----------|---------------|
-| 1 | **Chooses between alternatives** | Does the ADR describe selecting X over Y? Or just "we used X"? |
-| 2 | **Project-wide impact** | Does this affect how future features are built, beyond the originating spec? |
-| 3 | **Would surprise a new team member** | Is this a non-obvious choice that needs explanation? |
-| 4 | **Adopts a lasting pattern or technology** | New library, architecture pattern, data model with long-term consequences? |
+| #   | Criterion                                  | How to Assess                                                                |
+| --- | ------------------------------------------ | ---------------------------------------------------------------------------- |
+| 1   | **Chooses between alternatives**           | Does the ADR describe selecting X over Y? Or just "we used X"?               |
+| 2   | **Project-wide impact**                    | Does this affect how future features are built, beyond the originating spec? |
+| 3   | **Would surprise a new team member**       | Is this a non-obvious choice that needs explanation?                         |
+| 4   | **Adopts a lasting pattern or technology** | New library, architecture pattern, data model with long-term consequences?   |
 
 3. Score: count how many criteria are met (0-4)
 4. Decision:

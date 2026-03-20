@@ -79,16 +79,12 @@ describe('parseFilePrefix', () => {
     const nonImageExts = ['pdf', 'txt', 'docx'];
 
     const lines = [...imageExts, ...nonImageExts].map(
-      (ext, i) =>
-        `- .dork/.temp/uploads/${String(i).padStart(8, '0')}-file.${ext}`,
+      (ext, i) => `- .dork/.temp/uploads/${String(i).padStart(8, '0')}-file.${ext}`
     );
 
-    const content = [
-      'Please read the following uploaded file(s):',
-      ...lines,
-      '',
-      'Analyze',
-    ].join('\n');
+    const content = ['Please read the following uploaded file(s):', ...lines, '', 'Analyze'].join(
+      '\n'
+    );
 
     const result = parseFilePrefix(content);
 

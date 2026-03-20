@@ -41,16 +41,12 @@ function PasswordInput({
 
   return (
     <div className="relative">
-      <Input
-        type={isVisible ? 'text' : 'password'}
-        className={cn('pr-10', className)}
-        {...props}
-      />
+      <Input type={isVisible ? 'text' : 'password'} className={cn('pr-10', className)} {...props} />
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground absolute top-0 right-0 h-full px-3 hover:bg-transparent"
         onClick={toggleVisibility}
         aria-label={isVisible ? 'Hide password' : 'Show password'}
       >

@@ -1,5 +1,5 @@
 ---
-title: "Update Notification UX Patterns: Research Report"
+title: 'Update Notification UX Patterns: Research Report'
 date: 2026-02-27
 type: external-best-practices
 status: active
@@ -17,7 +17,7 @@ tags: [update-notification, ux, cli, update-notifier, versioning]
 
 ## Research Summary
 
-Modern best-in-class desktop and web applications treat update notifications as a tension to be resolved: the system *needs* to communicate that new software exists, but doing so in a way that demands attention is almost always the wrong choice. The patterns that users love share a common thread — notifications live at the periphery until the user pulls them forward. The patterns users hate are the ones that interrupt, repeat, or hold the application hostage. CLI tools follow a separate but equally well-established convention: print a styled box *after* the command completes, never before.
+Modern best-in-class desktop and web applications treat update notifications as a tension to be resolved: the system _needs_ to communicate that new software exists, but doing so in a way that demands attention is almost always the wrong choice. The patterns that users love share a common thread — notifications live at the periphery until the user pulls them forward. The patterns users hate are the ones that interrupt, repeat, or hold the application hostage. CLI tools follow a separate but equally well-established convention: print a styled box _after_ the command completes, never before.
 
 ---
 
@@ -35,11 +35,11 @@ This three-layer progressive disclosure model is the gold standard.
 
 ### 2. Auto-Update is Preferred But Must Be Transparent
 
-Apps that silently auto-update in the background (Raycast, GitHub Desktop) receive less friction than those requiring explicit user action (Slack) — but only when they clearly communicate *that* an update happened and *what* changed afterward. The worst experience is silent update + no post-update summary.
+Apps that silently auto-update in the background (Raycast, GitHub Desktop) receive less friction than those requiring explicit user action (Slack) — but only when they clearly communicate _that_ an update happened and _what_ changed afterward. The worst experience is silent update + no post-update summary.
 
 ### 3. CLI Tools Have a Settled Convention
 
-The `update-notifier` pattern (popularized by Sindre Sorhus, used by npm, Yarn, Claude Code, Gemini CLI, Codex) is effectively canonical for CLIs: check for updates in a background child process, cache the result for 24 hours, print a styled box with current → new version and the exact command to run — *at the very end of the command output*, never at the beginning.
+The `update-notifier` pattern (popularized by Sindre Sorhus, used by npm, Yarn, Claude Code, Gemini CLI, Codex) is effectively canonical for CLIs: check for updates in a background child process, cache the result for 24 hours, print a styled box with current → new version and the exact command to run — _at the very end of the command output_, never at the beginning.
 
 ### 4. Release Notes as a Product Experience, Not an Afterthought
 
@@ -58,6 +58,7 @@ The most common complaints across GitHub issues and UX forums: repeated modal po
 **Where the notification appears**: Two surfaces. First, VS Code downloads the update silently in the background (auto-update on macOS/Windows by default). Once downloaded, a notification toast appears in the **bottom-right corner** of the window saying "Restart Visual Studio Code to apply the latest update" with a restart button. Additionally, the **bottom-left status bar** can show a sync/update indicator. The bell icon in the bottom-right status bar counts all pending notifications.
 
 **Progressive disclosure**:
+
 1. Background download (silent, no UI)
 2. Toast in bottom-right: "Restart to apply update" with a Restart button and a dismiss X
 3. On click of the bell icon: Notification Center panel slides in from the right with all notifications listed persistently
@@ -77,7 +78,7 @@ The most common complaints across GitHub issues and UX forums: repeated modal po
 
 ### Linear
 
-**Where the notification appears**: Linear handles *collaboration* notifications (mentions, assignments, status changes) through a sidebar inbox with a red badge count. For *application version* updates, Linear follows a web-app convention: since it is an Electron-wrapped web app, updates can ship silently and users just get the new version on next launch without ever seeing a notification.
+**Where the notification appears**: Linear handles _collaboration_ notifications (mentions, assignments, status changes) through a sidebar inbox with a red badge count. For _application version_ updates, Linear follows a web-app convention: since it is an Electron-wrapped web app, updates can ship silently and users just get the new version on next launch without ever seeing a notification.
 
 **Progressive disclosure**: Linear's web-first architecture means there is no "you need to restart" moment for most users. The app simply updates in the background between sessions. For major releases, Linear uses their public changelog page (linear.app/changelog) and email announcements.
 
@@ -85,7 +86,7 @@ The most common complaints across GitHub issues and UX forums: repeated modal po
 
 **Auto-update**: Yes, silently. Web app architecture makes this nearly invisible.
 
-**Delightful touches**: Linear's notification center is centered on *people* — notifications show teammate avatars prominently. Urgent issues use a distinct visual treatment requiring interaction. The notification redesign explicitly optimized for faces/avatars over labels, which reduces cognitive load.
+**Delightful touches**: Linear's notification center is centered on _people_ — notifications show teammate avatars prominently. Urgent issues use a distinct visual treatment requiring interaction. The notification redesign explicitly optimized for faces/avatars over labels, which reduces cognitive load.
 
 ---
 
@@ -94,6 +95,7 @@ The most common complaints across GitHub issues and UX forums: repeated modal po
 **Where the notification appears**: Raycast is a launcher — it lives in the menu bar and has no persistent dock presence. When an update is ready, Raycast shows release notes in a **dedicated window that appears immediately after the update installs**. There is no separate "update available" notification step — the update installs, the app relaunches, and the release notes window is the first thing you see.
 
 **Progressive disclosure**:
+
 1. Silent background download
 2. On next app launch post-update: a release notes window appears automatically
 3. The window uses Raycast's own design language with emoji categorization (e.g., 💎 for improvements, 🐞 for fixes)
@@ -116,6 +118,7 @@ The most common complaints across GitHub issues and UX forums: repeated modal po
 **Where the notification appears**: Arc places a **banner at the bottom of the sidebar** when an update is available. This is a non-modal, non-interrupting surface that is visible but never disruptive. It starts **collapsed** (a small pill/indicator) and expands on hover to reveal the full update card.
 
 **Progressive disclosure**:
+
 1. Collapsed pill at the bottom of the sidebar (low signal, always visible)
 2. Hover: pill expands with gradient button and brief version info
 3. Click "See What's New": opens Arc's release notes, built in Easel (Arc's own whiteboard/note feature)
@@ -137,7 +140,8 @@ The most common complaints across GitHub issues and UX forums: repeated modal po
 
 **Where the notification appears**: Figma is a web app (with an Electron desktop wrapper). Application-level version updates are invisible — the web app simply ships a new version and users get it on next session, no notification required.
 
-For *feature announcements*, Figma uses:
+For _feature announcements_, Figma uses:
+
 1. A **red dot** over the notification bell icon (left navigation bar, next to account menu) for collaboration notifications
 2. Occasional **full-screen welcome modals** for major releases (e.g., the "Everything we launched at Config 2024" modal on first login after a major release)
 3. A public **Release Notes page** (figma.com/release-notes) for users who want to track changes
@@ -169,6 +173,7 @@ For *feature announcements*, Figma uses:
 **Where the notification appears**: When a Slack desktop update is available, the **help icon (?) in the toolbar gets a badge** (a visual dot or count indicator). The update is not surfaced as a disruptive toast or banner.
 
 **Progressive disclosure**:
+
 1. Help icon badge (persistent, low-signal)
 2. User clicks the help icon → sees an **update card** in the help panel
 3. User clicks the update card → "Restart Slack" option appears
@@ -207,6 +212,7 @@ For App Store versions (Mac App Store, Windows Store), updates go through the st
 ### The `update-notifier` Convention (npm, Yarn, Claude Code, Gemini CLI, Codex, etc.)
 
 **Settled canonical pattern**:
+
 1. On first run, check npm registry for the latest version (in an unref'ed child process so it does not block)
 2. Cache the result with a 24-hour TTL
 3. On subsequent runs, if a newer version exists and the cached check is fresh: print a notification **at the very end of command output** (never before)
@@ -226,11 +232,12 @@ For App Store versions (Mac App Store, Windows Store), updates go through the st
 7. First-run: checks but does not notify (waits one full interval before first display)
 
 **Real-world variations**:
+
 - Gemini CLI: `ℹ Gemini CLI update available! 0.1.22 → 0.2.0. Installed via Homebrew. Please update with "brew upgrade".`
 - Codex CLI: `✨ Update available! 0.46.0 -> 0.47.0. See full release notes: https://... Run brew upgrade codex to update.`
 - Claude Code: `Update available! Run: brew upgrade claude-code` (with Homebrew detection)
 
-**Key principle**: The notification appears *after* the command result, so it never interferes with the actual output the user needs. The user can safely ignore it. It does not appear on every run — only once per 24-hour window.
+**Key principle**: The notification appears _after_ the command result, so it never interferes with the actual output the user needs. The user can safely ignore it. It does not appear on every run — only once per 24-hour window.
 
 ### Homebrew itself
 
@@ -242,14 +249,14 @@ For App Store versions (Mac App Store, Windows Store), updates go through the st
 
 ### When to Be Passive vs. Active
 
-| Situation | Recommended Pattern |
-|-----------|-------------------|
-| Routine bug-fix / patch update | Silent install + no notification, or tiny badge |
-| Minor feature update | Badge indicator or end-of-session pill |
-| Major feature release | One-time "what's new" modal or sidebar card (dismissible) |
-| Security update | Banner or toast with clear urgency language, cannot be dismissed without acknowledgment |
-| Update required for compatibility | Blocking modal (last resort, justify carefully) |
-| CLI tool update | End-of-output box, 24h TTL, opt-outable |
+| Situation                         | Recommended Pattern                                                                     |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| Routine bug-fix / patch update    | Silent install + no notification, or tiny badge                                         |
+| Minor feature update              | Badge indicator or end-of-session pill                                                  |
+| Major feature release             | One-time "what's new" modal or sidebar card (dismissible)                               |
+| Security update                   | Banner or toast with clear urgency language, cannot be dismissed without acknowledgment |
+| Update required for compatibility | Blocking modal (last resort, justify carefully)                                         |
+| CLI tool update                   | End-of-output box, 24h TTL, opt-outable                                                 |
 
 **Rule of thumb**: If the user can safely defer the update and continue their work, the notification should be passive. Active (interrupting) notifications are only justified when the update contains a security fix or when running the old version will cause data loss or incorrect results.
 
@@ -264,6 +271,7 @@ For App Store versions (Mac App Store, Windows Store), updates go through the st
 ### Calm Technology Principles Applied to Updates
 
 From Amber Case's Calm Technology framework:
+
 - **"Technology should inform without creating anxiety"**: Update notifications should convey the existence of an update without implying urgency unless actual urgency exists.
 - **"Technology should make use of the periphery"**: The status bar, sidebar bottom, and help icon badge are all peripheral surfaces — ideal for update indicators.
 - **"Technology can communicate without demanding attention"**: A dot on an icon communicates. A modal demanding "Restart Now or Later?" interrupts.
@@ -286,22 +294,26 @@ From Amber Case's Calm Technology framework:
 Drawing from all of the above, the best system has these properties:
 
 **Architecture**:
+
 - Background version check on startup (non-blocking, cached for 24h minimum)
 - Two-tier update classification: silent (patch) vs. announced (minor/major)
 - Silent patches install without any user-facing notification
 - Announced updates surface a passive indicator
 
 **Notification surface**:
+
 - Persistent UI surface: a small dot, version indicator, or icon badge in a peripheral location (status bar, help icon, sidebar bottom)
 - On click: an inline card or drawer with version number, 2-3 sentence summary of what changed, and a clear CTA
 - CTA options: "Update Now" (if restartless), "Restart to Apply" (if restart needed), "See Full Release Notes" (link)
 - Full release notes open within the application where possible, not in a browser
 
 **Post-update**:
+
 - On first launch after an update: a brief "what's new" summary — either a panel, a modal (once only), or an auto-opened changelog view
 - This is the highest-value moment to communicate changes; don't waste it
 
 **CLI specifically**:
+
 - End-of-output box, 24h cache, opt-out via env var
 - Include exact command to update (with install method detection: npm vs. brew vs. binary)
 - Never show in CI / non-TTY contexts

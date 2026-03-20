@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SchedulerService, buildPulseAppend, type SchedulerAgentManager } from '../scheduler-service.js';
+import {
+  SchedulerService,
+  buildPulseAppend,
+  type SchedulerAgentManager,
+} from '../scheduler-service.js';
 import { PulseStore } from '../pulse-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -446,12 +450,12 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/projects/agent-dir' }),
+      expect.objectContaining({ cwd: '/projects/agent-dir' })
     );
     expect(mockAgent.sendMessage).toHaveBeenCalledWith(
       expect.any(String),
       'test',
-      expect.objectContaining({ cwd: '/projects/agent-dir' }),
+      expect.objectContaining({ cwd: '/projects/agent-dir' })
     );
 
     await service.stop();
@@ -477,7 +481,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/custom/path' }),
+      expect.objectContaining({ cwd: '/custom/path' })
     );
 
     await service.stop();
@@ -504,7 +508,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/fallback' }),
+      expect.objectContaining({ cwd: '/fallback' })
     );
 
     await service.stop();

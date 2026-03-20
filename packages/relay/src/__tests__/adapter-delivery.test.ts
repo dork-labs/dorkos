@@ -68,17 +68,13 @@ describe('AdapterDelivery', () => {
 
       expect(result).toBeDefined();
       expect(result!.success).toBe(true);
-      expect(adapterRegistry.deliver).toHaveBeenCalledWith(
-        'relay.agent.test',
-        envelope,
-        undefined,
-      );
+      expect(adapterRegistry.deliver).toHaveBeenCalledWith('relay.agent.test', envelope, undefined);
       expect(sqliteIndex.insertMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: envelope.id,
           subject: 'relay.agent.test',
           status: 'delivered',
-        }),
+        })
       );
     });
 
@@ -110,7 +106,7 @@ describe('AdapterDelivery', () => {
       });
       expect(logger.warn).toHaveBeenCalledWith(
         'RelayCore: adapter delivery failed:',
-        'network error',
+        'network error'
       );
     });
 
@@ -153,7 +149,7 @@ describe('AdapterDelivery', () => {
       vi.mocked(adapterRegistry.deliver).mockReturnValue(
         new Promise(() => {
           // Never resolves
-        }),
+        })
       );
       const logger = { warn: vi.fn() };
       const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex, logger);
@@ -185,7 +181,7 @@ describe('AdapterDelivery', () => {
         expect.objectContaining({
           success: false,
           error: 'synchronous throw before timer init',
-        }),
+        })
       );
       // The finally block should not throw even when timer is undefined
       clearTimeoutSpy.mockRestore();
@@ -198,11 +194,9 @@ describe('AdapterDelivery', () => {
       await delivery.deliver('relay.agent.test', createEnvelope(), contextBuilder);
 
       expect(contextBuilder).toHaveBeenCalledWith('relay.agent.test');
-      expect(adapterRegistry.deliver).toHaveBeenCalledWith(
-        'relay.agent.test',
-        expect.any(Object),
-        { agentCwd: '/test' },
-      );
+      expect(adapterRegistry.deliver).toHaveBeenCalledWith('relay.agent.test', expect.any(Object), {
+        agentCwd: '/test',
+      });
     });
   });
 });

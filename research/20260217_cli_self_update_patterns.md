@@ -1,5 +1,5 @@
 ---
-title: "CLI Self-Update Command Patterns"
+title: 'CLI Self-Update Command Patterns'
 date: 2026-02-17
 type: implementation
 status: archived
@@ -41,19 +41,19 @@ Self-update commands are widely implemented by non-npm-native runtimes (Deno, Bu
 
 ### What Popular Tools Do
 
-| Tool | Self-Update Command? | Mechanism |
-|---|---|---|
-| Deno | `deno upgrade` | Downloads binary from dl.deno.land, replaces executable |
-| Bun | `bun upgrade` | Downloads binary from GitHub releases, replaces executable |
-| Rustup | `rustup self update` | Downloads from static.rust-lang.org, replaces itself |
-| pnpm | `pnpm self-update` (v9.8+) | Spawns npm/standalone installer, only works for standalone installs |
-| npm | `npm install -g npm@latest` (no subcommand) | Recommends nvm; self-update is notoriously broken |
-| Volta | No self-update command | Recommends re-running the install script |
-| GitHub CLI | No self-update command | Defers to OS package manager (brew, winget, apt) |
-| Vercel CLI | No self-update command | Documents `npm i -g vercel` |
-| Firebase CLI | No self-update command | Documents `npm install -g firebase-tools` |
-| AWS Amplify CLI | No self-update command | Documents `npm install -g @aws-amplify/cli` |
-| Homebrew | `brew upgrade <formula>` | Managed by Homebrew itself, not the tool |
+| Tool            | Self-Update Command?                        | Mechanism                                                           |
+| --------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| Deno            | `deno upgrade`                              | Downloads binary from dl.deno.land, replaces executable             |
+| Bun             | `bun upgrade`                               | Downloads binary from GitHub releases, replaces executable          |
+| Rustup          | `rustup self update`                        | Downloads from static.rust-lang.org, replaces itself                |
+| pnpm            | `pnpm self-update` (v9.8+)                  | Spawns npm/standalone installer, only works for standalone installs |
+| npm             | `npm install -g npm@latest` (no subcommand) | Recommends nvm; self-update is notoriously broken                   |
+| Volta           | No self-update command                      | Recommends re-running the install script                            |
+| GitHub CLI      | No self-update command                      | Defers to OS package manager (brew, winget, apt)                    |
+| Vercel CLI      | No self-update command                      | Documents `npm i -g vercel`                                         |
+| Firebase CLI    | No self-update command                      | Documents `npm install -g firebase-tools`                           |
+| AWS Amplify CLI | No self-update command                      | Documents `npm install -g @aws-amplify/cli`                         |
+| Homebrew        | `brew upgrade <formula>`                    | Managed by Homebrew itself, not the tool                            |
 
 **Pattern**: Self-update is universal for tools that own their distribution channel (binary downloads, custom scripts). It is uncommon for tools distributed purely through npm, where npm is the canonical package manager and the tool is a guest in npm's system.
 
@@ -61,9 +61,9 @@ Self-update commands are widely implemented by non-npm-native runtimes (Deno, Bu
 
 The core technical challenge is described in the npm issue tracker (issue #7723, opened 2015, still referenced today):
 
-When a package is installed globally via the system npm, that global installation is invisible to any npm instance bundled *inside* the package itself. Running `npm.commands.update()` from within the CLI sees only the local `node_modules`, not the global install location. The npm programmatic API was explicitly called "not a super safe way" to do this by npm contributors, with reports of npm "unexpectedly deleting itself."
+When a package is installed globally via the system npm, that global installation is invisible to any npm instance bundled _inside_ the package itself. Running `npm.commands.update()` from within the CLI sees only the local `node_modules`, not the global install location. The npm programmatic API was explicitly called "not a super safe way" to do this by npm contributors, with reports of npm "unexpectedly deleting itself."
 
-The only reliable workaround is to spawn the *system's* npm binary as a separate child process (not using `exec` with shell interpolation — always use `execFile` or `spawn` with an args array to avoid shell injection). In dorkos terms this would use the existing `execFileNoThrow` utility or equivalent:
+The only reliable workaround is to spawn the _system's_ npm binary as a separate child process (not using `exec` with shell interpolation — always use `execFile` or `spawn` with an args array to avoid shell injection). In dorkos terms this would use the existing `execFileNoThrow` utility or equivalent:
 
 ```typescript
 // Conceptual sketch — use execFileNoThrow from src/utils/execFileNoThrow.ts
@@ -82,12 +82,14 @@ This works, but has a critical catch: it assumes npm is the installation manager
 ### The Package Manager Fragmentation Problem
 
 In 2026, users install global CLIs with multiple managers:
+
 - `npm install -g dorkos`
 - `yarn global add dorkos`
 - `pnpm add -g dorkos`
 - `bun add -g dorkos`
 
 If `dorkos update` blindly spawns `npm install -g dorkos`, it will:
+
 - Create a duplicate npm-managed install alongside a yarn-managed one
 - Potentially install to a different location than the user's PATH points to
 - Not update the correct instance the user is running
@@ -102,7 +104,7 @@ The ecosystem's answer to this complexity is **passive notification, not active 
 
 - Runs an async background check against the npm registry (non-blocking, spawns in an `unref`'d child process)
 - Caches the result for a configurable interval (default: 24 hours)
-- On the *next* run of the CLI, displays a message like:
+- On the _next_ run of the CLI, displays a message like:
 
 ```
 Update available: 0.9.0 -> 1.0.0

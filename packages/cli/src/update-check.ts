@@ -52,10 +52,13 @@ export async function checkForUpdate(currentVersion: string): Promise<string | n
     // 3. Write cache
     const cachePath = getCachePath();
     await mkdir(dirname(cachePath), { recursive: true });
-    await writeFile(cachePath, JSON.stringify({
-      latestVersion: data.version,
-      checkedAt: Date.now(),
-    }));
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        latestVersion: data.version,
+        checkedAt: Date.now(),
+      })
+    );
 
     return isNewer(data.version, currentVersion) ? data.version : null;
   } catch {

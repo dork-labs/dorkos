@@ -1,5 +1,5 @@
 ---
-title: "Shadcn UI Field Component: Installation Reference & API Surface"
+title: 'Shadcn UI Field Component: Installation Reference & API Surface'
 date: 2026-03-18
 type: external-best-practices
 status: active
@@ -37,18 +37,18 @@ This installs a single file: `components/ui/field.tsx` (or the path configured i
 
 All exports come from `@/components/ui/field` (single barrel import):
 
-| Component | Purpose |
-|---|---|
-| `Field` | Core wrapper for a single field. Accepts `orientation` prop. |
-| `FieldLabel` | Renders a `<label>` with proper `htmlFor` association. |
-| `FieldDescription` | Helper/hint text. Automatically balances long lines in horizontal layouts. |
-| `FieldError` | Accessible error container. Renders with `role="alert"`. Accepts `children` or an `errors` array (compatible with RHF and TanStack Form error shapes). |
-| `FieldContent` | Flex column grouping label and description. Not required if there is no description. |
-| `FieldTitle` | Title with label styling inside `FieldContent`. Use when control is already associated via wrapping label. |
-| `FieldGroup` | Layout wrapper that stacks multiple `Field` elements. Target for container query classes. |
-| `FieldSet` | Semantic `<fieldset>` wrapper with spacing presets. |
-| `FieldLegend` | `<legend>` element for `FieldSet`. |
-| `FieldSeparator` | Visual divider between sections inside a `FieldGroup`. Accepts optional inline content. |
+| Component          | Purpose                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Field`            | Core wrapper for a single field. Accepts `orientation` prop.                                                                                           |
+| `FieldLabel`       | Renders a `<label>` with proper `htmlFor` association.                                                                                                 |
+| `FieldDescription` | Helper/hint text. Automatically balances long lines in horizontal layouts.                                                                             |
+| `FieldError`       | Accessible error container. Renders with `role="alert"`. Accepts `children` or an `errors` array (compatible with RHF and TanStack Form error shapes). |
+| `FieldContent`     | Flex column grouping label and description. Not required if there is no description.                                                                   |
+| `FieldTitle`       | Title with label styling inside `FieldContent`. Use when control is already associated via wrapping label.                                             |
+| `FieldGroup`       | Layout wrapper that stacks multiple `Field` elements. Target for container query classes.                                                              |
+| `FieldSet`         | Semantic `<fieldset>` wrapper with spacing presets.                                                                                                    |
+| `FieldLegend`      | `<legend>` element for `FieldSet`.                                                                                                                     |
+| `FieldSeparator`   | Visual divider between sections inside a `FieldGroup`. Accepts optional inline content.                                                                |
 
 **Import pattern:**
 
@@ -64,7 +64,7 @@ import {
   FieldSeparator,
   FieldSet,
   FieldTitle,
-} from "@/components/ui/field"
+} from '@/components/ui/field';
 ```
 
 ---
@@ -73,11 +73,11 @@ import {
 
 `Field` accepts `orientation?: "vertical" | "horizontal" | "responsive"`:
 
-| Value | Behavior |
-|---|---|
-| `"vertical"` | Default. Stacks `FieldLabel`, control, `FieldDescription`, `FieldError` top-to-bottom. Best for mobile-first and text inputs. |
+| Value          | Behavior                                                                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"vertical"`   | Default. Stacks `FieldLabel`, control, `FieldDescription`, `FieldError` top-to-bottom. Best for mobile-first and text inputs.                               |
 | `"horizontal"` | Aligns label and control side-by-side. Pair with `FieldContent` to keep description aligned under the label column. Best for switches and select dropdowns. |
-| `"responsive"` | Starts vertical; switches to horizontal at container breakpoints. Driven by CSS container queries on the parent `FieldGroup`. Best for settings panels. |
+| `"responsive"` | Starts vertical; switches to horizontal at container breakpoints. Driven by CSS container queries on the parent `FieldGroup`. Best for settings panels.     |
 
 ### Horizontal Layout Pattern
 
@@ -118,9 +118,7 @@ The `orientation="responsive"` value works by applying `@container/field-group` 
 // FieldGroup becomes the container
 <FieldGroup className="@container/field-group">
   {/* Field switches layout at the container's breakpoints, not the viewport's */}
-  <Field orientation="responsive">
-    ...
-  </Field>
+  <Field orientation="responsive">...</Field>
 </FieldGroup>
 ```
 
@@ -192,12 +190,12 @@ The URL `https://ui.shadcn.com/docs/components/password-input` returns 404.
 
 Available alternatives:
 
-| Option | Status | Install |
-|---|---|---|
-| Official Shadcn core | Does not exist | N/A |
-| [WDS Shadcn Registry](https://wds-shadcn-registry.netlify.app/components/password-input/) | Community registry | `npx shadcn@latest add https://wds-shadcn-registry.netlify.app/r/password-input.json` |
-| [mjbalcueva GitHub Gist](https://gist.github.com/mjbalcueva/b21f39a8787e558d4c536bf68e267398) | Copy-paste pattern | Manual |
-| Build from base `Input` | DIY | Use `Input` + Lucide `Eye`/`EyeOff` toggle |
+| Option                                                                                        | Status             | Install                                                                               |
+| --------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------- |
+| Official Shadcn core                                                                          | Does not exist     | N/A                                                                                   |
+| [WDS Shadcn Registry](https://wds-shadcn-registry.netlify.app/components/password-input/)     | Community registry | `npx shadcn@latest add https://wds-shadcn-registry.netlify.app/r/password-input.json` |
+| [mjbalcueva GitHub Gist](https://gist.github.com/mjbalcueva/b21f39a8787e558d4c536bf68e267398) | Copy-paste pattern | Manual                                                                                |
+| Build from base `Input`                                                                       | DIY                | Use `Input` + Lucide `Eye`/`EyeOff` toggle                                            |
 
 The community pattern wraps Shadcn's `Input` with a visibility toggle button using Lucide React icons (`Eye` / `EyeOff`) and `useState` for the `type` prop (`"password"` vs `"text"`).
 
@@ -205,28 +203,28 @@ The community pattern wraps Shadcn's `Input` with a visibility toggle button usi
 
 ```tsx
 // layers/shared/ui/password-input/PasswordInput.tsx
-import { useState } from "react"
-import { Eye, EyeOff } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 export function PasswordInput(props: React.ComponentProps<typeof Input>) {
-  const [visible, setVisible] = useState(false)
+  const [visible, setVisible] = useState(false);
   return (
     <div className="relative">
-      <Input {...props} type={visible ? "text" : "password"} className="pr-10" />
+      <Input {...props} type={visible ? 'text' : 'password'} className="pr-10" />
       <Button
         type="button"
         variant="ghost"
         size="icon"
-        className="absolute right-0 top-0 h-full px-3 py-2"
+        className="absolute top-0 right-0 h-full px-3 py-2"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? "Hide password" : "Show password"}
+        aria-label={visible ? 'Hide password' : 'Show password'}
       >
         {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </Button>
     </div>
-  )
+  );
 }
 ```
 
@@ -234,13 +232,13 @@ export function PasswordInput(props: React.ComponentProps<typeof Input>) {
 
 ## Compatibility Notes: React 19 + Tailwind CSS 4 + new-york Style
 
-| Concern | Status |
-|---|---|
-| React 19 compatibility | Full. `Field` is a pure composition of standard React elements. No class components or deprecated APIs. |
-| Tailwind CSS 4 compatibility | Full. Container queries (`@container`) are native in Tailwind 4 — no `@tailwindcss/container-queries` plugin required. |
-| new-york style | Supported. Shadcn's `add` command respects the `style` setting in `components.json`. Using `new-york` style installs the new-york variant. |
-| React Compiler | No known issues. `Field` has no internal `useMemo`/`useCallback` that would conflict. |
-| Peer dependency conflicts | None. No form library required. |
+| Concern                      | Status                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| React 19 compatibility       | Full. `Field` is a pure composition of standard React elements. No class components or deprecated APIs.                                    |
+| Tailwind CSS 4 compatibility | Full. Container queries (`@container`) are native in Tailwind 4 — no `@tailwindcss/container-queries` plugin required.                     |
+| new-york style               | Supported. Shadcn's `add` command respects the `style` setting in `components.json`. Using `new-york` style installs the new-york variant. |
+| React Compiler               | No known issues. `Field` has no internal `useMemo`/`useCallback` that would conflict.                                                      |
+| Peer dependency conflicts    | None. No form library required.                                                                                                            |
 
 ---
 

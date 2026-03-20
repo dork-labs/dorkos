@@ -11,6 +11,7 @@ Refactor the `StatusLine` component from an imperative `entries[]` array assembl
 ## Phase 1: Foundation
 
 ### Task 1.1: Rewrite StatusLine.tsx as compound component
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: None
@@ -29,6 +30,7 @@ Rewrite `apps/client/src/layers/features/status/ui/StatusLine.tsx` to contain on
 Remove all data fetching hooks, all item component imports, and the `SessionStatusEvent` type import. The new `StatusLineProps` interface has `sessionId`, `isStreaming`, and `children` (no `sessionStatus`).
 
 **Acceptance Criteria**:
+
 - [ ] File contains only context, root, item, separator, and export — zero data fetching
 - [ ] Provider guard throws exact message: `'StatusLine.Item must be used within a StatusLine.'`
 - [ ] Registration uses `useEffect` (not render-time logic)
@@ -38,6 +40,7 @@ Remove all data fetching hooks, all item component imports, and the `SessionStat
 - [ ] All TSDoc and inline comments from spec section 11 are present
 
 ### Task 1.2: Update status feature barrel exports
+
 **Size**: Small
 **Priority**: High
 **Dependencies**: None
@@ -46,6 +49,7 @@ Remove all data fetching hooks, all item component imports, and the `SessionStat
 Add 7 missing item component exports to `apps/client/src/layers/features/status/index.ts`: `CwdItem`, `GitStatusItem`, `PermissionModeItem`, `ModelItem`, `CostItem`, `ContextItem`, `NotificationSoundItem`. Preserve all existing exports unchanged.
 
 **Acceptance Criteria**:
+
 - [ ] All 9 item components exported from barrel
 - [ ] Existing exports preserved
 - [ ] Module-level TSDoc preserved
@@ -53,6 +57,7 @@ Add 7 missing item component exports to `apps/client/src/layers/features/status/
 ## Phase 2: Consumer Migration
 
 ### Task 2.1: Migrate ChatStatusSection to compound StatusLine API
+
 **Size**: Large
 **Priority**: High
 **Dependencies**: Task 1.1, Task 1.2
@@ -68,6 +73,7 @@ Modify `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx`:
 6. Remove `sessionStatus` from `StatusLine` props
 
 **Acceptance Criteria**:
+
 - [ ] All 5 data hooks are in `ChatStatusSection`
 - [ ] `handleDismissVersion` and `dismissedVersions` are in `ChatStatusSection`
 - [ ] 9 `StatusLine.Item` children in compound JSX
@@ -78,6 +84,7 @@ Modify `apps/client/src/layers/features/chat/ui/ChatStatusSection.tsx`:
 ## Phase 3: Testing
 
 ### Task 3.1: Write StatusLine compound component tests
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 1.1
@@ -93,6 +100,7 @@ Create `apps/client/src/layers/features/status/__tests__/StatusLine.test.tsx` wi
 Uses the motion mock proxy pattern from `ModelItem.test.tsx`.
 
 **Acceptance Criteria**:
+
 - [ ] All 12 new tests pass
 - [ ] All 6 existing item test files pass without modification
 - [ ] Motion mock uses Proxy pattern
@@ -101,6 +109,7 @@ Uses the motion mock proxy pattern from `ModelItem.test.tsx`.
 ## Phase 4: Verification
 
 ### Task 4.1: Run full verification suite
+
 **Size**: Medium
 **Priority**: High
 **Dependencies**: Task 2.1, Task 3.1
@@ -109,6 +118,7 @@ Uses the motion mock proxy pattern from `ModelItem.test.tsx`.
 Run complete verification: `pnpm typecheck`, `pnpm lint`, `pnpm test -- --run`. Manual verification of visual parity, animation behavior, separator logic, interactive overlays, and mobile gestures.
 
 **Acceptance Criteria**:
+
 - [ ] All automated checks pass (typecheck, lint, test)
 - [ ] Visual parity confirmed
 - [ ] Interactive overlays functional

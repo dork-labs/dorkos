@@ -59,15 +59,15 @@ Tool descriptions are per-tool; these are cross-tool concerns. The system prompt
 
 ## 5. Technical Dependencies
 
-| Dependency | Version | Notes |
-|---|---|---|
-| `context-builder.ts` | internal | Existing `buildSystemPromptAppend()` pattern |
-| `relay-state.ts` | internal | `isRelayEnabled()` feature flag |
-| `mesh-state.ts` | internal | `isMeshEnabled()` (always true per ADR-0062) |
-| `config-manager.ts` | internal | `configManager.get('agentContext')` |
-| `config-schema.ts` | `@dorkos/shared` | `UserConfigSchema` Zod schema |
-| `agent-manager.ts` | internal | Calls `buildSystemPromptAppend()` |
-| shadcn/ui Switch | `@/layers/shared/ui` | Toggle component for Context tab |
+| Dependency           | Version              | Notes                                        |
+| -------------------- | -------------------- | -------------------------------------------- |
+| `context-builder.ts` | internal             | Existing `buildSystemPromptAppend()` pattern |
+| `relay-state.ts`     | internal             | `isRelayEnabled()` feature flag              |
+| `mesh-state.ts`      | internal             | `isMeshEnabled()` (always true per ADR-0062) |
+| `config-manager.ts`  | internal             | `configManager.get('agentContext')`          |
+| `config-schema.ts`   | `@dorkos/shared`     | `UserConfigSchema` Zod schema                |
+| `agent-manager.ts`   | internal             | Calls `buildSystemPromptAppend()`            |
+| shadcn/ui Switch     | `@/layers/shared/ui` | Toggle component for Context tab             |
 
 ---
 
@@ -324,8 +324,8 @@ export function ContextTab() {
   return (
     <div className="space-y-6">
       <p className="text-muted-foreground text-sm">
-        Control which tool usage instructions are injected into the agent system prompt.
-        These blocks teach the agent how to use DorkOS tools together.
+        Control which tool usage instructions are injected into the agent system prompt. These
+        blocks teach the agent how to use DorkOS tools together.
       </p>
 
       <ContextBlockSection
@@ -554,10 +554,10 @@ No changes needed. `ContextTab` is used internally by `AgentDialog` and does not
 
 Each context block requires BOTH conditions to be true:
 
-| Block | Feature Gate | Config Gate | Default State |
-|---|---|---|---|
-| `<relay_tools>` | `isRelayEnabled() === true` | `agentContext.relayTools !== false` | Included when relay is on |
-| `<mesh_tools>` | Always available (ADR-0062) | `agentContext.meshTools !== false` | Always included |
+| Block             | Feature Gate                | Config Gate                           | Default State             |
+| ----------------- | --------------------------- | ------------------------------------- | ------------------------- |
+| `<relay_tools>`   | `isRelayEnabled() === true` | `agentContext.relayTools !== false`   | Included when relay is on |
+| `<mesh_tools>`    | Always available (ADR-0062) | `agentContext.meshTools !== false`    | Always included           |
 | `<adapter_tools>` | `isRelayEnabled() === true` | `agentContext.adapterTools !== false` | Included when relay is on |
 
 Config toggles use `!== false` checks (not `=== true`) so that the default state (undefined/missing key) resolves to included. This ensures backward compatibility when upgrading from a config file that predates the `agentContext` section.
@@ -566,12 +566,12 @@ Config toggles use `!== false` checks (not `=== true`) so that the default state
 
 ## 9. Token Budget
 
-| Block | Estimated Tokens | Content Focus |
-|---|---|---|
-| `<relay_tools>` | ~250 | Subject hierarchy, 4 workflow steps, error codes |
-| `<mesh_tools>` | ~280 | 8-step lifecycle, 3 workflow patterns, runtimes |
-| `<adapter_tools>` | ~200 | External subjects, adapter management, binding routing |
-| **Total** | **~730** | **0.37% of 200K context window** |
+| Block             | Estimated Tokens | Content Focus                                          |
+| ----------------- | ---------------- | ------------------------------------------------------ |
+| `<relay_tools>`   | ~250             | Subject hierarchy, 4 workflow steps, error codes       |
+| `<mesh_tools>`    | ~280             | 8-step lifecycle, 3 workflow patterns, runtimes        |
+| `<adapter_tools>` | ~200             | External subjects, adapter management, binding routing |
+| **Total**         | **~730**         | **0.37% of 200K context window**                       |
 
 This is well within the 600-1000 token target. For comparison, the existing `<env>` block is ~60 tokens and `<agent_persona>` can be up to ~400 tokens.
 
@@ -581,20 +581,20 @@ This is well within the 600-1000 token target. For comparison, the existing `<en
 
 ### Phase 1: Context Blocks + Config Schema (Server-Only)
 
-| File | Action | Description |
-|---|---|---|
-| `packages/shared/src/config-schema.ts` | Modify | Add `agentContext` section to `UserConfigSchema` |
-| `apps/server/src/services/core/context-builder.ts` | Modify | Add 3 static constants, 3 builder functions, wire into `buildSystemPromptAppend()` |
-| `apps/server/src/services/core/__tests__/context-builder.test.ts` | Modify | Add tests for each builder function under enabled/disabled states |
+| File                                                              | Action | Description                                                                        |
+| ----------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `packages/shared/src/config-schema.ts`                            | Modify | Add `agentContext` section to `UserConfigSchema`                                   |
+| `apps/server/src/services/core/context-builder.ts`                | Modify | Add 3 static constants, 3 builder functions, wire into `buildSystemPromptAppend()` |
+| `apps/server/src/services/core/__tests__/context-builder.test.ts` | Modify | Add tests for each builder function under enabled/disabled states                  |
 
 ### Phase 2: Agent Settings Context Tab (Client UI)
 
-| File | Action | Description |
-|---|---|---|
-| `apps/client/src/layers/features/agent-settings/ui/ContextTab.tsx` | Create | New tab component with toggle switches and previews |
-| `apps/client/src/layers/features/agent-settings/model/use-agent-context-config.ts` | Create | Hook for reading/updating agentContext config |
-| `apps/client/src/layers/features/agent-settings/ui/AgentDialog.tsx` | Modify | Add Context tab (5th tab), update grid-cols-4 to grid-cols-5 |
-| `apps/client/src/layers/features/agent-settings/__tests__/ContextTab.test.tsx` | Create | Component tests for toggle behavior and preview rendering |
+| File                                                                               | Action | Description                                                  |
+| ---------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------ |
+| `apps/client/src/layers/features/agent-settings/ui/ContextTab.tsx`                 | Create | New tab component with toggle switches and previews          |
+| `apps/client/src/layers/features/agent-settings/model/use-agent-context-config.ts` | Create | Hook for reading/updating agentContext config                |
+| `apps/client/src/layers/features/agent-settings/ui/AgentDialog.tsx`                | Modify | Add Context tab (5th tab), update grid-cols-4 to grid-cols-5 |
+| `apps/client/src/layers/features/agent-settings/__tests__/ContextTab.test.tsx`     | Create | Component tests for toggle behavior and preview rendering    |
 
 ---
 
@@ -812,12 +812,12 @@ The XML block content follows these principles derived from the research report:
 
 ## 16. Related Decisions & Specs
 
-| Reference | Relationship |
-|---|---|
-| ADR-0051: Persona Injection via Context Builder | Precedent for XML block injection pattern |
-| ADR-0062: Remove Mesh Feature Flag (Always-On) | Mesh is always available, no feature flag gate |
-| Spec 42: Context Builder & agent-manager.ts Refactor | Created the `context-builder.ts` architecture |
-| Spec 41: Dynamic MCP Tool Injection Architecture | Created the `setMcpServerFactory()` pattern |
+| Reference                                            | Relationship                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------- |
+| ADR-0051: Persona Injection via Context Builder      | Precedent for XML block injection pattern                     |
+| ADR-0062: Remove Mesh Feature Flag (Always-On)       | Mesh is always available, no feature flag gate                |
+| Spec 42: Context Builder & agent-manager.ts Refactor | Created the `context-builder.ts` architecture                 |
+| Spec 41: Dynamic MCP Tool Injection Architecture     | Created the `setMcpServerFactory()` pattern                   |
 | Research: `20260303_agent_tool_context_injection.md` | Full research report with token budgets and content templates |
 
 ---

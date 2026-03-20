@@ -53,6 +53,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary Components/Modules:**
+
 - `roadmap/roadmap.json` — Source of truth, 8 items with MoSCoW prioritization
 - `roadmap/schema.json` — JSON Schema v7 for validation
 - `roadmap/roadmap.ts` — TypeScript query helpers (getItemById, getItemsByStatus)
@@ -61,6 +62,7 @@ status: ideation
 - `roadmap/scripts/` — 7 Python utilities (update_status, link_spec, find_by_title, etc.)
 
 **Shared Dependencies (to reuse):**
+
 - `packages/shared/` — Zod schemas, types, constants (would add roadmap schemas here)
 - `packages/typescript-config/` — tsconfig presets (react.json for frontend, node.json for backend)
 - `packages/test-utils/` — Mock factories, test helpers
@@ -74,6 +76,7 @@ status: ideation
 **Feature Flags/Config:** None currently. The roadmap JSON path could be configurable via env var `ROADMAP_PATH`.
 
 **Potential Blast Radius:**
+
 - Direct: New `apps/roadmap/` directory (server + client in one app)
 - Shared: Add roadmap Zod schemas to `packages/shared/`
 - Config: Add to `vitest.workspace.ts`
@@ -89,22 +92,22 @@ Research agent performed 10 web searches. Full findings at `research/20260218_ro
 
 ### Data Layer
 
-| Approach | Pros | Cons | Complexity |
-|---|---|---|---|
-| **lowdb (JSON adapter)** | Zero native deps, git-diffable, atomic writes via write-file-atomic, lodash-like API | Full-file reads/writes, no query language | Very Low |
-| **better-sqlite3** | Real SQL queries, WAL concurrency, battle-tested | Native addon compilation, binary files not git-diffable | Medium |
-| **node:sqlite (Node 22+)** | Zero deps, built into Node | Experimental API, requires Node >= 22.5 | Low-Medium |
+| Approach                   | Pros                                                                                 | Cons                                                    | Complexity |
+| -------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------- | ---------- |
+| **lowdb (JSON adapter)**   | Zero native deps, git-diffable, atomic writes via write-file-atomic, lodash-like API | Full-file reads/writes, no query language               | Very Low   |
+| **better-sqlite3**         | Real SQL queries, WAL concurrency, battle-tested                                     | Native addon compilation, binary files not git-diffable | Medium     |
+| **node:sqlite (Node 22+)** | Zero deps, built into Node                                                           | Experimental API, requires Node >= 22.5                 | Low-Medium |
 
 **Recommendation:** `lowdb` — keeps JSON as canonical artifact, adds atomic writes, zero compilation overhead. Migrate to SQLite only if relational queries become necessary.
 
 ### Visualization
 
-| View | Value | Complexity | Library |
-|---|---|---|---|
-| **Table/List** | High (bulk editing, search) | Low | shadcn Table + TanStack Table |
-| **Kanban by status** | High (visual workflow) | Low | Kibo UI `kanban` or `@hello-pangea/dnd` |
-| **MoSCoW priority grid** | Medium (unique to domain) | Low-Medium | Custom CSS Grid + `@hello-pangea/dnd` |
-| **Timeline/Gantt** | Lower (needs date fields) | Medium-High | Kibo UI `gantt` |
+| View                     | Value                       | Complexity  | Library                                 |
+| ------------------------ | --------------------------- | ----------- | --------------------------------------- |
+| **Table/List**           | High (bulk editing, search) | Low         | shadcn Table + TanStack Table           |
+| **Kanban by status**     | High (visual workflow)      | Low         | Kibo UI `kanban` or `@hello-pangea/dnd` |
+| **MoSCoW priority grid** | Medium (unique to domain)   | Low-Medium  | Custom CSS Grid + `@hello-pangea/dnd`   |
+| **Timeline/Gantt**       | Lower (needs date fields)   | Medium-High | Kibo UI `gantt`                         |
 
 **Recommendation:** Ship Table + Kanban first (fastest to build, highest value). Add MoSCoW grid next. Gantt only if items get `startDate`/`endDate` fields.
 

@@ -464,7 +464,9 @@ describe('ChatInput', () => {
     });
 
     it('send button shows Update icon when editing queue item', () => {
-      render(<ChatInput {...defaultProps} editingQueueItem={true} value="text" onSaveEdit={vi.fn()} />);
+      render(
+        <ChatInput {...defaultProps} editingQueueItem={true} value="text" onSaveEdit={vi.fn()} />
+      );
       expect(screen.getByLabelText('Save edit')).toBeDefined();
     });
 
@@ -505,7 +507,14 @@ describe('ChatInput', () => {
 
     it('Enter key saves edit when editingQueueItem is true', () => {
       const onSaveEdit = vi.fn();
-      render(<ChatInput {...defaultProps} editingQueueItem={true} value="edited" onSaveEdit={onSaveEdit} />);
+      render(
+        <ChatInput
+          {...defaultProps}
+          editingQueueItem={true}
+          value="edited"
+          onSaveEdit={onSaveEdit}
+        />
+      );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(onSaveEdit).toHaveBeenCalled();
     });

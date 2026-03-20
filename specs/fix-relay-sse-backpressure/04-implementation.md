@@ -39,6 +39,7 @@ Applied the same async drain pattern from `stream-adapter.ts` (commit 1352e31) t
 ## Follow-Up
 
 The backpressure fix addressed write queue serialization and drain handling but did not resolve upstream delivery issues that caused SSE freezes in chat sessions. See `specs/fix-relay-sse-delivery-pipeline/` for the complete fix addressing:
+
 - EventSource lifecycle stabilization on relay path
 - Subscribe-first handshake with `stream_ready` SSE event
 - Pending buffer for message capture during reconnection windows

@@ -92,7 +92,7 @@ function renderField(
     onChange?: (key: string, value: unknown) => void;
     error?: string;
     allValues?: Record<string, unknown>;
-  } = {},
+  } = {}
 ) {
   const onChange = overrides.onChange ?? vi.fn();
   return render(
@@ -102,7 +102,7 @@ function renderField(
       onChange={onChange}
       error={overrides.error}
       allValues={overrides.allValues ?? {}}
-    />,
+    />
   );
 }
 
@@ -220,7 +220,7 @@ describe('ConfigFieldInput', () => {
         value=""
         onChange={vi.fn()}
         allValues={{ mode: 'polling' }}
-      />,
+      />
     );
     expect(container.firstChild).toBeNull();
   });
@@ -232,7 +232,7 @@ describe('ConfigFieldInput', () => {
         value=""
         onChange={vi.fn()}
         allValues={{ mode: 'webhook' }}
-      />,
+      />
     );
     expect(screen.getByText('Webhook URL')).toBeInTheDocument();
   });
@@ -283,12 +283,7 @@ describe('ConfigFieldGroup', () => {
 
   it('renders all ungrouped fields without section headings', () => {
     render(
-      <ConfigFieldGroup
-        fields={ungroupedFields}
-        values={{}}
-        onChange={vi.fn()}
-        errors={{}}
-      />,
+      <ConfigFieldGroup fields={ungroupedFields} values={{}} onChange={vi.fn()} errors={{}} />
     );
     expect(screen.getByText('Name')).toBeInTheDocument();
     expect(screen.getByText('Token')).toBeInTheDocument();
@@ -297,12 +292,7 @@ describe('ConfigFieldGroup', () => {
 
   it('renders section headings for fields with a section property', () => {
     render(
-      <ConfigFieldGroup
-        fields={sectionedFields}
-        values={{}}
-        onChange={vi.fn()}
-        errors={{}}
-      />,
+      <ConfigFieldGroup fields={sectionedFields} values={{}} onChange={vi.fn()} errors={{}} />
     );
     expect(screen.getByText('Connection')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
@@ -310,12 +300,7 @@ describe('ConfigFieldGroup', () => {
 
   it('renders all fields within their respective sections', () => {
     render(
-      <ConfigFieldGroup
-        fields={sectionedFields}
-        values={{}}
-        onChange={vi.fn()}
-        errors={{}}
-      />,
+      <ConfigFieldGroup fields={sectionedFields} values={{}} onChange={vi.fn()} errors={{}} />
     );
     expect(screen.getByText('Host')).toBeInTheDocument();
     expect(screen.getByText('Port')).toBeInTheDocument();
@@ -329,7 +314,7 @@ describe('ConfigFieldGroup', () => {
         values={{}}
         onChange={vi.fn()}
         errors={{ name: 'Name is required' }}
-      />,
+      />
     );
     expect(screen.getByText('Name is required')).toBeInTheDocument();
   });
@@ -361,37 +346,18 @@ describe('helpMarkdown disclosure', () => {
 
   it('does not render collapsible when helpMarkdown is absent', () => {
     render(
-      <ConfigFieldInput
-        field={fieldWithoutHelp}
-        value=""
-        onChange={vi.fn()}
-        allValues={{}}
-      />,
+      <ConfigFieldInput field={fieldWithoutHelp} value="" onChange={vi.fn()} allValues={{}} />
     );
     expect(screen.queryByText('Where do I find this?')).not.toBeInTheDocument();
   });
 
   it('renders collapsible trigger when helpMarkdown is present', () => {
-    render(
-      <ConfigFieldInput
-        field={fieldWithHelp}
-        value=""
-        onChange={vi.fn()}
-        allValues={{}}
-      />,
-    );
+    render(<ConfigFieldInput field={fieldWithHelp} value="" onChange={vi.fn()} allValues={{}} />);
     expect(screen.getByText('Where do I find this?')).toBeInTheDocument();
   });
 
   it('expands help content when trigger is clicked', () => {
-    render(
-      <ConfigFieldInput
-        field={fieldWithHelp}
-        value=""
-        onChange={vi.fn()}
-        allValues={{}}
-      />,
-    );
+    render(<ConfigFieldInput field={fieldWithHelp} value="" onChange={vi.fn()} allValues={{}} />);
     fireEvent.click(screen.getByText('Where do I find this?'));
     expect(screen.getByText(/Settings/)).toBeInTheDocument();
   });

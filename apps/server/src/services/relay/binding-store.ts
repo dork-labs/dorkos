@@ -128,7 +128,19 @@ export class BindingStore {
    */
   async update(
     id: string,
-    updates: Partial<Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType' | 'permissionMode' | 'canInitiate' | 'canReply' | 'canReceive'>>,
+    updates: Partial<
+      Pick<
+        AdapterBinding,
+        | 'sessionStrategy'
+        | 'label'
+        | 'chatId'
+        | 'channelType'
+        | 'permissionMode'
+        | 'canInitiate'
+        | 'canReply'
+        | 'canReceive'
+      >
+    >
   ): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;
@@ -156,11 +168,7 @@ export class BindingStore {
    * @param chatId - Optional chat identifier from the message subject
    * @param channelType - Optional channel type from envelope metadata
    */
-  resolve(
-    adapterId: string,
-    chatId?: string,
-    channelType?: string,
-  ): AdapterBinding | undefined {
+  resolve(adapterId: string, chatId?: string, channelType?: string): AdapterBinding | undefined {
     const candidates = this.getByAdapterId(adapterId);
     if (candidates.length === 0) return undefined;
 
@@ -170,11 +178,7 @@ export class BindingStore {
       .sort((a, b) => b.score - a.score)[0]?.binding;
   }
 
-  private scoreMatch(
-    binding: AdapterBinding,
-    chatId?: string,
-    channelType?: string,
-  ): number {
+  private scoreMatch(binding: AdapterBinding, chatId?: string, channelType?: string): number {
     let score = 1; // base: adapterId already matches (filtered by caller)
     if (binding.chatId) {
       if (binding.chatId === chatId) score += 4;

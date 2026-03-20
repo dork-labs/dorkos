@@ -1,5 +1,5 @@
 ---
-title: "Slack vs Telegram Bot API: Relay Adapter Comparison"
+title: 'Slack vs Telegram Bot API: Relay Adapter Comparison'
 date: 2026-02-27
 type: internal-architecture
 status: archived
@@ -70,7 +70,7 @@ Slack is significantly more complex to set up than Telegram for a bidirectional 
 
 **Credentials needed:** `SLACK_SIGNING_SECRET` + `SLACK_BOT_TOKEN`. For Socket Mode, an additional **App-Level Token** (`xapp-...`) with `connections:write` scope.
 
-**Key friction:** The app must be *installed to a workspace*, meaning someone with workspace admin rights must approve or perform the installation. This is a significant difference from Telegram where there is no concept of workspace-level permission.
+**Key friction:** The app must be _installed to a workspace_, meaning someone with workspace admin rights must approve or perform the installation. This is a significant difference from Telegram where there is no concept of workspace-level permission.
 
 ---
 
@@ -81,12 +81,14 @@ Slack is significantly more complex to set up than Telegram for a bidirectional 
 Two modes, both well-supported by grammY:
 
 **Long Polling** (`getUpdates`):
+
 - No infrastructure needed — the bot polls Telegram servers.
 - Simple for local development.
 - Telegram queues updates; the bot fetches them in batches.
 - Cannot coexist with webhooks (Telegram enforces this).
 
 **Webhooks** (`setWebhook`):
+
 - Bot registers a public HTTPS URL.
 - Telegram POSTs JSON payloads to that URL on each update.
 - Requires a valid TLS certificate (Telegram provides a self-signed option or accepts Let's Encrypt).
@@ -99,6 +101,7 @@ Both modes return the same `Update` object structure. grammY handles switching b
 Two modes with significant tradeoffs:
 
 **HTTP Events API** (recommended for production):
+
 - Slack POSTs JSON event payloads to your public Request URL (must end in `/slack/events` for Bolt).
 - **Your server must respond within 3 seconds** with HTTP 200, or Slack retries.
 - You **must verify the HMAC-SHA256 signature** on every request (Bolt handles this automatically).
@@ -107,6 +110,7 @@ Two modes with significant tradeoffs:
 - Required for Slack Marketplace submission.
 
 **Socket Mode** (development / behind-firewall):
+
 - Slack initiates a WebSocket connection to your server (no public URL needed).
 - Maximum 10 concurrent connections per app.
 - Not allowed for Marketplace apps.
@@ -114,6 +118,7 @@ Two modes with significant tradeoffs:
 - Recommended only for local dev or internal tools that cannot expose a public endpoint.
 
 **Event subscription setup** — you must explicitly subscribe to each event type in the portal:
+
 - `message.channels` — messages in public channels the bot is in
 - `message.im` — direct messages to the bot
 - `message.groups` — messages in private channels the bot is in
@@ -137,9 +142,10 @@ Body: { chat_id: "...", text: "Hello", parse_mode: "HTML" }
 - Supports inline keyboards, reply keyboards, file attachments, stickers, etc.
 
 grammY API:
+
 ```typescript
-await ctx.reply("Hello world");
-await bot.api.sendMessage(chatId, "Hello world");
+await ctx.reply('Hello world');
+await bot.api.sendMessage(chatId, 'Hello world');
 ```
 
 #### Slack
@@ -156,10 +162,11 @@ Body: { channel: "C1234567890", text: "Hello" }
 - Rate limit: 1 message per second per channel (workspace-level limit of several hundred/minute).
 
 Bolt SDK API:
+
 ```typescript
-await app.client.chat.postMessage({ channel: channelId, text: "Hello" });
+await app.client.chat.postMessage({ channel: channelId, text: 'Hello' });
 // Inside an event handler:
-await say("Hello world");
+await say('Hello world');
 ```
 
 **Sending to a specific user as a DM:**
@@ -168,7 +175,7 @@ There is a quirk: if you pass a user ID as `channel`, the message appears in the
 ```typescript
 const result = await app.client.conversations.open({ users: userId });
 const dmChannelId = result.channel.id;
-await app.client.chat.postMessage({ channel: dmChannelId, text: "Hello" });
+await app.client.chat.postMessage({ channel: dmChannelId, text: 'Hello' });
 ```
 
 This is two API calls vs Telegram's one.
@@ -187,15 +194,16 @@ This is two API calls vs Telegram's one.
 
 **Three values may be needed depending on mode:**
 
-| Credential | Format | Used for |
-|---|---|---|
-| `SLACK_BOT_TOKEN` | `xoxb-...` | Making API calls (chat.postMessage, etc.) |
-| `SLACK_SIGNING_SECRET` | hex string | Verifying HTTP event payloads |
-| `SLACK_APP_TOKEN` | `xapp-...` | Socket Mode only (requires `connections:write` scope) |
+| Credential             | Format     | Used for                                              |
+| ---------------------- | ---------- | ----------------------------------------------------- |
+| `SLACK_BOT_TOKEN`      | `xoxb-...` | Making API calls (chat.postMessage, etc.)             |
+| `SLACK_SIGNING_SECRET` | hex string | Verifying HTTP event payloads                         |
+| `SLACK_APP_TOKEN`      | `xapp-...` | Socket Mode only (requires `connections:write` scope) |
 
 **Signature verification** is mandatory for HTTP mode. Slack signs each request with HMAC-SHA256 using your signing secret and a timestamp. Bolt handles this automatically; raw Express apps must do it manually.
 
 For multi-workspace deployments (distributing the app to other workspaces), you additionally need:
+
 - `SLACK_CLIENT_ID`
 - `SLACK_CLIENT_SECRET`
 - `SLACK_STATE_SECRET` (for OAuth state validation)
@@ -208,23 +216,23 @@ For a single-workspace internal adapter, only the bot token + signing secret are
 
 #### Telegram
 
-| Scope | Limit |
-|---|---|
-| Messages per chat | 1 message/second (short bursts allowed) |
-| Messages per group/channel | 20 messages/minute |
-| Broadcast across all users | ~30 messages/second total |
+| Scope                                      | Limit                                            |
+| ------------------------------------------ | ------------------------------------------------ |
+| Messages per chat                          | 1 message/second (short bursts allowed)          |
+| Messages per group/channel                 | 20 messages/minute                               |
+| Broadcast across all users                 | ~30 messages/second total                        |
 | Paid broadcasting (`allow_paid_broadcast`) | Up to 1,000 messages/second at 0.1 Stars/message |
 
 Exceeding limits returns HTTP 429 with a `retry_after` field. grammY's flood plugin handles this automatically.
 
 #### Slack
 
-| Method | Tier | Limit |
-|---|---|---|
-| `chat.postMessage` | Special | 1 message/second/channel, workspace burst cap |
-| Most read methods | Tier 2–3 | 20–50 requests/minute |
-| `conversations.history` (Marketplace apps) | Tier 3 | 50+ requests/minute, 1,000 messages/request |
-| `conversations.history` (non-Marketplace, from May 2025) | Restricted | 1 request/minute, max 15 messages/request |
+| Method                                                   | Tier       | Limit                                         |
+| -------------------------------------------------------- | ---------- | --------------------------------------------- |
+| `chat.postMessage`                                       | Special    | 1 message/second/channel, workspace burst cap |
+| Most read methods                                        | Tier 2–3   | 20–50 requests/minute                         |
+| `conversations.history` (Marketplace apps)               | Tier 3     | 50+ requests/minute, 1,000 messages/request   |
+| `conversations.history` (non-Marketplace, from May 2025) | Restricted | 1 request/minute, max 15 messages/request     |
 
 **2025 Rate Limit Changes (Important):** As of May 29, 2025, newly created non-Marketplace Slack apps face dramatically reduced limits on `conversations.history` and `conversations.replies`. Existing installations are affected from March 3, 2026. This applies to commercially distributed apps not in the Marketplace. Internal apps (installed only to a single workspace you own) are **exempt**. For a DorkOS relay adapter that installs to a user's own workspace, this should not be a concern.
 
@@ -236,13 +244,14 @@ Rate limit exceeded responses return HTTP 429 with `Retry-After` header.
 
 #### Telegram
 
-| Package | Stars | Weekly Downloads | Last Updated | Verdict |
-|---|---|---|---|---|
-| `grammy` | 3,391 | High | Daily | **Best choice** — modern, TypeScript-native, active |
-| `telegraf` | 9,098 | Moderate | 2 years ago | Avoid for new projects — stale |
-| `node-telegram-bot-api` | 9,112 | High | 2 months ago | Legacy; not recommended for large projects |
+| Package                 | Stars | Weekly Downloads | Last Updated | Verdict                                             |
+| ----------------------- | ----- | ---------------- | ------------ | --------------------------------------------------- |
+| `grammy`                | 3,391 | High             | Daily        | **Best choice** — modern, TypeScript-native, active |
+| `telegraf`              | 9,098 | Moderate         | 2 years ago  | Avoid for new projects — stale                      |
+| `node-telegram-bot-api` | 9,112 | High             | 2 months ago | Legacy; not recommended for large projects          |
 
 **grammY** (`grammy` on npm, v1.40.1) is the clear winner for new projects:
+
 - Updated daily, 12 open issues (extremely low for a bot framework)
 - Full TypeScript with inline Bot API reference hints
 - Always tracks the latest Telegram Bot API version
@@ -254,12 +263,13 @@ Rate limit exceeded responses return HTTP 429 with `Retry-After` header.
 
 #### Slack
 
-| Package | Stars | Version | Last Published | Maintainer |
-|---|---|---|---|---|
-| `@slack/bolt` | 2,800 | 4.6.0 | ~4 months ago | Slack (official) |
-| `@slack/web-api` | (part of bolt) | — | — | Slack (official) |
+| Package          | Stars          | Version | Last Published | Maintainer       |
+| ---------------- | -------------- | ------- | -------------- | ---------------- |
+| `@slack/bolt`    | 2,800          | 4.6.0   | ~4 months ago  | Slack (official) |
+| `@slack/web-api` | (part of bolt) | —       | —              | Slack (official) |
 
 **`@slack/bolt`** is the official Slack framework for Node.js. It wraps:
+
 - The Web API (`@slack/web-api`)
 - Events API handling + signature verification
 - Socket Mode (`@slack/socket-mode`)
@@ -267,6 +277,7 @@ Rate limit exceeded responses return HTTP 429 with `Retry-After` header.
 - Interactive components (modals, shortcuts, slash commands)
 
 Installation:
+
 ```bash
 npm install @slack/bolt
 ```
@@ -296,14 +307,17 @@ For a relay adapter, the key field is `message.text` for the content and `messag
 Slack has two text formatting systems:
 
 **mrkdwn** (Slack's Markdown dialect — note the spelling):
+
 - `*bold*`, `_italic_`, `~strikethrough~`, `` `code` ``, ` ```code block``` `
 - Not the same as standard Markdown. Angle brackets not supported for links directly; use `<url|text>` syntax.
 - Applied by setting `"type": "mrkdwn"` on text objects.
 
 **Block Kit** (modern, preferred):
+
 - JSON-based structured layout system.
 - `rich_text` blocks support full formatting including lists, quotes, inline code.
 - Example message payload:
+
 ```json
 {
   "channel": "C1234567890",
@@ -321,6 +335,7 @@ Slack has two text formatting systems:
   "text": "Hello world"
 }
 ```
+
 - The `text` field serves as fallback for notifications/accessibility.
 
 Incoming Slack event payloads for messages are significantly more complex than Telegram. A `message` event includes: `type`, `channel`, `user`, `text`, `ts` (timestamp used as message ID), `team`, `blocks` (if structured), `event_ts`, `channel_type`.
@@ -334,6 +349,7 @@ Incoming Slack event payloads for messages are significantly more complex than T
 #### Telegram — Estimated Setup Time: 5 minutes
 
 Steps:
+
 1. Chat with @BotFather → get token (2 min)
 2. Set `BOT_TOKEN` env var (30 sec)
 3. Initialize grammY with token (5 lines of code)
@@ -341,6 +357,7 @@ Steps:
 5. Call `bot.start()` for polling OR register webhook URL
 
 For the relay adapter specifically:
+
 - No portal configuration required
 - No scopes to select
 - No workspace admin needed
@@ -349,6 +366,7 @@ For the relay adapter specifically:
 #### Slack — Estimated Setup Time: 30–60 minutes
 
 Steps:
+
 1. Go to api.slack.com/apps → Create app (5 min)
 2. Configure app manifest: select scopes, enable events API (10 min)
 3. Choose HTTP vs Socket Mode (decision point)
@@ -360,12 +378,14 @@ Steps:
 9. Invite bot to each channel it should monitor (`/invite @botname`)
 
 Additional Slack-specific gotchas:
+
 - The bot only receives messages in channels it has been **explicitly invited to**. In Telegram, DMs arrive automatically.
 - To receive DMs, users must start a conversation with the bot first.
 - For Socket Mode in production, you must manage WebSocket reconnection and cannot distribute the app publicly.
 - `chat:write.public` scope is needed to post to public channels without joining them first.
 
 **Minimal scope set for a bidirectional relay adapter:**
+
 ```
 Bot Token Scopes:
 - channels:history     (read public channel messages)
@@ -386,24 +406,24 @@ Event Subscriptions (Bot Events):
 
 ## Side-by-Side Comparison Table
 
-| Aspect | Telegram | Slack |
-|---|---|---|
-| **Bot creation** | BotFather chat, 2 min | Developer portal, 30–60 min |
-| **Credentials** | 1 token | Bot token + signing secret (+ app token for Socket Mode) |
-| **Receiving messages** | Long polling or webhook | HTTP Events API or Socket Mode |
-| **Local dev (no public URL)** | Long polling (built-in) | Socket Mode required |
-| **Production receiving** | Webhook (simple) | HTTP Events API (requires public URL + HMAC verification) |
-| **Sending a message** | 1 API call | 1 API call (but DMs need 2: `conversations.open` + `postMessage`) |
-| **Message rate limit** | 1/sec per chat | 1/sec per channel |
-| **Text format** | Plain, HTML, MarkdownV2 | mrkdwn, Block Kit JSON |
-| **Message ID** | `message_id` (integer) | `ts` (timestamp string) |
-| **Node.js SDK** | grammY (daily updates) | @slack/bolt (official, ~monthly) |
-| **SDK quality** | Excellent | Good |
-| **Workspace admin needed?** | No | Yes (to install app) |
-| **Channel invitation required?** | No | Yes (bot must be invited) |
-| **Rate limit (history reading)** | Not a concern | Restricted for non-Marketplace apps since May 2025 |
-| **Multi-workspace support** | Built-in (each user has own chat) | Requires full OAuth flow per workspace |
-| **Relative adapter complexity** | Low | High |
+| Aspect                           | Telegram                          | Slack                                                             |
+| -------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| **Bot creation**                 | BotFather chat, 2 min             | Developer portal, 30–60 min                                       |
+| **Credentials**                  | 1 token                           | Bot token + signing secret (+ app token for Socket Mode)          |
+| **Receiving messages**           | Long polling or webhook           | HTTP Events API or Socket Mode                                    |
+| **Local dev (no public URL)**    | Long polling (built-in)           | Socket Mode required                                              |
+| **Production receiving**         | Webhook (simple)                  | HTTP Events API (requires public URL + HMAC verification)         |
+| **Sending a message**            | 1 API call                        | 1 API call (but DMs need 2: `conversations.open` + `postMessage`) |
+| **Message rate limit**           | 1/sec per chat                    | 1/sec per channel                                                 |
+| **Text format**                  | Plain, HTML, MarkdownV2           | mrkdwn, Block Kit JSON                                            |
+| **Message ID**                   | `message_id` (integer)            | `ts` (timestamp string)                                           |
+| **Node.js SDK**                  | grammY (daily updates)            | @slack/bolt (official, ~monthly)                                  |
+| **SDK quality**                  | Excellent                         | Good                                                              |
+| **Workspace admin needed?**      | No                                | Yes (to install app)                                              |
+| **Channel invitation required?** | No                                | Yes (bot must be invited)                                         |
+| **Rate limit (history reading)** | Not a concern                     | Restricted for non-Marketplace apps since May 2025                |
+| **Multi-workspace support**      | Built-in (each user has own chat) | Requires full OAuth flow per workspace                            |
+| **Relative adapter complexity**  | Low                               | High                                                              |
 
 ---
 
@@ -412,6 +432,7 @@ Event Subscriptions (Bot Events):
 Given an existing grammY-based Telegram adapter, adding Slack as a second adapter is feasible but requires significantly more upfront configuration from the user.
 
 **If adding Slack, the adapter should:**
+
 1. Use `@slack/bolt` with **Socket Mode** for the initial version to eliminate the public URL requirement during development and for self-hosted deployments.
 2. Provide a clear setup guide (the scope list above is the minimum viable configuration).
 3. Map Slack's `ts` field to the relay adapter's message ID concept.
@@ -420,14 +441,14 @@ Given an existing grammY-based Telegram adapter, adding Slack as a second adapte
 
 **For parity with the Telegram adapter's bidirectional bridge:**
 
-| Telegram equivalent | Slack implementation |
-|---|---|
-| `ctx.reply(text)` | `say(text)` or `client.chat.postMessage(...)` |
-| `message.from.id` | `event.user` |
-| `message.chat.id` | `event.channel` |
-| `message.message_id` | `event.ts` |
-| `bot.start()` (polling) | `app.start()` (Bolt, handles Socket Mode or HTTP) |
-| `bot.on('message', handler)` | `app.message(handler)` |
+| Telegram equivalent          | Slack implementation                              |
+| ---------------------------- | ------------------------------------------------- |
+| `ctx.reply(text)`            | `say(text)` or `client.chat.postMessage(...)`     |
+| `message.from.id`            | `event.user`                                      |
+| `message.chat.id`            | `event.channel`                                   |
+| `message.message_id`         | `event.ts`                                        |
+| `bot.start()` (polling)      | `app.start()` (Bolt, handles Socket Mode or HTTP) |
+| `bot.on('message', handler)` | `app.message(handler)`                            |
 
 ---
 

@@ -34,15 +34,15 @@ A secondary purpose: when the SDK assigns a different session ID than the client
 
 ### Data Loss from History Replace
 
-| Data Element | In SSE Stream? | In JSONL History? | Impact |
-|---|---|---|---|
-| Text response | Yes | Yes | No loss |
-| Thinking blocks | Yes (with `elapsedMs`) | Text only | Duration lost |
-| Tool calls | Yes | Yes | No loss |
-| **Error parts** | Yes | **No** | Errors vanish |
-| **Subagent parts** | Yes | **No** | Multi-agent invisible |
-| **Hook parts** | Yes | **No** | Build/test output lost |
-| **Tool progress** | Yes | **No** | Real-time output lost |
+| Data Element       | In SSE Stream?         | In JSONL History? | Impact                 |
+| ------------------ | ---------------------- | ----------------- | ---------------------- |
+| Text response      | Yes                    | Yes               | No loss                |
+| Thinking blocks    | Yes (with `elapsedMs`) | Text only         | Duration lost          |
+| Tool calls         | Yes                    | Yes               | No loss                |
+| **Error parts**    | Yes                    | **No**            | Errors vanish          |
+| **Subagent parts** | Yes                    | **No**            | Multi-agent invisible  |
+| **Hook parts**     | Yes                    | **No**            | Build/test output lost |
+| **Tool progress**  | Yes                    | **No**            | Real-time output lost  |
 
 ---
 
@@ -71,12 +71,12 @@ A secondary purpose: when the SDK assigns a different session ID than the client
 
 ## Technical Dependencies
 
-| Dependency | Version | Role |
-|---|---|---|
-| React | 19 | Component state, effects |
-| TanStack Query | 5.x | History polling, cache invalidation |
-| Zod | 3.x | Schema validation (MessagePartSchema) |
-| Vitest | 3.x | Unit testing |
+| Dependency       | Version   | Role                                     |
+| ---------------- | --------- | ---------------------------------------- |
+| React            | 19        | Component state, effects                 |
+| TanStack Query   | 5.x       | History polling, cache invalidation      |
+| Zod              | 3.x       | Schema validation (MessagePartSchema)    |
+| Vitest           | 3.x       | Unit testing                             |
 | `@dorkos/shared` | workspace | MessagePart union, HistoryMessage schema |
 
 No new external dependencies required.
@@ -191,19 +191,13 @@ if (historySeededRef.current && !isStreaming) {
     if (currentIds.has(serverMsg.id)) continue;
 
     // Try to match tagged user message by exact content
-    if (
-      taggedUser &&
-      serverMsg.role === 'user' &&
-      serverMsg.content === taggedUser.content
-    ) {
+    if (taggedUser && serverMsg.role === 'user' && serverMsg.content === taggedUser.content) {
       matchedUserIdx = i;
       // Replace tagged user with server version, clear tag
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === taggedUser.id
-            ? { ...mapHistoryMessage(serverMsg), _streaming: false }
-            : m,
-        ),
+          m.id === taggedUser.id ? { ...mapHistoryMessage(serverMsg), _streaming: false } : m
+        )
       );
       continue;
     }
@@ -218,7 +212,7 @@ if (historySeededRef.current && !isStreaming) {
       // Carry over client-only parts that the server version lacks
       const serverMapped = mapHistoryMessage(serverMsg);
       const clientOnlyParts = taggedAssistant.parts.filter(
-        (p) => p.type === 'error' || p.type === 'subagent' || p.type === 'hook',
+        (p) => p.type === 'error' || p.type === 'subagent' || p.type === 'hook'
       );
       const mergedParts =
         clientOnlyParts.length > 0
@@ -229,8 +223,8 @@ if (historySeededRef.current && !isStreaming) {
         prev.map((m) =>
           m.id === taggedAssistant.id
             ? { ...serverMapped, parts: mergedParts, _streaming: false }
-            : m,
-        ),
+            : m
+        )
       );
       continue;
     }
@@ -246,6 +240,7 @@ if (historySeededRef.current && !isStreaming) {
 ```
 
 **Key properties:**
+
 - The tagged set is bounded at 0-2 messages per streaming turn (one user, one assistant)
 - Tags are cleared on match, so no unbounded growth
 - User message matched by exact content (we submitted it — content is identical)
@@ -297,9 +292,15 @@ The parser iterates JSONL content blocks and only handles three types:
 
 ```typescript
 // Current: only thinking, text, tool_use
-if (block.type === 'thinking') { /* ... */ }
-if (block.type === 'text') { /* ... */ }
-if (block.type === 'tool_use') { /* ... */ }
+if (block.type === 'thinking') {
+  /* ... */
+}
+if (block.type === 'text') {
+  /* ... */
+}
+if (block.type === 'tool_use') {
+  /* ... */
+}
 ```
 
 #### New block handlers
@@ -307,6 +308,7 @@ if (block.type === 'tool_use') { /* ... */ }
 Add handlers for error, subagent, and hook blocks:
 
 **Error blocks → `ErrorPart`** (schema at `schemas.ts:571-580`):
+
 ```typescript
 if (block.type === 'error') {
   parts.push({
@@ -320,6 +322,7 @@ if (block.type === 'error') {
 ```
 
 **Subagent blocks → `SubagentPart`** (schema at `schemas.ts:545-558`):
+
 ```typescript
 if (block.type === 'subagent') {
   parts.push({
@@ -336,6 +339,7 @@ if (block.type === 'subagent') {
 ```
 
 **Hook blocks → `HookPart`** (schema at `schemas.ts:512-522`):
+
 ```typescript
 if (block.type === 'hook') {
   parts.push({
@@ -391,9 +395,7 @@ The `getLastMessageIds` method reads the JSONL transcript and returns the IDs of
 // sessions.ts — done event emission (lines 194-207)
 if (event.type === 'done') {
   const actualInternalId = runtime.getInternalSessionId(sessionId);
-  const lastMsgIds = await runtime.getLastMessageIds(
-    actualInternalId ?? sessionId,
-  );
+  const lastMsgIds = await runtime.getLastMessageIds(actualInternalId ?? sessionId);
   const donePayload: Record<string, unknown> = {};
 
   if (actualInternalId && actualInternalId !== sessionId) {
@@ -448,9 +450,7 @@ export interface AgentRuntime {
    * @param sessionId - Session to query
    * @returns ID pair or null if not available
    */
-  getLastMessageIds(
-    sessionId: string,
-  ): Promise<{ user: string; assistant: string } | null>;
+  getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null>;
 }
 ```
 
@@ -469,7 +469,7 @@ await transport.sendMessage(
   abortController.signal,
   selectedCwd ?? undefined,
   // Phase 3: include client IDs for server-echo
-  { clientMessageId: pendingUserId },
+  { clientMessageId: pendingUserId }
 );
 ```
 
@@ -498,7 +498,7 @@ if (doneData.messageIds) {
         return { ...m, id: serverAssistantId, _streaming: false };
       }
       return m;
-    }),
+    })
   );
 }
 ```
@@ -527,6 +527,7 @@ Users will not directly interact with this feature — it fixes existing bugs:
 ### Phase 1 Tests
 
 **Update existing remap test** (`stream-event-handler-remap.test.ts`):
+
 - Remove assertion that `setMessages([])` is called on remap
 - Add assertion that messages are preserved during remap (setMessages NOT called with empty array)
 
@@ -571,6 +572,7 @@ describe('tagged-dedup in seed effect', () => {
 ```
 
 **New post-stream stability test** (in `use-chat-session.test.ts` or new file):
+
 ```typescript
 it('does not reset historySeededRef after streaming completes', () => {
   // Verify that historySeededRef stays true after executeSubmission resolves
@@ -581,6 +583,7 @@ it('does not reset historySeededRef after streaming completes', () => {
 ### Phase 2 Tests
 
 **Transcript parser tests** (extend existing test file):
+
 ```typescript
 describe('transcript-parser error/subagent/hook extraction', () => {
   it('extracts error blocks from JSONL as ErrorPart', () => {
@@ -607,6 +610,7 @@ describe('transcript-parser error/subagent/hook extraction', () => {
 ### Phase 3 Tests
 
 **Server-echo ID tests**:
+
 ```typescript
 describe('done event with messageIds', () => {
   it('includes messageIds in done event when available', () => {
@@ -622,6 +626,7 @@ describe('done event with messageIds', () => {
 ```
 
 **Client ID remap tests**:
+
 ```typescript
 describe('client ID remap via done event', () => {
   it('updates message IDs when done event includes messageIds', () => {
@@ -716,14 +721,14 @@ All questions from the ideation phase have been resolved. No remaining open ques
 
 ## Related ADRs
 
-| ADR | Relevance |
-|---|---|
-| ADR-0018 | SSE event filtering — establishes SSE event type patterns |
-| ADR-0026 | Receipt + SSE protocol — server-to-client event delivery |
-| ADR-0091 | `watchSession` callback — session lifecycle monitoring |
-| ADR-0093 | `queueMicrotask` for tool_result — event ordering in stream handler |
-| ADR-0104 | Client-side message queue — message ordering guarantees |
-| ADR-0114 | Client-only `_partId` field — establishes underscore-prefix convention for internal fields |
+| ADR      | Relevance                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------ |
+| ADR-0018 | SSE event filtering — establishes SSE event type patterns                                              |
+| ADR-0026 | Receipt + SSE protocol — server-to-client event delivery                                               |
+| ADR-0091 | `watchSession` callback — session lifecycle monitoring                                                 |
+| ADR-0093 | `queueMicrotask` for tool_result — event ordering in stream handler                                    |
+| ADR-0104 | Client-side message queue — message ordering guarantees                                                |
+| ADR-0114 | Client-only `_partId` field — establishes underscore-prefix convention for internal fields             |
 | ADR-0117 | Client Direct SSE — POST body IS the SSE stream; separate persistent EventSource for cross-client sync |
 
 ---

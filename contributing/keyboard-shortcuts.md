@@ -77,46 +77,46 @@ interface UseInteractiveShortcutsOptions {
 
 ### Navigation
 
-| Key                            | Action               |
-| ------------------------------ | -------------------- |
-| `Cmd+K` / `Ctrl+K`            | Open command palette |
-| `Cmd+B` / `Ctrl+B`            | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`) |
-| `Cmd+Shift+N` / `Ctrl+Shift+N` | New session         |
-| `?`                            | Open keyboard shortcuts panel |
+| Key                            | Action                                                       |
+| ------------------------------ | ------------------------------------------------------------ |
+| `Cmd+K` / `Ctrl+K`             | Open command palette                                         |
+| `Cmd+B` / `Ctrl+B`             | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`) |
+| `Cmd+Shift+N` / `Ctrl+Shift+N` | New session                                                  |
+| `?`                            | Open keyboard shortcuts panel                                |
 
 ### Command Palette
 
 The global command palette (`Cmd+K` / `Ctrl+K`) provides unified access to agents, features, commands, and quick actions.
 
-| Behavior | Description |
-| -------- | ----------- |
-| **Content groups** | Recent Agents (frecency-sorted), All Agents, Features, Commands, Quick Actions |
-| **`@` prefix mode** | Typing `@` scopes search to agents only; the `@` is stripped from the search term |
-| **`>` prefix mode** | Typing `>` scopes search to commands only; the `>` is stripped from the search term |
-| **Zero-query state** | Shows frecency-sorted top 5 recent agents with the active agent pinned first, plus contextual suggestions |
+| Behavior              | Description                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Content groups**    | Recent Agents (frecency-sorted), All Agents, Features, Commands, Quick Actions                                                   |
+| **`@` prefix mode**   | Typing `@` scopes search to agents only; the `@` is stripped from the search term                                                |
+| **`>` prefix mode**   | Typing `>` scopes search to commands only; the `>` is stripped from the search term                                              |
+| **Zero-query state**  | Shows frecency-sorted top 5 recent agents with the active agent pinned first, plus contextual suggestions                        |
 | **Dialog precedence** | Cmd+K toggles the palette open/closed; does not conflict with interactive tool shortcuts since the palette dialog captures focus |
-| **Mobile** | Opens as a bottom Drawer instead of a centered Dialog |
-| **Arrow wrapping** | Arrow keys wrap around the list (uses cmdk `loop` prop) |
+| **Mobile**            | Opens as a bottom Drawer instead of a centered Dialog                                                                            |
+| **Arrow wrapping**    | Arrow keys wrap around the list (uses cmdk `loop` prop)                                                                          |
 
 #### Command Palette Shortcuts
 
-| Key | Context | Action |
-| --- | ------- | ------ |
-| `Enter` | Agent item selected | Open agent sub-menu (drill-down into actions) |
-| `Cmd+Enter` / `Ctrl+Enter` | Agent item selected | Open agent in new browser tab (fast path, skips sub-menu) |
-| `Backspace` | In sub-menu, input is empty | Go back one level to the parent page |
-| `Escape` | In sub-menu | Go back one level (does not close the dialog) |
-| `Escape` | At root level | Close the command palette |
+| Key                        | Context                     | Action                                                    |
+| -------------------------- | --------------------------- | --------------------------------------------------------- |
+| `Enter`                    | Agent item selected         | Open agent sub-menu (drill-down into actions)             |
+| `Cmd+Enter` / `Ctrl+Enter` | Agent item selected         | Open agent in new browser tab (fast path, skips sub-menu) |
+| `Backspace`                | In sub-menu, input is empty | Go back one level to the parent page                      |
+| `Escape`                   | In sub-menu                 | Go back one level (does not close the dialog)             |
+| `Escape`                   | At root level               | Close the command palette                                 |
 
 #### Dynamic Keyboard Hints (PaletteFooter)
 
 The command palette displays a `PaletteFooter` bar showing context-appropriate keyboard shortcuts. Hints adapt based on navigation depth and selection state:
 
-| Context | Hints Shown |
-| ------- | ----------- |
-| Root level, no selection | `↑↓` Navigate, `esc` Close |
+| Context                    | Hints Shown                                                                |
+| -------------------------- | -------------------------------------------------------------------------- |
+| Root level, no selection   | `↑↓` Navigate, `esc` Close                                                 |
 | Root level, agent selected | `↑↓` Navigate, `Enter` Open, `⌘+Enter` / `Ctrl+Enter` New Tab, `esc` Close |
-| Sub-menu active | `↑↓` Navigate, `Backspace` Back, `esc` Close |
+| Sub-menu active            | `↑↓` Navigate, `Backspace` Back, `esc` Close                               |
 
 ### Approval Mode (`WAITING_FOR_APPROVAL`)
 

@@ -1,5 +1,5 @@
 ---
-title: "Relay Convergence — Patterns and Best Practices"
+title: 'Relay Convergence — Patterns and Best Practices'
 date: 2026-02-24
 type: internal-architecture
 status: active
@@ -29,6 +29,7 @@ Migrating Pulse dispatch and Console messaging to flow through Relay requires th
 The canonical approach is the **strangler fig**: introduce a routing layer (facade/proxy) that can direct calls to either the old path or the new path. Gradually shift traffic by enabling the new path for increasing percentages of operations. The old path is never deleted until the new path is fully validated.
 
 Applied to DorkOS:
+
 - **Pulse dispatch facade**: `SchedulerService` currently calls `agentManager.sendMessage()` directly. The facade becomes a dispatcher function `dispatchPulseRun(schedule, run)` that checks `RELAY_PULSE_DISPATCH` and either calls AgentManager directly (old path) or `relay.publish()` (new path). Existing call sites in `scheduler-service.ts` become single-line calls to the dispatcher.
 - **Console facade**: `routes/sessions.ts` POST handler becomes the routing point. If `RELAY_CONSOLE_ENDPOINT` is enabled, the handler publishes to `relay.human.console.{clientId}` and returns a receipt. If disabled, it calls AgentManager directly as today.
 
@@ -44,12 +45,12 @@ Off → Dualwrite → Shadow → Live → Rampdown → Complete
 
 For DorkOS, a simpler **four-stage** model is appropriate since there is no persistent data replication concern — this is message routing, not data migration:
 
-| Stage | RELAY_PULSE_DISPATCH | RELAY_CONSOLE_ENDPOINT | Description |
-|---|---|---|---|
-| `off` | false | false | Current behavior. All direct calls. |
-| `shadow` | false | false | Relay publishes happen but results are discarded; old path is authoritative. Validates Relay plumbing without user impact. |
-| `live` | true | true | Relay path is authoritative. Old path disabled. |
-| `rollback` | false | false | Instant revert to `off` via flag flip. |
+| Stage      | RELAY_PULSE_DISPATCH | RELAY_CONSOLE_ENDPOINT | Description                                                                                                                |
+| ---------- | -------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `off`      | false                | false                  | Current behavior. All direct calls.                                                                                        |
+| `shadow`   | false                | false                  | Relay publishes happen but results are discarded; old path is authoritative. Validates Relay plumbing without user impact. |
+| `live`     | true                 | true                   | Relay path is authoritative. Old path disabled.                                                                            |
+| `rollback` | false                | false                  | Instant revert to `off` via flag flip.                                                                                     |
 
 **Single flag vs. independent flags:** LaunchDarkly recommends a single migration flag per migration (not one global flag), as it keeps stage transitions atomic. DorkOS's spec already identifies `RELAY_PULSE_DISPATCH` and `RELAY_CONSOLE_ENDPOINT` as separate flags — this is correct because Pulse and Console have different risk profiles, different owners, and must be rollback-able independently.
 
@@ -60,6 +61,7 @@ For DorkOS, a simpler **four-stage** model is appropriate since there is no pers
 Modeling the user's chat interface as just another endpoint on the message bus is a well-established pattern. Slack's internal architecture, Discord's gateway, and Salesforce Messaging all treat the browser client as a subscribing endpoint on the same event bus that agents use — there is no special-casing of the "human" client.
 
 The concrete DorkOS implementation:
+
 - Console registers endpoint: `relay.human.console.{clientId}` on session open
 - Chat messages from user → `relay.publish('relay.agent.{sessionId}', { from: 'relay.human.console.{clientId}', ... })`
 - Responses from agent → delivered to `relay.human.console.{clientId}` → SSE stream to browser
@@ -75,24 +77,24 @@ The existing session sync stream (`GET /api/sessions/:id/stream`) and the new Re
 
 ```typescript
 // Server: single endpoint merges two sources
-res.setHeader('Content-Type', 'text/event-stream')
+res.setHeader('Content-Type', 'text/event-stream');
 
 // Source 1: session sync (existing)
 sessionBroadcaster.registerClient(sessionId, (event) => {
-  res.write(`event: sync_update\ndata: ${JSON.stringify(event)}\n\n`)
-})
+  res.write(`event: sync_update\ndata: ${JSON.stringify(event)}\n\n`);
+});
 
 // Source 2: Relay delivery events for this session
 relay.subscribe(`relay.human.console.${clientId}`, (envelope) => {
-  res.write(`event: relay_message\ndata: ${JSON.stringify(envelope)}\n\n`)
-})
+  res.write(`event: relay_message\ndata: ${JSON.stringify(envelope)}\n\n`);
+});
 ```
 
 ```typescript
 // Client: single EventSource, multiple listeners
-const es = new EventSource(`/api/sessions/${id}/stream`)
-es.addEventListener('sync_update', (e) => handleSyncUpdate(JSON.parse(e.data)))
-es.addEventListener('relay_message', (e) => handleRelayMessage(JSON.parse(e.data)))
+const es = new EventSource(`/api/sessions/${id}/stream`);
+es.addEventListener('sync_update', (e) => handleSyncUpdate(JSON.parse(e.data)));
+es.addEventListener('relay_message', (e) => handleRelayMessage(JSON.parse(e.data)));
 ```
 
 **Latency implications:** SSE over HTTP/1.1 has a 6-connection-per-domain limit; merging into one connection is strictly better than two separate SSE streams. HTTP/2 removes this limit but merging is still cleaner. Measured latency for SSE fan-in is indistinguishable from direct delivery for human-interactive use cases.
@@ -131,6 +133,7 @@ CREATE TABLE IF NOT EXISTS message_traces (
 ```
 
 **Query patterns:**
+
 ```sql
 -- Full trace for a conversation
 SELECT * FROM message_traces WHERE trace_id = ? ORDER BY sent_at;
@@ -150,6 +153,7 @@ SELECT AVG(delivered_at - sent_at) as p50 FROM (
 Cloudflare Queues (which uses SQLite internally) achieved sub-60ms median delivery latency and 5000 msg/s throughput. For DorkOS's single-user local system, these ceilings are not a constraint — the bottleneck will always be LLM response time.
 
 **Metrics that matter for DorkOS Relay:**
+
 - Dead letter queue depth (absolute count — alerts when > 0)
 - Delivery latency p50/p95 (SQLite window aggregate on `message_traces`)
 - Budget rejection counts (by rejection type: hop_limit, ttl_expired, cycle_detected)
@@ -159,10 +163,12 @@ Cloudflare Queues (which uses SQLite internally) achieved sub-60ms median delive
 **Pre-computed counters vs live aggregates:** For DorkOS scale (single user, tens of messages/minute at most), live `COUNT(*)` queries on `message_traces` with proper indexes are fine. Pre-computed counters add complexity for no practical gain. Re-evaluate if Mesh expands to multi-project scenarios.
 
 **Real-time via SSE:** Emit metrics events on the existing `GET /api/relay/stream` endpoint as a new typed event:
+
 ```
 event: metrics_snapshot
 data: { dlqDepth: 0, deliveredLast5m: 12, failedLast5m: 0, ... }
 ```
+
 Push a snapshot every 30 seconds or immediately after any DLQ event.
 
 ### 7. Feature Flag Architecture Specific to DorkOS
@@ -170,22 +176,26 @@ Push a snapshot every 30 seconds or immediately after any DLQ event.
 DorkOS already uses the `relay-state.ts` singleton pattern for the Relay feature flag. The same pattern should be applied for convergence flags:
 
 **Option A — Environment variable flags (recommended for DorkOS):**
+
 ```typescript
 // apps/server/src/services/relay/convergence-flags.ts
-export const RELAY_PULSE_DISPATCH = process.env.RELAY_PULSE_DISPATCH === 'true'
-export const RELAY_CONSOLE_ENDPOINT = process.env.RELAY_CONSOLE_ENDPOINT === 'true'
+export const RELAY_PULSE_DISPATCH = process.env.RELAY_PULSE_DISPATCH === 'true';
+export const RELAY_CONSOLE_ENDPOINT = process.env.RELAY_CONSOLE_ENDPOINT === 'true';
 ```
+
 - Low complexity
 - Matches existing `RELAY_ENABLED`, `PULSE_ENABLED` patterns in the codebase
 - Instant rollback via env var change + server restart
 - Documented in CLI `--flags` and `~/.dork/config.json`
 
 **Option B — Runtime config flags (more flexible):**
+
 ```typescript
 // Add to UserConfigSchema in packages/shared/src/config-schema.ts
 relayPulseDispatch: z.boolean().default(false),
 relayConsoleEndpoint: z.boolean().default(false),
 ```
+
 - Enables hot-toggle without restart via PATCH `/api/config`
 - Higher implementation cost (config-manager integration, SSE config-change event)
 - Useful if toggling needs to happen while server is running
@@ -206,14 +216,14 @@ Recommended approach: keep `routes/sessions.ts` POST handler as the entry point 
 // routes/sessions.ts POST handler (simplified)
 if (isRelayConsoleEnabled() && relay) {
   // New path: publish through Relay, return receipt immediately
-  const envelope = buildConsoleEnvelope(req.body, clientId)
-  const receipt = await relay.publish(`relay.agent.${sessionId}`, envelope)
-  sendSSEEvent(res, 'relay_receipt', { messageId: receipt.id })
+  const envelope = buildConsoleEnvelope(req.body, clientId);
+  const receipt = await relay.publish(`relay.agent.${sessionId}`, envelope);
+  sendSSEEvent(res, 'relay_receipt', { messageId: receipt.id });
 } else {
   // Old path: direct AgentManager call (unchanged from today)
-  const events = agentManager.sendMessage(sessionId, content, opts)
+  const events = agentManager.sendMessage(sessionId, content, opts);
   for await (const event of events) {
-    sendSSEEvent(res, event.type, event)
+    sendSSEEvent(res, event.type, event);
   }
 }
 ```
@@ -221,6 +231,7 @@ if (isRelayConsoleEnabled() && relay) {
 This means the SSE streaming behavior changes under the new path: instead of streaming events synchronously during the AgentManager call, the POST returns a receipt immediately and the agent's response is pushed via the Console's registered Relay endpoint (`relay.human.console.{clientId}`) subscription on the existing `GET /api/sessions/:id/stream` SSE connection.
 
 **This is a protocol change the client must handle.** The client's `useChatSession` hook currently expects the POST to return a streaming SSE response. Under the Relay path, it must:
+
 1. POST the message, receive a `relay_receipt` event
 2. Wait for `relay_message` events on the existing session sync SSE connection
 3. Display agent response chunks as they arrive via that channel
@@ -242,6 +253,7 @@ The existing run lifecycle tracking in `PulseStore` (`markRunningAsFailed`, run 
 ### Message Trace UI
 
 The spec calls for "click any message to see its full delivery path." This maps to:
+
 - A `MessageTrace` component in `features/relay/` (FSD layer: features)
 - Data source: `GET /api/relay/messages/:id/trace` returning the `message_traces` rows for the given trace_id
 - Rendered as a vertical timeline with colored status badges (delivered/failed/pending) and latency deltas between hops

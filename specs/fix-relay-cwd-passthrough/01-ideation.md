@@ -68,6 +68,7 @@ status: ideation
 ## 4) Root Cause Analysis
 
 **Repro steps:**
+
 1. Start DorkOS with Relay enabled (`DORKOS_RELAY_ENABLED=true`)
 2. Open `http://localhost:4241/?dir=/some/custom/directory`
 3. Click "+ New session"
@@ -75,16 +76,19 @@ status: ideation
 5. Observe reported CWD
 
 **Observed vs Expected:**
+
 - Observed: Agent reports `/Users/doriancollier/Keep/dork-os/core/apps` (server's default CWD)
 - Expected: Agent reports `/some/custom/directory` (from the `?dir=` URL param)
 
 **Evidence:**
+
 - JSONL file created in `~/.claude/projects/-Users-doriancollier-Keep-dork-os-core-apps/` instead of `~/.claude/projects/-Users-doriancollier-Keep-some-custom-directory/`
 - Server `api/config` response: `workingDirectory: /Users/doriancollier/Keep/dork-os/core/apps/server` — confirms server's default CWD is being used
 - Relay publish payload (sessions.ts:175): `{ content, cwd, correlationId }` — cwd IS in the payload
 - Adapter handleAgentMessage (adapter line 372): `const agentCwd = context?.agent?.directory` — cwd is NOT read from payload
 
 **Root-cause hypotheses:**
+
 - **[HIGH CONFIDENCE] Missing payload extraction in handleAgentMessage**: The `payloadObj` is parsed on lines 402-405 to extract `correlationId` (line 421) but `cwd` is never extracted from it. The code only reads CWD from `context?.agent?.directory` (Mesh agent context), which is `undefined` for web client sessions without Mesh.
 - [VERY LOW] Client not sending cwd: Ruled out — `sessions.ts:202` shows `cwd` is extracted from request body and `sessions.ts:175` passes it to `publishViaRelay`.
 - [VERY LOW] Schema missing cwd: Ruled out — `SendMessageRequestSchema` includes `cwd: z.string().optional()`.
@@ -98,12 +102,14 @@ status: ideation
 Skipped per user instruction ("you can skip the deep research"). The fix pattern is directly observable from `handlePulseMessage()` in the same file.
 
 **Pattern to follow (handlePulseMessage, line 595-596):**
+
 ```typescript
 const { scheduleId, runId, prompt, cwd, permissionMode } = payload;
 const effectiveCwd = cwd ?? context?.agent?.directory ?? this.config.defaultCwd;
 ```
 
 **Applied to handleAgentMessage:**
+
 ```typescript
 // After payloadObj is resolved (line ~405), before ensureSession call (line ~380):
 const payloadCwd = payloadObj?.cwd as string | undefined;
@@ -130,8 +136,8 @@ Note: `payloadObj` is currently resolved after the `ensureSession` call (line ~4
 
 No ambiguities identified — the task brief and code analysis converge on a single, obvious fix. The Pulse path already shows the correct pattern.
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Where to extract payload cwd | Before `ensureSession` call, alongside `agentCwd` resolution | `ensureSession` is the session creation point — cwd must be resolved before it's called |
-| 2 | Fallback precedence | `payloadCwd ?? agentCwd` (no server default fallback) | Matches Pulse pattern minus the server default; for web sessions, undefined is fine — the SDK will use its own default, which is the session's stored cwd or the server's process.cwd() |
-| 3 | Scope of fix | CWD only; do NOT add permissionMode to payload | permissionMode is correctly handled via the separate PATCH endpoint; adding it to the relay payload would create a competing update channel |
+| #   | Decision                     | Choice                                                       | Rationale                                                                                                                                                                               |
+| --- | ---------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Where to extract payload cwd | Before `ensureSession` call, alongside `agentCwd` resolution | `ensureSession` is the session creation point — cwd must be resolved before it's called                                                                                                 |
+| 2   | Fallback precedence          | `payloadCwd ?? agentCwd` (no server default fallback)        | Matches Pulse pattern minus the server default; for web sessions, undefined is fine — the SDK will use its own default, which is the session's stored cwd or the server's process.cwd() |
+| 3   | Scope of fix                 | CWD only; do NOT add permissionMode to payload               | permissionMode is correctly handled via the separate PATCH endpoint; adding it to the relay payload would create a competing update channel                                             |

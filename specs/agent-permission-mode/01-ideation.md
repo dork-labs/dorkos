@@ -66,6 +66,7 @@ status: ideation
   - TanStack Query hooks for bindings (`useBindings`, `useCreateBinding`, `useUpdateBinding`)
 
 - **Data flow:**
+
   ```
   Slack message → SlackAdapter → relayCore.publish('relay.human.slack.{chatId}')
     → BindingRouter.handleInbound() → resolve binding → check canReceive
@@ -95,12 +96,12 @@ N/A — this is a feature, not a bug fix.
 
 The Claude Agent SDK supports these permission modes:
 
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| `default` | Prompts for all tool usage | Interactive CLI sessions |
-| `plan` | Can read files but prompts for writes | Planning/review workflows |
-| `acceptEdits` | Auto-approves file edits, prompts for Bash/network | Headless coding tasks |
-| `bypassPermissions` | Auto-approves everything | Fully autonomous, trusted contexts |
+| Mode                | Behavior                                           | Use Case                           |
+| ------------------- | -------------------------------------------------- | ---------------------------------- |
+| `default`           | Prompts for all tool usage                         | Interactive CLI sessions           |
+| `plan`              | Can read files but prompts for writes              | Planning/review workflows          |
+| `acceptEdits`       | Auto-approves file edits, prompts for Bash/network | Headless coding tasks              |
+| `bypassPermissions` | Auto-approves everything                           | Fully autonomous, trusted contexts |
 
 In headless (non-TTY) contexts, `default` mode causes tools to be **auto-denied** (not stalled), which means the agent skips tools silently. The SDK uses `allowDangerouslySkipPermissions: true` for bypass mode.
 
@@ -115,6 +116,7 @@ Agent orchestration frameworks (CrewAI, AutoGen, LangGraph) generally handle thi
 ### Potential Solutions
 
 **1. Binding-level permission mode (Recommended)**
+
 - Add `permissionMode` to `AdapterBindingSchema`
 - Each adapter-agent pair configures its own mode
 - Pros: Maximum granularity, natural UI placement alongside existing permissions, different trust levels per channel
@@ -123,6 +125,7 @@ Agent orchestration frameworks (CrewAI, AutoGen, LangGraph) generally handle thi
 - Maintenance: Low (leverages existing `PermissionModeSchema`)
 
 **2. Agent/Runtime-level permission mode**
+
 - Set on the agent itself, all bindings share the same mode
 - Pros: Simpler mental model
 - Cons: Can't differentiate trust levels (Slack vs. Telegram vs. local); a single agent serving a public Slack and a private Telegram group would need the same mode
@@ -130,6 +133,7 @@ Agent orchestration frameworks (CrewAI, AutoGen, LangGraph) generally handle thi
 - Maintenance: Low
 
 **3. Adapter-level permission mode**
+
 - Set on the adapter instance, all agents connected via that adapter use the same mode
 - Pros: Fewest configuration points
 - Cons: Too coarse; can't vary by agent for the same adapter; mixes infrastructure config with session semantics
@@ -137,6 +141,7 @@ Agent orchestration frameworks (CrewAI, AutoGen, LangGraph) generally handle thi
 - Maintenance: Low
 
 **4. Message-level override only**
+
 - Use `MessageOpts.permissionMode` in enriched payload
 - Pros: Already exists in the interface, maximum flexibility
 - Cons: No UI for users; adapters must parse payload; error-prone
@@ -158,9 +163,9 @@ The default of `acceptEdits` matches the Pulse scheduler's precedent for headles
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Where should permission mode live? | Binding level | Both agents converged strongly on this. Binding already contains adapter-to-agent routing logic and permission flags (canReply, canInitiate). Natural placement. Allows different modes per adapter-agent pair (Slack=acceptEdits, Telegram=plan). |
-| 2 | Default permission mode for new bindings | `acceptEdits` | Matches Pulse scheduler precedent for headless runs. Lets agents edit files without blocking. Bash/network tools auto-denied in headless mode rather than stalling. Best balance of autonomy and safety. |
-| 3 | Security UX for `bypassPermissions` | Warning with acknowledgment | AlertDialog warning that any user in the Slack workspace/Telegram chat can trigger unrestricted agent actions. Requires explicit confirmation. Honest by design (Dieter Rams: "Good design is honest"). |
-| 4 | Filter modes by runtime capabilities? | Yes, filter by runtime capabilities | Only show modes the agent's runtime supports (via `RuntimeCapabilities.supportedPermissionModes`). Prevents invalid configurations. The data already exists — ClaudeCodeRuntime declares its supported modes. |
+| #   | Decision                                 | Choice                              | Rationale                                                                                                                                                                                                                                          |
+| --- | ---------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Where should permission mode live?       | Binding level                       | Both agents converged strongly on this. Binding already contains adapter-to-agent routing logic and permission flags (canReply, canInitiate). Natural placement. Allows different modes per adapter-agent pair (Slack=acceptEdits, Telegram=plan). |
+| 2   | Default permission mode for new bindings | `acceptEdits`                       | Matches Pulse scheduler precedent for headless runs. Lets agents edit files without blocking. Bash/network tools auto-denied in headless mode rather than stalling. Best balance of autonomy and safety.                                           |
+| 3   | Security UX for `bypassPermissions`      | Warning with acknowledgment         | AlertDialog warning that any user in the Slack workspace/Telegram chat can trigger unrestricted agent actions. Requires explicit confirmation. Honest by design (Dieter Rams: "Good design is honest").                                            |
+| 4   | Filter modes by runtime capabilities?    | Yes, filter by runtime capabilities | Only show modes the agent's runtime supports (via `RuntimeCapabilities.supportedPermissionModes`). Prevents invalid configurations. The data already exists — ClaudeCodeRuntime declares its supported modes.                                      |

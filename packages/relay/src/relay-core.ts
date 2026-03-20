@@ -164,11 +164,14 @@ export class RelayCore {
         signalEmitter: this.signalEmitter,
         deadLetterQueue,
       },
-      this.backpressureConfig,
+      this.backpressureConfig
     );
     const adapterDelivery = new AdapterDelivery(options?.adapterRegistry, this.sqliteIndex);
     const watcherManager = new WatcherManager(
-      maildirStore, this.subscriptionRegistry, this.sqliteIndex, this.circuitBreaker,
+      maildirStore,
+      this.subscriptionRegistry,
+      this.sqliteIndex,
+      this.circuitBreaker
     );
     watcherManager.setWasDispatched((id) => this.deliveryPipeline.wasDispatched(id));
 
@@ -193,7 +196,7 @@ export class RelayCore {
         defaultCallBudget: options?.defaultCallBudget ?? DEFAULT_CALL_BUDGET,
       },
       rateLimitConfig,
-      options?.adapterContextBuilder,
+      options?.adapterContextBuilder
     );
 
     this.subscriptionDeps = {
@@ -201,8 +204,12 @@ export class RelayCore {
       signalEmitter: this.signalEmitter,
     };
     this.endpointDeps = {
-      endpointRegistry, maildirStore, sqliteIndex: this.sqliteIndex,
-      deadLetterQueue, accessControl: this.accessControl, watcherManager,
+      endpointRegistry,
+      maildirStore,
+      sqliteIndex: this.sqliteIndex,
+      deadLetterQueue,
+      accessControl: this.accessControl,
+      watcherManager,
     };
 
     this.configPath = path.join(dataDir, 'config.json');
@@ -231,7 +238,11 @@ export class RelayCore {
   // --- Publish ---
 
   /** Publish a message to a subject. Delegates to {@link RelayPublishPipeline}. */
-  async publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResult> {
+  async publish(
+    subject: string,
+    payload: unknown,
+    options: PublishOptions
+  ): Promise<PublishResult> {
     this.assertOpen();
     return this.publishPipeline.publish(subject, payload, options);
   }
@@ -289,7 +300,11 @@ export class RelayCore {
 
   /** Query messages with optional filters and cursor-based pagination. */
   listMessages(filters?: {
-    subject?: string; status?: string; from?: string; cursor?: string; limit?: number;
+    subject?: string;
+    status?: string;
+    from?: string;
+    cursor?: string;
+    limit?: number;
   }): { messages: IndexedMessage[]; nextCursor?: string } {
     this.assertOpen();
     return executeListMessages(filters, this.endpointDeps);
@@ -298,7 +313,7 @@ export class RelayCore {
   /** Read inbox messages for a specific endpoint. */
   readInbox(
     subject: string,
-    options?: { status?: string; cursor?: string; limit?: number },
+    options?: { status?: string; cursor?: string; limit?: number }
   ): { messages: IndexedMessage[]; nextCursor?: string } {
     this.assertOpen();
     return executeReadInbox(subject, options, this.endpointDeps);
@@ -410,7 +425,8 @@ export class RelayCore {
       const parsed = ReliabilityConfigSchema.safeParse(obj.reliability);
       if (parsed.success) {
         this.publishPipeline.setRateLimitConfig({
-          ...DEFAULT_RATE_LIMIT_CONFIG, ...parsed.data.rateLimit,
+          ...DEFAULT_RATE_LIMIT_CONFIG,
+          ...parsed.data.rateLimit,
         });
         this.circuitBreaker.updateConfig({ ...DEFAULT_CB_CONFIG, ...parsed.data.circuitBreaker });
         this.backpressureConfig = { ...DEFAULT_BP_CONFIG, ...parsed.data.backpressure };

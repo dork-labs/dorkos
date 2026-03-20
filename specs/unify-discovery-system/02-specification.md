@@ -18,6 +18,7 @@ Consolidate the three separate discovery UI experiences — the onboarding `Agen
 Two independent discovery scanners exist with overlapping functionality:
 
 **Scanner A** (`apps/server/src/services/discovery/discovery-scanner.ts`):
+
 - Standalone BFS async generator (`scanForAgents`)
 - Own `DiscoveryCandidate` type (different from `@dorkos/shared/mesh-schemas`)
 - 14 exclude patterns including `Library`, `AppData`, `.Trash`, `.npm`, `.nvm`, `.local`, `.cargo`, `.rustup`, `go/pkg`
@@ -27,6 +28,7 @@ Two independent discovery scanners exist with overlapping functionality:
 - Has timeout support (30s default)
 
 **Scanner B** (`packages/mesh/src/discovery-engine.ts`):
+
 - BFS async generator (`scanDirectory`) with pluggable `DiscoveryStrategy` instances
 - Uses canonical `DiscoveryCandidate` from `@dorkos/shared/mesh-schemas`
 - 11 exclude patterns including `__pycache__`, `.venv`, `venv`, `.tox`, `extensions`
@@ -38,6 +40,7 @@ Two independent discovery scanners exist with overlapping functionality:
 **The bug:** The onboarding flow (`AgentDiscoveryStep.tsx`) calls `startScan()` with no arguments. `use-discovery-scan.ts` sends an empty body to `POST /api/discovery/scan`. The route falls back to `DEFAULT_CWD` (the DorkOS project root, not the user's home directory). The scan completes in <1 second with zero results.
 
 **Additional issues:**
+
 - `use-discovery-scan.ts` uses raw `fetch()`, bypassing the Transport abstraction
 - Three copies of the `DiscoveryCandidate` shape exist (Scanner A's type, shared schema, onboarding hook's `ScanCandidate`)
 - Scan results are not shared between onboarding and mesh panel — each maintains separate state
@@ -45,7 +48,7 @@ Two independent discovery scanners exist with overlapping functionality:
 
 **UI duplication — three discovery experiences with different interaction models:**
 
-The mesh panel has *two* entirely separate discovery surfaces, plus onboarding has a third:
+The mesh panel has _two_ entirely separate discovery surfaces, plus onboarding has a third:
 
 1. **"Discover Agents" button** (inline `DiscoverAgentsSection` in `MeshPanel.tsx:143-253`) — Uses the onboarding `AgentCard` component with checkbox toggle. No deny action. Batch "Register N agents" button. Hidden behind a collapsible panel toggle.
 
@@ -53,11 +56,12 @@ The mesh panel has *two* entirely separate discovery surfaces, plus onboarding h
 
 3. **Onboarding** (`AgentDiscoveryStep.tsx` with onboarding `AgentCard`) — All candidates auto-selected by default. Checkbox toggle to deselect. Batch confirm. No deny flow. Auto-starts on mount. Staggered entrance animations.
 
-This violates the core design principle: *"Say no to a thousand things."* Two discovery buttons in the same panel means the team couldn't commit to one approach. The checkbox model hides the deny concept entirely — you just "don't select" something, but nothing gets recorded in the denied list. The approve/deny model is more honest: it tells the user exactly what each action means.
+This violates the core design principle: _"Say no to a thousand things."_ Two discovery buttons in the same panel means the team couldn't commit to one approach. The checkbox model hides the deny concept entirely — you just "don't select" something, but nothing gets recorded in the denied list. The approve/deny model is more honest: it tells the user exactly what each action means.
 
 ## Goals
 
 ### Backend Unification
+
 - Fix the onboarding scan to use the correct default root (boundary/home directory)
 - Consolidate to a single scanner implementation combining the best of both
 - Add `scan()` to the Transport interface for both HttpTransport and DirectTransport
@@ -67,6 +71,7 @@ This violates the core design principle: *"Say no to a thousand things."* Two di
 - Keep `POST /api/mesh/discover` as a backward-compatible thin wrapper
 
 ### UI Consolidation
+
 - **Delete `DiscoverAgentsSection`** and the "Discover Agents" button from the mesh panel — the Discovery tab is the single entry point
 - **Converge on the approve/deny interaction model** (`CandidateCard`) as the single discovery card — replaces the checkbox-selection `AgentCard` from onboarding
 - **Update onboarding** to use `CandidateCard` with approve/deny instead of checkbox selection — registering an agent to your mesh deserves a deliberate per-agent decision
@@ -134,11 +139,28 @@ export interface UnifiedScanOptions {
 ```typescript
 export const UNIFIED_EXCLUDE_PATTERNS = new Set([
   // From Scanner A
-  'node_modules', '.git', 'vendor', 'Library', 'AppData',
-  '.Trash', 'dist', 'build', '.cache', '.npm', '.nvm',
-  '.local', '.cargo', '.rustup', 'go/pkg',
+  'node_modules',
+  '.git',
+  'vendor',
+  'Library',
+  'AppData',
+  '.Trash',
+  'dist',
+  'build',
+  '.cache',
+  '.npm',
+  '.nvm',
+  '.local',
+  '.cargo',
+  '.rustup',
+  'go/pkg',
   // From Scanner B (additions)
-  '__pycache__', '.venv', 'venv', '.tox', '.DS_Store', 'extensions',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.tox',
+  '.DS_Store',
+  'extensions',
 ]);
 ```
 
@@ -154,6 +176,7 @@ export async function* unifiedScan(
 ```
 
 The scanner combines:
+
 - Scanner B's strategy-based detection (`strategy.detect()` + `strategy.extractHints()`)
 - Scanner B's registered/denied path filtering
 - Scanner B's symlink cycle detection via `realpathSync()`
@@ -220,7 +243,7 @@ export interface Transport {
   scan(
     options: TransportScanOptions,
     onEvent: (event: TransportScanEvent) => void,
-    signal?: AbortSignal,
+    signal?: AbortSignal
   ): Promise<void>;
 }
 ```
@@ -362,7 +385,11 @@ entities/discovery/
 
 ```typescript
 import { create } from 'zustand';
-import type { DiscoveryCandidate, ScanProgress, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
+import type {
+  DiscoveryCandidate,
+  ScanProgress,
+  TransportScanEvent,
+} from '@dorkos/shared/mesh-schemas';
 
 interface DiscoveryState {
   candidates: DiscoveryCandidate[];
@@ -388,12 +415,10 @@ export const useDiscoveryStore = create<DiscoveryState & DiscoveryActions>((set)
   error: null,
   lastScanAt: null,
 
-  addCandidate: (candidate) =>
-    set((state) => ({ candidates: [...state.candidates, candidate] })),
+  addCandidate: (candidate) => set((state) => ({ candidates: [...state.candidates, candidate] })),
   setProgress: (progress) => set({ progress }),
   startScan: () => set({ candidates: [], progress: null, error: null, isScanning: true }),
-  completeScan: (progress) =>
-    set({ progress, isScanning: false, lastScanAt: Date.now() }),
+  completeScan: (progress) => set({ progress, isScanning: false, lastScanAt: Date.now() }),
   setError: (error) => set({ error, isScanning: false }),
   clear: () => set({ candidates: [], progress: null, error: null, lastScanAt: null }),
 }));
@@ -445,7 +470,7 @@ export function useDiscoveryScan() {
                 break;
             }
           },
-          controller.signal,
+          controller.signal
         )
         .catch((err) => {
           if (err.name !== 'AbortError') {
@@ -453,7 +478,7 @@ export function useDiscoveryScan() {
           }
         });
     },
-    [transport, roots, store],
+    [transport, roots, store]
   );
 
   return {
@@ -474,6 +499,7 @@ The UI consolidation eliminates two of the three discovery surfaces and converge
 #### 7a. Delete `DiscoverAgentsSection` and "Discover Agents" button
 
 Remove entirely from `MeshPanel.tsx`:
+
 - The `DiscoverAgentsSection` component (lines 143-253) — deleted
 - The `showQuickDiscover` state and toggle button (lines 299, 364-372)
 - The `AnimatePresence` wrapper for the inline panel (lines 375-388)
@@ -522,6 +548,7 @@ Replace the checkbox-selection model with per-agent approve/skip:
 This is more honest — each agent gets a deliberate decision. It also removes the cognitive overhead of "wait, are the checked ones the ones being registered or the ones being skipped?"
 
 Changes to `AgentDiscoveryStep.tsx`:
+
 - Remove `selectedPaths` state (no more checkbox tracking)
 - Remove `handleToggle`, bulk select/deselect logic
 - Add `actedPaths` state (same pattern as `DiscoveryView`)
@@ -534,6 +561,7 @@ Changes to `AgentDiscoveryStep.tsx`:
 #### 7d. Delete onboarding `AgentCard`
 
 After convergence, the onboarding `AgentCard` component is no longer used:
+
 - Delete `apps/client/src/layers/features/onboarding/ui/AgentCard.tsx`
 - Remove from `apps/client/src/layers/features/onboarding/index.ts` barrel exports
 - Also delete `useSpotlight` hook if it was only used by `AgentCard`
@@ -593,6 +621,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 ## User Experience
 
 ### Onboarding (first-time user)
+
 1. User starts DorkOS for the first time
 2. Clicks "Get Started" in the onboarding flow
 3. Scan auto-starts, searching from the home directory
@@ -605,33 +634,37 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 10. No "Select all" / batch mode — each agent deserves a deliberate decision
 
 ### Mesh Panel — Mode A (zero agents)
+
 1. The fullbleed `DiscoveryView` is shown automatically — same card component, same interaction model
 2. Each card has **Approve** (green) and **Deny** (red) buttons
 3. Denied agents are persisted and appear in the "Denied" tab
 4. Advanced scan configuration available (roots, depth)
 
 ### Mesh Panel — Mode B (has agents)
+
 1. The Discovery **tab** is the single entry point for new discovery — no "Discover Agents" button
 2. Same `CandidateCard` with Approve/Deny, same progressive streaming
 3. Results from onboarding are immediately visible if the Zustand store still holds them
 
 ### Shared State
+
 - Onboarding scan → results available in mesh panel without re-scan
 - Mesh panel scan → results available if user navigates back to onboarding
 - "Re-scan" in either UI clears and re-scans
 
 ### Interaction Model Summary
 
-| Context | Approve | Reject | Effect |
-|---------|---------|--------|--------|
-| Onboarding | "Approve" (green) | "Skip" (subtle) | Approve registers immediately. Skip dismisses card (session-local). |
-| Mesh Discovery | "Approve" (green) | "Deny" (red) | Approve registers immediately. Deny persists a `DenialRecord`. |
+| Context        | Approve           | Reject          | Effect                                                              |
+| -------------- | ----------------- | --------------- | ------------------------------------------------------------------- |
+| Onboarding     | "Approve" (green) | "Skip" (subtle) | Approve registers immediately. Skip dismisses card (session-local). |
+| Mesh Discovery | "Approve" (green) | "Deny" (red)    | Approve registers immediately. Deny persists a `DenialRecord`.      |
 
 ## Testing Strategy
 
 ### Unit Tests
 
 **`packages/mesh/src/discovery/__tests__/unified-scanner.test.ts`:**
+
 - Yields `candidate` events for directories matching strategies
 - Yields `auto-import` events for directories with `.dork/agent.json`
 - Skips denied paths entirely (no traversal)
@@ -644,6 +677,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 - Handles EACCES/EPERM errors gracefully (skip and continue)
 
 **`apps/client/src/layers/entities/discovery/__tests__/use-discovery-scan.test.ts`:**
+
 - Calls `transport.scan()` with provided roots
 - Falls back to configured scan roots from `useMeshScanRoots`
 - Updates Zustand store with candidate, progress, complete events
@@ -651,6 +685,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 - Sets error state on transport failure
 
 **`apps/client/src/layers/entities/discovery/__tests__/discovery-store.test.ts`:**
+
 - `startScan()` clears previous results and sets `isScanning`
 - `addCandidate()` appends to candidates array
 - `completeScan()` sets `lastScanAt` and clears `isScanning`
@@ -659,15 +694,18 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 ### Integration Tests
 
 **`apps/server/src/routes/__tests__/discovery.test.ts`** (update existing):
+
 - SSE stream uses unified scanner via meshCore
 - Default root is boundary (home dir) when no root provided
 - `roots` array parameter works
 - Boundary validation rejects paths outside boundary
 
 ### Tests to Delete
+
 - `apps/server/src/services/discovery/__tests__/discovery-scanner.test.ts` — Scanner A is deleted
 
 ### Mocking Strategy
+
 - Server tests: mock `meshCore.discover()` as an async generator
 - Client tests: mock `transport.scan()` to call `onEvent` with test events
 - Discovery store tests: test Zustand store actions directly
@@ -695,6 +733,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 ## Implementation Phases
 
 ### Phase 1: Unified Scanner + Bug Fix
+
 1. Create `packages/mesh/src/discovery/unified-scanner.ts` with unified exclude set, timeout, progress events
 2. Create `packages/mesh/src/discovery/types.ts` and barrel
 3. Update `MeshCore.discover()` to use `unifiedScan()`
@@ -706,6 +745,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 9. Update server tests
 
 ### Phase 2: Transport + Client Unification
+
 1. Add `TransportScanEvent`, `TransportScanOptions`, `ScanProgress` to shared schemas
 2. Add `scan()` to Transport interface
 3. Implement `scan()` in HttpTransport (SSE parsing)
@@ -718,6 +758,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 10. Update client tests
 
 ### Phase 3: UI Consolidation
+
 1. Update `AgentDiscoveryStep.tsx` — replace `AgentCard` with `CandidateCard`, remove checkbox selection model, use per-agent approve/skip
 2. Delete onboarding `AgentCard.tsx` and remove from barrel exports
 3. Delete `DiscoverAgentsSection` from `MeshPanel.tsx` — remove "Discover Agents" button, `showQuickDiscover` state, `OnboardingAgentCard` import
@@ -725,13 +766,14 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 5. Update onboarding and mesh panel tests
 
 ### Phase 4: Cleanup
+
 1. Remove unused imports and type definitions
 2. Verify all tests pass
 3. Update documentation
 
 ## Open Questions
 
-*None — all decisions have been resolved during ideation.*
+_None — all decisions have been resolved during ideation._
 
 ## Related ADRs
 

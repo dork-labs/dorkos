@@ -22,30 +22,47 @@ const PRESET: PulsePreset = {
 };
 
 describe('PresetCard', () => {
-  afterEach(() => { cleanup(); });
-  beforeEach(() => { vi.clearAllMocks(); });
+  afterEach(() => {
+    cleanup();
+  });
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   describe('toggle variant', () => {
     it('renders the preset name and description', () => {
-      render(<PresetCard preset={PRESET} variant="toggle" checked={false} onCheckedChange={vi.fn()} />);
+      render(
+        <PresetCard preset={PRESET} variant="toggle" checked={false} onCheckedChange={vi.fn()} />
+      );
       expect(screen.getByText('Health Check')).toBeTruthy();
       expect(screen.getByText('Run lint, tests, and type-check.')).toBeTruthy();
     });
 
     it('calls onCheckedChange when the card is clicked', () => {
       const onCheckedChange = vi.fn();
-      render(<PresetCard preset={PRESET} variant="toggle" checked={false} onCheckedChange={onCheckedChange} />);
+      render(
+        <PresetCard
+          preset={PRESET}
+          variant="toggle"
+          checked={false}
+          onCheckedChange={onCheckedChange}
+        />
+      );
       fireEvent.click(screen.getByRole('button'));
       expect(onCheckedChange).toHaveBeenCalledWith(true);
     });
 
     it('renders a Switch element (aria-label present)', () => {
-      render(<PresetCard preset={PRESET} variant="toggle" checked={true} onCheckedChange={vi.fn()} />);
+      render(
+        <PresetCard preset={PRESET} variant="toggle" checked={true} onCheckedChange={vi.fn()} />
+      );
       expect(screen.getByRole('switch', { name: /Enable Health Check/i })).toBeTruthy();
     });
 
     it('applies checked styles when checked=true', () => {
-      const { container } = render(<PresetCard preset={PRESET} variant="toggle" checked={true} onCheckedChange={vi.fn()} />);
+      const { container } = render(
+        <PresetCard preset={PRESET} variant="toggle" checked={true} onCheckedChange={vi.fn()} />
+      );
       const btn = container.querySelector('button')!;
       expect(btn.className).toContain('border-primary/40');
     });
@@ -70,13 +87,17 @@ describe('PresetCard', () => {
     });
 
     it('applies selection ring styles when selected=true', () => {
-      const { container } = render(<PresetCard preset={PRESET} variant="selectable" selected={true} onSelect={vi.fn()} />);
+      const { container } = render(
+        <PresetCard preset={PRESET} variant="selectable" selected={true} onSelect={vi.fn()} />
+      );
       const btn = container.querySelector('button')!;
       expect(btn.className).toContain('ring-primary');
     });
 
     it('does not apply selection ring when selected=false', () => {
-      const { container } = render(<PresetCard preset={PRESET} variant="selectable" selected={false} onSelect={vi.fn()} />);
+      const { container } = render(
+        <PresetCard preset={PRESET} variant="selectable" selected={false} onSelect={vi.fn()} />
+      );
       const btn = container.querySelector('button')!;
       expect(btn.className).not.toContain('ring-primary');
     });

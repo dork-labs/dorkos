@@ -98,7 +98,8 @@ router.get('/', async (_req, res) => {
     tunnel: {
       ...tunnel,
       authEnabled: tunnel.authEnabled || !!env.TUNNEL_AUTH,
-      tokenConfigured: tunnel.tokenConfigured || !!(env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
+      tokenConfigured:
+        tunnel.tokenConfigured || !!(env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
     },
     pulse: {
       enabled: isPulseEnabled(),

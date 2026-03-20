@@ -13,11 +13,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
 import { ClaudeCodeAdapter } from '../adapters/claude-code/index.js';
+import type { AgentRuntimeLike, TraceStoreLike } from '../adapters/claude-code/index.js';
 import type {
-  AgentRuntimeLike,
-  TraceStoreLike,
-} from '../adapters/claude-code/index.js';
-import type { RelayPublisher, AdapterRegistryLike, AdapterContext, DeliveryResult } from '../types.js';
+  RelayPublisher,
+  AdapterRegistryLike,
+  AdapterContext,
+  DeliveryResult,
+} from '../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -34,7 +36,7 @@ class SingleAdapterRegistry implements AdapterRegistryLike {
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
-    context?: AdapterContext,
+    context?: AdapterContext
   ): Promise<DeliveryResult | null> {
     return this.adapter.deliver(subject, envelope, context);
   }
@@ -62,7 +64,7 @@ function createMockAgentManager(): AgentRuntimeLike {
       (async function* () {
         yield { type: 'text_delta', data: { text: 'Deus' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
-      })(),
+      })()
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
   };
@@ -90,7 +92,7 @@ describe('relay → CCA round-trip', () => {
     cca = new ClaudeCodeAdapter(
       'claude-code',
       { defaultCwd: '/tmp', maxConcurrent: 5 },
-      { agentManager, traceStore },
+      { agentManager, traceStore }
     );
 
     const registry = new SingleAdapterRegistry(cca);
@@ -122,7 +124,7 @@ describe('relay → CCA round-trip', () => {
     await relay.publish(
       'relay.agent.lifeOS-session',
       { text: "What is my son's name?" },
-      { from: 'relay.agent.sender-session', replyTo: 'relay.agent.sender-session' },
+      { from: 'relay.agent.sender-session', replyTo: 'relay.agent.sender-session' }
     );
 
     // AgentManager called exactly once for the real query — never for StreamEvent responses
@@ -130,7 +132,7 @@ describe('relay → CCA round-trip', () => {
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
       'lifeOS-session',
       expect.any(String),
-      expect.any(Object),
+      expect.any(Object)
     );
 
     // StreamEvents arrived at sender's subject (round-trip completed)
@@ -146,7 +148,7 @@ describe('relay → CCA round-trip', () => {
     await relay.publish(
       'relay.agent.lifeOS-session',
       { text: 'Hello LifeOS' },
-      { from: 'relay.agent.sender-session' },
+      { from: 'relay.agent.sender-session' }
     );
 
     expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
@@ -162,21 +164,28 @@ describe('relay → CCA round-trip', () => {
 
     // Deliver directly to CCA with the context (simulating what AdapterDelivery does
     // after calling buildContext())
-    await cca.deliver('relay.agent.lifeOS-session', {
-      id: 'msg-cwd-test',
-      subject: 'relay.agent.lifeOS-session',
-      from: 'agent:sender',
-      budget: {
-        hopCount: 1, maxHops: 5, ancestorChain: [],
-        ttl: Date.now() + 300_000, callBudgetRemaining: 10,
-      },
-      createdAt: new Date().toISOString(),
-      payload: { text: 'Hello' },
-    } as RelayEnvelope, context);
+    await cca.deliver(
+      'relay.agent.lifeOS-session',
+      {
+        id: 'msg-cwd-test',
+        subject: 'relay.agent.lifeOS-session',
+        from: 'agent:sender',
+        budget: {
+          hopCount: 1,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 300_000,
+          callBudgetRemaining: 10,
+        },
+        createdAt: new Date().toISOString(),
+        payload: { text: 'Hello' },
+      } as RelayEnvelope,
+      context
+    );
 
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/path/to/agent-b' }),
+      expect.objectContaining({ cwd: '/path/to/agent-b' })
     );
   });
 
@@ -193,7 +202,7 @@ describe('relay → CCA round-trip', () => {
     await relay.publish(
       'relay.agent.lifeOS-session',
       { text: 'question' },
-      { from: 'relay.agent.sender-session', replyTo: 'relay.inbox.sender-session' },
+      { from: 'relay.agent.sender-session', replyTo: 'relay.inbox.sender-session' }
     );
 
     // AgentManager called exactly once — no loop from inbox replyTo
@@ -206,8 +215,9 @@ describe('relay → CCA round-trip', () => {
 
     // No raw stream events (text_delta, done) published to the inbox
     const hasRawStreamEvents = receivedPayloads.some(
-      (p) => (p as Record<string, unknown>).type === 'text_delta' ||
-               (p as Record<string, unknown>).type === 'done',
+      (p) =>
+        (p as Record<string, unknown>).type === 'text_delta' ||
+        (p as Record<string, unknown>).type === 'done'
     );
     expect(hasRawStreamEvents).toBe(false);
   });
@@ -225,17 +235,23 @@ describe('relay → CCA round-trip', () => {
     vi.mocked(agentManager.sendMessage).mockReturnValue(
       (async function* () {
         yield { type: 'text_delta', data: { text: 'Thinking...' } } as StreamEvent;
-        yield { type: 'tool_call_start', data: { tool_use_id: 'tu1', name: 'Read' } } as StreamEvent;
-        yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'file contents' } } as StreamEvent;
+        yield {
+          type: 'tool_call_start',
+          data: { tool_use_id: 'tu1', name: 'Read' },
+        } as StreamEvent;
+        yield {
+          type: 'tool_result',
+          data: { tool_use_id: 'tu1', content: 'file contents' },
+        } as StreamEvent;
         yield { type: 'text_delta', data: { text: 'Analysis complete.' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
-      })(),
+      })()
     );
 
     await relay.publish(
       'relay.agent.dispatch-target',
       { text: 'Analyze this' },
-      { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' },
+      { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' }
     );
 
     // Wait briefly for async operations to complete
@@ -252,7 +268,7 @@ describe('relay → CCA round-trip', () => {
 
     // Progress events have done: false
     const progressEvents = receivedPayloads.filter(
-      (p) => (p as Record<string, unknown>).type === 'progress',
+      (p) => (p as Record<string, unknown>).type === 'progress'
     );
     expect(progressEvents.length).toBeGreaterThan(0);
     progressEvents.forEach((p) => {
@@ -275,13 +291,13 @@ describe('relay → CCA round-trip', () => {
       (async function* () {
         yield { type: 'text_delta', data: { text: 'answer' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
-      })(),
+      })()
     );
 
     await relay.publish(
       'relay.agent.lifeOS-session',
       { text: 'question' },
-      { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' },
+      { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' }
     );
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -293,8 +309,9 @@ describe('relay → CCA round-trip', () => {
 
     // No raw stream events (text_delta, done) published to the query inbox
     const hasRawStreamEvents = receivedPayloads.some(
-      (p) => (p as Record<string, unknown>).type === 'text_delta' ||
-               (p as Record<string, unknown>).type === 'done',
+      (p) =>
+        (p as Record<string, unknown>).type === 'text_delta' ||
+        (p as Record<string, unknown>).type === 'done'
     );
     expect(hasRawStreamEvents).toBe(false);
   });
@@ -312,22 +329,28 @@ describe('relay → CCA round-trip', () => {
     vi.mocked(agentManager.sendMessage).mockReturnValue(
       (async function* () {
         yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
-        yield { type: 'tool_call_start', data: { tool_use_id: 'tu1', name: 'Bash' } } as StreamEvent;
-        yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'output' } } as StreamEvent;
+        yield {
+          type: 'tool_call_start',
+          data: { tool_use_id: 'tu1', name: 'Bash' },
+        } as StreamEvent;
+        yield {
+          type: 'tool_result',
+          data: { tool_use_id: 'tu1', content: 'output' },
+        } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
-      })(),
+      })()
     );
 
     await relay.publish(
       'relay.agent.target',
       { text: 'Do work' },
-      { from: 'relay.agent.src', replyTo: 'relay.inbox.dispatch.step-type-test' },
+      { from: 'relay.agent.src', replyTo: 'relay.inbox.dispatch.step-type-test' }
     );
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const progressEvents = receivedPayloads.filter(
-      (p) => (p as Record<string, unknown>).type === 'progress',
+      (p) => (p as Record<string, unknown>).type === 'progress'
     ) as Array<Record<string, unknown>>;
 
     const messageSteps = progressEvents.filter((p) => p.step_type === 'message');
@@ -342,8 +365,8 @@ describe('relay → CCA round-trip', () => {
     // Uses real timers with a very short TTL to avoid chokidar/fake-timer conflicts.
     const shortRelay = new RelayCore({
       dataDir: path.join(tmpDir, 'ttl-test'),
-      dispatchInboxTtlMs: 10,      // 10ms TTL
-      ttlSweepIntervalMs: 5,       // 5ms sweep
+      dispatchInboxTtlMs: 10, // 10ms TTL
+      ttlSweepIntervalMs: 5, // 5ms sweep
       adapterRegistry: new SingleAdapterRegistry(cca),
     });
 
@@ -381,9 +404,21 @@ describe('relay → CCA round-trip', () => {
     });
 
     // Simulate CCA publishing: 2 progress events + final agent_result
-    await relay.publish(inboxSubject, { type: 'progress', step: 1, step_type: 'message', text: 'step1', done: false }, { from: 'relay.agent.cca' });
-    await relay.publish(inboxSubject, { type: 'progress', step: 2, step_type: 'tool_result', text: 'tool output', done: false }, { from: 'relay.agent.cca' });
-    await relay.publish(inboxSubject, { type: 'agent_result', text: 'Final answer', done: true }, { from: 'relay.agent.cca' });
+    await relay.publish(
+      inboxSubject,
+      { type: 'progress', step: 1, step_type: 'message', text: 'step1', done: false },
+      { from: 'relay.agent.cca' }
+    );
+    await relay.publish(
+      inboxSubject,
+      { type: 'progress', step: 2, step_type: 'tool_result', text: 'tool output', done: false },
+      { from: 'relay.agent.cca' }
+    );
+    await relay.publish(
+      inboxSubject,
+      { type: 'agent_result', text: 'Final answer', done: true },
+      { from: 'relay.agent.cca' }
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 

@@ -90,8 +90,18 @@ describe('MeshCore topology integration', () => {
     });
 
     try {
-      await mesh.registerByPath(projectA, { name: 'agent-a', runtime: 'claude-code' }, 'test', base);
-      await mesh.registerByPath(projectB, { name: 'agent-b', runtime: 'claude-code' }, 'test', base);
+      await mesh.registerByPath(
+        projectA,
+        { name: 'agent-a', runtime: 'claude-code' },
+        'test',
+        base
+      );
+      await mesh.registerByPath(
+        projectB,
+        { name: 'agent-b', runtime: 'claude-code' },
+        'test',
+        base
+      );
 
       // Both agents should share namespace derived from common parent
       const allAgents = mesh.list();
@@ -127,13 +137,13 @@ describe('MeshCore topology integration', () => {
         projectA,
         { name: 'agent-a', runtime: 'claude-code' },
         'test',
-        base,
+        base
       );
       const manifestB = await mesh.registerByPath(
         projectB,
         { name: 'agent-b', runtime: 'cursor' },
         'test',
-        base,
+        base
       );
 
       // The namespaces should differ
@@ -171,13 +181,13 @@ describe('MeshCore topology integration', () => {
         projectA,
         { name: 'agent-a', runtime: 'claude-code' },
         'test',
-        base,
+        base
       );
       const manifestB = await mesh.registerByPath(
         projectB,
         { name: 'agent-b', runtime: 'cursor' },
         'test',
-        base,
+        base
       );
 
       const nsA = manifestA.namespace!;
@@ -221,13 +231,13 @@ describe('MeshCore topology integration', () => {
         projectA,
         { name: 'agent-a', runtime: 'claude-code' },
         'test',
-        base,
+        base
       );
       const manifestB = await mesh.registerByPath(
         projectB,
         { name: 'agent-b', runtime: 'cursor' },
         'test',
-        base,
+        base
       );
 
       const nsA = manifestA.namespace!;
@@ -263,13 +273,13 @@ describe('MeshCore topology integration', () => {
         projectA,
         { name: 'agent-a', runtime: 'claude-code' },
         'test',
-        base,
+        base
       );
       const manifestB = await mesh.registerByPath(
         projectB,
         { name: 'agent-b', runtime: 'cursor' },
         'test',
-        base,
+        base
       );
 
       const view = mesh.getTopology('*');
@@ -312,7 +322,7 @@ describe('MeshCore topology integration', () => {
           budget: { maxHopsPerMessage: 3, maxCallsPerHour: 50 },
         },
         'test',
-        base,
+        base
       );
 
       // In-memory manifest preserves custom budget
@@ -320,7 +330,9 @@ describe('MeshCore topology integration', () => {
 
       // After round-trip through the DB the budget is preserved in the budget_json column.
       const view = mesh.getTopology('*');
-      const agent = view.namespaces.flatMap((ns) => ns.agents).find((a) => a.name === 'budgeted-agent');
+      const agent = view.namespaces
+        .flatMap((ns) => ns.agents)
+        .find((a) => a.name === 'budgeted-agent');
       expect(agent).toBeDefined();
       expect(agent!.budget).toEqual({ maxHopsPerMessage: 3, maxCallsPerHour: 50 });
     } finally {
@@ -377,13 +389,13 @@ describe('MeshCore topology integration', () => {
         projectA,
         { name: 'agent-a', runtime: 'claude-code' },
         'test',
-        base,
+        base
       );
       const manifestB = await mesh.registerByPath(
         projectB,
         { name: 'agent-b', runtime: 'cursor' },
         'test',
-        base,
+        base
       );
 
       // Without cross-namespace access, agent-a can't reach agent-b

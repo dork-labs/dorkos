@@ -62,6 +62,7 @@ status: ideation
 Adapter `.md` file → build copies to `dist/` → adapter-manager reads at startup → enriches manifest → catalog API serves to client → wizard/field components render markdown
 
 **Feature Flags/Config:**
+
 - `DORKOS_RELAY_ENABLED` — Existing feature gate; no new flags needed
 
 **Potential Blast Radius:**
@@ -78,6 +79,7 @@ Research completed at `research/20260314_plugin_integration_setup_docs_patterns.
 ### Potential Solutions
 
 **1. Slack Manifest URL (One-Click Create)**
+
 - Description: Generate a URL-encoded YAML manifest and embed it in `https://api.slack.com/apps?new_app=1&manifest_yaml=<encoded>`. User clicks one button, Slack pre-fills everything.
 - Pros: Eliminates the most error-prone part of Slack setup (scope configuration, socket mode, events). Confirmed working URL scheme.
 - Cons: If Slack changes the manifest format, the URL breaks. Manifest must be kept in sync with adapter requirements.
@@ -85,6 +87,7 @@ Research completed at `research/20260314_plugin_integration_setup_docs_patterns.
 - Maintenance: Low (manifest is static, changes rarely)
 
 **2. Per-Field Help Disclosures (Pattern D from research)**
+
 - Description: Add `helpMarkdown` to `ConfigField`. Renders as a collapsible "Where do I find this?" section below each field. Uses the Home Assistant `data_description` / VS Code walkthrough step media pattern.
 - Pros: Targeted help at the exact moment of need. Progressive disclosure — experts skip it, beginners expand it.
 - Cons: Adds visual density to the form if many fields have help. Need to design the collapsed/expanded states well.
@@ -92,6 +95,7 @@ Research completed at `research/20260314_plugin_integration_setup_docs_patterns.
 - Maintenance: Low
 
 **3. Adapter Docs Folder + Setup Guide Panel (Patterns B+C from research)**
+
 - Description: Each adapter gets a `docs/` folder with `setup.md`. Content loaded at server startup, served via catalog API as `setupGuide` field. Rendered in a slide-out Sheet from the right alongside the wizard.
 - Pros: Proper authoring DX (real `.md` files), scalable to multiple docs later, side-by-side form + guide UX.
 - Cons: Requires build copy step for `.md` files. Adds a new UI surface (Sheet component). Content must be maintained alongside adapter code.
@@ -99,6 +103,7 @@ Research completed at `research/20260314_plugin_integration_setup_docs_patterns.
 - Maintenance: Medium
 
 **4. Enhanced setupInstructions Rendering**
+
 - Description: Upgrade the existing blue info box to render markdown instead of plain text.
 - Pros: Immediate improvement to all adapters with zero schema changes. Links, bold, numbered lists all work.
 - Cons: Doesn't solve the "too much info for a small box" problem — just makes the box richer.
@@ -109,12 +114,12 @@ Research completed at `research/20260314_plugin_integration_setup_docs_patterns.
 
 **All four solutions are complementary and should be implemented together.** They form a layered documentation system:
 
-| Layer | What | When User Sees It |
-|-------|------|-------------------|
-| Enhanced setupInstructions | Brief markdown summary in info box | Always visible at top of configure step |
-| Per-field helpMarkdown | Collapsible "Where do I find this?" per field | On demand, when user needs help with a specific field |
-| Setup guide panel | Full guide in Sheet/drawer | On demand, via "Setup Guide" button |
-| One-click create button | Pre-filled Slack App creation | During Slack setup specifically |
+| Layer                      | What                                          | When User Sees It                                     |
+| -------------------------- | --------------------------------------------- | ----------------------------------------------------- |
+| Enhanced setupInstructions | Brief markdown summary in info box            | Always visible at top of configure step               |
+| Per-field helpMarkdown     | Collapsible "Where do I find this?" per field | On demand, when user needs help with a specific field |
+| Setup guide panel          | Full guide in Sheet/drawer                    | On demand, via "Setup Guide" button                   |
+| One-click create button    | Pre-filled Slack App creation                 | During Slack setup specifically                       |
 
 ### Security Considerations
 
@@ -130,9 +135,9 @@ Research completed at `research/20260314_plugin_integration_setup_docs_patterns.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Guide panel placement | Sheet/drawer from the right | Non-destructive, side-by-side with form, follows existing shadcn Sheet pattern in the codebase |
-| 2 | Content authoring format | Real `.md` files in `docs/` per adapter | DX excellence — syntax highlighting, preview, linting, clean diffs. Writing markdown inside TypeScript template literals is a poor authoring experience. |
-| 3 | Content delivery | Files copied to `dist/` at build, loaded at server startup, served via existing catalog API | No new endpoints needed. Robust for both built-in and plugin adapters. One-line build script addition. |
-| 4 | Docs scope for v1 | Single `setup.md` per adapter | Tight scope, expandable to `troubleshooting.md`, `advanced.md` later. Each adapter gets one comprehensive guide. |
+| #   | Decision                 | Choice                                                                                      | Rationale                                                                                                                                                |
+| --- | ------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Guide panel placement    | Sheet/drawer from the right                                                                 | Non-destructive, side-by-side with form, follows existing shadcn Sheet pattern in the codebase                                                           |
+| 2   | Content authoring format | Real `.md` files in `docs/` per adapter                                                     | DX excellence — syntax highlighting, preview, linting, clean diffs. Writing markdown inside TypeScript template literals is a poor authoring experience. |
+| 3   | Content delivery         | Files copied to `dist/` at build, loaded at server startup, served via existing catalog API | No new endpoints needed. Robust for both built-in and plugin adapters. One-line build script addition.                                                   |
+| 4   | Docs scope for v1        | Single `setup.md` per adapter                                                               | Tight scope, expandable to `troubleshooting.md`, `advanced.md` later. Each adapter gets one comprehensive guide.                                         |

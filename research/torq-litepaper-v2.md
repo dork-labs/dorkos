@@ -1,5 +1,5 @@
 ---
-title: "Torq: The Autonomous Improvement Engine (v0.2)"
+title: 'Torq: The Autonomous Improvement Engine (v0.2)'
 date: 2026-02-18
 type: exploratory
 status: superseded
@@ -35,6 +35,7 @@ Human notices problem → Human writes ticket → Human (or agent) does work →
 ```
 
 The "???" is where everything breaks down. After shipping:
+
 - Who checks if the fix actually worked?
 - Who notices the new regression?
 - Who synthesizes the PostHog data, user feedback, and error logs into actionable next steps?
@@ -42,7 +43,7 @@ The "???" is where everything breaks down. After shipping:
 
 **The answer is always a human.** A human who is context-switching, forgetting, and operating on gut feel rather than systematic analysis. The feedback loop exists in their head, and it runs once a week at best — during retros that nobody pays attention to.
 
-Height attempted to build an "autonomous project manager" and shut down in September 2025 after 3.5 years. Linear has positioned itself as the PM layer that *accepts* AI agents as task assignees via MCP. Factory.ai builds "Droids" that execute across the full SDLC. But none of them close the loop. They all assume a human is synthesizing feedback and deciding what to work on next.
+Height attempted to build an "autonomous project manager" and shut down in September 2025 after 3.5 years. Linear has positioned itself as the PM layer that _accepts_ AI agents as task assignees via MCP. Factory.ai builds "Droids" that execute across the full SDLC. But none of them close the loop. They all assume a human is synthesizing feedback and deciding what to work on next.
 
 **The missing piece is the engine that turns signals into hypotheses, hypotheses into plans, plans into tasks, and tasks into agent sessions — then monitors the outcomes and feeds them back in.**
 
@@ -184,7 +185,7 @@ Linear emphasizes making decisions with incomplete information rather than over-
 
 ### 7. Build in Public
 
-Every agent action is logged. Every hypothesis is traceable to signals. Every outcome is measured. The system generates changelogs that explain not just *what* changed but *why* — tracing back to the signal that triggered the work. This radical transparency is both a debugging tool and a trust-building mechanism.
+Every agent action is logged. Every hypothesis is traceable to signals. Every outcome is measured. The system generates changelogs that explain not just _what_ changed but _why_ — tracing back to the signal that triggered the work. This radical transparency is both a debugging tool and a trust-building mechanism.
 
 ---
 
@@ -295,13 +296,13 @@ WorkflowState {
 
 **Type categories and their autonomous loop roles:**
 
-| Type        | Human meaning                     | Autonomous loop role |
-|-------------|-----------------------------------|---------------------|
-| `triage`    | Inbox, excluded from normal views | **Signal processing queue** — signals land here |
-| `backlog`   | Accepted, not yet prioritized     | Issues accepted from triage, awaiting cycle planning |
-| `unstarted` | Ready to work on                  | Queued for agent dispatch |
-| `started`   | In progress                       | Agent session active |
-| `completed` | Done                              | Work shipped, monitoring may follow |
+| Type        | Human meaning                     | Autonomous loop role                                        |
+| ----------- | --------------------------------- | ----------------------------------------------------------- |
+| `triage`    | Inbox, excluded from normal views | **Signal processing queue** — signals land here             |
+| `backlog`   | Accepted, not yet prioritized     | Issues accepted from triage, awaiting cycle planning        |
+| `unstarted` | Ready to work on                  | Queued for agent dispatch                                   |
+| `started`   | In progress                       | Agent session active                                        |
+| `completed` | Done                              | Work shipped, monitoring may follow                         |
 | `canceled`  | Rejected/closed                   | Signal was noise, hypothesis invalidated, or issue obsolete |
 
 **Default progression:**
@@ -312,6 +313,7 @@ WorkflowState {
 ```
 
 **Triage behavior (adapted from Linear):**
+
 - Signals create issues in the Triage state
 - Agent processes triage queue: Accept (→ Backlog), Decline (→ Canceled), Duplicate (→ Canceled + link), or Snooze (revisit later)
 - Triage issues are excluded from cycle views and backlogs by default
@@ -368,7 +370,7 @@ Project {
 
 ### Cycle
 
-Per-team observation windows. Unlike traditional sprints, Torq cycles don't dictate *when* work happens — agents work continuously. Cycles provide **measurement boundaries**: how much was accomplished, what was the hypothesis hit rate, how efficient were the agents.
+Per-team observation windows. Unlike traditional sprints, Torq cycles don't dictate _when_ work happens — agents work continuously. Cycles provide **measurement boundaries**: how much was accomplished, what was the hypothesis hit rate, how efficient were the agents.
 
 ```
 Cycle {
@@ -436,14 +438,14 @@ Signal {
 
 **Built-in signal sources:**
 
-| Source | How it connects | What it produces |
-|--------|----------------|-----------------|
-| **PostHog** | Webhook integration | Metric changes, funnel drops, feature adoption data |
-| **User Feedback Widget** | Embeddable JS widget + API endpoint | Bug reports, feature requests, friction reports |
-| **Agent Reports** | MCP tool / CLI command | Session summaries, encountered issues, improvement suggestions |
-| **Git Events** | GitHub/GitLab webhooks | PR merges, CI failures, deployment events |
-| **Error Tracking** | Sentry/similar webhook | Error spikes, new error classes, regression detection |
-| **Custom** | REST API endpoint | Anything — Slack messages, support tickets, custom metrics |
+| Source                   | How it connects                     | What it produces                                               |
+| ------------------------ | ----------------------------------- | -------------------------------------------------------------- |
+| **PostHog**              | Webhook integration                 | Metric changes, funnel drops, feature adoption data            |
+| **User Feedback Widget** | Embeddable JS widget + API endpoint | Bug reports, feature requests, friction reports                |
+| **Agent Reports**        | MCP tool / CLI command              | Session summaries, encountered issues, improvement suggestions |
+| **Git Events**           | GitHub/GitLab webhooks              | PR merges, CI failures, deployment events                      |
+| **Error Tracking**       | Sentry/similar webhook              | Error spikes, new error classes, regression detection          |
+| **Custom**               | REST API endpoint                   | Anything — Slack messages, support tickets, custom metrics     |
 
 ### Hypothesis
 
@@ -612,24 +614,24 @@ Customers (N)                          [CRM entities]
 
 **Key cardinalities:**
 
-| Relationship               | Cardinality    |
-|----------------------------|---------------|
-| Issue → Team               | N:1 (required) |
-| Issue → WorkflowState      | N:1 (required) |
-| Issue → Project            | N:1 (optional) |
-| Issue → Cycle              | N:1 (optional) |
-| Issue → Parent Issue       | N:1 (optional) |
-| Issue → Labels             | N:M            |
-| Issue → Assignee           | N:1 (optional) |
-| Issue → AgentSessions      | 1:N            |
-| Issue → IssueRelations     | 1:N            |
-| Project → Teams            | N:M            |
-| Project → Milestones       | 1:N            |
-| Initiative → Projects      | N:M            |
-| Initiative → Parent Init.  | N:1 (optional) |
-| Signal → Issue             | 1:1            |
-| Hypothesis → Issue         | 1:1            |
-| Hypothesis → Signals       | N:M            |
+| Relationship              | Cardinality    |
+| ------------------------- | -------------- |
+| Issue → Team              | N:1 (required) |
+| Issue → WorkflowState     | N:1 (required) |
+| Issue → Project           | N:1 (optional) |
+| Issue → Cycle             | N:1 (optional) |
+| Issue → Parent Issue      | N:1 (optional) |
+| Issue → Labels            | N:M            |
+| Issue → Assignee          | N:1 (optional) |
+| Issue → AgentSessions     | 1:N            |
+| Issue → IssueRelations    | 1:N            |
+| Project → Teams           | N:M            |
+| Project → Milestones      | 1:N            |
+| Initiative → Projects     | N:M            |
+| Initiative → Parent Init. | N:1 (optional) |
+| Signal → Issue            | 1:1            |
+| Hypothesis → Issue        | 1:1            |
+| Hypothesis → Signals      | N:M            |
 
 ---
 
@@ -705,18 +707,18 @@ which takes 1.5-3 seconds. Add a centered spinner with "Signing you in..." text.
 
 Torq exposes an MCP tool server that DorkOS agents can call during their sessions:
 
-| Tool | Purpose |
-|------|---------|
-| `torq_get_issue` | Read issue details, parent chain, related issues |
-| `torq_update_issue` | Update status, add comments, attach artifacts |
-| `torq_create_issue` | Create sub-issues or follow-up work |
-| `torq_submit_signal` | Report a signal (agent-discovered issue, improvement idea) |
-| `torq_get_context` | Get project/cycle/initiative context |
-| `torq_attach_session` | Link the current DorkOS session to the issue |
-| `torq_log_commit` | Attach a git commit to the issue |
-| `torq_log_pr` | Attach a PR to the issue |
-| `torq_list_issues` | Query issues with filters (status, priority, team, project, cycle) |
-| `torq_get_relations` | Get blocking/blocked-by chains for dependency awareness |
+| Tool                  | Purpose                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `torq_get_issue`      | Read issue details, parent chain, related issues                   |
+| `torq_update_issue`   | Update status, add comments, attach artifacts                      |
+| `torq_create_issue`   | Create sub-issues or follow-up work                                |
+| `torq_submit_signal`  | Report a signal (agent-discovered issue, improvement idea)         |
+| `torq_get_context`    | Get project/cycle/initiative context                               |
+| `torq_attach_session` | Link the current DorkOS session to the issue                       |
+| `torq_log_commit`     | Attach a git commit to the issue                                   |
+| `torq_log_pr`         | Attach a PR to the issue                                           |
+| `torq_list_issues`    | Query issues with filters (status, priority, team, project, cycle) |
+| `torq_get_relations`  | Get blocking/blocked-by chains for dependency awareness            |
 
 This means agents working through DorkOS can read their full context and report back results without any human intermediary.
 
@@ -727,6 +729,7 @@ This means agents working through DorkOS can read their full context and report 
 ### Cloud-First Design
 
 Torq runs as a cloud service with public endpoints, enabling:
+
 - Webhooks from PostHog, GitHub, Sentry, etc.
 - The feedback widget to POST from any website
 - Multiple DorkOS instances to connect as agent backends
@@ -735,16 +738,16 @@ Torq runs as a cloud service with public endpoints, enabling:
 
 ### Tech Stack
 
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| **API** | Node.js + Hono (or Express) | Fast, TypeScript-native, excellent middleware ecosystem |
-| **Database** | PostgreSQL + Drizzle ORM | Relational integrity for issue hierarchies, JSONB for signal payloads |
-| **Queue** | pg-boss (Postgres-backed) | No separate Redis/RabbitMQ needed; transactional job creation |
-| **Auth** | Better Auth or Clerk | Team management, API keys for integrations |
-| **Frontend** | React 19 + Vite + Tailwind + shadcn/ui | Consistent with DorkOS ecosystem |
-| **Real-time** | Server-Sent Events | Dashboard updates, agent session streaming |
-| **CLI** | Node.js binary | `torq` command for local interaction |
-| **MCP Server** | @anthropic-ai/claude-agent-sdk | In-process MCP for agent tool access |
+| Layer          | Technology                             | Rationale                                                             |
+| -------------- | -------------------------------------- | --------------------------------------------------------------------- |
+| **API**        | Node.js + Hono (or Express)            | Fast, TypeScript-native, excellent middleware ecosystem               |
+| **Database**   | PostgreSQL + Drizzle ORM               | Relational integrity for issue hierarchies, JSONB for signal payloads |
+| **Queue**      | pg-boss (Postgres-backed)              | No separate Redis/RabbitMQ needed; transactional job creation         |
+| **Auth**       | Better Auth or Clerk                   | Team management, API keys for integrations                            |
+| **Frontend**   | React 19 + Vite + Tailwind + shadcn/ui | Consistent with DorkOS ecosystem                                      |
+| **Real-time**  | Server-Sent Events                     | Dashboard updates, agent session streaming                            |
+| **CLI**        | Node.js binary                         | `torq` command for local interaction                                  |
+| **MCP Server** | @anthropic-ai/claude-agent-sdk         | In-process MCP for agent tool access                                  |
 
 ### System Architecture
 
@@ -784,17 +787,17 @@ Torq runs as a cloud service with public endpoints, enabling:
 
 The queue is the heartbeat of the system. Workers process issues in priority order:
 
-| Worker | Trigger | Action |
-|--------|---------|--------|
-| `signal-ingest` | New signal received via API/webhook | Validate, deduplicate, create triage issue |
-| `triage-process` | Triage issue assigned to agent | Dispatch to DorkOS, collect analysis, accept/decline/snooze |
-| `hypothesis-plan` | Hypothesis issue accepted | Dispatch to DorkOS, agent creates plan + sub-issues |
-| `issue-dispatch` | Issue moves to `unstarted` state | Dispatch to DorkOS, agent executes, reports back |
-| `monitor-check` | Monitoring issue scheduled check | Query signal sources, evaluate validation criteria |
-| `session-sync` | Agent session completes | Sync results back to issue (commits, PRs, summary) |
-| `auto-merge` | PR passes CI | Merge PR, update issue status, trigger deployment |
-| `cycle-roll` | Cycle ends | Roll incomplete issues to next cycle, calculate metrics |
-| `retention` | Scheduled (daily) | Archive old signals, prune stale backlog per `autoClosePeriod` |
+| Worker            | Trigger                             | Action                                                         |
+| ----------------- | ----------------------------------- | -------------------------------------------------------------- |
+| `signal-ingest`   | New signal received via API/webhook | Validate, deduplicate, create triage issue                     |
+| `triage-process`  | Triage issue assigned to agent      | Dispatch to DorkOS, collect analysis, accept/decline/snooze    |
+| `hypothesis-plan` | Hypothesis issue accepted           | Dispatch to DorkOS, agent creates plan + sub-issues            |
+| `issue-dispatch`  | Issue moves to `unstarted` state    | Dispatch to DorkOS, agent executes, reports back               |
+| `monitor-check`   | Monitoring issue scheduled check    | Query signal sources, evaluate validation criteria             |
+| `session-sync`    | Agent session completes             | Sync results back to issue (commits, PRs, summary)             |
+| `auto-merge`      | PR passes CI                        | Merge PR, update issue status, trigger deployment              |
+| `cycle-roll`      | Cycle ends                          | Roll incomplete issues to next cycle, calculate metrics        |
+| `retention`       | Scheduled (daily)                   | Archive old signals, prune stale backlog per `autoClosePeriod` |
 
 ---
 
@@ -850,13 +853,15 @@ torq status                        # Quick health check in terminal
 A lightweight, embeddable JavaScript widget that collects user feedback and sends it to Torq as a signal.
 
 ```html
-<script src="https://torq.example.com/widget.js"
-        data-project="your-project-id"
-        data-position="bottom-right">
-</script>
+<script
+  src="https://torq.example.com/widget.js"
+  data-project="your-project-id"
+  data-position="bottom-right"
+></script>
 ```
 
 Features:
+
 - Feedback types: bug report, feature request, friction report, general feedback
 - Optional screenshot capture
 - Optional session replay link (PostHog integration)
@@ -872,13 +877,13 @@ Each feedback submission becomes a signal → which creates a triage issue → w
 
 ### What exists today
 
-| Product | What it does | What's missing |
-|---------|-------------|---------------|
-| **Linear** | Best-in-class issue tracker + AI triage + MCP | No autonomous execution loop, no signal ingestion, no hypothesis layer |
-| **Devin** | Autonomous coding agent ($20/mo, 67% PR merge rate) | No PM layer, no feedback loop, no signal processing, no issue tracking |
-| **Factory.ai** | Full SDLC agent fleet ("Droids") | Closed-source, enterprise-only, no built-in PM, no feedback loop |
-| **GitHub Copilot Workspace** | AI-assisted coding in IDE | IDE-bound, no autonomous loop, no signal processing |
-| **Height** (shut down Sept 2025) | Autonomous project collaboration | Attempted this space, failed commercially. Market gap still open. |
+| Product                          | What it does                                        | What's missing                                                         |
+| -------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Linear**                       | Best-in-class issue tracker + AI triage + MCP       | No autonomous execution loop, no signal ingestion, no hypothesis layer |
+| **Devin**                        | Autonomous coding agent ($20/mo, 67% PR merge rate) | No PM layer, no feedback loop, no signal processing, no issue tracking |
+| **Factory.ai**                   | Full SDLC agent fleet ("Droids")                    | Closed-source, enterprise-only, no built-in PM, no feedback loop       |
+| **GitHub Copilot Workspace**     | AI-assisted coding in IDE                           | IDE-bound, no autonomous loop, no signal processing                    |
+| **Height** (shut down Sept 2025) | Autonomous project collaboration                    | Attempted this space, failed commercially. Market gap still open.      |
 
 ### Where Torq sits
 
@@ -919,15 +924,16 @@ Torq occupies the unique intersection: **Linear-quality issue tracking + autonom
 
 The product name should evoke continuous improvement, feedback loops, and mechanical/systematic momentum.
 
-| Name | Metaphor | CLI | Rationale |
-|------|----------|-----|-----------|
-| **Torq** | Rotational force driving a flywheel | `torq` | Each cycle adds force; the system compounds momentum. 1 syllable, unique spelling. |
-| **Ratchet** | Forward-only mechanism | `ratchet` | Gains lock in, no regression. Each click is permanent improvement. |
-| **Sigma** | Continuous improvement + signal/noise | `sigma` | Six Sigma = DMAIC loop. Sigma = signal analysis. Triple meaning. |
-| **Keel** | Structural spine keeping course | `keel` | Directional stability with continuous correction. Kubernetes/Helm family. |
-| **Arc** | Trajectory + electric discharge | `arc` | Improvement arcs upward. Energy arcs between signals and actions. |
+| Name        | Metaphor                              | CLI       | Rationale                                                                          |
+| ----------- | ------------------------------------- | --------- | ---------------------------------------------------------------------------------- |
+| **Torq**    | Rotational force driving a flywheel   | `torq`    | Each cycle adds force; the system compounds momentum. 1 syllable, unique spelling. |
+| **Ratchet** | Forward-only mechanism                | `ratchet` | Gains lock in, no regression. Each click is permanent improvement.                 |
+| **Sigma**   | Continuous improvement + signal/noise | `sigma`   | Six Sigma = DMAIC loop. Sigma = signal analysis. Triple meaning.                   |
+| **Keel**    | Structural spine keeping course       | `keel`    | Directional stability with continuous correction. Kubernetes/Helm family.          |
+| **Arc**     | Trajectory + electric discharge       | `arc`     | Improvement arcs upward. Energy arcs between signals and actions.                  |
 
 Additional candidates:
+
 - **Kaizen** (Japanese for "continuous improvement" — direct, but 3 syllables)
 - **Kata** (Toyota Kata — the practice of improvement, 2 syllables)
 - **Gyre** (a spiral motion — literary, distinctive)
@@ -1030,7 +1036,7 @@ Torq is the intentional version.
 
 5. **"Friction reports" as a signal type**: The feedback widget shouldn't just collect bug reports. "This was confusing" or "I expected X but got Y" are the most valuable signal type — they reveal UX issues before they become churn.
 
-6. **Changelog generation from the loop**: Since every shipped change traces back to a signal → hypothesis → plan chain, the system can auto-generate changelogs that explain *why* — "Fixed OAuth redirect latency (detected via 12% conversion drop signal)."
+6. **Changelog generation from the loop**: Since every shipped change traces back to a signal → hypothesis → plan chain, the system can auto-generate changelogs that explain _why_ — "Fixed OAuth redirect latency (detected via 12% conversion drop signal)."
 
 7. **Linear Method automated**: The principles Linear designed for human teams — work in cycles, scope issues small, measure with code not status updates, keep backlogs clean — are even more powerful when enforced by the system itself rather than relying on human discipline.
 

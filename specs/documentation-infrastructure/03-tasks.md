@@ -14,6 +14,7 @@ Last Decompose: 2026-02-16
 **Objective**: Rename the `guides/` directory to `contributing/` to make the target audience self-documenting.
 
 **Implementation**:
+
 - Rename `guides/` → `contributing/` (git mv to preserve history)
 - Update all references across the codebase:
   - `CLAUDE.md` — guides table, monorepo structure diagram, all `guides/` paths
@@ -25,6 +26,7 @@ Last Decompose: 2026-02-16
 - Verify no broken references remain: `grep -r "guides/" --include="*.md" --include="*.ts" --include="*.json"`
 
 **Acceptance Criteria**:
+
 - `guides/` directory no longer exists
 - `contributing/` directory contains all former `guides/` files
 - All references across the codebase updated
@@ -43,12 +45,14 @@ Last Decompose: 2026-02-16
 **Objective**: Add root `LICENSE` file with MIT license text.
 
 **Implementation**:
+
 - Create `/LICENSE` at the repository root
 - Use the standard MIT license template
 - Copyright line: `Copyright (c) 2025 Dork Labs`
 - Year matches what is declared in existing `package.json` files
 
 **Acceptance Criteria**:
+
 - `LICENSE` file exists at repo root
 - Contains full MIT license text
 - Copyright holder is "Dork Labs"
@@ -62,6 +66,7 @@ Last Decompose: 2026-02-16
 **Objective**: Replace the current root `README.md` with a version targeting npm users and open-source contributors.
 
 **Implementation**:
+
 - Read the current `README.md` to understand existing content
 - Rewrite following this structure:
   1. **Header**: `# DorkOS` with one-line description
@@ -76,6 +81,7 @@ Last Decompose: 2026-02-16
   10. **License**: MIT, link to `LICENSE`
 
 **Acceptance Criteria**:
+
 - README.md is rewritten with all sections above
 - No references to pre-monorepo structure
 - CLI install instructions are prominent
@@ -90,6 +96,7 @@ Last Decompose: 2026-02-16
 **Objective**: Create a changelog using Keep a Changelog format.
 
 **Implementation**:
+
 - Create `/CHANGELOG.md` at repo root
 - Use [Keep a Changelog](https://keepachangelog.com/) format
 - Include header linking to the format spec
@@ -99,6 +106,7 @@ Last Decompose: 2026-02-16
 - Add comparison links at the bottom: `[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.1.0...HEAD`
 
 **Acceptance Criteria**:
+
 - CHANGELOG.md exists at repo root
 - Follows Keep a Changelog format
 - Has `[Unreleased]` and `[0.1.0]` sections
@@ -113,6 +121,7 @@ Last Decompose: 2026-02-16
 **Objective**: Create a contributor onboarding guide.
 
 **Implementation**:
+
 - Create `/CONTRIBUTING.md` at repo root
 - Sections:
   1. **Welcome**: Brief welcoming statement
@@ -129,6 +138,7 @@ Last Decompose: 2026-02-16
   12. **Code of Conduct**: `<!-- TODO: Add Code of Conduct -->` placeholder with note that one will be adopted
 
 **Acceptance Criteria**:
+
 - CONTRIBUTING.md exists at repo root
 - All sections above are present
 - Commands are accurate per CLAUDE.md
@@ -143,6 +153,7 @@ Last Decompose: 2026-02-16
 **Objective**: Create the npm package page README for the `dorkos` CLI.
 
 **Implementation**:
+
 - Create `/packages/cli/README.md`
 - This is what npmjs.com displays on the package page
 - Sections:
@@ -165,6 +176,7 @@ Last Decompose: 2026-02-16
   10. **License**: MIT
 
 **Acceptance Criteria**:
+
 - `packages/cli/README.md` exists
 - All env vars documented accurately (cross-reference with CLAUDE.md and server code)
 - Install command is `npm install -g dorkos`
@@ -181,6 +193,7 @@ Last Decompose: 2026-02-16
 **Objective**: Create the full `docs/` directory structure with all `meta.json` navigation files.
 
 **Implementation**:
+
 - Create the following directories:
   - `docs/`
   - `docs/getting-started/`
@@ -191,34 +204,26 @@ Last Decompose: 2026-02-16
   - `docs/contributing/`
 
 - Create `docs/meta.json`:
+
   ```json
   {
     "title": "Documentation",
-    "pages": [
-      "getting-started",
-      "guides",
-      "integrations",
-      "api",
-      "self-hosting",
-      "contributing"
-    ]
+    "pages": ["getting-started", "guides", "integrations", "api", "self-hosting", "contributing"]
   }
   ```
 
 - Create `docs/getting-started/meta.json`:
+
   ```json
   {
     "title": "Getting Started",
-    "pages": [
-      "installation",
-      "quickstart",
-      "configuration"
-    ],
+    "pages": ["installation", "quickstart", "configuration"],
     "defaultOpen": true
   }
   ```
 
 - Create `docs/guides/meta.json`:
+
   ```json
   {
     "title": "Guides",
@@ -234,17 +239,16 @@ Last Decompose: 2026-02-16
   ```
 
 - Create `docs/integrations/meta.json`:
+
   ```json
   {
     "title": "Integrations",
-    "pages": [
-      "building-integrations",
-      "sse-protocol"
-    ]
+    "pages": ["building-integrations", "sse-protocol"]
   }
   ```
 
 - Create `docs/api/meta.json`:
+
   ```json
   {
     "title": "API Reference",
@@ -256,13 +260,11 @@ Last Decompose: 2026-02-16
 - Create `docs/api/.gitkeep` (empty file — API docs generated at build time)
 
 - Create `docs/self-hosting/meta.json`:
+
   ```json
   {
     "title": "Self-Hosting",
-    "pages": [
-      "deployment",
-      "reverse-proxy"
-    ]
+    "pages": ["deployment", "reverse-proxy"]
   }
   ```
 
@@ -270,15 +272,12 @@ Last Decompose: 2026-02-16
   ```json
   {
     "title": "Contributing",
-    "pages": [
-      "development-setup",
-      "architecture",
-      "testing"
-    ]
+    "pages": ["development-setup", "architecture", "testing"]
   }
   ```
 
 **Acceptance Criteria**:
+
 - All 7 directories exist under `docs/`
 - All 7 `meta.json` files exist with correct content
 - `docs/api/.gitkeep` exists
@@ -294,7 +293,9 @@ Last Decompose: 2026-02-16
 **Objective**: Create the documentation landing page.
 
 **Implementation**:
+
 - Create `docs/index.mdx` with frontmatter and content:
+
   ```mdx
   ---
   title: DorkOS Documentation
@@ -328,6 +329,7 @@ Last Decompose: 2026-02-16
   ```
 
 **Acceptance Criteria**:
+
 - `docs/index.mdx` exists with valid frontmatter
 - Contains links to key sections
 - Written for external users (not internal agents)
@@ -343,6 +345,7 @@ Last Decompose: 2026-02-16
 **Implementation**:
 
 Create `docs/getting-started/installation.mdx`:
+
 ```mdx
 ---
 title: Installation
@@ -389,6 +392,7 @@ Visit [http://localhost:4242](http://localhost:4242) to see the DorkOS interface
 ```
 
 Create `docs/getting-started/quickstart.mdx`:
+
 ```mdx
 ---
 title: Quickstart
@@ -423,6 +427,7 @@ Your conversations are saved as sessions. Use the sidebar to switch between sess
 ```
 
 Create `docs/getting-started/configuration.mdx`:
+
 ```mdx
 ---
 title: Configuration
@@ -435,27 +440,27 @@ DorkOS is configured via environment variables.
 
 ## Required
 
-| Variable | Description |
-|---|---|
+| Variable            | Description            |
+| ------------------- | ---------------------- |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key |
 
 ## Optional
 
-| Variable | Default | Description |
-|---|---|---|
-| `DORKOS_PORT` | `4242` | Port for the DorkOS server |
+| Variable             | Default           | Description                            |
+| -------------------- | ----------------- | -------------------------------------- |
+| `DORKOS_PORT`        | `4242`            | Port for the DorkOS server             |
 | `DORKOS_DEFAULT_CWD` | Current directory | Default working directory for sessions |
 
 ## Tunnel Configuration
 
 DorkOS supports ngrok tunnels for remote access.
 
-| Variable | Description |
-|---|---|
-| `TUNNEL_ENABLED` | Set to `true` to enable ngrok tunnel |
-| `NGROK_AUTHTOKEN` | Your ngrok authentication token |
-| `TUNNEL_DOMAIN` | Custom tunnel domain (optional) |
-| `TUNNEL_AUTH` | Basic auth for the tunnel in `user:pass` format (optional) |
+| Variable          | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `TUNNEL_ENABLED`  | Set to `true` to enable ngrok tunnel                       |
+| `NGROK_AUTHTOKEN` | Your ngrok authentication token                            |
+| `TUNNEL_DOMAIN`   | Custom tunnel domain (optional)                            |
+| `TUNNEL_AUTH`     | Basic auth for the tunnel in `user:pass` format (optional) |
 
 ## Config Directory
 
@@ -463,6 +468,7 @@ DorkOS creates a `~/.dork/` directory on startup for storing configuration.
 ```
 
 **Acceptance Criteria**:
+
 - All three `.mdx` files exist in `docs/getting-started/`
 - Each has valid frontmatter with `title` and `description`
 - Content is user-facing (not agent-facing)
@@ -479,6 +485,7 @@ DorkOS creates a `~/.dork/` directory on startup for storing configuration.
 **Implementation**:
 
 Each placeholder file should have:
+
 - Valid frontmatter (`title`, `description`)
 - A heading
 - A brief content outline (3-5 bullet points of what the page will cover)
@@ -487,23 +494,28 @@ Each placeholder file should have:
 Files to create:
 
 **docs/guides/**:
+
 - `cli-usage.mdx` — Title: "CLI Usage", covers: running dorkos command, available flags, environment variables, config directory
 - `tunnel-setup.mdx` — Title: "Tunnel Setup", covers: enabling ngrok, auth tokens, custom domains, basic auth, health check
 - `slash-commands.mdx` — Title: "Slash Commands", covers: what slash commands are, `.claude/commands/` directory, frontmatter format, using commands in the UI
 
 **docs/integrations/**:
+
 - `building-integrations.mdx` — Title: "Building Integrations", covers: Transport interface, HttpTransport vs DirectTransport, creating custom clients, React context injection
 - `sse-protocol.mdx` — Title: "SSE Protocol", covers: event types (text_delta, tool_call_start, etc.), message format, session sync events, connection lifecycle
 
 **docs/self-hosting/**:
+
 - `deployment.mdx` — Title: "Deployment", covers: production build, running with `npm start`, environment variables, systemd service example
 - `reverse-proxy.mdx` — Title: "Reverse Proxy", covers: nginx configuration, Caddy configuration, SSE proxy considerations, WebSocket-like keep-alive
 
 **docs/contributing/**:
+
 - `development-setup.mdx` — Title: "Development Setup", covers: prerequisites, cloning, installing, running dev servers, running tests
 - `testing.mdx` — Title: "Testing", covers: Vitest setup, running tests, writing component tests with mock Transport, writing service tests
 
 **Acceptance Criteria**:
+
 - All 9 placeholder `.mdx` files exist in their correct directories
 - Each has valid frontmatter
 - Each has a content outline
@@ -520,7 +532,9 @@ Files to create:
 **Objective**: Create a script that exports the OpenAPI spec to a static JSON file for future Fumadocs consumption.
 
 **Implementation**:
+
 - Create `scripts/export-openapi.ts`:
+
   ```typescript
   /**
    * Export the OpenAPI spec to a static JSON file.
@@ -546,6 +560,7 @@ Files to create:
 - Note: The import path `../apps/server/src/services/openapi-registry` uses the function `generateOpenAPISpec()` which is already exported from that module.
 
 **Acceptance Criteria**:
+
 - `scripts/export-openapi.ts` exists
 - Imports `generateOpenAPISpec` from the server's openapi-registry
 - Writes output to `docs/api/openapi.json`
@@ -561,6 +576,7 @@ Files to create:
 **Objective**: Add the npm script to run the OpenAPI export.
 
 **Implementation**:
+
 - Edit `/package.json` to add the `docs:export-api` script:
   ```json
   "docs:export-api": "dotenv -- tsx scripts/export-openapi.ts"
@@ -570,6 +586,7 @@ Files to create:
 - Check if `tsx` is already a dependency; if not, install it as a devDependency
 
 **Acceptance Criteria**:
+
 - `npm run docs:export-api` runs without error
 - Produces `docs/api/openapi.json` with valid OpenAPI 3.1.0 content
 - Script uses `dotenv` prefix consistent with other scripts
@@ -583,12 +600,14 @@ Files to create:
 **Objective**: Run the export script to generate the initial openapi.json and ensure it is gitignored (it is a build artifact).
 
 **Implementation**:
+
 - Run `npm run docs:export-api` to generate `docs/api/openapi.json`
 - Add `docs/api/openapi.json` to `.gitignore` (this is a generated file, not source)
 - Remove the `docs/api/.gitkeep` file since `openapi.json` will exist (or keep `.gitkeep` and gitignore only `openapi.json` — prefer gitignoring the generated file)
 - Verify the generated JSON is valid OpenAPI 3.1.0 spec
 
 **Acceptance Criteria**:
+
 - `docs/api/openapi.json` can be generated by running the script
 - `docs/api/openapi.json` is listed in `.gitignore`
 - The generated spec has `openapi: "3.1.0"` and `info.title: "DorkOS API"`
@@ -603,7 +622,9 @@ Files to create:
 **Objective**: Add a test that validates the OpenAPI spec generation.
 
 **Implementation**:
+
 - Create `scripts/__tests__/export-openapi.test.ts`:
+
   ```typescript
   import { describe, it, expect } from 'vitest';
   import { generateOpenAPISpec } from '../../apps/server/src/services/openapi-registry';
@@ -636,6 +657,7 @@ Files to create:
 - Ensure the test file is picked up by the vitest workspace configuration. Check `vitest.workspace.ts` to see if `scripts/` is included; if not, either add it or move the test to `apps/server/src/services/__tests__/openapi-registry.test.ts` instead.
 
 **Acceptance Criteria**:
+
 - Test file exists and passes
 - Validates OpenAPI version, title, and that paths are non-empty
 - Runs with `npx vitest run` (either from scripts/ or apps/server/)
@@ -651,6 +673,7 @@ Files to create:
 **Objective**: Adapt the internal keyboard shortcuts guide into a user-facing docs page.
 
 **Implementation**:
+
 - Read `contributing/keyboard-shortcuts.md` for source content
 - Create `docs/contributing/keyboard-shortcuts.mdx` with:
   - Frontmatter: `title: "Keyboard Shortcuts"`, `description: "Navigate DorkOS efficiently with keyboard shortcuts"`
@@ -661,6 +684,7 @@ Files to create:
   - Keep the content practical and task-oriented
 
 **Acceptance Criteria**:
+
 - `docs/contributing/keyboard-shortcuts.mdx` exists with valid frontmatter
 - Content is rewritten for end users
 - No internal file paths or implementation details
@@ -675,6 +699,7 @@ Files to create:
 **Objective**: Adapt the internal interactive tools guide into a user-facing tool approval docs page.
 
 **Implementation**:
+
 - Read `contributing/interactive-tools.md` for source content
 - Create `docs/guides/tool-approval.mdx` with:
   - Frontmatter: `title: "Tool Approval"`, `description: "Understanding how tool approval works in DorkOS"`
@@ -686,6 +711,7 @@ Files to create:
   - Focus on the user experience and workflow
 
 **Acceptance Criteria**:
+
 - `docs/guides/tool-approval.mdx` exists with valid frontmatter
 - Content explains tool approval from the user's perspective
 - No internal code references or implementation details
@@ -700,6 +726,7 @@ Files to create:
 **Objective**: Adapt the internal Obsidian plugin development guide into a user-facing setup guide.
 
 **Implementation**:
+
 - Read `contributing/obsidian-plugin-development.md` for source content
 - Create `docs/guides/obsidian-plugin.mdx` with:
   - Frontmatter: `title: "Obsidian Plugin"`, `description: "Use DorkOS inside Obsidian as a sidebar plugin"`
@@ -712,6 +739,7 @@ Files to create:
   - Remove all Vite build config details, Electron compatibility internals, ItemView patterns, React mounting details
 
 **Acceptance Criteria**:
+
 - `docs/guides/obsidian-plugin.mdx` exists with valid frontmatter
 - Content is a user setup guide, not a developer reference
 - No build system or Electron internals
@@ -726,6 +754,7 @@ Files to create:
 **Objective**: Adapt the internal architecture guide into a simplified contributor-facing architecture overview.
 
 **Implementation**:
+
 - Read `contributing/architecture.md` for source content
 - Create `docs/contributing/architecture.mdx` with:
   - Frontmatter: `title: "Architecture"`, `description: "High-level architecture overview for DorkOS contributors"`
@@ -739,6 +768,7 @@ Files to create:
   - Remove: detailed FSD layer enforcement rules, specific file paths for every component, agent-specific instructions, PostToolUse hook details
 
 **Acceptance Criteria**:
+
 - `docs/contributing/architecture.mdx` exists with valid frontmatter
 - Simplified but accurate architecture overview
 - Covers server, client, shared package, and Transport interface
@@ -756,12 +786,14 @@ Files to create:
 **Objective**: Add a reference to the new `docs/` directory in `CLAUDE.md`.
 
 **Implementation**:
+
 - Edit `/CLAUDE.md` to add a brief section about the `docs/` directory:
   - Add to the monorepo structure diagram: `docs/` directory with description
   - Add a note in the appropriate section explaining that `docs/` contains user-facing MDX content structured for Fumadocs, while `contributing/` remains the internal developer documentation
   - Add `npm run docs:export-api` to the Commands section
 
 **Acceptance Criteria**:
+
 - CLAUDE.md references `docs/` directory
 - Distinction between `docs/` (external) and `contributing/` (internal) is clear
 - `docs:export-api` command is documented

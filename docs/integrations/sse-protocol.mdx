@@ -38,41 +38,79 @@ The endpoint always returns a `text/event-stream` response. The web client uses 
 
 ### Text Events
 
-<TypeTable type={{
-  "text_delta": { type: "{ delta: string }", description: "Incremental text chunk for the assistant message" },
-}} />
+<TypeTable
+  type={{
+    text_delta: {
+      type: '{ delta: string }',
+      description: 'Incremental text chunk for the assistant message',
+    },
+  }}
+/>
 
 ### Thinking Events
 
-<TypeTable type={{
-  "thinking_delta": { type: "{ delta: string }", description: "Incremental extended thinking content (when extended thinking is enabled)" },
-}} />
+<TypeTable
+  type={{
+    thinking_delta: {
+      type: '{ delta: string }',
+      description: 'Incremental extended thinking content (when extended thinking is enabled)',
+    },
+  }}
+/>
 
 ### Tool Events
 
-<TypeTable type={{
-  "tool_call_start": { type: "{ toolCallId: string, toolName: string }", description: "Tool invocation begins" },
-  "tool_call_delta": { type: "{ toolCallId: string, delta: string }", description: "Incremental tool input/output" },
-  "tool_call_end": { type: "{ toolCallId: string }", description: "Tool invocation completes" },
-  "tool_result": { type: "{ toolCallId: string, result: string }", description: "Tool execution result" },
-  "tool_progress": { type: "{ toolCallId: string, progress: string }", description: "Tool execution progress update (e.g., percentage complete)" },
-}} />
+<TypeTable
+  type={{
+    tool_call_start: {
+      type: '{ toolCallId: string, toolName: string }',
+      description: 'Tool invocation begins',
+    },
+    tool_call_delta: {
+      type: '{ toolCallId: string, delta: string }',
+      description: 'Incremental tool input/output',
+    },
+    tool_call_end: { type: '{ toolCallId: string }', description: 'Tool invocation completes' },
+    tool_result: {
+      type: '{ toolCallId: string, result: string }',
+      description: 'Tool execution result',
+    },
+    tool_progress: {
+      type: '{ toolCallId: string, progress: string }',
+      description: 'Tool execution progress update (e.g., percentage complete)',
+    },
+  }}
+/>
 
 ### Interactive Events
 
-<TypeTable type={{
-  "approval_required": { type: "{ toolCallId: string, toolName: string, input: object }", description: "Tool needs user approval before executing" },
-  "question_prompt": { type: "{ toolCallId: string, questions: object }", description: "Claude is asking the user a question with options" },
-}} />
+<TypeTable
+  type={{
+    approval_required: {
+      type: '{ toolCallId: string, toolName: string, input: object }',
+      description: 'Tool needs user approval before executing',
+    },
+    question_prompt: {
+      type: '{ toolCallId: string, questions: object }',
+      description: 'Claude is asking the user a question with options',
+    },
+  }}
+/>
 
 ### Control Events
 
-<TypeTable type={{
-  "error": { type: "{ error: string }", description: "Error occurred during execution" },
-  "done": { type: "{ lastMessageIds?: { user: string, assistant: string } }", description: "Message stream complete. Includes JSONL-assigned IDs when clientMessageId was sent in the request." },
-  "session_status": { type: "{ status: string }", description: "Session state changed" },
-  "task_update": { type: "{ tasks: TaskItem[] }", description: "Task list updated" },
-}} />
+<TypeTable
+  type={{
+    error: { type: '{ error: string }', description: 'Error occurred during execution' },
+    done: {
+      type: '{ lastMessageIds?: { user: string, assistant: string } }',
+      description:
+        'Message stream complete. Includes JSONL-assigned IDs when clientMessageId was sent in the request.',
+    },
+    session_status: { type: '{ status: string }', description: 'Session state changed' },
+    task_update: { type: '{ tasks: TaskItem[] }', description: 'Task list updated' },
+  }}
+/>
 
 ## Responding to Interactive Events
 
@@ -94,10 +132,12 @@ Content-Type: application/json
 ```
 
 <Callout type="warn">
-  Failing to respond to an `approval_required` event blocks the agent. The SSE stream stays open until the tool call is resolved.
+  Failing to respond to an `approval_required` event blocks the agent. The SSE stream stays open
+  until the tool call is resolved.
 </Callout>
 
 Both `/approve`, `/deny`, and `/submit-answers` may return `409` with `{ code: "INTERACTION_ALREADY_RESOLVED" }` if the SDK resolved the interaction before the request arrived. Treat this as success.
+
 </Tab>
 
 <Tab value="Question Response">
@@ -108,6 +148,7 @@ POST /api/sessions/:id/submit-answers
 Content-Type: application/json
 { "toolCallId": "tc_123", "answers": { "0": "option_a" } }
 ```
+
 </Tab>
 
 </Tabs>
@@ -122,13 +163,22 @@ GET /api/sessions/:id/stream
 
 ### Sync Events
 
-<TypeTable type={{
-  "sync_connected": { type: "{ sessionId: string }", description: "Sent on initial SSE connection" },
-  "sync_update": { type: "{ sessionId: string, timestamp: string }", description: "New content written to session JSONL file" },
-}} />
+<TypeTable
+  type={{
+    sync_connected: {
+      type: '{ sessionId: string }',
+      description: 'Sent on initial SSE connection',
+    },
+    sync_update: {
+      type: '{ sessionId: string, timestamp: string }',
+      description: 'New content written to session JSONL file',
+    },
+  }}
+/>
 
 <Callout type="info">
-  When a `sync_update` is received, re-fetch message history. `GET /api/sessions/:id/messages` supports ETag caching (`If-None-Match` / `304`) for efficient polling.
+  When a `sync_update` is received, re-fetch message history. `GET /api/sessions/:id/messages`
+  supports ETag caching (`If-None-Match` / `304`) for efficient polling.
 </Callout>
 
 The sync stream carries only `sync_connected` and `sync_update` events. Real-time relay activity is available via the dedicated `GET /api/relay/stream` SSE endpoint.
@@ -137,9 +187,14 @@ The sync stream carries only `sync_connected` and `sync_update` events. Real-tim
 
 `POST /api/sessions/:id/messages` prevents concurrent writes via client IDs.
 
-<TypeTable type={{
-  "X-Client-Id": { type: "string", description: "Client identifier sent with each message request" },
-}} />
+<TypeTable
+  type={{
+    'X-Client-Id': {
+      type: 'string',
+      description: 'Client identifier sent with each message request',
+    },
+  }}
+/>
 
 - If another client holds the write lock, the server returns `409` with `{ error: "Session locked", code: "SESSION_LOCKED", lockedBy, lockedAt }`
 - Locks auto-expire after 5 minutes
@@ -153,30 +208,35 @@ The sync stream carries only `sync_connected` and `sync_update` events. Real-tim
 ### Open the SSE connection
 
 Send `POST /api/sessions/:id/messages` with message content. The response is `Content-Type: text/event-stream`.
+
 </Step>
 
 <Step>
 ### Process streamed events
 
 The server streams events as they arrive from the Claude Agent SDK. Update your UI in real time.
+
 </Step>
 
 <Step>
 ### Handle interactive events
 
 If `approval_required` or `question_prompt` arrive, respond via the appropriate endpoint before the stream continues.
+
 </Step>
 
 <Step>
 ### Stream completes
 
 On `done`, the message stream ends. Send another message or close the connection.
+
 </Step>
 
 <Step>
 ### Subscribe for ongoing sync
 
 For real-time updates from other clients or CLI writes, open a persistent connection via `GET /api/sessions/:id/stream`.
+
 </Step>
 
 </Steps>

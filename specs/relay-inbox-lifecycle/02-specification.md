@@ -64,12 +64,12 @@ Spec #91 introduced `relay_dispatch` (fire-and-poll for long-running tasks) and 
 
 ## Technical Dependencies
 
-| Dependency | Location | Role |
-|---|---|---|
-| `@dorkos/relay` | `packages/relay/` | Primary modification target |
-| `@dorkos/shared/relay-schemas` | `packages/shared/src/relay-schemas.ts` | `RelayProgressPayload` type (already exists from spec #91) |
-| Node.js `setInterval` / `clearInterval` | Built-in | TTL sweeper — no new packages |
-| `@anthropic-ai/claude-agent-sdk` | Server | No changes required |
+| Dependency                              | Location                               | Role                                                       |
+| --------------------------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| `@dorkos/relay`                         | `packages/relay/`                      | Primary modification target                                |
+| `@dorkos/shared/relay-schemas`          | `packages/shared/src/relay-schemas.ts` | `RelayProgressPayload` type (already exists from spec #91) |
+| Node.js `setInterval` / `clearInterval` | Built-in                               | TTL sweeper — no new packages                              |
+| `@anthropic-ai/claude-agent-sdk`        | Server                                 | No changes required                                        |
 
 ---
 
@@ -121,9 +121,9 @@ export type EndpointType = 'dispatch' | 'query' | 'persistent' | 'agent' | 'unkn
  */
 export function inferEndpointType(subject: string): EndpointType {
   if (subject.startsWith('relay.inbox.dispatch.')) return 'dispatch';
-  if (subject.startsWith('relay.inbox.query.'))    return 'query';
-  if (subject.startsWith('relay.inbox.'))           return 'persistent';
-  if (subject.startsWith('relay.agent.'))           return 'agent';
+  if (subject.startsWith('relay.inbox.query.')) return 'query';
+  if (subject.startsWith('relay.inbox.')) return 'persistent';
+  if (subject.startsWith('relay.agent.')) return 'agent';
   return 'unknown';
 }
 ```
@@ -390,7 +390,13 @@ if (isInboxReplyTo) {
   }
   if (event.type === 'tool_call_start' && messageBuffer) {
     stepCounter++;
-    await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+    await this.publishDispatchProgress(
+      envelope,
+      stepCounter,
+      'message',
+      messageBuffer,
+      ccaSessionKey
+    );
     messageBuffer = '';
   }
   if (event.type === 'tool_result') {
@@ -412,7 +418,13 @@ if (isInboxReplyTo) {
 if (isInboxReplyTo && envelope.replyTo && this.relay) {
   if (messageBuffer) {
     stepCounter++;
-    await this.publishDispatchProgress(envelope, stepCounter, 'message', messageBuffer, ccaSessionKey);
+    await this.publishDispatchProgress(
+      envelope,
+      stepCounter,
+      'message',
+      messageBuffer,
+      ccaSessionKey
+    );
   }
   await this.publishAgentResult(envelope, collectedText, ccaSessionKey);
 }
@@ -427,6 +439,7 @@ The `publishDispatchProgress` method name remains unchanged — it already handl
 **`apps/server/src/services/core/context-builder.ts`** — update `RELAY_TOOLS_CONTEXT`:
 
 1. **relay_query workflow** — update response shape and add progress note:
+
    ```
    Workflow: Query another agent — SHORT/MEDIUM tasks (≤10 min, PREFERRED)
    2. relay_query(..., timeout_ms=600000)
@@ -438,6 +451,7 @@ The `publishDispatchProgress` method name remains unchanged — it already handl
    ```
 
 2. **Subject hierarchy** — add TTL note for dispatch inboxes:
+
    ```
    relay.inbox.dispatch.{UUID}  — ephemeral inbox for relay_dispatch (caller-managed; server auto-expires after 30 min)
    ```
@@ -592,13 +606,13 @@ it('publishes progress events followed by agent_result for relay.inbox.query.* r
       yield { type: 'tool_result', data: { tool_use_id: 'tu1', content: 'file' } } as StreamEvent;
       yield { type: 'text_delta', data: { text: 'Done.' } } as StreamEvent;
       yield { type: 'done', data: {} } as StreamEvent;
-    })(),
+    })()
   );
 
   await relay.publish(
     'relay.agent.lifeOS-session',
     { text: 'question' },
-    { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.test-uuid' },
+    { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.test-uuid' }
   );
 
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -619,8 +633,8 @@ it('TTL sweeper unregisters dispatch inboxes after configured TTL', async () => 
 
   const shortRelay = new RelayCore({
     dataDir: path.join(tmpDir, 'ttl-test'),
-    dispatchInboxTtlMs: 100,       // 100ms TTL
-    ttlSweepIntervalMs: 50,        // 50ms sweep
+    dispatchInboxTtlMs: 100, // 100ms TTL
+    ttlSweepIntervalMs: 50, // 50ms sweep
     adapterRegistry: new SingleAdapterRegistry(cca),
   });
 
@@ -663,9 +677,21 @@ it('relay_query resolves with populated progress array for CCA progress streamin
   });
 
   // Simulate CCA publishing: 2 progress events + final agent_result
-  await relay.publish(inboxSubject, { type: 'progress', step: 1, step_type: 'message', text: 'step1', done: false }, { from: 'relay.agent.cca' });
-  await relay.publish(inboxSubject, { type: 'progress', step: 2, step_type: 'tool_result', text: 'tool output', done: false }, { from: 'relay.agent.cca' });
-  await relay.publish(inboxSubject, { type: 'agent_result', text: 'Final answer', done: true }, { from: 'relay.agent.cca' });
+  await relay.publish(
+    inboxSubject,
+    { type: 'progress', step: 1, step_type: 'message', text: 'step1', done: false },
+    { from: 'relay.agent.cca' }
+  );
+  await relay.publish(
+    inboxSubject,
+    { type: 'progress', step: 2, step_type: 'tool_result', text: 'tool output', done: false },
+    { from: 'relay.agent.cca' }
+  );
+  await relay.publish(
+    inboxSubject,
+    { type: 'agent_result', text: 'Final answer', done: true },
+    { from: 'relay.agent.cca' }
+  );
 
   await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -720,10 +746,10 @@ pnpm test -- --run
 
 ## Documentation
 
-| Document | Change |
-|---|---|
-| `contributing/architecture.md` | Add Relay section note: endpoint `type` field and 30-min dispatch TTL sweeper |
-| `contributing/api-reference.md` | Update `relay_list_endpoints` (new `type`/`expiresAt` fields) and `relay_query` (new `progress[]` field) response shapes |
+| Document                                           | Change                                                                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `contributing/architecture.md`                     | Add Relay section note: endpoint `type` field and 30-min dispatch TTL sweeper                                                 |
+| `contributing/api-reference.md`                    | Update `relay_list_endpoints` (new `type`/`expiresAt` fields) and `relay_query` (new `progress[]` field) response shapes      |
 | `apps/server/src/services/core/context-builder.ts` | Update `RELAY_TOOLS_CONTEXT` (Phase 5) — relay_query response shape, dispatch inbox TTL note, relay_list_endpoints field note |
 
 ---
@@ -731,22 +757,27 @@ pnpm test -- --run
 ## Implementation Phases
 
 ### Phase 1 — Endpoint Type Metadata
+
 **Files:** `packages/relay/src/types.ts` (add `EndpointType` + `inferEndpointType`), `apps/server/src/services/core/mcp-tools/relay-tools.ts` (update handler + tool description)
 **Verification:** `pnpm vitest run apps/server/src/services/core/__tests__/`
 
 ### Phase 2 — TTL Sweeper
+
 **Files:** `packages/relay/src/types.ts` (extend `RelayOptions`), `packages/relay/src/relay-core.ts` (add fields, `startTtlSweeper()`, `getDispatchInboxTtlMs()`, update `close()`)
 **Verification:** `pnpm vitest run packages/relay/src/__tests__/`
 
 ### Phase 3 — relay_query Progress Aggregation
+
 **Files:** `apps/server/src/services/core/mcp-tools/relay-tools.ts` (update subscribe handler + return shape + tool description)
 **Verification:** `pnpm vitest run apps/server/src/services/core/__tests__/`
 
 ### Phase 4 — CCA Broadens Streaming
+
 **Files:** `packages/relay/src/adapters/claude-code-adapter.ts` (rename `isDispatchInbox`/`isQueryInbox` → `isInboxReplyTo`), `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` (update 1 existing test, add 2 new)
 **Verification:** `pnpm vitest run packages/relay/src/__tests__/relay-cca-roundtrip.test.ts`
 
 ### Phase 5 — context-builder Docs
+
 **Files:** `apps/server/src/services/core/context-builder.ts` (update `RELAY_TOOLS_CONTEXT`)
 **Verification:** `pnpm test -- --run`
 
@@ -761,6 +792,7 @@ None. All decisions were resolved during ideation (see `specs/relay-inbox-lifecy
 ## Related ADRs
 
 Candidates for extraction via `/adr:from-spec relay-inbox-lifecycle`:
+
 - Derive endpoint type from subject prefix (zero schema change, canonical source of truth)
 - Periodic sweeper pattern over timer-per-resource for TTL management
 - In-process aggregation for relay_query progress (MCP single-response constraint)

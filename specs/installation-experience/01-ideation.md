@@ -57,6 +57,7 @@ status: ideation
 ### Primary Components/Modules
 
 **CLI Package (`packages/cli/`):**
+
 - `src/cli.ts` (150 lines) — Entry point, parseArgs, environment setup, server import
 - `src/init-wizard.ts` (88 lines) — Interactive setup (port, theme, tunnel, cwd)
 - `src/check-claude.ts` — Claude CLI prerequisite validation
@@ -66,11 +67,13 @@ status: ideation
 - `package.json` — Published as unscoped `dorkos` to npm, bin entry: `"dorkos": "./dist/bin/cli.js"`
 
 **Marketing Site (`apps/site/`):**
+
 - `src/layers/features/marketing/ui/InstallMoment.tsx` — Homepage install section with scramble animation
 - `src/layers/features/marketing/ui/ActivityFeedHero.tsx` — Hero with npm install CTA
 - `src/app/(marketing)/page.tsx` — Homepage composition
 
 **Documentation (`docs/getting-started/`):**
+
 - `installation.mdx` — Three-tab install page (npm CLI, Obsidian Plugin, Self-Hosted)
 - `quickstart.mdx` — Post-install getting started guide
 - `configuration.mdx` — Config reference
@@ -112,11 +115,13 @@ status: ideation
 ### Potential Blast Radius
 
 **New files (low risk):**
+
 - `install.sh` — New shell install script (served via site or GitHub)
 - Homebrew formula repository (separate GitHub repo)
 - Updated marketing site install components
 
 **Modified files (medium risk):**
+
 - `apps/site/src/layers/features/marketing/ui/InstallMoment.tsx` — Redesign with tabs
 - `apps/site/src/layers/features/marketing/ui/ActivityFeedHero.tsx` — Update CTA
 - `docs/getting-started/installation.mdx` — Add curl method as primary
@@ -137,17 +142,18 @@ N/A — This is a new feature, not a bug fix.
 
 ### Competitor Install Methods
 
-| Tool | Primary Method | Other Methods | Install Script? | Auto-Update? |
-|------|---------------|---------------|-----------------|--------------|
-| **Claude Code** | `curl -fsSL https://claude.ai/install.sh \| bash` | Homebrew, WinGet, Desktop app, npm (deprecated) | Yes — SHA256 checksums, code signing, Rosetta 2 detection | Yes — binary self-replace |
-| **OpenCode** | `curl -fsSL https://opencode.ai/install \| bash` | npm, bun, Homebrew, AUR, Go, Desktop app | Yes — AVX2 detection, no checksums | No |
-| **OpenClaw** | `curl -fsSL https://openclaw.ai/install.sh \| bash` | npm, git clone | Yes — TUI spinner via gum, runs `openclaw onboard` at end | No |
-| **Codex** | `npm install -g @openai/codex` | Homebrew, binary download, web app | No | No |
-| **DorkOS** | `npm install -g dorkos` | — | No | No |
+| Tool            | Primary Method                                      | Other Methods                                   | Install Script?                                           | Auto-Update?              |
+| --------------- | --------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------- | ------------------------- |
+| **Claude Code** | `curl -fsSL https://claude.ai/install.sh \| bash`   | Homebrew, WinGet, Desktop app, npm (deprecated) | Yes — SHA256 checksums, code signing, Rosetta 2 detection | Yes — binary self-replace |
+| **OpenCode**    | `curl -fsSL https://opencode.ai/install \| bash`    | npm, bun, Homebrew, AUR, Go, Desktop app        | Yes — AVX2 detection, no checksums                        | No                        |
+| **OpenClaw**    | `curl -fsSL https://openclaw.ai/install.sh \| bash` | npm, git clone                                  | Yes — TUI spinner via gum, runs `openclaw onboard` at end | No                        |
+| **Codex**       | `npm install -g @openai/codex`                      | Homebrew, binary download, web app              | No                                                        | No                        |
+| **DorkOS**      | `npm install -g dorkos`                             | —                                               | No                                                        | No                        |
 
 ### What the Install Scripts Do
 
 **Claude Code (bootstrap.sh) — Gold standard:**
+
 1. Checks for `curl` or `wget`
 2. OS detection (`uname -s`): Darwin, Linux; Windows exits with error
 3. Arch detection (`uname -m`): x64, arm64
@@ -160,6 +166,7 @@ N/A — This is a new feature, not a bug fix.
 10. Auto-update is built into the binary itself
 
 **OpenClaw (install.sh) — Most feature-complete:**
+
 1. OS/arch detection (including WSL)
 2. Downloads `gum` (TUI library) for interactive spinner during install
 3. Validates all dependencies: Node 22+, npm, git, pnpm, make/cmake/python3
@@ -170,6 +177,7 @@ N/A — This is a new feature, not a bug fix.
 8. Holiday taglines based on current date
 
 **OpenCode (install) — Cleanest binary approach:**
+
 1. `set -euo pipefail` strict mode
 2. OS/arch detection with AVX2 CPU feature detection
 3. Downloads `.tar.gz` or `.zip` from GitHub releases
@@ -181,6 +189,7 @@ N/A — This is a new feature, not a bug fix.
 ### Why npm-Only Is a Problem
 
 The research identified a perceptual gap:
+
 - `npm install -g dorkos` signals "side project" — one of thousands of npm packages
 - `curl -fsSL https://dorkos.ai/install | bash` signals "first-class infrastructure" — own distribution channel
 
@@ -189,6 +198,7 @@ Claude Code's migration from npm to native binary was as much a repositioning as
 ### The Hybrid Approach (OpenClaw Pattern)
 
 Since DorkOS is a Node.js application that requires a runtime, the most practical immediate approach is OpenClaw's pattern: a `curl | bash` script that wraps `npm install -g` but adds:
+
 - Node.js version detection and helpful error messages
 - Dependency validation before install
 - Clean post-install messaging
@@ -222,18 +232,18 @@ This provides the `curl` UX without requiring binary compilation.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Install methods to offer | **curl script + npm + brew** (Tier 1) | Fastest path to parity with competitors. Every tool in our competitive set offers 3+ methods; we currently offer 1. The curl script wraps npm (like OpenClaw), the brew tap wraps npm. Days of work, not weeks. Native binary (Bun compile) is deferred to a separate spec |
-| 2 | Post-install behavior | **Offer but don't force** | After install, prompt `Run setup wizard now? (y/N)`. Skips by default — pressing Enter continues without the wizard. Respects expert users while surfacing the option. The web UI FTUE handles deeper onboarding |
-| 3 | Website install presentation | **Tabbed install with curl as default** | 3-tab UI (curl / npm / brew) on both the homepage InstallMoment and docs install page. Curl tab pre-selected. Copy-to-clipboard on each code block. Matches Claude Code's gold-standard pattern |
-| 4 | Install script host URL | **dorkos.ai/install** | Clean, brandable URL. Served as a static file from the marketing site (Next.js public directory or API route). Version-pinnable: `curl ... \| bash -s 1.2.3` |
-| 5 | Install script security | **HTTPS only, no checksum (for now)** | Since the script wraps npm (not downloading arbitrary binaries), the security surface is the same as running npm directly. Checksum verification becomes critical when/if we move to binary distribution |
-| 6 | Script capabilities | **Node.js check + npm install + post-install message + optional init** | Detect Node.js 18+, run npm install, print clean completion message, ask about setup wizard. Support `--version`, `--no-prompt` (for CI), and `--dry-run` flags |
-| 7 | Homebrew tap structure | **Separate GitHub repo: dork-labs/homebrew-dorkos** | Standard Homebrew tap pattern. Formula wraps `npm install -g dorkos`. Updated on each npm release. Minimal maintenance via GitHub Actions |
-| 8 | Hero CTA update | **curl command replaces npm command** | The hero CTA (`ActivityFeedHero.tsx`) and install moment (`InstallMoment.tsx`) should show `curl -fsSL https://dorkos.ai/install \| bash` as the primary command. npm is one tab away |
-| 9 | Mobile install UX | **"Get started" button linking to docs** | On mobile, show a "Get started" button linking to the docs install page (current pattern). The curl command is too long for mobile display. Docs page has the full tabbed experience |
-| 10 | Docs install page update | **Add curl as first tab, keep existing content** | The existing `installation.mdx` has good content for npm, Obsidian, and Self-Hosted. Add curl as a new first tab, keep the other 3 tabs as-is. Reorder: curl (recommended) / npm / brew / Obsidian / Self-Hosted |
+| #   | Decision                     | Choice                                                                 | Rationale                                                                                                                                                                                                                                                                  |
+| --- | ---------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Install methods to offer     | **curl script + npm + brew** (Tier 1)                                  | Fastest path to parity with competitors. Every tool in our competitive set offers 3+ methods; we currently offer 1. The curl script wraps npm (like OpenClaw), the brew tap wraps npm. Days of work, not weeks. Native binary (Bun compile) is deferred to a separate spec |
+| 2   | Post-install behavior        | **Offer but don't force**                                              | After install, prompt `Run setup wizard now? (y/N)`. Skips by default — pressing Enter continues without the wizard. Respects expert users while surfacing the option. The web UI FTUE handles deeper onboarding                                                           |
+| 3   | Website install presentation | **Tabbed install with curl as default**                                | 3-tab UI (curl / npm / brew) on both the homepage InstallMoment and docs install page. Curl tab pre-selected. Copy-to-clipboard on each code block. Matches Claude Code's gold-standard pattern                                                                            |
+| 4   | Install script host URL      | **dorkos.ai/install**                                                  | Clean, brandable URL. Served as a static file from the marketing site (Next.js public directory or API route). Version-pinnable: `curl ... \| bash -s 1.2.3`                                                                                                               |
+| 5   | Install script security      | **HTTPS only, no checksum (for now)**                                  | Since the script wraps npm (not downloading arbitrary binaries), the security surface is the same as running npm directly. Checksum verification becomes critical when/if we move to binary distribution                                                                   |
+| 6   | Script capabilities          | **Node.js check + npm install + post-install message + optional init** | Detect Node.js 18+, run npm install, print clean completion message, ask about setup wizard. Support `--version`, `--no-prompt` (for CI), and `--dry-run` flags                                                                                                            |
+| 7   | Homebrew tap structure       | **Separate GitHub repo: dork-labs/homebrew-dorkos**                    | Standard Homebrew tap pattern. Formula wraps `npm install -g dorkos`. Updated on each npm release. Minimal maintenance via GitHub Actions                                                                                                                                  |
+| 8   | Hero CTA update              | **curl command replaces npm command**                                  | The hero CTA (`ActivityFeedHero.tsx`) and install moment (`InstallMoment.tsx`) should show `curl -fsSL https://dorkos.ai/install \| bash` as the primary command. npm is one tab away                                                                                      |
+| 9   | Mobile install UX            | **"Get started" button linking to docs**                               | On mobile, show a "Get started" button linking to the docs install page (current pattern). The curl command is too long for mobile display. Docs page has the full tabbed experience                                                                                       |
+| 10  | Docs install page update     | **Add curl as first tab, keep existing content**                       | The existing `installation.mdx` has good content for npm, Obsidian, and Self-Hosted. Add curl as a new first tab, keep the other 3 tabs as-is. Reorder: curl (recommended) / npm / brew / Obsidian / Self-Hosted                                                           |
 
 ---
 
@@ -345,21 +355,27 @@ fi
 The `InstallMoment.tsx` and docs `installation.mdx` should present install methods in a tabbed interface:
 
 **Tab 1 — "One-liner" (pre-selected):**
+
 ```
 curl -fsSL https://dorkos.ai/install | bash
 ```
+
 Copy button. Subtext: "Checks Node.js, installs via npm, offers setup wizard."
 
 **Tab 2 — "npm":**
+
 ```
 npm install -g dorkos
 ```
+
 Copy button. Subtext: "Requires Node.js 18+."
 
 **Tab 3 — "Homebrew":**
+
 ```
 brew install dorkos-ai/tap/dorkos
 ```
+
 Copy button. Subtext: "macOS and Linux. Updates via brew upgrade."
 
 ## Appendix: Homebrew Formula

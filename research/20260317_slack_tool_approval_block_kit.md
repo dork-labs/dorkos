@@ -1,9 +1,21 @@
 ---
-title: "Slack Interactive Tool Approval — Block Kit Buttons, app.action(), and Relay-Based Response Routing"
+title: 'Slack Interactive Tool Approval — Block Kit Buttons, app.action(), and Relay-Based Response Routing'
 date: 2026-03-17
 type: implementation
 status: active
-tags: [slack, bolt, block-kit, block_actions, tool-approval, interactivity, socket-mode, relay, correlation-id, security]
+tags:
+  [
+    slack,
+    bolt,
+    block-kit,
+    block_actions,
+    tool-approval,
+    interactivity,
+    socket-mode,
+    relay,
+    correlation-id,
+    security,
+  ]
 feature_slug: slack-tool-approval
 searches_performed: 14
 sources_count: 28
@@ -16,6 +28,7 @@ sources_count: 28
 **Context:** The DorkOS Slack adapter currently handles messages and mentions only. This research covers adding interactive tool approval — posting a Block Kit card with Approve/Deny buttons when an agent requests permission to use a tool, routing the button response back through the relay, and resolving the pending `canUseTool` callback.
 
 **Prior research incorporated:**
+
 - `research/20260314_slack_bolt_socket_mode_best_practices.md` — rate limits, logging, streaming
 - `research/20260313_slack_bot_adapter_best_practices.md` — Bolt setup, Socket Mode, scopes
 - `research/20260315_agent_runtime_permission_modes.md` — `canUseTool`, permission modes, binding config
@@ -40,6 +53,7 @@ Socket Mode delivers `block_actions` payloads over the same WebSocket connection
 Bolt routes these payloads to `app.action()` handlers automatically. No change is needed to the WebSocket setup. The only required change is to the **Slack app manifest**: add `interactivity: { is_enabled: true }` under `settings`. Without this, Slack will not dispatch button payloads. The `request_url` field is explicitly optional (and forbidden) in Socket Mode.
 
 **Manifest addition:**
+
 ```yaml
 settings:
   socket_mode_enabled: true
@@ -75,6 +89,7 @@ app.action<BlockButtonAction>('tool_deny', async ({ ack, body, client }) => {
 The `ack()` function must be called within **3 seconds** of Slack dispatching the payload. Call it before any async work (agent notification, DB writes). Bolt handles the acknowledgment envelope automatically over the WebSocket.
 
 Key fields available in `body` for `block_actions`:
+
 - `body.user.id` — Slack user ID of who clicked
 - `body.user.name` — display name
 - `body.channel.id` — channel where the message lives
@@ -103,6 +118,7 @@ const denyValue = JSON.stringify({
 ```
 
 In the action handler:
+
 ```typescript
 const parsed = JSON.parse(body.actions[0].value) as {
   toolCallId: string;
@@ -143,9 +159,8 @@ function buildApprovalCard(opts: {
   const approveValue = JSON.stringify({ toolCallId: opts.toolCallId, sessionId: opts.sessionId });
   const denyValue = JSON.stringify({ toolCallId: opts.toolCallId, sessionId: opts.sessionId });
 
-  const truncatedInput = opts.toolInput.length > 300
-    ? opts.toolInput.slice(0, 300) + '…'
-    : opts.toolInput;
+  const truncatedInput =
+    opts.toolInput.length > 300 ? opts.toolInput.slice(0, 300) + '…' : opts.toolInput;
 
   return [
     {
@@ -205,6 +220,7 @@ function buildApprovalCard(opts: {
 ```
 
 **Design rationale:**
+
 - `header` block: immediately identifies the card type
 - `section.fields`: two-column layout for tool name and agent name — compact
 - `section.text`: code block for parameters — monospaced, shows JSON cleanly
@@ -215,6 +231,7 @@ function buildApprovalCard(opts: {
 **Maximum Block Kit blocks per message:** 50. The approval card uses 5 — no concern.
 
 **`text` fallback is mandatory** (for notifications and accessibility):
+
 ```typescript
 await client.chat.postMessage({
   channel: channelId,
@@ -255,11 +272,13 @@ app.action<BlockButtonAction>('tool_approve', async ({ ack, body, client }) => {
 ```
 
 **Why `client.chat.update` over `respond()`:**
+
 - `respond()` uses the `response_url` webhook, which is valid for 5 uses and 30 minutes
 - `client.chat.update` uses the bot token — persistent, reliable, no timeout
 - `client.chat.update` is the correct choice for a production adapter
 
 **Result card blocks (replaces the interactive card):**
+
 ```typescript
 function buildApprovalResultCard(opts: {
   result: 'approved' | 'denied' | 'timeout';
@@ -267,12 +286,16 @@ function buildApprovalResultCard(opts: {
   toolName: string;
 }): KnownBlock[] {
   const isApproved = opts.result === 'approved';
-  const emoji = isApproved ? ':white_check_mark:' : opts.result === 'timeout' ? ':timer_clock:' : ':x:';
+  const emoji = isApproved
+    ? ':white_check_mark:'
+    : opts.result === 'timeout'
+      ? ':timer_clock:'
+      : ':x:';
   const label = isApproved
     ? `Approved by <@${opts.approvedBy}>`
     : opts.result === 'timeout'
-    ? 'Auto-denied — timed out'
-    : `Denied by <@${opts.approvedBy ?? 'system'}>`;
+      ? 'Auto-denied — timed out'
+      : `Denied by <@${opts.approvedBy ?? 'system'}>`;
 
   return [
     {
@@ -293,12 +316,14 @@ The interactive Actions block is deliberately absent from the result card — th
 The approval flow must bridge two contexts: the Slack event handler (`app.action()`) and the agent runtime's `canUseTool` callback (which holds an open promise). The cleanest pattern is a **local pending-approval registry** (an in-memory `Map`) rather than a relay pub/sub round-trip.
 
 **Why avoid relay pub/sub for approval responses:**
+
 - Relay round-trips introduce latency and require subject design for response routing
 - The `canUseTool` callback is already an in-process deferred promise in the server
 - The Slack adapter and the server runtime live in the same process (relay package is imported directly)
 - A local `Map` is simpler, testable, and zero-latency
 
 **Pending approval registry:**
+
 ```typescript
 type ApprovalDecision = 'approve' | 'deny';
 
@@ -358,6 +383,7 @@ The `ClaudeCodeAdapter` in the relay package already handles `approval_required`
 When the 10-minute timeout fires before the user clicks:
 
 **Server side:**
+
 ```typescript
 const timeoutHandle = setTimeout(() => {
   const pending = this.pendingApprovals.get(toolCallId);
@@ -366,12 +392,14 @@ const timeoutHandle = setTimeout(() => {
   pending.resolve('deny'); // auto-deny on timeout
 
   // Update the Slack message to show "timed out"
-  void this.app?.client.chat.update({
-    channel: pending.channelId,
-    ts: pending.messageTs,
-    text: `Tool approval timed out — auto-denied`,
-    blocks: buildApprovalResultCard({ result: 'timeout', toolName: pending.toolName }),
-  }).catch(() => {});
+  void this.app?.client.chat
+    .update({
+      channel: pending.channelId,
+      ts: pending.messageTs,
+      text: `Tool approval timed out — auto-denied`,
+      blocks: buildApprovalResultCard({ result: 'timeout', toolName: pending.toolName }),
+    })
+    .catch(() => {});
 }, INTERACTION_TIMEOUT_MS);
 ```
 
@@ -416,6 +444,7 @@ The `block_actions` payload includes `body.user.id` — the Slack user who click
 **Option A: Anyone in the workspace (no restriction)** — simplest, appropriate for small trusted teams. The risk is that any workspace member with channel access can approve tool executions.
 
 **Option B: Restrict to original requester** — only the user who sent the triggering message can approve. Encode the `requestorUserId` in the button value:
+
 ```typescript
 // In button value:
 { toolCallId, sessionId, allowedUserId: triggeringUserId }
@@ -445,17 +474,18 @@ Each tool approval posts one `chat.postMessage` (card) and one `chat.update` (re
 
 ### 9. Alternatives Compared
 
-| Approach | Complexity | UX Quality | Reliability | Verdict |
-|---|---|---|---|---|
-| **Block Kit buttons (recommended)** | Medium | Excellent | High | Ship this |
-| Text-based ("reply 'approve' or 'deny'") | Low | Poor — easy to mistype, no context shown | Medium | Fallback only |
-| Emoji reaction-based | Low | Poor — confusing, no confirmation | Low | Do not use |
-| Slack slash commands (`/approve toolCallId`) | Low | Poor — requires knowing the toolCallId | Low | Do not use |
-| Slack modals | High | Good — full form UI | High | Overkill for approve/deny |
+| Approach                                     | Complexity | UX Quality                               | Reliability | Verdict                   |
+| -------------------------------------------- | ---------- | ---------------------------------------- | ----------- | ------------------------- |
+| **Block Kit buttons (recommended)**          | Medium     | Excellent                                | High        | Ship this                 |
+| Text-based ("reply 'approve' or 'deny'")     | Low        | Poor — easy to mistype, no context shown | Medium      | Fallback only             |
+| Emoji reaction-based                         | Low        | Poor — confusing, no confirmation        | Low         | Do not use                |
+| Slack slash commands (`/approve toolCallId`) | Low        | Poor — requires knowing the toolCallId   | Low         | Do not use                |
+| Slack modals                                 | High       | Good — full form UI                      | High        | Overkill for approve/deny |
 
 **Text-based fallback scenario:** If Block Kit interactivity cannot be enabled (e.g., workspace restriction), a text parser in the `app.message()` handler can look for replies in the tool approval thread containing "approve" or "deny". Less reliable but zero additional setup.
 
 **Why not emoji reactions:**
+
 - No reliable delivery guarantee
 - The `reaction_added` event can be missed
 - No confirmation dialog — accidental reactions are common
@@ -473,7 +503,7 @@ The existing `SLACK_APP_MANIFEST_YAML` in `slack-adapter.ts` needs two additions
 settings:
   socket_mode_enabled: true
   interactivity:
-    is_enabled: true    # ← NEW: enables block_actions dispatch
+    is_enabled: true # ← NEW: enables block_actions dispatch
   event_subscriptions:
     bot_events:
       - message.channels
@@ -489,12 +519,14 @@ The `SLACK_CREATE_APP_URL` is generated from the manifest YAML — updating the 
 ### Adapter Code Architecture
 
 The `SlackAdapter._start()` method currently registers two handlers:
+
 ```typescript
 app.message(...)
 app.event('app_mention', ...)
 ```
 
 The approval feature adds:
+
 ```typescript
 app.action<BlockButtonAction>('tool_approve', ...)
 app.action<BlockButtonAction>('tool_deny', ...)
@@ -583,6 +615,7 @@ async requestApproval(opts: {
 ```
 
 And the action handlers complete the loop:
+
 ```typescript
 // Registered in _start():
 app.action<BlockButtonAction>('tool_approve', async ({ ack, body, client }) => {

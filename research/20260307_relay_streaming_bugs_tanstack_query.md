@@ -1,9 +1,20 @@
 ---
-title: "Relay-Mode SSE Streaming Bugs — Message Duplication & 503 Storm Fix Patterns"
+title: 'Relay-Mode SSE Streaming Bugs — Message Duplication & 503 Storm Fix Patterns'
 date: 2026-03-07
 type: implementation
 status: active
-tags: [relay, sse, tanstack-query, streaming, polling, message-duplication, 503, invalidateQueries, refetchInterval]
+tags:
+  [
+    relay,
+    sse,
+    tanstack-query,
+    streaming,
+    polling,
+    message-duplication,
+    503,
+    invalidateQueries,
+    refetchInterval,
+  ]
 feature_slug: relay-sse-streaming-bugs
 searches_performed: 9
 sources_count: 18
@@ -98,6 +109,7 @@ eventSource.addEventListener('sync_update', () => {
 ```
 
 **Pros:**
+
 - Surgical — 3 lines of change
 - Preserves all non-streaming invalidation behavior
 - No structural changes to the query setup
@@ -105,6 +117,7 @@ eventSource.addEventListener('sync_update', () => {
 - Fast: ref reads are synchronous, no closure staleness risk
 
 **Cons:**
+
 - Still invalidates immediately after `done` event (when `isStreamingRef` flips to false) — this is correct behavior but means one refetch will still fire post-streaming. This is acceptable since the stream is complete.
 - Doesn't fix the deduplication in the seed effect independently
 
@@ -126,11 +139,13 @@ if (historySeededRef.current && !isStreaming) {
 ```
 
 **Pros:**
+
 - Eliminates duplication regardless of timing or streaming state
 - More robust against future race conditions from any source
 - IDs are already present: `HistoryMessage` has an `id` field (line 69 in `mapHistoryMessage`)
 
 **Cons:**
+
 - Doesn't prevent the unnecessary refetch network request — just prevents its display effect
 - Doesn't fix redundant polling (Bug 2)
 - Adds a Set construction on every history update (minor cost)
@@ -150,11 +165,13 @@ queryClient.setQueryData(['messages', sessionId, selectedCwd], {
 ```
 
 **Pros:**
+
 - Eliminates the refetch roundtrip entirely for streaming updates
 - Cache is always current with local state
 - Pattern is well-documented in TanStack Query v5 optimistic updates guide
 
 **Cons:**
+
 - Requires implementing `chatMessageToHistoryMessage` reverse mapping (non-trivial — `ChatMessage` includes UI state not in `HistoryMessage`)
 - Creates divergence between local optimistic state and server truth
 - If streaming fails mid-way, cache contains partial data
@@ -168,11 +185,13 @@ queryClient.setQueryData(['messages', sessionId, selectedCwd], {
 Store in-progress streaming messages in Zustand; only merge into query cache on `done` event. TanStack Query cache only holds finalized, server-confirmed history.
 
 **Pros:**
+
 - Cleanest separation of concerns
 - Eliminates all race conditions between local streaming state and server history
 - Aligns with TanStack Query philosophy: server state (query) vs UI state (Zustand)
 
 **Cons:**
+
 - Major refactor — `useChatSession` currently mixes streaming state and history state
 - `messages` array would need to be assembled from two sources on every render
 - File is already 437 lines — this expansion would require extraction
@@ -203,6 +222,7 @@ const historyQuery = useQuery({
 ```
 
 The `refetchInterval` callback already suppresses polling during streaming (line 185). However:
+
 - In Relay mode, polling is entirely redundant — `sync_update` SSE events drive all invalidation
 - If `ACTIVE_TAB_REFETCH_MS` = 3000ms, this fires every 3 seconds indefinitely in Relay idle mode
 - Each poll hits GET /api/sessions/:id/messages, which must read from the transcript file
@@ -211,6 +231,7 @@ The `refetchInterval` callback already suppresses polling during streaming (line
 #### Why 503 (not 500) in Relay Mode
 
 503 "Service Unavailable" from an Express route typically indicates:
+
 1. The route throws synchronously or the async rejection is unhandled (Express 4: unhandled async errors don't reach error middleware → connection hangs → proxy/client interprets as 503)
 2. A downstream resource (file read, DB query) times out under load
 3. The route calls `next()` or `res.send()` only on certain code paths, leaving other paths hanging
@@ -229,6 +250,7 @@ refetchInterval: () => {
 ```
 
 **Pros:**
+
 - Single-line change to an existing function
 - Completely eliminates the 503 storm in Relay mode
 - Semantically correct: in Relay mode, `sync_update` already handles invalidation
@@ -236,6 +258,7 @@ refetchInterval: () => {
 - `relayEnabled` is already in scope (line 85)
 
 **Cons:**
+
 - If the SSE connection drops and `sync_update` events stop arriving, there's no polling fallback (mitigated by EventSource auto-reconnect)
 - Does not fix the underlying 503 cause in the GET /messages route
 
@@ -266,11 +289,13 @@ router.get('/:id/messages', async (req, res, next) => {
 ```
 
 **Pros:**
+
 - Fixes the 503 for any caller, not just polling
 - Express 4 async error handling is a well-known issue with a clear fix
 - Should be fixed regardless as a correctness issue
 
 **Cons:**
+
 - Doesn't eliminate the redundant polling itself
 - Need to locate the specific route handler first (check `apps/server/src/routes/sessions.ts`)
 
@@ -286,22 +311,26 @@ const historyQuery = useQuery({
   queryFn: () => transport.getMessages(sessionId, selectedCwd ?? undefined),
   staleTime: relayEnabled ? Infinity : QUERY_TIMING.MESSAGE_STALE_TIME_MS,
   refetchOnWindowFocus: false,
-  refetchInterval: relayEnabled ? false : () => {
-    if (isStreaming) return false;
-    return isTabVisible
-      ? QUERY_TIMING.ACTIVE_TAB_REFETCH_MS
-      : QUERY_TIMING.BACKGROUND_TAB_REFETCH_MS;
-  },
+  refetchInterval: relayEnabled
+    ? false
+    : () => {
+        if (isStreaming) return false;
+        return isTabVisible
+          ? QUERY_TIMING.ACTIVE_TAB_REFETCH_MS
+          : QUERY_TIMING.BACKGROUND_TAB_REFETCH_MS;
+      },
 });
 ```
 
 **Pros:**
+
 - Zero polling in Relay mode — no 503 risk
 - `staleTime: Infinity` prevents any background refetch from occurring
 - Cleanest conceptual model: SSE events are the real-time signal, polling is a fallback
 - TanStack Query docs confirm `staleTime: Infinity` prevents background refetches
 
 **Cons:**
+
 - If the SSE connection is completely lost (EventSource closed, not reconnected), history never updates until page reload
 - Slightly more code than Solution A
 
@@ -374,12 +403,9 @@ Use `setQueryData` to update cache directly during streaming without a network r
 
 ```typescript
 // During stream processing:
-queryClient.setQueryData(
-  ['messages', sessionId, cwd],
-  (old: MessageHistory | undefined) => ({
-    messages: [...(old?.messages ?? []), newMessage],
-  })
-);
+queryClient.setQueryData(['messages', sessionId, cwd], (old: MessageHistory | undefined) => ({
+  messages: [...(old?.messages ?? []), newMessage],
+}));
 ```
 
 ### Preventing Refetch During Mutations (Pattern from #2245)
@@ -431,12 +457,14 @@ Add `isStreamingRef` mirroring `status === 'streaming'` and check it in the `syn
 **Rationale:** The hook already uses this exact ref pattern (`statusRef`, `selectedCwdRef`, `messagesRef`). It's the least-surprise change, keeps invalidation logic in one place, and precisely targets the problem. Solution B (deduplication by ID) should be added as a safety net — it costs one Set construction per history update and eliminates an entire class of future race conditions.
 
 **Recommended combined fix:**
+
 1. Add `isStreamingRef` + guard on `sync_update` (lines 270-273) — primary fix
 2. Change the history seed merge to use ID-based deduplication (lines 210-217) — safety net
 
 ### Bug 2 Recommended Approach: Solution A + Solution B (Disable Relay Polling + Fix Route Error)
 
 Both should be done:
+
 1. Add `|| relayEnabled` to the `refetchInterval` callback (line 185) — stops the storm immediately
 2. Audit and add try/catch to the GET /messages Express route handler — fixes the 503 root cause for all callers
 
@@ -444,7 +472,7 @@ Both should be done:
 
 **Caveats:**
 
-- The `isStreamingRef` guard on Bug 1 prevents `sync_update` invalidation *during* streaming. The guard should use a ref (not the `isStreaming` state closure) because the `sync_update` listener closure captures state at effect creation time. Existing `statusRef` (line 134) already tracks this — the guard could use `statusRef.current === 'streaming'` directly without adding a new ref.
+- The `isStreamingRef` guard on Bug 1 prevents `sync_update` invalidation _during_ streaming. The guard should use a ref (not the `isStreaming` state closure) because the `sync_update` listener closure captures state at effect creation time. Existing `statusRef` (line 134) already tracks this — the guard could use `statusRef.current === 'streaming'` directly without adding a new ref.
 - The Bug 2 fix should be validated by checking `QUERY_TIMING.ACTIVE_TAB_REFETCH_MS` — if it's already set to a high value (e.g., 30s), the 503 storm may be coming from a different source.
 - Both fixes are Relay-mode-only changes and should not affect non-Relay behavior.
 

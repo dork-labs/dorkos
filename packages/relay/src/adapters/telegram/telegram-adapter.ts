@@ -13,8 +13,12 @@ import type { Server } from 'node:http';
 import type { Signal, AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
-  RelayPublisher, AdapterContext, PublishOptions,
-  DeliveryResult, TelegramAdapterConfig, Unsubscribe,
+  RelayPublisher,
+  AdapterContext,
+  PublishOptions,
+  DeliveryResult,
+  TelegramAdapterConfig,
+  Unsubscribe,
 } from '../../types.js';
 import { SUBJECT_PREFIX, handleInboundMessage } from './inbound.js';
 import {
@@ -55,9 +59,14 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
     },
   ],
   configFields: [
-    { key: 'token', label: 'Bot Token', type: 'password', required: true,
+    {
+      key: 'token',
+      label: 'Bot Token',
+      type: 'password',
+      required: true,
       placeholder: '123456789:ABCDefGHijklMNOpqrSTUvwxYZ',
-      description: 'Paste the token from @BotFather. Message @BotFather on Telegram → /newbot → copy the token.',
+      description:
+        'Paste the token from @BotFather. Message @BotFather on Telegram → /newbot → copy the token.',
       pattern: '^\\d+:[\\w-]{35,}$',
       patternMessage: 'Expected format: 123456789:ABCDefGHijklMNOpqrSTUvwxYZ',
       visibleByDefault: true,
@@ -65,15 +74,33 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
 2. Send \`/newbot\` to start creating a bot
 3. Choose a display name and username for your bot
 4. BotFather will send you the token (format: \`123456789:ABCDefGHijklMNOpqrSTUvwxYZ\`)
-5. If you already have a bot, send \`/myBots\` to BotFather to find existing tokens` },
-    { key: 'mode', label: 'Receiving Mode', type: 'select', displayAs: 'radio-cards', required: true, default: 'polling',
+5. If you already have a bot, send \`/myBots\` to BotFather to find existing tokens`,
+    },
+    {
+      key: 'mode',
+      label: 'Receiving Mode',
+      type: 'select',
+      displayAs: 'radio-cards',
+      required: true,
+      default: 'polling',
       options: [
-        { label: 'Long Polling', value: 'polling',
-          description: 'Works everywhere. Recommended for getting started.' },
-        { label: 'Webhook', value: 'webhook',
-          description: 'Requires a public HTTPS URL. Best for production.' },
-      ] },
-    { key: 'webhookUrl', label: 'Webhook URL', type: 'url', required: true,
+        {
+          label: 'Long Polling',
+          value: 'polling',
+          description: 'Works everywhere. Recommended for getting started.',
+        },
+        {
+          label: 'Webhook',
+          value: 'webhook',
+          description: 'Requires a public HTTPS URL. Best for production.',
+        },
+      ],
+    },
+    {
+      key: 'webhookUrl',
+      label: 'Webhook URL',
+      type: 'url',
+      required: true,
       placeholder: 'https://your-domain.com/relay/webhooks/telegram',
       description: 'Public HTTPS URL where Telegram sends updates.',
       showWhen: { field: 'mode', equals: 'webhook' },
@@ -82,22 +109,39 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
 - **Publicly accessible** from the internet
 - Pointing to: \`https://your-domain.com/relay/webhooks/telegram\`
 
-For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).` },
-    { key: 'webhookPort', label: 'Webhook Port', type: 'number', required: false, default: 8443,
+For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
+    },
+    {
+      key: 'webhookPort',
+      label: 'Webhook Port',
+      type: 'number',
+      required: false,
+      default: 8443,
       description: 'Port for the webhook HTTP server.',
-      showWhen: { field: 'mode', equals: 'webhook' } },
-    { key: 'webhookSecret', label: 'Webhook Secret', type: 'password', required: false,
+      showWhen: { field: 'mode', equals: 'webhook' },
+    },
+    {
+      key: 'webhookSecret',
+      label: 'Webhook Secret',
+      type: 'password',
+      required: false,
       placeholder: 'Auto-generated if empty',
       description: 'Secret token for validating incoming webhook requests from Telegram.',
-      showWhen: { field: 'mode', equals: 'webhook' } },
-    { key: 'streaming', label: 'Streaming', type: 'boolean', required: false,
+      showWhen: { field: 'mode', equals: 'webhook' },
+    },
+    {
+      key: 'streaming',
+      label: 'Streaming',
+      type: 'boolean',
+      required: false,
       description:
         "Stream responses in real-time using Telegram's sendMessageDraft API (DMs only). Groups always use buffer-and-flush.",
       visibleByDefault: true,
       helpMarkdown:
         'When enabled, recipients in DMs see text appearing in real-time (ChatGPT-style). ' +
         'Group chats always use buffer-and-flush regardless of this setting. ' +
-        'Requires Telegram Bot API 9.5+.' },
+        'Requires Telegram Bot API 9.5+.',
+    },
   ],
   setupInstructions:
     'Open Telegram and search for @BotFather. Send /newbot, choose a name and username. Copy the token provided.',
@@ -145,7 +189,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
     const bot = new Bot(this.config.token);
     bot.api.config.use(autoRetry());
     bot.on('message', (ctx) =>
-      handleInboundMessage(ctx, relay, this.makeInboundCallbacks(), this.logger),
+      handleInboundMessage(ctx, relay, this.makeInboundCallbacks(), this.logger)
     );
 
     // Register callback query handler for tool approval inline keyboard buttons
@@ -165,14 +209,18 @@ export class TelegramAdapter extends BaseRelayAdapter {
 
         // Publish approval response to relay bus
         const opts: PublishOptions = { from: `telegram:${ctx.from.id}` };
-        await relay.publish(`relay.system.approval.${entry.agentId}`, {
-          type: 'approval_response',
-          toolCallId: entry.toolCallId,
-          sessionId: entry.sessionId,
-          approved,
-          respondedBy: String(ctx.from.id),
-          platform: 'telegram',
-        }, opts);
+        await relay.publish(
+          `relay.system.approval.${entry.agentId}`,
+          {
+            type: 'approval_response',
+            toolCallId: entry.toolCallId,
+            sessionId: entry.sessionId,
+            approved,
+            respondedBy: String(ctx.from.id),
+            platform: 'telegram',
+          },
+          opts
+        );
 
         // Edit message to show decision result
         const decision = approved ? 'Approved' : 'Denied';
@@ -180,7 +228,9 @@ export class TelegramAdapter extends BaseRelayAdapter {
         await ctx.editMessageText(`${emoji} *Tool ${decision}*`, { parse_mode: 'Markdown' });
         await ctx.answerCallbackQuery({ text: `Tool ${decision}` });
 
-        this.logger.debug?.(`[Telegram] tool ${approved ? 'approved' : 'denied'}: toolCallId=${entry.toolCallId}`);
+        this.logger.debug?.(
+          `[Telegram] tool ${approved ? 'approved' : 'denied'}: toolCallId=${entry.toolCallId}`
+        );
       } catch (err) {
         this.logger.error('[Telegram] callback query handler error:', err);
         this.recordError(err);
@@ -192,12 +242,17 @@ export class TelegramAdapter extends BaseRelayAdapter {
     this.bot = bot;
 
     this.signalUnsub = relay.onSignal(`${SUBJECT_PREFIX}.>`, (subject: string, signal: Signal) => {
-      if (signal.type === 'typing') void handleTypingSignal(this.bot, subject, this.outboundState, signal.state);
+      if (signal.type === 'typing')
+        void handleTypingSignal(this.bot, subject, this.outboundState, signal.state);
     });
 
     if (this.config.mode === 'webhook') {
       this.webhookServer = await startWebhookMode(
-        bot, this.id, this.config.webhookUrl, this.config.webhookPort, this.config.webhookSecret,
+        bot,
+        this.id,
+        this.config.webhookUrl,
+        this.config.webhookPort,
+        this.config.webhookSecret
       );
     } else {
       await this.startPollingMode(bot);
@@ -206,8 +261,14 @@ export class TelegramAdapter extends BaseRelayAdapter {
 
   /** Disconnect from Telegram and clean up state. */
   protected async _stop(): Promise<void> {
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-    if (this.signalUnsub) { this.signalUnsub(); this.signalUnsub = null; }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.signalUnsub) {
+      this.signalUnsub();
+      this.signalUnsub = null;
+    }
     clearAllTypingIntervals(this.outboundState);
 
     // Clear all pending approval timeouts to prevent dangling timers
@@ -217,7 +278,11 @@ export class TelegramAdapter extends BaseRelayAdapter {
 
     if (this.bot) {
       if (this.config.mode === 'webhook') {
-        try { await this.bot.api.deleteWebhook(); } catch { /* best-effort */ }
+        try {
+          await this.bot.api.deleteWebhook();
+        } catch {
+          /* best-effort */
+        }
       }
       try {
         if (this.config.mode === 'polling') await this.bot.stop();
@@ -233,7 +298,11 @@ export class TelegramAdapter extends BaseRelayAdapter {
   }
 
   /** Deliver a Relay message to Telegram. Delegates to outbound module. */
-  async deliver(subject: string, envelope: RelayEnvelope, _context?: AdapterContext): Promise<DeliveryResult> {
+  async deliver(
+    subject: string,
+    envelope: RelayEnvelope,
+    _context?: AdapterContext
+  ): Promise<DeliveryResult> {
     return deliverMessage({
       adapterId: this.id,
       subject,
@@ -252,17 +321,24 @@ export class TelegramAdapter extends BaseRelayAdapter {
   /** Start grammy bot in long-polling mode with eager token validation. */
   private async startPollingMode(bot: Bot): Promise<void> {
     await bot.init();
-    bot.start({
-      drop_pending_updates: true,
-      onStart: () => { this.reconnectAttempts = 0; this.markConnected(); },
-    }).catch((err: unknown) => this.handlePollingError(err));
+    bot
+      .start({
+        drop_pending_updates: true,
+        onStart: () => {
+          this.reconnectAttempts = 0;
+          this.markConnected();
+        },
+      })
+      .catch((err: unknown) => this.handlePollingError(err));
   }
 
   /** Handle polling failure and schedule reconnection with exponential backoff. */
   private handlePollingError(err: unknown): void {
     this.recordError(err);
     if (this.reconnectAttempts >= TelegramAdapter.RECONNECT_DELAYS.length) {
-      this.recordError(new Error('Max reconnection attempts exhausted \u2014 adapter will not retry'));
+      this.recordError(
+        new Error('Max reconnection attempts exhausted \u2014 adapter will not retry')
+      );
       return;
     }
     const delay = TelegramAdapter.RECONNECT_DELAYS[this.reconnectAttempts]!;
@@ -271,12 +347,16 @@ export class TelegramAdapter extends BaseRelayAdapter {
 
     this.reconnectTimer = setTimeout(async () => {
       if (this.isStopped) return;
-      try { await this.bot?.stop(); } catch { /* old bot likely dead */ }
+      try {
+        await this.bot?.stop();
+      } catch {
+        /* old bot likely dead */
+      }
 
       const newBot = new Bot(this.config.token);
       newBot.api.config.use(autoRetry());
       newBot.on('message', (ctx) =>
-        handleInboundMessage(ctx, this.relay!, this.makeInboundCallbacks(), this.logger),
+        handleInboundMessage(ctx, this.relay!, this.makeInboundCallbacks(), this.logger)
       );
       newBot.catch((e) => this.recordError(e));
       this.bot = newBot;

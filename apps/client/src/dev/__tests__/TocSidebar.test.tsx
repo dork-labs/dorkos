@@ -88,7 +88,7 @@ describe('TocSidebar', () => {
         if (el.id === 'section-one' && capturedCallback) {
           capturedCallback(
             [{ target: el, isIntersecting: true } as IntersectionObserverEntry],
-            this as unknown as IntersectionObserver,
+            this as unknown as IntersectionObserver
           );
         }
       });

@@ -62,14 +62,14 @@ The tabbed sidebar surfaces agent context directly, transforming the sidebar fro
 
 Straightforward rename with no behavioral changes:
 
-| Current Path | New Path |
-|---|---|
-| `features/session-list/ui/SessionSidebar.tsx` | `features/session-list/ui/AgentSidebar.tsx` |
+| Current Path                                              | New Path                                                |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| `features/session-list/ui/SessionSidebar.tsx`             | `features/session-list/ui/AgentSidebar.tsx`             |
 | `features/session-list/__tests__/SessionSidebar.test.tsx` | `features/session-list/__tests__/AgentSidebar.test.tsx` |
-| `features/session-list/index.ts` export | Update `SessionSidebar` → `AgentSidebar` |
-| `App.tsx` import | Update import name |
-| `apps/e2e/pages/SessionSidebarPage.ts` | Rename to `AgentSidebarPage.ts` |
-| `apps/e2e/fixtures/index.ts` | Update fixture name |
+| `features/session-list/index.ts` export                   | Update `SessionSidebar` → `AgentSidebar`                |
+| `App.tsx` import                                          | Update import name                                      |
+| `apps/e2e/pages/SessionSidebarPage.ts`                    | Rename to `AgentSidebarPage.ts`                         |
+| `apps/e2e/fixtures/index.ts`                              | Update fixture name                                     |
 
 ### 2. Zustand State Addition
 
@@ -103,11 +103,12 @@ New file: `features/session-list/ui/SidebarTabRow.tsx`
 A horizontal row of three icon buttons with ARIA `role="tablist"` semantics. Renders between `SidebarHeader` and the content area.
 
 **Props:**
+
 ```typescript
 interface SidebarTabRowProps {
   activeTab: 'sessions' | 'schedules' | 'connections';
   onTabChange: (tab: 'sessions' | 'schedules' | 'connections') => void;
-  schedulesBadge: number;       // Active run count (0 = no badge)
+  schedulesBadge: number; // Active run count (0 = no badge)
   connectionsStatus: 'ok' | 'partial' | 'error' | 'none';
   visibleTabs: ('sessions' | 'schedules' | 'connections')[];
 }
@@ -115,35 +116,42 @@ interface SidebarTabRowProps {
 
 **Tab definitions:**
 
-| Tab | Icon | ARIA Label | Badge | Tooltip |
-|---|---|---|---|---|
-| `sessions` | `MessageSquare` | "Sessions" | None | "Sessions ⌘1" |
-| `schedules` | `Clock` | "Schedules" | Numeric (active runs) | "Schedules ⌘2" |
-| `connections` | `Plug2` | "Connections" | Status dot | "Connections ⌘3" |
+| Tab           | Icon            | ARIA Label    | Badge                 | Tooltip          |
+| ------------- | --------------- | ------------- | --------------------- | ---------------- |
+| `sessions`    | `MessageSquare` | "Sessions"    | None                  | "Sessions ⌘1"    |
+| `schedules`   | `Clock`         | "Schedules"   | Numeric (active runs) | "Schedules ⌘2"   |
+| `connections` | `Plug2`         | "Connections" | Status dot            | "Connections ⌘3" |
 
 **ARIA structure:**
+
 - Container: `role="tablist"`, `aria-label="Sidebar views"`
 - Each tab button: `role="tab"`, `aria-selected`, `aria-controls="sidebar-tabpanel-{name}"`
 - Arrow key navigation between tabs (left/right)
 
 **Sliding indicator:**
+
 ```tsx
-{/* Underline indicator — slides between tabs */}
+{
+  /* Underline indicator — slides between tabs */
+}
 <motion.div
   layoutId="sidebar-tab-indicator"
   className="bg-foreground absolute bottom-0 h-0.5 rounded-full"
   transition={{ type: 'spring', stiffness: 280, damping: 32 }}
-/>
+/>;
 ```
 
 **Badge rendering:**
+
 - Schedules badge: `<span className="...text-2xs...">{count}</span>` with `animate-pulse` ring when `count > 0`
 - Connections status dot: 6px circle — `bg-green-500` (ok), `bg-amber-500` (partial), `bg-red-500` (error), hidden (none)
 
 **Styling:**
+
 ```
 border-b border-border px-2 py-1.5 flex items-center gap-1 relative
 ```
+
 Each tab button: `relative rounded-md p-2 transition-colors duration-150` with active/inactive color states matching existing `AgentContextChips` pattern.
 
 ### 4. AgentSidebar Component Structure
@@ -255,6 +263,7 @@ Extract the existing session list rendering into a dedicated component. This is 
 **File:** `features/session-list/ui/SessionsView.tsx`
 
 **Props:**
+
 ```typescript
 interface SessionsViewProps {
   sessions: Session[];
@@ -274,6 +283,7 @@ Contains the existing `ScrollArea` → `motion.div` → grouped `SidebarGroup` /
 Read-only summary of Pulse schedules for the current agent.
 
 **Props:**
+
 ```typescript
 interface SchedulesViewProps {
   /** Per-agent Pulse chip state from useAgentToolStatus */
@@ -282,10 +292,12 @@ interface SchedulesViewProps {
 ```
 
 **Data hooks used internally:**
+
 - `useSchedules(toolStatus !== 'disabled-by-server')` — schedule list
 - `useActiveRunCount(toolStatus !== 'disabled-by-server')` — active run count
 
 **Layout:**
+
 ```
 ScrollArea
 ├── SidebarGroup "Active" (if any running)
@@ -310,6 +322,7 @@ ScrollArea
 Read-only summary of Relay adapters and Mesh agents.
 
 **Props:**
+
 ```typescript
 interface ConnectionsViewProps {
   toolStatus: AgentToolStatus;
@@ -318,11 +331,13 @@ interface ConnectionsViewProps {
 ```
 
 **Data hooks used internally:**
+
 - `useRelayAdapters(toolStatus.relay !== 'disabled-by-server')` — adapter list
 - `useRegisteredAgents(undefined, toolStatus.mesh !== 'disabled-by-server')` — agent list
 - `useRelayEnabled()`, `useMeshEnabled()` — feature flags
 
 **Layout:**
+
 ```
 ScrollArea
 ├── SidebarGroup "Adapters" (if Relay not disabled-by-server)
@@ -341,6 +356,7 @@ ScrollArea
 ```
 
 **Status dot colors:**
+
 - Adapters: green = connected, amber = idle, red = error
 - Agents: green = online, muted = offline
 
@@ -363,10 +379,10 @@ export function useConnectionsStatus(
   return useMemo(() => {
     const items = [...(adapters ?? []), ...(agents ?? [])];
     if (items.length === 0) return 'none';
-    const hasError = adapters?.some(a => a.status === 'error');
+    const hasError = adapters?.some((a) => a.status === 'error');
     if (hasError) return 'error';
-    const allConnected = adapters?.every(a => a.status === 'connected') ?? true;
-    const allOnline = agents?.every(a => a.status === 'online') ?? true;
+    const allConnected = adapters?.every((a) => a.status === 'connected') ?? true;
+    const allOnline = agents?.every((a) => a.status === 'online') ?? true;
     if (allConnected && allOnline) return 'ok';
     return 'partial';
   }, [adapters, agents]);
@@ -405,10 +421,12 @@ Shortcut numbers are dynamic — they map to visible tab positions. If Schedules
 ### 10. AgentContextChips Removal
 
 **Delete files:**
+
 - `features/session-list/ui/AgentContextChips.tsx`
 - `features/session-list/__tests__/AgentContextChips.test.tsx`
 
 **Update files:**
+
 - `features/session-list/index.ts` — remove `AgentContextChips` export
 - `AgentSidebar.tsx` — remove `<AgentContextChips />` from `SidebarFooter`
 
@@ -416,12 +434,12 @@ The Pulse badge count flow to Zustand (`setPulseBadgeCount`) for `useDocumentTit
 
 ### 11. Motion & Micro-interactions
 
-| Element | Animation | Config |
-|---|---|---|
-| Sliding tab indicator | `layoutId` spring | `stiffness: 280, damping: 32` |
-| Schedules badge pulse | CSS `animate-pulse` on ring | When `activeRunCount > 0` |
-| First-open stagger | `motion.div` stagger children | 40ms delay, first 5 items, only on first render |
-| Tab content appear | Fade in | `opacity: 0→1`, 150ms, `ease-out` |
+| Element               | Animation                     | Config                                          |
+| --------------------- | ----------------------------- | ----------------------------------------------- |
+| Sliding tab indicator | `layoutId` spring             | `stiffness: 280, damping: 32`                   |
+| Schedules badge pulse | CSS `animate-pulse` on ring   | When `activeRunCount > 0`                       |
+| First-open stagger    | `motion.div` stagger children | 40ms delay, first 5 items, only on first render |
+| Tab content appear    | Fade in                       | `opacity: 0→1`, 150ms, `ease-out`               |
 
 ### 12. File Organization
 
@@ -462,6 +480,7 @@ features/session-list/
 ### Glanceable Status
 
 Without clicking:
+
 - A pulsing dot on the Schedules tab means a run is actively executing
 - A numeric badge on the Schedules tab shows how many runs are active
 - A green dot on the Connections tab means all adapters connected and agents online
@@ -479,6 +498,7 @@ Without clicking:
 ### Unit Tests
 
 **SidebarTabRow.test.tsx:**
+
 - Renders three tabs with correct icons and ARIA attributes
 - Active tab has `aria-selected="true"`; others `"false"`
 - Click handler fires with correct tab value
@@ -488,6 +508,7 @@ Without clicking:
 - Arrow key navigation moves focus between tabs
 
 **SchedulesView.test.tsx:**
+
 - Renders "Active" section when active runs exist
 - Renders "Upcoming" section with schedule names and relative times
 - Shows empty state when no schedules
@@ -496,6 +517,7 @@ Without clicking:
 - Does NOT render when Pulse is `disabled-by-server` (parent hides tab)
 
 **ConnectionsView.test.tsx:**
+
 - Renders "Adapters" section with adapter names and status indicators
 - Renders "Agents" section with agent names and online status
 - Hides "Adapters" section when Relay is `disabled-by-server`
@@ -504,6 +526,7 @@ Without clicking:
 - Empty states render when sections have no items
 
 **AgentSidebar.test.tsx (extended):**
+
 - Tab switching changes visible view (`hidden` class toggling)
 - Active tab persists in Zustand state
 - Keyboard shortcuts (Cmd+1/2/3) switch tabs when sidebar is open
@@ -515,6 +538,7 @@ Without clicking:
 ### Integration Tests
 
 **use-connections-status.test.ts:**
+
 - Returns `'none'` when no adapters or agents exist
 - Returns `'ok'` when all adapters connected and agents online
 - Returns `'partial'` when some adapters idle
@@ -523,6 +547,7 @@ Without clicking:
 ### E2E Tests
 
 Update `apps/e2e/pages/SessionSidebarPage.ts` → `AgentSidebarPage.ts`:
+
 - Add locators for tab buttons (`[role="tab"]`)
 - Add locators for tab panels (`[role="tabpanel"]`)
 - Add method: `switchTab(name: 'sessions' | 'schedules' | 'connections')`
@@ -576,16 +601,16 @@ No new security concerns. All data sources are existing authenticated API endpoi
 
 ## Open Questions
 
-*No open questions — all decisions resolved during ideation.*
+_No open questions — all decisions resolved during ideation._
 
 ## Related ADRs
 
-| ADR | Relevance |
-|---|---|
-| [ADR-0064: Shadcn Sidebar for Standalone Layout](../decisions/0064-shadcn-sidebar-for-standalone-layout.md) | Foundation — the sidebar already uses Shadcn primitives (SidebarProvider, SidebarContent, etc.) |
-| [ADR-0065: Lift Dialogs to Root DialogHost](../decisions/0065-lift-dialogs-to-root-dialog-host.md) | DialogHost renders PulsePanel/RelayPanel/MeshPanel — unchanged by this spec. Bridge buttons trigger dialog open via Zustand. |
-| [ADR-0069: Agent Context Config Independent from Feature Flags](../decisions/0069-agent-context-config-independent-from-feature-flags.md) | Dual gating (feature flag + agent config) applies to tab visibility and section rendering |
-| [ADR-0105: Header as Agent Identity Surface](../decisions/0105-header-as-agent-identity-surface.md) | Agent identity moved to header — sidebar focuses on operational views (sessions, schedules, connections) |
+| ADR                                                                                                                                       | Relevance                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [ADR-0064: Shadcn Sidebar for Standalone Layout](../decisions/0064-shadcn-sidebar-for-standalone-layout.md)                               | Foundation — the sidebar already uses Shadcn primitives (SidebarProvider, SidebarContent, etc.)                              |
+| [ADR-0065: Lift Dialogs to Root DialogHost](../decisions/0065-lift-dialogs-to-root-dialog-host.md)                                        | DialogHost renders PulsePanel/RelayPanel/MeshPanel — unchanged by this spec. Bridge buttons trigger dialog open via Zustand. |
+| [ADR-0069: Agent Context Config Independent from Feature Flags](../decisions/0069-agent-context-config-independent-from-feature-flags.md) | Dual gating (feature flag + agent config) applies to tab visibility and section rendering                                    |
+| [ADR-0105: Header as Agent Identity Surface](../decisions/0105-header-as-agent-identity-surface.md)                                       | Agent identity moved to header — sidebar focuses on operational views (sessions, schedules, connections)                     |
 
 ## References
 

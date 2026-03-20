@@ -10,6 +10,7 @@
 ## Phase 1: Implementation
 
 ### 1.1 Create FAQ data file with 7 Q&A items
+
 - **Size:** Small | **Priority:** High
 - **Dependencies:** None | **Parallel with:** 1.2
 - **File:** `apps/site/src/layers/features/marketing/lib/faq-items.ts`
@@ -19,6 +20,7 @@ Create the data file following the `subsystems.ts` pattern — export a `FaqItem
 ---
 
 ### 1.2 Create FAQSection accordion component
+
 - **Size:** Small | **Priority:** High
 - **Dependencies:** None | **Parallel with:** 1.1
 - **File:** `apps/site/src/layers/features/marketing/ui/FAQSection.tsx`
@@ -28,6 +30,7 @@ Create the section component following the `SubsystemsSection.tsx` pattern. Uses
 ---
 
 ### 1.3 Update barrel exports and page composition
+
 - **Size:** Small | **Priority:** High
 - **Dependencies:** 1.1, 1.2 | **Parallel with:** None
 - **Files:** `apps/site/src/layers/features/marketing/index.ts`, `apps/site/src/app/(marketing)/page.tsx`
@@ -37,6 +40,7 @@ Add `FAQSection` component export, `faqItems` data export, and `FaqItem` type ex
 ---
 
 ### 1.4 Verify site build succeeds
+
 - **Size:** Small | **Priority:** High
 - **Dependencies:** 1.3 | **Parallel with:** None
 

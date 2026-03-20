@@ -100,7 +100,11 @@ describe('reconcile()', () => {
     registry.list.mockReturnValue([makeEntry({ id: 'a1', projectPath: '/gone' })]);
     vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.unreachable).toBe(1);
     expect(registry.markUnreachable).toHaveBeenCalledWith('a1');
   });
@@ -111,19 +115,34 @@ describe('reconcile()', () => {
     registry.listUnreachable.mockReturnValue([entry]);
     vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.unreachable).toBe(0);
     expect(registry.markUnreachable).not.toHaveBeenCalled();
   });
 
   it('syncs updated manifest fields to DB', async () => {
-    registry.list.mockReturnValue([makeEntry({ id: 'a1', name: 'Old', projectPath: '/root/proj/backend', scanRoot: '/root/proj' })]);
+    registry.list.mockReturnValue([
+      makeEntry({
+        id: 'a1',
+        name: 'Old',
+        projectPath: '/root/proj/backend',
+        scanRoot: '/root/proj',
+      }),
+    ]);
     vi.mocked(fsPromises.access).mockResolvedValue(undefined);
     vi.mocked(manifestModule.readManifest).mockResolvedValue(
-      makeManifest({ id: 'a1', name: 'New' }),
+      makeManifest({ id: 'a1', name: 'New' })
     );
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.synced).toBe(1);
     expect(registry.update).toHaveBeenCalledWith('a1', expect.objectContaining({ name: 'New' }));
   });
@@ -141,10 +160,14 @@ describe('reconcile()', () => {
         capabilities: entry.capabilities,
         behavior: entry.behavior,
         budget: entry.budget,
-      }),
+      })
     );
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.synced).toBe(0);
     expect(registry.update).not.toHaveBeenCalled();
   });
@@ -154,12 +177,16 @@ describe('reconcile()', () => {
     const oldEntry = makeEntry({ id: 'old', namespace: 'ns1' });
     registry.listUnreachableBefore.mockReturnValue([oldEntry]);
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.removed).toBe(1);
     expect(relayBridge.unregisterAgent).toHaveBeenCalledWith(
       'relay.agent.ns1.old',
       'old',
-      oldEntry.name,
+      oldEntry.name
     );
     expect(registry.remove).toHaveBeenCalledWith('old');
   });
@@ -169,7 +196,11 @@ describe('reconcile()', () => {
     vi.mocked(fsPromises.access).mockResolvedValue(undefined);
     vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.synced).toBe(0);
     expect(result.unreachable).toBe(0);
   });
@@ -178,7 +209,11 @@ describe('reconcile()', () => {
     registry.list.mockReturnValue([]);
     registry.listUnreachableBefore.mockReturnValue([]);
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result).toEqual({ synced: 0, unreachable: 0, removed: 0, discovered: 0 });
   });
 
@@ -202,10 +237,14 @@ describe('reconcile()', () => {
         persona: 'You are a backend expert',
         color: '#ff0000',
         icon: 'server',
-      }),
+      })
     );
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.synced).toBe(1);
     expect(registry.update).toHaveBeenCalledWith(
       'a1',
@@ -213,7 +252,7 @@ describe('reconcile()', () => {
         persona: 'You are a backend expert',
         color: '#ff0000',
         icon: 'server',
-      }),
+      })
     );
   });
 
@@ -241,10 +280,14 @@ describe('reconcile()', () => {
         personaEnabled: true,
         color: '#000',
         icon: 'code',
-      }),
+      })
     );
 
-    const result = await reconcile(registry as unknown as AgentRegistry, relayBridge as unknown as RelayBridge, '/root');
+    const result = await reconcile(
+      registry as unknown as AgentRegistry,
+      relayBridge as unknown as RelayBridge,
+      '/root'
+    );
     expect(result.synced).toBe(0);
     expect(registry.update).not.toHaveBeenCalled();
   });

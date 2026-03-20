@@ -9,7 +9,8 @@ import type { SubagentPart } from '@dorkos/shared/types';
 
 const USER_1 = createUserMessage({
   id: 'sim-ec-u1',
-  content: 'I want to add real-time collaboration to our editor. Multiple users should be able to edit the same document simultaneously. What approach would you recommend?',
+  content:
+    'I want to add real-time collaboration to our editor. Multiple users should be able to edit the same document simultaneously. What approach would you recommend?',
 });
 
 const ASST_1 = createAssistantMessage({
@@ -94,7 +95,8 @@ Want me to proceed with a Yjs-based implementation?`;
 
 const USER_2 = createUserMessage({
   id: 'sim-ec-u2',
-  content: 'Yes, go with Yjs. Can you start with the core sync infrastructure and a basic proof of concept?',
+  content:
+    'Yes, go with Yjs. Can you start with the core sync infrastructure and a basic proof of concept?',
 });
 
 const ASST_2 = createAssistantMessage({
@@ -103,7 +105,8 @@ const ASST_2 = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const TEXT_2_INTRO = "Absolutely. I'll implement this in phases. First the WebSocket sync provider, then the React integration.\n\n";
+const TEXT_2_INTRO =
+  "Absolutely. I'll implement this in phases. First the WebSocket sync provider, then the React integration.\n\n";
 
 const QUESTION_TOOL = createToolCall({
   toolCallId: 'sim-ec-question',
@@ -118,8 +121,14 @@ const QUESTION_TOOL = createToolCall({
       header: 'Presence',
       question: 'How should we display other users editing the document?',
       options: [
-        { label: 'Colored cursors + names (Recommended)', description: 'Show each user\'s cursor position and name, Google Docs style' },
-        { label: 'Avatar badges only', description: 'Show who is viewing but not cursor positions' },
+        {
+          label: 'Colored cursors + names (Recommended)',
+          description: "Show each user's cursor position and name, Google Docs style",
+        },
+        {
+          label: 'Avatar badges only',
+          description: 'Show who is viewing but not cursor positions',
+        },
         { label: 'No presence indicators', description: 'Keep it minimal, just sync the content' },
       ],
       multiSelect: false,
@@ -127,7 +136,8 @@ const QUESTION_TOOL = createToolCall({
   ],
 });
 
-const POST_QUESTION = "\n\nColored cursors it is. I'll include Yjs awareness protocol for presence. Let me start building the infrastructure.\n\n";
+const POST_QUESTION =
+  "\n\nColored cursors it is. I'll include Yjs awareness protocol for presence. Let me start building the infrastructure.\n\n";
 
 // Turn 2: Implementation
 const WRITE_PROVIDER = createToolCall({
@@ -244,32 +254,62 @@ export const extendedConversation: SimScenario = {
 
     // Research tools
     { type: 'append_tool_call', messageId: 'sim-ec-a1', toolCall: GREP_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a1', toolCallId: 'sim-ec-grep', patch: { status: 'running' }, delayMs: 1200 },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a1',
       toolCallId: 'sim-ec-grep',
-      patch: { status: 'complete', result: 'src/server/ws-handler.ts:4: import { WebSocketServer } from "ws";\nsrc/server/notifications.ts:12: ws.send(JSON.stringify(event));' },
+      patch: { status: 'running' },
+      delayMs: 1200,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a1',
+      toolCallId: 'sim-ec-grep',
+      patch: {
+        status: 'complete',
+        result:
+          'src/server/ws-handler.ts:4: import { WebSocketServer } from "ws";\nsrc/server/notifications.ts:12: ws.send(JSON.stringify(event));',
+      },
       delayMs: 400,
     },
 
     { type: 'append_tool_call', messageId: 'sim-ec-a1', toolCall: READ_TOOL, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a1', toolCallId: 'sim-ec-read1', patch: { status: 'running' }, delayMs: 1600 },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a1',
       toolCallId: 'sim-ec-read1',
-      patch: { status: 'complete', result: 'export interface Document {\n  id: string;\n  title: string;\n  content: TreeNode;\n  version: number;\n  updatedAt: Date;\n}\n\nexport interface TreeNode {\n  type: string;\n  children?: TreeNode[];\n  text?: string;\n}' },
+      patch: { status: 'running' },
+      delayMs: 1600,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a1',
+      toolCallId: 'sim-ec-read1',
+      patch: {
+        status: 'complete',
+        result:
+          'export interface Document {\n  id: string;\n  title: string;\n  content: TreeNode;\n  version: number;\n  updatedAt: Date;\n}\n\nexport interface TreeNode {\n  type: string;\n  children?: TreeNode[];\n  text?: string;\n}',
+      },
       delayMs: 400,
     },
 
     { type: 'append_tool_call', messageId: 'sim-ec-a1', toolCall: READ_PKG, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a1', toolCallId: 'sim-ec-read2', patch: { status: 'running' }, delayMs: 1000 },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a1',
       toolCallId: 'sim-ec-read2',
-      patch: { status: 'complete', result: '{\n  "dependencies": {\n    "express": "^5.0.0",\n    "ws": "^8.16.0",\n    "better-sqlite3": "^11.0.0"\n  }\n}' },
+      patch: { status: 'running' },
+      delayMs: 1000,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a1',
+      toolCallId: 'sim-ec-read2',
+      patch: {
+        status: 'complete',
+        result:
+          '{\n  "dependencies": {\n    "express": "^5.0.0",\n    "ws": "^8.16.0",\n    "better-sqlite3": "^11.0.0"\n  }\n}',
+      },
       delayMs: 400,
     },
 
@@ -300,7 +340,10 @@ export const extendedConversation: SimScenario = {
       toolCallId: 'sim-ec-question',
       patch: {
         status: 'complete',
-        answers: { 'How should we display other users editing the document?': 'Colored cursors + names (Recommended)' },
+        answers: {
+          'How should we display other users editing the document?':
+            'Colored cursors + names (Recommended)',
+        },
       },
       delayMs: 600,
     },
@@ -312,7 +355,13 @@ export const extendedConversation: SimScenario = {
 
     // Write files
     { type: 'append_tool_call', messageId: 'sim-ec-a2', toolCall: WRITE_PROVIDER, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a2', toolCallId: 'sim-ec-write1', patch: { status: 'running' }, delayMs: 2400 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a2',
+      toolCallId: 'sim-ec-write1',
+      patch: { status: 'running' },
+      delayMs: 2400,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a2',
@@ -322,7 +371,13 @@ export const extendedConversation: SimScenario = {
     },
 
     { type: 'append_tool_call', messageId: 'sim-ec-a2', toolCall: WRITE_HOOK, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a2', toolCallId: 'sim-ec-write2', patch: { status: 'running' }, delayMs: 2000 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a2',
+      toolCallId: 'sim-ec-write2',
+      patch: { status: 'running' },
+      delayMs: 2000,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a2',
@@ -332,7 +387,13 @@ export const extendedConversation: SimScenario = {
     },
 
     { type: 'append_tool_call', messageId: 'sim-ec-a2', toolCall: WRITE_CURSOR, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a2', toolCallId: 'sim-ec-write3', patch: { status: 'running' }, delayMs: 1800 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a2',
+      toolCallId: 'sim-ec-write3',
+      patch: { status: 'running' },
+      delayMs: 1800,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a2',
@@ -342,7 +403,13 @@ export const extendedConversation: SimScenario = {
     },
 
     { type: 'append_tool_call', messageId: 'sim-ec-a2', toolCall: WRITE_SERVER, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a2', toolCallId: 'sim-ec-write4', patch: { status: 'running' }, delayMs: 2200 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a2',
+      toolCallId: 'sim-ec-write4',
+      patch: { status: 'running' },
+      delayMs: 2200,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a2',
@@ -360,25 +427,42 @@ export const extendedConversation: SimScenario = {
     { type: 'append_tool_call', messageId: 'sim-ec-a2', toolCall: BASH_INSTALL },
     { type: 'set_waiting', isWaiting: true, waitingType: 'approval', delayMs: 4000 },
     { type: 'set_waiting', isWaiting: false },
-    { type: 'update_tool_call', messageId: 'sim-ec-a2', toolCallId: 'sim-ec-bash1', patch: { status: 'running' }, delayMs: 3000 },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a2',
       toolCallId: 'sim-ec-bash1',
-      patch: { status: 'complete', result: 'Added 4 packages in 3.2s\n\nyjs@13.6.0\ny-websocket@2.0.0\ny-protocols@1.0.6\nlib0@0.2.98' },
+      patch: { status: 'running' },
+      delayMs: 3000,
+    },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a2',
+      toolCallId: 'sim-ec-bash1',
+      patch: {
+        status: 'complete',
+        result:
+          'Added 4 packages in 3.2s\n\nyjs@13.6.0\ny-websocket@2.0.0\ny-protocols@1.0.6\nlib0@0.2.98',
+      },
       delayMs: 600,
     },
 
     // Run tests
     { type: 'append_tool_call', messageId: 'sim-ec-a2', toolCall: BASH_TEST, delayMs: 200 },
-    { type: 'update_tool_call', messageId: 'sim-ec-a2', toolCallId: 'sim-ec-bash2', patch: { status: 'running' }, delayMs: 3000 },
+    {
+      type: 'update_tool_call',
+      messageId: 'sim-ec-a2',
+      toolCallId: 'sim-ec-bash2',
+      patch: { status: 'running' },
+      delayMs: 3000,
+    },
     {
       type: 'update_tool_call',
       messageId: 'sim-ec-a2',
       toolCallId: 'sim-ec-bash2',
       patch: {
         status: 'complete',
-        result: '✓ sync-provider connects and syncs (45ms)\n✓ sync-provider handles reconnection (120ms)\n✓ sync-provider buffers offline edits (32ms)\n✓ use-collaboration initializes document (18ms)\n✓ use-collaboration tracks presence (24ms)\n✓ CollaboratorCursors renders remote cursors (12ms)\n✓ collab-handler broadcasts updates (28ms)\n✓ collab-handler rejects unauthorized connections (8ms)\n\nTest Files  4 passed (4)\nTests       8 passed (8)\nDuration    0.29s',
+        result:
+          '✓ sync-provider connects and syncs (45ms)\n✓ sync-provider handles reconnection (120ms)\n✓ sync-provider buffers offline edits (32ms)\n✓ use-collaboration initializes document (18ms)\n✓ use-collaboration tracks presence (24ms)\n✓ CollaboratorCursors renders remote cursors (12ms)\n✓ collab-handler broadcasts updates (28ms)\n✓ collab-handler rejects unauthorized connections (8ms)\n\nTest Files  4 passed (4)\nTests       8 passed (8)\nDuration    0.29s',
       },
       delayMs: 400,
     },

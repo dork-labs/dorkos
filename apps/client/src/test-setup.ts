@@ -5,15 +5,40 @@ import { vi } from 'vitest';
 
 // Motion-specific props to strip so they don't leak to the DOM.
 const MOTION_PROPS = new Set([
-  'initial', 'animate', 'exit', 'transition', 'variants', 'custom',
-  'whileHover', 'whileTap', 'whileFocus', 'whileDrag', 'whileInView',
-  'drag', 'dragConstraints', 'dragElastic', 'dragMomentum', 'dragTransition',
-  'dragPropagation', 'dragSnapToOrigin', 'dragListener',
-  'onDragStart', 'onDrag', 'onDragEnd', 'onDirectionLock',
-  'onAnimationStart', 'onAnimationComplete', 'onUpdate',
-  'layout', 'layoutId', 'layoutDependency', 'layoutScroll',
-  'onLayoutAnimationStart', 'onLayoutAnimationComplete',
-  'onViewportEnter', 'onViewportLeave',
+  'initial',
+  'animate',
+  'exit',
+  'transition',
+  'variants',
+  'custom',
+  'whileHover',
+  'whileTap',
+  'whileFocus',
+  'whileDrag',
+  'whileInView',
+  'drag',
+  'dragConstraints',
+  'dragElastic',
+  'dragMomentum',
+  'dragTransition',
+  'dragPropagation',
+  'dragSnapToOrigin',
+  'dragListener',
+  'onDragStart',
+  'onDrag',
+  'onDragEnd',
+  'onDirectionLock',
+  'onAnimationStart',
+  'onAnimationComplete',
+  'onUpdate',
+  'layout',
+  'layoutId',
+  'layoutDependency',
+  'layoutScroll',
+  'onLayoutAnimationStart',
+  'onLayoutAnimationComplete',
+  'onViewportEnter',
+  'onViewportLeave',
 ]);
 
 /** Strip motion props and render a plain HTML element. */
@@ -38,23 +63,21 @@ function getMotionComponent(tag: string): React.FC<Record<string, unknown>> {
   let comp = componentCache.get(tag);
   if (!comp) {
     // eslint-disable-next-line react/display-name
-    comp = React.forwardRef(
-      (allProps: Record<string, unknown>, ref: React.Ref<unknown>) => {
-        const { children, onAnimationComplete, ...rest } = allProps;
-        const filtered = stripMotionProps(rest);
+    comp = React.forwardRef((allProps: Record<string, unknown>, ref: React.Ref<unknown>) => {
+      const { children, onAnimationComplete, ...rest } = allProps;
+      const filtered = stripMotionProps(rest);
 
-        // Invoke onAnimationComplete immediately so tests relying on it work.
-        React.useEffect(() => {
-          if (typeof onAnimationComplete === 'function') {
-            (onAnimationComplete as () => void)();
-          }
-        }, [onAnimationComplete]);
+      // Invoke onAnimationComplete immediately so tests relying on it work.
+      React.useEffect(() => {
+        if (typeof onAnimationComplete === 'function') {
+          (onAnimationComplete as () => void)();
+        }
+      }, [onAnimationComplete]);
 
-        const Tag = tag as keyof React.JSX.IntrinsicElements;
-        // eslint-disable-next-line react-hooks/refs -- test mock: ref forwarding is intentional
-        return React.createElement(Tag, { ...filtered, ref }, children as React.ReactNode);
-      },
-    ) as unknown as React.FC<Record<string, unknown>>;
+      const Tag = tag as keyof React.JSX.IntrinsicElements;
+      // eslint-disable-next-line react-hooks/refs -- test mock: ref forwarding is intentional
+      return React.createElement(Tag, { ...filtered, ref }, children as React.ReactNode);
+    }) as unknown as React.FC<Record<string, unknown>>;
     componentCache.set(tag, comp);
   }
   return comp;
@@ -67,7 +90,7 @@ vi.mock('motion/react', () => ({
     {},
     {
       get: (_target: unknown, prop: string) => getMotionComponent(prop),
-    },
+    }
   ),
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
   LayoutGroup: ({ children }: { children: React.ReactNode }) => children,

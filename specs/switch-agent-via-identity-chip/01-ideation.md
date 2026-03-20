@@ -101,8 +101,8 @@ N/A — not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | What happens to AgentHeader after removing CWD and Switch? | Remove AgentHeader entirely | Header info is redundant with AgentIdentityChip in top nav. Sidebar starts directly with New Session button + session list. Cleaner, less visual noise. |
-| 2 | Where does the Edit Agent button go? | Icon in existing footer row | Add a Pencil icon alongside Pulse, Relay, Mesh, Settings icons. Consistent with existing pattern, no layout changes needed. |
-| 3 | Edit Agent button visibility when no agent? | Always show, opens create flow | One entry point for both create and edit. When no agent exists, clicking opens AgentDialog in creation mode. |
+| #   | Decision                                                   | Choice                         | Rationale                                                                                                                                               |
+| --- | ---------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | What happens to AgentHeader after removing CWD and Switch? | Remove AgentHeader entirely    | Header info is redundant with AgentIdentityChip in top nav. Sidebar starts directly with New Session button + session list. Cleaner, less visual noise. |
+| 2   | Where does the Edit Agent button go?                       | Icon in existing footer row    | Add a Pencil icon alongside Pulse, Relay, Mesh, Settings icons. Consistent with existing pattern, no layout changes needed.                             |
+| 3   | Edit Agent button visibility when no agent?                | Always show, opens create flow | One entry point for both create and edit. When no agent exists, clicking opens AgentDialog in creation mode.                                            |

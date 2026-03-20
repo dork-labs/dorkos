@@ -28,6 +28,7 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 **File**: `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.ts`
 
 **Technical Requirements**:
+
 - Must live within the `services/runtimes/claude-code/` ESLint import boundary
 - Imports `SDKMessage` from `@anthropic-ai/claude-agent-sdk`
 - Imports `vi` from `vitest` (only for `wrapSdkQuery`)
@@ -48,6 +49,7 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 6. Implement `sdkError(message)` — yields init → result with `subtype: 'error'`, `is_error: true`.
 
 **Acceptance Criteria**:
+
 - [ ] File compiles with no TypeScript errors
 - [ ] `wrapSdkQuery` output has both `supportedModels()` and `setPermissionMode()` attached
 - [ ] All four scenario builders are exported
@@ -65,11 +67,13 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 **File**: `packages/test-utils/src/test-scenarios.ts`
 
 **Technical Requirements**:
+
 - No `vitest` import (used in both Vitest and live server contexts)
 - `as const` so values narrow to string literal types
 - Exports both the const object and the `TestScenarioKey` derived union type
 
 **Acceptance Criteria**:
+
 - [ ] `TestScenario.SimpleText` is typed as `'simple-text'` (not `string`)
 - [ ] `TestScenarioKey` is a union of all five string literals
 - [ ] No `vitest` imports
@@ -87,6 +91,7 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 **File**: `packages/test-utils/src/fake-agent-runtime.ts`
 
 **Technical Requirements**:
+
 - `implements AgentRuntime` — TypeScript compile error if the interface gains new methods
 - All methods are `vi.fn()` spies
 - `withScenarios(scenarios: ScenarioFn[]): this` — loads an ordered scenario queue; `sendMessage` dequeues from it
@@ -94,6 +99,7 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 - Method signatures must exactly match the `AgentRuntime` interface in `packages/shared/src/agent-runtime.ts`, including: `acquireLock(sessionId, clientId, res: SseResponse)`, `updateSession(sessionId, opts: { permissionMode?, model? })`, `watchSession(sessionId, projectDir, callback, clientId?)`, `listSessions(projectDir)`, `getSession(projectDir, sessionId)`, etc.
 
 **Acceptance Criteria**:
+
 - [ ] `FakeAgentRuntime implements AgentRuntime` compiles
 - [ ] Removing any method causes a TypeScript compile error
 - [ ] Scenario queue dequeues in order for multi-turn tests
@@ -111,12 +117,14 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 **File**: `packages/test-utils/src/sse-test-helpers.ts`
 
 **Technical Requirements**:
+
 - Uses `supertest`'s `buffer(true).parse(...)` pattern
 - Parses `data: {...}` SSE lines into `StreamEvent[]`
 - Non-JSON SSE lines are silently ignored (no exception)
 - Returns an ordered array of all events emitted before the connection closes
 
 **Acceptance Criteria**:
+
 - [ ] Returns complete `StreamEvent[]` in emission order
 - [ ] Non-JSON lines do not cause exceptions
 - [ ] TSDoc on the exported function
@@ -134,6 +142,7 @@ All new utilities live in `packages/test-utils` (Tiers 2–3 shared constants) o
 
 **Change**:
 Add to the existing exports:
+
 ```typescript
 export * from './fake-agent-runtime.js';
 export * from './sse-test-helpers.js';
@@ -141,10 +150,12 @@ export * from './test-scenarios.js';
 ```
 
 **Technical Requirements**:
+
 - No name collisions with existing exports from `db.js`, `mock-factories.js`, `react-helpers.js`, `sse-helpers.js`
 - `import { FakeAgentRuntime, collectSseEvents, TestScenario } from '@dorkos/test-utils'` resolves
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm typecheck` passes across the monorepo after this change
 - [ ] All three new exports are accessible from the package root
 
@@ -160,6 +171,7 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/services/runtimes/claude-code/__tests__/sdk-scenarios.test.ts`
 
 **Test Cases**:
+
 - `wrapSdkQuery` attaches `supportedModels` and `setPermissionMode`
 - `wrapSdkQuery` — `setPermissionMode` resolves to `undefined`
 - `sdkSimpleText` yields `system/init` first, `result/success` last, text delta in between
@@ -170,6 +182,7 @@ export * from './test-scenarios.js';
 - `sdkError` yields `is_error: true` result with the provided message and `subtype: 'error'`
 
 **Acceptance Criteria**:
+
 - [ ] All tests pass
 - [ ] No real SDK API calls
 
@@ -185,6 +198,7 @@ export * from './test-scenarios.js';
 **File**: `packages/test-utils/src/__tests__/fake-agent-runtime.test.ts`
 
 **Test Cases**:
+
 - Instantiation without error
 - `sendMessage` yields events from first queued scenario
 - Multi-turn: second `sendMessage` call dequeues second scenario
@@ -195,6 +209,7 @@ export * from './test-scenarios.js';
 - `acquireLock` defaults to `true`
 
 **Acceptance Criteria**:
+
 - [ ] All tests pass
 - [ ] Multi-turn scenario dequeuing verified
 
@@ -212,6 +227,7 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/routes/__tests__/sessions.test.ts`
 
 **Migration Pattern**:
+
 1. Import `FakeAgentRuntime` from `@dorkos/test-utils`
 2. Replace top-level `mockRuntime = { ... }` with `const fakeRuntime = vi.hoisted(() => new FakeAgentRuntime())`
 3. Update `runtimeRegistry` mock to return `fakeRuntime`
@@ -221,6 +237,7 @@ export * from './test-scenarios.js';
 **Note**: The existing `sessions.test.ts` does not use `vi.hoisted()` for `mockRuntime` — it is a top-level `const`. The migration to `vi.hoisted()` is required so the mock is available when `vi.mock()` factory functions execute.
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm vitest run apps/server/src/routes/__tests__/sessions.test.ts` passes
 - [ ] No `mockRuntime` variable remains
 - [ ] `vi.hoisted(() => new FakeAgentRuntime())` is used
@@ -239,6 +256,7 @@ export * from './test-scenarios.js';
 **Migration Pattern**: Same as Task 2.1. The existing file already uses `vi.hoisted()` for `mockRuntime`, so step 2 is a direct replacement of the object literal with `new FakeAgentRuntime()`.
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm vitest run apps/server/src/routes/__tests__/sessions-interactive.test.ts` passes
 - [ ] No `mockRuntime` variable remains
 
@@ -256,6 +274,7 @@ export * from './test-scenarios.js';
 **Migration Pattern**: Same as Task 2.1. Check `sessions-relay-correlation.test.ts` for the same pattern and apply migration there too if applicable.
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm vitest run apps/server/src/routes/__tests__/sessions-relay.test.ts` passes
 - [ ] No `mockRuntime` variable remains
 
@@ -273,6 +292,7 @@ export * from './test-scenarios.js';
 **Migration Pattern**: Same as Task 2.1. Assertions on `ensureSession` call arguments must continue to work via `expect(fakeRuntime.ensureSession).toHaveBeenCalledWith(...)`.
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm vitest run apps/server/src/routes/__tests__/sessions-boundary.test.ts` passes
 - [ ] No `mockRuntime` variable remains
 
@@ -288,12 +308,14 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts`
 
 **Migration Pattern**:
+
 1. Import `wrapSdkQuery, sdkSimpleText, sdkToolCall, sdkError` from `./sdk-scenarios.js`
 2. Remove the local `mockQueryResult` function (lines 76-82)
 3. Replace `mockQueryResult(async function* () { ... })` calls with `wrapSdkQuery(sdkSimpleText(...))`, `wrapSdkQuery(sdkToolCall(...))`, or `wrapSdkQuery(sdkError(...))` as appropriate
 4. For highly specific inline generators not covered by shared builders, keep as `wrapSdkQuery(async function* () { ... })` with an explanatory comment
 
 **Acceptance Criteria**:
+
 - [ ] All existing tests pass
 - [ ] Local `mockQueryResult` function is removed
 - [ ] At least 3 tests use named scenario builders
@@ -310,18 +332,21 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/routes/__tests__/sessions-streaming.test.ts`
 
 **Test Cases**:
+
 1. `emits session_status → text_delta events → done in order` — verifies the full SSE event sequence via `collectSseEvents`
 2. `emits tool_call_start and tool_call_end for tool use scenarios` — verifies tool call SSE events
 3. `returns 423 when session is locked by another client` — uses `request(app)` directly for HTTP status assertion
 4. `sendMessage is called with the correct session ID and content` — spy call argument assertion
 
 **Technical Requirements**:
+
 - Same mock setup pattern as other session test files (boundary mock, runtime-registry mock, tunnel-manager mock)
 - Uses `FakeAgentRuntime` from `@dorkos/test-utils` with `vi.hoisted()`
 - Uses `collectSseEvents` from `@dorkos/test-utils`
 - `beforeEach` sets up `ensureSession`, `acquireLock`, `isLocked`, `getLockInfo` defaults
 
 **Acceptance Criteria**:
+
 - [ ] All four test cases pass
 - [ ] No real Claude API calls
 - [ ] 423 locking test verifies HTTP status directly (not via `collectSseEvents`)
@@ -340,6 +365,7 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/services/runtimes/test-mode/scenario-store.ts`
 
 **Technical Requirements**:
+
 - No `vitest` import — runs in a real server process
 - Four built-in scenarios: `simple-text`, `tool-call`, `todo-write`, `error`
 - `ScenarioStore` class (singleton exported as `scenarioStore`) with:
@@ -350,6 +376,7 @@ export * from './test-scenarios.js';
   - `reset()` — clears all session overrides and resets default to `'simple-text'`
 
 **Acceptance Criteria**:
+
 - [ ] No `vitest` import
 - [ ] Unknown scenario name throws with descriptive error message
 - [ ] `getScenario` falls back to default correctly
@@ -367,6 +394,7 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts`
 
 **Technical Requirements**:
+
 - No `vitest` import
 - `implements AgentRuntime` (TypeScript-enforced)
 - `sendMessage` delegates to `scenarioStore.getScenario(sessionId)` and yields from the returned generator
@@ -377,6 +405,7 @@ export * from './test-scenarios.js';
 **Technical Note**: Method signatures must exactly match `AgentRuntime` — note that storage methods take `projectDir` as the first parameter (`listSessions(projectDir)`, `getSession(projectDir, sessionId)`, etc.), `acquireLock` takes `(sessionId, clientId, res: SseResponse)`, and `watchSession` takes `(sessionId, projectDir, callback, clientId?)`.
 
 **Acceptance Criteria**:
+
 - [ ] `TestModeRuntime implements AgentRuntime` compiles
 - [ ] No `vitest` import
 - [ ] `sendMessage` yields from scenario store
@@ -394,15 +423,18 @@ export * from './test-scenarios.js';
 **File**: `apps/server/src/routes/test-control.ts`
 
 **Endpoints**:
+
 - `POST /scenario` — body: `{ name: string, sessionId?: string (UUID) }` — calls `scenarioStore.setDefault(name)` or `scenarioStore.setForSession(sessionId, name)`; returns `{ ok: true, scenario: name }` on success, 400 on validation failure or unknown scenario name
 - `POST /reset` — calls `scenarioStore.reset()`; returns `{ ok: true }`
 
 **Technical Requirements**:
+
 - Zod validation on request body
 - Try/catch around `scenarioStore` calls (methods throw on unknown scenarios) — returns 400 with the error message
 - Follows API route conventions: no business logic in handler, delegates to service layer (`scenarioStore`)
 
 **Acceptance Criteria**:
+
 - [ ] `POST /api/test/scenario` with valid known scenario returns `{ ok: true }`
 - [ ] `POST /api/test/scenario` with unknown scenario name returns HTTP 400
 - [ ] `POST /api/test/scenario` with invalid body returns HTTP 400 with Zod details
@@ -418,17 +450,20 @@ export * from './test-scenarios.js';
 **Can run parallel with**: (none — integrates all Phase 3 pieces)
 
 **Files Modified**:
+
 - `apps/server/src/env.ts` — add `DORKOS_TEST_RUNTIME: z.string().optional().transform(v => v === 'true')`
 - `apps/server/src/index.ts` — conditional runtime registration: `if (env.DORKOS_TEST_RUNTIME) { dynamic import TestModeRuntime } else { ClaudeCodeRuntime }`
 - `apps/server/src/app.ts` — conditionally mount `/api/test` router when `DORKOS_TEST_RUNTIME=true`
 
 **Technical Requirements**:
+
 - `env.DORKOS_TEST_RUNTIME` is typed as `boolean` after the Zod transform
 - `TestModeRuntime` is dynamically imported in `index.ts` to keep it out of the production module graph
 - The `/api/test/*` routes return 404 in production (route not mounted)
 - The `app.ts` change must be compatible with the existing `createApp()` signature (sync vs async)
 
 **Acceptance Criteria**:
+
 - [ ] `pnpm typecheck` passes
 - [ ] `DORKOS_TEST_RUNTIME=true` server logs `[TestMode] TestModeRuntime registered`
 - [ ] `GET /api/test/reset` returns 404 without the env var set
@@ -444,21 +479,25 @@ export * from './test-scenarios.js';
 **Can run parallel with**: (none — requires all Tier 3 infrastructure)
 
 **Files**:
+
 - `apps/e2e/playwright.config.ts` — configure test-mode server access for mock tests
 - `apps/e2e/tests/chat-mock.spec.ts` — three initial browser test cases
 
 **Test Cases**:
+
 1. `renders streamed text response from simple-text scenario` — sets `SimpleText` scenario, sends a message, asserts `Echo:` text appears in DOM
 2. `renders tool call card for tool-call scenario` — sets `ToolCall` scenario, sends a message, asserts `Bash` tool name appears in DOM
 3. `scenario endpoint rejects unknown scenario names` — asserts HTTP 400 from `POST /api/test/scenario` with an invalid name
 
 **Technical Requirements**:
+
 - `test.beforeEach` resets scenario store via `POST /api/test/reset`
 - `TestScenario` constants from `@dorkos/test-utils` — no string literals for scenario names in tests
 - UI selectors must match the actual React client's input element (verify against the client source)
 - Playwright config change must not break existing tests
 
 **Acceptance Criteria**:
+
 - [ ] `apps/e2e/tests/chat-mock.spec.ts` is created
 - [ ] At least one browser test passes (text visible in DOM from simulated response)
 - [ ] Scenario rejection test passes (HTTP 400)

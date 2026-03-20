@@ -1,5 +1,5 @@
 ---
-title: "OpenClaw Scheduler Architecture Analysis"
+title: 'OpenClaw Scheduler Architecture Analysis'
 date: 2026-02-17
 type: internal-architecture
 status: archived
@@ -55,7 +55,7 @@ OpenClaw uses `croner` v10 (MIT license) as a dependency declared in `package.js
 
 ```typescript
 // src/cron/schedule.ts
-import { Cron } from "croner";
+import { Cron } from 'croner';
 
 const cron = new Cron(expr, {
   timezone: resolveCronTimezone(schedule.tz),
@@ -72,23 +72,26 @@ Defined in `src/cron/types.ts`:
 
 ```typescript
 export type CronSchedule =
-  | { kind: "at"; at: string }                            // One-shot, ISO 8601
-  | { kind: "every"; everyMs: number; anchorMs?: number } // Fixed interval
-  | { kind: "cron"; expr: string; tz?: string };          // 5-field cron expression
+  | { kind: 'at'; at: string } // One-shot, ISO 8601
+  | { kind: 'every'; everyMs: number; anchorMs?: number } // Fixed interval
+  | { kind: 'cron'; expr: string; tz?: string }; // 5-field cron expression
 ```
 
 **`at` (one-shot):**
+
 - Runs exactly once at the given ISO 8601 timestamp.
 - If `deleteAfterRun: true` (the default for `at` jobs), the job record is deleted after a successful run.
 - If `deleteAfterRun: false`, the job is disabled after any terminal status (ok, error, skipped).
 - One-shot jobs do NOT retry after failure.
 
 **`every` (fixed interval):**
+
 - The interval is stored as milliseconds (`everyMs`).
 - An `anchorMs` epoch timestamp anchors the phase. The next run is computed as `anchor + N * everyMs` where N is the smallest integer such that the result is in the future.
 - The anchor defaults to the job's `createdAtMs`, ensuring consistent drift-free phase across restarts.
 
 **`cron` (cron expression):**
+
 - Standard 5-field cron expressions (minute, hour, day-of-month, month, day-of-week).
 - Optional IANA timezone (e.g., `America/Los_Angeles`). Falls back to the Gateway host's local timezone if omitted.
 - After each run, a minimum 2-second gap is enforced (`MIN_REFIRE_GAP_MS = 2_000`) as a spin-loop guard against same-second rescheduling in edge cases.
@@ -113,6 +116,7 @@ onTimer()
 ```
 
 Key design decisions:
+
 - **Intentionally non-async timer callback**: The `setTimeout` callback is synchronous and spawns an async chain via `void onTimer(...).catch(...)`. This avoids blocking Vitest's fake timer helpers during testing.
 - **Clamped maximum delay (60s)**: Even if the next job is hours away, the timer wakes every 60 seconds. This recovers quickly from wall-clock jumps (e.g., laptop sleep/wake) without relying on OS-level timer correction.
 - **Non-blocking re-arm during execution**: If a job is still running when the 60s tick fires again, the timer immediately re-arms for another 60s instead of dropping the timer entirely. This prevents a long-running job from silently killing the scheduler.
@@ -178,9 +182,9 @@ Isolated jobs support model and thinking level overrides per job (`payload.model
 
 ```typescript
 const ERROR_BACKOFF_SCHEDULE_MS = [
-  30_000,      // 1st error  -> 30s
-  60_000,      // 2nd error  -> 1 min
-  5 * 60_000,  // 3rd error  -> 5 min
+  30_000, // 1st error  -> 30s
+  60_000, // 2nd error  -> 1 min
+  5 * 60_000, // 3rd error  -> 5 min
   15 * 60_000, // 4th error  -> 15 min
   60 * 60_000, // 5th+ error -> 60 min
 ];
@@ -235,20 +239,21 @@ The `--at` flag accepts both ISO 8601 timestamps and human durations like `"20m"
 
 Handlers in `src/gateway/server-methods/cron.ts`. All operations go through the `context.cron` (a `CronService` instance) via JSON RPC-style `request("cron.add", params)` calls:
 
-| Method | Description |
-|--------|-------------|
-| `cron.list` | List jobs (optional `includeDisabled`) |
-| `cron.status` | Status: enabled, job count, next wake time |
-| `cron.add` | Add a new job |
-| `cron.update` | Patch an existing job (partial update) |
-| `cron.remove` | Delete a job |
-| `cron.run` | Manually trigger a job (`"force"` or `"due"` mode) |
-| `cron.runs` | Fetch run history for a job |
-| `wake` | Enqueue a system event + optional immediate heartbeat |
+| Method        | Description                                           |
+| ------------- | ----------------------------------------------------- |
+| `cron.list`   | List jobs (optional `includeDisabled`)                |
+| `cron.status` | Status: enabled, job count, next wake time            |
+| `cron.add`    | Add a new job                                         |
+| `cron.update` | Patch an existing job (partial update)                |
+| `cron.remove` | Delete a job                                          |
+| `cron.run`    | Manually trigger a job (`"force"` or `"due"` mode)    |
+| `cron.runs`   | Fetch run history for a job                           |
+| `wake`        | Enqueue a system event + optional immediate heartbeat |
 
 #### Web UI (`ui/src/ui/`)
 
 A Lit-based web panel (`ui/src/ui/views/cron.ts`) renders:
+
 - Scheduler status (enabled, job count, next wake time)
 - New job creation form (all three schedule kinds, session target, payload kind, delivery mode)
 - Job list with enable/disable, run, and delete actions
@@ -265,8 +270,8 @@ Per-job JSONL files at `~/.openclaw/cron/runs/<jobId>.jsonl`:
 type CronRunLogEntry = {
   ts: number;
   jobId: string;
-  action: "finished";
-  status?: "ok" | "error" | "skipped";
+  action: 'finished';
+  status?: 'ok' | 'error' | 'skipped';
   error?: string;
   summary?: string;
   sessionId?: string;
@@ -299,16 +304,17 @@ In the agent config file (`~/.openclaw/agents/<agentId>/config.json` or equivale
 ```json5
 {
   cron: {
-    enabled: true,                                     // default: true
-    store: "~/.openclaw/cron/jobs.json",               // job store path
-    maxConcurrentRuns: 1,                              // default: 1
-    webhook: "https://example.invalid/legacy",         // deprecated legacy webhook
-    webhookToken: "bearer-token-for-webhook-delivery", // optional bearer token
-  }
+    enabled: true, // default: true
+    store: '~/.openclaw/cron/jobs.json', // job store path
+    maxConcurrentRuns: 1, // default: 1
+    webhook: 'https://example.invalid/legacy', // deprecated legacy webhook
+    webhookToken: 'bearer-token-for-webhook-delivery', // optional bearer token
+  },
 }
 ```
 
 Disable cron:
+
 - `cron.enabled: false` in config
 - `OPENCLAW_SKIP_CRON=1` environment variable
 

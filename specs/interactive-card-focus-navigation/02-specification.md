@@ -37,15 +37,15 @@ Transform the chat input zone into a unified interaction surface that adapts to 
 
 These decisions were made during ideation and are final:
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Where interactive cards render | Input zone transformation | Eliminates dual focus. Matches Claude Code Desktop pattern. The message stream is history; the input zone is the present. |
-| 2 | Kbd hint position | After label, right-aligned | Industry standard (Linear, VS Code, GitHub). WCAG accessible name ordering. |
-| 3 | Arrow keys in textarea | Up/Down always navigate options | Consistent behavior. Shift+Enter for newlines in "Other" text. |
-| 4 | Multi-question navigation | Replace tab strip with Back/Next buttons + step indicator | Simpler, more focused sequential flow. Left/Right arrows for keyboard nav. |
-| 5 | Draft handling when card appears | Replace input entirely, preserve draft invisibly | All input-related elements hidden. Draft text and pending files restored after resolution. |
-| 6 | In-stream placeholder | Compact pending indicator (single-line, matches CompactResultRow style) | Minimal stream footprint while interaction is handled in the input zone. |
-| 7 | Transition animation | Crossfade with shared container | Outer shell stays stable, inner content crossfades via AnimatePresence. |
+| #   | Decision                         | Choice                                                                  | Rationale                                                                                                                 |
+| --- | -------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Where interactive cards render   | Input zone transformation                                               | Eliminates dual focus. Matches Claude Code Desktop pattern. The message stream is history; the input zone is the present. |
+| 2   | Kbd hint position                | After label, right-aligned                                              | Industry standard (Linear, VS Code, GitHub). WCAG accessible name ordering.                                               |
+| 3   | Arrow keys in textarea           | Up/Down always navigate options                                         | Consistent behavior. Shift+Enter for newlines in "Other" text.                                                            |
+| 4   | Multi-question navigation        | Replace tab strip with Back/Next buttons + step indicator               | Simpler, more focused sequential flow. Left/Right arrows for keyboard nav.                                                |
+| 5   | Draft handling when card appears | Replace input entirely, preserve draft invisibly                        | All input-related elements hidden. Draft text and pending files restored after resolution.                                |
+| 6   | In-stream placeholder            | Compact pending indicator (single-line, matches CompactResultRow style) | Minimal stream footprint while interaction is handled in the input zone.                                                  |
+| 7   | Transition animation             | Crossfade with shared container                                         | Outer shell stays stable, inner content crossfades via AnimatePresence.                                                   |
 
 ---
 
@@ -436,6 +436,7 @@ This keeps the submit logic self-contained in QuestionPrompt.
 Replace the existing `TabsList` with a sequential navigation UI.
 
 **Current (TabsList):**
+
 ```tsx
 <TabsList>
   {questions.map((q, i) => (
@@ -447,6 +448,7 @@ Replace the existing `TabsList` with a sequential navigation UI.
 ```
 
 **New (Step indicator + Back/Next buttons):**
+
 ```tsx
 <div className="mb-2 flex items-center justify-between">
   <span className="text-muted-foreground text-xs">
@@ -463,11 +465,7 @@ Replace the existing `TabsList` with a sequential navigation UI.
       Back {<Kbd className="ml-1">&larr;</Kbd>}
     </Button>
     {activeIndex < questions.length - 1 ? (
-      <Button
-        size="sm"
-        onClick={() => navigateQuestion('next')}
-        className="h-7 px-2 text-xs"
-      >
+      <Button size="sm" onClick={() => navigateQuestion('next')} className="h-7 px-2 text-xs">
         Next {<Kbd className="ml-1">&rarr;</Kbd>}
       </Button>
     ) : (
@@ -488,6 +486,7 @@ Replace the existing `TabsList` with a sequential navigation UI.
 The underlying `Tabs` / `TabsContent` component can still be used for content switching (hidden `TabsList` or controlled via `value` prop), but the visible navigation is the Back/Next buttons with the step indicator.
 
 **Keyboard mapping:**
+
 - Left arrow / `[` -> Back (existing `navigateQuestion('prev')`)
 - Right arrow / `]` -> Next (existing `navigateQuestion('next')`)
 - Enter -> Next (or Submit on last question, via modified `submit()`)
@@ -497,6 +496,7 @@ The underlying `Tabs` / `TabsContent` component can still be used for content sw
 Move Kbd badges from inline after the label to right-aligned within the row.
 
 **Current OptionRow children pattern (inside QuestionPrompt):**
+
 ```tsx
 <OptionRow isSelected={isSelected} isFocused={isFocused} control={<RadioGroupItem ... />}>
   <label className="flex-1 cursor-pointer">
@@ -510,6 +510,7 @@ Move Kbd badges from inline after the label to right-aligned within the row.
 ```
 
 **New pattern:**
+
 ```tsx
 <OptionRow isSelected={isSelected} isFocused={isFocused} control={<RadioGroupItem ... />}>
   <label className="flex flex-1 cursor-pointer items-center">
@@ -525,6 +526,7 @@ Move Kbd badges from inline after the label to right-aligned within the row.
 ```
 
 Key changes:
+
 - Label uses `flex items-center` layout
 - Kbd badge uses `ml-auto shrink-0` to push it to the right edge
 - The `isActive` conditional on Kbd visibility is removed — when rendered in the input zone, hints are always visible
@@ -573,32 +575,32 @@ This matches the existing behavior where only one interaction is "active" at a t
 
 ### New Files
 
-| File | Purpose |
-|---|---|
+| File                                                                       | Purpose                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `apps/client/src/layers/features/chat/ui/primitives/CompactPendingRow.tsx` | Compact spinning-loader placeholder for interactions handled in the input zone |
 
 ### Modified Files
 
-| File | Changes |
-|---|---|
-| `apps/client/src/layers/features/chat/ui/ChatInputContainer.tsx` | Add `activeInteraction`, `focusedOptionIndex`, `onToolRef`, `onToolDecided` props. Add mode switching (normal vs interactive). Add draft preservation via `interactiveDraftRef`. Add AnimatePresence crossfade between modes. Render ToolApproval or QuestionPrompt in interactive mode. |
-| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` | Thread `activeInteraction` (enriched with tool data), `focusedOptionIndex`, `handleToolRef`, `markToolCallResponded` to ChatInputContainer. Compute `inputZoneToolCallId` and pass to MessageList. |
-| `apps/client/src/layers/features/chat/ui/MessageList.tsx` | Accept and thread `inputZoneToolCallId` prop. |
-| `apps/client/src/layers/features/chat/ui/message/MessageItem.tsx` | Thread `inputZoneToolCallId` through MessageContext. |
-| `apps/client/src/layers/features/chat/ui/message/MessageContext.tsx` | Add `inputZoneToolCallId: string \| null` to context shape. |
-| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Read `inputZoneToolCallId` from MessageContext. Render `CompactPendingRow` when tool call matches. Import CompactPendingRow. |
-| `apps/client/src/layers/features/chat/ui/primitives/index.ts` | Export `CompactPendingRow`. |
-| `apps/client/src/layers/features/chat/ui/QuestionPrompt.tsx` | Replace TabsList with Back/Next buttons + step indicator. Modify `submit()` imperative handle to advance question before submitting on last. Reposition Kbd badges to right-aligned (ml-auto). Update option container spacing to `space-y-1`. |
-| `apps/client/src/layers/shared/model/use-interactive-shortcuts.ts` | Relax `isTextInput` guard to allow ArrowUp/ArrowDown even when textarea is focused. |
+| File                                                                          | Changes                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/ui/ChatInputContainer.tsx`              | Add `activeInteraction`, `focusedOptionIndex`, `onToolRef`, `onToolDecided` props. Add mode switching (normal vs interactive). Add draft preservation via `interactiveDraftRef`. Add AnimatePresence crossfade between modes. Render ToolApproval or QuestionPrompt in interactive mode. |
+| `apps/client/src/layers/features/chat/ui/ChatPanel.tsx`                       | Thread `activeInteraction` (enriched with tool data), `focusedOptionIndex`, `handleToolRef`, `markToolCallResponded` to ChatInputContainer. Compute `inputZoneToolCallId` and pass to MessageList.                                                                                       |
+| `apps/client/src/layers/features/chat/ui/MessageList.tsx`                     | Accept and thread `inputZoneToolCallId` prop.                                                                                                                                                                                                                                            |
+| `apps/client/src/layers/features/chat/ui/message/MessageItem.tsx`             | Thread `inputZoneToolCallId` through MessageContext.                                                                                                                                                                                                                                     |
+| `apps/client/src/layers/features/chat/ui/message/MessageContext.tsx`          | Add `inputZoneToolCallId: string \| null` to context shape.                                                                                                                                                                                                                              |
+| `apps/client/src/layers/features/chat/ui/message/AssistantMessageContent.tsx` | Read `inputZoneToolCallId` from MessageContext. Render `CompactPendingRow` when tool call matches. Import CompactPendingRow.                                                                                                                                                             |
+| `apps/client/src/layers/features/chat/ui/primitives/index.ts`                 | Export `CompactPendingRow`.                                                                                                                                                                                                                                                              |
+| `apps/client/src/layers/features/chat/ui/QuestionPrompt.tsx`                  | Replace TabsList with Back/Next buttons + step indicator. Modify `submit()` imperative handle to advance question before submitting on last. Reposition Kbd badges to right-aligned (ml-auto). Update option container spacing to `space-y-1`.                                           |
+| `apps/client/src/layers/shared/model/use-interactive-shortcuts.ts`            | Relax `isTextInput` guard to allow ArrowUp/ArrowDown even when textarea is focused.                                                                                                                                                                                                      |
 
 ### Potentially Modified Files
 
-| File | Condition |
-|---|---|
-| `apps/client/src/layers/features/chat/model/use-chat-session.ts` | May need to enrich `activeInteraction` with tool call data (toolName, input, questions, timeoutMs) if not already available. Currently exposes only `toolCallId` and `interactiveType`. |
-| `apps/client/src/layers/features/chat/model/chat-types.ts` | May need to export an enriched `ActiveInteraction` type with tool call details. |
-| `apps/client/src/layers/features/chat/model/use-tool-shortcuts.ts` | May need minor adjustments for the Enter-advances-question behavior, though this is primarily handled inside QuestionPrompt. |
-| `apps/client/src/dev/showcases/MessageShowcases.tsx` | If showcases render interactive tools, may need updates for the new rendering context. |
+| File                                                               | Condition                                                                                                                                                                               |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/client/src/layers/features/chat/model/use-chat-session.ts`   | May need to enrich `activeInteraction` with tool call data (toolName, input, questions, timeoutMs) if not already available. Currently exposes only `toolCallId` and `interactiveType`. |
+| `apps/client/src/layers/features/chat/model/chat-types.ts`         | May need to export an enriched `ActiveInteraction` type with tool call details.                                                                                                         |
+| `apps/client/src/layers/features/chat/model/use-tool-shortcuts.ts` | May need minor adjustments for the Enter-advances-question behavior, though this is primarily handled inside QuestionPrompt.                                                            |
+| `apps/client/src/dev/showcases/MessageShowcases.tsx`               | If showcases render interactive tools, may need updates for the new rendering context.                                                                                                  |
 
 ---
 
@@ -637,25 +639,30 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 ### Tests Requiring Updates
 
 **`apps/client/src/layers/features/chat/__tests__/QuestionPrompt.test.tsx`:**
+
 - Tab navigation tests: Replace TabsList/TabsTrigger assertions with Back/Next button assertions
 - Kbd positioning tests: Update expectations for `ml-auto` class on Kbd elements
 - Submit behavior tests: Add tests for Enter advancing to next question on non-last questions
 - Option spacing tests: Update class assertions from `space-y-0.5` to `space-y-1`
 
 **`apps/client/src/layers/features/chat/__tests__/ToolApproval.test.tsx`:**
+
 - No structural changes needed — ToolApproval component API is unchanged
 - May add tests verifying it works correctly with `isActive={true}` (already covered)
 
 **`apps/client/src/layers/features/chat/__tests__/ChatPanel.test.tsx` (or ChatInputContainer tests):**
+
 - New tests for mode switching behavior
 - New tests for draft preservation/restoration
 
 **`apps/client/src/layers/shared/model/__tests__/use-interactive-shortcuts.test.ts`:**
+
 - Update tests for relaxed textarea arrow key guard
 
 ### New Test Cases
 
 #### ChatInputContainer Mode Switching
+
 ```
 - renders normal mode content when no activeInteraction
 - renders ToolApproval when activeInteraction.interactiveType is 'approval'
@@ -668,6 +675,7 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 ```
 
 #### CompactPendingRow
+
 ```
 - renders "Waiting for approval..." text for approval type
 - renders "Answering questions..." text for question type
@@ -676,6 +684,7 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 ```
 
 #### AssistantMessageContent Placeholder
+
 ```
 - renders CompactPendingRow when tool call matches inputZoneToolCallId
 - renders full ToolApproval when tool call does NOT match inputZoneToolCallId
@@ -685,6 +694,7 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 ```
 
 #### QuestionPrompt Back/Next Buttons
+
 ```
 - renders Back button disabled on first question
 - renders Next button on non-last questions
@@ -697,6 +707,7 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 ```
 
 #### Keyboard Shortcuts in Input Zone Context
+
 ```
 - ArrowUp navigates options even when textarea is focused
 - ArrowDown navigates options even when textarea is focused
@@ -783,14 +794,14 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 
 ## 10. Risk Assessment
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Draft text lost during rapid interaction resolution | Low | Medium | `interactiveDraftRef` is set before mode switch; restore is triggered by `activeInteraction` becoming null. Test this edge case explicitly. |
-| Keyboard shortcut conflicts between input zone and global listeners | Medium | Medium | The `useInteractiveShortcuts` hook already guards on `activeInteraction` being set. When in interactive mode, shortcuts route to the card; when in normal mode, they don't fire. Ensure no double-handling. |
-| AnimatePresence `mode="wait"` causes flash of empty content | Low | Low | The `"wait"` mode ensures the exiting content finishes before entering content starts. With 150ms transitions, this is a very brief crossfade. Test visually. |
-| QuestionPrompt Back/Next changes break multi-question imperative handle | Medium | Medium | `navigateQuestion` already exists and works. The Tab strip is replaced visually but the underlying Tabs component can still drive content switching via controlled `value` prop. |
-| `ToolCallState` type widening causes type errors downstream | Low | Low | `ToolCallState` is already the type of the array items. Widening the return from a narrow pick to the full type only adds optional fields. |
-| ToolApproval countdown timer resets on re-mount in input zone | Medium | High | The countdown uses `useEffect` with `timeoutMs` as dependency and computes `expiresAt = Date.now() + timeoutMs`. If ToolApproval unmounts from stream and remounts in input zone, the timer restarts. Mitigation: track `expiresAt` at the parent level (ChatInputContainer or ChatPanel) and pass it down instead of `timeoutMs`. Alternatively, ensure ToolApproval only ever mounts once (in the input zone) and the stream shows the placeholder from the start. |
+| Risk                                                                    | Likelihood | Impact | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Draft text lost during rapid interaction resolution                     | Low        | Medium | `interactiveDraftRef` is set before mode switch; restore is triggered by `activeInteraction` becoming null. Test this edge case explicitly.                                                                                                                                                                                                                                                                                                                          |
+| Keyboard shortcut conflicts between input zone and global listeners     | Medium     | Medium | The `useInteractiveShortcuts` hook already guards on `activeInteraction` being set. When in interactive mode, shortcuts route to the card; when in normal mode, they don't fire. Ensure no double-handling.                                                                                                                                                                                                                                                          |
+| AnimatePresence `mode="wait"` causes flash of empty content             | Low        | Low    | The `"wait"` mode ensures the exiting content finishes before entering content starts. With 150ms transitions, this is a very brief crossfade. Test visually.                                                                                                                                                                                                                                                                                                        |
+| QuestionPrompt Back/Next changes break multi-question imperative handle | Medium     | Medium | `navigateQuestion` already exists and works. The Tab strip is replaced visually but the underlying Tabs component can still drive content switching via controlled `value` prop.                                                                                                                                                                                                                                                                                     |
+| `ToolCallState` type widening causes type errors downstream             | Low        | Low    | `ToolCallState` is already the type of the array items. Widening the return from a narrow pick to the full type only adds optional fields.                                                                                                                                                                                                                                                                                                                           |
+| ToolApproval countdown timer resets on re-mount in input zone           | Medium     | High   | The countdown uses `useEffect` with `timeoutMs` as dependency and computes `expiresAt = Date.now() + timeoutMs`. If ToolApproval unmounts from stream and remounts in input zone, the timer restarts. Mitigation: track `expiresAt` at the parent level (ChatInputContainer or ChatPanel) and pass it down instead of `timeoutMs`. Alternatively, ensure ToolApproval only ever mounts once (in the input zone) and the stream shows the placeholder from the start. |
 
 ---
 
@@ -816,14 +827,14 @@ ChatPanel could look up the full tool call from messages using `activeInteractio
 
 ### Visual States
 
-| State | Input Zone | Message Stream |
-|---|---|---|
-| No interaction | Normal mode (textarea, chips, queue, status) | No interactive cards |
-| Pending approval | ToolApproval card (crossfaded in) | CompactPendingRow ("Waiting for approval...") |
-| Pending question | QuestionPrompt card (crossfaded in) | CompactPendingRow ("Answering questions...") |
-| Resolved | Normal mode (crossfaded back, draft restored) | CompactResultRow (approved/denied or answered) |
-| History replay | Normal mode (no interaction) | CompactResultRow (existing behavior) |
-| Multiple pending | Shows oldest pending | CompactPendingRow for active; dimmed full card for others |
+| State            | Input Zone                                    | Message Stream                                            |
+| ---------------- | --------------------------------------------- | --------------------------------------------------------- |
+| No interaction   | Normal mode (textarea, chips, queue, status)  | No interactive cards                                      |
+| Pending approval | ToolApproval card (crossfaded in)             | CompactPendingRow ("Waiting for approval...")             |
+| Pending question | QuestionPrompt card (crossfaded in)           | CompactPendingRow ("Answering questions...")              |
+| Resolved         | Normal mode (crossfaded back, draft restored) | CompactResultRow (approved/denied or answered)            |
+| History replay   | Normal mode (no interaction)                  | CompactResultRow (existing behavior)                      |
+| Multiple pending | Shows oldest pending                          | CompactPendingRow for active; dimmed full card for others |
 
 ### Crossfade Animation Spec
 

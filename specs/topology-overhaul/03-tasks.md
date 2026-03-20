@@ -42,10 +42,12 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 4. Verify binding edge validation already handles missing source nodes (it does)
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts`
 - `apps/client/src/layers/features/mesh/lib/__tests__/build-topology-elements.test.ts`
 
 **Acceptance Criteria**:
+
 - [ ] CCA adapter (type `'claude-code'`) is never rendered as a graph node
 - [ ] Binding edges referencing CCA adapters are automatically excluded
 - [ ] External adapters (telegram, webhook, plugin) still render as nodes
@@ -75,11 +77,13 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 4. Update TopologyGraph integration tests for the new behavior
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts`
 - `apps/client/src/layers/features/mesh/lib/__tests__/build-topology-elements.test.ts`
 - `apps/client/src/layers/features/mesh/ui/__tests__/TopologyGraph.test.tsx`
 
 **Acceptance Criteria**:
+
 - [ ] Single-namespace topologies show a namespace container group node
 - [ ] Agent nodes in single-namespace topologies have `parentId` set
 - [ ] Multi-namespace behavior is unchanged
@@ -115,6 +119,7 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 7. Wire `onGhostClick` callback in `TopologyGraph.tsx`
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/ui/AdapterNode.tsx`
 - `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts`
 - `apps/client/src/layers/features/mesh/ui/use-topology-handlers.ts`
@@ -123,6 +128,7 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 - `apps/client/src/layers/features/mesh/ui/__tests__/AdapterNode.test.tsx`
 
 **Acceptance Criteria**:
+
 - [ ] Ghost node appears when relay enabled and no external adapters exist
 - [ ] Ghost node appears when only CCA adapters exist
 - [ ] Ghost node does NOT appear when external adapters exist
@@ -160,9 +166,11 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 3. Update MiniMap maskColor and positioning
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx`
 
 **Acceptance Criteria**:
+
 - [ ] Background dots use 16px gap matching 8pt grid
 - [ ] Background dot color uses theme-aware value
 - [ ] MiniMap shows namespace-colored agent nodes
@@ -196,12 +204,14 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 4. Pass `adapter.config.label` in `buildTopologyElements`
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/ui/AdapterNode.tsx`
 - `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts`
 - `apps/client/src/layers/features/mesh/ui/__tests__/AdapterNode.test.tsx`
 - `apps/client/src/layers/features/mesh/lib/__tests__/build-topology-elements.test.ts`
 
 **Acceptance Criteria**:
+
 - [ ] Labeled adapters show label primary, name secondary
 - [ ] Unlabeled adapters show name primary, no secondary
 - [ ] Compact pills show label (or name)
@@ -234,12 +244,14 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 5. Pass filter fields in `buildTopologyElements`
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/ui/BindingEdge.tsx`
 - `apps/client/src/layers/features/mesh/lib/build-topology-elements.ts`
 - `apps/client/src/layers/features/mesh/ui/__tests__/BindingEdge.test.tsx`
 - `apps/client/src/layers/features/mesh/lib/__tests__/build-topology-elements.test.ts`
 
 **Acceptance Criteria**:
+
 - [ ] chatId badge renders when present and visible
 - [ ] channelType badge renders when present and visible
 - [ ] Both badges render together when both present
@@ -281,9 +293,11 @@ The underlying architecture (React Flow, ELK.js layout, LOD bands, `buildTopolog
 8. Run `pnpm typecheck` to verify no TypeScript errors
 
 **Files Changed**:
+
 - `apps/client/src/layers/features/mesh/ui/__tests__/TopologyGraph.test.tsx`
 
 **Acceptance Criteria**:
+
 - [ ] All CCA filtering integration tests pass
 - [ ] All ghost adapter integration tests pass
 - [ ] Updated single-namespace tests pass

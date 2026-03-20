@@ -1,5 +1,12 @@
 /** Page identifiers for the dev playground. */
-export type Page = 'overview' | 'tokens' | 'forms' | 'components' | 'chat' | 'features' | 'simulator';
+export type Page =
+  | 'overview'
+  | 'tokens'
+  | 'forms'
+  | 'components'
+  | 'chat'
+  | 'features'
+  | 'simulator';
 
 /** A single searchable/navigable section in the playground. */
 export interface PlaygroundSection {

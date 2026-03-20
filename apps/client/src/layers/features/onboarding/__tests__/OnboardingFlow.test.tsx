@@ -47,9 +47,7 @@ vi.mock('../model/use-onboarding', () => ({
 // Mock useMeshAgentPaths — default: returns one agent
 const mockAgentPaths = vi.fn().mockReturnValue({
   data: {
-    agents: [
-      { id: 'agent-1', name: 'Test Agent', projectPath: '/test/project', icon: '🤖' },
-    ],
+    agents: [{ id: 'agent-1', name: 'Test Agent', projectPath: '/test/project', icon: '🤖' }],
   },
   isLoading: false,
 });
@@ -104,9 +102,7 @@ describe('OnboardingFlow', () => {
     // Reset to default: one agent
     mockAgentPaths.mockReturnValue({
       data: {
-        agents: [
-          { id: 'agent-1', name: 'Test Agent', projectPath: '/test/project', icon: '🤖' },
-        ],
+        agents: [{ id: 'agent-1', name: 'Test Agent', projectPath: '/test/project', icon: '🤖' }],
       },
       isLoading: false,
     });

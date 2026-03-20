@@ -248,15 +248,17 @@ export class SubscriptionRegistry {
       }
 
       // Deliver asynchronously to avoid blocking the subscribe() caller
-      Promise.resolve().then(async () => {
-        for (const { envelope } of messages) {
-          try {
-            await handler(envelope);
-          } catch {
-            // Handler errors during drain are non-fatal
+      Promise.resolve()
+        .then(async () => {
+          for (const { envelope } of messages) {
+            try {
+              await handler(envelope);
+            } catch {
+              // Handler errors during drain are non-fatal
+            }
           }
-        }
-      }).catch(() => undefined);
+        })
+        .catch(() => undefined);
     }
   }
 

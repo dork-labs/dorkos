@@ -182,7 +182,7 @@ describe('cleanupNamespaceRules', () => {
 
     expect(relay.removeAccessRule).toHaveBeenCalledWith(
       'relay.agent.test-ns.*',
-      'relay.agent.test-ns.*',
+      'relay.agent.test-ns.*'
     );
   });
 
@@ -192,10 +192,7 @@ describe('cleanupNamespaceRules', () => {
 
     bridge.cleanupNamespaceRules('test-ns');
 
-    expect(relay.removeAccessRule).toHaveBeenCalledWith(
-      'relay.agent.test-ns.*',
-      'relay.agent.>',
-    );
+    expect(relay.removeAccessRule).toHaveBeenCalledWith('relay.agent.test-ns.*', 'relay.agent.>');
   });
 
   it('is a no-op when RelayCore is not provided', () => {
@@ -231,7 +228,7 @@ describe('lifecycle signals — registerAgent', () => {
           agentName: 'test-agent',
           event: 'registered',
         }),
-      }),
+      })
     );
   });
 });
@@ -256,7 +253,7 @@ describe('lifecycle signals — unregisterAgent', () => {
           agentName: 'test-agent',
           event: 'unregistered',
         }),
-      }),
+      })
     );
   });
 });
@@ -269,11 +266,9 @@ describe('lifecycle signals — no signalEmitter', () => {
     const manifest = makeManifest({ id: '01JKABC00001' });
 
     // Both operations must complete without throwing
-    await expect(
-      bridge.registerAgent(manifest, '/projects/my-agent', 'my-ns'),
-    ).resolves.toBe('relay.agent.my-ns.01JKABC00001');
-    await expect(
-      bridge.unregisterAgent('relay.agent.my-ns.01JKABC00001'),
-    ).resolves.toBeUndefined();
+    await expect(bridge.registerAgent(manifest, '/projects/my-agent', 'my-ns')).resolves.toBe(
+      'relay.agent.my-ns.01JKABC00001'
+    );
+    await expect(bridge.unregisterAgent('relay.agent.my-ns.01JKABC00001')).resolves.toBeUndefined();
   });
 });

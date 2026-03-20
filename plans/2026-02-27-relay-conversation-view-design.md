@@ -11,6 +11,7 @@ title: Relay Conversation View Design
 ## Problem
 
 The Relay panel shows raw message data that is meaningless to users:
+
 - Subject lines like `relay.human.console.ff5ab4df-8b70-4573-a0cf-e0243bce1e66`
 - 8 individual SSE response chunks displayed as separate rows
 - Payload shows "undefined" (IndexedMessage has no payload)
@@ -33,7 +34,7 @@ Returns messages grouped into request-response exchanges.
 
 ```typescript
 interface RelayConversation {
-  id: string;                    // The request message ID
+  id: string; // The request message ID
   direction: 'outbound' | 'inbound';
   status: 'delivered' | 'failed' | 'pending';
 
@@ -42,8 +43,8 @@ interface RelayConversation {
   to: { label: string; raw: string };
 
   // Content
-  preview: string;               // First 120 chars of payload.content
-  payload: unknown;              // Full payload (from Maildir read)
+  preview: string; // First 120 chars of payload.content
+  payload: unknown; // Full payload (from Maildir read)
 
   // Response grouping
   responseCount: number;
@@ -74,12 +75,12 @@ interface RelayConversation {
 
 ### Subject → Human Label Resolution
 
-| Subject Pattern | Label |
-|----------------|-------|
-| `relay.human.console.*` | "You" |
+| Subject Pattern           | Label                                                |
+| ------------------------- | ---------------------------------------------------- |
+| `relay.human.console.*`   | "You"                                                |
 | `relay.agent.{sessionId}` | Agent name from manifest, fallback: `Agent (a6010b)` |
-| `relay.system.pulse.*` | "Pulse Scheduler" |
-| `relay.system.console` | "System Console" |
+| `relay.system.pulse.*`    | "Pulse Scheduler"                                    |
+| `relay.system.console`    | "System Console"                                     |
 
 Resolution happens server-side to avoid N+1 client requests.
 
@@ -150,6 +151,7 @@ if (this.traceStore) {
 ```
 
 Three disclosure levels:
+
 1. **Collapsed**: Only human-readable info
 2. **First expand**: Payload + delivery summary
 3. **Accordions**: Technical Details, Trace Timeline (for power users)
@@ -179,6 +181,7 @@ Add human-readable names above raw subjects:
 ### Filters
 
 Rename to human-friendly labels:
+
 - Source: "All", "Chat messages", "Pulse jobs", "System"
 - Status: "All", "Delivered", "Failed", "Pending"
 - Search: "Filter by agent or message..."
@@ -199,15 +202,15 @@ Rename to human-friendly labels:
 
 ## Change Summary
 
-| Layer | Change |
-|-------|--------|
-| Server: RelayCore | Wire trace store into publish() and deliverToAdapter() |
-| Server: New endpoint | GET /relay/conversations — grouped, resolved, with payloads |
-| Server: Existing endpoint | GET /relay/messages?include=payload |
-| Server: Agent resolution | Parse subjects → resolve names via session/agent identity |
-| Client: ActivityFeed | Swap MessageRow for ConversationRow |
-| Client: ConversationRow | Human labels, preview, expandable technical detail |
-| Client: DeadLetterSection | Message preview + resolved agent name |
-| Client: EndpointList | Human-readable names above raw subjects |
-| Client: Filters | Rename to friendly labels |
-| Client: AdapterCard | "Handles: ..." description |
+| Layer                     | Change                                                      |
+| ------------------------- | ----------------------------------------------------------- |
+| Server: RelayCore         | Wire trace store into publish() and deliverToAdapter()      |
+| Server: New endpoint      | GET /relay/conversations — grouped, resolved, with payloads |
+| Server: Existing endpoint | GET /relay/messages?include=payload                         |
+| Server: Agent resolution  | Parse subjects → resolve names via session/agent identity   |
+| Client: ActivityFeed      | Swap MessageRow for ConversationRow                         |
+| Client: ConversationRow   | Human labels, preview, expandable technical detail          |
+| Client: DeadLetterSection | Message preview + resolved agent name                       |
+| Client: EndpointList      | Human-readable names above raw subjects                     |
+| Client: Filters           | Rename to friendly labels                                   |
+| Client: AdapterCard       | "Handles: ..." description                                  |

@@ -14,10 +14,12 @@ lastDecompose: 2026-02-21
 Add a generic `systemPromptAppend?: string` option to `AgentManager.sendMessage()` and the `SchedulerAgentManager` interface so any caller can inject additional system prompt context.
 
 **Files:**
+
 - `apps/server/src/services/scheduler-service.ts` — Add `systemPromptAppend?: string` to `SchedulerAgentManager.sendMessage()` opts type
 - `apps/server/src/services/agent-manager.ts` — Update `sendMessage()` signature and merge caller append after base append
 
 **Acceptance criteria:**
+
 - `SchedulerAgentManager` interface opts include `systemPromptAppend?: string`
 - `AgentManager.sendMessage()` accepts `systemPromptAppend` in opts
 - When `systemPromptAppend` is provided, it is concatenated after the base `buildSystemPromptAppend()` output with `\n\n` separator
@@ -29,10 +31,12 @@ Add a generic `systemPromptAppend?: string` option to `AgentManager.sendMessage(
 Wire `buildPulseAppend()` into `SchedulerService.executeRun()` so scheduled agents receive unattended runtime context. Update the scheduler-service test mock.
 
 **Files:**
+
 - `apps/server/src/services/scheduler-service.ts` — In `executeRun()`, call `buildPulseAppend(schedule, run)` and pass result as `systemPromptAppend` opt to `sendMessage()`
 - `apps/server/src/services/__tests__/scheduler-service.test.ts` — Update mock `sendMessage` to accept and verify the new `systemPromptAppend` opt
 
 **Acceptance criteria:**
+
 - `executeRun()` calls `buildPulseAppend(schedule, run)` before `sendMessage()`
 - The result is passed as `systemPromptAppend` in `sendMessage()` opts
 - Test mock updated to accept 3-arg opts with `systemPromptAppend`
@@ -48,9 +52,11 @@ Wire `buildPulseAppend()` into `SchedulerService.executeRun()` so scheduled agen
 Add a Pencil icon button to each schedule row in PulsePanel that opens CreateScheduleDialog in edit mode.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/ui/PulsePanel.tsx` — Import Pencil icon, add edit button
 
 **Implementation details:**
+
 - Import `Pencil` from `lucide-react`
 - Add button in the non-`pending_approval` action div, between "Run Now" and the toggle switch
 - Button uses `e.stopPropagation()` to prevent row expand/collapse
@@ -60,6 +66,7 @@ Add a Pencil icon button to each schedule row in PulsePanel that opens CreateSch
 - Icon: `<Pencil className="size-3.5" />`
 
 **Acceptance criteria:**
+
 - Each non-pending schedule row has a pencil edit button
 - Clicking edit button opens CreateScheduleDialog in edit mode with form pre-filled
 - Clicking edit button does NOT expand/collapse the row
@@ -74,11 +81,13 @@ Add a Pencil icon button to each schedule row in PulsePanel that opens CreateSch
 Extend `mcp-tool-server.test.ts` with handler factory tests for all 5 Pulse handlers and the `requirePulse()` guard.
 
 **Files:**
+
 - `apps/server/src/services/__tests__/mcp-tool-server.test.ts` — New imports, mock helpers, and test suites
 
 **Implementation details:**
 
 Add imports:
+
 ```typescript
 import {
   createListSchedulesHandler,
@@ -90,6 +99,7 @@ import {
 ```
 
 Add mock helpers:
+
 ```typescript
 function makeMockPulseStore(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   return {
@@ -116,36 +126,43 @@ function makePulseDeps(
 Test suites for each handler:
 
 **`createListSchedulesHandler`:**
+
 - Returns all schedules when Pulse enabled
 - Filters to `enabled_only` when flag set
 - Returns error when `pulseStore` undefined (requirePulse guard)
 - Handles empty schedule list
 
 **`createCreateScheduleHandler`:**
+
 - Creates schedule and sets `pending_approval` status
 - Returns created schedule with approval note
 - Returns error when Pulse disabled
 
 **`createUpdateScheduleHandler`:**
+
 - Updates existing schedule
 - Returns error for non-existent ID (store returns null)
 - Handles `permissionMode` string conversion
 - Returns error when Pulse disabled
 
 **`createDeleteScheduleHandler`:**
+
 - Deletes existing schedule, returns success
 - Returns error for non-existent ID (store returns false)
 - Returns error when Pulse disabled
 
 **`createGetRunHistoryHandler`:**
+
 - Returns runs with default limit (20)
 - Respects custom limit parameter
 - Returns error when Pulse disabled
 
 **`requirePulse()` guard** (tested implicitly across all handlers):
+
 - Every handler tested with `makeMockDeps()` (no `pulseStore`) returns `isError: true`, error contains "not enabled"
 
 **Acceptance criteria:**
+
 - ~20 test cases covering all 5 handler factories
 - Every handler has at least one happy-path and one error-path test
 - requirePulse guard tested for every handler (error when pulseStore undefined)
@@ -160,9 +177,11 @@ Test suites for each handler:
 Add `createMockSchedule()` and `createMockRun()` factory functions to the shared test-utils package.
 
 **Files:**
+
 - `packages/test-utils/src/mock-factories.ts` — Add two new factory functions
 
 **Implementation:**
+
 ```typescript
 export function createMockSchedule(overrides: Partial<PulseSchedule> = {}): PulseSchedule {
   return {
@@ -200,6 +219,7 @@ export function createMockRun(overrides: Partial<PulseRun> = {}): PulseRun {
 ```
 
 **Acceptance criteria:**
+
 - Both factories exported from `packages/test-utils/src/mock-factories.ts`
 - Import types `PulseSchedule` and `PulseRun` from `@dorkos/shared/types`
 - Factories produce valid objects matching Zod schemas
@@ -210,9 +230,11 @@ export function createMockRun(overrides: Partial<PulseRun> = {}): PulseRun {
 Write tests for the 5 schedule-related entity hooks following established patterns from `use-sessions.test.tsx`.
 
 **Files:**
+
 - `apps/client/src/layers/entities/pulse/__tests__/use-schedules.test.ts` (new file)
 
 **Test pattern:**
+
 ```typescript
 function createWrapper() {
   const queryClient = createTestQueryClient();
@@ -227,6 +249,7 @@ function createWrapper() {
 ```
 
 **Test cases:**
+
 - `useSchedules`: Fetches schedules via transport, handles loading/error states
 - `useCreateSchedule`: Calls `transport.createSchedule()`, invalidates schedules query key
 - `useUpdateSchedule`: Calls `transport.updateSchedule(id, input)`, invalidates schedules query key
@@ -234,6 +257,7 @@ function createWrapper() {
 - `useTriggerSchedule`: Calls `transport.triggerSchedule(id)`, invalidates runs query key (not schedules)
 
 **Acceptance criteria:**
+
 - Each hook has at least one test verifying correct transport call
 - Mutation hooks verify query invalidation
 - Each test creates its own wrapper (no shared QueryClient)
@@ -244,14 +268,17 @@ function createWrapper() {
 Write tests for the 3 run-related entity hooks.
 
 **Files:**
+
 - `apps/client/src/layers/entities/pulse/__tests__/use-runs.test.ts` (new file)
 
 **Test cases:**
+
 - `useRuns`: Fetches runs via transport, passes opts through, 10s refetch interval configured
 - `useRun`: Fetches single run, disabled when `id` is null
 - `useCancelRun`: Calls `transport.cancelRun(id)`, invalidates runs query key
 
 **Acceptance criteria:**
+
 - Each hook has at least one test verifying correct transport call
 - `useRuns` verifies refetch interval configuration
 - `useRun` verifies disabled state when id is null
@@ -262,9 +289,11 @@ Write tests for the 3 run-related entity hooks.
 Write component tests for PulsePanel following established patterns.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/__tests__/PulsePanel.test.tsx` (new file)
 
 **Mock requirements:**
+
 ```typescript
 vi.mock('motion/react', () => ({
   motion: new Proxy({}, { get: (_, prop) => forwardRef(...) }),
@@ -273,6 +302,7 @@ vi.mock('motion/react', () => ({
 ```
 
 **Test cases:**
+
 - Renders schedule list when data is available
 - Shows loading state initially
 - "New Schedule" button opens create dialog
@@ -284,6 +314,7 @@ vi.mock('motion/react', () => ({
 - Clicking schedule row expands/collapses run history
 
 **Acceptance criteria:**
+
 - Components rendered with full provider stack (QueryClient + Transport)
 - All 9 test cases pass
 - Tests pass with `npx vitest run apps/client/src/layers/features/pulse/__tests__/PulsePanel.test.tsx`
@@ -293,10 +324,12 @@ vi.mock('motion/react', () => ({
 Write component tests for the remaining two UI components.
 
 **Files:**
+
 - `apps/client/src/layers/features/pulse/__tests__/CreateScheduleDialog.test.tsx` (new file)
 - `apps/client/src/layers/features/pulse/__tests__/RunHistoryPanel.test.tsx` (new file)
 
 **CreateScheduleDialog test cases:**
+
 - Renders "New Schedule" title in create mode
 - Renders "Edit Schedule" title when `editSchedule` is provided
 - Pre-fills form fields in edit mode
@@ -306,6 +339,7 @@ Write component tests for the remaining two UI components.
 - Permission mode warning for `bypassPermissions`
 
 **RunHistoryPanel test cases:**
+
 - Renders run list with status indicators
 - Shows duration for completed runs
 - Cancel button visible only for running jobs
@@ -313,6 +347,7 @@ Write component tests for the remaining two UI components.
 - Shows loading state
 
 **Acceptance criteria:**
+
 - All test cases pass
 - Components rendered with full provider stack
 - Tests pass with vitest

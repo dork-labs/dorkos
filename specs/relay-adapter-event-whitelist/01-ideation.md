@@ -50,6 +50,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `packages/relay/src/lib/payload-utils.ts` — Shared event detection and payload extraction utilities
 - `packages/relay/src/adapters/slack/outbound.ts` — Slack message delivery (streaming via `chat.update`, throttled)
 - `packages/relay/src/adapters/telegram/outbound.ts` — Telegram message delivery (buffer-and-flush)
@@ -58,12 +59,14 @@ status: ideation
 - `packages/shared/src/schemas.ts` — StreamEventType union (29 types)
 
 **Shared dependencies:**
+
 - `packages/relay/src/types.ts` — `AdapterOutboundCallbacks`, `DeliveryResult`, `RelayEnvelope` interfaces
 - `packages/relay/src/adapter-delivery.ts` — Delivery orchestration with timeout wrapping
 - `@slack/bolt` — Slack SDK (Socket Mode + Web API)
 - `grammy` — Telegram Bot SDK
 
 **Data flow:**
+
 ```
 Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
   → relay publish → adapter-delivery.ts → adapter.deliver()
@@ -76,10 +79,12 @@ Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
 ```
 
 **Feature flags/config:**
+
 - Slack adapter: `streaming: boolean` config field (existing)
 - Telegram adapter: no streaming config (will need one for sendMessageDraft)
 
 **Potential blast radius:**
+
 - Direct: `payload-utils.ts`, `slack/outbound.ts`, `telegram/outbound.ts`, `telegram-adapter.ts` (buffer cleanup)
 - Indirect: `slack/slack-adapter.ts` (if streaming API changes thread model), `adapter-delivery.ts` (timeout discrepancy)
 - Tests: `payload-utils.test.ts`, `slack/outbound.test.ts`, `telegram/outbound.test.ts`
@@ -113,6 +118,7 @@ Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
 ### Potential solutions:
 
 **1. Delete SILENT_EVENT_TYPES, silent drop in fallthrough**
+
 - Description: Remove the SILENT_EVENT_TYPES set. After handling text_delta/error/done, return `{ success: true }` for all other event types.
 - Pros: Minimal change (2 lines per adapter + delete export), forward-compatible, no maintenance burden
 - Cons: Less self-documenting (whitelist is implicit in the handler chain)
@@ -120,6 +126,7 @@ Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
 - Maintenance: None
 
 **2. Replace with HANDLED_STREAM_EVENT_TYPES allowlist**
+
 - Description: Rename to an explicit allowlist containing only `text_delta`, `done`, `error`. Check `!HANDLED.has(type)` to drop.
 - Pros: Self-documenting, explicit about what's forwarded
 - Cons: Still requires maintenance when adding new forwardable events (though this is rare)
@@ -127,6 +134,7 @@ Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
 - Maintenance: Low
 
 **3. Slack native streaming API (chat.startStream/appendStream/stopStream)**
+
 - Description: Replace `chat.update` edit-in-place with native streaming. Released Oct 2025.
 - Pros: Better rate limits (chat.update limited to ~50 edits/min), smoother UX (append-only vs full-replace), purpose-built for AI streaming
 - Cons: Requires streaming in threads (not top-level channel messages), may need additional OAuth scope verification, newer API (less battle-tested)
@@ -134,6 +142,7 @@ Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
 - Maintenance: Low
 
 **4. Telegram sendMessageDraft (Bot API 9.5)**
+
 - Description: Use `sendMessageDraft` for DM streaming instead of buffer-and-flush. Available to all bots since March 1, 2026.
 - Pros: Native ChatGPT-style streaming UX in DMs, real-time response visibility
 - Cons: Only works in DMs (groups still need buffer-and-flush), needs throttling (4-5 calls/sec), grammY support needs verification
@@ -141,6 +150,7 @@ Claude Agent SDK → sdk-event-mapper.ts → SSE StreamEvents
 - Maintenance: Low
 
 **5. Telegram buffer TTL reaping**
+
 - Description: Add TTL cleanup to `responseBuffers` Map, matching Slack's orphan stream reaping pattern.
 - Pros: Prevents unbounded memory growth from dead chats, follows established pattern
 - Cons: None significant
@@ -153,8 +163,8 @@ All five. The whitelist fix (solution 1) is the critical bug fix that should be 
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | How to handle unknown/future event types | Silent drop — delete SILENT_EVENT_TYPES, return success for all unrecognized types | Forward-compatible, fail-closed. No maintenance when SDK adds new events. |
-| 2 | Scope of streaming upgrades | Full overhaul — event filtering + Slack streaming API + Telegram sendMessageDraft | Both platform APIs are now stable. Streaming is optional (on by default). Note: Slack streaming API requires threads. |
-| 3 | Telegram buffer memory leak | Add TTL reaping matching Slack's pattern | Small change, prevents unbounded memory growth. Already proven in Slack adapter. |
+| #   | Decision                                 | Choice                                                                             | Rationale                                                                                                             |
+| --- | ---------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1   | How to handle unknown/future event types | Silent drop — delete SILENT_EVENT_TYPES, return success for all unrecognized types | Forward-compatible, fail-closed. No maintenance when SDK adds new events.                                             |
+| 2   | Scope of streaming upgrades              | Full overhaul — event filtering + Slack streaming API + Telegram sendMessageDraft  | Both platform APIs are now stable. Streaming is optional (on by default). Note: Slack streaming API requires threads. |
+| 3   | Telegram buffer memory leak              | Add TTL reaping matching Slack's pattern                                           | Small change, prevents unbounded memory growth. Already proven in Slack adapter.                                      |

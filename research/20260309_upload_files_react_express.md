@@ -1,5 +1,5 @@
 ---
-title: "File Upload: React Drag-Drop + Express Multipart + Claude API Integration"
+title: 'File Upload: React Drag-Drop + Express Multipart + Claude API Integration'
 date: 2026-03-09
 type: implementation
 status: active
@@ -171,14 +171,20 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB per file
-    files: 10,                   // Max 10 files per request
+    files: 10, // Max 10 files per request
   },
   fileFilter: (req, file, cb) => {
     // Allowlist MIME types
     const allowed = [
-      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-      'application/pdf', 'text/plain', 'text/markdown',
-      'text/csv', 'application/json',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'application/pdf',
+      'text/plain',
+      'text/markdown',
+      'text/csv',
+      'application/json',
     ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
@@ -196,7 +202,7 @@ Route handler:
 router.post('/:id/uploads', upload.array('files', 10), async (req, res) => {
   const files = req.files as Express.Multer.File[];
   res.json({
-    uploads: files.map(f => ({
+    uploads: files.map((f) => ({
       originalName: f.originalname,
       savedPath: f.path,
       filename: f.filename,
@@ -209,11 +215,11 @@ router.post('/:id/uploads', upload.array('files', 10), async (req, res) => {
 
 #### busboy vs multer vs formidable
 
-| Library | Weekly Downloads | Maintenance | Ease | Best For |
-|---|---|---|---|---|
-| multer | ~9M/week | Active | High | Express + disk storage |
-| busboy | ~30M/week | Active | Low | Low-level streaming, any framework |
-| formidable | ~15M/week | Active | Medium | Full-featured, non-Express |
+| Library    | Weekly Downloads | Maintenance | Ease   | Best For                           |
+| ---------- | ---------------- | ----------- | ------ | ---------------------------------- |
+| multer     | ~9M/week         | Active      | High   | Express + disk storage             |
+| busboy     | ~30M/week        | Active      | Low    | Low-level streaming, any framework |
+| formidable | ~15M/week        | Active      | Medium | Full-featured, non-Express         |
 
 For DorkOS: **multer**. It's the least friction for an Express app that needs disk storage.
 
@@ -293,11 +299,11 @@ Claude Code's agent loop has built-in bash tools — it can `cat`, `read_file`, 
 
 ### 4. File Storage Location
 
-| Option | Path | Pros | Cons |
-|---|---|---|---|
-| `{cwd}/.dork/uploads/` | Per-project uploads | Files visible in project dir, agent can reference by relative path, consistent with `.dork/agent.json` pattern | Stays in project forever unless pruned |
-| `~/.dork/uploads/{session-id}/` | Global uploads | Single location, easy to clean by session | Path reference in message must be absolute |
-| `os.tmpdir()/{session-id}/` | OS temp | Auto-cleaned by OS | Not guaranteed to persist across server restart |
+| Option                          | Path                | Pros                                                                                                           | Cons                                            |
+| ------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `{cwd}/.dork/uploads/`          | Per-project uploads | Files visible in project dir, agent can reference by relative path, consistent with `.dork/agent.json` pattern | Stays in project forever unless pruned          |
+| `~/.dork/uploads/{session-id}/` | Global uploads      | Single location, easy to clean by session                                                                      | Path reference in message must be absolute      |
+| `os.tmpdir()/{session-id}/`     | OS temp             | Auto-cleaned by OS                                                                                             | Not guaranteed to persist across server restart |
 
 **Recommended:** `{cwd}/.dork/uploads/` — consistent with `.dork/` conventions in the codebase (see `lib/dork-home.ts` patterns), and the agent can use relative paths to reference files.
 
@@ -334,12 +340,12 @@ Add an `attachments?: Attachment[]` parameter to `sendMessage`. Requires changin
 
 ## Claude API File Handling Summary
 
-| Method | Supported Types | Encoding | Use Case |
-|---|---|---|---|
-| Base64 in content block | JPEG, PNG, GIF, WebP | base64 | Direct API calls, images |
-| URL reference | Any publicly accessible URL | None | Hosted images |
-| Files API (beta) | PDF, images, and others | Upload via API | Reusable files, multi-turn |
-| File path in message (Claude Code) | Any file Claude Code tools can read | None | Local agent sessions |
+| Method                             | Supported Types                     | Encoding       | Use Case                   |
+| ---------------------------------- | ----------------------------------- | -------------- | -------------------------- |
+| Base64 in content block            | JPEG, PNG, GIF, WebP                | base64         | Direct API calls, images   |
+| URL reference                      | Any publicly accessible URL         | None           | Hosted images              |
+| Files API (beta)                   | PDF, images, and others             | Upload via API | Reusable files, multi-turn |
+| File path in message (Claude Code) | Any file Claude Code tools can read | None           | Local agent sessions       |
 
 For DorkOS chat sessions (which use the Claude Code SDK), **file path in message text** is the correct approach. The agent's filesystem tools handle reading.
 
@@ -350,6 +356,7 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 **Description:** react-dropzone on the ChatInputContainer for drag-drop + a paperclip button for manual selection. Files are uploaded to `{cwd}/.dork/uploads/` via multer. Paths are injected as text into the message.
 
 **Pros:**
+
 - No change to Transport.sendMessage signature
 - Files live in the project directory — agent can access them naturally
 - No base64 overhead
@@ -358,6 +365,7 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 - Works for all file types Claude Code can read
 
 **Cons:**
+
 - No visual preview of file content in the chat UI (just a name chip)
 - Files persist in `.dork/uploads/` until manually cleaned
 
@@ -371,6 +379,7 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 **Pros:** Zero additional client dependency.
 
 **Cons:**
+
 - Significant boilerplate (drag counter, cross-browser issues)
 - Harder to maintain
 - react-dropzone is only ~10KB and actively maintained
@@ -383,10 +392,12 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 **Description:** Upload files to the Anthropic Files API, reference by `file_id` in a multimodal message content block.
 
 **Pros:**
+
 - Anthropic handles file storage
 - Files API supports PDFs and images with rich content blocks
 
 **Cons:**
+
 - Requires changing Transport.sendMessage to support content blocks (not just strings)
 - Requires Anthropic API key on the client or server
 - Files stored on Anthropic servers, not local — doesn't align with DorkOS's local-first philosophy
@@ -403,6 +414,7 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 **Pros:** Lower-level control, streaming writes.
 
 **Cons:**
+
 - More code, no practical benefit for local uploads (loopback speeds are fast)
 - multer already uses busboy internally
 
@@ -414,6 +426,7 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 **Recommended Approach:** react-dropzone + multer + path injection into message text
 
 **Rationale:**
+
 1. **Aligned with Claude Code's file-access model** — The agent already has bash tools to read files. Injecting a file path is the most natural integration.
 2. **Minimal interface surface** — Only adds one new Transport method (`uploadFiles`) and one new route (`POST /api/sessions/:id/uploads`). Doesn't touch the core `sendMessage` path.
 3. **Local-first** — Files stay in `{cwd}/.dork/uploads/` on the user's machine, consistent with DorkOS's data philosophy.
@@ -433,6 +446,7 @@ For DorkOS chat sessions (which use the Claude Code SDK), **file path in message
 9. In `handleSubmit`, prepend file paths to message content.
 
 **Caveats:**
+
 - The `noClick: true` on the dropzone means the button is the only way to open the file picker — which is correct UX.
 - The `cwd` for the upload path must be validated through `validateBoundary()` on the server to prevent path traversal.
 - For image files that users want Claude to visually analyze (not just read as text), the path reference works with Claude Code's built-in `view` tool for images. No base64 encoding needed.

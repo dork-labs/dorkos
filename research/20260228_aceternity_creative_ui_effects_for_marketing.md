@@ -1,5 +1,5 @@
 ---
-title: "Creative UI Effects Research: Aceternity UI and the Effect Ecosystem"
+title: 'Creative UI Effects Research: Aceternity UI and the Effect Ecosystem'
 date: 2026-02-28
 type: external-best-practices
 status: active
@@ -27,98 +27,99 @@ Aceternity UI and its peer libraries (Magic UI, Animata, Hover.dev) have establi
 
 **Background Atmospheric Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| Aurora | SVG/Canvas gradient animation with blur and hue rotation | Aceternity, Magic UI |
-| Noise/Grain Texture | SVG `<feTurbulence>` filter overlaid on gradients | CSS-Tricks, ibelick, shadcn |
-| Background Beams | Animated SVG path strokes fanning from a point | Aceternity |
-| Background Beams with Collision | Canvas-rendered beams that explode on contact | Aceternity |
-| Shooting Stars / Meteors | CSS `@keyframes` translateX+opacity on pseudo-elements | Aceternity, Magic UI |
-| Vortex | Canvas-rendered swirling wave pattern | Aceternity |
-| Wavy Background | CSS or Canvas sine-wave path animation | Aceternity |
-| Ripple Effect | Expanding circle pulse, CSS keyframes | Aceternity, Magic UI |
-| Animated Gradient | `background-position` animation over large gradient | Aceternity, Magic UI |
-| Spotlight / Radial Reveal | `radial-gradient` following `mousemove`, CSS mask | Aceternity |
-| Grid and Dot Backgrounds | Static SVG `pattern` element, optionally animated | Aceternity, shadcn |
-| Dotted Glow | CSS `box-shadow` + opacity keyframes on grid nodes | Aceternity |
-| Canvas Reveal Effect | Expanding dot grid on hover, Canvas 2D | Aceternity |
+| Effect                          | Technique                                                | Library                     |
+| ------------------------------- | -------------------------------------------------------- | --------------------------- |
+| Aurora                          | SVG/Canvas gradient animation with blur and hue rotation | Aceternity, Magic UI        |
+| Noise/Grain Texture             | SVG `<feTurbulence>` filter overlaid on gradients        | CSS-Tricks, ibelick, shadcn |
+| Background Beams                | Animated SVG path strokes fanning from a point           | Aceternity                  |
+| Background Beams with Collision | Canvas-rendered beams that explode on contact            | Aceternity                  |
+| Shooting Stars / Meteors        | CSS `@keyframes` translateX+opacity on pseudo-elements   | Aceternity, Magic UI        |
+| Vortex                          | Canvas-rendered swirling wave pattern                    | Aceternity                  |
+| Wavy Background                 | CSS or Canvas sine-wave path animation                   | Aceternity                  |
+| Ripple Effect                   | Expanding circle pulse, CSS keyframes                    | Aceternity, Magic UI        |
+| Animated Gradient               | `background-position` animation over large gradient      | Aceternity, Magic UI        |
+| Spotlight / Radial Reveal       | `radial-gradient` following `mousemove`, CSS mask        | Aceternity                  |
+| Grid and Dot Backgrounds        | Static SVG `pattern` element, optionally animated        | Aceternity, shadcn          |
+| Dotted Glow                     | CSS `box-shadow` + opacity keyframes on grid nodes       | Aceternity                  |
+| Canvas Reveal Effect            | Expanding dot grid on hover, Canvas 2D                   | Aceternity                  |
 
 **Text Animation Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| Typewriter | `setTimeout`-driven character append | Aceternity, Animata |
-| Encrypted / Scramble Text | Interval-driven random char substitution before reveal | Aceternity, Animata |
-| Text Generate Effect | Framer Motion `staggerChildren` opacity 0→1 per word | Aceternity |
-| Flip Words | Framer Motion `AnimatePresence` + `y` translate per word | Aceternity |
-| Hero Highlight | Radial gradient background clip on inline span | Aceternity |
-| Text Reveal Card | SVG mask driven by `mousemove` | Aceternity |
-| Gradient Text | `background: linear-gradient` + `background-clip: text` | Animata, Magic UI |
-| Glitch Text | CSS multi-layer `text-shadow` + offset keyframes | Animata |
-| Wave Reveal | `staggerChildren` with `y` + opacity | Animata |
-| Canvas Text | HTML Canvas with colored curves clipped to text shape | Aceternity |
+| Effect                    | Technique                                                | Library             |
+| ------------------------- | -------------------------------------------------------- | ------------------- |
+| Typewriter                | `setTimeout`-driven character append                     | Aceternity, Animata |
+| Encrypted / Scramble Text | Interval-driven random char substitution before reveal   | Aceternity, Animata |
+| Text Generate Effect      | Framer Motion `staggerChildren` opacity 0→1 per word     | Aceternity          |
+| Flip Words                | Framer Motion `AnimatePresence` + `y` translate per word | Aceternity          |
+| Hero Highlight            | Radial gradient background clip on inline span           | Aceternity          |
+| Text Reveal Card          | SVG mask driven by `mousemove`                           | Aceternity          |
+| Gradient Text             | `background: linear-gradient` + `background-clip: text`  | Animata, Magic UI   |
+| Glitch Text               | CSS multi-layer `text-shadow` + offset keyframes         | Animata             |
+| Wave Reveal               | `staggerChildren` with `y` + opacity                     | Animata             |
+| Canvas Text               | HTML Canvas with colored curves clipped to text shape    | Aceternity          |
 
 **Card and Surface Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| 3D Card Tilt | `perspective` + `rotateX`/`rotateY` driven by `mousemove` | Aceternity, Magic UI |
-| Card Spotlight | `radial-gradient` that follows cursor within card bounds | Aceternity |
-| Glare Card | Pseudo-element shine layer driven by `mousemove` | Aceternity (Linear-inspired) |
-| Evervault Card | Encrypted text + gradient on hover | Aceternity |
-| Focus Cards | Hover blurs siblings, sharpens hovered | Aceternity |
-| Canvas Reveal | Canvas dot grid revealed on hover | Aceternity |
-| Draggable Card | Tilt + boundary constraint physics | Aceternity |
-| Wobble Card | `translate` + `scale` on `mousemove` | Aceternity |
+| Effect         | Technique                                                 | Library                      |
+| -------------- | --------------------------------------------------------- | ---------------------------- |
+| 3D Card Tilt   | `perspective` + `rotateX`/`rotateY` driven by `mousemove` | Aceternity, Magic UI         |
+| Card Spotlight | `radial-gradient` that follows cursor within card bounds  | Aceternity                   |
+| Glare Card     | Pseudo-element shine layer driven by `mousemove`          | Aceternity (Linear-inspired) |
+| Evervault Card | Encrypted text + gradient on hover                        | Aceternity                   |
+| Focus Cards    | Hover blurs siblings, sharpens hovered                    | Aceternity                   |
+| Canvas Reveal  | Canvas dot grid revealed on hover                         | Aceternity                   |
+| Draggable Card | Tilt + boundary constraint physics                        | Aceternity                   |
+| Wobble Card    | `translate` + `scale` on `mousemove`                      | Aceternity                   |
 
 **Scroll and Parallax Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| Container Scroll Animation | `perspective` 3D rotation that reverses on scroll | Aceternity |
-| Hero Parallax | Multi-layer `translateY` at different rates via `useScroll` + `useTransform` | Aceternity |
-| Macbook Scroll | Image slides out of device frame as user scrolls | Aceternity |
-| Parallax Scroll | Two columns scroll in opposite directions | Aceternity |
-| Sticky Scroll Reveal | Left content sticky while right content scrolls through | Aceternity |
-| Timeline with Beam | Vertical timeline with scroll-activated beam progress | Aceternity |
-| ScrollTrigger Scrub | GSAP `scrub: true` ties animation progress to scroll position | GSAP (via @gsap/react) |
-| Lenis Smooth Scroll | Momentum-based scroll physics replacing native scroll | `lenis` npm |
+| Effect                     | Technique                                                                    | Library                |
+| -------------------------- | ---------------------------------------------------------------------------- | ---------------------- |
+| Container Scroll Animation | `perspective` 3D rotation that reverses on scroll                            | Aceternity             |
+| Hero Parallax              | Multi-layer `translateY` at different rates via `useScroll` + `useTransform` | Aceternity             |
+| Macbook Scroll             | Image slides out of device frame as user scrolls                             | Aceternity             |
+| Parallax Scroll            | Two columns scroll in opposite directions                                    | Aceternity             |
+| Sticky Scroll Reveal       | Left content sticky while right content scrolls through                      | Aceternity             |
+| Timeline with Beam         | Vertical timeline with scroll-activated beam progress                        | Aceternity             |
+| ScrollTrigger Scrub        | GSAP `scrub: true` ties animation progress to scroll position                | GSAP (via @gsap/react) |
+| Lenis Smooth Scroll        | Momentum-based scroll physics replacing native scroll                        | `lenis` npm            |
 
 **3D and WebGL Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| 3D Globe / GitHub Globe | Three.js sphere with custom shaders | Aceternity, Magic UI |
-| 3D Marquee | CSS `perspective` + `rotateX` on grid of cards | Aceternity |
-| 3D Pin | Gradient cone + floating card with Motion | Aceternity |
-| React Three Fiber (R3F) | Full WebGL scene in React | `@react-three/fiber` |
-| React Three Drei | Helpers (OrbitControls, Text, MeshReflector, etc.) | `@react-three/drei` |
-| Dither Shader | Fragment shader ordered dithering over live camera | Aceternity |
+| Effect                  | Technique                                          | Library              |
+| ----------------------- | -------------------------------------------------- | -------------------- |
+| 3D Globe / GitHub Globe | Three.js sphere with custom shaders                | Aceternity, Magic UI |
+| 3D Marquee              | CSS `perspective` + `rotateX` on grid of cards     | Aceternity           |
+| 3D Pin                  | Gradient cone + floating card with Motion          | Aceternity           |
+| React Three Fiber (R3F) | Full WebGL scene in React                          | `@react-three/fiber` |
+| React Three Drei        | Helpers (OrbitControls, Text, MeshReflector, etc.) | `@react-three/drei`  |
+| Dither Shader           | Fragment shader ordered dithering over live camera | Aceternity           |
 
 **Particle and Field Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| Sparkles | Canvas-rendered configurable sparkle bursts | Aceternity |
-| Shooting Stars | CSS pseudo-element animation | Aceternity |
-| tsParticles | JSON-configurable particle field (confetti, connections, repulse) | `@tsparticles/react` |
-| Orbit | CSS `@keyframes` circular motion | Magic UI |
-| Ripple | Expanding opacity rings | Magic UI |
+| Effect         | Technique                                                         | Library              |
+| -------------- | ----------------------------------------------------------------- | -------------------- |
+| Sparkles       | Canvas-rendered configurable sparkle bursts                       | Aceternity           |
+| Shooting Stars | CSS pseudo-element animation                                      | Aceternity           |
+| tsParticles    | JSON-configurable particle field (confetti, connections, repulse) | `@tsparticles/react` |
+| Orbit          | CSS `@keyframes` circular motion                                  | Magic UI             |
+| Ripple         | Expanding opacity rings                                           | Magic UI             |
 
 **Border and Glow Effects**
 
-| Effect | Technique | Library |
-|--------|-----------|---------|
-| Moving Border | Animated gradient along `border-image` | Aceternity |
-| Hover Border Gradient | Gradient border expands on hover | Aceternity |
-| Glowing Effect | Box-shadow blur adapts to container | Aceternity |
-| Shimmer Slide | Gradient sweep animation on button | Magic UI |
+| Effect                | Technique                              | Library    |
+| --------------------- | -------------------------------------- | ---------- |
+| Moving Border         | Animated gradient along `border-image` | Aceternity |
+| Hover Border Gradient | Gradient border expands on hover       | Aceternity |
+| Glowing Effect        | Box-shadow blur adapts to container    | Aceternity |
+| Shimmer Slide         | Gradient sweep animation on button     | Magic UI   |
 
 ---
 
 ### 2. Technology Stack Breakdown
 
 **Motion (formerly Framer Motion)** — npm `motion`
+
 - The dominant animation layer for Aceternity, Magic UI, and Animata
 - `useScroll` + `useTransform`: Scroll-linked parallax, value mapping
 - `useInView`: Trigger animations on viewport entry
@@ -129,6 +130,7 @@ Aceternity UI and its peer libraries (Magic UI, Animata, Hover.dev) have establi
 - 30M+ downloads/month; safe dependency for any React project
 
 **GSAP + ScrollTrigger** — npm `gsap`
+
 - Best for: Complex multi-step timelines, scrub-based scroll animations, SVG path drawing
 - `ScrollTrigger` with `scrub: true` ties animation progress 1:1 with scroll
 - `gsap.timeline()` chains multiple animations with precise offsets
@@ -136,6 +138,7 @@ Aceternity UI and its peer libraries (Magic UI, Animata, Hover.dev) have establi
 - Free for non-premium plugins; ScrollTrigger is free
 
 **CSS/SVG (zero-dependency)**
+
 - Film grain: SVG `<feTurbulence>` + `<feColorMatrix>` filter applied via `filter: url(#grain)` on a pseudo-element
 - Grainy gradients: Layer SVG noise over CSS gradient with `mix-blend-mode`
 - Spotlight: `radial-gradient` at `mousemove` coords via CSS custom properties
@@ -143,22 +146,26 @@ Aceternity UI and its peer libraries (Magic UI, Animata, Hover.dev) have establi
 - All these are implementable without any npm package
 
 **Lenis** — npm `lenis`
+
 - Replaces native scroll with smooth momentum scroll
 - Required for polished parallax — prevents jank when `useTransform` fights native scroll inertia
 - Works with Framer Motion via `autoRaf: false` flag
 - React wrapper: `lenis/react` with `ReactLenis` component + `useLenis` hook
 
 **tsParticles** — npm `@tsparticles/react` + `@tsparticles/slim`
+
 - JSON-driven particle engine: shapes, connections, repulse, orbits, confetti
 - Good for: ambient particle backgrounds, constellation effects
 - Heavy-ish; use `@tsparticles/slim` for smaller bundle
 
 **React Three Fiber / Drei** — npm `@react-three/fiber`, `@react-three/drei`
+
 - Full WebGL 3D scenes in React components
 - Steep learning curve; best used for one showpiece element (rotating globe, etc.)
 - `@react-three/postprocessing` adds bloom, depth-of-field, chromatic aberration
 
 **react-spring** — npm `react-spring`
+
 - Physics-based (spring interpolation, not keyframes)
 - Better than Framer Motion for drag-and-release, bouncy card physics
 - Used by Stripe, Notion, Framer in production
@@ -298,28 +305,28 @@ Aceternity UI and its peer libraries (Magic UI, Animata, Hover.dev) have establi
 
 **Communication-enhancing** (use these):
 
-| Effect | Communicative Function |
-|--------|----------------------|
-| Card Spotlight (radial cursor) | "This card is evidence / under examination" |
-| Scroll-scrubbed timeline beam | "Time is actually passing as you read" |
-| Midnight-to-dawn gradient | "This happened overnight, not during business hours" |
-| Scramble → reveal on CLI command | "This is real; it's decoding itself for you" |
-| Blur-in for "Ready." | "The system is resolving into focus; it's ready" |
-| Noise/grain texture | "This is warm and analog, not sterile SaaS" |
-| Text generate effect (word-by-word) | "This thesis is being composed deliberately" |
-| Activity feed slide-in (live) | "This is already running — not a demo" |
-| Period ripple after "Ready." | "Heartbeat — the system is alive and waiting" |
+| Effect                              | Communicative Function                               |
+| ----------------------------------- | ---------------------------------------------------- |
+| Card Spotlight (radial cursor)      | "This card is evidence / under examination"          |
+| Scroll-scrubbed timeline beam       | "Time is actually passing as you read"               |
+| Midnight-to-dawn gradient           | "This happened overnight, not during business hours" |
+| Scramble → reveal on CLI command    | "This is real; it's decoding itself for you"         |
+| Blur-in for "Ready."                | "The system is resolving into focus; it's ready"     |
+| Noise/grain texture                 | "This is warm and analog, not sterile SaaS"          |
+| Text generate effect (word-by-word) | "This thesis is being composed deliberately"         |
+| Activity feed slide-in (live)       | "This is already running — not a demo"               |
+| Period ripple after "Ready."        | "Heartbeat — the system is alive and waiting"        |
 
 **Decorative (avoid for DorkOS)**:
 
-| Effect | Why to avoid |
-|--------|-------------|
-| Aurora background | Too associated with cold neon / crypto / AI vaporware brands |
-| WebGL 3D globe | DorkOS is local-first; a globe implies cloud SaaS scale |
-| Shooting stars / meteor beams | No narrative meaning; pure decoration |
+| Effect                          | Why to avoid                                                        |
+| ------------------------------- | ------------------------------------------------------------------- |
+| Aurora background               | Too associated with cold neon / crypto / AI vaporware brands        |
+| WebGL 3D globe                  | DorkOS is local-first; a globe implies cloud SaaS scale             |
+| Shooting stars / meteor beams   | No narrative meaning; pure decoration                               |
 | tsParticles constellation field | Heavy, distracting, often associated with blockchain/NFT aesthetics |
-| Vortex background | Sensory overload; no meaning |
-| 3D Marquee of testimonials | Gimmicky; DorkOS is honest, not hyped |
+| Vortex background               | Sensory overload; no meaning                                        |
+| 3D Marquee of testimonials      | Gimmicky; DorkOS is honest, not hyped                               |
 
 ---
 
@@ -428,8 +435,8 @@ The single cheapest and most brand-defining CSS technique for DorkOS is film gra
 ```html
 <svg style="display:none">
   <filter id="grain">
-    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
-    <feColorMatrix type="saturate" values="0"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+    <feColorMatrix type="saturate" values="0" />
   </filter>
 </svg>
 ```
@@ -450,13 +457,13 @@ Do not use both GSAP and Motion for the same element — they will fight. Use GS
 
 Most Aceternity components default to blue/purple/neon palettes. Every component needs color adaptation for DorkOS's cream/charcoal/orange brand:
 
-| Default (Aceternity) | DorkOS Adaptation |
-|---------------------|------------------|
-| `from-purple-500 to-cyan-500` | `from-amber-400 to-orange-500` |
-| `rgba(14, 165, 233, 0.15)` (blue glow) | `rgba(251, 146, 60, 0.12)` (amber glow) |
-| `bg-black` backgrounds | `bg-zinc-950` or `bg-stone-900` |
-| White spotlight | Warm white `rgba(255, 240, 220, 0.9)` spotlight |
-| Cold grid lines | `rgba(255, 200, 100, 0.08)` grid lines |
+| Default (Aceternity)                   | DorkOS Adaptation                               |
+| -------------------------------------- | ----------------------------------------------- |
+| `from-purple-500 to-cyan-500`          | `from-amber-400 to-orange-500`                  |
+| `rgba(14, 165, 233, 0.15)` (blue glow) | `rgba(251, 146, 60, 0.12)` (amber glow)         |
+| `bg-black` backgrounds                 | `bg-zinc-950` or `bg-stone-900`                 |
+| White spotlight                        | Warm white `rgba(255, 240, 220, 0.9)` spotlight |
+| Cold grid lines                        | `rgba(255, 200, 100, 0.08)` grid lines          |
 
 The spotlight radial gradient in particular should use warm white as its center, fading to transparent — not the default cold-white-to-dark that reads as sci-fi.
 

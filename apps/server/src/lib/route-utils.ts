@@ -74,7 +74,7 @@ export function sendError(res: Response, status: number, message: string, code: 
  */
 export async function assertBoundary(
   pathToCheck: string | undefined | null,
-  res: Response,
+  res: Response
 ): Promise<boolean> {
   if (!pathToCheck) return true;
   try {

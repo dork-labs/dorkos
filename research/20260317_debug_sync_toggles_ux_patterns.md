@@ -1,9 +1,21 @@
 ---
-title: "Debug/Observability Toggles for Chat Sync Paths — UX Patterns, React Implementation, and Recommendations"
+title: 'Debug/Observability Toggles for Chat Sync Paths — UX Patterns, React Implementation, and Recommendations'
 date: 2026-03-17
 type: implementation
 status: active
-tags: [settings, ux, debug, sse, polling, tanstack-query, eventsource, observability, chat, use-chat-session]
+tags:
+  [
+    settings,
+    ux,
+    debug,
+    sse,
+    polling,
+    tanstack-query,
+    eventsource,
+    observability,
+    chat,
+    use-chat-session,
+  ]
 feature_slug: debug-sync-toggles
 searches_performed: 7
 sources_count: 12
@@ -40,18 +52,22 @@ The toggles should be framed under a **"Diagnostics"** section heading within th
 ### 3. Naming Conventions: Descriptive, Not Technical
 
 #### Option A: Technical names
+
 - "Persistent SSE" / "Message polling"
-- **Verdict: Too jargon-heavy.** Kai (primary persona) would understand these, but the names don't communicate *why* you'd turn them off.
+- **Verdict: Too jargon-heavy.** Kai (primary persona) would understand these, but the names don't communicate _why_ you'd turn them off.
 
 #### Option B: Feature-framed names
+
 - "Enable cross-client sync" / "Enable background refresh"
 - **Verdict: Better.** These describe what the feature does, not how it works.
 
 #### Option C: Diagnostic framing (recommended)
+
 - "Cross-client sync" (with description "Receives real-time updates from other clients. Disable to isolate this session's data.")
 - "Background message refresh" (with description "Periodically re-fetches message history. Disable to load history once and stop.")
 
 **Recommended names:**
+
 - Toggle 1: **"Cross-client sync"** — `syncEnabled` in the store
 - Toggle 2: **"Background message refresh"** — `pollingEnabled` in the store
 
@@ -122,12 +138,14 @@ The `refetchInterval` function is a closure. `pollingEnabled` must be in scope �
 #### Store Changes
 
 Add to `BOOL_KEYS` in `app-store.ts`:
+
 ```typescript
 syncEnabled: 'dorkos-sync-enabled',
 pollingEnabled: 'dorkos-polling-enabled',
 ```
 
 Add to `BOOL_DEFAULTS`:
+
 ```typescript
 syncEnabled: true,
 pollingEnabled: true,
@@ -146,7 +164,7 @@ Add to `AppState` interface and implement getters/setters following the existing
 
 #### When Background Message Refresh (polling) is off:
 
-- **History loads exactly once, at mount.** The `enabled: sessionId !== null` guard still allows the initial fetch. `refetchInterval: false` stops *subsequent* automatic fetches. The initial load still runs.
+- **History loads exactly once, at mount.** The `enabled: sessionId !== null` guard still allows the initial fetch. `refetchInterval: false` stops _subsequent_ automatic fetches. The initial load still runs.
 - **New messages from other sources appear only via SSE.** If sync SSE is still on, `sync_update` events call `queryClient.invalidateQueries(['messages', ...])` which triggers a fresh fetch even when `refetchInterval` is false. So the two toggles interact: disabling polling alone still gets updates via the persistent SSE invalidation path.
 - **Post-stream history reconciliation still works.** After streaming ends, the code calls `queryClient.invalidateQueries({ queryKey: ['messages'] })` explicitly (line 435). This is an imperative invalidation, not the auto-refetch mechanism. It will still fire and fetch updated history even when polling is off.
 - **Edge case: a message that arrives only via polling.** In normal operation, streaming delivers messages inline during `sendMessage()`. After streaming, the explicit invalidation catches any SDK-assigned ID remapping. Polling's role is as a background consistency check for cases where: (a) the server had a crash-resume mid-session, (b) another tool triggered a new turn without going through the DorkOS API, or (c) the SSE stream dropped and reconnected. Disabling polling makes these edge cases unrecoverable until the user manually navigates away and back.
@@ -175,6 +193,7 @@ The minimal change set to ship both toggles:
 **Step 1: app-store.ts** — Add two boolean entries to `BOOL_KEYS`, `BOOL_DEFAULTS`, `AppState`, and the store body. This is a ~20-line addition following the exact existing pattern for `enableNotificationSound` (lines 348-355 in `app-store.ts`).
 
 **Step 2: use-chat-session.ts** — Two targeted edits:
+
 - Import `syncEnabled` and `pollingEnabled` from `useAppStore` at the top of `useChatSession`
 - Add `if (!syncEnabled) return;` in the persistent SSE `useEffect` and add `syncEnabled` to its dependency array
 - Add `if (!pollingEnabled) return false;` in the `refetchInterval` function
@@ -202,6 +221,7 @@ No new files required. No Transport interface changes. No server changes.
 ```
 
 The section should:
+
 - Use `bg-muted/30 border rounded-md p-3 space-y-3` container
 - Include a section header: "Diagnostics" with `text-xs font-medium text-muted-foreground uppercase tracking-wider`
 - Use the existing `SettingRow` component from `SettingsDialog.tsx` (or extract it to a shared component if used in multiple tabs — it is currently defined inline in `SettingsDialog.tsx`)
@@ -221,12 +241,12 @@ The only stale closure concern in `use-chat-session.ts` is the `executeSubmissio
 
 ### Interaction Between the Two Toggles
 
-| Sync On | Polling On | Behavior |
-|---|---|---|
-| Both on | Both on | Normal operation — real-time sync + background consistency |
-| Sync off | Polling on | No cross-client updates until polling fires (3s). Good for isolating "is this from SSE or polling?" |
-| Sync on | Polling off | Rely entirely on SSE for consistency. History loads once at mount + on explicit invalidations (post-stream, on demand). |
-| Both off | Both off | Single-load viewer mode. Best for isolating streaming bugs from consistency bugs. |
+| Sync On  | Polling On  | Behavior                                                                                                                |
+| -------- | ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Both on  | Both on     | Normal operation — real-time sync + background consistency                                                              |
+| Sync off | Polling on  | No cross-client updates until polling fires (3s). Good for isolating "is this from SSE or polling?"                     |
+| Sync on  | Polling off | Rely entirely on SSE for consistency. History loads once at mount + on explicit invalidations (post-stream, on demand). |
+| Both off | Both off    | Single-load viewer mode. Best for isolating streaming bugs from consistency bugs.                                       |
 
 This interaction should be documented in the setting description, or at minimum the descriptions should hint at the dependency ("Note: when sync is enabled, it can also trigger a message refresh").
 
@@ -236,7 +256,7 @@ The existing `devtoolsOpen` toggle in `app-store.ts` (line 93) is notable: it is
 
 The sync/polling toggles should behave differently: they **should** persist to `localStorage`. The user may be running an extended debugging session across multiple page loads and does not want the toggles resetting. This is the correct behavior since `readBool` with `true` as default means normal users are unaffected.
 
-If a future decision is made to *not* persist them (treat them as session-local debug state), the implementation would just omit the `BOOL_KEYS`/`BOOL_DEFAULTS` entries and use `useState(true)` locally in `useChatSession`. But persistence is better for debugging.
+If a future decision is made to _not_ persist them (treat them as session-local debug state), the implementation would just omit the `BOOL_KEYS`/`BOOL_DEFAULTS` entries and use `useState(true)` locally in `useChatSession`. But persistence is better for debugging.
 
 ---
 
@@ -244,30 +264,30 @@ If a future decision is made to *not* persist them (treat them as session-local 
 
 ### Naming Options
 
-| Option | Pros | Cons | Verdict |
-|---|---|---|---|
-| "Persistent SSE" / "Message polling" | Technically precise, Kai would grok it | Too implementation-specific; doesn't communicate user impact | No |
-| "Enable cross-client sync" / "Enable message polling" | Clear what enabling does | "Polling" still jargon; "enable" prefix is redundant for a toggle | Partial |
-| "Cross-client sync" / "Background message refresh" | Communicates user-visible effect; no jargon | Slightly abstract for "what exactly is SSE?" | **Recommended** |
-| "Live sync" / "Auto-refresh" | Shortest, most approachable | Too vague for power users who need to know what they're disabling | No |
+| Option                                                | Pros                                        | Cons                                                              | Verdict         |
+| ----------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------- | --------------- |
+| "Persistent SSE" / "Message polling"                  | Technically precise, Kai would grok it      | Too implementation-specific; doesn't communicate user impact      | No              |
+| "Enable cross-client sync" / "Enable message polling" | Clear what enabling does                    | "Polling" still jargon; "enable" prefix is redundant for a toggle | Partial         |
+| "Cross-client sync" / "Background message refresh"    | Communicates user-visible effect; no jargon | Slightly abstract for "what exactly is SSE?"                      | **Recommended** |
+| "Live sync" / "Auto-refresh"                          | Shortest, most approachable                 | Too vague for power users who need to know what they're disabling | No              |
 
 ### Placement Options
 
-| Option | Pros | Cons | Verdict |
-|---|---|---|---|
-| New "Debug" tab | Clear purpose segregation | Sixth tab for two switches; wasteful; may encourage "debug mode" as a permanent mode | No |
-| Preferences tab (existing) | Already has many toggles | Mixes debug with display preferences; clutters regular users' settings | No |
-| Advanced tab, new "Diagnostics" section | Correct semantic home; no new tabs; power-user context already set | `AdvancedTab.tsx` gets slightly longer | **Recommended** |
-| Dev-mode only (hidden in production) | Avoids cluttering UI for users | DorkOS has no production/dev UI branching; adds conditional complexity | No |
-| Behind `devtoolsOpen` gate | Only visible when devtools is on | Devtools is not persisted; creates awkward two-toggle dance | No |
+| Option                                  | Pros                                                               | Cons                                                                                 | Verdict         |
+| --------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | --------------- |
+| New "Debug" tab                         | Clear purpose segregation                                          | Sixth tab for two switches; wasteful; may encourage "debug mode" as a permanent mode | No              |
+| Preferences tab (existing)              | Already has many toggles                                           | Mixes debug with display preferences; clutters regular users' settings               | No              |
+| Advanced tab, new "Diagnostics" section | Correct semantic home; no new tabs; power-user context already set | `AdvancedTab.tsx` gets slightly longer                                               | **Recommended** |
+| Dev-mode only (hidden in production)    | Avoids cluttering UI for users                                     | DorkOS has no production/dev UI branching; adds conditional complexity               | No              |
+| Behind `devtoolsOpen` gate              | Only visible when devtools is on                                   | Devtools is not persisted; creates awkward two-toggle dance                          | No              |
 
 ### Immediacy Options
 
-| Option | Pros | Cons | Verdict |
-|---|---|---|---|
-| Immediate effect | Matches debugging intent; matches existing settings behavior; technically easy | None | **Recommended** |
-| Requires page reload | Simpler mental model ("settings apply on restart") | Destroys in-progress debug state; inconsistent with rest of settings | No |
-| Takes effect on next session navigation | Avoids disrupting active session | Still loses current debug state; more complex to implement | No |
+| Option                                  | Pros                                                                           | Cons                                                                 | Verdict         |
+| --------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- | --------------- |
+| Immediate effect                        | Matches debugging intent; matches existing settings behavior; technically easy | None                                                                 | **Recommended** |
+| Requires page reload                    | Simpler mental model ("settings apply on restart")                             | Destroys in-progress debug state; inconsistent with rest of settings | No              |
+| Takes effect on next session navigation | Avoids disrupting active session                                               | Still loses current debug state; more complex to implement           | No              |
 
 ---
 

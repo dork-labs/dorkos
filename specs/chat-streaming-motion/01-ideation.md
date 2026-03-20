@@ -108,6 +108,7 @@ Simulator:
 N/A — this is a feature/polish task.
 
 The current experience feels abrupt because:
+
 1. **Text chunks append to the DOM with no visual transition** — Streamdown renders markdown but the `animated` prop is not used
 2. **Auto-scroll is instant** (`scrollTop = scrollHeight - clientHeight`) — no spring interpolation between positions
 3. **No `overflow-anchor: none`** on the scroll container — browser's native scroll anchoring fights with programmatic scroll during streaming
@@ -193,16 +194,16 @@ The current experience feels abrupt because:
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Text animation approach | Streamdown `animated` prop | Already installed, zero new deps, handles markdown AST correctly, auto-disables on completed messages |
-| 2 | Default text effect | `blurIn` | Perplexity-style blur-in is the most premium feel; only major AI chat app doing per-word animation |
-| 3 | Animation granularity | Word-level (`sep: 'word'`) | ~180 spans/1000 chars is safe. Character-level (~1000 spans) risks mobile perf |
-| 4 | Scroll jump fix | `overflow-anchor: none` CSS | One-line fix, no dependency, addresses browser scroll anchoring conflicts |
-| 5 | Spring scroll (`use-stick-to-bottom`) | Defer to follow-up PR | Current scroll logic is sophisticated; migration needs careful testing. `overflow-anchor` fixes the worst issue now. |
-| 6 | Effect config architecture | `TextEffectMode` union type + config hook | Simple, extensible, respects `prefers-reduced-motion`, maps cleanly to streamdown's `animated` config |
-| 7 | Simulator integration | Toggle controls in SimulatorControls | Dropdown for effect mode + toggle for animation on/off. Allows visual comparison of all effects. |
-| 8 | Reduced motion | Auto-disable via `prefers-reduced-motion` | Accessibility requirement. `useTextEffectConfig()` hook returns `mode: 'none'` when reduced motion is preferred. |
+| #   | Decision                              | Choice                                    | Rationale                                                                                                            |
+| --- | ------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 1   | Text animation approach               | Streamdown `animated` prop                | Already installed, zero new deps, handles markdown AST correctly, auto-disables on completed messages                |
+| 2   | Default text effect                   | `blurIn`                                  | Perplexity-style blur-in is the most premium feel; only major AI chat app doing per-word animation                   |
+| 3   | Animation granularity                 | Word-level (`sep: 'word'`)                | ~180 spans/1000 chars is safe. Character-level (~1000 spans) risks mobile perf                                       |
+| 4   | Scroll jump fix                       | `overflow-anchor: none` CSS               | One-line fix, no dependency, addresses browser scroll anchoring conflicts                                            |
+| 5   | Spring scroll (`use-stick-to-bottom`) | Defer to follow-up PR                     | Current scroll logic is sophisticated; migration needs careful testing. `overflow-anchor` fixes the worst issue now. |
+| 6   | Effect config architecture            | `TextEffectMode` union type + config hook | Simple, extensible, respects `prefers-reduced-motion`, maps cleanly to streamdown's `animated` config                |
+| 7   | Simulator integration                 | Toggle controls in SimulatorControls      | Dropdown for effect mode + toggle for animation on/off. Allows visual comparison of all effects.                     |
+| 8   | Reduced motion                        | Auto-disable via `prefers-reduced-motion` | Accessibility requirement. `useTextEffectConfig()` hook returns `mode: 'none'` when reduced motion is preferred.     |
 
 ---
 

@@ -10,9 +10,7 @@
       "runCount": 3,
       "passCount": 3,
       "failCount": 0,
-      "relatedCode": [
-        "apps/client/src/App.tsx"
-      ],
+      "relatedCode": ["apps/client/src/App.tsx"],
       "lastModified": ""
     },
     "send-message": {
@@ -56,9 +54,7 @@
       "runCount": 5,
       "passCount": 5,
       "failCount": 0,
-      "relatedCode": [
-        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
       "lastModified": ""
     },
     "pulse-scheduler": {

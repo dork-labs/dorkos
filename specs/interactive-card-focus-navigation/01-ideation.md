@@ -54,6 +54,7 @@ status: ideation
 ## 3) Codebase Map
 
 **Primary components/modules:**
+
 - `apps/client/src/layers/features/chat/ui/QuestionPrompt.tsx` — Multi-question form (target for relocation)
 - `apps/client/src/layers/features/chat/ui/ToolApproval.tsx` — Tool approval card (target for relocation)
 - `apps/client/src/layers/features/chat/ui/ChatPanel.tsx` — Main chat panel containing message list + input area
@@ -63,12 +64,14 @@ status: ideation
 - `apps/client/src/layers/shared/model/use-interactive-shortcuts.ts` — Global keyboard listener
 
 **Shared dependencies:**
+
 - `apps/client/src/layers/features/chat/ui/primitives/` — InteractiveCard, OptionRow, CompactResultRow
 - `apps/client/src/layers/shared/ui/` — Button, Kbd, RadioGroup, Checkbox, Tabs components
 - `apps/client/src/layers/shared/model/TransportContext` — Transport for `approveTool`, `denyTool`, `submitAnswers`
 - `motion/react` — Animation library for transitions
 
 **Data flow:**
+
 1. Server sends tool_call with `requiresApproval` or `question` type via SSE
 2. `stream-event-handler.ts` processes event, adds to message store
 3. `AssistantMessageContent` renders the tool call inline in the message stream
@@ -77,6 +80,7 @@ status: ideation
 6. User interacts → imperative handle calls transport method → server responds
 
 **With the new approach, data flow changes:**
+
 1. Server sends event (same)
 2. Stream handler processes event, adds to message store (same)
 3. Message stream shows a **placeholder/pending marker** (NOT the full interactive card)
@@ -85,6 +89,7 @@ status: ideation
 6. User interacts → transport method called → resolved state shown in both input zone (briefly) and message stream (CompactResultRow)
 
 **Potential blast radius:**
+
 - Direct: ChatInputContainer, ChatPanel, QuestionPrompt, ToolApproval, AssistantMessageContent, use-tool-shortcuts, use-interactive-shortcuts
 - Indirect: MessageItem, MessageProvider (props may change), use-chat-session (state management)
 - Tests: QuestionPrompt tests, ToolApproval tests, ChatPanel tests, use-interactive-shortcuts tests
@@ -99,6 +104,7 @@ N/A — this is a UX enhancement, not a bug fix.
 ### Potential Solutions
 
 **1. Input Zone Transformation (Claude Code Desktop pattern)**
+
 - Description: The chat input area transforms into the interactive card when user action is needed. The message stream shows a pending placeholder that resolves to a `CompactResultRow` after action. One interaction point.
 - Pros:
   - Eliminates dual focus zones entirely
@@ -115,6 +121,7 @@ N/A — this is a UX enhancement, not a bug fix.
 - Maintenance: Medium (simpler mental model long-term)
 
 **2. Improved In-Stream Cards with Focus Management**
+
 - Description: Keep cards in the message stream but add proper focus management — auto-scroll, focus save/restore, enhanced keyboard routing.
 - Pros:
   - Smaller change footprint
@@ -128,6 +135,7 @@ N/A — this is a UX enhancement, not a bug fix.
 - Maintenance: Medium
 
 **3. Hybrid: In-Stream Card + Input Zone Summary Bar**
+
 - Description: Card stays in stream but a summary/action bar appears in the input zone (like "Tool approval needed — Enter to approve, Esc to deny"). Clicking the bar scrolls to the card.
 - Pros:
   - Low disruption to current architecture
@@ -151,25 +159,28 @@ The key architectural insight: the message stream is a **history**. The input zo
 ### Specific UX Research Findings
 
 **Keyboard navigation:**
+
 - **Roving tabindex** is the correct ARIA pattern for option navigation (not `aria-activedescendant`) — better AT support, auto-scrolls focused option into view
 - **`<kbd>` hints should appear after the label, right-aligned** — universal industry convention (Linear, VS Code, GitHub), matches WCAG accessible name ordering
 - **Arrow keys should always navigate options**, even when textarea is focused — consistent, predictable behavior; Shift+Enter for newlines in "Other" text
 - **Back/Next buttons replace tab strip** for multi-question flows — simpler, more focused UI with step indicator ("2 of 3")
 
 **Focus management:**
+
 - Soft focus scope (not a focus trap) — the input zone naturally captures keyboard events
 - `scrollIntoView({ behavior: 'smooth', block: 'nearest' })` for focused option visibility
 - No need for `document.activeElement` save/restore with the input zone approach — the input zone simply transforms back to text input after resolution
 
 **Textarea interaction:**
+
 - Current "suppress arrows in textarea" approach is correct and simpler than textarea boundary detection
 - User uses Shift+Enter for multi-line "Other" text
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Where interactive cards render | Input zone transformation | User insight: "create a single place for users to interact / send input." Eliminates dual focus, matches Claude Code Desktop. Steve Jobs: "One place." |
-| 2 | Kbd hint position | After label, right-aligned | Industry standard (Linear, VS Code, GitHub). WCAG accessible name ordering. Clean visual hierarchy: control → label → hint. |
-| 3 | Arrow keys in textarea | Up/Down always navigate options | Consistent behavior. Shift+Enter for newlines. Predictable — user always knows what arrows do. |
-| 4 | Multi-question navigation | Replace tab strip with Back/Next buttons | Simpler UI, sequential flow with step indicator. Left/Right arrows for keyboard nav. Enter advances to next question, Submit on last. |
+| #   | Decision                       | Choice                                   | Rationale                                                                                                                                              |
+| --- | ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Where interactive cards render | Input zone transformation                | User insight: "create a single place for users to interact / send input." Eliminates dual focus, matches Claude Code Desktop. Steve Jobs: "One place." |
+| 2   | Kbd hint position              | After label, right-aligned               | Industry standard (Linear, VS Code, GitHub). WCAG accessible name ordering. Clean visual hierarchy: control → label → hint.                            |
+| 3   | Arrow keys in textarea         | Up/Down always navigate options          | Consistent behavior. Shift+Enter for newlines. Predictable — user always knows what arrows do.                                                         |
+| 4   | Multi-question navigation      | Replace tab strip with Back/Next buttons | Simpler UI, sequential flow with step indicator. Left/Right arrows for keyboard nav. Enter advances to next question, Submit on last.                  |

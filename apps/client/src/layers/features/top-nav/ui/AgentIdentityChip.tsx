@@ -31,11 +31,7 @@ export function AgentIdentityChip({ agent, visual, isStreaming }: AgentIdentityC
           onClick={() => openGlobalPaletteWithSearch('@')}
           className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-md px-2 transition-colors"
           whileTap={{ scale: 0.97 }}
-          aria-label={
-            agent
-              ? `${agent.name} \u2014 switch agent`
-              : 'Switch agent'
-          }
+          aria-label={agent ? `${agent.name} \u2014 switch agent` : 'Switch agent'}
         >
           {/* Color dot — solid when agent exists, dashed border when no agent */}
           {agent ? (
@@ -63,7 +59,7 @@ export function AgentIdentityChip({ agent, visual, isStreaming }: AgentIdentityC
           <AnimatePresence mode="wait">
             <motion.span
               key={agent?.id ?? 'no-agent'}
-              className={`flex items-center gap-1 max-w-[160px] text-sm ${
+              className={`flex max-w-[160px] items-center gap-1 text-sm ${
                 agent ? 'font-medium' : 'text-muted-foreground'
               }`}
               initial={{ opacity: 0, y: -3 }}

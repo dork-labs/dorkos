@@ -70,12 +70,7 @@ describe('useAdapterEvents', () => {
     });
 
     // Verify query is cached under the expected key
-    const queryState = queryClient.getQueryState([
-      'relay',
-      'adapters',
-      'telegram-1',
-      'events',
-    ]);
+    const queryState = queryClient.getQueryState(['relay', 'adapters', 'telegram-1', 'events']);
     expect(queryState).toBeDefined();
   });
 });

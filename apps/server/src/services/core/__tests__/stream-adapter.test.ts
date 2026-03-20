@@ -50,7 +50,10 @@ describe('Stream Adapter', () => {
         if (event === 'drain') cb();
       }),
     };
-    await sendSSEEvent(mockRes as unknown as Response, { type: 'text_delta', data: { text: 'hi' } });
+    await sendSSEEvent(mockRes as unknown as Response, {
+      type: 'text_delta',
+      data: { text: 'hi' },
+    });
     expect(mockRes.once).toHaveBeenCalledWith('drain', expect.any(Function));
     expect(mockRes.write).toHaveBeenCalledTimes(1);
   });

@@ -1,5 +1,5 @@
 ---
-title: "Loop: The Autonomous Improvement Engine (Litepaper)"
+title: 'Loop: The Autonomous Improvement Engine (Litepaper)'
 date: 2026-02-18
 type: exploratory
 status: active
@@ -183,7 +183,7 @@ Agents form hypotheses at 0.6-0.8 confidence, ship small fixes, and measure outc
 
 ### Build in Public
 
-Every agent action is logged. Every hypothesis is traceable to signals. Every outcome is measured. The system can generate changelogs that explain not just *what* changed but *why* — tracing back to the signal that triggered the work.
+Every agent action is logged. Every hypothesis is traceable to signals. Every outcome is measured. The system can generate changelogs that explain not just _what_ changed but _why_ — tracing back to the signal that triggered the work.
 
 ---
 

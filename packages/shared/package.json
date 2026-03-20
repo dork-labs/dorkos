@@ -24,7 +24,7 @@
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"
     },
-"./relay-schemas": {
+    "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"
     },

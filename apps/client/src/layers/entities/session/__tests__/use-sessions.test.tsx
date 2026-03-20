@@ -7,7 +7,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessions } from '../model/use-sessions';
 
-// Mock useSessionId (nuqs-backed)
+// Mock useSessionId (TanStack Router search params)
 let mockSessionId: string | null = null;
 const mockSetSessionId = vi.fn((id: string | null) => {
   mockSessionId = id;

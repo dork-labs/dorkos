@@ -12,7 +12,7 @@ vi.mock('../../../hooks/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 
-// Mock TunnelDialog to avoid nuqs adapter dependency
+// Mock TunnelDialog to avoid router dependency
 vi.mock('../ui/TunnelDialog', () => ({
   TunnelDialog: () => null,
 }));
@@ -205,7 +205,9 @@ describe('SettingsDialog', () => {
   it('has all status bar toggles enabled by default', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/status bar/i);
-    const panel = screen.getByText(/show directory/i).closest('[data-slot="navigation-layout-panel"]')!;
+    const panel = screen
+      .getByText(/show directory/i)
+      .closest('[data-slot="navigation-layout-panel"]')!;
     const switches = panel.querySelectorAll('[role="switch"]');
     expect(switches.length).toBe(10);
     switches.forEach((sw) => {

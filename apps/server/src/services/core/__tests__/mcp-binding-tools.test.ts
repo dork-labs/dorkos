@@ -18,13 +18,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
       name: string,
       desc: string,
       schema: Record<string, unknown>,
-      handler: (...args: unknown[]) => unknown,
+      handler: (...args: unknown[]) => unknown
     ) => ({
       name,
       description: desc,
       schema,
       handler,
-    }),
+    })
   ),
 }));
 
@@ -64,7 +64,7 @@ function makeMockBindingStore(overrides?: Record<string, unknown>) {
 }
 
 function makeMockDeps(
-  bindingStore?: ReturnType<typeof makeMockBindingStore> | undefined,
+  bindingStore?: ReturnType<typeof makeMockBindingStore> | undefined
 ): McpToolDeps {
   return {
     transcriptReader: {} as McpToolDeps['transcriptReader'],
@@ -130,7 +130,7 @@ describe('Binding MCP Tools', () => {
           agentId: 'agent-2',
           sessionStrategy: 'per-chat',
           label: '',
-        }),
+        })
       );
     });
 
@@ -151,7 +151,7 @@ describe('Binding MCP Tools', () => {
           chatId: 'chat-123',
           channelType: 'dm',
           label: 'My Binding',
-        }),
+        })
       );
     });
 
@@ -203,9 +203,7 @@ describe('Binding MCP Tools', () => {
   describe('tool registration', () => {
     it('includes binding tools when bindingStore is provided', () => {
       const store = makeMockBindingStore();
-      const server = createDorkOsToolServer(
-        makeMockDeps(store),
-      ) as unknown as MockServer;
+      const server = createDorkOsToolServer(makeMockDeps(store)) as unknown as MockServer;
       const toolNames = server.tools.map((t) => t.name);
       expect(toolNames).toContain('binding_list');
       expect(toolNames).toContain('binding_create');
@@ -213,9 +211,7 @@ describe('Binding MCP Tools', () => {
     });
 
     it('excludes binding tools when bindingStore is undefined', () => {
-      const server = createDorkOsToolServer(
-        makeMockDeps(),
-      ) as unknown as MockServer;
+      const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
       const toolNames = server.tools.map((t) => t.name);
       expect(toolNames).not.toContain('binding_list');
       expect(toolNames).not.toContain('binding_create');

@@ -57,7 +57,10 @@ describe('requestLogger', () => {
     res.emit('finish');
 
     expect(logger.debug).toHaveBeenCalledOnce();
-    const [fields, msg] = vi.mocked(logger.debug).mock.calls[0] as [Record<string, unknown>, string];
+    const [fields, msg] = vi.mocked(logger.debug).mock.calls[0] as [
+      Record<string, unknown>,
+      string,
+    ];
     expect(msg).toBe('request');
     expect(fields.method).toBe('POST');
     expect(fields.path).toBe('/api/sessions');

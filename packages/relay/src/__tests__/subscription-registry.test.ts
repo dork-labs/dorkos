@@ -60,7 +60,7 @@ describe('SubscriptionRegistry', () => {
 
       expect(() => registry.subscribe('', handler)).toThrow('Invalid subscription pattern');
       expect(() => registry.subscribe('relay..bad', handler)).toThrow(
-        'Invalid subscription pattern',
+        'Invalid subscription pattern'
       );
     });
 
@@ -412,7 +412,7 @@ describe('SubscriptionRegistry', () => {
       writeFileSync(
         join(tempDir, 'subscriptions.json'),
         JSON.stringify({ not: 'an array' }),
-        'utf-8',
+        'utf-8'
       );
 
       const freshRegistry = new SubscriptionRegistry(tempDir);

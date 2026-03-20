@@ -42,7 +42,9 @@ export interface AgentManagementDeps {
  * @param entry - Registry entry with internal fields
  * @returns Clean object with internal fields removed
  */
-export function toManifest<T extends AgentRegistryEntry>(entry: T): Omit<T, 'projectPath' | 'namespace' | 'scanRoot'> {
+export function toManifest<T extends AgentRegistryEntry>(
+  entry: T
+): Omit<T, 'projectPath' | 'namespace' | 'scanRoot'> {
   const { projectPath: _p, namespace: _n, scanRoot: _s, ...rest } = entry;
   return rest;
 }
@@ -59,7 +61,7 @@ export function toManifest<T extends AgentRegistryEntry>(entry: T): Omit<T, 'pro
  */
 export function list(
   deps: AgentManagementDeps,
-  filters?: { runtime?: AgentRuntime; capability?: string; callerNamespace?: string },
+  filters?: { runtime?: AgentRuntime; capability?: string; callerNamespace?: string }
 ): AgentManifest[] {
   if (filters?.callerNamespace) {
     // Delegate to TopologyManager for namespace-scoped visibility
@@ -92,8 +94,12 @@ export function list(
  */
 export function listWithHealth(
   deps: AgentManagementDeps,
-  filters?: { runtime?: AgentRuntime; capability?: string },
-): (AgentManifest & { healthStatus: AgentHealthStatus; lastSeenAt: string | null; lastSeenEvent: string | null })[] {
+  filters?: { runtime?: AgentRuntime; capability?: string }
+): (AgentManifest & {
+  healthStatus: AgentHealthStatus;
+  lastSeenAt: string | null;
+  lastSeenEvent: string | null;
+})[] {
   const entries = deps.registry.listWithHealth(filters);
   return entries.map((entry) => toManifest(entry));
 }
@@ -108,7 +114,7 @@ export function listWithHealth(
  * @returns Array of lightweight agent entries with project paths
  */
 export function listWithPaths(
-  deps: AgentManagementDeps,
+  deps: AgentManagementDeps
 ): Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }> {
   return deps.registry.list().map((e) => ({
     id: e.id,
@@ -139,7 +145,10 @@ export function get(deps: AgentManagementDeps, agentId: string): AgentManifest |
  * @param projectPath - Absolute path to the project directory
  * @returns The agent manifest, or undefined if not found
  */
-export function getByPath(deps: AgentManagementDeps, projectPath: string): AgentManifest | undefined {
+export function getByPath(
+  deps: AgentManagementDeps,
+  projectPath: string
+): AgentManifest | undefined {
   const entry = deps.registry.getByPath(projectPath);
   if (!entry) return undefined;
   return toManifest(entry);
@@ -171,7 +180,7 @@ export function getProjectPath(deps: AgentManagementDeps, agentId: string): stri
 export async function update(
   deps: AgentManagementDeps,
   agentId: string,
-  partial: Partial<AgentManifest>,
+  partial: Partial<AgentManifest>
 ): Promise<AgentManifest | undefined> {
   const entry = deps.registry.get(agentId);
   if (!entry) return undefined;
@@ -241,7 +250,10 @@ export async function unregister(deps: AgentManagementDeps, agentId: string): Pr
  * @param discoveryDeps - Discovery dependencies (needed for upsertAutoImported)
  * @returns true if the manifest was found and synced, false otherwise
  */
-export async function syncFromDisk(projectPath: string, discoveryDeps: DiscoveryDeps): Promise<boolean> {
+export async function syncFromDisk(
+  projectPath: string,
+  discoveryDeps: DiscoveryDeps
+): Promise<boolean> {
   const manifest = await readManifest(projectPath);
   if (!manifest) return false;
   await upsertAutoImported(manifest, projectPath, discoveryDeps);
@@ -298,7 +310,10 @@ export function updateLastSeen(deps: AgentManagementDeps, agentId: string, event
  * @param agentId - The agent's ULID
  * @returns AgentHealth snapshot, or undefined if the agent is not found
  */
-export function getAgentHealth(deps: AgentManagementDeps, agentId: string): AgentHealth | undefined {
+export function getAgentHealth(
+  deps: AgentManagementDeps,
+  agentId: string
+): AgentHealth | undefined {
   const entry = deps.registry.getWithHealth(agentId);
   if (!entry) return undefined;
   return {
@@ -377,7 +392,10 @@ export function getTopology(deps: AgentManagementDeps, callerNamespace: string):
  * @param agentId - The ULID of the agent
  * @returns Array of reachable agent manifests, or undefined if agent not found
  */
-export function getAgentAccess(deps: AgentManagementDeps, agentId: string): AgentManifest[] | undefined {
+export function getAgentAccess(
+  deps: AgentManagementDeps,
+  agentId: string
+): AgentManifest[] | undefined {
   return deps.topology.getAgentAccess(agentId);
 }
 
@@ -388,7 +406,11 @@ export function getAgentAccess(deps: AgentManagementDeps, agentId: string): Agen
  * @param sourceNamespace - The namespace to allow messages from
  * @param targetNamespace - The namespace to allow messages to
  */
-export function allowCrossNamespace(deps: AgentManagementDeps, sourceNamespace: string, targetNamespace: string): void {
+export function allowCrossNamespace(
+  deps: AgentManagementDeps,
+  sourceNamespace: string,
+  targetNamespace: string
+): void {
   deps.topology.allowCrossNamespace(sourceNamespace, targetNamespace);
 }
 
@@ -399,7 +421,11 @@ export function allowCrossNamespace(deps: AgentManagementDeps, sourceNamespace: 
  * @param sourceNamespace - Source namespace
  * @param targetNamespace - Target namespace
  */
-export function denyCrossNamespace(deps: AgentManagementDeps, sourceNamespace: string, targetNamespace: string): void {
+export function denyCrossNamespace(
+  deps: AgentManagementDeps,
+  sourceNamespace: string,
+  targetNamespace: string
+): void {
   deps.topology.denyCrossNamespace(sourceNamespace, targetNamespace);
 }
 

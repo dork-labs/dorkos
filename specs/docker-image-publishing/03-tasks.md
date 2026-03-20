@@ -75,6 +75,7 @@ Add a `### Docker Image` section to Phase 6 (Report) between `### What's Next` a
 
 ```markdown
 ### Docker Image
+
 - Image will be published automatically to `ghcr.io/dork-labs/dorkos:{version}`
 - Triggered by the tag push above
 - Monitor progress: https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml
@@ -133,9 +134,9 @@ Phase 3 (parallel):     3.1 ──┘  (depends on 1.1)
 
 ## Summary
 
-| Phase | Tasks | Size | Estimated Effort |
-|-------|-------|------|-----------------|
-| 1. Workflow + Dockerfile | 2 | 1 medium + 1 small | ~30 min |
-| 2. Release Command Reorder | 2 | 2 small | ~15 min |
-| 3. Documentation | 2 | 1 medium + 1 small | ~20 min |
-| **Total** | **6** | | **~65 min** |
+| Phase                      | Tasks | Size               | Estimated Effort |
+| -------------------------- | ----- | ------------------ | ---------------- |
+| 1. Workflow + Dockerfile   | 2     | 1 medium + 1 small | ~30 min          |
+| 2. Release Command Reorder | 2     | 2 small            | ~15 min          |
+| 3. Documentation           | 2     | 1 medium + 1 small | ~20 min          |
+| **Total**                  | **6** |                    | **~65 min**      |

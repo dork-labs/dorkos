@@ -30,19 +30,19 @@ The Value Architecture is a systematic process for translating product features 
 
 It is not a single framework. It is a synthesis of 10+ proven marketing and positioning frameworks, each contributing its strongest mechanism:
 
-| Source Framework | What It Contributes | Where It Appears |
-|---|---|---|
-| JTBD (Christensen, Ulwick, Moesta) | "Hire" motivation, job mapping, four forces of progress | Phase 1B, Layer 3 |
-| Obviously Awesome (April Dunford) | Competitive alternatives as the foundation for differentiation | Phase 1A, Layer 2 |
-| Means-End Chain (Gutman 1982) | Laddering from attributes through consequences to terminal values | Layer 4, the "Why?" probe |
-| Brand Ladder (Aaker, Y&R, Ogilvy) | Self-expressive benefit, identity signal | Layer 5 |
-| FAB (Sales training tradition) | Feature → Advantage → Benefit translation | Layer 1 → Layer 3 path |
-| Apple Methodology (Jobs era) | Benefit-first headlines, human metric translation | Proof Anchor, Phase 4 templates |
-| StoryBrand (Donald Miller) | Villain construct, three-layer problem | Phase 1D anti-positioning |
-| Message House (PR/Corp Comms) | Hierarchical message organization: roof, pillars, proof | Phase 3A |
-| Nike Brand Architecture | Identity platform → category → product layering | Phase 3, funnel-stage messaging |
-| Value Proposition Canvas (Osterwalder) | Jobs/Pains/Gains taxonomy | Phase 1B enrichment |
-| Developer Positioning Stack (emerging) | The four essential positioning questions for dev tools | Phase 1A validation |
+| Source Framework                       | What It Contributes                                               | Where It Appears                |
+| -------------------------------------- | ----------------------------------------------------------------- | ------------------------------- |
+| JTBD (Christensen, Ulwick, Moesta)     | "Hire" motivation, job mapping, four forces of progress           | Phase 1B, Layer 3               |
+| Obviously Awesome (April Dunford)      | Competitive alternatives as the foundation for differentiation    | Phase 1A, Layer 2               |
+| Means-End Chain (Gutman 1982)          | Laddering from attributes through consequences to terminal values | Layer 4, the "Why?" probe       |
+| Brand Ladder (Aaker, Y&R, Ogilvy)      | Self-expressive benefit, identity signal                          | Layer 5                         |
+| FAB (Sales training tradition)         | Feature → Advantage → Benefit translation                         | Layer 1 → Layer 3 path          |
+| Apple Methodology (Jobs era)           | Benefit-first headlines, human metric translation                 | Proof Anchor, Phase 4 templates |
+| StoryBrand (Donald Miller)             | Villain construct, three-layer problem                            | Phase 1D anti-positioning       |
+| Message House (PR/Corp Comms)          | Hierarchical message organization: roof, pillars, proof           | Phase 3A                        |
+| Nike Brand Architecture                | Identity platform → category → product layering                   | Phase 3, funnel-stage messaging |
+| Value Proposition Canvas (Osterwalder) | Jobs/Pains/Gains taxonomy                                         | Phase 1B enrichment             |
+| Developer Positioning Stack (emerging) | The four essential positioning questions for dev tools            | Phase 1A validation             |
 
 The output of the process is a set of structured documents that serve as the **single source of truth for all marketing communications** — from homepage headlines to sales decks to social media to investor pitches.
 
@@ -59,13 +59,13 @@ A **Value Architecture** for a product consists of:
 
 ### Who It's For
 
-| Consumer | How They Use It |
-|---|---|
-| **Founders / Product Leaders** | Define positioning, make messaging decisions, align the team |
-| **Copywriters / Content Marketers** | Pull from the Headline Bank and Activation Templates to write |
-| **AI Agents** | Parse YAML templates to generate, validate, and iterate on messaging |
-| **Designers** | Understand what benefit layer each visual should communicate |
-| **Sales / DevRel** | Use the Message House as a talk track; know which layer to lead with for each audience |
+| Consumer                            | How They Use It                                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------------- |
+| **Founders / Product Leaders**      | Define positioning, make messaging decisions, align the team                           |
+| **Copywriters / Content Marketers** | Pull from the Headline Bank and Activation Templates to write                          |
+| **AI Agents**                       | Parse YAML templates to generate, validate, and iterate on messaging                   |
+| **Designers**                       | Understand what benefit layer each visual should communicate                           |
+| **Sales / DevRel**                  | Use the Message House as a talk track; know which layer to lead with for each audience |
 
 ---
 
@@ -79,7 +79,7 @@ Every established marketing framework solves one part of the feature-to-value pr
 
 **JTBD-only teams** understand their customers deeply but can't translate that understanding into positioning or copy. They have great research and mediocre marketing.
 
-**Dunford-only teams** have sharp competitive positioning but flat emotional resonance. They know what they're better at, but their messaging doesn't make anyone *feel* anything.
+**Dunford-only teams** have sharp competitive positioning but flat emotional resonance. They know what they're better at, but their messaging doesn't make anyone _feel_ anything.
 
 **Brand Ladder-only teams** produce beautiful emotional creative that floats above the product. The ads are stunning but nobody knows what the product actually does.
 
@@ -102,6 +102,7 @@ Feature          Product reality           "What is it?"
 The Value Architecture integrates all five altitudes into a single, repeatable process. You don't pick a framework — you execute a process that automatically produces output at every altitude.
 
 The process is designed so that:
+
 - Each altitude builds on the one below it (the chain is causal)
 - Every claim is grounded in product reality (no aspirational vapor)
 - Every layer is validated by a specific quality test
@@ -121,6 +122,7 @@ Apple says "Think outside the outlet" (identity: freedom from power cables) — 
 The inverse is also true: stopping at functional benefits is leaving loyalty on the table. A functional benefit can be matched or exceeded by a competitor. An identity benefit creates tribal affiliation that no feature comparison can dislodge.
 
 This is why the framework has five layers — not three (like FAB), not two (like most copy formulas). You need:
+
 1. The feature (what it is)
 2. The mechanism (why it's different)
 3. The functional benefit (what you observe)
@@ -225,14 +227,15 @@ PHASE 4: ACTIVATION (downstream)
 
 For each major product capability/module, document:
 
-| Field | What to Write | Where the Answer Comes From |
-|---|---|---|
-| `capability` | The module/feature name | Product architecture |
-| `alternative` | What the user does today without this | Customer interviews, founder intuition, or competitive research |
-| `unique_attribute` | What you have that the alternative doesn't | Product differentiation analysis |
-| `so_what` | Why the user should care about that difference | JTBD outcome mapping |
+| Field              | What to Write                                  | Where the Answer Comes From                                     |
+| ------------------ | ---------------------------------------------- | --------------------------------------------------------------- |
+| `capability`       | The module/feature name                        | Product architecture                                            |
+| `alternative`      | What the user does today without this          | Customer interviews, founder intuition, or competitive research |
+| `unique_attribute` | What you have that the alternative doesn't     | Product differentiation analysis                                |
+| `so_what`          | Why the user should care about that difference | JTBD outcome mapping                                            |
 
 **The critical discipline**: The "alternative" is NOT always a competitor. For novel categories, it's usually:
+
 - Manual process ("I do this by hand")
 - Status quo ("I don't do this at all")
 - Cobbled-together stack ("I use 3 different tools")
@@ -244,13 +247,13 @@ For each major product capability/module, document:
 
 For each persona, document:
 
-| Field | What to Write | Where the Answer Comes From |
-|---|---|---|
-| `persona` | Persona name and archetype | `meta/personas/` |
-| `core_job` | "When [trigger], I want [capability], so I can [outcome]" | Persona trigger event + JTBD formula |
-| `emotional_job` | "I want to feel [emotion] while doing this" | Means-End Chain laddering |
-| `social_job` | "I want to be perceived as [identity] by [audience]" | Brand Ladder self-expressive |
-| `job_steps` | The workflow steps and which features serve each | Ulwick's Universal Job Map |
+| Field           | What to Write                                             | Where the Answer Comes From          |
+| --------------- | --------------------------------------------------------- | ------------------------------------ |
+| `persona`       | Persona name and archetype                                | `meta/personas/`                     |
+| `core_job`      | "When [trigger], I want [capability], so I can [outcome]" | Persona trigger event + JTBD formula |
+| `emotional_job` | "I want to feel [emotion] while doing this"               | Means-End Chain laddering            |
+| `social_job`    | "I want to be perceived as [identity] by [audience]"      | Brand Ladder self-expressive         |
+| `job_steps`     | The workflow steps and which features serve each          | Ulwick's Universal Job Map           |
 
 **The critical discipline**: The core job statement must describe the OUTCOME the user wants, not the product they use. "I want to schedule agent sessions" is product language. "I want my projects to make progress while I sleep" is outcome language.
 
@@ -260,12 +263,12 @@ For each persona, document:
 
 Define the single identity space your product occupies. This is the Brand Ladder's apex — the self-expressive benefit territory that all features ultimately converge on.
 
-| Field | What to Write | Where the Answer Comes From |
-|---|---|---|
-| `worldview` | The belief system the product represents | Brand foundation, litepaper vision |
-| `tribe` | Who you join by choosing this product | User community characteristics |
-| `signal` | What using this product signals about you to peers | Customer interviews, community observation |
-| `anti_identity` | Who would NEVER use this product, and why | Anti-persona |
+| Field           | What to Write                                      | Where the Answer Comes From                |
+| --------------- | -------------------------------------------------- | ------------------------------------------ |
+| `worldview`     | The belief system the product represents           | Brand foundation, litepaper vision         |
+| `tribe`         | Who you join by choosing this product              | User community characteristics             |
+| `signal`        | What using this product signals about you to peers | Customer interviews, community observation |
+| `anti_identity` | Who would NEVER use this product, and why          | Anti-persona                               |
 
 **Output**: A single YAML block. This anchors the top of every Value Ladder and prevents Layer 5 entries from drifting into generic territory.
 
@@ -273,12 +276,12 @@ Define the single identity space your product occupies. This is the Brand Ladder
 
 Define what you oppose — the villain, the paradigm, the status quo. From StoryBrand's narrative structure.
 
-| Field | What to Write | Where the Answer Comes From |
-|---|---|---|
-| `villain` | The force or paradigm you're against | Brand foundation "What we're NOT" |
-| `external_problem` | The surface-level problem it creates | User frustration research |
-| `internal_problem` | How it makes the user FEEL | Emotional job analysis |
-| `philosophical_problem` | Why this state of affairs is fundamentally WRONG | Brand values, vision |
+| Field                   | What to Write                                    | Where the Answer Comes From       |
+| ----------------------- | ------------------------------------------------ | --------------------------------- |
+| `villain`               | The force or paradigm you're against             | Brand foundation "What we're NOT" |
+| `external_problem`      | The surface-level problem it creates             | User frustration research         |
+| `internal_problem`      | How it makes the user FEEL                       | Emotional job analysis            |
+| `philosophical_problem` | Why this state of affairs is fundamentally WRONG | Brand values, vision              |
 
 **Output**: A single YAML block. This feeds the Anti-Positioning Lead pattern and the Comparison Section activation template.
 
@@ -343,12 +346,12 @@ Define what you oppose — the villain, the paradigm, the status quo. From Story
 
 For each Pillar, generate headlines at four altitudes:
 
-| Altitude | Layer | Use Case | Length |
-|---|---|---|---|
-| Identity | Layer 5 | Hero sections, brand campaigns, taglines | 2-5 words |
-| Emotional | Layer 4 | Section headers, email subject lines, social | 1 short sentence |
-| Functional | Layer 3 | Feature pages, product tours, comparison | 1 sentence |
-| Proof | Layer 1-2 with translation | Specs, deep-scroll, data sheets | 1 sentence with metric |
+| Altitude   | Layer                      | Use Case                                     | Length                 |
+| ---------- | -------------------------- | -------------------------------------------- | ---------------------- |
+| Identity   | Layer 5                    | Hero sections, brand campaigns, taglines     | 2-5 words              |
+| Emotional  | Layer 4                    | Section headers, email subject lines, social | 1 short sentence       |
+| Functional | Layer 3                    | Feature pages, product tours, comparison     | 1 sentence             |
+| Proof      | Layer 1-2 with translation | Specs, deep-scroll, data sheets              | 1 sentence with metric |
 
 **Output**: 3-5 headline options per Pillar per altitude. This is the working copy bank that downstream creators pull from.
 
@@ -356,13 +359,13 @@ For each Pillar, generate headlines at four altitudes:
 
 Map which layers to lead with at each stage of the customer journey:
 
-| Stage | Lead Layer | Support Layer | What the User Needs |
-|---|---|---|---|
-| Discovery | L3 + L5 | L2 | "What is this? Why should I care?" |
-| Evaluation | L2 + L3 | L1 | "How does it work? Is it credible?" |
-| Trial | L1 + L3 | L6 (proof) | "Can I actually use this?" |
-| Adoption | L4 | L3 | "This is working. I feel it." |
-| Advocacy | L5 | L4 | "This is part of who I am." |
+| Stage      | Lead Layer | Support Layer | What the User Needs                 |
+| ---------- | ---------- | ------------- | ----------------------------------- |
+| Discovery  | L3 + L5    | L2            | "What is this? Why should I care?"  |
+| Evaluation | L2 + L3    | L1            | "How does it work? Is it credible?" |
+| Trial      | L1 + L3    | L6 (proof)    | "Can I actually use this?"          |
+| Adoption   | L4         | L3            | "This is working. I feel it."       |
+| Advocacy   | L5         | L4            | "This is part of who I am."         |
 
 For each stage, write 2-3 example messages pulling from the appropriate layers.
 
@@ -405,6 +408,7 @@ These templates are NOT finished copy. They are structural patterns with layer-s
 #### 4D: Social Proof Architecture
 
 Three tiers, ordered by credibility for developer audiences:
+
 1. Numeric proof ("build times from 7m to 40s")
 2. Identity-anchor quote ("[outcome] — [respected person], [known company]")
 3. Community signal (GitHub stars, npm downloads, contributor count)
@@ -417,24 +421,24 @@ Three tiers, ordered by credibility for developer audiences:
 
 ### Intermediate Outputs (produced during the process)
 
-| Output | Produced In | Format | Purpose |
-|---|---|---|---|
-| Competitive Alternative Map | Phase 1A | YAML | Feeds Layer 2 of all Value Ladders |
-| JTBD Map (per persona) | Phase 1B | YAML | Feeds Layer 3-5 generation |
-| Identity Territory | Phase 1C | YAML | Anchors Layer 5 of all Value Ladders |
-| Anti-Positioning | Phase 1D | YAML | Feeds Comparison Section and villain construct |
-| Individual Value Ladders | Phase 2 | YAML | Per-feature complete maps |
-| Persona-Benefit Matrix | Phase 2 (synthesis) | Table | Maps persona × feature → resonant layer |
+| Output                      | Produced In         | Format | Purpose                                        |
+| --------------------------- | ------------------- | ------ | ---------------------------------------------- |
+| Competitive Alternative Map | Phase 1A            | YAML   | Feeds Layer 2 of all Value Ladders             |
+| JTBD Map (per persona)      | Phase 1B            | YAML   | Feeds Layer 3-5 generation                     |
+| Identity Territory          | Phase 1C            | YAML   | Anchors Layer 5 of all Value Ladders           |
+| Anti-Positioning            | Phase 1D            | YAML   | Feeds Comparison Section and villain construct |
+| Individual Value Ladders    | Phase 2             | YAML   | Per-feature complete maps                      |
+| Persona-Benefit Matrix      | Phase 2 (synthesis) | Table  | Maps persona × feature → resonant layer        |
 
 ### Final Outputs (the deliverables)
 
-| Output | Produced In | Format | Primary Consumer |
-|---|---|---|---|
-| **Message House** | Phase 3A | Text diagram + YAML | Leadership, marketing leads, all communicators |
-| **Headline Bank** | Phase 3B | YAML (per pillar, per layer) | Copywriters, designers, AI agents |
-| **Funnel-Stage Messaging** | Phase 3C | Table + example copy | Content marketers, growth team, sales |
-| **Activation Templates** | Phase 4 | Structured copy with layer slots | Copywriters, landing page builders, campaign creators |
-| **The Value Architecture** | All phases combined | Single Markdown + YAML document | Everyone — the single source of truth |
+| Output                     | Produced In         | Format                           | Primary Consumer                                      |
+| -------------------------- | ------------------- | -------------------------------- | ----------------------------------------------------- |
+| **Message House**          | Phase 3A            | Text diagram + YAML              | Leadership, marketing leads, all communicators        |
+| **Headline Bank**          | Phase 3B            | YAML (per pillar, per layer)     | Copywriters, designers, AI agents                     |
+| **Funnel-Stage Messaging** | Phase 3C            | Table + example copy             | Content marketers, growth team, sales                 |
+| **Activation Templates**   | Phase 4             | Structured copy with layer slots | Copywriters, landing page builders, campaign creators |
+| **The Value Architecture** | All phases combined | Single Markdown + YAML document  | Everyone — the single source of truth                 |
 
 ### File Structure in a Repository
 
@@ -470,16 +474,16 @@ This section describes exactly how an AI coding/marketing agent would execute th
 
 The agent reads the codebase to extract every feature with technical precision.
 
-| Repository Source | What It Reveals |
-|---|---|
-| `CLAUDE.md` | Complete product architecture, all modules, all services, route handlers, data flow |
-| `specs/manifest.json` | Every specified feature, its status (implemented/specified/ideation), chronological ordering |
-| `apps/server/src/routes/*.ts` | API surface — every endpoint is a capability |
-| `apps/server/src/services/*.ts` | Internal services — reveals mechanisms not visible from API alone |
-| `apps/client/src/layers/features/*/` | UI features — what the user actually interacts with |
-| `packages/*/src/` | Shared libraries — core logic that powers multiple features |
-| `contributing/*.md` | Architecture docs, design system, patterns — deep implementation detail |
-| `decisions/*.md` | ADRs — architectural choices and their rationale |
+| Repository Source                    | What It Reveals                                                                              |
+| ------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`                          | Complete product architecture, all modules, all services, route handlers, data flow          |
+| `specs/manifest.json`                | Every specified feature, its status (implemented/specified/ideation), chronological ordering |
+| `apps/server/src/routes/*.ts`        | API surface — every endpoint is a capability                                                 |
+| `apps/server/src/services/*.ts`      | Internal services — reveals mechanisms not visible from API alone                            |
+| `apps/client/src/layers/features/*/` | UI features — what the user actually interacts with                                          |
+| `packages/*/src/`                    | Shared libraries — core logic that powers multiple features                                  |
+| `contributing/*.md`                  | Architecture docs, design system, patterns — deep implementation detail                      |
+| `decisions/*.md`                     | ADRs — architectural choices and their rationale                                             |
 
 **Agent process**: Read `CLAUDE.md` first (it's the rosetta stone). Then scan `specs/manifest.json` for the feature inventory. Then read source code for implementation details.
 
@@ -487,11 +491,11 @@ The agent reads the codebase to extract every feature with technical precision.
 
 The agent can describe HOW a feature works differently from general approaches by reading the code and architecture docs. But it CANNOT know what actual users do as an alternative without human input.
 
-| What the Agent CAN Do | What It CANNOT Do |
-|---|---|
+| What the Agent CAN Do                                                                           | What It CANNOT Do                                                  |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Describe the technical approach (e.g., "uses JSONL transcript files as single source of truth") | Know whether users currently use spreadsheets, scripts, or nothing |
-| Identify unique architectural decisions from ADRs | Validate that those decisions matter to real customers |
-| Compare to general industry patterns (e.g., "most agent tools use ephemeral sessions") | Know which specific tools users actually compare against |
+| Identify unique architectural decisions from ADRs                                               | Validate that those decisions matter to real customers             |
+| Compare to general industry patterns (e.g., "most agent tools use ephemeral sessions")          | Know which specific tools users actually compare against           |
 
 **Agent process**: Read ADRs for architectural decisions. Read the litepaper's "What DorkOS Is NOT" for explicit differentiation. Draft Layer 2 entries with a `[NEEDS VALIDATION]` flag on the alternative.
 
@@ -499,11 +503,11 @@ The agent can describe HOW a feature works differently from general approaches b
 
 The agent can reason about outcomes by connecting features to persona job steps.
 
-| What the Agent CAN Do | What It CANNOT Do |
-|---|---|
-| Map features to JTBD job steps using persona trigger events | Confirm that users actually experience these outcomes |
-| Translate technical capabilities to outcome language | Know which outcomes users value MOST |
-| Draft functional benefit statements | Validate that the language matches how users describe their own experience |
+| What the Agent CAN Do                                       | What It CANNOT Do                                                          |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Map features to JTBD job steps using persona trigger events | Confirm that users actually experience these outcomes                      |
+| Translate technical capabilities to outcome language        | Know which outcomes users value MOST                                       |
+| Draft functional benefit statements                         | Validate that the language matches how users describe their own experience |
 
 **Agent process**: Read persona files for job statements and triggers. For each feature, ask "What outcome does this enable for this persona?" Draft Layer 3, flag with `[DRAFT]`.
 
@@ -511,11 +515,11 @@ The agent can reason about outcomes by connecting features to persona job steps.
 
 The agent can hypothesize emotions by applying the Means-End Chain "Why is that important?" probe to Layer 3. But emotional resonance is fundamentally a human judgment.
 
-| What the Agent CAN Do | What It CANNOT Do |
-|---|---|
-| Apply the "Why does that matter?" probe iteratively | Know whether the hypothesized emotion is what users actually feel |
-| Draw from persona frustrations and goals | Distinguish between emotions the FOUNDER wants users to feel and emotions users ACTUALLY feel |
-| Reference brand foundation for emotional territory | Validate that the emotion is specific enough (not generic "feel good") |
+| What the Agent CAN Do                               | What It CANNOT Do                                                                             |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Apply the "Why does that matter?" probe iteratively | Know whether the hypothesized emotion is what users actually feel                             |
+| Draw from persona frustrations and goals            | Distinguish between emotions the FOUNDER wants users to feel and emotions users ACTUALLY feel |
+| Reference brand foundation for emotional territory  | Validate that the emotion is specific enough (not generic "feel good")                        |
 
 **Agent process**: Take Layer 3. Ask "Why is that important to the persona?" 2-3 times. Draft Layer 4 with `[HYPOTHESIS — VALIDATE WITH USERS]` flag.
 
@@ -523,21 +527,21 @@ The agent can hypothesize emotions by applying the Means-End Chain "Why is that 
 
 The agent can draft identity benefits using the Identity Territory from Phase 1C and the brand foundation. But identity positioning is a strategic choice — the highest-stakes marketing decision — and requires founder/leadership approval.
 
-| What the Agent CAN Do | What It CANNOT Do |
-|---|---|
-| Read `brand-foundation.md` for stated identity territory | Decide whether this identity territory is correct for the market |
-| Apply the "I am someone who..." test to generated candidates | Make the strategic choice of which identity to claim |
-| Generate multiple options for human selection | Validate that the identity resonates with the target audience |
+| What the Agent CAN Do                                        | What It CANNOT Do                                                |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| Read `brand-foundation.md` for stated identity territory     | Decide whether this identity territory is correct for the market |
+| Apply the "I am someone who..." test to generated candidates | Make the strategic choice of which identity to claim             |
+| Generate multiple options for human selection                | Validate that the identity resonates with the target audience    |
 
 **Agent process**: Read brand foundation and Identity Territory. Generate 2-3 Layer 5 options per feature. Present to human for selection. Flag all as `[REQUIRES FOUNDER APPROVAL]`.
 
 #### Proof Anchor — Mixed
 
-| What the Agent CAN Do | What It CANNOT Do |
-|---|---|
-| Extract technical metrics from code (service counts, architectural stats) | Provide customer usage metrics (no access to production data) |
-| Generate human-metric translations of specs | Provide customer quotes or testimonials |
-| Create contrast proof by comparing with/without scenarios | Provide numeric social proof (downloads, stars, customer outcomes) |
+| What the Agent CAN Do                                                     | What It CANNOT Do                                                  |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Extract technical metrics from code (service counts, architectural stats) | Provide customer usage metrics (no access to production data)      |
+| Generate human-metric translations of specs                               | Provide customer quotes or testimonials                            |
+| Create contrast proof by comparing with/without scenarios                 | Provide numeric social proof (downloads, stars, customer outcomes) |
 
 **Agent process**: Draft Human Metric and Contrast Proof types. Leave Social Proof as `[PLACEHOLDER — NEEDS CUSTOMER DATA]`.
 
@@ -609,6 +613,7 @@ STEP 9: WRITE FINAL OUTPUT
 For each generation step, the agent can use these prompt patterns internally:
 
 **Generating Layer 3 from Layer 1-2:**
+
 ```
 Given this feature: [Layer 1]
 And this differentiator: [Layer 2]
@@ -618,6 +623,7 @@ Test: Can the user see and measure this result?
 ```
 
 **Generating Layer 4 from Layer 3:**
+
 ```
 Given this functional benefit: [Layer 3]
 Ask "Why is that important to [persona name] personally?" three times.
@@ -626,6 +632,7 @@ Test: Would a real person say "When this works, I feel [emotion]"?
 ```
 
 **Generating Layer 5 from Layer 4:**
+
 ```
 Given this emotional benefit: [Layer 4]
 And this identity territory: [Phase 1C worldview and tribe]
@@ -634,6 +641,7 @@ Test: Does this sound like something you'd say about yourself with pride?
 ```
 
 **Generating Proof Anchor from Layer 1:**
+
 ```
 Given this feature: [Layer 1]
 Translate the most impressive technical spec into a human-scale metric.
@@ -647,18 +655,18 @@ Reference: "5GB" → "1,000 songs in your pocket"
 
 ### Decisions Only Humans Can Make
 
-| Decision | Why AI Can't Make It | When It's Needed |
-|---|---|---|
-| **Competitive alternative validation** | Requires knowledge of actual user behavior, not hypothetical | Phase 1A |
-| **JTBD validation** | Real job statements come from customer interviews, not code analysis | Phase 1B |
-| **Identity territory selection** | This is the highest-stakes positioning decision a company makes | Phase 1C |
-| **Anti-positioning scope** | Choosing your enemy is a strategic act with market consequences | Phase 1D |
-| **Emotional benefit validation** | Whether an emotion resonates is empirical, not logical | Phase 2, Layer 4 |
-| **Layer 5 approval** | Identity claims shape how the market perceives you permanently | Phase 2, Layer 5 |
-| **Pillar selection** | Which 3-4 themes to elevate is a prioritization decision | Phase 3A |
-| **Primary Message approval** | The one sentence that defines you to the world | Phase 3A |
-| **Social proof collection** | Customer quotes and metrics come from real customers | Phase 2, Proof Anchor |
-| **Headline selection** | Choosing between generated options is a taste decision | Phase 3B |
+| Decision                               | Why AI Can't Make It                                                 | When It's Needed      |
+| -------------------------------------- | -------------------------------------------------------------------- | --------------------- |
+| **Competitive alternative validation** | Requires knowledge of actual user behavior, not hypothetical         | Phase 1A              |
+| **JTBD validation**                    | Real job statements come from customer interviews, not code analysis | Phase 1B              |
+| **Identity territory selection**       | This is the highest-stakes positioning decision a company makes      | Phase 1C              |
+| **Anti-positioning scope**             | Choosing your enemy is a strategic act with market consequences      | Phase 1D              |
+| **Emotional benefit validation**       | Whether an emotion resonates is empirical, not logical               | Phase 2, Layer 4      |
+| **Layer 5 approval**                   | Identity claims shape how the market perceives you permanently       | Phase 2, Layer 5      |
+| **Pillar selection**                   | Which 3-4 themes to elevate is a prioritization decision             | Phase 3A              |
+| **Primary Message approval**           | The one sentence that defines you to the world                       | Phase 3A              |
+| **Social proof collection**            | Customer quotes and metrics come from real customers                 | Phase 2, Proof Anchor |
+| **Headline selection**                 | Choosing between generated options is a taste decision               | Phase 3B              |
 
 ### Human Input Format
 
@@ -673,13 +681,13 @@ The agent does the generative work. The human does the judgment work. This is by
 
 ### Minimum Human Time Investment
 
-| Phase | Human Effort | What You're Doing |
-|---|---|---|
-| Phase 1 | 30-60 min | Reviewing and correcting Ground Truth drafts |
-| Phase 2 | 10-20 min total | Approving/rejecting Value Ladders (2 min each) |
-| Phase 3 | 20-30 min | Selecting pillars, approving primary message, choosing headlines |
-| Phase 4 | 15-20 min | Reviewing final activation copy |
-| **Total** | **~2 hours** | For a complete Value Architecture from scratch |
+| Phase     | Human Effort    | What You're Doing                                                |
+| --------- | --------------- | ---------------------------------------------------------------- |
+| Phase 1   | 30-60 min       | Reviewing and correcting Ground Truth drafts                     |
+| Phase 2   | 10-20 min total | Approving/rejecting Value Ladders (2 min each)                   |
+| Phase 3   | 20-30 min       | Selecting pillars, approving primary message, choosing headlines |
+| Phase 4   | 15-20 min       | Reviewing final activation copy                                  |
+| **Total** | **~2 hours**    | For a complete Value Architecture from scratch                   |
 
 ---
 
@@ -689,14 +697,14 @@ The agent does the generative work. The human does the judgment work. This is by
 
 Every layer has a binary pass/fail test:
 
-| Layer | Test | Pass Example | Fail Example |
-|---|---|---|---|
-| L1 Feature | Can an engineer point to the code? | "Cron-based scheduling with SQLite state" | "Smart scheduling" |
-| L2 Mechanism | Does it name a specific alternative? | "Unlike manual `claude` invocations..." | "Better than other tools" |
-| L3 Functional | Can the user observe and measure this? | "Ship code while you sleep" | "Improves agent capability" |
-| L4 Emotional | Would a real person say "I feel [this]"? | "Wake up to progress, not dread" | "Feel empowered" |
-| L5 Identity | Does "I am someone who [this]" sound natural? | "...builds systems that run autonomously" | "...uses good software" |
-| Proof | Is the spec translated to human scale? | "Your agents never sleep" | "24/7 cron execution" |
+| Layer         | Test                                          | Pass Example                              | Fail Example                |
+| ------------- | --------------------------------------------- | ----------------------------------------- | --------------------------- |
+| L1 Feature    | Can an engineer point to the code?            | "Cron-based scheduling with SQLite state" | "Smart scheduling"          |
+| L2 Mechanism  | Does it name a specific alternative?          | "Unlike manual `claude` invocations..."   | "Better than other tools"   |
+| L3 Functional | Can the user observe and measure this?        | "Ship code while you sleep"               | "Improves agent capability" |
+| L4 Emotional  | Would a real person say "I feel [this]"?      | "Wake up to progress, not dread"          | "Feel empowered"            |
+| L5 Identity   | Does "I am someone who [this]" sound natural? | "...builds systems that run autonomously" | "...uses good software"     |
+| Proof         | Is the spec translated to human scale?        | "Your agents never sleep"                 | "24/7 cron execution"       |
 
 ### The Chain Test
 
@@ -720,26 +728,26 @@ For final Headline Bank and Activation Template output, apply this filter:
 
 ### Trigger Events for Updates
 
-| Event | What to Update | Scope |
-|---|---|---|
-| New feature shipped | Add a Value Ladder, update Persona-Benefit Matrix | Phase 2 only |
-| New persona identified | Re-score all ladders for persona resonance | Phase 2 resonance + Phase 3C |
-| Competitive landscape shifts | Re-run Phase 1A, cascade to all Layer 2 entries | Phase 1A → Phase 2 Layer 2 |
-| New customer data (quotes, metrics) | Update Proof Anchors with Social Proof | Phase 2 Proof Anchors |
-| Brand repositioning | Re-run Phase 1C-1D, cascade through all Layer 5 entries | Phase 1C-D → Phase 2 Layer 5 → Phase 3 |
-| Quarterly review | Validate Layer 2 alternatives still accurate, refresh Headline Bank | All phases, light touch |
+| Event                               | What to Update                                                      | Scope                                  |
+| ----------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
+| New feature shipped                 | Add a Value Ladder, update Persona-Benefit Matrix                   | Phase 2 only                           |
+| New persona identified              | Re-score all ladders for persona resonance                          | Phase 2 resonance + Phase 3C           |
+| Competitive landscape shifts        | Re-run Phase 1A, cascade to all Layer 2 entries                     | Phase 1A → Phase 2 Layer 2             |
+| New customer data (quotes, metrics) | Update Proof Anchors with Social Proof                              | Phase 2 Proof Anchors                  |
+| Brand repositioning                 | Re-run Phase 1C-1D, cascade through all Layer 5 entries             | Phase 1C-D → Phase 2 Layer 5 → Phase 3 |
+| Quarterly review                    | Validate Layer 2 alternatives still accurate, refresh Headline Bank | All phases, light touch                |
 
 ### Version History Pattern
 
 Track changes to the Value Architecture the same way you track code:
 
 ```yaml
-version: "1.0"
-last_updated: "2026-02-27"
+version: '1.0'
+last_updated: '2026-02-27'
 changelog:
-  - date: "2026-02-27"
-    change: "Initial Value Architecture created"
-    scope: "All phases"
+  - date: '2026-02-27'
+    change: 'Initial Value Architecture created'
+    scope: 'All phases'
 ```
 
 ---
@@ -758,36 +766,36 @@ The name also resonates with the product it was designed for (DorkOS is infrastr
 
 ### Key Terms
 
-| Term | Definition |
-|---|---|
-| **Value Ladder** | The complete 5-layer map for a single feature, from Feature to Identity |
-| **Layer** | One altitude in the Value Ladder (Feature, Mechanism, Functional, Emotional, Identity) |
-| **Proof Anchor** | The evidence element attached to each Value Ladder (human metric, contrast, or social proof) |
-| **Ground Truth** | The strategic foundation established in Phase 1 (competitive context, JTBD, identity territory, anti-positioning) |
-| **Message House** | The hierarchical messaging structure: primary message (roof), pillars, proof points, foundation |
-| **Headline Bank** | The collection of ready-to-use headlines organized by pillar and benefit layer |
-| **Persona-Benefit Matrix** | The grid mapping each persona × feature to their most resonant benefit layer |
-| **Activation Template** | Structural copy patterns with layer-specific slots for downstream creators |
-| **Identity Territory** | The self-expressive benefit space the brand occupies (the apex of the Brand Ladder) |
-| **Anti-Positioning** | The explicit definition of what the product opposes — the villain, the paradigm, the status quo |
-| **Human Metric** | A technical spec translated to a number that activates human desire ("1000 songs in your pocket") |
-| **Contrast Proof** | A before/after or with/without comparison that makes the benefit tangible |
-| **Altitude** | Shorthand for benefit layer level — "write at Layer 4 altitude" means "write emotional benefit copy" |
+| Term                       | Definition                                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Value Ladder**           | The complete 5-layer map for a single feature, from Feature to Identity                                           |
+| **Layer**                  | One altitude in the Value Ladder (Feature, Mechanism, Functional, Emotional, Identity)                            |
+| **Proof Anchor**           | The evidence element attached to each Value Ladder (human metric, contrast, or social proof)                      |
+| **Ground Truth**           | The strategic foundation established in Phase 1 (competitive context, JTBD, identity territory, anti-positioning) |
+| **Message House**          | The hierarchical messaging structure: primary message (roof), pillars, proof points, foundation                   |
+| **Headline Bank**          | The collection of ready-to-use headlines organized by pillar and benefit layer                                    |
+| **Persona-Benefit Matrix** | The grid mapping each persona × feature to their most resonant benefit layer                                      |
+| **Activation Template**    | Structural copy patterns with layer-specific slots for downstream creators                                        |
+| **Identity Territory**     | The self-expressive benefit space the brand occupies (the apex of the Brand Ladder)                               |
+| **Anti-Positioning**       | The explicit definition of what the product opposes — the villain, the paradigm, the status quo                   |
+| **Human Metric**           | A technical spec translated to a number that activates human desire ("1000 songs in your pocket")                 |
+| **Contrast Proof**         | A before/after or with/without comparison that makes the benefit tangible                                         |
+| **Altitude**               | Shorthand for benefit layer level — "write at Layer 4 altitude" means "write emotional benefit copy"              |
 
 ### Abbreviations Used in Templates
 
-| Abbreviation | Meaning |
-|---|---|
-| L1 | Layer 1 — Feature |
-| L2 | Layer 2 — Mechanism |
-| L3 | Layer 3 — Functional Benefit |
-| L4 | Layer 4 — Emotional Benefit |
-| L5 | Layer 5 — Identity Benefit |
-| VA | Value Architecture |
-| VL | Value Ladder |
-| PBM | Persona-Benefit Matrix |
-| MH | Message House |
-| HB | Headline Bank |
+| Abbreviation | Meaning                      |
+| ------------ | ---------------------------- |
+| L1           | Layer 1 — Feature            |
+| L2           | Layer 2 — Mechanism          |
+| L3           | Layer 3 — Functional Benefit |
+| L4           | Layer 4 — Emotional Benefit  |
+| L5           | Layer 5 — Identity Benefit   |
+| VA           | Value Architecture           |
+| VL           | Value Ladder                 |
+| PBM          | Persona-Benefit Matrix       |
+| MH           | Message House                |
+| HB           | Headline Bank                |
 
 ---
 
@@ -805,15 +813,15 @@ The frameworks synthesized into The Value Architecture were selected based on fi
 
 Frameworks considered but not included:
 
-| Framework | Why Excluded |
-|---|---|
-| Porter's Value Chain | Addresses business operations, not customer-facing messaging |
-| Blue Ocean Strategy | Strategy-level framework; too broad for feature-to-benefit mapping |
-| Crossing the Chasm (Moore) | Adoption lifecycle strategy, not a messaging framework |
-| SPIN Selling | Sales methodology; FAB covers the same territory for marketing |
-| The Challenger Sale | Sales methodology; relevant to enterprise, not developer PLG |
-| Design Thinking | Product development methodology; not a messaging framework |
-| Lean Canvas | Business model tool; Value Prop Canvas better serves the messaging need |
+| Framework                  | Why Excluded                                                            |
+| -------------------------- | ----------------------------------------------------------------------- |
+| Porter's Value Chain       | Addresses business operations, not customer-facing messaging            |
+| Blue Ocean Strategy        | Strategy-level framework; too broad for feature-to-benefit mapping      |
+| Crossing the Chasm (Moore) | Adoption lifecycle strategy, not a messaging framework                  |
+| SPIN Selling               | Sales methodology; FAB covers the same territory for marketing          |
+| The Challenger Sale        | Sales methodology; relevant to enterprise, not developer PLG            |
+| Design Thinking            | Product development methodology; not a messaging framework              |
+| Lean Canvas                | Business model tool; Value Prop Canvas better serves the messaging need |
 
 ### The Insight That Drove the Synthesis
 

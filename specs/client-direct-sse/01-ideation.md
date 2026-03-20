@@ -58,6 +58,7 @@ status: ideation
   - `apps/client/src/layers/entities/relay/` — Relay entity hooks (stay for UI)
 
 - **Data flow (current relay path):**
+
   ```
   Client useChatSession.executeSubmission()
     → correlationId = crypto.randomUUID()
@@ -70,6 +71,7 @@ status: ideation
   ```
 
 - **Data flow (direct SSE — the keeper):**
+
   ```
   Client useChatSession.executeSubmission()
     → transport.sendMessage(sessionId, content, onEvent, signal)
@@ -123,8 +125,8 @@ Research saved to: `research/20260312_client_direct_sse_relay_removal.md`
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Removal depth | Full stack removal | Server-side relay code for the web client (publishViaRelay, 202 path, SessionBroadcaster relay fan-in, stream_ready) is dead code that won't be reused. External adapters use completely different code paths. |
-| 2 | Transport interface | Keep `sendMessageRelay()`, stop calling it | Avoids breaking change to the interface while relay feature settles. DirectTransport already has a no-op implementation. |
-| 3 | Naming cleanup | Rename "legacy" labels in this work | SSE is now the primary and only client transport. Calling it "legacy" is confusing and contradicts the intent of this change. |
+| #   | Decision            | Choice                                     | Rationale                                                                                                                                                                                                      |
+| --- | ------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Removal depth       | Full stack removal                         | Server-side relay code for the web client (publishViaRelay, 202 path, SessionBroadcaster relay fan-in, stream_ready) is dead code that won't be reused. External adapters use completely different code paths. |
+| 2   | Transport interface | Keep `sendMessageRelay()`, stop calling it | Avoids breaking change to the interface while relay feature settles. DirectTransport already has a no-op implementation.                                                                                       |
+| 3   | Naming cleanup      | Rename "legacy" labels in this work        | SSE is now the primary and only client transport. Calling it "legacy" is confusing and contradicts the intent of this change.                                                                                  |

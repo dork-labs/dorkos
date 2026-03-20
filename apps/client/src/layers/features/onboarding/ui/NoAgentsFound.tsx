@@ -39,7 +39,7 @@ export function NoAgentsFound({ onAgentCreated }: NoAgentsFoundProps) {
           // Brief delay so user sees the success state before callback
           setTimeout(onAgentCreated, 1200);
         },
-      },
+      }
     );
   }, [directory, name, persona, createAgent, onAgentCreated]);
 
@@ -65,8 +65,8 @@ export function NoAgentsFound({ onAgentCreated }: NoAgentsFoundProps) {
         </div>
         <h3 className="text-lg font-semibold">No agents found</h3>
         <p className="text-muted-foreground mx-auto max-w-sm text-sm">
-          Agents give your projects an identity. Each agent lives in a project directory and can have
-          its own name, persona, and scheduled tasks.
+          Agents give your projects an identity. Each agent lives in a project directory and can
+          have its own name, persona, and scheduled tasks.
         </p>
       </div>
 
@@ -88,11 +88,7 @@ export function NoAgentsFound({ onAgentCreated }: NoAgentsFoundProps) {
               {directory ? shortenHomePath(directory) : 'Select a directory...'}
             </span>
           </button>
-          <DirectoryPicker
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
-            onSelect={setDirectory}
-          />
+          <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={setDirectory} />
         </div>
 
         {/* Agent name */}

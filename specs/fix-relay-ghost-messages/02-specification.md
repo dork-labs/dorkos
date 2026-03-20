@@ -138,8 +138,11 @@ eventSource.addEventListener('relay_message', (event: MessageEvent) => {
       correlationId?: string;
     };
     // Discard events from previous messages
-    if (correlationIdRef.current && envelope.correlationId &&
-        envelope.correlationId !== correlationIdRef.current) {
+    if (
+      correlationIdRef.current &&
+      envelope.correlationId &&
+      envelope.correlationId !== correlationIdRef.current
+    ) {
       return;
     }
     resetStalenessTimer();
@@ -263,9 +266,10 @@ In `subscribeToRelay()`, include `correlationId` from the relay payload in the S
 ```typescript
 unsubFn = this.relay!.subscribe(subject, (envelope) => {
   const payload = envelope.payload as Record<string, unknown> | null | undefined;
-  const correlationId = typeof payload === 'object' && payload !== null
-    ? (payload as Record<string, unknown>)['correlationId']
-    : undefined;
+  const correlationId =
+    typeof payload === 'object' && payload !== null
+      ? (payload as Record<string, unknown>)['correlationId']
+      : undefined;
   // ...
   const eventData = `event: relay_message\ndata: ${JSON.stringify({
     messageId: envelope.id,
@@ -313,6 +317,7 @@ Client: EventSource relay_message listener
 ## User Experience
 
 No visible UI changes. Users will experience:
+
 - Messages sent in rapid succession are delivered reliably
 - No more phantom/ghost responses
 - No increase in perceived latency (correlation ID is generated client-side, no extra round-trips)
@@ -348,6 +353,7 @@ Tests for the relay-specific fixes:
 ### E2E / Manual Verification
 
 Use the existing `/chat:self-test` skill to verify the fix:
+
 1. Enable relay mode
 2. Send 5 rapid successive messages
 3. Verify all messages appear in JSONL

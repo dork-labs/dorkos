@@ -1,11 +1,5 @@
 import { motion } from 'motion/react';
-import {
-  File as FileIcon,
-  FileCode,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-} from 'lucide-react';
+import { File as FileIcon, FileCode, FileImage, FileSpreadsheet, FileText } from 'lucide-react';
 
 import type { ParsedFile } from '../../lib/parse-file-prefix';
 import { useAppStore } from '@/layers/shared/model';
@@ -73,7 +67,7 @@ export function FileAttachmentList({ files }: FileAttachmentListProps) {
                   src={imgSrc}
                   alt={file.displayName}
                   loading="lazy"
-                  className="max-h-[120px] max-w-[200px] cursor-pointer rounded-lg border border-border/50 object-contain transition-all duration-150 hover:brightness-95"
+                  className="border-border/50 max-h-[120px] max-w-[200px] cursor-pointer rounded-lg border object-contain transition-all duration-150 hover:brightness-95"
                 />
               </a>
             </motion.div>

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers state management patterns in DorkOS. Zustand manages complex client-side UI state, TanStack Query manages server state via the Transport abstraction, and nuqs synchronizes URL parameters for session/directory state in standalone mode.
+This guide covers state management patterns in DorkOS. Zustand manages complex client-side UI state, TanStack Query manages server state via the Transport abstraction, and TanStack Router search params synchronize URL parameters for session/directory state in standalone mode.
 
 ## Key Files
 
@@ -12,24 +12,24 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | TransportContext     | `apps/client/src/layers/shared/model/TransportContext.tsx`        |
 | Session entity hooks | `apps/client/src/layers/entities/session/`                        |
 | Command entity hooks | `apps/client/src/layers/entities/command/`                        |
-| Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
-| URL state (nuqs)     | `apps/client/src/layers/entities/session/model/use-session-id.ts` |
-| Theme hook           | `apps/client/src/layers/shared/model/use-theme.ts`               |
+| Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
+| URL state (router)   | `apps/client/src/layers/entities/session/model/use-session-id.ts` |
+| Theme hook           | `apps/client/src/layers/shared/model/use-theme.ts`                |
 
 ## When to Use What
 
-| State Type               | Tool            | Example                                     | Why                                                        |
-| ------------------------ | --------------- | ------------------------------------------- | ---------------------------------------------------------- |
-| Server state             | TanStack Query  | Sessions, messages, commands                | Handles caching, revalidation, background refetching       |
-| Complex client state     | Zustand         | Sidebar open/closed, active panel           | Global access, no prop drilling, middleware support         |
-| Simple UI state          | React useState  | Modal open/close, toggle visibility         | Scoped to component, no persistence needed                 |
-| URL state (standalone)   | nuqs            | `?session=` ID, `?dir=` working directory   | Shareable links, browser history, bookmarkable             |
-| URL state (Obsidian)     | Zustand         | Session ID, working directory               | No URL bar in Obsidian; Zustand replaces nuqs              |
-| Persistent client state  | localStorage + useSyncExternalStore | Agent frecency scores (Slack bucket system)  | Survives page reloads, reactive updates via subscribe/getSnapshot |
-| Dialog-scoped state      | React useState  | Pages stack in CommandPaletteDialog          | Resets when dialog closes, no persistence needed           |
-| Debounced derived state  | useDeferredValue | Preview panel data during rapid navigation  | Defers expensive fetches without state management overhead |
-| Multi-source derived state | TanStack Query + `useMemo` | Feature flags + entity data combined | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
-| Cross-feature signal     | Zustand (entity layer) | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation |
+| State Type                 | Tool                                | Example                                                             | Why                                                                                    |
+| -------------------------- | ----------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Server state               | TanStack Query                      | Sessions, messages, commands                                        | Handles caching, revalidation, background refetching                                   |
+| Complex client state       | Zustand                             | Sidebar open/closed, active panel                                   | Global access, no prop drilling, middleware support                                    |
+| Simple UI state            | React useState                      | Modal open/close, toggle visibility                                 | Scoped to component, no persistence needed                                             |
+| URL state (standalone)     | TanStack Router search params       | `?session=` ID, `?dir=` working directory                           | Shareable links, browser history, bookmarkable                                         |
+| URL state (Obsidian)       | Zustand                             | Session ID, working directory                                       | No URL bar in Obsidian; Zustand replaces router search params                          |
+| Persistent client state    | localStorage + useSyncExternalStore | Agent frecency scores (Slack bucket system)                         | Survives page reloads, reactive updates via subscribe/getSnapshot                      |
+| Dialog-scoped state        | React useState                      | Pages stack in CommandPaletteDialog                                 | Resets when dialog closes, no persistence needed                                       |
+| Debounced derived state    | useDeferredValue                    | Preview panel data during rapid navigation                          | Defers expensive fetches without state management overhead                             |
+| Multi-source derived state | TanStack Query + `useMemo`          | Feature flags + entity data combined                                | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
+| Cross-feature signal       | Zustand (entity layer)              | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation                             |
 
 ## Core Patterns
 
@@ -38,6 +38,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 The central UI store lives at `apps/client/src/layers/shared/model/app-store.ts`. It uses the `devtools` middleware for Redux DevTools support and persists boolean preferences to `localStorage` via `readBool`/`writeBool` helpers.
 
 Key state owned by the app store:
+
 - `sidebarOpen` — persisted to localStorage; always `false` on mobile on first load
 - `previousCwd` — transient; used by command palette for "switch back" suggestions
 - Dialog open states (`settingsOpen`, `pulseOpen`, `relayOpen`, `meshOpen`, etc.) — transient, not persisted
@@ -109,22 +110,26 @@ export function useSessions(cwd?: string) {
 }
 ```
 
-### URL State with nuqs (Standalone Mode)
+### URL State with TanStack Router (Standalone Mode)
 
-In standalone web mode, `?session=` and `?dir=` persist in the URL via nuqs:
+In standalone web mode, `?session=` and `?dir=` persist in the URL via TanStack Router's `validateSearch` and `Route.useSearch()`:
 
 ```typescript
 // apps/client/src/layers/entities/session/model/use-session-id.ts
-import { useQueryState } from 'nuqs';
+import { useSessionSearch } from './use-session-search';
+import { useNavigate } from '@tanstack/react-router';
 
-export function useSessionId() {
-  // Syncs session ID to/from URL: ?session=<uuid>
-  const [sessionId, setSessionId] = useQueryState('session');
-  return { sessionId, setSessionId };
+export function useSessionId(): [string | null, (id: string | null) => void] {
+  const { session } = useSessionSearch();
+  const navigate = useNavigate();
+  const setSessionId = (id: string | null) => {
+    navigate({ search: (prev) => ({ ...prev, session: id ?? undefined }) });
+  };
+  return [session ?? null, setSessionId];
 }
 ```
 
-In Obsidian embedded mode, the same hooks use Zustand instead of nuqs (no URL bar available). The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
+In Obsidian embedded mode, the same hooks use Zustand instead of TanStack Router (no URL bar available). The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
 
 ### Persistent Client State with useSyncExternalStore
 
@@ -138,7 +143,7 @@ const STORAGE_KEY = 'dorkos:agent-frecency-v2';
 
 interface FrecencyRecord {
   agentId: string;
-  timestamps: number[];  // epoch ms, most recent first, max 10
+  timestamps: number[]; // epoch ms, most recent first, max 10
   totalCount: number;
 }
 
@@ -158,7 +163,7 @@ function getSnapshot() {
 function recordVisit(agentId: string) {
   // ... update record, persist to localStorage
   snapshot = [...updatedRecords];
-  listeners.forEach(l => l()); // Notify React
+  listeners.forEach((l) => l()); // Notify React
 }
 
 export function useAgentFrecency() {
@@ -182,7 +187,7 @@ export function usePreviewData(agentId: string, agentCwd: string) {
   const { data: sessions } = useSessions();
 
   const agentSessions = useMemo(
-    () => sessions?.filter(s => s.cwd === agentCwd) ?? [],
+    () => sessions?.filter((s) => s.cwd === agentCwd) ?? [],
     [sessions, agentCwd]
   );
 
@@ -199,16 +204,21 @@ When a component needs state computed from multiple independent server queries, 
 ```typescript
 // Pattern: useAgentToolStatus combines agent manifest + feature flags
 function useAgentToolStatus() {
-  const { data: agent } = useCurrentAgent();     // TanStack Query
-  const pulseEnabled = usePulseEnabled();          // TanStack Query
-  const relayEnabled = useRelayEnabled();          // TanStack Query
+  const { data: agent } = useCurrentAgent(); // TanStack Query
+  const pulseEnabled = usePulseEnabled(); // TanStack Query
+  const relayEnabled = useRelayEnabled(); // TanStack Query
 
-  return useMemo(() => ({
-    pulse: !pulseEnabled ? 'disabled-by-server'
-         : agent?.enabledToolGroups?.pulse === false ? 'disabled-by-agent'
-         : 'enabled',
-    // ... similar for relay, mesh, adapter
-  }), [agent, pulseEnabled, relayEnabled]);
+  return useMemo(
+    () => ({
+      pulse: !pulseEnabled
+        ? 'disabled-by-server'
+        : agent?.enabledToolGroups?.pulse === false
+          ? 'disabled-by-agent'
+          : 'enabled',
+      // ... similar for relay, mesh, adapter
+    }),
+    [agent, pulseEnabled, relayEnabled]
+  );
 }
 ```
 
@@ -351,12 +361,17 @@ export const useFilterStore = create((set) => ({
   setSessionId: (id) => set({ sessionId: id }),
 }));
 
-// ✅ Use nuqs for URL-synchronized state (shareable, bookmarkable)
-import { useQueryState } from 'nuqs';
+// ✅ Use TanStack Router search params for URL-synchronized state (shareable, bookmarkable)
+import { useSessionSearch } from './use-session-search';
+import { useNavigate } from '@tanstack/react-router';
 
 export function useSessionId() {
-  const [sessionId, setSessionId] = useQueryState('session');
-  return { sessionId, setSessionId };
+  const { session } = useSessionSearch();
+  const navigate = useNavigate();
+  const setSessionId = (id: string | null) => {
+    navigate({ search: (prev) => ({ ...prev, session: id ?? undefined }) });
+  };
+  return [session ?? null, setSessionId];
 }
 ```
 
@@ -425,8 +440,7 @@ addItem: (item) => {
 };
 
 // ✅ Create new reference
-addItem: (item) =>
-  set((state) => ({ items: [...state.items, item] }));
+addItem: (item) => set((state) => ({ items: [...state.items, item] }));
 ```
 
 ### Component re-renders on every store update
@@ -443,8 +457,8 @@ const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 
 ### URL state not persisting after navigation
 
-**Cause**: Using Zustand instead of nuqs for URL-synced state in standalone mode.
-**Fix**: Use `useQueryState` from nuqs for state that should persist in the URL.
+**Cause**: Using Zustand instead of TanStack Router search params for URL-synced state in standalone mode.
+**Fix**: Use `useSessionSearch()` / `useNavigate()` from TanStack Router for state that should persist in the URL.
 
 ### "Cannot use store outside React components"
 
@@ -463,7 +477,7 @@ const currentState = useAppStore.getState();
 - [Data Fetching Guide](./data-fetching.md) - TanStack Query patterns and Transport abstraction
 - [Architecture Guide](./architecture.md) - Transport interface, dependency injection
 - [Zustand Documentation](https://docs.pmnd.rs/zustand/getting-started/introduction)
-- [nuqs Documentation](https://nuqs.47ng.com/) - Type-safe URL query state for React
+- [TanStack Router Documentation](https://tanstack.com/router/latest) - Type-safe routing and URL search params for React
 - [useSyncExternalStore (React docs)](https://react.dev/reference/react/useSyncExternalStore) - External state subscription pattern
 - [useDeferredValue (React docs)](https://react.dev/reference/react/useDeferredValue) - High-frequency update debouncing
 - [Slack Engineering — A Faster, Smarter Quick Switcher](https://slack.engineering/a-faster-smarter-quick-switcher/) - Bucket frecency algorithm

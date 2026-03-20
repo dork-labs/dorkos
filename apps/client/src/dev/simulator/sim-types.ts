@@ -1,4 +1,8 @@
-import type { ChatMessage, ChatStatus, ToolCallState } from '@/layers/features/chat/model/chat-types';
+import type {
+  ChatMessage,
+  ChatStatus,
+  ToolCallState,
+} from '@/layers/features/chat/model/chat-types';
 import type { MessagePart } from '@dorkos/shared/types';
 
 /** Base fields shared by all simulation steps. */
@@ -13,11 +17,20 @@ export type SimStep =
   | ({ type: 'update_message'; messageId: string; patch: Partial<ChatMessage> } & SimStepBase)
   | ({ type: 'stream_text_chunk'; messageId: string; text: string } & SimStepBase)
   | ({ type: 'append_tool_call'; messageId: string; toolCall: ToolCallState } & SimStepBase)
-  | ({ type: 'update_tool_call'; messageId: string; toolCallId: string; patch: Partial<ToolCallState> } & SimStepBase)
+  | ({
+      type: 'update_tool_call';
+      messageId: string;
+      toolCallId: string;
+      patch: Partial<ToolCallState>;
+    } & SimStepBase)
   | ({ type: 'append_part'; messageId: string; part: MessagePart } & SimStepBase)
   | ({ type: 'set_status'; status: ChatStatus } & SimStepBase)
   | ({ type: 'set_streaming'; isTextStreaming: boolean } & SimStepBase)
-  | ({ type: 'set_waiting'; isWaiting: boolean; waitingType?: 'approval' | 'question' } & SimStepBase);
+  | ({
+      type: 'set_waiting';
+      isWaiting: boolean;
+      waitingType?: 'approval' | 'question';
+    } & SimStepBase);
 
 /** A named sequence of simulation steps with metadata. */
 export interface SimScenario {

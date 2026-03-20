@@ -51,21 +51,22 @@ An existing Next.js 16 codebase (`144x.co`) provides a strong foundation: Calm T
 
 ## Technical Dependencies
 
-| Dependency | Version | Purpose | Notes |
-|---|---|---|---|
-| Next.js | 16.x | App framework | Already in 144x.co source |
-| React | 19.x | UI library | Already in 144x.co source |
-| Tailwind CSS | 4.x | Styling | Already in 144x.co source |
-| Fumadocs | latest | Docs framework | New dependency for `apps/web` |
-| fumadocs-mdx | latest | MDX content pipeline | Processes `docs/` at build time |
-| fumadocs-openapi | latest | OpenAPI docs rendering | Reads `openapi.json` |
-| fumadocs-ui | latest | Docs UI components | DocsLayout, search, sidebar |
-| posthog-js | 1.336.x | Client analytics | Already in 144x.co source |
-| next-themes | 0.4.x | Dark mode | Already in 144x.co source |
-| motion | 12.x | Animations | Already in 144x.co source |
-| shiki | latest | Code highlighting | Required by fumadocs-openapi |
+| Dependency       | Version | Purpose                | Notes                           |
+| ---------------- | ------- | ---------------------- | ------------------------------- |
+| Next.js          | 16.x    | App framework          | Already in 144x.co source       |
+| React            | 19.x    | UI library             | Already in 144x.co source       |
+| Tailwind CSS     | 4.x     | Styling                | Already in 144x.co source       |
+| Fumadocs         | latest  | Docs framework         | New dependency for `apps/web`   |
+| fumadocs-mdx     | latest  | MDX content pipeline   | Processes `docs/` at build time |
+| fumadocs-openapi | latest  | OpenAPI docs rendering | Reads `openapi.json`            |
+| fumadocs-ui      | latest  | Docs UI components     | DocsLayout, search, sidebar     |
+| posthog-js       | 1.336.x | Client analytics       | Already in 144x.co source       |
+| next-themes      | 0.4.x   | Dark mode              | Already in 144x.co source       |
+| motion           | 12.x    | Animations             | Already in 144x.co source       |
+| shiki            | latest  | Code highlighting      | Required by fumadocs-openapi    |
 
 **Removed dependencies** (stripped from 144x.co):
+
 - `better-auth`, `@prisma/adapter-better-sqlite3` — Authentication
 - `prisma`, `@prisma/client`, `better-sqlite3` — Database
 - `@modelcontextprotocol/sdk`, `mcp-handler` — MCP server
@@ -81,6 +82,7 @@ An existing Next.js 16 codebase (`144x.co`) provides a strong foundation: Calm T
 Add `apps/web` as a Turborepo workspace:
 
 **`apps/web/package.json`:**
+
 ```json
 {
   "name": "@dorkos/web",
@@ -99,6 +101,7 @@ Add `apps/web` as a Turborepo workspace:
 ```
 
 **`turbo.json` updates:**
+
 - Add `.next/**` to the `build` task `outputs` array
 - Add `NEXT_PUBLIC_*`, `POSTHOG_*` to `build` env list
 
@@ -156,17 +159,19 @@ apps/web/
 ### 3. Fumadocs Integration
 
 **`source.config.ts`:**
+
 ```typescript
 import { defineDocs, defineConfig } from 'fumadocs-mdx/config';
 
 export const docs = defineDocs({
-  dir: '../../docs',  // Points to repo root docs/ directory
+  dir: '../../docs', // Points to repo root docs/ directory
 });
 
 export default defineConfig();
 ```
 
 **`lib/source.ts`:**
+
 ```typescript
 import { docs } from 'fumadocs-mdx:collections/server';
 import { loader } from 'fumadocs-core/source';
@@ -178,6 +183,7 @@ export const source = loader({
 ```
 
 **`app/(docs)/layout.tsx`:**
+
 ```typescript
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { RootProvider } from 'fumadocs-ui/provider';
@@ -196,6 +202,7 @@ export default function DocsRootLayout({ children }: { children: ReactNode }) {
 ```
 
 **`app/(docs)/docs/[[...slug]]/page.tsx`:**
+
 ```typescript
 import { source } from '@/lib/source';
 import { DocsPage, DocsBody } from 'fumadocs-ui/page';
@@ -236,6 +243,7 @@ export function generateStaticParams() {
 ### 4. OpenAPI Documentation
 
 **`lib/openapi.ts`:**
+
 ```typescript
 import { createOpenAPI } from 'fumadocs-openapi/server';
 
@@ -245,6 +253,7 @@ export const openapi = createOpenAPI({
 ```
 
 **`scripts/generate-api-docs.ts`:**
+
 ```typescript
 import { generateFiles } from 'fumadocs-openapi';
 import { openapi } from '../lib/openapi';
@@ -259,6 +268,7 @@ void generateFiles({
 This script runs as a pre-build step (`generate:api-docs` in package.json). The generated MDX files slot into the `docs/api/` directory and are picked up by Fumadocs.
 
 **Build pipeline integration** in `turbo.json`:
+
 ```json
 {
   "build": {
@@ -285,6 +295,7 @@ The terminal-style "reveal email" contact section is preserved as-is from 144x.c
 ### 7. Theme System (Preserved)
 
 Dark/light mode via `next-themes`:
+
 - Root layout: `<html suppressHydrationWarning>`
 - Providers: `ThemeProvider` with `attribute="class"`, `defaultTheme="system"`
 - CSS: Full light/dark variable sets in `globals.css` (oklch color space)
@@ -294,26 +305,27 @@ Dark/light mode via `next-themes`:
 
 The following are removed during the copy-and-adapt process:
 
-| Feature | Files Removed | Reason |
-|---|---|---|
-| BetterAuth | `src/layers/features/auth/`, `api/auth/`, `src/layers/shared/api/auth.ts` | No auth on marketing site |
-| Prisma/DB | `prisma/`, `src/layers/shared/api/errors.ts` (if DB-specific) | No database needed |
-| User entity | `src/layers/entities/user/` | Tied to auth |
-| MCP server | `src/layers/features/mcp-database-server/`, `api/mcp/` | Internal tool |
-| Dashboard | `src/app/(authenticated)/` | Requires auth |
-| Auth pages | `src/app/(auth)/` | No auth |
-| Design system page | `src/app/system/` | Internal dev tool |
-| App sidebar | `src/layers/widgets/app-sidebar/` | App-level nav, not marketing |
-| API routes | `src/app/api/` (all) | No backend API needed |
-| TanStack Query | `src/layers/shared/lib/query-client.ts` | No data fetching |
-| Env validation | `src/env.ts` | Simplified to just PostHog vars |
-| PWA manifest | `src/app/manifest.ts` | Marketing site isn't a PWA |
+| Feature            | Files Removed                                                             | Reason                          |
+| ------------------ | ------------------------------------------------------------------------- | ------------------------------- |
+| BetterAuth         | `src/layers/features/auth/`, `api/auth/`, `src/layers/shared/api/auth.ts` | No auth on marketing site       |
+| Prisma/DB          | `prisma/`, `src/layers/shared/api/errors.ts` (if DB-specific)             | No database needed              |
+| User entity        | `src/layers/entities/user/`                                               | Tied to auth                    |
+| MCP server         | `src/layers/features/mcp-database-server/`, `api/mcp/`                    | Internal tool                   |
+| Dashboard          | `src/app/(authenticated)/`                                                | Requires auth                   |
+| Auth pages         | `src/app/(auth)/`                                                         | No auth                         |
+| Design system page | `src/app/system/`                                                         | Internal dev tool               |
+| App sidebar        | `src/layers/widgets/app-sidebar/`                                         | App-level nav, not marketing    |
+| API routes         | `src/app/api/` (all)                                                      | No backend API needed           |
+| TanStack Query     | `src/layers/shared/lib/query-client.ts`                                   | No data fetching                |
+| Env validation     | `src/env.ts`                                                              | Simplified to just PostHog vars |
+| PWA manifest       | `src/app/manifest.ts`                                                     | Marketing site isn't a PWA      |
 
 ### 9. Site Configuration
 
 All site-wide strings and settings live in a central config file to avoid hardcoding across components:
 
 **`lib/site-config.ts`:**
+
 ```typescript
 export const siteConfig = {
   name: 'DorkOS',
@@ -330,22 +342,23 @@ Components reference `siteConfig.contactEmail` instead of hardcoded strings.
 
 ### 10. Branding Updates
 
-| Element | 144x.co (Current) | DorkOS (Target) |
-|---|---|---|
-| Site title | "Dorkian" | "DorkOS" |
-| Description | "Independent studio..." | "A web UI for Claude Code" |
-| Domain | dorkian.com | dorkos.ai |
-| Contact email | hey@dorkian.com | (TBD — user decides) |
-| Projects data | 6 portfolio projects | DorkOS features/highlights |
-| Philosophy items | 3 studio values | DorkOS design principles |
-| JSON-LD schema | Organization (Dorkian) | SoftwareApplication (DorkOS) |
-| OG images | Dorkian branding | DorkOS branding |
-| Fonts | IBM Plex Sans/Mono | IBM Plex Sans/Mono (keep) |
-| Color palette | Cream/charcoal/orange | Cream/charcoal/orange (keep) |
+| Element          | 144x.co (Current)       | DorkOS (Target)              |
+| ---------------- | ----------------------- | ---------------------------- |
+| Site title       | "Dorkian"               | "DorkOS"                     |
+| Description      | "Independent studio..." | "A web UI for Claude Code"   |
+| Domain           | dorkian.com             | dorkos.ai                    |
+| Contact email    | hey@dorkian.com         | (TBD — user decides)         |
+| Projects data    | 6 portfolio projects    | DorkOS features/highlights   |
+| Philosophy items | 3 studio values         | DorkOS design principles     |
+| JSON-LD schema   | Organization (Dorkian)  | SoftwareApplication (DorkOS) |
+| OG images        | Dorkian branding        | DorkOS branding              |
+| Fonts            | IBM Plex Sans/Mono      | IBM Plex Sans/Mono (keep)    |
+| Color palette    | Cream/charcoal/orange   | Cream/charcoal/orange (keep) |
 
 ### 11. Vercel Deployment
 
 **Vercel project configuration:**
+
 - **Project name:** `dorkos-web`
 - **Root Directory:** `apps/web`
 - **Build Command:** `turbo build` (auto-scoped by Vercel)
@@ -354,10 +367,12 @@ Components reference `siteConfig.contactEmail` instead of hardcoded strings.
 - **Node.js version:** 20.x
 
 **Domain configuration:**
+
 - Primary: `dorkos.ai` → Vercel project
 - Docs: `dorkos.ai/docs` (route group, same deployment)
 
 **Environment variables (Vercel dashboard):**
+
 - `NEXT_PUBLIC_POSTHOG_KEY` — PostHog project API key
 - `NEXT_PUBLIC_POSTHOG_HOST` — `https://us.i.posthog.com`
 
@@ -391,6 +406,7 @@ export default async function sitemap() {
 ### Marketing Site (`dorkos.ai`)
 
 Users land on a visually striking page with the Calm Tech aesthetic:
+
 1. **Hero section** — DorkOS tagline with terminal-style blinking cursor
 2. **Features/Projects grid** — Showcase of DorkOS capabilities
 3. **Philosophy section** — Design principles (open-source, developer-first, etc.)
@@ -402,6 +418,7 @@ Navigation: Sticky header with links to Features, Docs, GitHub.
 ### Documentation (`dorkos.ai/docs`)
 
 Users navigate docs via Fumadocs' built-in sidebar:
+
 1. **Getting Started** — Installation, quickstart, configuration
 2. **Guides** — CLI usage, tunnel setup, slash commands, keyboard shortcuts
 3. **API Reference** — Interactive endpoint docs (from OpenAPI spec)
@@ -444,6 +461,7 @@ describe('Fumadocs source', () => {
 ### Build-Time Verification
 
 The primary "test" is a successful build. The build pipeline validates:
+
 - All MDX files parse without errors
 - All imports resolve
 - TypeScript types check
@@ -492,6 +510,7 @@ The primary "test" is a successful build. The build pipeline validates:
 Copy 144x.co source into `apps/web/`. Strip BetterAuth, Prisma, MCP, dashboard, auth pages, API routes, TanStack Query, and env validation. Convert from pnpm to npm. Verify `npm run dev` and `npm run build` work for the isolated marketing site within the monorepo.
 
 **Files created/modified:**
+
 - `apps/web/` — Full directory (copied and stripped from 144x.co)
 - `apps/web/package.json` — Workspace package, stripped dependencies
 - `turbo.json` — Add `.next/**` outputs, web-specific env vars
@@ -504,6 +523,7 @@ Copy 144x.co source into `apps/web/`. Strip BetterAuth, Prisma, MCP, dashboard, 
 Install Fumadocs packages. Create `source.config.ts` pointing at `../../docs/`. Set up route group `(docs)` with DocsLayout and catch-all page. Verify docs render at `/docs`.
 
 **Files created:**
+
 - `apps/web/source.config.ts`
 - `apps/web/lib/source.ts`
 - `apps/web/app/(docs)/layout.tsx`
@@ -517,6 +537,7 @@ Install Fumadocs packages. Create `source.config.ts` pointing at `../../docs/`. 
 Install `fumadocs-openapi`. Create the `createOpenAPI` instance and `generateFiles` script. Wire into build pipeline. Verify API reference pages render.
 
 **Files created:**
+
 - `apps/web/lib/openapi.ts`
 - `apps/web/scripts/generate-api-docs.ts`
 - `apps/web/components/api-page.tsx`
@@ -528,6 +549,7 @@ Install `fumadocs-openapi`. Create the `createOpenAPI` instance and `generateFil
 Update all 144x.co branding to DorkOS: site title, description, metadata, JSON-LD, OG images, project data, philosophy items, contact email. Update sitemap to include docs pages.
 
 **Files modified:**
+
 - `apps/web/app/layout.tsx` — Metadata, title
 - `apps/web/app/(marketing)/layout.tsx` — JSON-LD schema
 - `apps/web/layers/features/marketing/lib/projects.ts` — DorkOS features
@@ -540,22 +562,27 @@ Update all 144x.co branding to DorkOS: site title, description, metadata, JSON-L
 Set up the Vercel project, environment variables, domain, and deploy — all via the Vercel CLI. The only manual step is DNS configuration (user must update their domain registrar).
 
 **Prerequisites:**
+
 - Vercel CLI installed: `npm i -g vercel`
 - Authenticated: `vercel login`
 - DorkOS repo made public on GitHub (removes org private repo restriction)
 
 **Step 5.1: Install Vercel CLI (if needed)**
+
 ```bash
 npm i -g vercel
 vercel login
 ```
 
 **Step 5.2: Link project to Vercel**
+
 ```bash
 cd apps/web
 vercel link
 ```
+
 During `vercel link`, select:
+
 - Scope: `dork-labs` (or personal account)
 - Link to existing project? → No, create new
 - Project name: `dorkos-web`
@@ -567,6 +594,7 @@ During `vercel link`, select:
 This creates `.vercel/project.json` in `apps/web/`.
 
 **Step 5.3: Configure environment variables**
+
 ```bash
 # PostHog analytics
 vercel env add NEXT_PUBLIC_POSTHOG_KEY production preview development
@@ -576,6 +604,7 @@ vercel env add NEXT_PUBLIC_POSTHOG_HOST production preview development
 **Step 5.4: Configure `vercel.json` for monorepo**
 
 Create `apps/web/vercel.json`:
+
 ```json
 {
   "ignoreCommand": "npx turbo-ignore"
@@ -585,17 +614,22 @@ Create `apps/web/vercel.json`:
 This tells Vercel to skip rebuilds when only non-web code changes (e.g., changes to `apps/server/` or `packages/cli/`).
 
 **Step 5.5: Deploy preview build**
+
 ```bash
 cd apps/web
 vercel deploy
 ```
+
 Verify the preview URL works — marketing pages render, docs render, API docs render.
 
 **Step 5.6: Configure custom domain**
+
 ```bash
 vercel domains add dorkos.ai
 ```
+
 The CLI outputs DNS records to configure. User must update DNS at their domain registrar:
+
 - **Option A (recommended):** Set Vercel as nameservers (full DNS delegation)
 - **Option B:** Add A record (`76.76.21.21`) and CNAME (`cname.vercel-dns.com`)
 
@@ -608,11 +642,13 @@ vercel domains add www.dorkos.ai
 ```
 
 **Step 5.7: Production deploy**
+
 ```bash
 vercel deploy --prod
 ```
 
 **Step 5.8: Verify production**
+
 ```bash
 # Check deployment status
 vercel inspect $(vercel ls --json | head -1)
@@ -623,10 +659,12 @@ curl -sI https://dorkos.ai/docs | head -5
 ```
 
 **Files created:**
+
 - `apps/web/.vercel/project.json` — Generated by `vercel link` (gitignored)
 - `apps/web/vercel.json` — Monorepo ignore command config
 
 **Manual action required (user):**
+
 - Update DNS records at domain registrar to point `dorkos.ai` to Vercel
 - Wait for DNS propagation (typically 5-30 minutes, up to 48 hours)
 - SSL certificate is automatically provisioned by Vercel after DNS propagates

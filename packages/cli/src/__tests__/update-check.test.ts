@@ -52,10 +52,12 @@ describe('checkForUpdate', () => {
   });
 
   it('returns cached result when cache is fresh', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-      latestVersion: '0.2.0',
-      checkedAt: Date.now() - 1000, // 1 second ago
-    }));
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        latestVersion: '0.2.0',
+        checkedAt: Date.now() - 1000, // 1 second ago
+      })
+    );
 
     const result = await checkForUpdate('0.1.0');
     expect(result).toBe('0.2.0');
@@ -63,20 +65,24 @@ describe('checkForUpdate', () => {
   });
 
   it('returns null from cache when current version is up to date', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-      latestVersion: '0.1.0',
-      checkedAt: Date.now() - 1000,
-    }));
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        latestVersion: '0.1.0',
+        checkedAt: Date.now() - 1000,
+      })
+    );
 
     const result = await checkForUpdate('0.1.0');
     expect(result).toBeNull();
   });
 
   it('fetches from registry when cache is stale', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({
-      latestVersion: '0.1.0',
-      checkedAt: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
-    }));
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        latestVersion: '0.1.0',
+        checkedAt: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
+      })
+    );
     vi.mocked(mkdir).mockResolvedValue(undefined);
     vi.mocked(writeFile).mockResolvedValue(undefined);
     mockFetch.mockResolvedValue({

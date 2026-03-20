@@ -91,42 +91,49 @@ N/A — not a bug fix.
 ### Potential Solutions
 
 **1. Maildir Storage**
+
 - Description: Implement Maildir protocol directly — atomic file delivery via POSIX rename, one file per message, ULID as filename
 - Pros: Crash-safe delivery, simple inspection, filesystem-level durability, ~80 lines of code
 - Cons: Scalability degrades past ~100K files per directory (mitigated by per-endpoint subdirectories)
 - Recommendation: **Direct implementation** — existing Node.js Maildir libraries are email-centric or abandoned. Use `O_CREAT | O_EXCL` for safe tmp writes, `fs.rename()` for atomic delivery.
 
 **2. Subject Matching**
+
 - Description: Three approaches evaluated — trie (NATS production), pre-compiled regex per pattern, linear token scan
 - Pros (linear scan): Simplest (~30 lines), zero dependencies, easy to test, O(N) per publish where N = subscription count
 - Cons: Not optimal for >1000 subscriptions (but DorkOS won't hit this threshold initially)
 - Recommendation: **Linear token scan** with a `SubjectMatcher` interface for future trie upgrade. Enforce strict validation (no empty tokens, no consecutive dots, `>` only as last token, wildcards as standalone tokens only).
 
 **3. Message IDs (ULID)**
+
 - Description: `ulidx` with `monotonicFactory()` for guaranteed monotonic ordering within same millisecond
 - Pros: Timestamp-ordered (free chronological sort), 26-char compact format, sequential B-tree inserts (2-5x better SQLite perf), double-duty as Maildir filename
 - Cons: External dependency (small, well-maintained)
 - Recommendation: **`ulidx` monotonicFactory()** — ULID serves as message ID, filename, and sort key simultaneously.
 
 **4. SQLite Configuration**
+
 - Description: `better-sqlite3` with WAL mode following PulseStore pattern
 - PRAGMAs: `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`, `temp_store=MEMORY`
 - Migration pattern: `PRAGMA user_version` with sequential migration array
 - Recommendation: **Copy PulseStore pattern exactly** — proven in this codebase, synchronous API appropriate for embedded message bus.
 
 **5. Typed EventEmitter**
+
 - Description: Native `EventEmitter<TEventMap>` generics from `@types/node` (available since Node 20.11+)
 - Pros: Zero extra dependencies, fully integrated with Node.js lifecycle, supports `once()`, `removeAllListeners()`, `setMaxListeners()`, async `events.once()`
 - Cons: Requires `@types/node` >= 20.11.0 (already satisfied in this project)
 - Recommendation: **Native generics** — extend `EventEmitter<RelaySignalEvents>` with typed event map.
 
 ### Security Considerations
+
 - Maildir file permissions: `mode: 0o700` for directory, `mode: 0o600` for files, use `O_CREAT | O_EXCL` to prevent TOCTOU
 - SQLite injection: Always use prepared statements via better-sqlite3 (never string interpolation)
 - Subject validation doubles as injection guard (limited character set: alphanumeric, dot, dash, underscore)
 - EventEmitter DoS: Per-endpoint subscription limit to prevent listener flooding
 
 ### Performance Considerations
+
 - SQLite WAL + `synchronous=NORMAL`: ~10,000-50,000 inserts/sec (vs ~100-500 with default journal)
 - ULID sequential inserts: eliminate B-tree page splits that random UUIDs cause
 - Linear subject matching: ~1ms for 1,000 subscription checks (adequate for initial scale)
@@ -134,8 +141,8 @@ N/A — not a bug fix.
 
 ## 6) Decisions
 
-| # | Decision | Choice | Rationale |
-|---|----------|--------|-----------|
-| 1 | Message ID format | ULID via `ulidx` | Monotonic ordering, compact 26-char format, sequential B-tree inserts boost SQLite perf 2-5x, doubles as Maildir filename. Research confirms `ulidx` is actively maintained. |
-| 2 | TTL vs Deadline in RelayBudget | TTL only — remove `deadline` | Simplifies budget enforcement to one expiry field. Consumers can encode deadline in payload if needed. Resolves litepaper OQ-5. |
-| 3 | New message delivery mode | Push via chokidar | Matches existing pattern (session-broadcaster.ts). Subscribers get instant delivery via native OS file watching. chokidar already in the project. |
+| #   | Decision                       | Choice                       | Rationale                                                                                                                                                                    |
+| --- | ------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Message ID format              | ULID via `ulidx`             | Monotonic ordering, compact 26-char format, sequential B-tree inserts boost SQLite perf 2-5x, doubles as Maildir filename. Research confirms `ulidx` is actively maintained. |
+| 2   | TTL vs Deadline in RelayBudget | TTL only — remove `deadline` | Simplifies budget enforcement to one expiry field. Consumers can encode deadline in payload if needed. Resolves litepaper OQ-5.                                              |
+| 3   | New message delivery mode      | Push via chokidar            | Matches existing pattern (session-broadcaster.ts). Subscribers get instant delivery via native OS file watching. chokidar already in the project.                            |

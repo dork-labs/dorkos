@@ -1,5 +1,5 @@
 ---
-title: "File Attachment Display in Chat Message History — UX Patterns & Implementation Strategy"
+title: 'File Attachment Display in Chat Message History — UX Patterns & Implementation Strategy'
 date: 2026-03-10
 type: external-best-practices
 status: active
@@ -94,6 +94,7 @@ Linear handles attachments in issue comments:
 ### Pattern 1: File Type Bifurcation (Universal)
 
 Every app studied applies different visual treatment by file type:
+
 - **Images** → inline visual preview (thumbnail, constrained dimension)
 - **Documents/data files** → file chip (icon + name + optional metadata)
 
@@ -102,6 +103,7 @@ This is not optional — showing an image as a text chip is considered a UX fail
 ### Pattern 2: File Chip Anatomy
 
 The standard file chip contains:
+
 1. **File type icon** — disambiguates content type at a glance
 2. **Filename** — original user-facing name (never internal storage paths)
 3. **Optional metadata** — file size, type label (e.g., "PDF", "CSV")
@@ -114,12 +116,14 @@ The chip is compact (typically 40–48px tall), horizontally oriented, and uses 
 Consistent across apps: attachments appear either **above** the message text (Claude.ai, ChatGPT) or **below** it (Slack, Discord, Linear). Never inline with text. Never as raw paths within the text paragraph.
 
 The "above text" pattern (Claude, ChatGPT) is preferable for AI chat apps because:
+
 - The file provides context for the message that follows
 - It visually signals "I sent this file, then asked about it"
 
 ### Pattern 4: Image Thumbnails Are Full-Bleed or Constrained, Never Icon-Sized
 
 Image previews are always large enough to be meaningful:
+
 - Minimum: ~80px × 80px (thumbnail)
 - Maximum: bubble width (~200–400px, constrained proportionally)
 - Never reduced to icon size (16–24px)
@@ -154,6 +158,7 @@ Three approaches exist for fixing the visual display:
 **Description**: In `UserMessageContent.tsx`, detect the file prefix pattern in message content, extract the paths, strip the prefix from the displayed text, and render the paths as styled file chips above the message text. The JSONL transcript and server-side logic remain completely unchanged.
 
 **Detection pattern** (the current prefix format from `ChatPanel.tsx` line 61–62):
+
 ```
 Please read the following uploaded file(s):
 - <path1>
@@ -163,6 +168,7 @@ Please read the following uploaded file(s):
 ```
 
 The parser regex:
+
 ```typescript
 const FILE_PREFIX_RE = /^Please read the following uploaded file\(s\):\n((?:- .+\n)+)\n/;
 
@@ -179,16 +185,19 @@ function parseFilePrefix(content: string): { paths: string[]; text: string } | n
 ```
 
 **Visual rendering**: For each extracted path:
+
 - If the path's extension is an image type (`png`, `jpg`, `jpeg`, `gif`, `webp`) → render as a thumbnail (the server can serve a `/api/sessions/:id/uploads/:filename` endpoint, or the Obsidian DirectTransport reads from disk directly)
 - Otherwise → render as a file chip with a Lucide icon, filename (basename only), no path
 
 **Pros**:
+
 - Zero changes to server, JSONL, transport interface, or agent behavior
 - Works retroactively — existing messages in chat history are immediately improved
 - Purely a rendering concern — clean separation
 - Low complexity: one new parsing function, one new small component
 
 **Cons**:
+
 - Fragile to prefix format changes: if `ChatPanel.tsx` ever changes the prefix string, the parser must be updated in sync
 - The JSONL transcript still contains the raw path text (minor: this is what the agent reads, so it should stay)
 - Cannot differentiate between "user typed this text themselves" and "system injected it" without a stricter prefix format (very unlikely to be an issue in practice)
@@ -202,18 +211,21 @@ function parseFilePrefix(content: string): { paths: string[]; text: string } | n
 **Description**: Add an `attachments` field alongside the message in the JSONL or in a parallel data structure. When constructing the message to send to the agent, keep the path-injection logic; when storing/rendering the message, record the attachment metadata separately.
 
 This would require changes to:
+
 - The JSONL message format (add an `attachments` array field to the user turn)
 - The transcript reader on the server to parse/return attachment metadata
 - The `ChatMessage` type in `use-chat-session.ts`
 - `UserMessageContent.tsx` to consume attachment metadata
 
 **Pros**:
+
 - Clean data model: attachment metadata is explicit, not embedded in prose
 - Original filename and file size can be stored alongside the path
 - The rendered filename doesn't need to be derived from the path
 - More extensible (image dimensions, MIME type, etc.)
 
 **Cons**:
+
 - JSONL format change: any external tools or consumers of transcript files would need to handle the new field
 - Higher implementation complexity: server changes, transport changes, type changes, test changes
 - Still requires the path to be in the text content (the agent reads the text); the metadata is supplemental
@@ -236,11 +248,13 @@ This would require changes to:
 The agent treats the first line as text it can parse (Claude Code understands XML-like tool-use syntax natively). The renderer detects the `<dork:files ...>` tag and renders chips.
 
 **Pros**:
+
 - More reliable parser (no ambiguity about whether the user typed this)
 - Extensible (could add `names`, `sizes`, `mimetypes` attributes)
 - Still zero server-side changes
 
 **Cons**:
+
 - Changes the text the agent reads — may affect how Claude Code processes the file instruction (needs verification)
 - More work than the plain-text parser approach
 - Slightly worse for humans reading raw JSONL transcripts
@@ -265,6 +279,7 @@ The current prefix format is already stable and defined in a single place (`Chat
 ### Enhancement: Show Basename Only, with Original Name Derivation
 
 The stored path is `8a3b2c1d-screenshot.png`. The parser should:
+
 1. Extract the basename via `path.basename(savedPath)` (or a simple `split('/').pop()`)
 2. Strip the UUID prefix: `savedPath.replace(/^[0-9a-f-]+-/i, '')`
 3. Show the resulting clean name: `screenshot.png`
@@ -276,14 +291,16 @@ This recovers the user-facing filename from the storage convention.
 Following the Claude.ai / ChatGPT pattern (most relevant for AI chat apps):
 
 **File chip (for non-image files)**:
+
 ```tsx
-<div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs">
-  <FileIcon className="size-3.5 text-muted-foreground flex-shrink-0" />
+<div className="bg-muted/50 flex items-center gap-2 rounded-lg px-3 py-2 text-xs">
+  <FileIcon className="text-muted-foreground size-3.5 flex-shrink-0" />
   <span className="text-foreground truncate font-medium">{cleanFilename}</span>
 </div>
 ```
 
 **Image preview (for image files)**:
+
 ```tsx
 <img
   src={`/api/sessions/${sessionId}/uploads/${encodedFilename}`}
@@ -295,6 +312,7 @@ Following the Claude.ai / ChatGPT pattern (most relevant for AI chat apps):
 **Layout within the user message bubble**: Attachments render **above** the message text, separated by a small gap (`mb-2`). This matches the Claude.ai and ChatGPT convention.
 
 **File type icons** (Lucide icons, already available in the codebase):
+
 - Images → `Image`
 - PDFs → `FileText`
 - CSV/spreadsheets → `Sheet`
@@ -309,11 +327,13 @@ Following the Claude.ai / ChatGPT pattern (most relevant for AI chat apps):
 - **Integration point**: `apps/client/src/layers/features/chat/ui/message/UserMessageContent.tsx` — detect prefix in the `default` render branch, call the parser, conditionally render chips above text
 
 The `UserMessageContent.tsx` default return (line 42) currently does:
+
 ```tsx
 return <div className="break-words whitespace-pre-wrap">{message.content}</div>;
 ```
 
 It should become:
+
 ```tsx
 const parsed = parseFilePrefix(message.content);
 if (parsed) {

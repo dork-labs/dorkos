@@ -95,9 +95,10 @@ describe('loadAdapters', () => {
     // Second and third: succeed via builtinMap
     const mockAdapter1 = createMockAdapter({ id: 'ok-1' });
     const mockAdapter2 = createMockAdapter({ id: 'ok-2' });
-    builtinMap.set('good-type', vi.fn()
-      .mockReturnValueOnce(mockAdapter1)
-      .mockReturnValueOnce(mockAdapter2));
+    builtinMap.set(
+      'good-type',
+      vi.fn().mockReturnValueOnce(mockAdapter1).mockReturnValueOnce(mockAdapter2)
+    );
 
     const configs: PluginAdapterConfig[] = [
       createConfig({ id: 'fail', type: 'unknown-type', builtin: false }), // no factory, no plugin
@@ -126,7 +127,7 @@ describe('loadAdapters', () => {
     expect(result).toHaveLength(0);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[PluginLoader] Failed to load adapter 'bad-pkg':"),
-      expect.anything(),
+      expect.anything()
     );
     warnSpy.mockRestore();
   });
@@ -157,8 +158,17 @@ describe('loadAdapters', () => {
     // We test the validateAndCreate path by using plugin.path with a bad module
     // Since we can't mock dynamic import easily, test via validateAdapterShape directly
     expect(() => {
-      validateAdapterShape({ id: 'x', subjectPrefix: 'relay.test', displayName: 'X',
-        start: vi.fn(), stop: vi.fn(), deliver: vi.fn() /* missing getStatus */ }, 'x');
+      validateAdapterShape(
+        {
+          id: 'x',
+          subjectPrefix: 'relay.test',
+          displayName: 'X',
+          start: vi.fn(),
+          stop: vi.fn(),
+          deliver: vi.fn() /* missing getStatus */,
+        },
+        'x'
+      );
     }).toThrow("missing 'getStatus()' method");
 
     warnSpy.mockRestore();
@@ -170,7 +180,12 @@ describe('loadAdapters', () => {
     builtinMap.set('test-type', factory);
 
     const configs: PluginAdapterConfig[] = [
-      createConfig({ id: 'custom-plugin', type: 'test-type', builtin: true, config: { key: 'val' } }),
+      createConfig({
+        id: 'custom-plugin',
+        type: 'test-type',
+        builtin: true,
+        config: { key: 'val' },
+      }),
     ];
 
     await loadAdapters(configs, builtinMap, '/config/dir');
@@ -210,44 +225,86 @@ describe('validateAdapterShape', () => {
   });
 
   it('throws for missing id', () => {
-    const obj = { subjectPrefix: 'relay.test', displayName: 'X',
-      start: vi.fn(), stop: vi.fn(), deliver: vi.fn(), getStatus: vi.fn() };
+    const obj = {
+      subjectPrefix: 'relay.test',
+      displayName: 'X',
+      start: vi.fn(),
+      stop: vi.fn(),
+      deliver: vi.fn(),
+      getStatus: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'test')).toThrow("missing 'id' property");
   });
 
   it('throws for missing subjectPrefix', () => {
-    const obj = { id: 'x', displayName: 'X',
-      start: vi.fn(), stop: vi.fn(), deliver: vi.fn(), getStatus: vi.fn() };
+    const obj = {
+      id: 'x',
+      displayName: 'X',
+      start: vi.fn(),
+      stop: vi.fn(),
+      deliver: vi.fn(),
+      getStatus: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'subjectPrefix'");
   });
 
   it('throws for missing displayName', () => {
-    const obj = { id: 'x', subjectPrefix: 'relay.test',
-      start: vi.fn(), stop: vi.fn(), deliver: vi.fn(), getStatus: vi.fn() };
+    const obj = {
+      id: 'x',
+      subjectPrefix: 'relay.test',
+      start: vi.fn(),
+      stop: vi.fn(),
+      deliver: vi.fn(),
+      getStatus: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'displayName'");
   });
 
   it('throws for missing start()', () => {
-    const obj = { id: 'x', subjectPrefix: 'relay.test', displayName: 'X',
-      stop: vi.fn(), deliver: vi.fn(), getStatus: vi.fn() };
+    const obj = {
+      id: 'x',
+      subjectPrefix: 'relay.test',
+      displayName: 'X',
+      stop: vi.fn(),
+      deliver: vi.fn(),
+      getStatus: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'start()' method");
   });
 
   it('throws for missing stop()', () => {
-    const obj = { id: 'x', subjectPrefix: 'relay.test', displayName: 'X',
-      start: vi.fn(), deliver: vi.fn(), getStatus: vi.fn() };
+    const obj = {
+      id: 'x',
+      subjectPrefix: 'relay.test',
+      displayName: 'X',
+      start: vi.fn(),
+      deliver: vi.fn(),
+      getStatus: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'stop()' method");
   });
 
   it('throws for missing deliver()', () => {
-    const obj = { id: 'x', subjectPrefix: 'relay.test', displayName: 'X',
-      start: vi.fn(), stop: vi.fn(), getStatus: vi.fn() };
+    const obj = {
+      id: 'x',
+      subjectPrefix: 'relay.test',
+      displayName: 'X',
+      start: vi.fn(),
+      stop: vi.fn(),
+      getStatus: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'deliver()' method");
   });
 
   it('throws for missing getStatus()', () => {
-    const obj = { id: 'x', subjectPrefix: 'relay.test', displayName: 'X',
-      start: vi.fn(), stop: vi.fn(), deliver: vi.fn() };
+    const obj = {
+      id: 'x',
+      subjectPrefix: 'relay.test',
+      displayName: 'X',
+      start: vi.fn(),
+      stop: vi.fn(),
+      deliver: vi.fn(),
+    };
     expect(() => validateAdapterShape(obj, 'x')).toThrow("missing 'getStatus()' method");
   });
 });

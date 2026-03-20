@@ -96,9 +96,7 @@ describe('ClaudeCodeRuntime.getLastMessageIds', () => {
   });
 
   it('returns null when only user messages exist', async () => {
-    const messages: HistoryMessage[] = [
-      { id: 'user-1', role: 'user', content: 'Hello' },
-    ];
+    const messages: HistoryMessage[] = [{ id: 'user-1', role: 'user', content: 'Hello' }];
     mockReadTranscript.mockResolvedValue(messages);
 
     const result = await runtime.getLastMessageIds('session-no-asst');
@@ -128,7 +126,7 @@ describe('ClaudeCodeRuntime.getLastMessageIds', () => {
       expect.objectContaining({
         sessionId: 'session-error',
         error: 'ENOENT: file not found',
-      }),
+      })
     );
   });
 
@@ -169,7 +167,7 @@ describe('ClaudeCodeRuntime.getLastMessageIds', () => {
     expect(result).toBeNull();
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       '[getLastMessageIds] failed to read transcript',
-      expect.objectContaining({ error: 'string error' }),
+      expect.objectContaining({ error: 'string error' })
     );
   });
 });
