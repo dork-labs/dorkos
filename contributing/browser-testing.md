@@ -48,7 +48,7 @@ apps/e2e/
 ├── pages/                     # Page Object Models
 │   ├── BasePage.ts            # Common navigation helpers
 │   ├── ChatPage.ts            # Chat interactions
-│   ├── AgentSidebarPage.ts    # Agent sidebar (tabs, sessions, schedules, connections)
+│   ├── SessionSidebarPage.ts  # Session sidebar (tabs, sessions, schedules, connections)
 │   ├── SettingsPage.ts        # Settings dialog
 │   ├── PulsePage.ts           # Pulse scheduler dialog
 │   ├── MeshPage.ts            # Mesh agent discovery dialog
@@ -77,15 +77,15 @@ import { test, expect } from '../../fixtures';
 
 The fixture file (`fixtures/index.ts`) provides seven pre-instantiated Page Objects:
 
-| Fixture        | Class              | Auto-navigates?                                                      |
-| -------------- | ------------------ | -------------------------------------------------------------------- |
-| `basePage`     | `BasePage`         | No                                                                   |
-| `chatPage`     | `ChatPage`         | Yes — calls `goto()` which navigates and ensures a session is active |
-| `agentSidebar` | `AgentSidebarPage` | No                                                                   |
-| `settingsPage` | `SettingsPage`     | No                                                                   |
-| `pulsePage`    | `PulsePage`        | No — call `pulsePage.open()` to open the dialog                      |
-| `meshPage`     | `MeshPage`         | No — call `meshPage.open()` to open the dialog                       |
-| `relayPage`    | `RelayPage`        | No — call `relayPage.open()` to open the dialog                      |
+| Fixture          | Class                | Auto-navigates?                                                      |
+| ---------------- | -------------------- | -------------------------------------------------------------------- |
+| `basePage`       | `BasePage`           | No                                                                   |
+| `chatPage`       | `ChatPage`           | Yes — calls `goto()` which navigates and ensures a session is active |
+| `sessionSidebar` | `SessionSidebarPage` | No                                                                   |
+| `settingsPage`   | `SettingsPage`       | No                                                                   |
+| `pulsePage`      | `PulsePage`          | No — call `pulsePage.open()` to open the dialog                      |
+| `meshPage`       | `MeshPage`           | No — call `meshPage.open()` to open the dialog                       |
+| `relayPage`      | `RelayPage`          | No — call `relayPage.open()` to open the dialog                      |
 
 ### Use Page Object Models
 

@@ -1,7 +1,7 @@
 import type { Page, Locator } from '@playwright/test';
 
-/** Page Object Model for the agent sidebar with tabbed views. */
-export class AgentSidebarPage {
+/** Page Object Model for the session sidebar with tabbed views. */
+export class SessionSidebarPage {
   readonly page: Page;
   readonly newChatButton: Locator;
   readonly sessionList: Locator;

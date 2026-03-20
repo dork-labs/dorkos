@@ -131,8 +131,9 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). U
 **FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. The app shell (`App.tsx`, `AppShell.tsx`, `main.tsx`, `router.tsx`) lives at the `src/` root and can import from any layer. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
 
 **Routing**: TanStack Router with code-based route definitions in `router.tsx`. Route structure:
-- `/` → `DashboardPage` (widgets/dashboard) — status overview
-- `/session` → `SessionPage` (widgets/session) — agent chat, with `?session=` and `?dir=` search params
+
+- `/` → `DashboardPage` (widgets/dashboard) — status overview, with `DashboardSidebar` + `DashboardHeader`
+- `/session` → `SessionPage` (widgets/session) — agent chat, with `SessionSidebar` + `SessionHeader`, `?session=` and `?dir=` search params
 - `/dev/*` → Dev playground (outside router, conditional on dev mode)
 - Embedded mode (Obsidian plugin) bypasses the router entirely — `App.tsx` renders `<ChatPanel>` directly
 

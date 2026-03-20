@@ -71,7 +71,8 @@ src/
 │   │   │   └── index.ts
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
-│   │   ├── session-list/ # AgentSidebar, SidebarTabRow, tabbed views
+│   │   ├── session-list/ # SessionSidebar, SidebarTabRow, tabbed views
+│   │   ├── dashboard-sidebar/ # DashboardSidebar (navigation + status at /)
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Status Bar, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab)
 │   │   ├── files/       # FileBrowser

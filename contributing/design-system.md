@@ -250,9 +250,9 @@ Both overlays live in a `relative flex-1 min-h-0` wrapper in ChatPanel, position
 - Send button: circular, `accent` color, icon-only
 - Stop button: circular, muted red, square icon
 
-### Sidebar (AgentSidebar)
+### Sidebar (SessionSidebar)
 
-Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. The main sidebar component is `AgentSidebar` (in `features/session-list/`).
+Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. The sidebar body swaps per route: `SessionSidebar` (in `features/session-list/`) at `/session`, `DashboardSidebar` (in `features/dashboard-sidebar/`) at `/`.
 
 - **Width**: 320px (20rem) via `--sidebar-width` CSS custom property on `SidebarProvider`
 - **CSS variables**: `--sidebar-*` in `index.css` (subtly distinct from main background — 96% vs 98% light, 6% vs 4% dark)
@@ -577,7 +577,7 @@ Usage:
 | Class                  | Applied To                   | Purpose                         |
 | ---------------------- | ---------------------------- | ------------------------------- |
 | `chat-input-container` | ChatPanel input wrapper      | Bottom safe area inset          |
-| `sidebar-container`    | AgentSidebar root            | Left + bottom safe area insets  |
+| `sidebar-container`    | Sidebar root                 | Left + bottom safe area insets  |
 | `chat-scroll-area`     | MessageList scroll container | `touch-action: pan-y` on mobile |
 
 ### Adjusting the Scale

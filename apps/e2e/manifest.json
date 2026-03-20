@@ -40,7 +40,7 @@
       "passCount": 3,
       "failCount": 0,
       "relatedCode": [
-        "apps/client/src/layers/features/session-list/ui/AgentSidebar.tsx",
+        "apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx",
         "apps/client/src/layers/features/session-list/ui/SessionItem.tsx"
       ],
       "lastModified": ""

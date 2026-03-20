@@ -123,10 +123,12 @@ HttpTransport({ baseUrl: '/api' })
 
 **Client routing** (`router.tsx`): TanStack Router with code-based routes. A pathless `_shell` layout route renders `AppShell` (sidebar, header, dialogs). Child routes render into `<Outlet>`:
 
-| Path | Component | Search Params |
-| --- | --- | --- |
-| `/` | `DashboardPage` | — |
+| Path       | Component                   | Search Params                        |
+| ---------- | --------------------------- | ------------------------------------ |
+| `/`        | `DashboardPage`             | —                                    |
 | `/session` | `SessionPage` → `ChatPanel` | `?session=`, `?dir=` (Zod-validated) |
+
+Each route provides its own sidebar and header content via private slot hooks in `AppShell` (`useSidebarSlot` / `useHeaderSlot`). The sidebar body and header cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` renders `SessionSidebar` + `SessionHeader`.
 
 Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
 

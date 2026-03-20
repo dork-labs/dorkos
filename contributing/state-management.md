@@ -280,7 +280,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useTransport } from '@/layers/shared/model';
 
-export function AgentSidebar() {
+export function SessionSidebar() {
   const transport = useTransport();
 
   // Server state (sessions from API) — TanStack Query

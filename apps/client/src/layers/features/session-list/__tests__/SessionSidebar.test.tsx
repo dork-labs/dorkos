@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AgentSidebar } from '../ui/AgentSidebar';
+import { SessionSidebar } from '../ui/SessionSidebar';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
@@ -19,7 +19,7 @@ vi.mock('@/layers/entities/session/model/use-directory-state', () => ({
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
 }));
 
-// Mock TanStack Router hooks (AgentSidebar uses useNavigate and useLocation directly)
+// Mock TanStack Router hooks (SessionSidebar uses useNavigate and useLocation directly)
 let mockPathname = '/session';
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
@@ -201,7 +201,7 @@ function renderWithQuery(ui: React.ReactElement) {
   );
 }
 
-describe('AgentSidebar', () => {
+describe('SessionSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTransport = createMockTransport();
@@ -214,12 +214,12 @@ describe('AgentSidebar', () => {
   });
 
   it('renders "New session" button', () => {
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
     expect(screen.getByText('New session')).toBeDefined();
   });
 
   it('shows empty state when no sessions', async () => {
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
     await waitFor(() => {
       expect(screen.getByText('No conversations yet')).toBeDefined();
     });
@@ -235,7 +235,7 @@ describe('AgentSidebar', () => {
         ]),
     });
 
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
 
     await waitFor(() => {
       expect(screen.getByText('Today')).toBeDefined();
@@ -247,7 +247,7 @@ describe('AgentSidebar', () => {
   });
 
   it('sets active session to null on "New session" click', () => {
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
     fireEvent.click(screen.getByText('New session'));
 
     expect(mockSetSessionId).toHaveBeenCalledWith(null);
@@ -262,7 +262,7 @@ describe('AgentSidebar', () => {
         ]),
     });
 
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
 
     await waitFor(() => {
       expect(screen.getByText('Only today')).toBeDefined();
@@ -272,18 +272,16 @@ describe('AgentSidebar', () => {
   });
 
   it('does not render AgentContextChips (replaced by tab badges)', () => {
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
     expect(screen.queryByLabelText('Pulse scheduler')).toBeNull();
     expect(screen.queryByLabelText('Relay messaging')).toBeNull();
     expect(screen.queryByLabelText('Mesh discovery')).toBeNull();
   });
 
-  it('renders SidebarFooterBar with branding and settings', () => {
-    renderWithQuery(<AgentSidebar />);
-    // Branding is now a DorkLogo SVG inside a link to dorkos.ai
-    const brandLink = screen.getByRole('link');
-    expect(brandLink.getAttribute('href')).toBe('https://dorkos.ai');
-    expect(screen.getByLabelText('Settings')).toBeDefined();
+  it('does not render footer (footer moved to AppShell)', () => {
+    renderWithQuery(<SessionSidebar />);
+    // Footer with branding and settings now lives in AppShell, not the sidebar
+    expect(screen.queryByLabelText('Settings')).toBeNull();
   });
 
   it('auto-selects first session when no active session', async () => {
@@ -297,7 +295,7 @@ describe('AgentSidebar', () => {
         ]),
     });
 
-    renderWithQuery(<AgentSidebar />);
+    renderWithQuery(<SessionSidebar />);
 
     await waitFor(() => {
       expect(mockSetSessionId).toHaveBeenCalledWith('s1');
@@ -306,14 +304,14 @@ describe('AgentSidebar', () => {
 
   describe('tab switching', () => {
     it('renders SidebarTabRow with tab buttons', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       expect(screen.getByRole('tablist')).toBeInTheDocument();
       // At minimum: sessions + connections (schedules depends on Pulse feature flag)
       expect(screen.getAllByRole('tab').length).toBeGreaterThanOrEqual(2);
     });
 
     it('shows sessions tabpanel by default and hides others', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       const sessionsPanel = document.getElementById('sidebar-tabpanel-sessions');
       const schedulesPanel = document.getElementById('sidebar-tabpanel-schedules');
       const connectionsPanel = document.getElementById('sidebar-tabpanel-connections');
@@ -323,7 +321,7 @@ describe('AgentSidebar', () => {
     });
 
     it('switching tab calls setSidebarActiveTab', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
 
       const schedulesTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-schedules');
       expect(schedulesTab).toBeDefined();
@@ -334,7 +332,7 @@ describe('AgentSidebar', () => {
     });
 
     it('each tabpanel has correct aria-labelledby linking to its tab', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       const sessionsPanel = document.getElementById('sidebar-tabpanel-sessions');
       const schedulesPanel = document.getElementById('sidebar-tabpanel-schedules');
       const connectionsPanel = document.getElementById('sidebar-tabpanel-connections');
@@ -346,31 +344,31 @@ describe('AgentSidebar', () => {
 
   describe('keyboard shortcuts', () => {
     it('Cmd+1 switches to sessions tab when sidebar is open', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       fireEvent.keyDown(document, { key: '1', metaKey: true });
       expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('sessions');
     });
 
     it('Cmd+2 switches to schedules tab when visible and sidebar open', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       fireEvent.keyDown(document, { key: '2', metaKey: true });
       expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
     });
 
     it('Cmd+3 switches to connections tab when visible and sidebar open', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       fireEvent.keyDown(document, { key: '3', metaKey: true });
       expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('connections');
     });
 
     it('Ctrl+number also works (cross-platform)', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       fireEvent.keyDown(document, { key: '2', ctrlKey: true });
       expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('schedules');
     });
 
     it('plain number keys without modifier do not switch tabs', () => {
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
       fireEvent.keyDown(document, { key: '2' });
       expect(mockSetSidebarActiveTab).not.toHaveBeenCalled();
     });
@@ -395,7 +393,7 @@ describe('AgentSidebar', () => {
         adapter: 'enabled',
       };
 
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
 
       const schedulesTab = screen.getAllByRole('tab').find((t) => t.id === 'sidebar-tab-schedules');
       expect(schedulesTab).toBeUndefined();
@@ -411,7 +409,7 @@ describe('AgentSidebar', () => {
         adapter: 'enabled',
       };
 
-      renderWithQuery(<AgentSidebar />);
+      renderWithQuery(<SessionSidebar />);
 
       // The fallback effect should call setSidebarActiveTab('sessions')
       expect(mockSetSidebarActiveTab).toHaveBeenCalledWith('sessions');

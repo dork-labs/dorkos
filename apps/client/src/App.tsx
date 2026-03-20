@@ -6,7 +6,7 @@ import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
 import { PermissionBanner } from '@/layers/widgets/app-layout';
-import { AgentSidebar } from '@/layers/features/session-list';
+import { SessionSidebar } from '@/layers/features/session-list';
 import { ChatPanel } from '@/layers/features/chat';
 import {
   Toaster,
@@ -113,7 +113,7 @@ export function App({ transformContent }: AppProps) {
                     transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
                     className="bg-background absolute top-0 left-0 z-50 h-full w-80 overflow-y-auto border-r"
                   >
-                    <AgentSidebar />
+                    <SessionSidebar />
                   </motion.div>
                 </>
               )}

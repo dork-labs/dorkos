@@ -4,39 +4,34 @@ import { cn, groupSessionsByTime, TIMING, formatShortcutKey, SHORTCUTS } from '@
 import {
   SidebarContent,
   SidebarContext,
-  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarRail,
   Kbd,
 } from '@/layers/shared/ui';
 import { usePulseEnabled, useCompletedRunBadge, useActiveRunCount } from '@/layers/entities/pulse';
 import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
 import { toast } from 'sonner';
 import { useSessions } from '@/layers/entities/session';
-import { SidebarFooterBar } from './SidebarFooterBar';
 import { SidebarTabRow } from './SidebarTabRow';
 import { SessionsView } from './SessionsView';
 import { SchedulesView } from './SchedulesView';
 import { ConnectionsView } from './ConnectionsView';
 import { Home, Plus } from 'lucide-react';
 import { useNavigate, useLocation } from '@tanstack/react-router';
-import { ProgressCard, useOnboarding } from '@/layers/features/onboarding';
 import { useConnectionsStatus } from '../model/use-connections-status';
 
-/** Primary sidebar with session list, schedule tabs, and onboarding progress. */
-export function AgentSidebar() {
+/** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
+export function SessionSidebar() {
   const { sessions, activeSessionId, setActiveSession } = useSessions();
-  const { setSidebarOpen, setPulseOpen, setOnboardingStep } = useAppStore();
+  const { setSidebarOpen, setPulseOpen } = useAppStore();
   const isMobile = useIsMobile();
   // Suppresses auto-select after user intentionally clicks "New session"
   const intentionallyNullRef = useRef(false);
   const pulseEnabled = usePulseEnabled();
   const { unviewedCount, clearBadge } = useCompletedRunBadge(pulseEnabled);
   const enablePulseNotifications = useAppStore((s) => s.enablePulseNotifications);
-  const { shouldShowOnboarding, dismiss: dismissOnboarding } = useOnboarding();
   const pulseOpen = useAppStore((s) => s.pulseOpen);
   // Null when rendered in embedded mode (no SidebarProvider); used to close the mobile Sheet.
   const sidebarCtx = useContext(SidebarContext);
@@ -255,20 +250,6 @@ export function AgentSidebar() {
           <ConnectionsView toolStatus={toolStatus} agentId={currentAgent?.id} />
         </div>
       </SidebarContent>
-
-      <SidebarFooter className="border-t p-3">
-        {shouldShowOnboarding && (
-          <div className="mb-2">
-            <ProgressCard
-              onStepClick={(stepIndex) => setOnboardingStep(stepIndex)}
-              onDismiss={dismissOnboarding}
-            />
-          </div>
-        )}
-        <SidebarFooterBar />
-      </SidebarFooter>
-
-      <SidebarRail />
     </>
   );
 }
