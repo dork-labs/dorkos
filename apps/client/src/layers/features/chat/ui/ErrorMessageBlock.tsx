@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { AlertTriangle, ChevronDown, RotateCcw } from 'lucide-react';
 import type { ErrorCategory } from '@dorkos/shared/types';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+
+const collapseTransition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
 
 const ERROR_COPY: Record<
   ErrorCategory,
@@ -79,20 +82,32 @@ export function ErrorMessageBlock({
               type="button"
               onClick={() => setShowDetails(!showDetails)}
               className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-expanded={showDetails}
             >
-              {showDetails ? (
+              <motion.div
+                animate={{ rotate: showDetails ? 0 : -90 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              >
                 <ChevronDown className="size-3" />
-              ) : (
-                <ChevronRight className="size-3" />
-              )}
+              </motion.div>
               Details
             </button>
           )}
-          {showDetails && details && (
-            <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 p-2 text-xs whitespace-pre-wrap">
-              {details}
-            </pre>
-          )}
+          <AnimatePresence initial={false}>
+            {showDetails && details && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={collapseTransition}
+                className="overflow-hidden"
+              >
+                <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 p-2 text-xs whitespace-pre-wrap">
+                  {details}
+                </pre>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
         {retryable && onRetry && (
           <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0 gap-1.5">

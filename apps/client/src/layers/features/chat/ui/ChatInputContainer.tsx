@@ -204,6 +204,7 @@ export function ChatInputContainer({
                 answers={activeInteraction!.answers}
                 isActive
                 focusedOptionIndex={focusedOptionIndex}
+                onDecided={onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined}
               />
             ) : null}
           </motion.div>

@@ -244,7 +244,12 @@ router.post('/:id/approve', async (req, res) => {
   const { toolCallId } = parsed.data;
   const runtime = runtimeRegistry.getDefault();
   const approved = runtime.approveTool(sessionId, toolCallId, true);
-  if (!approved) return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
+  if (!approved) {
+    if (runtime.hasSession(sessionId)) {
+      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+    }
+    return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
+  }
   res.json({ ok: true });
 });
 
@@ -260,7 +265,12 @@ router.post('/:id/deny', async (req, res) => {
   const { toolCallId } = parsed.data;
   const runtime = runtimeRegistry.getDefault();
   const denied = runtime.approveTool(sessionId, toolCallId, false);
-  if (!denied) return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
+  if (!denied) {
+    if (runtime.hasSession(sessionId)) {
+      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+    }
+    return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
+  }
   res.json({ ok: true });
 });
 
@@ -276,7 +286,12 @@ router.post('/:id/submit-answers', async (req, res) => {
   const { toolCallId, answers } = parsed.data;
   const runtime = runtimeRegistry.getDefault();
   const ok = runtime.submitAnswers(sessionId, toolCallId, answers);
-  if (!ok) return sendError(res, 404, 'No pending question', 'NO_PENDING_QUESTION');
+  if (!ok) {
+    if (runtime.hasSession(sessionId)) {
+      return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
+    }
+    return sendError(res, 404, 'No pending question', 'NO_PENDING_QUESTION');
+  }
   res.json({ ok: true });
 });
 

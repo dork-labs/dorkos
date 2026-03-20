@@ -1,9 +1,8 @@
-import { useState, useImperativeHandle, useCallback, forwardRef } from 'react';
+import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import {
-  Tabs,
-  TabsContent,
   Kbd,
   Button,
   RadioGroup,
@@ -13,7 +12,16 @@ import {
 import { OptionRow, CompactResultRow, InteractiveCard } from './primitives';
 import type { QuestionItem } from '@dorkos/shared/types';
 
-// TabsList and TabsTrigger are not used — Back/Next buttons replace the tab strip.
+// --- Animation constants (module-scope to avoid per-render allocation) ---
+
+const collapseTransition = { duration: 0.25, ease: [0.4, 0, 0.2, 1] } as const;
+const fadeTransition = { duration: 0.15, ease: 'easeOut' as const } as const;
+
+const questionSlideVariants = {
+  enter: (d: number) => ({ opacity: 0, x: d * 20 }),
+  center: { opacity: 1, x: 0 },
+  exit: (d: number) => ({ opacity: 0, x: d * -20 }),
+};
 
 interface QuestionPromptProps {
   sessionId: string;
@@ -25,6 +33,8 @@ interface QuestionPromptProps {
   isActive?: boolean;
   /** Which option is focused via keyboard */
   focusedOptionIndex?: number;
+  /** Called after user submits answers, to optimistically clear waiting state */
+  onDecided?: () => void;
 }
 
 export interface QuestionPromptHandle {
@@ -45,16 +55,19 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       answers: preAnswers,
       isActive = false,
       focusedOptionIndex = -1,
+      onDecided,
     },
     ref
   ) {
     const transport = useTransport();
+    const instanceId = useId();
     const [selections, setSelections] = useState<Record<string, string | string[]>>({});
     const [otherText, setOtherText] = useState<Record<string, string>>({});
     const [submitted, setSubmitted] = useState(!!preAnswers);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState('0');
+    const directionRef = useRef<1 | -1>(1);
 
     const activeQuestion = questions[Number(activeTab)] || questions[0];
     const activeQIdx = Number(activeTab);
@@ -139,13 +152,21 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       try {
         await transport.submitAnswers(sessionId, toolCallId, answers);
         setSubmitted(true);
+        onDecided?.();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to submit answers');
+        // If the server says the interaction was already resolved (409), treat as success.
+        const code = (err as { code?: string }).code;
+        if (code === 'INTERACTION_ALREADY_RESOLVED') {
+          setSubmitted(true);
+          onDecided?.();
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to submit answers');
+        }
       } finally {
         setSubmitting(false);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: isComplete is a local function
-    }, [selections, otherText, submitting, transport, sessionId, toolCallId, questions]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: isComplete and onDecided are local/stable
+    }, [selections, otherText, submitting, transport, sessionId, toolCallId, questions, onDecided]);
 
     useImperativeHandle(
       ref,
@@ -186,8 +207,10 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           if (questions.length <= 1) return;
           const current = Number(activeTab);
           if (direction === 'next' && current < questions.length - 1) {
+            directionRef.current = 1;
             setActiveTab(String(current + 1));
           } else if (direction === 'prev' && current > 0) {
+            directionRef.current = -1;
             setActiveTab(String(current - 1));
           }
         },
@@ -195,6 +218,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           const currentIdx = Number(activeTab);
           if (currentIdx < questions.length - 1) {
             // Advance to next question — actual submission only on the last
+            directionRef.current = 1;
             setActiveTab(String(currentIdx + 1));
             return;
           }
@@ -224,8 +248,10 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
     function navigateToQuestion(direction: 'prev' | 'next') {
       const current = Number(activeTab);
       if (direction === 'next' && current < questions.length - 1) {
+        directionRef.current = 1;
         setActiveTab(String(current + 1));
       } else if (direction === 'prev' && current > 0) {
+        directionRef.current = -1;
         setActiveTab(String(current - 1));
       }
     }
@@ -235,7 +261,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       const isOtherSelected = q.multiSelect
         ? ((selections[qIdx] as string[]) || []).includes('__other__')
         : selections[qIdx] === '__other__';
-      const optionId = `q-${qIdx}-other`;
+      const optionId = `${instanceId}-q-${qIdx}-other`;
       const oIdx = q.options.length;
 
       return (
@@ -263,18 +289,28 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                 <Kbd className="ml-auto shrink-0 text-2xs text-muted-foreground">{oIdx + 1}</Kbd>
               )}
             </label>
-            {isOtherSelected && (
-              <textarea
-                placeholder="Type your answer..."
-                rows={2}
-                value={otherText[qIdx] || ''}
-                disabled={submitting}
-                onChange={(e) => handleOtherText(qIdx, e.target.value)}
-                className="bg-background mt-1 w-full resize-y rounded border border-border px-2 py-1 text-sm focus:ring-1 focus:ring-ring focus:outline-none"
-                // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
-                autoFocus
-              />
-            )}
+            <AnimatePresence initial={false}>
+              {isOtherSelected && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={collapseTransition}
+                  className="overflow-hidden"
+                >
+                  <textarea
+                    placeholder="Type your answer..."
+                    rows={2}
+                    value={otherText[qIdx] || ''}
+                    disabled={submitting}
+                    onChange={(e) => handleOtherText(qIdx, e.target.value)}
+                    className="bg-background mt-1 w-full resize-y rounded border border-border px-2 py-1 text-sm focus:ring-1 focus:ring-ring focus:outline-none"
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
+                    autoFocus
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </OptionRow>
       );
@@ -291,11 +327,11 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
               value={(selections[qIdx] as string) ?? ''}
               onValueChange={(value) => handleSingleSelect(qIdx, value)}
               aria-label={q.question}
-              className="ml-1 space-y-1"
+              className="ml-1 gap-1"
             >
               {q.options.map((opt, oIdx) => {
                 const isSelected = selections[qIdx] === opt.label;
-                const optionId = `q-${qIdx}-opt-${oIdx}`;
+                const optionId = `${instanceId}-q-${qIdx}-opt-${oIdx}`;
                 return (
                   <OptionRow
                     key={oIdx}
@@ -327,7 +363,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             <div role="group" aria-label={q.question} className="ml-1 space-y-1">
               {q.options.map((opt, oIdx) => {
                 const isSelected = ((selections[qIdx] as string[]) || []).includes(opt.label);
-                const optionId = `q-${qIdx}-opt-${oIdx}`;
+                const optionId = `${instanceId}-q-${qIdx}-opt-${oIdx}`;
                 return (
                   <OptionRow
                     key={oIdx}
@@ -369,35 +405,43 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       );
     }
 
-    // Collapsed submitted state — compact single-row matching ToolCallCard pattern
-    if (submitted) {
+    // Build submitted summary content
+    function renderSubmittedRow() {
       const hasSpecificAnswers = preAnswers
         ? Object.values(preAnswers).some((v) => v !== '')
         : Object.keys(selections).length > 0;
 
-      // Build a compact summary string
-      const summaryParts: string[] = [];
+      let summaryText = 'Questions answered';
       if (hasSpecificAnswers) {
         if (questions.length === 1) {
-          // Single question: show "header: value"
           const displayValue = getDisplayValue(questions[0], 0);
           if (displayValue) {
-            summaryParts.push(`${questions[0].header}: ${displayValue}`);
+            summaryText = `${questions[0].header}: ${displayValue}`;
           }
         } else {
-          // Multi-question: show "N questions answered"
-          summaryParts.push(`${questions.length} questions answered`);
+          summaryText = `${questions.length} questions answered`;
         }
-      } else {
-        summaryParts.push('Questions answered');
       }
 
       return (
         <CompactResultRow
           data-testid="question-prompt-submitted"
           icon={<Check className="size-(--size-icon-sm) shrink-0 text-status-success" />}
-          label={<span className="truncate">{summaryParts[0]}</span>}
+          label={<span className="truncate">{summaryText}</span>}
         />
+      );
+    }
+
+    // Collapsed submitted state — fade in the compact row
+    if (submitted) {
+      return (
+        <motion.div
+          initial={preAnswers ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={fadeTransition}
+        >
+          {renderSubmittedRow()}
+        </motion.div>
       );
     }
 
@@ -409,8 +453,8 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           renderQuestionContent(questions[0], 0)
         ) : (
           // Multiple questions — sequential Back/Next navigation
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            {/* Step indicator + Back/Next buttons (replaces tab strip) */}
+          <div>
+            {/* Step indicator + Back/Next buttons */}
             <div className="mb-2 flex items-center justify-between">
               <span className="text-muted-foreground text-xs">
                 {questions[Number(activeTab)].header ?? `Question ${Number(activeTab) + 1} of ${questions.length}`}
@@ -438,7 +482,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     size="sm"
                     onClick={handleSubmit}
                     disabled={!isComplete() || submitting}
-                    className="h-7 px-2 text-xs"
+                    className="h-7 px-2 text-xs transition-opacity duration-150"
                   >
                     <Check className="size-(--size-icon-xs)" />
                     {submitting ? 'Submitting...' : 'Submit'}
@@ -448,19 +492,45 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
               </div>
             </div>
 
-            {questions.map((q, idx) => (
-              <TabsContent key={idx} value={String(idx)} className="mt-0">
-                {renderQuestionContent(q, idx)}
-              </TabsContent>
-            ))}
-          </Tabs>
+            {/* Directional crossfade for question content */}
+            <AnimatePresence mode="wait" custom={directionRef.current}>
+              <motion.div
+                key={activeTab}
+                custom={directionRef.current}
+                variants={questionSlideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={fadeTransition}
+              >
+                {renderQuestionContent(questions[Number(activeTab)], Number(activeTab))}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         )}
 
-        {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={fadeTransition}
+              className="mt-2 text-xs text-red-500"
+            >
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
         {/* Submit button for single-question flows */}
         {questions.length === 1 && (
-          <Button size="sm" onClick={handleSubmit} disabled={!isComplete() || submitting} className="mt-2">
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={!isComplete() || submitting}
+            className="mt-2 transition-opacity duration-150"
+          >
             {submitting ? (
               'Submitting...'
             ) : (

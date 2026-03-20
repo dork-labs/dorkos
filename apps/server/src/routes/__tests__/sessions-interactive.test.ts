@@ -48,8 +48,9 @@ describe('POST /api/sessions/:id/submit-answers', () => {
     });
   });
 
-  it('returns 404 when no pending question exists', async () => {
+  it('returns 404 when session does not exist (submit-answers)', async () => {
     fakeRuntime.submitAnswers.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(false);
 
     const res = await request(app)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
@@ -57,6 +58,19 @@ describe('POST /api/sessions/:id/submit-answers', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('No pending question');
+  });
+
+  it('returns 409 when session exists but question already resolved', async () => {
+    fakeRuntime.submitAnswers.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(true);
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/submit-answers`)
+      .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Interaction already resolved');
+    expect(res.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
   });
 
   it('returns 400 when toolCallId is missing', async () => {
@@ -91,8 +105,9 @@ describe('POST /api/sessions/:id/approve', () => {
     expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', true);
   });
 
-  it('returns 404 when no pending approval exists', async () => {
+  it('returns 404 when session does not exist (approve)', async () => {
     fakeRuntime.approveTool.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(false);
 
     const res = await request(app)
       .post(`/api/sessions/${SESSION_ID}/approve`)
@@ -100,6 +115,19 @@ describe('POST /api/sessions/:id/approve', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('No pending approval');
+  });
+
+  it('returns 409 when session exists but approval already resolved', async () => {
+    fakeRuntime.approveTool.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(true);
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/approve`)
+      .send({ toolCallId: 'tc-1' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('Interaction already resolved');
+    expect(res.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
   });
 });
 

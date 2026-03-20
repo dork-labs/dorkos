@@ -340,6 +340,25 @@ describe('QuestionPrompt', () => {
     expect(container.className).toContain('bg-muted/50');
   });
 
+  it('treats INTERACTION_ALREADY_RESOLVED error as successful submission', async () => {
+    const alreadyResolvedError = Object.assign(new Error('Interaction already resolved'), {
+      code: 'INTERACTION_ALREADY_RESOLVED',
+      status: 409,
+    });
+    mockSubmitAnswers.mockRejectedValueOnce(alreadyResolvedError);
+
+    render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
+    const radio = screen.getAllByRole('radio')[0];
+    fireEvent.click(radio);
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+
+    await waitFor(() => {
+      // Should collapse to submitted state, not show an error
+      expect(screen.queryByRole('radio')).toBeNull();
+      expect(screen.getByTestId('question-prompt-submitted')).toBeDefined();
+    });
+  });
+
   it('shows error text when submission fails', async () => {
     mockSubmitAnswers.mockRejectedValueOnce(new Error('Network error'));
 

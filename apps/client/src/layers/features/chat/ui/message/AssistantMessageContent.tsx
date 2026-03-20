@@ -200,7 +200,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
               sessionId={sessionId}
               toolCallId={toolPart.toolCallId}
               questions={toolPart.questions}
-              answers={toolPart.answers}
+              answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
               isActive={isActive}
               focusedOptionIndex={isActive ? focusedOptionIndex : -1}
             />

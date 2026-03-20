@@ -1,9 +1,14 @@
 import { useState, useEffect, useRef, useMemo, useImperativeHandle, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Check, X, Shield } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
 import { Kbd, Button } from '@/layers/shared/ui';
 import { CompactResultRow, InteractiveCard } from './primitives';
+
+// --- Animation constants (module-scope to avoid per-render allocation) ---
+
+const fadeTransition = { duration: 0.15, ease: 'easeOut' as const } as const;
 
 const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
 const URGENT_THRESHOLD_S = 60; // 1 minute — red
@@ -126,7 +131,13 @@ export function ToolApproval({
       setDecided('approved');
       onDecided?.();
     } catch (err) {
-      console.error('Approval failed:', err);
+      const code = (err as { code?: string }).code;
+      if (code === 'INTERACTION_ALREADY_RESOLVED') {
+        setDecided('approved');
+        onDecided?.();
+      } else {
+        console.error('Approval failed:', err);
+      }
     } finally {
       setResponding(false);
     }
@@ -140,7 +151,13 @@ export function ToolApproval({
       setDecided('denied');
       onDecided?.();
     } catch (err) {
-      console.error('Deny failed:', err);
+      const code = (err as { code?: string }).code;
+      if (code === 'INTERACTION_ALREADY_RESOLVED') {
+        setDecided('denied');
+        onDecided?.();
+      } else {
+        console.error('Deny failed:', err);
+      }
     } finally {
       setResponding(false);
     }
@@ -162,37 +179,43 @@ export function ToolApproval({
   if (decided) {
     const isApproved = decided === 'approved';
     return (
-      <CompactResultRow
-        data-testid="tool-approval-decided"
-        data-decision={decided}
-        icon={
-          isApproved ? (
-            <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
-          ) : (
-            <X className="size-(--size-icon-sm) shrink-0 text-status-error" />
-          )
-        }
-        label={<span className="font-mono text-3xs">{toolName}</span>}
-        trailing={
-          <span
-            className={cn(
-              'rounded-full px-1.5 py-0.5 text-2xs font-medium',
-              isApproved
-                ? 'bg-status-success-bg text-status-success-fg'
-                : 'bg-status-error-bg text-status-error-fg'
-            )}
-          >
-            {isApproved ? 'Approved' : 'Denied'}
-          </span>
-        }
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={fadeTransition}
       >
-        {decided === 'denied' && timedOut.current && (
-          <p className="text-2xs text-muted-foreground mt-1">
-            Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes. The agent continued
-            without this tool.
-          </p>
-        )}
-      </CompactResultRow>
+        <CompactResultRow
+          data-testid="tool-approval-decided"
+          data-decision={decided}
+          icon={
+            isApproved ? (
+              <Check className="size-(--size-icon-sm) shrink-0 text-status-success" />
+            ) : (
+              <X className="size-(--size-icon-sm) shrink-0 text-status-error" />
+            )
+          }
+          label={<span className="font-mono text-3xs">{toolName}</span>}
+          trailing={
+            <span
+              className={cn(
+                'rounded-full px-1.5 py-0.5 text-2xs font-medium',
+                isApproved
+                  ? 'bg-status-success-bg text-status-success-fg'
+                  : 'bg-status-error-bg text-status-error-fg'
+              )}
+            >
+              {isApproved ? 'Approved' : 'Denied'}
+            </span>
+          }
+        >
+          {decided === 'denied' && timedOut.current && (
+            <p className="text-2xs text-muted-foreground mt-1">
+              Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes. The agent continued
+              without this tool.
+            </p>
+          )}
+        </CompactResultRow>
+      </motion.div>
     );
   }
 
@@ -230,20 +253,28 @@ export function ToolApproval({
         </div>
       )}
 
-      {/* Text countdown — only visible in warning/urgent phases (last 2 minutes) */}
-      {(phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
-        <div className="mb-2">
-          <span
-            className={cn(
-              'text-2xs tabular-nums',
-              phase === 'warning' && 'text-status-warning',
-              phase === 'urgent' && 'text-status-error'
-            )}
+      {/* Text countdown — fades in at warning threshold, updates through urgent */}
+      <AnimatePresence>
+        {(phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={fadeTransition}
+            className="mb-2"
           >
-            {formatCountdown(secondsRemaining)} remaining
-          </span>
-        </div>
-      )}
+            <span
+              className={cn(
+                'text-2xs tabular-nums',
+                phase === 'warning' && 'text-status-warning',
+                phase === 'urgent' && 'text-status-error'
+              )}
+            >
+              {formatCountdown(secondsRemaining)} remaining
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="mb-2 font-mono text-xs">{toolName}</div>
       {input && (
@@ -256,6 +287,7 @@ export function ToolApproval({
           size="sm"
           onClick={handleApprove}
           disabled={responding}
+          className="transition-opacity duration-150"
         >
           <Check className="size-(--size-icon-xs)" /> Approve
           {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
@@ -265,6 +297,7 @@ export function ToolApproval({
           variant="outline"
           onClick={handleDeny}
           disabled={responding}
+          className="transition-opacity duration-150"
         >
           <X className="size-(--size-icon-xs)" /> Deny
           {isActive && <Kbd className="ml-1.5">Esc</Kbd>}

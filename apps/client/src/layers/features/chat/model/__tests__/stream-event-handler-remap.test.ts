@@ -191,12 +191,19 @@ describe('stream-event-handler — client ID remap via done event messageIds', (
 
     handler('done', {}, 'client-asst-id');
 
-    // No function-form setMessages call should originate from messageIds logic
-    // (the done handler has no other functional setMessages calls)
+    // The only function-form setMessages call should be the force-complete safety net,
+    // not a messageIds mapper. Verify by applying the mapper — it should be a no-op
+    // for messages without pending interactive tool calls.
     const mapperCalls = setMessages.mock.calls.filter(
       (call) => typeof call[0] === 'function',
     );
-    expect(mapperCalls).toHaveLength(0);
+    // 1 call: force-complete safety net (no messageIds mapper)
+    expect(mapperCalls).toHaveLength(1);
+    // The safety net mapper is a no-op for normal messages (returns same reference)
+    const safetyMapper = mapperCalls[0][0] as (prev: { id: string; role: string; toolCalls?: unknown[] }[]) => unknown[];
+    const prev = [{ id: 'msg-1', role: 'assistant', toolCalls: [] }];
+    const result = safetyMapper(prev);
+    expect(result[0]).toBe(prev[0]); // Same reference — no mutation
   });
 
   it('handles remap and messageIds together in one done event', () => {
@@ -219,5 +226,99 @@ describe('stream-event-handler — client ID remap via done event messageIds', (
       (call) => typeof call[0] === 'function',
     );
     expect(mapperCalls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('stream-event-handler — force-complete pending interactive tool calls on done', () => {
+  it('force-completes pending interactive tool calls in done handler', () => {
+    const { handler, setMessages } = createMinimalDeps({ sessionId: 'test-session' });
+
+    handler('done', {}, 'asst-1');
+
+    // Find the force-complete safety net mapper
+    const mapperCalls = setMessages.mock.calls.filter(
+      (call) => typeof call[0] === 'function',
+    );
+    expect(mapperCalls.length).toBeGreaterThanOrEqual(1);
+
+    const safetyMapper = mapperCalls[mapperCalls.length - 1][0] as (prev: unknown[]) => unknown[];
+
+    const prev = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: '',
+        parts: [
+          { type: 'tool_call', toolCallId: 'tc-1', toolName: 'AskUserQuestion', input: '', status: 'pending', interactiveType: 'question' },
+        ],
+        toolCalls: [
+          { toolCallId: 'tc-1', toolName: 'AskUserQuestion', input: '', status: 'pending', interactiveType: 'question' },
+        ],
+        timestamp: '2026-01-01T00:00:00Z',
+      },
+    ];
+
+    const result = safetyMapper(prev) as typeof prev;
+    expect(result[0].toolCalls[0].status).toBe('complete');
+    expect(result[0].parts[0].status).toBe('complete');
+  });
+
+  it('force-completes pending interactive tool calls during remap', () => {
+    const onSessionIdChangeFn = vi.fn();
+    const { handler, setMessages } = createMinimalDeps({
+      sessionId: 'client-uuid',
+      onSessionIdChange: onSessionIdChangeFn,
+    });
+
+    handler('done', { sessionId: 'server-uuid' }, 'asst-1');
+
+    // Find the force-complete mapper (last function-form call)
+    const mapperCalls = setMessages.mock.calls.filter(
+      (call) => typeof call[0] === 'function',
+    );
+    const safetyMapper = mapperCalls[mapperCalls.length - 1][0] as (prev: unknown[]) => unknown[];
+
+    const prev = [
+      {
+        id: 'msg-1',
+        role: 'assistant',
+        content: '',
+        parts: [
+          { type: 'tool_call', toolCallId: 'tc-1', toolName: 'AskUserQuestion', input: '', status: 'pending', interactiveType: 'question' },
+        ],
+        toolCalls: [
+          { toolCallId: 'tc-1', toolName: 'AskUserQuestion', input: '', status: 'pending', interactiveType: 'question' },
+        ],
+        timestamp: '2026-01-01T00:00:00Z',
+      },
+    ];
+
+    const result = safetyMapper(prev) as typeof prev;
+    expect(result[0].toolCalls[0].status).toBe('complete');
+    expect(result[0].parts[0].status).toBe('complete');
+  });
+
+  it('preserves messages without pending interactive tool calls (referential identity)', () => {
+    const { handler, setMessages } = createMinimalDeps({ sessionId: 'test-session' });
+
+    handler('done', {}, 'asst-1');
+
+    const mapperCalls = setMessages.mock.calls.filter(
+      (call) => typeof call[0] === 'function',
+    );
+    const safetyMapper = mapperCalls[mapperCalls.length - 1][0] as (prev: unknown[]) => unknown[];
+
+    const msg = {
+      id: 'msg-1',
+      role: 'assistant',
+      content: 'hello',
+      parts: [{ type: 'text', text: 'hello' }],
+      toolCalls: [{ toolCallId: 'tc-1', toolName: 'Read', input: '', status: 'complete' }],
+      timestamp: '2026-01-01T00:00:00Z',
+    };
+    const prev = [msg];
+    const result = safetyMapper(prev) as typeof prev;
+    // No pending interactive tool calls — same reference returned
+    expect(result[0]).toBe(msg);
   });
 });

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve stuck input bar and 404 errors in AskUserQuestion flow
 - Update createPulseRouter to include dorkHome parameter
 ---
 

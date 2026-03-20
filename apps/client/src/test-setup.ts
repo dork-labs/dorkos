@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 
 // Motion-specific props to strip so they don't leak to the DOM.
 const MOTION_PROPS = new Set([
-  'initial', 'animate', 'exit', 'transition', 'variants',
+  'initial', 'animate', 'exit', 'transition', 'variants', 'custom',
   'whileHover', 'whileTap', 'whileFocus', 'whileDrag', 'whileInView',
   'drag', 'dragConstraints', 'dragElastic', 'dragMomentum', 'dragTransition',
   'dragPropagation', 'dragSnapToOrigin', 'dragListener',

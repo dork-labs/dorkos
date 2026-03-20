@@ -18,7 +18,7 @@ import type {
 } from '@dorkos/shared/types';
 import { TIMING } from '@/layers/shared/lib';
 import type { StreamEventDeps, StreamingTextPart } from './stream-event-types';
-import { createStreamHelpers } from './stream-event-helpers';
+import { createStreamHelpers, deriveFromParts } from './stream-event-helpers';
 import {
   handleToolCallStart,
   handleToolCallDelta,
@@ -256,6 +256,20 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       case 'done': {
         const doneData = data as { sessionId?: string; messageIds?: { user: string; assistant: string } };
         if (doneData.sessionId && doneData.sessionId !== sessionId) {
+          // Flush current streaming state to messages before clearing parts for remap.
+          // This prevents the queueMicrotask race in handleToolResult from reading
+          // an empty currentPartsRef after we clear it below.
+          if (assistantCreatedRef.current && currentPartsRef.current.length > 0) {
+            const parts = currentPartsRef.current.map((p) => ({ ...p }));
+            const derived = deriveFromParts(parts);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m._streaming && m.role === 'assistant'
+                  ? { ...m, content: derived.content, toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : [], parts }
+                  : m
+              )
+            );
+          }
           currentPartsRef.current = [];
           assistantCreatedRef.current = false;
           // Signal that this sessionId change is a remap — the session change effect
@@ -306,6 +320,27 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         isTextStreamingRef.current = false;
         setIsTextStreaming(false);
         setSystemStatus(null);
+
+        // Safety net: force-complete any interactive tool calls still marked 'pending'.
+        // This handles races where tool_result's queueMicrotask hasn't flushed,
+        // or where the transcript parser loaded stale data after a remap.
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (!m.toolCalls?.some((tc) => tc.interactiveType && tc.status === 'pending')) return m;
+            return {
+              ...m,
+              toolCalls: m.toolCalls!.map((tc) =>
+                tc.interactiveType && tc.status === 'pending' ? { ...tc, status: 'complete' as const } : tc
+              ),
+              parts: m.parts.map((p) =>
+                p.type === 'tool_call' && p.interactiveType && p.status === 'pending'
+                  ? { ...p, status: 'complete' as const }
+                  : p
+              ),
+            };
+          })
+        );
+
         setStatus('idle');
         break;
       }
