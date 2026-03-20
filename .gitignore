@@ -16,6 +16,7 @@ dist-obsidian/
 
 # Test & coverage
 coverage/
+test-results/
 
 # Environment & secrets
 .env
