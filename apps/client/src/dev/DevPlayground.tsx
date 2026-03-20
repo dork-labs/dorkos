@@ -18,7 +18,7 @@ import {
   Separator,
 } from '@/layers/shared/ui';
 import { TransportProvider, useTheme } from '@/layers/shared/model';
-import { LayoutDashboard, Palette, TextCursorInput, Component, MessageSquare, Blocks, Sun, Monitor, Moon, Search } from 'lucide-react';
+import { LayoutDashboard, Palette, TextCursorInput, Component, MessageSquare, Blocks, Play, Sun, Monitor, Moon, Search } from 'lucide-react';
 import { createPlaygroundTransport } from './playground-transport';
 import { ChatPage } from './pages/ChatPage';
 import { FeaturesPage } from './pages/FeaturesPage';
@@ -26,6 +26,7 @@ import { TokensPage } from './pages/TokensPage';
 import { FormsPage } from './pages/FormsPage';
 import { ComponentsPage } from './pages/ComponentsPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { SimulatorPage } from './pages/SimulatorPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import type { Page, PlaygroundSection } from './playground-registry';
 
@@ -52,6 +53,7 @@ function getRouteFromPath(): PlaygroundRoute {
   if (path.startsWith('/dev/components')) return { page: 'components', anchor };
   if (path.startsWith('/dev/chat')) return { page: 'chat', anchor };
   if (path.startsWith('/dev/features')) return { page: 'features', anchor };
+  if (path.startsWith('/dev/simulator')) return { page: 'simulator', anchor };
   return { page: 'overview', anchor };
 }
 
@@ -70,6 +72,7 @@ const DESIGN_SYSTEM_NAV: NavItem[] = [
 const FEATURES_NAV: NavItem[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'features', label: 'Features', icon: Blocks },
+  { id: 'simulator', label: 'Simulator', icon: Play },
 ];
 
 /**
@@ -256,6 +259,7 @@ export default function DevPlayground() {
                 {page === 'components' && <ComponentsPage />}
                 {page === 'chat' && <ChatPage />}
                 {page === 'features' && <FeaturesPage />}
+                {page === 'simulator' && <SimulatorPage />}
               </SidebarInset>
 
               <PlaygroundSearch

@@ -145,6 +145,7 @@ export {
 } from './select';
 export type { SelectTriggerProps, SelectItemProps } from './select';
 export { Separator } from './separator';
+export { Slider } from './slider';
 export { Switch } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';

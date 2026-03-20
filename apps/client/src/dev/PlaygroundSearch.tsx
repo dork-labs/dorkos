@@ -21,10 +21,11 @@ const PAGE_LABELS: Record<Page, string> = {
   components: 'Components',
   chat: 'Chat',
   features: 'Features',
+  simulator: 'Simulator',
 };
 
 /** Ordered list of pages for consistent group rendering. */
-const PAGE_ORDER: Page[] = ['overview', 'tokens', 'forms', 'components', 'chat', 'features'];
+const PAGE_ORDER: Page[] = ['overview', 'tokens', 'forms', 'components', 'chat', 'features', 'simulator'];
 
 /** Group registry sections by their page. */
 function groupByPage(sections: PlaygroundSection[]): Map<Page, PlaygroundSection[]> {

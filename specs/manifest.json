@@ -1067,7 +1067,14 @@
       "title": "Streaming Message Integrity — Eliminate Post-Stream Replace",
       "created": "2026-03-19",
       "status": "specification"
+    },
+    {
+      "number": 151,
+      "slug": "dev-playground-chat-simulator",
+      "title": "Dev Playground Chat Simulator",
+      "created": "2026-03-19",
+      "status": "ideation"
     }
   ],
-  "nextNumber": 151
+  "nextNumber": 152
 }
