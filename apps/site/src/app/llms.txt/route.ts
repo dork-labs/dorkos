@@ -108,16 +108,14 @@ function buildFeaturesSection(): string {
 }
 
 function buildFeatureCategoriesSection(): string {
-  const categories = Object.keys(CATEGORY_LABELS) as FeatureCategory[];
-  return categories
-    .map((category) => {
-      const label = CATEGORY_LABELS[category];
-      const url = `${siteConfig.url}/features/category/${category}`;
-      const categoryFeatures = features.filter((f) => f.category === category);
-      const featureNames = categoryFeatures.map((f) => f.name).join(', ');
-      return featureNames ? `- [${label}](${url}): ${featureNames}` : `- [${label}](${url})`;
+  return (Object.keys(CATEGORY_LABELS) as FeatureCategory[])
+    .map((cat) => {
+      const label = CATEGORY_LABELS[cat];
+      const catFeatures = features.filter((f) => f.category === cat);
+      const lines = catFeatures.map((f) => `- ${f.name}: ${f.tagline}`);
+      return `### ${label}\n${lines.join('\n')}`;
     })
-    .join('\n');
+    .join('\n\n');
 }
 
 /**

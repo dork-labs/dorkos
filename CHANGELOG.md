@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Correct llms.txt Feature Categories section format
 - Fix Stop hook hang, add auto-format on file write
 - Fix Stop hook hang, add auto-format on file write
 - Fix dashboard navigation — use router context in beforeLoad, suppress auto-select
