@@ -9,6 +9,7 @@ import {
 } from '@/layers/entities/mesh';
 import { useDiscoveryScan, useDiscoveryStore, CandidateCard } from '@/layers/entities/discovery';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import { Button } from '@/layers/shared/ui';
 import { ScanRootInput } from './ScanRootInput';
 
 const DETECTION_STRATEGIES = [
@@ -51,6 +52,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
 
   const [actedPaths, setActedPaths] = useState<Set<string>>(new Set());
   const visibleCandidates = candidates.filter((c) => !actedPaths.has(c.path));
+  const hasRegistered = (agentsResult?.agents?.length ?? 0) > 0;
 
   function markActed(path: string) {
     setActedPaths((prev) => new Set([...prev, path]));
@@ -116,15 +118,10 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleScan}
-          disabled={isPending || displayRoots.length === 0}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
-        >
+        <Button onClick={handleScan} disabled={isPending || displayRoots.length === 0}>
           {isPending ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
           Scan for Agents
-        </button>
+        </Button>
       </div>
 
       {/* Results */}
@@ -135,24 +132,18 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
           </div>
         )}
 
-        {!isPending &&
-          visibleCandidates &&
-          visibleCandidates.length === 0 &&
-          (() => {
-            const hasRegistered = (agentsResult?.agents?.length ?? 0) > 0;
-            return (
-              <div className="rounded-xl border border-dashed p-8 text-center">
-                <p className="text-sm font-medium">
-                  {hasRegistered ? 'No new agents found' : 'No agents found'}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {hasRegistered
-                    ? 'All discovered agents are already registered. Check the Agents tab to see them.'
-                    : 'Try scanning deeper directories or adding different paths.'}
-                </p>
-              </div>
-            );
-          })()}
+        {!isPending && visibleCandidates.length === 0 && (
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <p className="text-sm font-medium">
+              {hasRegistered ? 'No new agents found' : 'No agents found'}
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {hasRegistered
+                ? 'All discovered agents are already registered. Check the Agents tab to see them.'
+                : 'Try scanning deeper directories or adding different paths.'}
+            </p>
+          </div>
+        )}
 
         {!isPending && visibleCandidates && visibleCandidates.length > 0 && (
           <AnimatePresence mode="popLayout">

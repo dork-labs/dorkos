@@ -52,7 +52,7 @@ function DeniedTab({ denied, isLoading }: DeniedTabProps) {
             {d.reason && <p className="text-muted-foreground text-xs">{d.reason}</p>}
           </div>
           <Badge variant="outline" className="text-xs">
-            {d.strategy}
+            {d.deniedBy}
           </Badge>
         </div>
       ))}

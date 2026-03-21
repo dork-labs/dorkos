@@ -14,22 +14,23 @@ Mesh is the agent discovery and registry system in DorkOS. It scans your filesys
 
 ## Discovering Agents
 
-Discovery scans your filesystem for directories that contain recognized agent markers. Mesh ships with four detection strategies:
+Discovery scans your filesystem for directories that contain recognized agent markers. Mesh ships with three detection strategies:
 
-- **claude-code** — `.claude/` directory present
-- **cursor** — `.cursor/` directory or `.cursorrc` file
-- **copilot** — GitHub Copilot configuration markers
-- **dork-manifest** — `.dork/agent.json` file (auto-imports previously registered agents)
+- **claude-code** — `CLAUDE.md` file at the project root (the Claude Code convention). Extracts a description from the first paragraph of `CLAUDE.md`.
+- **cursor** — `.cursor/` directory present at the project root.
+- **codex** — `.codex/` directory present at the project root.
+
+In addition, any directory that already contains a `.dork/agent.json` manifest is **auto-imported** — the agent is silently added to the registry without requiring your approval again.
 
 Trigger a scan from the UI by opening the Mesh tab and clicking the discover button, or use the REST API:
 
 ```bash
 curl -X POST http://localhost:4242/api/mesh/discover \
   -H "Content-Type: application/json" \
-  -d '{ "roots": ["/home/user/projects"], "maxDepth": 3 }'
+  -d '{ "roots": ["/home/user/projects"], "maxDepth": 5 }'
 ```
 
-The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the UI, each candidate appears as a CandidateCard with accept and deny buttons.
+The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the UI, each candidate appears as a CandidateCard with approve and deny buttons.
 
 <Callout type="info">
   Discovery is non-destructive. It only reads filesystem markers and never modifies your project
@@ -124,7 +125,21 @@ curl -X POST http://localhost:4242/api/mesh/agents \
 
 ### MCP Tools
 
-Agents can register other agents (or themselves) using the `mesh_register` MCP tool:
+Agents can discover and register other agents using the mesh MCP tools.
+
+**Scan for candidates:**
+
+```
+mesh_discover({ roots: ["/home/user/projects"], maxDepth: 5 })
+```
+
+By default this returns only **unregistered** candidates. Pass `includeRegistered: true` to also see agents that were auto-imported during the scan (directories with an existing `.dork/agent.json`):
+
+```
+mesh_discover({ roots: ["/home/user/projects"], includeRegistered: true })
+```
+
+**Register an agent directly:**
 
 ```
 mesh_register({ path: "/home/user/projects/research", name: "research-agent", runtime: "claude-code", capabilities: ["web-search"] })

@@ -14,9 +14,10 @@ import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
 // Human-readable descriptions for known detection strategies
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
-  manifest: 'Found a .dork/agent.json manifest file in this directory.',
-  heuristic: 'Inferred from project file structure and naming conventions.',
-  'package.json': 'Detected agent configuration inside package.json.',
+  'claude-code': 'Detected a CLAUDE.md file — this is a Claude Code project.',
+  cursor: 'Detected a .cursor/ directory — this is a Cursor project.',
+  codex: 'Detected a .codex/ directory — this is a Codex project.',
+  'dork-manifest': 'Found an existing .dork/agent.json — already configured as a DorkOS agent.',
 };
 
 function strategyDescription(strategy: string): string {
@@ -80,6 +81,11 @@ export function CandidateCard({
           <Folder className="size-3 shrink-0" />
           <span className="truncate font-mono">{path}</span>
         </div>
+
+        {/* Description (extracted from CLAUDE.md or similar) */}
+        {hints.description && (
+          <p className="text-muted-foreground line-clamp-2 text-xs">{hints.description}</p>
+        )}
 
         {/* Runtime with HoverCard showing detection strategy */}
         <div className="flex flex-wrap items-center gap-1.5">

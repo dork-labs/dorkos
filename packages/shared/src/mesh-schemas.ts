@@ -154,7 +154,6 @@ export type DiscoveryCandidate = z.infer<typeof DiscoveryCandidateSchema>;
 export const DenialRecordSchema = z
   .object({
     path: z.string().min(1),
-    strategy: z.string().min(1),
     reason: z.string().optional(),
     deniedBy: z.string().min(1),
     deniedAt: z.string().datetime(),

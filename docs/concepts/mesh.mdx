@@ -22,18 +22,19 @@ Discovery scans directories to find agent projects. Mesh uses pluggable **detect
 
 ### Built-in Strategies
 
-DorkOS ships with four detection strategies:
+DorkOS ships with three detection strategies:
 
-- **claude-code** — Detects projects with a `.claude/` directory. Extracts name, description, and capabilities from `CLAUDE.md` and the commands directory.
-- **cursor** — Detects projects with a `.cursor/` directory or `.cursorrc` file.
-- **copilot** — Detects projects with GitHub Copilot configuration markers.
-- **dork-manifest** — Detects projects that already have a `.dork/agent.json` manifest file (from a previous registration).
+- **claude-code** — Detects projects with a `CLAUDE.md` file at the project root (the Claude Code convention). Extracts a description from the first paragraph of `CLAUDE.md`.
+- **cursor** — Detects projects with a `.cursor/` directory at the project root.
+- **codex** — Detects projects with a `.codex/` directory at the project root.
+
+In addition, any directory that already contains a `.dork/agent.json` manifest is **auto-imported** by the scanner — the agent is silently added to the registry without appearing as a candidate. This is scanner behavior, not a detection strategy.
 
 Each strategy checks whether a directory matches its markers and gathers information about the agent — suggested name, runtime type, inferred capabilities, and description.
 
 ### Scan Process
 
-When you trigger a discovery scan, Mesh walks the specified root directories up to a configurable depth (default: 3 levels). For each directory, it runs every strategy's detection logic. Several behaviors happen automatically:
+When you trigger a discovery scan, Mesh walks the specified root directories up to a configurable depth (default: 5 levels). For each directory, it runs every strategy's detection logic. Several behaviors happen automatically:
 
 - **Auto-import** — If a directory already has a `.dork/agent.json` manifest, the agent is silently imported into the registry without appearing as a candidate. Re-scanning picks up previously registered agents without requiring you to approve them again.
 - **Skip registered** — Directories already in the registry are skipped entirely.

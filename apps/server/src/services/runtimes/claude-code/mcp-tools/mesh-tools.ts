@@ -13,19 +13,29 @@ function requireMesh(deps: McpToolDeps) {
 
 /** Discover agents by scanning directories. */
 export function createMeshDiscoverHandler(deps: McpToolDeps) {
-  return async (args: { roots: string[]; maxDepth?: number }) => {
+  return async (args: { roots: string[]; maxDepth?: number; includeRegistered?: boolean }) => {
     const err = requireMesh(deps);
     if (err) return err;
     try {
       const candidates = [];
+      const autoImported = [];
       for await (const event of deps.meshCore!.discover(args.roots, {
         maxDepth: args.maxDepth,
       })) {
         if (event.type === 'candidate') {
           candidates.push(event.data);
+        } else if (event.type === 'auto-import' && args.includeRegistered) {
+          autoImported.push(event.data);
         }
       }
-      return jsonContent({ candidates, count: candidates.length });
+      return jsonContent({
+        candidates,
+        count: candidates.length,
+        ...(args.includeRegistered && {
+          registered: autoImported,
+          registeredCount: autoImported.length,
+        }),
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Discovery failed';
       return jsonContent({ error: message, code: 'DISCOVER_FAILED' }, true);
@@ -45,11 +55,6 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
     const err = requireMesh(deps);
     if (err) return err;
     try {
-      const overrides: Record<string, unknown> = {};
-      if (args.name) overrides.name = args.name;
-      if (args.description) overrides.description = args.description;
-      if (args.runtime) overrides.runtime = args.runtime;
-      if (args.capabilities) overrides.capabilities = args.capabilities;
       const agent = await deps.meshCore!.registerByPath(
         args.path,
         {
@@ -164,7 +169,7 @@ export function getMeshTools(deps: McpToolDeps) {
   return [
     tool(
       'mesh_discover',
-      'Scan directories for agent candidates. Returns paths with detected runtime, capabilities, and suggested names.',
+      'Scan directories for agent candidates. By default returns only unregistered agents (candidates). Set includeRegistered to also see already-registered agents found during the scan.',
       {
         roots: z.array(z.string()).describe('Root directories to scan for agents'),
         maxDepth: z
@@ -172,7 +177,13 @@ export function getMeshTools(deps: McpToolDeps) {
           .int()
           .min(1)
           .optional()
-          .describe('Maximum directory depth (default 3)'),
+          .describe('Maximum directory depth (default: 5)'),
+        includeRegistered: z
+          .boolean()
+          .optional()
+          .describe(
+            'Include already-registered agents in results (default: false — unregistered candidates only)'
+          ),
       },
       createMeshDiscoverHandler(deps)
     ),

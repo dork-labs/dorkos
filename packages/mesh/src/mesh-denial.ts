@@ -8,9 +8,7 @@
  */
 import type { DenialRecord } from '@dorkos/shared/mesh-schemas';
 import type { DenialList } from './denial-list.js';
-
-/** Default registrar identifier when none is provided. */
-const DEFAULT_REGISTRAR = 'mesh';
+import { DEFAULT_REGISTRAR } from './mesh-discovery.js';
 
 /** Dependencies required by denial management functions. */
 export interface DenialDeps {
@@ -33,7 +31,7 @@ export async function deny(
   reason?: string,
   denier = DEFAULT_REGISTRAR
 ): Promise<void> {
-  deps.denialList.deny(filePath, 'manual', reason, denier);
+  deps.denialList.deny(filePath, reason, denier);
 }
 
 /**

@@ -18,7 +18,7 @@ import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
 import { writeManifest, removeManifest } from './manifest.js';
 
 /** Default registrar identifier when none is provided. */
-const DEFAULT_REGISTRAR = 'mesh';
+export const DEFAULT_REGISTRAR = 'mesh';
 
 /** Dependencies required by discovery and registration functions. */
 export interface DiscoveryDeps {

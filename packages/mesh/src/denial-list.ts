@@ -27,7 +27,7 @@ const generateUlid = monotonicFactory();
  * @example
  * ```typescript
  * const denials = new DenialList(db);
- * denials.deny('/projects/unwanted', 'claude-code', 'Not a project', 'user');
+ * denials.deny('/projects/unwanted', 'Not a project', 'user');
  * denials.isDenied('/projects/unwanted'); // true
  * ```
  */
@@ -47,11 +47,10 @@ export class DenialList {
    * onConflictDoUpdate on the unique `path` column.
    *
    * @param filePath - Absolute path to the project directory
-   * @param strategy - Strategy name that detected the directory
    * @param reason - Human-readable reason for denial (optional)
    * @param denier - Identifier of the entity performing the denial (e.g., "user", "system")
    */
-  deny(filePath: string, strategy: string, reason: string | undefined, denier: string): void {
+  deny(filePath: string, reason: string | undefined, denier: string): void {
     const canonicalPath = this.canonicalize(filePath);
     this.db
       .insert(agentDenials)
@@ -123,9 +122,6 @@ export class DenialList {
   private rowToRecord(row: typeof agentDenials.$inferSelect): DenialRecord {
     return {
       path: row.path,
-      // DenialRecord requires strategy but agentDenials schema doesn't have it;
-      // use 'manual' as default since strategy was dropped in the schema migration.
-      strategy: 'manual',
       reason: row.reason ?? undefined,
       deniedBy: row.denier ?? 'unknown',
       deniedAt: row.createdAt,

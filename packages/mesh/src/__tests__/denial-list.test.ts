@@ -24,7 +24,7 @@ beforeEach(async () => {
 describe('deny and isDenied', () => {
   it('round-trip: deny a path, then isDenied returns true', () => {
     const dir = path.join(tmpDir, 'project-a');
-    denialList.deny(dir, 'claude-code', 'Not a project', 'user');
+    denialList.deny(dir, 'Not a project', 'user');
     expect(denialList.isDenied(dir)).toBe(true);
   });
 
@@ -35,7 +35,7 @@ describe('deny and isDenied', () => {
 
   it('deny() preserves reason string', () => {
     const dir = path.join(tmpDir, 'project-c');
-    denialList.deny(dir, 'cursor', 'Not relevant', 'admin');
+    denialList.deny(dir, 'Not relevant', 'admin');
 
     const records = denialList.list();
     expect(records).toHaveLength(1);
@@ -44,7 +44,7 @@ describe('deny and isDenied', () => {
 
   it('deny() works with no reason (undefined)', () => {
     const dir = path.join(tmpDir, 'project-d');
-    denialList.deny(dir, 'codex', undefined, 'system');
+    denialList.deny(dir, undefined, 'system');
 
     const records = denialList.list();
     expect(records[0].reason).toBeUndefined();
@@ -52,8 +52,8 @@ describe('deny and isDenied', () => {
 
   it('re-denying the same path updates the record', () => {
     const dir = path.join(tmpDir, 'project-e');
-    denialList.deny(dir, 'claude-code', 'First reason', 'user');
-    denialList.deny(dir, 'claude-code', 'Updated reason', 'admin');
+    denialList.deny(dir, 'First reason', 'user');
+    denialList.deny(dir, 'Updated reason', 'admin');
 
     const records = denialList.list();
     // Should still only have one record
@@ -66,7 +66,7 @@ describe('deny and isDenied', () => {
 describe('clear', () => {
   it('removes a denial and returns true', () => {
     const dir = path.join(tmpDir, 'project-f');
-    denialList.deny(dir, 'claude-code', undefined, 'user');
+    denialList.deny(dir, undefined, 'user');
 
     const result = denialList.clear(dir);
     expect(result).toBe(true);
@@ -81,8 +81,8 @@ describe('clear', () => {
 
 describe('list', () => {
   it('returns all denial records', () => {
-    denialList.deny(path.join(tmpDir, 'p1'), 'claude-code', undefined, 'user');
-    denialList.deny(path.join(tmpDir, 'p2'), 'cursor', 'Test reason', 'admin');
+    denialList.deny(path.join(tmpDir, 'p1'), undefined, 'user');
+    denialList.deny(path.join(tmpDir, 'p2'), 'Test reason', 'admin');
 
     const records = denialList.list();
     expect(records).toHaveLength(2);
@@ -102,7 +102,7 @@ describe('path canonicalization', () => {
     nodefs.symlinkSync(realDir, linkDir);
 
     // Deny via symlink path
-    denialList.deny(linkDir, 'claude-code', undefined, 'user');
+    denialList.deny(linkDir, undefined, 'user');
 
     // Check via real path (realpath resolution should match)
     const realPath = nodefs.realpathSync(realDir);
@@ -113,7 +113,7 @@ describe('path canonicalization', () => {
 describe('persistence', () => {
   it('denials persist across DenialList instances on the same db', () => {
     const dir = path.join(tmpDir, 'project-h');
-    denialList.deny(dir, 'claude-code', 'Persistent', 'user');
+    denialList.deny(dir, 'Persistent', 'user');
 
     // Create a new DenialList on the same db
     const denialList2 = new DenialList(db);

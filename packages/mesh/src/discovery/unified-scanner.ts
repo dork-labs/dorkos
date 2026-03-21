@@ -7,7 +7,6 @@
  * @module mesh/discovery/unified-scanner
  */
 import fs from 'fs/promises';
-import { realpathSync } from 'fs';
 import path from 'path';
 import type { DiscoveryStrategy } from '../discovery-strategy.js';
 import { readManifest } from '../manifest.js';
@@ -91,7 +90,7 @@ export async function* unifiedScan(
       if (followSymlinks) {
         let realDir: string;
         try {
-          realDir = realpathSync(dir);
+          realDir = await fs.realpath(dir);
         } catch {
           // Broken symlink or ENOENT race — skip
           continue;
@@ -162,8 +161,8 @@ export async function* unifiedScan(
           const isDir = entry.isDirectory();
           const isSymlink = entry.isSymbolicLink();
 
-          if (!isDir && !(followSymlinks && isSymlink)) continue;
-          if (isSymlink && !followSymlinks) continue;
+          if (!isDir && !isSymlink) continue; // skip regular files
+          if (isSymlink && !followSymlinks) continue; // skip symlinks when not following
 
           queue.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
         }
