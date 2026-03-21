@@ -22,7 +22,7 @@ Claude Code — 2026-03-05
 
 ## Overview
 
-Add `relay_dispatch` (fire-and-poll async dispatch) and `relay_unregister_endpoint` (explicit inbox cleanup) as two new relay MCP tools. Simultaneously raise the `relay_query` timeout cap from 120 s to 600 s, stream incremental progress updates from ClaudeCodeAdapter to dispatch inboxes during agent sessions, and update `context-builder.ts` documentation with the new workflows and the subagent MCP constraint warning.
+Add `relay_send_async` (fire-and-poll async dispatch) and `relay_unregister_endpoint` (explicit inbox cleanup) as two new relay MCP tools. Simultaneously raise the `relay_send_and_wait` timeout cap from 120 s to 600 s, stream incremental progress updates from ClaudeCodeAdapter to dispatch inboxes during agent sessions, and update `context-builder.ts` documentation with the new workflows and the subagent MCP constraint warning.
 
 ---
 
@@ -31,13 +31,13 @@ Add `relay_dispatch` (fire-and-poll async dispatch) and `relay_unregister_endpoi
 The relay system today offers two agent-to-agent patterns:
 
 1. **relay_send** — fire-and-forget, no reply
-2. **relay_query** — synchronous request/reply with a hard 120 s timeout
+2. **relay_send_and_wait** — synchronous request/reply with a hard 120 s timeout
 
-Neither works for tasks where Agent B requires 20+ minutes: `relay_query` silently times out, and `relay_send` gives Agent A no visibility into the outcome. Three gaps compound:
+Neither works for tasks where Agent B requires 20+ minutes: `relay_send_and_wait` silently times out, and `relay_send` gives Agent A no visibility into the outcome. Three gaps compound:
 
 1. No non-blocking dispatch mechanism that returns a job token immediately
 2. No progress visibility while Agent B runs
-3. Even raising `relay_query`'s timeout still makes Agent A block synchronously for many minutes — a poor agent pattern
+3. Even raising `relay_send_and_wait`'s timeout still makes Agent A block synchronously for many minutes — a poor agent pattern
 
 Additionally, there is no `relay_unregister_endpoint` tool, meaning any dispatch inbox created by agents can never be explicitly cleaned up from within a session.
 
@@ -47,13 +47,13 @@ A secondary documentation gap: agents that attempt to call relay or mesh tools i
 
 ## Goals
 
-- Add `relay_dispatch` tool that returns `{ messageId, inboxSubject }` immediately without blocking on Agent B's response
+- Add `relay_send_async` tool that returns `{ messageId, inboxSubject }` immediately without blocking on Agent B's response
 - Add `relay_unregister_endpoint` tool that allows callers to explicitly clean up named endpoints
-- Raise `relay_query` timeout from 120 s to 600 s (10 min) for medium-duration tasks
+- Raise `relay_send_and_wait` timeout from 120 s to 600 s (10 min) for medium-duration tasks
 - Stream incremental progress from CCA to `relay.inbox.dispatch.*` subjects (per AssistantMessage text completion and per tool_result event)
 - Publish a final `agent_result` with `done: true` after Agent B's session ends
-- Update `RELAY_TOOLS_CONTEXT` in `context-builder.ts` to document relay_dispatch workflow, updated relay_query timeout, and subagent MCP constraint with orchestrator workaround
-- Maintain full backward compatibility with existing relay_query, relay_send, and relay_inbox behavior
+- Update `RELAY_TOOLS_CONTEXT` in `context-builder.ts` to document relay_send_async workflow, updated relay_send_and_wait timeout, and subagent MCP constraint with orchestrator workaround
+- Maintain full backward compatibility with existing relay_send_and_wait, relay_send, and relay_inbox behavior
 - Update tool count test (14 → 16) and tool-filter tests for the two new tools
 
 ---
@@ -66,7 +66,7 @@ A secondary documentation gap: agents that attempt to call relay or mesh tools i
 - Streaming individual text deltas to dispatch inboxes (too granular; progress per text-completion or tool_result is sufficient)
 - Server-side TTL for dispatch inboxes (deferred to a future pass — caller-initiated cleanup only)
 - Adding a `type` metadata field to endpoint entries in `relay_list_endpoints` (deferred to a future pass)
-- Changing relay_query to deliver streaming progress to its ephemeral query inbox (relay_query inbox uses single-message aggregation; its EventEmitter subscribe pattern resolves on the first message)
+- Changing relay_send_and_wait to deliver streaming progress to its ephemeral query inbox (relay_send_and_wait inbox uses single-message aggregation; its EventEmitter subscribe pattern resolves on the first message)
 
 ---
 
@@ -74,8 +74,8 @@ A secondary documentation gap: agents that attempt to call relay or mesh tools i
 
 - **`@anthropic-ai/claude-agent-sdk`** — `tool()` factory for MCP tool registration
 - **`zod`** — schema validation for tool arguments
-- **`packages/relay/src/relay-core.ts`** — `RelayCore.unregisterEndpoint(subject)` already exists (line 499); used by relay_query's finally block; no new RelayCore API required
-- **`packages/relay/src/relay-core.ts`** — `RelayCore.registerEndpoint()` and `RelayCore.publish()` already exist; relay_dispatch uses both
+- **`packages/relay/src/relay-core.ts`** — `RelayCore.unregisterEndpoint(subject)` already exists (line 499); used by relay_send_and_wait's finally block; no new RelayCore API required
+- **`packages/relay/src/relay-core.ts`** — `RelayCore.registerEndpoint()` and `RelayCore.publish()` already exist; relay_send_async uses both
 - **`packages/relay/src/types.ts`** — `RelayPublisher` interface
 
 No new external library dependencies.
@@ -121,13 +121,13 @@ export type RelayAgentResultPayload = z.infer<typeof RelayAgentResultPayloadSche
 
 > **Note:** The existing `publishAgentResult()` already publishes `{ type: 'agent_result', text }` without a `done` field. Adding `done: true` to the schema is additive and does not break existing consumers — the `done` field is new and will be `undefined` on messages published before this spec. Callers must check `payload.done === true` or `payload.type === 'agent_result'` for backward compatibility.
 
-### 2. New MCP Tool: `relay_dispatch` (`apps/server/src/services/core/mcp-tools/relay-tools.ts`)
+### 2. New MCP Tool: `relay_send_async` (`apps/server/src/services/core/mcp-tools/relay-tools.ts`)
 
 ```typescript
 /**
  * Dispatch a message to an agent asynchronously.
  *
- * Unlike relay_query, relay_dispatch returns immediately with a dispatch inbox
+ * Unlike relay_send_and_wait, relay_send_async returns immediately with a dispatch inbox
  * subject. Agent A can then poll relay_inbox() for progress events and the
  * final agent_result. Call relay_unregister_endpoint() to clean up when done.
  *
@@ -195,9 +195,9 @@ export function createRelayDispatchHandler(deps: McpToolDeps) {
 
 ```typescript
 tool(
-  'relay_dispatch',
+  'relay_send_async',
   'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
-    'Unlike relay_query (which blocks), relay_dispatch returns { messageId, inboxSubject } at once. ' +
+    'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
     'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
     'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
     'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
@@ -247,7 +247,7 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
 ```typescript
 tool(
   'relay_unregister_endpoint',
-  'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_dispatch completes (when done:true received).',
+  'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_send_async completes (when done:true received).',
   {
     subject: z.string().describe('Subject of the endpoint to unregister'),
   },
@@ -255,7 +255,7 @@ tool(
 );
 ```
 
-### 4. relay_query Timeout Raise (`relay-tools.ts`, line ~265)
+### 4. relay_send_and_wait Timeout Raise (`relay-tools.ts`, line ~265)
 
 Change:
 
@@ -269,7 +269,7 @@ To:
 .max(600000)
 ```
 
-Also update the tool description to reflect the new maximum and mention relay_dispatch for tasks longer than 10 minutes.
+Also update the tool description to reflect the new maximum and mention relay_send_async for tasks longer than 10 minutes.
 
 ### 5. tool-filter.ts: Add New Tools to RELAY_TOOLS
 
@@ -279,8 +279,8 @@ const RELAY_TOOLS = [
   'mcp__dorkos__relay_inbox',
   'mcp__dorkos__relay_list_endpoints',
   'mcp__dorkos__relay_register_endpoint',
-  'mcp__dorkos__relay_query',
-  'mcp__dorkos__relay_dispatch', // NEW
+  'mcp__dorkos__relay_send_and_wait',
+  'mcp__dorkos__relay_send_async', // NEW
   'mcp__dorkos__relay_unregister_endpoint', // NEW
 ] as const;
 ```
@@ -418,14 +418,14 @@ await this.relay.publish(
 );
 ```
 
-> This is additive — the `done: true` field is new. Existing `relay_query` consumers that check `payload.type === 'agent_result'` continue to work unchanged.
+> This is additive — the `done: true` field is new. Existing `relay_send_and_wait` consumers that check `payload.type === 'agent_result'` continue to work unchanged.
 
 ### 8. context-builder.ts: Updated RELAY_TOOLS_CONTEXT
 
 Replace the current `RELAY_TOOLS_CONTEXT` constant with an updated version that:
 
-1. **Documents `relay_dispatch` workflow** with the full polling loop pattern
-2. **Updates relay_query guidance** — max timeout is now 10 min (600 s), still recommended for ≤10 min tasks
+1. **Documents `relay_send_async` workflow** with the full polling loop pattern
+2. **Updates relay_send_and_wait guidance** — max timeout is now 10 min (600 s), still recommended for ≤10 min tasks
 3. **Adds subagent MCP constraint warning** with the orchestrator pattern workaround
 
 The updated context block:
@@ -436,8 +436,8 @@ DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session
-  relay.inbox.query.{UUID}             — ephemeral inbox for relay_query (auto-managed)
-  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_dispatch (caller-managed)
+  relay.inbox.query.{UUID}             — ephemeral inbox for relay_send_and_wait (auto-managed)
+  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_send_async (caller-managed)
   relay.inbox.{agentId}                — persistent agent reply inbox
   relay.human.console.{clientId}       — reach a human in the DorkOS UI
   relay.system.console                 — system broadcast channel
@@ -445,12 +445,12 @@ Subject hierarchy:
 
 Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
-2. relay_query(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
+2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId }
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. relay_dispatch(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
 2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread")
    → Returns progress events: { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
@@ -469,13 +469,13 @@ CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, pulse_*) a
 inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not
 inherit the parent MCP server). The orchestrator pattern workaround:
   WRONG:  Task("use relay_send to message agent B")   ← tools unavailable, silent failure
-  RIGHT:  1. Call relay_dispatch() in this (parent) session
+  RIGHT:  1. Call relay_send_async() in this (parent) session
           2. Pass the inboxSubject into the Task() prompt if needed
           3. Poll relay_inbox() in this session after Task() returns
 
 IMPORTANT: When YOU receive a relay message, respond naturally — do NOT call relay_send.
 Your response is automatically forwarded by the relay system.
-Only call relay_send/relay_query/relay_dispatch to INITIATE a new message.
+Only call relay_send/relay_send_and_wait/relay_send_async to INITIATE a new message.
 
 Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND,
              TIMEOUT, QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
@@ -489,7 +489,7 @@ Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND,
 ### Current (all-at-once)
 
 ```
-Agent A: relay_query(to_subject="relay.agent.{B}", timeout=120s)
+Agent A: relay_send_and_wait(to_subject="relay.agent.{B}", timeout=120s)
   → relay.registerEndpoint("relay.inbox.query.{UUID}")
   → relay.publish("relay.agent.{B}", replyTo="relay.inbox.query.{UUID}")
   → relay.subscribe("relay.inbox.query.{UUID}", resolve)
@@ -501,7 +501,7 @@ Agent A: relay_query(to_subject="relay.agent.{B}", timeout=120s)
 ### New (async dispatch + streaming)
 
 ```
-Agent A: relay_dispatch(to_subject="relay.agent.{B}")
+Agent A: relay_send_async(to_subject="relay.agent.{B}")
   → relay.registerEndpoint("relay.inbox.dispatch.{UUID}")
   → relay.publish("relay.agent.{B}", replyTo="relay.inbox.dispatch.{UUID}")
   → if rejected: auto-unregister inbox, return { error, rejected }
@@ -526,11 +526,11 @@ Agent A (polling): relay_inbox(endpoint_subject="relay.inbox.dispatch.{UUID}", s
 
 Agents interact exclusively through MCP tools. The new experience:
 
-**For long-running tasks (relay_dispatch):**
+**For long-running tasks (relay_send_async):**
 
 ```
 # Fire and poll pattern
-result = relay_dispatch(
+result = relay_send_async(
   to_subject="relay.agent.{analysisAgentId}",
   payload={"task": "Analyze entire codebase and write report"},
   from="relay.agent.{myAgentId}"
@@ -549,11 +549,11 @@ while True:
         print(f"Step {msg.payload.step}: {msg.payload.text[:100]}")
 ```
 
-**For medium-duration tasks (relay_query, now up to 10 min):**
+**For medium-duration tasks (relay_send_and_wait, now up to 10 min):**
 
 ```
 # Blocking call, up to 10 minutes
-result = relay_query(
+result = relay_send_and_wait(
   to_subject="relay.agent.{codeReviewAgentId}",
   payload={"task": "Review the PR"},
   from="relay.agent.{myAgentId}",
@@ -571,7 +571,7 @@ result = relay_query(
 
 - Update the tool count test: `toHaveLength(14)` → `toHaveLength(16)`
 - Update the comment: `(4 core + 5 pulse + 5 relay)` → `(4 core + 5 pulse + 7 relay)`
-- Add `relay_dispatch` and `relay_unregister_endpoint` to the "registers tools with correct names" assertions
+- Add `relay_send_async` and `relay_unregister_endpoint` to the "registers tools with correct names" assertions
 
 ```typescript
 it('registers 16 tools (4 core + 5 pulse + 7 relay)', () => {
@@ -581,43 +581,43 @@ it('registers 16 tools (4 core + 5 pulse + 7 relay)', () => {
   expect(server.tools).toHaveLength(16);
 });
 
-it('registers relay_dispatch and relay_unregister_endpoint', () => {
+it('registers relay_send_async and relay_unregister_endpoint', () => {
   const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
   const toolNames = server.tools.map((t) => t.name);
-  expect(toolNames).toContain('relay_dispatch');
+  expect(toolNames).toContain('relay_send_async');
   expect(toolNames).toContain('relay_unregister_endpoint');
 });
 ```
 
 **`apps/server/src/services/core/__tests__/tool-filter.test.ts`**
 
-- Add `relay_dispatch` and `relay_unregister_endpoint` to the relay tools inclusion test
+- Add `relay_send_async` and `relay_unregister_endpoint` to the relay tools inclusion test
 - Verify both tools are excluded when relay is disabled
 
 ```typescript
-it('includes relay_dispatch and relay_unregister_endpoint when relay enabled', () => {
+it('includes relay_send_async and relay_unregister_endpoint when relay enabled', () => {
   // Purpose: ensures new relay tools follow the relay toggle exactly.
   const config = resolveToolConfig(undefined, allEnabledDeps);
   const allowed = buildAllowedTools({ ...config, pulse: false, mesh: false, adapter: false });
-  expect(allowed).toContain('mcp__dorkos__relay_dispatch');
+  expect(allowed).toContain('mcp__dorkos__relay_send_async');
   expect(allowed).toContain('mcp__dorkos__relay_unregister_endpoint');
 });
 
-it('excludes relay_dispatch and relay_unregister_endpoint when relay disabled', () => {
+it('excludes relay_send_async and relay_unregister_endpoint when relay disabled', () => {
   // Purpose: verifies relay feature gate applies to new tools.
   const config = resolveToolConfig(undefined, allDisabledDeps);
   const allowed = buildAllowedTools(config);
-  expect(allowed).not.toContain('mcp__dorkos__relay_dispatch');
+  expect(allowed).not.toContain('mcp__dorkos__relay_send_async');
   expect(allowed).not.toContain('mcp__dorkos__relay_unregister_endpoint');
 });
 ```
 
-**New tests for `relay_dispatch` handler** (add to mcp-tool-server.test.ts or a new relay-tools.test.ts):
+**New tests for `relay_send_async` handler** (add to mcp-tool-server.test.ts or a new relay-tools.test.ts):
 
 ```typescript
 describe('createRelayDispatchHandler', () => {
   it('returns error when relay disabled', async () => {
-    // Purpose: verifies requireRelay guard applies to relay_dispatch.
+    // Purpose: verifies requireRelay guard applies to relay_send_async.
     const handler = createRelayDispatchHandler(makeMockDeps());
     const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
     expect(result.isError).toBe(true);
@@ -727,8 +727,8 @@ it('publishes multiple progress events followed by agent_result for relay.inbox.
 });
 
 it('still publishes single agent_result for relay.inbox.query.* replyTo (backward compat)', async () => {
-  // Purpose: regression guard — relay_query inbox behavior must not change.
-  // relay_query subscribes via EventEmitter and resolves on the FIRST message;
+  // Purpose: regression guard — relay_send_and_wait inbox behavior must not change.
+  // relay_send_and_wait subscribes via EventEmitter and resolves on the FIRST message;
   // streaming would break it.
   await relay.registerEndpoint('relay.inbox.query.existing-test');
 
@@ -801,7 +801,7 @@ it('step_type field is "message" for text completions and "tool_result" for tool
 
 - **Progress publish overhead:** Each CCA progress publish is a `relay.publish()` call — synchronous `EventEmitter2` dispatch (no network). Overhead is negligible.
 - **Memory:** Dispatch inboxes accumulate messages in Maildir on disk until unregistered. For a 20-minute session with one progress step per tool call (~50 calls), this is ~50 messages at ~1 KB each ≈ 50 KB. Not a concern.
-- **relay_query unchanged:** The timeout raise to 600 s is a Zod schema max change. No runtime overhead.
+- **relay_send_and_wait unchanged:** The timeout raise to 600 s is a Zod schema max change. No runtime overhead.
 - **text buffer:** CCA accumulates `messageBuffer` (a string) in the dispatch path — no material memory impact vs. the existing `collectedText` accumulation.
 
 ---
@@ -810,7 +810,7 @@ it('step_type field is "message" for text completions and "tool_result" for tool
 
 - **Inbox subject namespace:** `relay.inbox.dispatch.{UUID}` uses `randomUUID()` (Node.js crypto), which is cryptographically secure. Inboxes cannot be guessed.
 - **Feature gate:** Both new tools are gated behind `DORKOS_RELAY_ENABLED`. No exposure when relay is off.
-- **Access control:** `relay.publish()` enforces existing relay access control rules on the target subject; relay_dispatch does not bypass them.
+- **Access control:** `relay.publish()` enforces existing relay access control rules on the target subject; relay_send_async does not bypass them.
 - **Inbox cleanup:** Auto-unregister on early rejection prevents orphaned inboxes. Server restarts naturally clear in-memory endpoint state.
 - **No new attack surface:** relay_unregister_endpoint can only remove endpoints the caller knows the name of. Since names are UUIDs, callers cannot remove other agents' inboxes without knowing the exact UUID.
 
@@ -819,7 +819,7 @@ it('step_type field is "message" for text completions and "tool_result" for tool
 ## Documentation
 
 - **RELAY_TOOLS_CONTEXT** in `context-builder.ts` updated (Section 8 of Technical Design above) — this is the primary documentation for agents
-- No user-facing docs changes required (relay_dispatch is agent-to-agent; not surfaced in the DorkOS UI)
+- No user-facing docs changes required (relay_send_async is agent-to-agent; not surfaced in the DorkOS UI)
 - `contributing/architecture.md` — no changes needed (patterns are extensions of existing relay architecture)
 
 ---
@@ -834,7 +834,7 @@ it('step_type field is "message" for text completions and "tool_result" for tool
 4. Register both tools in `getRelayTools()` in `relay-tools.ts`
 5. Export new handlers from `mcp-tools/index.ts`
 6. Add both tools to `RELAY_TOOLS` in `tool-filter.ts`
-7. Raise relay_query `.max(120000)` to `.max(600000)`
+7. Raise relay_send_and_wait `.max(120000)` to `.max(600000)`
 8. Update unit tests: tool count (14→16), relay tool names, tool-filter inclusion/exclusion
 
 **Verification:** `pnpm vitest run apps/server/src/services/core/__tests__/mcp-tool-server.test.ts apps/server/src/services/core/__tests__/tool-filter.test.ts`
@@ -867,7 +867,7 @@ For future consideration:
 
 - **Endpoint type metadata**: Add `type: 'dispatch' | 'persistent'` field to relay_list_endpoints output so agents can filter dispatch inboxes. Deferred from this spec.
 - **Server-side TTL for dispatch inboxes**: Auto-expire after 30–60 min for agents that fail to clean up. Deferred from this spec.
-- **relay_query streaming**: If relay_query's timeout is raised further (>10 min), consider whether relay_query should also benefit from streaming progress. Requires rethinking the EventEmitter resolve-on-first-message pattern.
+- **relay_send_and_wait streaming**: If relay_send_and_wait's timeout is raised further (>10 min), consider whether relay_send_and_wait should also benefit from streaming progress. Requires rethinking the EventEmitter resolve-on-first-message pattern.
 
 ---
 
@@ -881,7 +881,7 @@ For future consideration:
 
 ## References
 
-- `research/20260304_agent-to-agent-reply-patterns.md` — Prior research on relay_query and fire-and-poll patterns
+- `research/20260304_agent-to-agent-reply-patterns.md` — Prior research on relay_send_and_wait and fire-and-poll patterns
 - `research/20260304_relay_async_query_and_subagent_mcp.md` — Confirms fire-and-poll pattern; documents SDK subagent MCP limitation (Anthropic #13898, #14496, #5465)
 - `packages/relay/src/adapters/claude-code-adapter.ts` — CCA implementation; `handleAgentMessage()` is the primary change target
 - `apps/server/src/services/core/mcp-tools/relay-tools.ts` — Relay MCP tool definitions

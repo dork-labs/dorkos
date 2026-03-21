@@ -128,15 +128,15 @@ Embed a standards-compliant MCP server in the existing DorkOS Express process at
 
 **Tool groups and counts**:
 
-| Group   | Count | Tools                                                                                                                          |
-| ------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Core    | 4     | ping, get_server_info, get_session_count, get_current_agent                                                                    |
-| Pulse   | 5     | pulse_list_schedules, pulse_create_schedule, pulse_update_schedule, pulse_delete_schedule, pulse_get_run_history               |
-| Relay   | 7     | relay_send, relay_inbox, relay_list_endpoints, relay_register_endpoint, relay_query, relay_dispatch, relay_unregister_endpoint |
-| Adapter | 4     | relay_list_adapters, relay_enable_adapter, relay_disable_adapter, relay_reload_adapters                                        |
-| Binding | 3     | binding_list, binding_create, binding_delete                                                                                   |
-| Trace   | 2     | relay_get_trace, relay_get_metrics                                                                                             |
-| Mesh    | 8     | mesh_discover, mesh_register, mesh_list, mesh_deny, mesh_unregister, mesh_status, mesh_inspect, mesh_query_topology            |
+| Group   | Count | Tools                                                                                                                                    |
+| ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Core    | 4     | ping, get_server_info, get_session_count, get_current_agent                                                                              |
+| Pulse   | 5     | pulse_list_schedules, pulse_create_schedule, pulse_update_schedule, pulse_delete_schedule, pulse_get_run_history                         |
+| Relay   | 7     | relay_send, relay_inbox, relay_list_endpoints, relay_register_endpoint, relay_send_and_wait, relay_send_async, relay_unregister_endpoint |
+| Adapter | 4     | relay_list_adapters, relay_enable_adapter, relay_disable_adapter, relay_reload_adapters                                                  |
+| Binding | 3     | binding_list, binding_create, binding_delete                                                                                             |
+| Trace   | 2     | relay_get_trace, relay_get_metrics                                                                                                       |
+| Mesh    | 8     | mesh_discover, mesh_register, mesh_list, mesh_deny, mesh_unregister, mesh_status, mesh_inspect, mesh_query_topology                      |
 
 **Acceptance Criteria**:
 

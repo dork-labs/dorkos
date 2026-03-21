@@ -381,13 +381,13 @@ describe('relay → CCA round-trip', () => {
     await shortRelay.close();
   });
 
-  it('relay_query resolves with populated progress array for CCA progress streaming', async () => {
-    // Purpose: end-to-end guard for relay_query Phase 3 enhancement.
-    // relay_query must accumulate progress events from query inbox and return them
+  it('relay_send_and_wait resolves with populated progress array for CCA progress streaming', async () => {
+    // Purpose: end-to-end guard for relay_send_and_wait Phase 3 enhancement.
+    // relay_send_and_wait must accumulate progress events from query inbox and return them
     // in the response, not prematurely resolve on the first progress event.
 
     // This test validates the subscribe-level behavior by using RelayCore directly.
-    // Register a query inbox and simulate the message flow that relay_query uses.
+    // Register a query inbox and simulate the message flow that relay_send_and_wait uses.
     const inboxSubject = 'relay.inbox.query.e2e-test';
     await relay.registerEndpoint(inboxSubject);
 

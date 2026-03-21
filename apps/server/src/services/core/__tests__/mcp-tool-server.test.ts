@@ -474,8 +474,8 @@ describe('MCP Tool Handlers', () => {
       expect(toolNames).toContain('relay_inbox');
       expect(toolNames).toContain('relay_list_endpoints');
       expect(toolNames).toContain('relay_register_endpoint');
-      expect(toolNames).toContain('relay_query');
-      expect(toolNames).toContain('relay_dispatch');
+      expect(toolNames).toContain('relay_send_and_wait');
+      expect(toolNames).toContain('relay_send_async');
       expect(toolNames).toContain('relay_unregister_endpoint');
     });
   });
@@ -503,7 +503,7 @@ function makeRelayCoreMock(
 
 describe('createRelayDispatchHandler', () => {
   it('returns error when relay disabled', async () => {
-    // Purpose: verifies requireRelay guard applies to relay_dispatch.
+    // Purpose: verifies requireRelay guard applies to relay_send_async.
     const handler = createRelayDispatchHandler(makeMockDeps());
     const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
     expect(result.isError).toBe(true);

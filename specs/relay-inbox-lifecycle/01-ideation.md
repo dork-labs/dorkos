@@ -1,12 +1,12 @@
 ---
 slug: relay-inbox-lifecycle
 number: 92
-title: Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_query Streaming
+title: Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming
 created: 2026-03-05
 status: ideation
 ---
 
-# Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_query Streaming
+# Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming
 
 **Slug:** relay-inbox-lifecycle
 **Author:** Claude Code
@@ -20,17 +20,17 @@ status: ideation
 - **Task brief:** Implement the three items explicitly deferred from spec #91 (relay-async-query):
   (1) endpoint type metadata field in `relay_list_endpoints` output to distinguish dispatch vs persistent inboxes;
   (2) server-side TTL for dispatch inboxes that auto-expires them after 30 min if the caller never calls `relay_unregister_endpoint`;
-  (3) relay_query in-process aggregation of streaming progress events so 5–10 min tasks get intermediate visibility while still resolving with a single MCP tool response.
+  (3) relay_send_and_wait in-process aggregation of streaming progress events so 5–10 min tasks get intermediate visibility while still resolving with a single MCP tool response.
 - **Assumptions:**
-  - Spec #91 is implemented (relay_dispatch, relay_unregister_endpoint, CCA progress streaming for dispatch inboxes all exist)
+  - Spec #91 is implemented (relay_send_async, relay_unregister_endpoint, CCA progress streaming for dispatch inboxes all exist)
   - CCA publishes `{ type: 'agent_result', done: true }` as the final message to all inbox replyTos (per spec #91 design)
-  - The relay_query timeout raise to 600 s is also already implemented (spec #91 phase 1)
+  - The relay_send_and_wait timeout raise to 600 s is also already implemented (spec #91 phase 1)
   - MCP tool handlers must return a single `CallToolResult` (array of content blocks) — they cannot stream individual messages
 - **Out of scope:**
   - Changing dispatch inbox persistence to survive server restarts
   - Any new relay transport patterns or new tools beyond type/TTL/streaming enhancements
-  - Push-based notification ("interrupt") to a waiting relay_query caller
-  - Changing relay_query to use relay_dispatch internally
+  - Push-based notification ("interrupt") to a waiting relay_send_and_wait caller
+  - Changing relay_send_and_wait to use relay_send_async internally
 
 ---
 
@@ -39,7 +39,7 @@ status: ideation
 - `packages/relay/src/relay-core.ts` — Main orchestrator. Exports `RelayCore`. Has `DEFAULT_TTL_MS = 3_600_000` (1 hour) for message envelopes. No endpoint-level TTL. `listEndpoints()` delegates to `EndpointRegistry`. `startTtlSweeper()` / `stopTtlSweeper()` do not yet exist.
 - `packages/relay/src/types.ts` — `EndpointInfo` interface: `{ subject, hash, maildirPath, registeredAt }`. No `type` field.
 - `packages/relay/src/endpoint-registry.ts` — In-memory `Map<subject, EndpointInfo>`. `registerEndpoint` creates Maildir + adds to map. `unregisterEndpoint` removes from map + deletes Maildir (`rm -r`). Returns `false` gracefully if endpoint not found (critical for TTL sweeper race handling).
-- `apps/server/src/services/core/mcp-tools/relay-tools.ts` — `relay_list_endpoints` (line ~86) returns `EndpointInfo[]` as-is. `relay_query` (line ~159) uses EventEmitter subscribe + Promise; resolves on the **first message** via `cleanup(); resolve(...)` inside the subscriber.
+- `apps/server/src/services/core/mcp-tools/relay-tools.ts` — `relay_list_endpoints` (line ~86) returns `EndpointInfo[]` as-is. `relay_send_and_wait` (line ~159) uses EventEmitter subscribe + Promise; resolves on the **first message** via `cleanup(); resolve(...)` inside the subscriber.
 - `packages/relay/src/adapters/claude-code-adapter.ts` — `handleAgentMessage()` distinguishes dispatch (`relay.inbox.dispatch.*`) from query (`relay.inbox.query.*`) by subject prefix regex. Dispatch path publishes progress events + final `agent_result`. Query path publishes single aggregated `agent_result` only.
 - `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` — Integration test asserts that `relay.inbox.query.*` replyTo receives **one** message only (backward-compat guard from spec #91).
 - `packages/shared/src/relay-schemas.ts` — Defines `RelayProgressPayloadSchema` and `RelayAgentResultPayloadSchema` (added by spec #91).
@@ -53,9 +53,9 @@ status: ideation
 - `packages/relay/src/relay-core.ts` — Add TTL sweeper (`startTtlSweeper`, `stopTtlSweeper`), integrate into `start()`/`stop()`
 - `packages/relay/src/types.ts` — No change required (type derived from subject, not stored)
 - `packages/relay/src/endpoint-registry.ts` — No change required (existing `unregisterEndpoint` handles race correctly)
-- `apps/server/src/services/core/mcp-tools/relay-tools.ts` — (1) `relay_list_endpoints` enriched with `type` field; (2) `relay_query` subscribe logic changed from resolve-on-first to resolve-on-done:true with progress accumulation
-- `packages/relay/src/adapters/claude-code-adapter.ts` — Extend progress streaming from dispatch-only to all `relay.inbox.*` replyTos (enables relay_query to actually receive progress events)
-- `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` — Update backward-compat test; add new tests for relay_query aggregation
+- `apps/server/src/services/core/mcp-tools/relay-tools.ts` — (1) `relay_list_endpoints` enriched with `type` field; (2) `relay_send_and_wait` subscribe logic changed from resolve-on-first to resolve-on-done:true with progress accumulation
+- `packages/relay/src/adapters/claude-code-adapter.ts` — Extend progress streaming from dispatch-only to all `relay.inbox.*` replyTos (enables relay_send_and_wait to actually receive progress events)
+- `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` — Update backward-compat test; add new tests for relay_send_and_wait aggregation
 - `packages/shared/src/relay-schemas.ts` — Add `EndpointTypeSchema` for OpenAPI docs (optional, additive)
 
 **Shared Dependencies:**
@@ -68,12 +68,12 @@ status: ideation
 
 - TTL: `RelayCore.startTtlSweeper()` → every 5 min → iterate `EndpointRegistry.listEndpoints()` → infer type from subject → if `dispatch` && age > 30 min → `RelayCore.unregisterEndpoint(subject)`
 - Endpoint type: `relay_list_endpoints` → `EndpointRegistry.listEndpoints()` → for each, call `inferEndpointType(subject)` → append `type` to response
-- relay_query streaming: `relay_query` handler → subscribe to inbox → per-message: if `type === 'progress' && done === false` → push to `progressEvents[]` → else → `cleanup(); resolve({ payload, progress: progressEvents, from, id })`; CCA: extend progress publishing to all `relay.inbox.*` (not just `relay.inbox.dispatch.*`)
+- relay_send_and_wait streaming: `relay_send_and_wait` handler → subscribe to inbox → per-message: if `type === 'progress' && done === false` → push to `progressEvents[]` → else → `cleanup(); resolve({ payload, progress: progressEvents, from, id })`; CCA: extend progress publishing to all `relay.inbox.*` (not just `relay.inbox.dispatch.*`)
 
 **Potential Blast Radius:**
 
 - Direct: 5 files (relay-core, relay-tools, claude-code-adapter, relay-schemas, relay-cca-roundtrip.test)
-- Indirect: relay-tools type declarations, context-builder.ts (RELAY_TOOLS_CONTEXT update for relay_query response shape)
+- Indirect: relay-tools type declarations, context-builder.ts (RELAY_TOOLS_CONTEXT update for relay_send_and_wait response shape)
 - Tests: relay-cca-roundtrip.test.ts (update 1 existing test, add 2 new), mcp-tool-server.test.ts (no count change), tool-filter.test.ts (no change)
 
 ---
@@ -147,21 +147,21 @@ stopTtlSweeper(): void {
 
 `startTtlSweeper()` is called in `RelayCore.start()`, `stopTtlSweeper()` in `RelayCore.stop()`.
 
-**Feature 3: relay_query In-Process Aggregation**
+**Feature 3: relay_send_and_wait In-Process Aggregation**
 
-MCP tool handlers must return a single `CallToolResult` — they cannot stream. Therefore relay_query cannot yield individual events. The right pattern: internally collect events and return a batch.
+MCP tool handlers must return a single `CallToolResult` — they cannot stream. Therefore relay_send_and_wait cannot yield individual events. The right pattern: internally collect events and return a batch.
 
 The two-part change:
 
-1. **relay_query subscribe logic**: change from resolve-on-first to resolve-on-done:true:
+1. **relay_send_and_wait subscribe logic**: change from resolve-on-first to resolve-on-done:true:
    - If `payload.type === 'progress' && payload.done === false` → push to `progressEvents[]`, return without resolving
    - Otherwise (agent_result with `done: true`, or any non-progress message for backward compat) → `cleanup(); resolve({ payload, progress: progressEvents, from, id })`
 
 2. **CCA broadens streaming**: extend `publishDispatchProgress` calls to all `relay.inbox.*` replyTos, not just `relay.inbox.dispatch.*`. This requires changing the condition from `isDispatchInbox` to `isAnyInbox` (i.e., `envelope.replyTo?.startsWith('relay.inbox.')`).
 
-The CCA change makes `relay.inbox.query.*` also receive progress events before the final `agent_result`. The spec #91 backward-compat integration test ("still publishes single agent_result for relay.inbox.query.\* replyTo") must be updated: query inboxes will now receive progress events + final agent_result (matching dispatch inbox behavior). The relay_query caller still gets a single MCP tool response, just now with a populated `progress` array.
+The CCA change makes `relay.inbox.query.*` also receive progress events before the final `agent_result`. The spec #91 backward-compat integration test ("still publishes single agent_result for relay.inbox.query.\* replyTo") must be updated: query inboxes will now receive progress events + final agent_result (matching dispatch inbox behavior). The relay_send_and_wait caller still gets a single MCP tool response, just now with a populated `progress` array.
 
-Updated relay_query response shape:
+Updated relay_send_and_wait response shape:
 
 ```typescript
 {
@@ -185,12 +185,12 @@ Backward compatibility: existing callers that only destructure `reply`, `from`, 
 
 ## 6) Decisions
 
-| #   | Decision                       | Choice                                         | Rationale                                                                                                                                                                                                 |
-| --- | ------------------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | relay_query streaming approach | In-process aggregation                         | MCP tools cannot stream; internally collecting progress events and returning them as a `progress[]` array on the single response is backward-compatible and delivers the 5-10 min visibility goal.        |
-| 2   | TTL implementation pattern     | Periodic sweeper (setInterval, 5 min interval) | Single timer for all endpoints; no handle accumulation; ±5 min imprecision is acceptable for a 30-min TTL; `EndpointRegistry.unregisterEndpoint()` already handles the race with explicit caller cleanup. |
-| 3   | Endpoint type determination    | Derive from subject prefix at list time        | CCA already uses the same prefix-matching logic. Zero schema change. Subject naming is the canonical discriminator already.                                                                               |
-| 4   | Dispatch inbox TTL default     | 30 minutes                                     | Sufficient for typical long-running agent workflows; keeps disk usage bounded; agents that need longer already have the relay_dispatch+polling pattern and will keep the inbox alive via activity.        |
+| #   | Decision                               | Choice                                         | Rationale                                                                                                                                                                                                 |
+| --- | -------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | relay_send_and_wait streaming approach | In-process aggregation                         | MCP tools cannot stream; internally collecting progress events and returning them as a `progress[]` array on the single response is backward-compatible and delivers the 5-10 min visibility goal.        |
+| 2   | TTL implementation pattern             | Periodic sweeper (setInterval, 5 min interval) | Single timer for all endpoints; no handle accumulation; ±5 min imprecision is acceptable for a 30-min TTL; `EndpointRegistry.unregisterEndpoint()` already handles the race with explicit caller cleanup. |
+| 3   | Endpoint type determination            | Derive from subject prefix at list time        | CCA already uses the same prefix-matching logic. Zero schema change. Subject naming is the canonical discriminator already.                                                                               |
+| 4   | Dispatch inbox TTL default             | 30 minutes                                     | Sufficient for typical long-running agent workflows; keeps disk usage bounded; agents that need longer already have the relay_send_async+polling pattern and will keep the inbox alive via activity.      |
 
 ---
 
@@ -267,7 +267,7 @@ const typed = endpoints.map((ep) => ({
 }));
 ```
 
-### Phase 3: relay_query In-Process Aggregation
+### Phase 3: relay_send_and_wait In-Process Aggregation
 
 **Update subscribe handler** in `relay-tools.ts`:
 
@@ -318,14 +318,14 @@ const isInboxReplyTo = envelope.replyTo?.startsWith('relay.inbox.');
 // relay.agent.* and relay.human.* subjects get raw event streaming (unchanged)
 ```
 
-The query inbox single-message test in `relay-cca-roundtrip.test.ts` is updated: query inboxes now receive progress events + final agent_result (same as dispatch). Add a new test: `relay_query still resolves with correct reply and populated progress array`.
+The query inbox single-message test in `relay-cca-roundtrip.test.ts` is updated: query inboxes now receive progress events + final agent_result (same as dispatch). Add a new test: `relay_send_and_wait still resolves with correct reply and populated progress array`.
 
 ### Phase 5: context-builder.ts Update
 
 Update `RELAY_TOOLS_CONTEXT` to document:
 
 1. `relay_list_endpoints` now returns `type` and `expiresAt` per endpoint
-2. `relay_query` now returns a `progress` array in addition to `reply`
+2. `relay_send_and_wait` now returns a `progress` array in addition to `reply`
 3. Dispatch inboxes auto-expire after 30 min (explicit cleanup with `relay_unregister_endpoint` is still recommended when done:true is received)
 
 ---
@@ -337,15 +337,15 @@ Update `RELAY_TOOLS_CONTEXT` to document:
 **relay-tools.test.ts** (new or extend existing):
 
 - `relay_list_endpoints` returns `type` field for each endpoint
-- `relay_query` accumulates progress events and returns them in `progress` array
-- `relay_query` resolves on non-progress message (backward compat for non-CCA agents)
+- `relay_send_and_wait` accumulates progress events and returns them in `progress` array
+- `relay_send_and_wait` resolves on non-progress message (backward compat for non-CCA agents)
 
 ### Integration Tests
 
 **relay-cca-roundtrip.test.ts** (update + add):
 
 - Update: "still publishes single agent_result for relay.inbox.query.\* replyTo" → update to verify progress events ARE now published to query inboxes, then final agent_result
-- Add: "relay_query returns populated progress array when CCA streams progress"
+- Add: "relay_send_and_wait returns populated progress array when CCA streams progress"
 - Add: "TTL sweeper unregisters dispatch inboxes after configured TTL" (timer mock)
 
 ### No New Test Files Required
@@ -362,7 +362,7 @@ All new tests fit in existing test files.
 **Phase 2** — TTL sweeper (1 file): `relay-core.ts`
 **Verification**: `pnpm vitest run packages/relay/src/__tests__/`
 
-**Phase 3** — relay_query aggregation (1 file): `relay-tools.ts`
+**Phase 3** — relay_send_and_wait aggregation (1 file): `relay-tools.ts`
 **Phase 4** — CCA broadens streaming (1 file): `claude-code-adapter.ts` + test update
 **Verification**: `pnpm vitest run packages/relay/src/__tests__/relay-cca-roundtrip.test.ts`
 

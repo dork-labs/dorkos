@@ -12,7 +12,7 @@ Three deferred enhancements from spec #91 (relay-async-query):
 
 1. **Endpoint type metadata** — `relay_list_endpoints` returns `type` and `expiresAt` per endpoint, derived from subject prefix
 2. **Server-side TTL sweeper** — `RelayCore` auto-expires dispatch inboxes after 30 min via `setInterval`
-3. **relay_query progress aggregation** — `relay_query` accumulates CCA progress events and returns them in a new `progress[]` field
+3. **relay_send_and_wait progress aggregation** — `relay_send_and_wait` accumulates CCA progress events and returns them in a new `progress[]` field
 4. **CCA unified inbox streaming** — Query inboxes receive full progress streaming (same as dispatch inboxes)
 
 ---
@@ -26,7 +26,7 @@ Three deferred enhancements from spec #91 (relay-async-query):
 | 2.1 | 2     | Add TTL sweeper and getDispatchInboxTtlMs to RelayCore                      | medium | high     | 1.1, 1.2      |
 | 2.2 | 2     | Write TTL sweeper integration test in relay-cca-roundtrip.test.ts           | medium | high     | 2.1           |
 | 3.1 | 3     | Update createRelayQueryHandler to accumulate progress events                | medium | high     | 1.1           |
-| 3.2 | 3     | Write relay_query progress unit tests in relay-tools.test.ts                | medium | high     | 3.1           |
+| 3.2 | 3     | Write relay_send_and_wait progress unit tests in relay-tools.test.ts        | medium | high     | 3.1           |
 | 4.1 | 4     | Update ClaudeCodeAdapter to stream progress for all relay.inbox.\* replyTos | medium | high     | 1.1, 2.1      |
 | 4.2 | 4     | Update existing backward-compat test in relay-cca-roundtrip.test.ts         | small  | high     | 4.1           |
 | 5.1 | 5     | Update createRelayListEndpointsHandler to include type and expiresAt fields | small  | high     | 1.1, 2.1      |
@@ -141,11 +141,11 @@ Add two new tests:
 
 **Test 1: TTL sweeper** — Uses `vi.useFakeTimers()` and a `RelayCore` with `dispatchInboxTtlMs: 100, ttlSweepIntervalMs: 50`. Registers a dispatch endpoint, advances fake time by 200ms, asserts `listEndpoints()` is empty.
 
-**Test 2: relay_query end-to-end progress** — Registers a query inbox, subscribes with progress/final separation logic, publishes 2 progress events + 1 agent_result, asserts `progressEvents.length === 2` and `finalPayload.type === 'agent_result'`.
+**Test 2: relay_send_and_wait end-to-end progress** — Registers a query inbox, subscribes with progress/final separation logic, publishes 2 progress events + 1 agent_result, asserts `progressEvents.length === 2` and `finalPayload.type === 'agent_result'`.
 
 ---
 
-## Phase 3 — relay_query Progress Aggregation
+## Phase 3 — relay_send_and_wait Progress Aggregation
 
 ### Task 3.1 — Update createRelayQueryHandler to accumulate progress events
 
@@ -169,7 +169,7 @@ const reply = await new Promise<{
   let cleanup: () => void = () => {};
   const timer = setTimeout(() => {
     cleanup();
-    reject(new Error(`relay_query timed out after ${timeoutMs}ms (sent ${sentMessageId})`));
+    reject(new Error(`relay_send_and_wait timed out after ${timeoutMs}ms (sent ${sentMessageId})`));
   }, timeoutMs);
 
   const unsub = relay.subscribe(inboxSubject, (envelope) => {
@@ -203,11 +203,11 @@ return jsonContent({
 });
 ```
 
-Also update the `relay_query` tool description to document the new `progress[]` field.
+Also update the `relay_send_and_wait` tool description to document the new `progress[]` field.
 
 ---
 
-### Task 3.2 — Write relay_query progress unit tests
+### Task 3.2 — Write relay_send_and_wait progress unit tests
 
 **Files:** `apps/server/src/services/core/__tests__/relay-tools.test.ts`
 
@@ -218,7 +218,7 @@ Add four tests across two describe blocks:
 - Verify `inferEndpointType` is applied (dispatch → `'dispatch'`, query → `'query'`, etc.)
 - Verify `expiresAt` is ISO string for dispatch, `null` for others
 
-**`relay_query progress accumulation`:**
+**`relay_send_and_wait progress accumulation`:**
 
 - Mock emits 2 progress events then `agent_result` → `progress.length === 2`
 - Mock emits plain `{ text: 'hello' }` → `progress` is empty array (backward compat)
@@ -310,7 +310,7 @@ Update the tool description to document the new `type` and `expiresAt` fields.
 
 Three targeted string updates to `RELAY_TOOLS_CONTEXT`:
 
-1. **relay_query workflow** — Change `SHORT tasks` to `SHORT/MEDIUM tasks`, update return shape from `{ reply, from, replyMessageId, sentMessageId }` to `{ reply, progress, from, replyMessageId, sentMessageId }` with description of the `progress` array
+1. **relay_send_and_wait workflow** — Change `SHORT tasks` to `SHORT/MEDIUM tasks`, update return shape from `{ reply, from, replyMessageId, sentMessageId }` to `{ reply, progress, from, replyMessageId, sentMessageId }` with description of the `progress` array
 
 2. **Subject hierarchy dispatch line** — Add `; server auto-expires after 30 min` to the dispatch inbox description
 

@@ -14,23 +14,23 @@
 ### Session 1 - 2026-03-05
 
 - Task #1: [relay-async-query] [P1] Add RelayProgressPayload and RelayAgentResultPayload schemas to relay-schemas.ts
-- Task #2: [relay-async-query] [P1] Add relay_dispatch and relay_unregister_endpoint tools to relay-tools.ts
+- Task #2: [relay-async-query] [P1] Add relay_send_async and relay_unregister_endpoint tools to relay-tools.ts
 - Task #3: [relay-async-query] [P1] Export new handlers from mcp-tools/index.ts and add to RELAY_TOOLS in tool-filter.ts
 - Task #4: [relay-async-query] [P1] Update mcp-tool-server tests and tool-filter tests for new tools
 - Task #5: [relay-async-query] [P2] Refactor handleAgentMessage in ClaudeCodeAdapter to stream progress to dispatch inboxes
 - Task #6: [relay-async-query] [P2] Add CCA dispatch streaming integration tests to relay-cca-roundtrip.test.ts
-- Task #7: [relay-async-query] [P3] Update RELAY_TOOLS_CONTEXT in context-builder.ts with relay_dispatch workflow and subagent MCP constraint
+- Task #7: [relay-async-query] [P3] Update RELAY_TOOLS_CONTEXT in context-builder.ts with relay_send_async workflow and subagent MCP constraint
 
 ## Files Modified/Created
 
 **Source files:**
 
 - `packages/shared/src/relay-schemas.ts` — Added `RelayProgressPayloadSchema` and `RelayAgentResultPayloadSchema` with `.openapi()` metadata and exported TypeScript types
-- `apps/server/src/services/core/mcp-tools/relay-tools.ts` — Added `createRelayDispatchHandler` and `createRelayUnregisterEndpointHandler` exports; registered both tools in `getRelayTools()`; raised `relay_query` timeout cap from 120,000ms to 600,000ms
+- `apps/server/src/services/core/mcp-tools/relay-tools.ts` — Added `createRelayDispatchHandler` and `createRelayUnregisterEndpointHandler` exports; registered both tools in `getRelayTools()`; raised `relay_send_and_wait` timeout cap from 120,000ms to 600,000ms
 - `apps/server/src/services/core/mcp-tools/index.ts` — Added new handlers to barrel export
-- `apps/server/src/services/core/tool-filter.ts` — Added `mcp__dorkos__relay_dispatch` and `mcp__dorkos__relay_unregister_endpoint` to `RELAY_TOOLS` constant
+- `apps/server/src/services/core/tool-filter.ts` — Added `mcp__dorkos__relay_send_async` and `mcp__dorkos__relay_unregister_endpoint` to `RELAY_TOOLS` constant
 - `packages/relay/src/adapters/claude-code-adapter.ts` — Refactored `handleAgentMessage()`: split `isInboxReplyTo` into `isDispatchInbox`/`isQueryInbox`; added streaming progress to dispatch inboxes; added `publishDispatchProgress()` private helper; updated `publishAgentResult()` to include `done: true`
-- `apps/server/src/services/core/context-builder.ts` — Replaced `RELAY_TOOLS_CONTEXT` with updated version documenting relay_dispatch fire-and-poll workflow, timeout_ms=600000, and subagent MCP constraint warning
+- `apps/server/src/services/core/context-builder.ts` — Replaced `RELAY_TOOLS_CONTEXT` with updated version documenting relay_send_async fire-and-poll workflow, timeout_ms=600000, and subagent MCP constraint warning
 
 **Test files:**
 

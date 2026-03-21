@@ -58,8 +58,8 @@ const RELAY_TOOLS = [
   'mcp__dorkos__relay_inbox',
   'mcp__dorkos__relay_list_endpoints',
   'mcp__dorkos__relay_register_endpoint',
-  'mcp__dorkos__relay_query',
-  'mcp__dorkos__relay_dispatch', // NEW
+  'mcp__dorkos__relay_send_and_wait',
+  'mcp__dorkos__relay_send_async', // NEW
   'mcp__dorkos__relay_unregister_endpoint', // NEW
 ] as const;
 

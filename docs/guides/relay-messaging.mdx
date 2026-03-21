@@ -107,8 +107,8 @@ relay_inbox                 Read inbox messages for an endpoint
 relay_list_endpoints        List all registered endpoints
 relay_register_endpoint     Register a new endpoint
 relay_unregister_endpoint   Unregister an endpoint (use to clean up dispatch inboxes)
-relay_query                 Blocking request/reply — sends a message and waits for the response
-relay_dispatch              Fire-and-poll — dispatches a message, returns immediately with an inbox to poll
+relay_send_and_wait                 Blocking request/reply — sends a message and waits for the response
+relay_send_async              Fire-and-poll — dispatches a message, returns immediately with an inbox to poll
 relay_get_trace             Get the full delivery trace for a message
 relay_get_metrics           Get aggregate delivery metrics
 relay_list_adapters         List all adapters with status
@@ -117,9 +117,9 @@ relay_disable_adapter       Disable a running adapter
 relay_reload_adapters       Hot-reload adapter configuration from disk
 ```
 
-**`relay_query`** (added in v0.8.0) handles request/reply in a single call. It registers an ephemeral inbox, publishes the message with that inbox as `replyTo`, and blocks until the agent replies. Use this for synchronous patterns where you need the response before proceeding.
+**`relay_send_and_wait`** (added in v0.8.0) handles request/reply in a single call. It registers an ephemeral inbox, publishes the message with that inbox as `replyTo`, and blocks until the agent replies. Use this for synchronous patterns where you need the response before proceeding.
 
-**`relay_dispatch`** returns immediately with a dispatch inbox subject. The agent runs asynchronously; poll `relay_inbox` for progress events and the final result. Use this for long-running tasks where blocking is not appropriate. Call `relay_unregister_endpoint` to clean up when you receive `done: true`.
+**`relay_send_async`** returns immediately with a dispatch inbox subject. The agent runs asynchronously; poll `relay_inbox` for progress events and the final result. Use this for long-running tasks where blocking is not appropriate. Call `relay_unregister_endpoint` to clean up when you receive `done: true`.
 
 ### Subject Naming
 

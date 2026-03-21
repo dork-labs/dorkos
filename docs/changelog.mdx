@@ -351,9 +351,9 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
 - Add chat microinteraction polish — spring physics, layoutId, session crossfade
 - Unify discovery scanners and fix onboarding scan root
-- Add endpoint types, dispatch TTL sweeper, and relay_query progress accumulation
+- Add endpoint types, dispatch TTL sweeper, and relay_send_and_wait progress accumulation
 - Add /chat:self-test slash command
-- Add relay_dispatch fire-and-poll for long-running tasks
+- Add relay_send_async fire-and-poll for long-running tasks
 
 ### Changed
 
@@ -395,7 +395,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 ### Added
 
 - Per-agent tool filtering via `enabledToolGroups` in `AgentManifest` — configure which tool domains each agent can access; cascade disable propagates to dependent tools
-- `relay_query` blocking MCP tool for synchronous inter-agent request/reply
+- `relay_send_and_wait` blocking MCP tool for synchronous inter-agent request/reply
 - `get_current_agent` MCP tool returning agent identity for the session's working directory
 - `CapabilitiesTab` in agent settings dialog with per-agent Tool Groups toggles showing 3-state display (inherited/overridden)
 - Command palette rebuilt with Fuse.js fuzzy search, agent preview panel, Slack bucket frecency, sub-menu drill-down, and spring animations (`features/command-palette/`)
@@ -418,7 +418,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Clean up command palette cmdk prop usage and @ filtering logic
 - Enforce file-first write-through storage pattern for agent identity (ADR-0043)
 - Improve onboarding step completion logic to handle rapid user interactions
-- Register `relay_query` in tool filter and add test coverage
+- Register `relay_send_and_wait` in tool filter and add test coverage
 
 ---
 

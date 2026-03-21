@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rename relay_query → relay_send_and_wait, relay_dispatch → relay_send_async
 - Use subject strings as mailbox directory names instead of SHA-256 hashes
 - Split feature category into product + category
 - Clean up routing migration — remove dead code, fix test/code consistency
@@ -374,9 +375,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redesign chat message theming — semantic tokens, TV variants, MessageItem decomposition
 - Add chat microinteraction polish — spring physics, layoutId, session crossfade
 - Unify discovery scanners and fix onboarding scan root
-- Add endpoint types, dispatch TTL sweeper, and relay_query progress accumulation
+- Add endpoint types, dispatch TTL sweeper, and relay_send_and_wait progress accumulation
 - Add /chat:self-test slash command
-- Add relay_dispatch fire-and-poll for long-running tasks
+- Add relay_send_async fire-and-poll for long-running tasks
 
 ### Changed
 
@@ -418,7 +419,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Per-agent tool filtering and cascade disable — configure which tools each agent can access
-- Add relay_query blocking MCP tool for inter-agent communication
+- Add relay_send_and_wait blocking MCP tool for inter-agent communication
 - Rebuild command palette with preview panel, fuzzy search, and sub-menu navigation for agent discovery
 - Migrate sidebar to Shadcn Sidebar component with agent-centric layout
 - Add tool context injection with configurable toggles throughout the interface
@@ -439,7 +440,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean up command palette cmdk prop usage and @ filtering logic
 - Enforce file-first write-through storage pattern for agent identity (ADR-0043)
 - Improve onboarding step completion logic to handle rapid user interactions
-- Register relay_query in tool filter and add test coverage
+- Register relay_send_and_wait in tool filter and add test coverage
 
 ---
 

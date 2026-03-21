@@ -1,4 +1,4 @@
-# Implementation Summary: Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_query Streaming
+# Implementation Summary: Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming
 
 **Created:** 2026-03-05
 **Last Updated:** 2026-03-05
@@ -17,7 +17,7 @@
 - Task #2: [P1] Extend RelayOptions with TTL fields in packages/relay/src/types.ts
 - Task #5: [P3] Update createRelayQueryHandler to accumulate progress events
 - Task #3: [P2] Add TTL sweeper and getDispatchInboxTtlMs to RelayCore
-- Task #6: [P3] Write relay_query progress unit tests in relay-tools.test.ts
+- Task #6: [P3] Write relay_send_and_wait progress unit tests in relay-tools.test.ts
 
 ## Files Modified/Created
 
@@ -31,13 +31,13 @@
 
 **Test files:**
 
-- `apps/server/src/services/core/__tests__/mcp-relay-tools.test.ts` — New tests for relay_query progress accumulation and relay_list_endpoints type metadata
+- `apps/server/src/services/core/__tests__/mcp-relay-tools.test.ts` — New tests for relay_send_and_wait progress accumulation and relay_list_endpoints type metadata
 
 ## Files Modified/Created (continued)
 
-- `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` — Added TTL sweeper integration test (real timers, 10ms TTL), relay_query e2e test; updated backward-compat test for unified streaming
+- `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` — Added TTL sweeper integration test (real timers, 10ms TTL), relay_send_and_wait e2e test; updated backward-compat test for unified streaming
 - `packages/relay/src/adapters/__tests__/claude-code-adapter.test.ts` — Updated inbox replyTo test for unified streaming behavior
-- `apps/server/src/services/core/context-builder.ts` — Updated RELAY_TOOLS_CONTEXT: relay_query progress[] field, dispatch inbox auto-expiry note, relay_list_endpoints type/expiresAt note
+- `apps/server/src/services/core/context-builder.ts` — Updated RELAY_TOOLS_CONTEXT: relay_send_and_wait progress[] field, dispatch inbox auto-expiry note, relay_list_endpoints type/expiresAt note
 
 ## Known Issues
 

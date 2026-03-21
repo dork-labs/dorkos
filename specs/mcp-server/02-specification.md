@@ -482,7 +482,7 @@ When API key is configured:
 - **Per-request transport creation is lightweight.** `NodeStreamableHTTPServerTransport` is a thin wrapper — construction cost is negligible compared to tool execution time.
 - **Single McpServer instance.** Tool registration happens once at startup. No per-request registration overhead.
 - **No session state.** No Map, no TTL cleanup, no memory growth over time. Each request is fully independent.
-- **Long-running tools** (e.g., `relay_query` with 120s timeout): The Streamable HTTP transport holds the HTTP connection open until the handler resolves. Express does not timeout the connection by default, so this works correctly.
+- **Long-running tools** (e.g., `relay_send_and_wait` with 120s timeout): The Streamable HTTP transport holds the HTTP connection open until the handler resolves. Express does not timeout the connection by default, so this works correctly.
 
 ## Security Considerations
 

@@ -16,8 +16,8 @@ DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session
-  relay.inbox.query.{UUID}             — ephemeral inbox for relay_query (auto-managed)
-  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_dispatch (auto-expires after ~35 min)
+  relay.inbox.query.{UUID}             — ephemeral inbox for relay_send_and_wait (auto-managed)
+  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_send_async (auto-expires after ~35 min)
   relay.inbox.{agentId}                — persistent agent reply inbox
   relay.human.console.{clientId}       — reach a human in the DorkOS UI
   relay.system.console                 — system broadcast channel
@@ -25,13 +25,13 @@ Subject hierarchy:
 
 Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
-2. relay_query(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
+2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId, progress: ProgressEvent[] }
    → progress[] contains intermediate steps: { type: "progress", step, step_type, text, done: false }
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. relay_dispatch(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
 2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread")
    → Returns progress events: { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
@@ -50,13 +50,13 @@ CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, pulse_*) a
 inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not
 inherit the parent MCP server). The orchestrator pattern workaround:
   WRONG:  Task("use relay_send to message agent B")   ← tools unavailable, silent failure
-  RIGHT:  1. Call relay_dispatch() in this (parent) session
+  RIGHT:  1. Call relay_send_async() in this (parent) session
           2. Pass the inboxSubject into the Task() prompt if needed
           3. Poll relay_inbox() in this session after Task() returns
 
 IMPORTANT: When YOU receive a relay message, respond naturally — do NOT call relay_send.
 Your response is automatically forwarded by the relay system.
-Only call relay_send/relay_query/relay_dispatch to INITIATE a new message.
+Only call relay_send/relay_send_and_wait/relay_send_async to INITIATE a new message.
 
 relay_list_endpoints returns type ("dispatch"|"query"|"persistent"|"agent"|"unknown") and expiresAt
 (ISO string or null) for each endpoint. Use these to identify active inboxes and their expiry.

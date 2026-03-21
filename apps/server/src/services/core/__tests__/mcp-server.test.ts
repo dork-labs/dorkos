@@ -168,8 +168,8 @@ describe('createExternalMcpServer', () => {
     expect(toolNames).toContain('relay_inbox');
     expect(toolNames).toContain('relay_list_endpoints');
     expect(toolNames).toContain('relay_register_endpoint');
-    expect(toolNames).toContain('relay_query');
-    expect(toolNames).toContain('relay_dispatch');
+    expect(toolNames).toContain('relay_send_and_wait');
+    expect(toolNames).toContain('relay_send_async');
     expect(toolNames).toContain('relay_unregister_endpoint');
 
     // Adapter tools (4)

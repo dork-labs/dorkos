@@ -685,7 +685,7 @@
     {
       "number": 92,
       "slug": "relay-inbox-lifecycle",
-      "title": "Relay Inbox Lifecycle \u2014 Endpoint Types, Dispatch TTL, relay_query Streaming",
+      "title": "Relay Inbox Lifecycle \u2014 Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming",
       "created": "2026-03-05",
       "status": "ideation"
     },

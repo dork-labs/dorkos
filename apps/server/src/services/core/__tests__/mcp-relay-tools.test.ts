@@ -252,7 +252,7 @@ describe('relay_list_endpoints with type metadata', () => {
   });
 });
 
-describe('relay_query progress accumulation', () => {
+describe('relay_send_and_wait progress accumulation', () => {
   it('accumulates progress events and returns them in progress array', async () => {
     // Purpose: verify progress[] is populated when progress events precede agent_result.
     const progressPayload1 = {

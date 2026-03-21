@@ -9,15 +9,15 @@ Generated: 2026-03-05
 
 6 tasks across 3 phases. All phases must complete in order; within Phase 1, tasks 1.1 and 1.2 are independent and can be done in parallel.
 
-| ID  | Phase | Subject                                          | Size   | Priority |
-| --- | ----- | ------------------------------------------------ | ------ | -------- |
-| 1.1 | 1     | Add progress payload schemas to relay-schemas.ts | small  | high     |
-| 1.2 | 1     | Add relay_dispatch and relay_unregister_endpoint | medium | high     |
-| 1.3 | 1     | Export handlers and update RELAY_TOOLS constant  | small  | high     |
-| 1.4 | 1     | Update mcp-tool-server and tool-filter tests     | medium | high     |
-| 2.1 | 2     | Refactor CCA handleAgentMessage for streaming    | large  | high     |
-| 2.2 | 2     | Add CCA dispatch streaming integration tests     | medium | high     |
-| 3.1 | 3     | Update RELAY_TOOLS_CONTEXT in context-builder.ts | small  | medium   |
+| ID  | Phase | Subject                                            | Size   | Priority |
+| --- | ----- | -------------------------------------------------- | ------ | -------- |
+| 1.1 | 1     | Add progress payload schemas to relay-schemas.ts   | small  | high     |
+| 1.2 | 1     | Add relay_send_async and relay_unregister_endpoint | medium | high     |
+| 1.3 | 1     | Export handlers and update RELAY_TOOLS constant    | small  | high     |
+| 1.4 | 1     | Update mcp-tool-server and tool-filter tests       | medium | high     |
+| 2.1 | 2     | Refactor CCA handleAgentMessage for streaming      | large  | high     |
+| 2.2 | 2     | Add CCA dispatch streaming integration tests       | medium | high     |
+| 3.1 | 3     | Update RELAY_TOOLS_CONTEXT in context-builder.ts   | small  | medium   |
 
 ---
 
@@ -66,7 +66,7 @@ Backward compatibility note: The `done: true` field added to `RelayAgentResultPa
 
 ---
 
-### Task 1.2 — Add relay_dispatch and relay_unregister_endpoint tools
+### Task 1.2 — Add relay_send_async and relay_unregister_endpoint tools
 
 **File:** `apps/server/src/services/core/mcp-tools/relay-tools.ts`
 **Depends on:** nothing (no dependency on 1.1 at this stage)
@@ -155,13 +155,13 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
 }
 ```
 
-**3. Register both tools in `getRelayTools()`** — add after the `relay_query` entry:
+**3. Register both tools in `getRelayTools()`** — add after the `relay_send_and_wait` entry:
 
 ```typescript
 tool(
-  'relay_dispatch',
+  'relay_send_async',
   'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
-  'Unlike relay_query (which blocks), relay_dispatch returns { messageId, inboxSubject } at once. ' +
+  'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
   'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
   'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
   'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
@@ -179,7 +179,7 @@ tool(
 ),
 tool(
   'relay_unregister_endpoint',
-  'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_dispatch completes (when done:true received).',
+  'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_send_async completes (when done:true received).',
   {
     subject: z.string().describe('Subject of the endpoint to unregister'),
   },
@@ -187,10 +187,10 @@ tool(
 ),
 ```
 
-**4. Raise relay_query timeout cap** in the `relay_query` tool schema:
+**4. Raise relay_send_and_wait timeout cap** in the `relay_send_and_wait` tool schema:
 
 - Change `.max(120000)` to `.max(600000)`
-- Update description: `'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_dispatch instead.'`
+- Update description: `'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_send_async instead.'`
 
 ---
 
@@ -224,8 +224,8 @@ const RELAY_TOOLS = [
   'mcp__dorkos__relay_inbox',
   'mcp__dorkos__relay_list_endpoints',
   'mcp__dorkos__relay_register_endpoint',
-  'mcp__dorkos__relay_query',
-  'mcp__dorkos__relay_dispatch', // NEW
+  'mcp__dorkos__relay_send_and_wait',
+  'mcp__dorkos__relay_send_async', // NEW
   'mcp__dorkos__relay_unregister_endpoint', // NEW
 ] as const;
 ```
@@ -246,13 +246,13 @@ No changes needed in `buildAllowedTools()` — it already pushes `...RELAY_TOOLS
 **mcp-tool-server.test.ts changes:**
 
 1. Update tool count: `toHaveLength(14)` → `toHaveLength(16)`, comment `(4 core + 5 pulse + 5 relay)` → `(4 core + 5 pulse + 7 relay)`
-2. Add to "registers tools with correct names": `expect(toolNames).toContain('relay_dispatch')` and `expect(toolNames).toContain('relay_unregister_endpoint')`
+2. Add to "registers tools with correct names": `expect(toolNames).toContain('relay_send_async')` and `expect(toolNames).toContain('relay_unregister_endpoint')`
 3. Import the two new handlers from `'../mcp-tools/index.js'`
 4. Add `makeRelayCoreMock()` helper and full handler test suites for `createRelayDispatchHandler` and `createRelayUnregisterEndpointHandler` (RELAY_DISABLED, success path, auto-unregister on rejection, ENDPOINT_NOT_FOUND)
 
 **tool-filter.test.ts changes:**
 
-1. Add test: `relay_dispatch` and `relay_unregister_endpoint` included when `relay=true`
+1. Add test: `relay_send_async` and `relay_unregister_endpoint` included when `relay=true`
 2. Add test: both excluded when `relay=false`
 3. Update existing relay exclusion test to assert the new tools are also absent
 
@@ -424,7 +424,7 @@ Replace the `RELAY_TOOLS_CONTEXT` constant's string value entirely. Key changes:
 - Add "Dispatch to another agent — LONG tasks (>10 min)" workflow with fire-and-poll steps
 - Add `CONSTRAINT — Subagent MCP tools` warning section documenting the SDK architectural limitation (Anthropic #13898, #14496, #5465) with WRONG vs RIGHT orchestrator pattern examples
 - Update error codes list to include `REJECTED`, `DISPATCH_FAILED`, `UNREGISTER_FAILED`
-- Update IMPORTANT note to include `relay_dispatch` in the list of tools for initiating new messages
+- Update IMPORTANT note to include `relay_send_async` in the list of tools for initiating new messages
 
 New RELAY_TOOLS_CONTEXT:
 
@@ -434,8 +434,8 @@ DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session
-  relay.inbox.query.{UUID}             — ephemeral inbox for relay_query (auto-managed)
-  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_dispatch (caller-managed)
+  relay.inbox.query.{UUID}             — ephemeral inbox for relay_send_and_wait (auto-managed)
+  relay.inbox.dispatch.{UUID}          — ephemeral inbox for relay_send_async (caller-managed)
   relay.inbox.{agentId}                — persistent agent reply inbox
   relay.human.console.{clientId}       — reach a human in the DorkOS UI
   relay.system.console                 — system broadcast channel
@@ -443,12 +443,12 @@ Subject hierarchy:
 
 Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
-2. relay_query(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
+2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId }
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. relay_dispatch(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
 2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread")
    → Returns progress events: { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
@@ -467,13 +467,13 @@ CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, pulse_*) a
 inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not
 inherit the parent MCP server). The orchestrator pattern workaround:
   WRONG:  Task("use relay_send to message agent B")   ← tools unavailable, silent failure
-  RIGHT:  1. Call relay_dispatch() in this (parent) session
+  RIGHT:  1. Call relay_send_async() in this (parent) session
           2. Pass the inboxSubject into the Task() prompt if needed
           3. Poll relay_inbox() in this session after Task() returns
 
 IMPORTANT: When YOU receive a relay message, respond naturally — do NOT call relay_send.
 Your response is automatically forwarded by the relay system.
-Only call relay_send/relay_query/relay_dispatch to INITIATE a new message.
+Only call relay_send/relay_send_and_wait/relay_send_async to INITIATE a new message.
 
 Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND,
              TIMEOUT, QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
@@ -502,7 +502,7 @@ Verification: `pnpm test -- --run`
 
 ## Key Invariants
 
-- `relay_query` behavior is unchanged — query inboxes (`relay.inbox.query.*`) still receive exactly one `agent_result` message
+- `relay_send_and_wait` behavior is unchanged — query inboxes (`relay.inbox.query.*`) still receive exactly one `agent_result` message
 - `publishAgentResult()` now always sends `done: true` — additive, not breaking
 - Both new tools are feature-gated behind `DORKOS_RELAY_ENABLED` (via `requireRelay()` guard)
 - Dispatch inbox subjects use `randomUUID()` — cryptographically secure, cannot be guessed

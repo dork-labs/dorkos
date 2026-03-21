@@ -16,7 +16,7 @@ status: ideation
 
 ## 1) Intent & Assumptions
 
-- **Task brief:** `relay_query` has a 120s hard maximum. Agent-to-agent tasks can take 20+ minutes. The current all-at-once delivery model means Agent A sees nothing until Agent B's entire session finishes. We need: (a) a non-blocking dispatch tool that returns immediately, (b) CCA streaming progress updates so Agent A can poll for incremental results, and (c) a raised timeout cap on `relay_query` for medium-duration tasks. Additionally, agents that try to use relay/mesh tools inside a Claude Code `Task()` subagent silently fail — this needs to be documented with the correct orchestrator pattern.
+- **Task brief:** `relay_send_and_wait` has a 120s hard maximum. Agent-to-agent tasks can take 20+ minutes. The current all-at-once delivery model means Agent A sees nothing until Agent B's entire session finishes. We need: (a) a non-blocking dispatch tool that returns immediately, (b) CCA streaming progress updates so Agent A can poll for incremental results, and (c) a raised timeout cap on `relay_send_and_wait` for medium-duration tasks. Additionally, agents that try to use relay/mesh tools inside a Claude Code `Task()` subagent silently fail — this needs to be documented with the correct orchestrator pattern.
 
 - **Assumptions:**
   - The relay subject schema (`relay.agent.{agentId}`, `relay.inbox.*`) is unchanged
@@ -35,9 +35,9 @@ status: ideation
 
 ## 2) Pre-reading Log
 
-- `research/20260304_agent-to-agent-reply-patterns.md`: Prior research recommending relay_query (already implemented) and fire-and-poll as the long-running fallback. Google's A2A protocol recommends the job-ID pattern for long-horizon work.
+- `research/20260304_agent-to-agent-reply-patterns.md`: Prior research recommending relay_send_and_wait (already implemented) and fire-and-poll as the long-running fallback. Google's A2A protocol recommends the job-ID pattern for long-horizon work.
 - `research/20260304_relay_async_query_and_subagent_mcp.md`: New research confirming fire-and-poll is the right pattern; subagent MCP access is a confirmed SDK bug (multiple GitHub issues), not a DorkOS fixable problem.
-- `apps/server/src/services/core/mcp-tools/relay-tools.ts`: relay_query fully implemented using EventEmitter subscribe. 120s max on line 265. Five relay tools total.
+- `apps/server/src/services/core/mcp-tools/relay-tools.ts`: relay_send_and_wait fully implemented using EventEmitter subscribe. 120s max on line 265. Five relay tools total.
 - `packages/relay/src/adapters/claude-code-adapter.ts`: CCA collects all text via `collectedText += delta.text`, publishes ONE aggregated result via `publishAgentResult()` after session ends. Progress streaming requires publishing intermediate updates to `envelope.replyTo` during the session.
 - `apps/server/src/services/core/agent-manager.ts`: MCP factory injected via `setMcpServerFactory()` called on each `sendMessage()`. Subagents spawn in separate subprocess — factory is NOT inherited.
 - `packages/relay/src/relay-core.ts`: `subscribe(pattern, handler)` is a thin wrapper over SubscriptionRegistry (in-memory EventEmitter2). Fires synchronously on `publish()` delivery — no polling.
@@ -51,10 +51,10 @@ status: ideation
 **Primary Components/Modules:**
 
 - `apps/server/src/services/core/mcp-tools/relay-tools.ts` — relay MCP tool definitions. `createRelayQueryHandler` contains the subscribe/Promise pattern. New `createRelayDispatchHandler` goes here.
-- `apps/server/src/services/core/mcp-tools/index.ts` — `createDorkOsToolServer()` composes all tools. Add relay_dispatch registration here.
+- `apps/server/src/services/core/mcp-tools/index.ts` — `createDorkOsToolServer()` composes all tools. Add relay_send_async registration here.
 - `packages/relay/src/adapters/claude-code-adapter.ts` — CCA delivery bridge. `handleAgentMessage()` is where streaming progress publishes need to be added. `publishAgentResult()` is the existing final-publish helper.
-- `apps/server/src/services/core/context-builder.ts` — `RELAY_TOOLS_CONTEXT` static string. Needs three updates: (1) document relay_dispatch workflow, (2) raise timeout guidance for relay_query, (3) add subagent MCP constraint warning.
-- `apps/server/src/services/core/tool-filter.ts` — `RELAY_TOOLS` constant. relay_dispatch must be added here.
+- `apps/server/src/services/core/context-builder.ts` — `RELAY_TOOLS_CONTEXT` static string. Needs three updates: (1) document relay_send_async workflow, (2) raise timeout guidance for relay_send_and_wait, (3) add subagent MCP constraint warning.
+- `apps/server/src/services/core/tool-filter.ts` — `RELAY_TOOLS` constant. relay_send_async must be added here.
 - `apps/server/src/services/core/__tests__/mcp-tool-server.test.ts` — tool count test (currently 14). Will become 15.
 - `apps/server/src/services/core/__tests__/tool-filter.test.ts` — relay tool inclusion/exclusion tests.
 - `packages/relay/src/__tests__/relay-cca-roundtrip.test.ts` — integration tests for CCA delivery. Progress streaming needs coverage here.
@@ -69,7 +69,7 @@ status: ideation
 **Data Flow (current — all-at-once):**
 
 ```
-Agent A: relay_query(to_subject="relay.agent.{B}", timeout=120s)
+Agent A: relay_send_and_wait(to_subject="relay.agent.{B}", timeout=120s)
   → relay.registerEndpoint(ephemeral inbox)
   → relay.publish("relay.agent.{B}", replyTo=ephemeral inbox)
   → relay.subscribe(ephemeral inbox, resolve)
@@ -82,7 +82,7 @@ Agent A: relay_query(to_subject="relay.agent.{B}", timeout=120s)
 **Data Flow (proposed — async dispatch + streaming):**
 
 ```
-Agent A: relay_dispatch(to_subject="relay.agent.{B}")
+Agent A: relay_send_async(to_subject="relay.agent.{B}")
   → relay.registerEndpoint("relay.inbox.dispatch.{UUID}")
   → relay.publish("relay.agent.{B}", replyTo="relay.inbox.dispatch.{UUID}")
   ← return immediately: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
@@ -95,13 +95,13 @@ Agent A (polling): relay_inbox(endpoint_subject="relay.inbox.dispatch.{UUID}")
   ← receives progress messages + final result
   → when done:true received: relay_unregister_endpoint (cleanup)
 
-  OR Agent A: relay_query (still works for ≤10 min tasks, raised timeout)
+  OR Agent A: relay_send_and_wait (still works for ≤10 min tasks, raised timeout)
 ```
 
 **Feature Flags/Config:**
 
-- `DORKOS_RELAY_ENABLED` — relay tools gated behind this (relay_dispatch follows same gate)
-- `tool-filter.ts` `RELAY_TOOLS` — relay_dispatch must be in this list
+- `DORKOS_RELAY_ENABLED` — relay tools gated behind this (relay_send_async follows same gate)
+- `tool-filter.ts` `RELAY_TOOLS` — relay_send_async must be in this list
 
 **Potential Blast Radius:**
 
@@ -115,10 +115,10 @@ Agent A (polling): relay_inbox(endpoint_subject="relay.inbox.dispatch.{UUID}")
 
 Not a bug fix. Enhancement driven by a real constraint:
 
-- **relay_query max timeout = 120s** (line 265 in relay-tools.ts: `.max(120000)`)
+- **relay_send_and_wait max timeout = 120s** (line 265 in relay-tools.ts: `.max(120000)`)
 - **Real agent task duration = 20+ minutes** (20× the hard limit)
 - **CCA publish model = all-at-once** (claude-code-adapter.ts: collects all `collectedText`, publishes once after session ends)
-- **Result**: Agents doing long research, code generation, or analysis tasks can never use relay_query successfully; they silently time out.
+- **Result**: Agents doing long research, code generation, or analysis tasks can never use relay_send_and_wait successfully; they silently time out.
 
 The three gaps compound each other:
 
@@ -132,11 +132,11 @@ The three gaps compound each other:
 
 **Potential solutions analyzed:**
 
-1. **relay_dispatch + polling (recommended)** — fire and return job token. Agent polls with relay_inbox. Simple, composable, matches Google A2A "Tasks" primitive. No changes to existing relay_query semantics.
+1. **relay_send_async + polling (recommended)** — fire and return job token. Agent polls with relay_inbox. Simple, composable, matches Google A2A "Tasks" primitive. No changes to existing relay_send_and_wait semantics.
    - Pros: immediate return, agents retain control, composable with existing relay_inbox tool, no new SDK interaction
    - Cons: caller must manage polling loop, inbox must be manually cleaned up, no push notification
 
-2. **Raise relay_query timeout** — change `.max(120000)` to `.max(600000)`. Covers medium-duration tasks (5-10 min).
+2. **Raise relay_send_and_wait timeout** — change `.max(120000)` to `.max(600000)`. Covers medium-duration tasks (5-10 min).
    - Pros: zero new APIs, no behavior change
    - Cons: doesn't solve 20-min tasks, blocking for 10 min is still bad practice
 
@@ -150,20 +150,20 @@ The three gaps compound each other:
 
 5. **Subagent MCP access** — not a solution path. SDK architectural limitation (confirmed Anthropic issues #13898, #14496, #5465). No DorkOS-side fix available.
 
-**Recommendation:** Combine (1) + (2) + (3). relay_dispatch covers the long-running case; relay_query timeout raised to 10 min covers medium tasks; CCA progress streaming gives Agent A visibility; documentation warns about subagent MCP limitation.
+**Recommendation:** Combine (1) + (2) + (3). relay_send_async covers the long-running case; relay_send_and_wait timeout raised to 10 min covers medium tasks; CCA progress streaming gives Agent A visibility; documentation warns about subagent MCP limitation.
 
 ---
 
 ## 6) Decisions
 
-| #   | Decision                      | Choice                                                                                                                 | Rationale                                                                                                                                                        |
-| --- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Async dispatch API design     | New `relay_dispatch` tool (separate, explicit)                                                                         | Clean mental model: relay_send=fire-forget, relay_query=short-sync, relay_dispatch=long-async. Avoids overloading existing tool semantics.                       |
-| 2   | relay_query timeout cap       | Raise from 120s to 600s (10 min)                                                                                       | Covers medium-duration tasks without pushing to the full async pattern. Still disciplined — agents with truly long tasks use relay_dispatch.                     |
-| 3   | Progress updates from Agent B | Full streaming: CCA publishes intermediate updates per AssistantMessage/tool_result                                    | Agent A can see real-time progress, detect stuck agents, and act on partial results. 20-min black-box is unacceptable for production agent systems.              |
-| 4   | Subagent MCP limitation       | Document constraint + orchestrator pattern in RELAY_TOOLS_CONTEXT                                                      | Can't fix architecturally. Documenting prevents wasted tool calls and silent failures. Pattern: parent does relay/mesh work, injects results into Task() prompt. |
-| 5   | relay_dispatch inbox cleanup  | Caller-initiated (no server-side TTL)                                                                                  | Simplest for MVP. Caller reads `done:true` and calls relay_unregister_endpoint. Future enhancement: TTL-based auto-cleanup.                                      |
-| 6   | Progress payload schema       | `{ type: 'progress', step: number, text: string, done: false }` / `{ type: 'agent_result', text: string, done: true }` | Distinguishable from final result; `done` flag allows Agent A to know when to stop polling without parsing content.                                              |
+| #   | Decision                        | Choice                                                                                                                 | Rationale                                                                                                                                                        |
+| --- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Async dispatch API design       | New `relay_send_async` tool (separate, explicit)                                                                       | Clean mental model: relay_send=fire-forget, relay_send_and_wait=short-sync, relay_send_async=long-async. Avoids overloading existing tool semantics.             |
+| 2   | relay_send_and_wait timeout cap | Raise from 120s to 600s (10 min)                                                                                       | Covers medium-duration tasks without pushing to the full async pattern. Still disciplined — agents with truly long tasks use relay_send_async.                   |
+| 3   | Progress updates from Agent B   | Full streaming: CCA publishes intermediate updates per AssistantMessage/tool_result                                    | Agent A can see real-time progress, detect stuck agents, and act on partial results. 20-min black-box is unacceptable for production agent systems.              |
+| 4   | Subagent MCP limitation         | Document constraint + orchestrator pattern in RELAY_TOOLS_CONTEXT                                                      | Can't fix architecturally. Documenting prevents wasted tool calls and silent failures. Pattern: parent does relay/mesh work, injects results into Task() prompt. |
+| 5   | relay_send_async inbox cleanup  | Caller-initiated (no server-side TTL)                                                                                  | Simplest for MVP. Caller reads `done:true` and calls relay_unregister_endpoint. Future enhancement: TTL-based auto-cleanup.                                      |
+| 6   | Progress payload schema         | `{ type: 'progress', step: number, text: string, done: false }` / `{ type: 'agent_result', text: string, done: true }` | Distinguishable from final result; `done` flag allows Agent A to know when to stop polling without parsing content.                                              |
 
 ---
 
@@ -171,9 +171,9 @@ The three gaps compound each other:
 
 1. **Progress granularity in CCA**: Publish after every `AssistantMessage` completion, or also after each `tool_result`? Tool results give better visibility but more messages. Recommended: both, with a `step_type: 'message' | 'tool_result'` field.
 
-2. **relay_dispatch inbox subject namespace**: `relay.inbox.dispatch.{UUID}` or `relay.inbox.query.{UUID}` (already used by relay_query)? Separate namespace `relay.inbox.dispatch.*` is cleaner for filtering.
+2. **relay_send_async inbox subject namespace**: `relay.inbox.dispatch.{UUID}` or `relay.inbox.query.{UUID}` (already used by relay_send_and_wait)? Separate namespace `relay.inbox.dispatch.*` is cleaner for filtering.
 
-3. **relay_dispatch rejection handling**: Same early-return logic as relay_query when `deliveredTo === 0 && rejected.length > 0`? Yes — but in this case the registered inbox must also be unregistered on early return.
+3. **relay_send_async rejection handling**: Same early-return logic as relay_send_and_wait when `deliveredTo === 0 && rejected.length > 0`? Yes — but in this case the registered inbox must also be unregistered on early return.
 
 4. **Impact on relay_list_endpoints**: Dispatch inboxes will appear in the endpoint list while open. Should they be filterable? Consider adding a `type: 'dispatch' | 'persistent'` field to endpoint metadata in a future pass.
 

@@ -161,7 +161,7 @@ MCP is a JSON-RPC 2.0 protocol for connecting AI agents to external tools and re
 
 - **In-process tool calls ≈ 0ms latency** — direct function calls into service singletons
 - **Session map unnecessary** — stateless mode (`sessionIdGenerator: undefined`) eliminates session management entirely since DorkOS tools are pure request-response
-- **Long-running tools** (e.g., `relay_query` with 120s timeout) — need to verify `StreamableHTTPServerTransport` holds the connection open
+- **Long-running tools** (e.g., `relay_send_and_wait` with 120s timeout) — need to verify `StreamableHTTPServerTransport` holds the connection open
 
 ### Recommendation
 

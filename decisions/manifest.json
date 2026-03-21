@@ -599,7 +599,7 @@
     {
       "number": 81,
       "slug": "in-process-progress-aggregation-for-relay-query",
-      "title": "Use In-Process Progress Aggregation for relay_query (MCP Single-Response Constraint)",
+      "title": "Use In-Process Progress Aggregation for relay_send_and_wait (MCP Single-Response Constraint)",
       "status": "proposed",
       "created": "2026-03-05",
       "extractedFrom": "relay-inbox-lifecycle",
@@ -608,7 +608,7 @@
     {
       "number": 77,
       "slug": "relay-dispatch-fire-and-poll-for-long-running-tasks",
-      "title": "relay_dispatch Fire-and-Poll Pattern for Long-Running Agent Tasks",
+      "title": "relay_send_async Fire-and-Poll Pattern for Long-Running Agent Tasks",
       "status": "proposed",
       "created": "2026-03-05",
       "extractedFrom": "relay-async-query",

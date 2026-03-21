@@ -206,7 +206,9 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
 
         const timer = setTimeout(() => {
           cleanup();
-          reject(new Error(`relay_query timed out after ${timeoutMs}ms (sent ${sentMessageId})`));
+          reject(
+            new Error(`relay_send_and_wait timed out after ${timeoutMs}ms (sent ${sentMessageId})`)
+          );
         }, timeoutMs);
 
         const unsub = relay.subscribe(inboxSubject, (envelope) => {
@@ -256,7 +258,7 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
 /**
  * Dispatch a message to an agent asynchronously.
  *
- * Unlike relay_query, relay_dispatch returns immediately with a dispatch inbox
+ * Unlike relay_send_and_wait, relay_send_async returns immediately with a dispatch inbox
  * subject. Agent A can then poll relay_inbox() for progress events and the
  * final agent_result. Call relay_unregister_endpoint() to clean up when done.
  *
@@ -400,7 +402,7 @@ export function getRelayTools(deps: McpToolDeps) {
       createRelayRegisterEndpointHandler(deps)
     ),
     tool(
-      'relay_query',
+      'relay_send_and_wait',
       'Send a message to an agent and WAIT for the reply in a single call. Preferred over relay_send + relay_inbox polling for request/reply patterns. Internally registers an ephemeral inbox, sends the message with replyTo set, and blocks until the target agent replies or the timeout elapses. ' +
         'Response shape: { reply, progress, from, replyMessageId, sentMessageId }. ' +
         'progress: array of intermediate steps emitted before the final reply (empty [] for quick replies; populated for multi-step CCA tasks). ' +
@@ -419,7 +421,7 @@ export function getRelayTools(deps: McpToolDeps) {
           .max(600000)
           .optional()
           .describe(
-            'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_dispatch instead.'
+            'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, use relay_send_async instead.'
           ),
         budget: z
           .object({
@@ -438,9 +440,9 @@ export function getRelayTools(deps: McpToolDeps) {
       createRelayQueryHandler(deps)
     ),
     tool(
-      'relay_dispatch',
+      'relay_send_async',
       'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
-        'Unlike relay_query (which blocks), relay_dispatch returns { messageId, inboxSubject } at once. ' +
+        'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
         'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
         'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
         'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
@@ -460,7 +462,7 @@ export function getRelayTools(deps: McpToolDeps) {
     ),
     tool(
       'relay_unregister_endpoint',
-      'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_dispatch completes (when done:true received).',
+      'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_send_async completes (when done:true received).',
       {
         subject: z.string().describe('Subject of the endpoint to unregister'),
       },
