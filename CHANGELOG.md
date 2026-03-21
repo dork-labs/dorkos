@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add dashboard content — mission control with 4 sections
 - Add route-aware sidebar and header with animated transitions
 - Add TanStack Router, dashboard route, and supporting artifacts
 - Add feature catalog system with SEO-optimized pages

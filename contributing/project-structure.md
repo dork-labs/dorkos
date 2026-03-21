@@ -72,7 +72,11 @@ src/
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
 │   │   ├── session-list/ # SessionSidebar, SidebarTabRow, tabbed views
-│   │   ├── dashboard-sidebar/ # DashboardSidebar (navigation + status at /)
+│   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
+│   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
+│   │   ├── dashboard-sessions/ # ActiveSessionsSection — active session cards grid (2h window)
+│   │   ├── dashboard-status/ # SystemStatusRow — Pulse/Relay/Mesh health cards + activity sparkline
+│   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Status Bar, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab)
 │   │   ├── files/       # FileBrowser

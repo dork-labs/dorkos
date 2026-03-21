@@ -1,7 +1,52 @@
 {
   "version": 1,
-  "nextNumber": 162,
+  "nextNumber": 167,
   "decisions": [
+    {
+      "number": 166,
+      "slug": "remove-mesh-agents-tab-clean-break",
+      "title": "Remove MeshPanel Agents Tab for Clean Separation",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "agents-page",
+      "specSlug": "agents-page"
+    },
+    {
+      "number": 165,
+      "slug": "dense-list-over-cards-for-agent-fleet",
+      "title": "Dense List Over Cards for Agent Fleet Display",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "agents-page",
+      "specSlug": "agents-page"
+    },
+    {
+      "number": 164,
+      "slug": "reuse-entity-caches-no-dashboard-polling",
+      "title": "Reuse Entity Query Caches Without Dedicated Dashboard Polling",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-content",
+      "specSlug": "dashboard-content"
+    },
+    {
+      "number": 163,
+      "slug": "zero-dom-conditional-attention-section",
+      "title": "Zero-DOM Conditional Rendering for Needs Attention Section",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-content",
+      "specSlug": "dashboard-content"
+    },
+    {
+      "number": 162,
+      "slug": "client-side-activity-feed-aggregation",
+      "title": "Client-Side Activity Feed Aggregation Over Server-Side Event Stream",
+      "status": "draft",
+      "created": "2026-03-20",
+      "extractedFrom": "dashboard-content",
+      "specSlug": "dashboard-content"
+    },
     {
       "number": 161,
       "slug": "route-aware-sidebar-header-slot-pattern",

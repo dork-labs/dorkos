@@ -1,19 +1,31 @@
+import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { LayoutDashboard, MessageSquare, Users } from 'lucide-react';
 import {
   SidebarHeader,
   SidebarContent,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarGroup,
+  SidebarGroupLabel,
 } from '@/layers/shared/ui';
-import { LayoutDashboard, MessageSquare } from 'lucide-react';
-import { useNavigate } from '@tanstack/react-router';
+import { useAppStore } from '@/layers/shared/model';
+import { useResolvedAgents } from '@/layers/entities/agent';
+import { RecentAgentItem } from './RecentAgentItem';
+
+/** Maximum number of recent agents shown in the sidebar. */
+const MAX_RECENT_AGENTS = 8;
 
 /**
- * Dashboard sidebar — navigation and overview for the dashboard route.
- * Placeholder content; full design is a follow-up spec.
+ * Dashboard sidebar — navigation links and recent agents list.
+ * Shows Dashboard/Sessions/Agents navigation and up to 8 recent agents from the app store.
  */
 export function DashboardSidebar() {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const recentCwds = useAppStore((s) => s.recentCwds);
+  const paths = recentCwds.map((r) => r.path);
+  const { data: agents } = useResolvedAgents(paths);
 
   return (
     <>
@@ -21,8 +33,9 @@ export function DashboardSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              isActive
-              className="text-foreground flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
+              isActive={pathname === '/'}
+              onClick={() => navigate({ to: '/' })}
+              className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
             >
               <LayoutDashboard className="size-(--size-icon-sm)" />
               Dashboard
@@ -30,18 +43,45 @@ export function DashboardSidebar() {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
+              isActive={pathname === '/session'}
               onClick={() => navigate({ to: '/session' })}
-              className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98]"
+              className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
             >
               <MessageSquare className="size-(--size-icon-sm)" />
               Sessions
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={pathname === '/agents'}
+              onClick={() => navigate({ to: '/agents' })}
+              className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
+            >
+              <Users className="size-(--size-icon-sm)" />
+              Agents
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="flex flex-1 items-center justify-center p-6">
-        <p className="text-muted-foreground/60 text-center text-xs">Agent overview coming soon</p>
+      <SidebarContent className="p-3">
+        {recentCwds.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-muted-foreground/70 text-[10px] font-medium tracking-wider uppercase">
+              Recent Agents
+            </SidebarGroupLabel>
+            <SidebarMenu>
+              {recentCwds.slice(0, MAX_RECENT_AGENTS).map((recent) => (
+                <RecentAgentItem
+                  key={recent.path}
+                  path={recent.path}
+                  agent={agents?.[recent.path] ?? null}
+                  onClick={() => navigate({ to: '/session', search: { dir: recent.path } })}
+                />
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </>
   );

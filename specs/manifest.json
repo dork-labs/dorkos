@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 147,
+  "nextNumber": 148,
   "specs": [
+    {
+      "number": 147,
+      "slug": "dashboard-content",
+      "title": "Dashboard Content — Mission Control for Your Agent Workforce",
+      "created": "2026-03-20",
+      "status": "ideation"
+    },
     {
       "number": 146,
       "slug": "form-field-standardization",
@@ -1109,7 +1116,14 @@
       "title": "Dynamic Route-Aware Sidebar & Header Content",
       "created": "2026-03-20",
       "status": "specified"
+    },
+    {
+      "number": 157,
+      "slug": "agents-page",
+      "title": "Agents Page — Dedicated Fleet Management",
+      "created": "2026-03-20",
+      "status": "specification"
     }
   ],
-  "nextNumber": 157
+  "nextNumber": 158
 }

@@ -1,14 +1,27 @@
+import { ScrollArea } from '@/layers/shared/ui';
+import { NeedsAttentionSection } from '@/layers/features/dashboard-attention';
+import { ActiveSessionsSection } from '@/layers/features/dashboard-sessions';
+import { SystemStatusRow } from '@/layers/features/dashboard-status';
+import { RecentActivityFeed } from '@/layers/features/dashboard-activity';
+
 /**
- * Dashboard placeholder — minimal status overview.
- * Full dashboard content is a follow-up spec.
+ * Dashboard page — mission control overview composing feature sections.
+ * Answers questions in priority order:
+ * 1. Does anything need my attention?
+ * 2. What is active right now?
+ * 3. Is the system healthy?
+ *
+ * Orchestrator widget that composes feature-level sections in a scrollable container.
  */
 export function DashboardPage() {
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">DorkOS</h1>
-        <p className="text-muted-foreground text-sm">Mission control for your agents</p>
+    <ScrollArea className="h-full">
+      <div className="mx-auto max-w-4xl space-y-8 px-6 py-8">
+        <NeedsAttentionSection />
+        <ActiveSessionsSection />
+        <SystemStatusRow />
+        <RecentActivityFeed />
       </div>
-    </div>
+    </ScrollArea>
   );
 }
