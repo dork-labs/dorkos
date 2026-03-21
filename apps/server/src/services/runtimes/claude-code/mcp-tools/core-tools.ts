@@ -7,6 +7,39 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
 /**
+ * Resolve the agent working directory from either an `agent_id` or `cwd` argument.
+ * Exactly one must be provided (mutually exclusive). Throws descriptive errors
+ * when validation fails.
+ *
+ * @param deps - MCP tool dependencies (needs `meshCore` when resolving by agent_id)
+ * @param args - The agent_id or cwd provided by the caller
+ * @returns The resolved absolute working directory path
+ */
+export function resolveAgentCwd(
+  deps: McpToolDeps,
+  args: { agent_id?: string; cwd?: string }
+): string {
+  if (!args.agent_id && !args.cwd) {
+    throw new Error('Either agent_id or cwd must be provided to identify the agent.');
+  }
+  if (args.agent_id && args.cwd) {
+    throw new Error('Provide either agent_id or cwd, not both.');
+  }
+  if (args.cwd) {
+    return args.cwd;
+  }
+  // agent_id path
+  if (!deps.meshCore) {
+    throw new Error('Mesh is not enabled. Cannot resolve agent_id without Mesh.');
+  }
+  const projectPath = deps.meshCore.getProjectPath(args.agent_id!);
+  if (!projectPath) {
+    throw new Error(`Agent not found: ${args.agent_id}`);
+  }
+  return projectPath;
+}
+
+/**
  * Ping handler — validates the MCP tool injection pipeline is working.
  * Returns a pong response with timestamp and server identifier.
  */
@@ -49,20 +82,22 @@ export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
 }
 
 /**
- * Session count handler factory — returns the number of sessions from SDK transcripts.
- * Validates the dependency injection pattern needed for future service-dependent tools.
+ * Session count handler factory — returns the number of sessions for a specific agent.
+ * Requires either `agent_id` (ULID) or `cwd` (working directory path) to scope the query.
  */
 export function createGetSessionCountHandler(deps: McpToolDeps) {
-  return async function handleGetSessionCount() {
+  return async function handleGetSessionCount(args: { agent_id?: string; cwd?: string }) {
     try {
-      const sessions = await deps.transcriptReader.listSessions(deps.defaultCwd);
+      const resolvedCwd = resolveAgentCwd(deps, args);
+      const sessions = await deps.transcriptReader.listSessions(resolvedCwd);
       return {
         content: [
           {
             type: 'text' as const,
             text: JSON.stringify({
               count: sessions.length,
-              cwd: deps.defaultCwd,
+              cwd: resolvedCwd,
+              ...(args.agent_id && { agent_id: args.agent_id }),
             }),
           },
         ],
@@ -84,15 +119,20 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
 }
 
 /**
- * Get the agent manifest for the current working directory.
+ * Get the agent manifest for a specific agent.
+ * Requires either `agent_id` (ULID) or `cwd` (working directory path).
  * Always available — not guarded by any feature flag.
  */
-export function createGetCurrentAgentHandler(deps: McpToolDeps) {
-  return async () => {
+export function createGetAgentHandler(deps: McpToolDeps) {
+  return async (args: { agent_id?: string; cwd?: string }) => {
     try {
-      const manifest = await readManifest(deps.defaultCwd);
+      const resolvedCwd = resolveAgentCwd(deps, args);
+      const manifest = await readManifest(resolvedCwd);
       if (!manifest) {
-        return jsonContent({ agent: null, message: 'No agent registered for current directory' });
+        return jsonContent({
+          agent: null,
+          message: 'No agent registered for the specified directory',
+        });
       }
       return jsonContent({ agent: manifest });
     } catch (err) {
@@ -104,10 +144,16 @@ export function createGetCurrentAgentHandler(deps: McpToolDeps) {
   };
 }
 
+/** Zod schema for the agent_id / cwd parameter pair shared by scoped core tools. */
+const agentScopeSchema = {
+  agent_id: z.string().optional().describe('Agent ULID to scope the query to'),
+  cwd: z.string().optional().describe('Working directory path to scope the query to'),
+};
+
 /** Returns the core tool definitions for registration with the MCP server. */
 export function getCoreTools(deps: McpToolDeps) {
   const handleGetSessionCount = createGetSessionCountHandler(deps);
-  const handleGetCurrentAgent = createGetCurrentAgentHandler(deps);
+  const handleGetAgent = createGetAgentHandler(deps);
 
   return [
     tool(
@@ -124,15 +170,15 @@ export function getCoreTools(deps: McpToolDeps) {
     ),
     tool(
       'get_session_count',
-      'Returns the number of sessions visible in the SDK transcript directory.',
-      {},
+      'Returns the number of sessions for a specific agent. Provide either agent_id (ULID) or cwd (working directory path).',
+      agentScopeSchema,
       handleGetSessionCount
     ),
     tool(
-      'get_current_agent',
-      'Get the agent identity for the current working directory. Returns the agent manifest from .dork/agent.json if one exists, or null if no agent is registered.',
-      {},
-      handleGetCurrentAgent
+      'get_agent',
+      'Get the agent manifest for a specific agent. Provide either agent_id (ULID) or cwd (working directory path). Returns the agent manifest from .dork/agent.json if one exists, or null if no agent is registered.',
+      agentScopeSchema,
+      handleGetAgent
     ),
   ];
 }

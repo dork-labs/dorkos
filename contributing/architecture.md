@@ -322,7 +322,7 @@ Four top-level toggles control six tool groups:
 | `mesh`    | Mesh tools (discover, register, list, deny, status, inspect, topology)                            |
 | `adapter` | Adapter tools (list/enable/disable/reload adapters) + Binding tools (list/create/delete bindings) |
 
-Core tools (ping, get_server_info, get_session_count, get_current_agent) are always included.
+Core tools (ping, get_server_info, get_session_count, get_agent) are always included.
 
 ### Defense in Depth
 

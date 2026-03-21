@@ -4,7 +4,7 @@ import {
   handlePing,
   handleGetServerInfo,
   createGetSessionCountHandler,
-  createGetCurrentAgentHandler,
+  createGetAgentHandler,
   createDorkOsToolServer,
   createListSchedulesHandler,
   createCreateScheduleHandler,
@@ -157,10 +157,10 @@ describe('MCP Tool Handlers', () => {
   });
 
   describe('createGetSessionCountHandler', () => {
-    it('returns session count from transcript reader', async () => {
+    it('returns session count from transcript reader when cwd provided', async () => {
       const listSessions = vi.fn().mockResolvedValue([{ id: 's1' }, { id: 's2' }, { id: 's3' }]);
       const handler = createGetSessionCountHandler(makeMockDeps({ listSessions }));
-      const result = await handler();
+      const result = await handler({ cwd: '/test/cwd' });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.count).toBe(3);
       expect(parsed.cwd).toBe('/test/cwd');
@@ -170,7 +170,7 @@ describe('MCP Tool Handlers', () => {
     it('returns isError when transcript reader fails', async () => {
       const listSessions = vi.fn().mockRejectedValue(new Error('ENOENT'));
       const handler = createGetSessionCountHandler(makeMockDeps({ listSessions }));
-      const result = await handler();
+      const result = await handler({ cwd: '/test/cwd' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('ENOENT');
@@ -178,7 +178,7 @@ describe('MCP Tool Handlers', () => {
 
     it('returns zero for empty session directory', async () => {
       const handler = createGetSessionCountHandler(makeMockDeps());
-      const result = await handler();
+      const result = await handler({ cwd: '/test/cwd' });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.count).toBe(0);
     });
@@ -186,10 +186,38 @@ describe('MCP Tool Handlers', () => {
     it('handles non-Error exceptions gracefully', async () => {
       const listSessions = vi.fn().mockRejectedValue('string error');
       const handler = createGetSessionCountHandler(makeMockDeps({ listSessions }));
-      const result = await handler();
+      const result = await handler({ cwd: '/test/cwd' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe('Failed to list sessions');
+    });
+
+    it('returns isError when neither agent_id nor cwd provided', async () => {
+      const handler = createGetSessionCountHandler(makeMockDeps());
+      const result = await handler({});
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain('Either agent_id or cwd must be provided');
+    });
+
+    it('returns isError when both agent_id and cwd provided', async () => {
+      const handler = createGetSessionCountHandler(makeMockDeps());
+      const result = await handler({ agent_id: 'abc', cwd: '/test' });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain('not both');
+    });
+
+    it('includes agent_id in response when resolved via agent_id', async () => {
+      const listSessions = vi.fn().mockResolvedValue([{ id: 's1' }]);
+      const meshCore = { getProjectPath: vi.fn().mockReturnValue('/resolved/path') };
+      const deps = { ...makeMockDeps({ listSessions }), meshCore } as McpToolDeps;
+      const handler = createGetSessionCountHandler(deps);
+      const result = await handler({ agent_id: 'agent-123' });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.count).toBe(1);
+      expect(parsed.cwd).toBe('/resolved/path');
+      expect(parsed.agent_id).toBe('agent-123');
     });
   });
 
@@ -385,12 +413,12 @@ describe('MCP Tool Handlers', () => {
     });
   });
 
-  describe('createGetCurrentAgentHandler', () => {
+  describe('createGetAgentHandler', () => {
     it('returns null with message when no manifest exists', async () => {
       const { readManifest } = await import('@dorkos/shared/manifest');
       vi.mocked(readManifest).mockResolvedValue(null);
-      const handler = createGetCurrentAgentHandler(makeMockDeps());
-      const result = await handler();
+      const handler = createGetAgentHandler(makeMockDeps());
+      const result = await handler({ cwd: '/test/cwd' });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.agent).toBeNull();
       expect(parsed.message).toContain('No agent registered');
@@ -406,27 +434,37 @@ describe('MCP Tool Handlers', () => {
         capabilities: ['testing'],
       };
       vi.mocked(readManifest).mockResolvedValue(mockManifest as never);
-      const handler = createGetCurrentAgentHandler(makeMockDeps());
-      const result = await handler();
+      const handler = createGetAgentHandler(makeMockDeps());
+      const result = await handler({ cwd: '/test/cwd' });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.agent).toEqual(mockManifest);
       expect(parsed.agent.id).toBe('test-agent-id');
       expect(parsed.agent.name).toBe('Test Agent');
     });
 
-    it('uses deps.defaultCwd as the working directory', async () => {
+    it('uses provided cwd as the working directory', async () => {
       const { readManifest } = await import('@dorkos/shared/manifest');
       vi.mocked(readManifest).mockResolvedValue(null);
-      const handler = createGetCurrentAgentHandler(makeMockDeps());
-      await handler();
+      const handler = createGetAgentHandler(makeMockDeps());
+      await handler({ cwd: '/test/cwd' });
       expect(readManifest).toHaveBeenCalledWith('/test/cwd');
+    });
+
+    it('resolves agent_id via meshCore.getProjectPath', async () => {
+      const { readManifest } = await import('@dorkos/shared/manifest');
+      vi.mocked(readManifest).mockResolvedValue(null);
+      const meshCore = { getProjectPath: vi.fn().mockReturnValue('/resolved/agent/path') };
+      const deps = { ...makeMockDeps(), meshCore } as McpToolDeps;
+      const handler = createGetAgentHandler(deps);
+      await handler({ agent_id: 'agent-ulid' });
+      expect(readManifest).toHaveBeenCalledWith('/resolved/agent/path');
     });
 
     it('returns isError when readManifest throws', async () => {
       const { readManifest } = await import('@dorkos/shared/manifest');
       vi.mocked(readManifest).mockRejectedValue(new Error('Permission denied'));
-      const handler = createGetCurrentAgentHandler(makeMockDeps());
-      const result = await handler();
+      const handler = createGetAgentHandler(makeMockDeps());
+      const result = await handler({ cwd: '/test/cwd' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('Permission denied');
@@ -435,11 +473,19 @@ describe('MCP Tool Handlers', () => {
     it('handles non-Error exceptions gracefully', async () => {
       const { readManifest } = await import('@dorkos/shared/manifest');
       vi.mocked(readManifest).mockRejectedValue('string error');
-      const handler = createGetCurrentAgentHandler(makeMockDeps());
-      const result = await handler();
+      const handler = createGetAgentHandler(makeMockDeps());
+      const result = await handler({ cwd: '/test/cwd' });
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe('Failed to read agent manifest');
+    });
+
+    it('returns isError when neither agent_id nor cwd provided', async () => {
+      const handler = createGetAgentHandler(makeMockDeps());
+      const result = await handler({});
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain('Either agent_id or cwd must be provided');
     });
   });
 
@@ -464,7 +510,7 @@ describe('MCP Tool Handlers', () => {
       expect(toolNames).toContain('ping');
       expect(toolNames).toContain('get_server_info');
       expect(toolNames).toContain('get_session_count');
-      expect(toolNames).toContain('get_current_agent');
+      expect(toolNames).toContain('get_agent');
       expect(toolNames).toContain('pulse_list_schedules');
       expect(toolNames).toContain('pulse_create_schedule');
       expect(toolNames).toContain('pulse_update_schedule');

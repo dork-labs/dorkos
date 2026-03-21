@@ -130,7 +130,7 @@ Embed a standards-compliant MCP server in the existing DorkOS Express process at
 
 | Group   | Count | Tools                                                                                                                                    |
 | ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Core    | 4     | ping, get_server_info, get_session_count, get_current_agent                                                                              |
+| Core    | 4     | ping, get_server_info, get_session_count, get_agent                                                                                      |
 | Pulse   | 5     | pulse_list_schedules, pulse_create_schedule, pulse_update_schedule, pulse_delete_schedule, pulse_get_run_history                         |
 | Relay   | 7     | relay_send, relay_inbox, relay_list_endpoints, relay_register_endpoint, relay_send_and_wait, relay_send_async, relay_unregister_endpoint |
 | Adapter | 4     | relay_list_adapters, relay_enable_adapter, relay_disable_adapter, relay_reload_adapters                                                  |

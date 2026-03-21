@@ -26,7 +26,7 @@ vi.mock('../../lib/logger.js', () => ({
   },
 }));
 
-// Mock manifest reader used by get_current_agent handler
+// Mock manifest reader used by get_agent handler
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));

@@ -20,7 +20,8 @@ export {
   handlePing,
   handleGetServerInfo,
   createGetSessionCountHandler,
-  createGetCurrentAgentHandler,
+  createGetAgentHandler,
+  resolveAgentCwd,
 } from './core-tools.js';
 export {
   createListSchedulesHandler,

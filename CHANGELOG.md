@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Require agent context for get_session_count and rename get_current_agent → get_agent
 - Update docs for Relay/Pulse enabled-by-default change
 - Rename relay_query → relay_send_and_wait, relay_dispatch → relay_send_async
 - Use subject strings as mailbox directory names instead of SHA-256 hashes

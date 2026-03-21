@@ -127,7 +127,7 @@ describe('buildAllowedTools', () => {
     expect(result).toContain('mcp__dorkos__ping');
     expect(result).toContain('mcp__dorkos__get_server_info');
     expect(result).toContain('mcp__dorkos__get_session_count');
-    expect(result).toContain('mcp__dorkos__get_current_agent');
+    expect(result).toContain('mcp__dorkos__get_agent');
   });
 
   it('excludes pulse tools when pulse=false', () => {
@@ -225,7 +225,7 @@ describe('buildAllowedTools', () => {
     expect(result).toContain('mcp__dorkos__ping');
     expect(result).toContain('mcp__dorkos__get_server_info');
     expect(result).toContain('mcp__dorkos__get_session_count');
-    expect(result).toContain('mcp__dorkos__get_current_agent');
+    expect(result).toContain('mcp__dorkos__get_agent');
   });
 
   it('returns a non-empty array when at least one domain is disabled', () => {

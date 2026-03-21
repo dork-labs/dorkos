@@ -110,7 +110,7 @@ export function createCanUseTool(
       'mcp__dorkos__mesh_register',
       'mcp__dorkos__mesh_status',
       'mcp__dorkos__mesh_query_topology',
-      'mcp__dorkos__get_current_agent',
+      'mcp__dorkos__get_agent',
     ]);
 
     if (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) {

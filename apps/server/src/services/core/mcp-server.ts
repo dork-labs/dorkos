@@ -5,7 +5,7 @@ import {
   handlePing,
   handleGetServerInfo,
   createGetSessionCountHandler,
-  createGetCurrentAgentHandler,
+  createGetAgentHandler,
 } from '../runtimes/claude-code/mcp-tools/core-tools.js';
 import {
   createListSchedulesHandler,
@@ -82,17 +82,21 @@ export function createExternalMcpServer(deps: McpToolDeps): McpServer {
     },
     handleGetServerInfo
   );
+  const agentScopeSchema = {
+    agent_id: z.string().optional().describe('Agent ULID to scope the query to'),
+    cwd: z.string().optional().describe('Working directory path to scope the query to'),
+  };
   server.tool(
     'get_session_count',
-    'Returns the number of sessions visible in the SDK transcript directory.',
-    {},
+    'Returns the number of sessions for a specific agent. Provide either agent_id (ULID) or cwd (working directory path).',
+    agentScopeSchema,
     createGetSessionCountHandler(deps)
   );
   server.tool(
-    'get_current_agent',
-    'Get the agent identity for the current working directory. Returns the agent manifest from .dork/agent.json if one exists, or null if no agent is registered.',
-    {},
-    createGetCurrentAgentHandler(deps)
+    'get_agent',
+    'Get the agent manifest for a specific agent. Provide either agent_id (ULID) or cwd (working directory path). Returns the agent manifest from .dork/agent.json if one exists, or null if no agent is registered.',
+    agentScopeSchema,
+    createGetAgentHandler(deps)
   );
 
   // ── Pulse tools ─────────────────────────────────────────────────────────

@@ -42,7 +42,7 @@ const CORE_TOOLS = [
   'mcp__dorkos__ping',
   'mcp__dorkos__get_server_info',
   'mcp__dorkos__get_session_count',
-  'mcp__dorkos__get_current_agent',
+  'mcp__dorkos__get_agent',
 ] as const;
 
 const PULSE_TOOLS = [

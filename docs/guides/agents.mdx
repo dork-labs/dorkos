@@ -128,4 +128,4 @@ These endpoints are always available — no feature flag needed. All paths are b
 
 ## MCP Tool
 
-Claude sessions can query their own agent identity via the `get_current_agent` MCP tool. This is always available, regardless of whether Mesh is configured.
+Claude sessions can query an agent's identity via the `get_agent` MCP tool, providing either an `agent_id` (ULID) or `cwd` (working directory path). This is always available, regardless of whether Mesh is configured.

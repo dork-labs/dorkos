@@ -43,7 +43,7 @@ vi.mock('../../runtimes/claude-code/mcp-tools/core-tools.js', () => ({
   handlePing: stubHandler,
   handleGetServerInfo: stubHandler,
   createGetSessionCountHandler: stubFactory,
-  createGetCurrentAgentHandler: stubFactory,
+  createGetAgentHandler: stubFactory,
 }));
 
 vi.mock('../../runtimes/claude-code/mcp-tools/pulse-tools.js', () => ({
@@ -154,7 +154,7 @@ describe('createExternalMcpServer', () => {
     expect(toolNames).toContain('ping');
     expect(toolNames).toContain('get_server_info');
     expect(toolNames).toContain('get_session_count');
-    expect(toolNames).toContain('get_current_agent');
+    expect(toolNames).toContain('get_agent');
 
     // Pulse tools (5)
     expect(toolNames).toContain('pulse_list_schedules');

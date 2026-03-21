@@ -57,7 +57,7 @@ export type AgentBudget = z.infer<typeof AgentBudgetSchema>;
  * Implicit grouping rules:
  * - `adapter: false` also disables Binding tools (`binding_list`, `binding_create`, `binding_delete`)
  * - `relay: false` also disables Trace tools (`relay_get_trace`, `relay_get_metrics`)
- * - Core tools (`ping`, `get_server_info`, `get_session_count`, `get_current_agent`) are always enabled
+ * - Core tools (`ping`, `get_server_info`, `get_session_count`, `get_agent`) are always enabled
  */
 export const EnabledToolGroupsSchema = z
   .object({

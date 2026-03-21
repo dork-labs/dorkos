@@ -48,7 +48,7 @@ status: ideation
 **Primary Components/Modules:**
 
 - `apps/server/src/services/runtimes/claude-code/mcp-tools/` — 7 tool group files defining 28 tools:
-  - `core-tools.ts` (4 tools): ping, get_server_info, get_session_count, get_current_agent
+  - `core-tools.ts` (4 tools): ping, get_server_info, get_session_count, get_agent
   - `pulse-tools.ts` (5 tools): list/create/update/delete schedules, get run history
   - `relay-tools.ts` (7 tools): send, inbox, list/register/unregister endpoints, query, dispatch
   - `adapter-tools.ts` (4 tools): list/enable/disable/reload adapters
