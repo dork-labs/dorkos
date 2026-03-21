@@ -23,6 +23,7 @@ vi.mock('@/layers/shared/model', () => ({
     };
     return selector ? selector(state) : state;
   },
+  useNow: () => Date.now(),
 }));
 
 const mockUsePulseEnabled = vi.fn<() => boolean>(() => false);

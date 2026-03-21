@@ -72,7 +72,7 @@ const mockBotCatch = vi.fn();
 /** Captured message handler registered via bot.on('message', handler) */
 let capturedMessageHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured callback query handler registered via bot.on('callback_query:data', handler) */
-const __capturedCallbackQueryHandler: ((ctx: unknown) => Promise<void>) | null = null;
+let _capturedCallbackQueryHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured error handler registered via bot.catch(handler) */
 let _capturedErrorHandler: ((err: unknown) => void) | null = null;
 /** Captured onStart callback from bot.start({ onStart }) */

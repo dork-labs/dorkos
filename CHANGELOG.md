@@ -9,36 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add agents page, attention detail sheets, and site category pages
-- Add agents page with fleet management, filtering, and health status
-- Add dashboard content — mission control with 4 sections
-- Add route-aware sidebar and header with animated transitions
-- Add TanStack Router, dashboard route, and supporting artifacts
-- Add feature catalog system with SEO-optimized pages
-- Unify InferenceIndicator and SystemStatusZone into ChatStatusStrip
-- Add status bar toggles for multi-window sync and background refresh
-- Add per-word text animation and spring-based smooth scroll
-
 ### Changed
-
-- Require agent context for get_session_count and rename get_current_agent → get_agent
-- Update docs for Relay/Pulse enabled-by-default change
-- Rename relay_query → relay_send_and_wait, relay_dispatch → relay_send_async
-- Use subject strings as mailbox directory names instead of SHA-256 hashes
-- Split feature category into product + category
-- Clean up routing migration — remove dead code, fix test/code consistency
-- Move scan line effect to chat input area and add subtle edge fade for cleaner visual separation
 
 ### Fixed
 
-- Resolve all ESLint warnings across the monorepo
-- Code review fixes for discovery, MCP tools, and schema
-- Add timeout guards and logging to adapter setup pipeline
-- Enable Relay and Pulse by default on fresh installs
-- Correct llms.txt Feature Categories section format
-- Fix Stop hook hang, add auto-format on file write
-- Fix dashboard navigation — use router context in beforeLoad, suppress auto-select
-- Add messageIds to DoneEventSchema, export SubagentStatus, extract history helpers
+---
+
+## [0.19.0] - 2026-03-21
+
+> Fleet management dashboard — dedicated agents page, mission control, and client-side routing
+
+### Added
+
+- Browse and manage agents from a dedicated fleet management page with health monitoring, filtering, and session launch
+- Access mission control dashboard with needs-attention alerts, active sessions, system status, and activity feed
+- Navigate between dashboard, sessions, and agents with animated sidebar and header transitions
+- Add TanStack Router with code-based route definitions and URL search params
+- Browse features by product and category on SEO-optimized catalog pages
+- Monitor chat status at a glance with a unified status strip combining inference and system indicators
+- Toggle multi-window sync and background refresh from the status bar
+- Experience smoother chat with per-word text animation and spring-based scroll physics
+
+### Changed
+
+- MCP tools require agent context for session counts and use clearer naming (get_agent)
+- Relay tools renamed for clarity: relay_send_and_wait (was relay_query), relay_send_async (was relay_dispatch)
+- Relay mailboxes use human-readable subject strings instead of SHA-256 hashes
+- Feature catalog split into product and category dimensions for richer filtering
+- Clean up routing migration — remove dead code, fix test/code consistency
+- Move scan line effect to chat input area with subtle edge fade
+
+### Fixed
+
+- Resolve all ESLint warnings across the monorepo (0 errors, 0 warnings)
+- Code review fixes for mesh discovery, MCP tools, and schema validation
+- Adapter setup pipeline protected with timeout guards and diagnostic logging
+- Relay and Pulse enabled by default on fresh installations
+- Fix llms.txt feature categories formatting
+- Fix Stop hook hanging and add auto-format on file write
+- Fix dashboard navigation router context and auto-select suppression
+- Fix DoneEventSchema missing messageIds and export SubagentStatus
 
 ---
 
@@ -691,7 +701,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/dork-labs/dorkos/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dork-labs/dorkos/compare/v0.17.2...v0.18.0
 [0.17.2]: https://github.com/dork-labs/dorkos/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/dork-labs/dorkos/compare/v0.17.0...v0.17.1

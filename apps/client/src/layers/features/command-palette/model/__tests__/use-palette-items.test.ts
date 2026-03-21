@@ -36,6 +36,7 @@ vi.mock('@/layers/shared/model', () => ({
     const state = mockUseAppStore();
     return selector ? selector(state) : state;
   },
+  useNow: () => Date.now(),
 }));
 
 vi.mock('../use-agent-frecency', () => ({

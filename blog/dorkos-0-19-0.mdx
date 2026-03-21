@@ -1,0 +1,57 @@
+---
+title: DorkOS 0.19.0
+description: Fleet management dashboard — dedicated agents page, mission control, and client-side routing
+date: 2026-03-21
+author: DorkOS Team
+category: release
+tags: [release, agents, dashboard, routing]
+---
+
+Fleet management graduates from a dialog tab to a first-class page, and the dashboard becomes a true mission control surface with real-time system awareness.
+
+## Highlights
+
+**Agents Page** — Browse, filter, and manage your agent fleet from a dedicated `/agents` route. Health monitoring, status filtering, expandable detail rows, and direct session launch give you full visibility into your fleet without leaving the console.
+
+**Dashboard Content** — The dashboard now surfaces what matters: needs-attention alerts, active sessions with live status, system health sparklines for Pulse/Relay/Mesh, and a time-grouped activity feed. Mission control for autonomous operations.
+
+**Client-Side Routing** — TanStack Router powers context-aware navigation between dashboard, sessions, and agents. Animated sidebar and header transitions make the app feel cohesive and responsive.
+
+## All Changes
+
+### Added
+
+- Browse and manage agents from a dedicated fleet management page with health monitoring, filtering, and session launch
+- Access mission control dashboard with needs-attention alerts, active sessions, system status, and activity feed
+- Navigate between dashboard, sessions, and agents with animated sidebar and header transitions
+- Add TanStack Router with code-based route definitions and URL search params
+- Browse features by product and category on SEO-optimized catalog pages
+- Monitor chat status at a glance with a unified status strip combining inference and system indicators
+- Toggle multi-window sync and background refresh from the status bar
+- Experience smoother chat with per-word text animation and spring-based scroll physics
+
+### Changed
+
+- MCP tools require agent context for session counts and use clearer naming (get_agent)
+- Relay tools renamed for clarity: relay_send_and_wait (was relay_query), relay_send_async (was relay_dispatch)
+- Relay mailboxes use human-readable subject strings instead of SHA-256 hashes
+- Feature catalog split into product and category dimensions for richer filtering
+- Clean up routing migration — remove dead code, fix test/code consistency
+- Move scan line effect to chat input area with subtle edge fade
+
+### Fixed
+
+- Resolve all ESLint warnings across the monorepo (0 errors, 0 warnings)
+- Code review fixes for mesh discovery, MCP tools, and schema validation
+- Adapter setup pipeline protected with timeout guards and diagnostic logging
+- Relay and Pulse enabled by default on fresh installations
+- Fix llms.txt feature categories formatting
+- Fix Stop hook hanging and add auto-format on file write
+- Fix dashboard navigation router context and auto-select suppression
+- Fix DoneEventSchema missing messageIds and export SubagentStatus
+
+## Install / Update
+
+```
+npm install -g dorkos@0.19.0
+```
