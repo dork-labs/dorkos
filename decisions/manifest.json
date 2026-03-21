@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 170,
+  "nextNumber": 172,
   "decisions": [
+    {
+      "number": 171,
+      "slug": "enable-relay-and-pulse-by-default",
+      "title": "Enable Relay and Pulse by Default",
+      "status": "accepted",
+      "created": "2026-03-21",
+      "extractedFrom": "enable-subsystems-by-default",
+      "specSlug": "enable-subsystems-by-default"
+    },
+    {
+      "number": 170,
+      "slug": "use-subject-strings-as-mailbox-directory-names",
+      "title": "Use Subject Strings as Mailbox Directory Names",
+      "status": "draft",
+      "created": "2026-03-21",
+      "extractedFrom": "relay-subject-folder-names",
+      "specSlug": "relay-subject-folder-names"
+    },
     {
       "number": 169,
       "slug": "collectionpage-jsonld-for-category-pages",

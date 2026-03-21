@@ -1,0 +1,117 @@
+{
+  "spec": "specs/relay-tool-rename/02-specification.md",
+  "slug": "relay-tool-rename",
+  "generatedAt": "2026-03-21T12:00:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Source Code",
+      "subject": "[relay-tool-rename] [P1] Rename tool strings in relay-tools.ts",
+      "description": "Rename all user-facing tool name strings in `apps/server/src/services/runtimes/claude-code/mcp-tools/relay-tools.ts`. This is the primary source file where tool names are registered and referenced in descriptions.\n\nExact changes (line numbers from spec, verify against actual file):\n\n1. **Line 209** — Timeout error message:\n   - Old: `` `relay_query timed out after ${timeoutMs}ms` ``\n   - New: `` `relay_send_and_wait timed out after ${timeoutMs}ms` ``\n\n2. **Line 259** — Description cross-reference:\n   - Old: `Unlike relay_query, relay_dispatch returns immediately`\n   - New: `Unlike relay_send_and_wait, relay_send_async returns immediately`\n\n3. **Line 403** — Tool name registration:\n   - Old: `'relay_query'`\n   - New: `'relay_send_and_wait'`\n\n4. **Line 422** — Description cross-reference:\n   - Old: `use relay_dispatch instead`\n   - New: `use relay_send_async instead`\n\n5. **Line 441** — Tool name registration:\n   - Old: `'relay_dispatch'`\n   - New: `'relay_send_async'`\n\n6. **Line 443** — Description cross-reference:\n   - Old: `Unlike relay_query (which blocks), relay_dispatch returns`\n   - New: `Unlike relay_send_and_wait (which blocks), relay_send_async returns`\n\n7. **Line 463** — Description cross-reference:\n   - Old: `after relay_dispatch completes`\n   - New: `after relay_send_async completes`\n\n**IMPORTANT — Do NOT change:**\n- Internal function names like `createRelayQueryHandler`, `createRelayDispatchHandler`\n- Subject prefixes like `relay.inbox.query.*`, `relay.inbox.dispatch.*`\n- Any tool behavior, parameters, or return types\n- The `relay_send` tool name (fire-and-forget, unchanged)\n\nAcceptance criteria:\n- All 7 string replacements applied\n- Internal function names remain unchanged\n- Subject prefixes remain unchanged\n- File compiles without errors (`pnpm typecheck`)",
+      "activeForm": "Renaming tool strings in relay-tools.ts",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2", "1.3"]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Source Code",
+      "subject": "[relay-tool-rename] [P1] Rename tool filter constants in tool-filter.ts",
+      "description": "Rename the MCP-prefixed tool name constants in `apps/server/src/services/runtimes/claude-code/tool-filter.ts`.\n\nExact changes:\n\n1. **Line 61**:\n   - Old: `'mcp__dorkos__relay_query'`\n   - New: `'mcp__dorkos__relay_send_and_wait'`\n\n2. **Line 62**:\n   - Old: `'mcp__dorkos__relay_dispatch'`\n   - New: `'mcp__dorkos__relay_send_async'`\n\nThese are the MCP SDK auto-prefixed versions of the tool names used in tool filtering logic.\n\nAcceptance criteria:\n- Both constants updated\n- File compiles without errors",
+      "activeForm": "Renaming tool filter constants in tool-filter.ts",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.3"]
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Source Code",
+      "subject": "[relay-tool-rename] [P1] Rename tool references in context-builder.ts",
+      "description": "Rename all user-facing tool name references in `apps/server/src/services/runtimes/claude-code/context-builder.ts`. This file builds the `RELAY_TOOLS_CONTEXT` documentation string that agents see.\n\nExact changes:\n\n1. **Line 19**:\n   - Old: `ephemeral inbox for relay_query`\n   - New: `ephemeral inbox for relay_send_and_wait`\n\n2. **Line 20**:\n   - Old: `ephemeral inbox for relay_dispatch`\n   - New: `ephemeral inbox for relay_send_async`\n\n3. **Line 28**:\n   - Old: `relay_query(to_subject=`\n   - New: `relay_send_and_wait(to_subject=`\n\n4. **Line 34**:\n   - Old: `relay_dispatch(to_subject=`\n   - New: `relay_send_async(to_subject=`\n\n5. **Line 53**:\n   - Old: `Call relay_dispatch()`\n   - New: `Call relay_send_async()`\n\n6. **Line 59**:\n   - Old: `relay_send/relay_query/relay_dispatch`\n   - New: `relay_send/relay_send_and_wait/relay_send_async`\n\nAcceptance criteria:\n- All 6 string replacements applied\n- File compiles without errors\n- `relay_send` references in the same strings remain unchanged",
+      "activeForm": "Renaming tool references in context-builder.ts",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.2"]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Tests",
+      "subject": "[relay-tool-rename] [P2] Update test assertions in all 4 test files",
+      "description": "Update all test files that assert on the old tool name strings. There are 4 test files with changes.\n\n#### File 2a: `apps/server/src/services/core/__tests__/mcp-relay-tools.test.ts`\n\n1. **Line 255** — describe block name:\n   - Old: `describe('relay_query progress accumulation'`\n   - New: `describe('relay_send_and_wait progress accumulation'`\n\n#### File 2b: `apps/server/src/services/core/__tests__/mcp-tool-server.test.ts`\n\n1. **Line 477**:\n   - Old: `toContain('relay_query')`\n   - New: `toContain('relay_send_and_wait')`\n\n2. **Line 478**:\n   - Old: `toContain('relay_dispatch')`\n   - New: `toContain('relay_send_async')`\n\n3. **Line 506**:\n   - Old: `applies to relay_dispatch`\n   - New: `applies to relay_send_async`\n\n#### File 2c: `apps/server/src/services/core/__tests__/tool-filter.test.ts`\n\n1. **Line 154**:\n   - Old: `'mcp__dorkos__relay_query'`\n   - New: `'mcp__dorkos__relay_send_and_wait'`\n\n2. **Line 155**:\n   - Old: `'mcp__dorkos__relay_dispatch'`\n   - New: `'mcp__dorkos__relay_send_async'`\n\n3. **Line 169**:\n   - Old: `'mcp__dorkos__relay_query'`\n   - New: `'mcp__dorkos__relay_send_and_wait'`\n\n4. **Line 172**:\n   - Old: `'mcp__dorkos__relay_dispatch'`\n   - New: `'mcp__dorkos__relay_send_async'`\n\n5. **Line 176**:\n   - Old: `includes relay_dispatch and relay_unregister_endpoint`\n   - New: `includes relay_send_async and relay_unregister_endpoint`\n\n6. **Line 179**:\n   - Old: `'mcp__dorkos__relay_dispatch'`\n   - New: `'mcp__dorkos__relay_send_async'`\n\n7. **Line 183**:\n   - Old: `excludes relay_dispatch and relay_unregister_endpoint`\n   - New: `excludes relay_send_async and relay_unregister_endpoint`\n\n8. **Line 186**:\n   - Old: `'mcp__dorkos__relay_dispatch'`\n   - New: `'mcp__dorkos__relay_send_async'`\n\n#### File 2d: `apps/server/src/services/core/__tests__/mcp-server.test.ts`\n\n1. **Line 171**:\n   - Old: `toContain('relay_query')`\n   - New: `toContain('relay_send_and_wait')`\n\n2. **Line 172**:\n   - Old: `toContain('relay_dispatch')`\n   - New: `toContain('relay_send_async')`\n\nAfter making all changes, run the test suite to confirm all 4 files pass:\n```bash\npnpm vitest run apps/server/src/services/core/__tests__/mcp-relay-tools.test.ts apps/server/src/services/core/__tests__/mcp-tool-server.test.ts apps/server/src/services/core/__tests__/tool-filter.test.ts apps/server/src/services/core/__tests__/mcp-server.test.ts\n```\n\nAcceptance criteria:\n- All 14 string replacements applied across 4 test files\n- All 4 test files pass\n- No other test assertions changed",
+      "activeForm": "Updating test assertions in 4 test files",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2", "1.3"],
+      "parallelWith": []
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Documentation",
+      "subject": "[relay-tool-rename] [P3] Update relay-messaging.mdx docs",
+      "description": "Update user-facing documentation in `docs/guides/relay-messaging.mdx`.\n\nExact changes:\n\n1. **Line 110**:\n   - Old: `relay_query`\n   - New: `relay_send_and_wait`\n\n2. **Line 111**:\n   - Old: `relay_dispatch`\n   - New: `relay_send_async`\n\n3. **Line 120**:\n   - Old: `` **`relay_query`** `` and all references\n   - New: `` **`relay_send_and_wait`** ``\n\n4. **Line 122**:\n   - Old: `` **`relay_dispatch`** `` and all references\n   - New: `` **`relay_send_async`** ``\n\nDo a full scan of the file for any additional occurrences of `relay_query` or `relay_dispatch` beyond the lines listed — the spec identified these specific lines but a thorough pass should catch any others.\n\nAcceptance criteria:\n- All occurrences of `relay_query` replaced with `relay_send_and_wait` in the file\n- All occurrences of `relay_dispatch` replaced with `relay_send_async` in the file\n- `relay_send` references remain unchanged\n- MDX renders correctly (no broken formatting)",
+      "activeForm": "Updating relay-messaging.mdx documentation",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.1"],
+      "parallelWith": ["4.1", "5.1", "6.1"]
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Changelog",
+      "subject": "[relay-tool-rename] [P4] Update changelog.mdx references",
+      "description": "Update historical changelog entries in `docs/changelog.mdx` to use the new tool names.\n\nExact changes:\n\n1. **Line 354**:\n   - Old: `relay_query progress accumulation`\n   - New: `relay_send_and_wait progress accumulation`\n\n2. **Line 356**:\n   - Old: `relay_dispatch fire-and-poll`\n   - New: `relay_send_async fire-and-poll`\n\n3. **Line 398**:\n   - Old: `relay_query blocking MCP tool`\n   - New: `relay_send_and_wait blocking MCP tool`\n\n4. **Line 421**:\n   - Old: `Register relay_query`\n   - New: `Register relay_send_and_wait`\n\nAcceptance criteria:\n- All 4 changelog entries updated\n- No broken MDX formatting",
+      "activeForm": "Updating changelog.mdx references",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.1"],
+      "parallelWith": ["3.1", "5.1", "6.1"]
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "Decision Records",
+      "subject": "[relay-tool-rename] [P5] Update ADRs and decisions manifest",
+      "description": "Update 3 ADR files and the decisions manifest to use the new tool names.\n\n#### File 5a: `decisions/0077-relay-dispatch-fire-and-poll-for-long-running-tasks.md`\n\nBulk find-and-replace throughout the entire document:\n- `relay_dispatch` -> `relay_send_async`\n- `relay_query` -> `relay_send_and_wait`\n\nSpecific areas called out in the spec:\n- Title (line 3 and line 10)\n- Context section\n- Decision section\n- Consequences section (lines 29, 31)\n\nDo a full pass — replace ALL occurrences in the file.\n\n#### File 5b: `decisions/0081-in-process-progress-aggregation-for-relay-query.md`\n\nBulk find-and-replace throughout the entire document:\n- `relay_query` -> `relay_send_and_wait`\n- `relay_dispatch` -> `relay_send_async`\n\nSpecific areas called out in the spec:\n- Title (line 3 and line 10)\n- Context section\n- Decision section\n- Consequences section (lines 29, 30, 37)\n\nDo a full pass — replace ALL occurrences in the file.\n\n#### File 5c: `decisions/manifest.json`\n\n1. **Line 593** — ADR title reference:\n   - Old: contains `relay_query`\n   - New: replace with `relay_send_and_wait`\n\n2. **Line 602** — ADR title reference:\n   - Old: contains `relay_dispatch`\n   - New: replace with `relay_send_async`\n\n#### File 5d: `decisions/archive/0078-cca-dispatch-streaming-gated-on-inbox-prefix.md`\n\nUpdate 2 references to the new tool names:\n- `relay_dispatch` -> `relay_send_async`\n- `relay_query` -> `relay_send_and_wait`\n\nDo a full pass of the file to catch all occurrences.\n\nAcceptance criteria:\n- All occurrences of `relay_query` replaced with `relay_send_and_wait` in all 4 files\n- All occurrences of `relay_dispatch` replaced with `relay_send_async` in all 4 files\n- JSON in manifest.json remains valid (verify with a JSON parse)\n- Internal identifiers (subject prefixes, function names) remain unchanged",
+      "activeForm": "Updating ADRs and decisions manifest",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["1.1"],
+      "parallelWith": ["3.1", "4.1", "6.1"]
+    },
+    {
+      "id": "6.1",
+      "phase": 6,
+      "phaseName": "Specs",
+      "subject": "[relay-tool-rename] [P6] Bulk rename in relay-async-query and relay-inbox-lifecycle specs",
+      "description": "Bulk find-and-replace across two spec directories that contain heavy references to the old tool names.\n\n#### Directory 6a: `specs/relay-async-query/` (108 occurrences across 5 files)\n\nFor every file in this directory, replace:\n- `relay_query` -> `relay_send_and_wait`\n- `relay_dispatch` -> `relay_send_async`\n\nThis includes `01-ideation.md`, `02-specification.md`, `03-tasks.json`, `03-tasks.md`, and any other files present.\n\n#### Directory 6b: `specs/relay-inbox-lifecycle/` (89 occurrences across 5 files)\n\nFor every file in this directory, replace:\n- `relay_query` -> `relay_send_and_wait`\n- `relay_dispatch` -> `relay_send_async`\n\nThis includes `01-ideation.md`, `02-specification.md`, `03-tasks.json`, `03-tasks.md`, and any other files present.\n\n**IMPORTANT:** These are bulk replacements — do NOT selectively skip any occurrences. Every instance of `relay_query` and `relay_dispatch` in these directories should be renamed. Do NOT change `relay_send` (fire-and-forget tool, unchanged).\n\nAlso do NOT change:\n- Internal function names like `createRelayQueryHandler`, `createRelayDispatchHandler`\n- Subject prefixes like `relay.inbox.query.*`, `relay.inbox.dispatch.*`\n\nIf those appear in the specs (they might as quoted code), leave them alone — only change the user-facing tool name strings.\n\nAcceptance criteria:\n- Zero remaining occurrences of standalone `relay_query` or `relay_dispatch` as tool names in either directory\n- `relay_send` references unchanged\n- Internal function names and subject prefixes unchanged\n- JSON files remain valid",
+      "activeForm": "Bulk renaming in spec directories",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["1.1"],
+      "parallelWith": ["3.1", "4.1", "5.1"]
+    },
+    {
+      "id": "7.1",
+      "phase": 7,
+      "phaseName": "Validation",
+      "subject": "[relay-tool-rename] [P7] Validate rename completeness and run full checks",
+      "description": "Final validation task to confirm all renames are complete and nothing is broken.\n\nRun the following checks in order:\n\n### 1. Run affected tests\n```bash\npnpm vitest run apps/server/src/services/core/__tests__/mcp-relay-tools.test.ts apps/server/src/services/core/__tests__/mcp-tool-server.test.ts apps/server/src/services/core/__tests__/tool-filter.test.ts apps/server/src/services/core/__tests__/mcp-server.test.ts\n```\nAll 4 test files must pass.\n\n### 2. Typecheck\n```bash\npnpm typecheck\n```\nNo type errors expected (tool names are string literals, not type-level).\n\n### 3. Grep for orphaned old names\n```bash\ngrep -r 'relay_query\\|relay_dispatch' apps/server/src/ docs/ decisions/ specs/ --include='*.ts' --include='*.tsx' --include='*.md' --include='*.mdx' --include='*.json'\n```\nShould return zero matches EXCEPT:\n- This spec itself (`specs/relay-tool-rename/`)\n- The research file (`research/` directory)\n- Internal function names (`createRelayQueryHandler`, `createRelayDispatchHandler`) which are NOT being renamed\n- Subject prefixes (`relay.inbox.query.*`, `relay.inbox.dispatch.*`) which are NOT being renamed\n\n### 4. Verify relay_send untouched\nConfirm that `relay_send` references throughout the codebase are unchanged. A quick grep should show them still present:\n```bash\ngrep -r 'relay_send[^_]' apps/server/src/ --include='*.ts' | head -20\n```\n\n### 5. Verify new names present\n```bash\ngrep -r 'relay_send_and_wait\\|relay_send_async' apps/server/src/ --include='*.ts' | head -20\n```\nShould show the new tool names in the expected files.\n\nAcceptance criteria:\n- All 4 test files pass\n- Typecheck passes\n- No orphaned `relay_query` or `relay_dispatch` tool name strings remain (excluding exceptions listed above)\n- `relay_send` references intact\n- New names (`relay_send_and_wait`, `relay_send_async`) present in all expected locations\n- Internal function names unchanged\n- Subject prefixes unchanged",
+      "activeForm": "Validating rename completeness",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["2.1", "3.1", "4.1", "5.1", "6.1"],
+      "parallelWith": []
+    }
+  ]
+}

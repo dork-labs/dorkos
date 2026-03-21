@@ -99,7 +99,9 @@ async function start() {
 
   // Initialize Pulse scheduler if enabled
   const schedulerConfig = configManager.get('scheduler');
-  const pulseEnabled = env.DORKOS_PULSE_ENABLED || schedulerConfig.enabled;
+  // eslint-disable-next-line no-restricted-syntax -- checks key existence (not value); env.ts boolFlag can't distinguish "unset" from "set to false"
+  const pulseEnabled =
+    'DORKOS_PULSE_ENABLED' in process.env ? env.DORKOS_PULSE_ENABLED : schedulerConfig.enabled;
 
   let pulseStore: PulseStore | undefined;
   if (pulseEnabled) {
@@ -120,14 +122,12 @@ async function start() {
   // boolFlag defaults to false even when unset, so check process.env directly.
   // eslint-disable-next-line no-restricted-syntax -- checks key existence (not value); env.ts boolFlag can't distinguish "unset" from "set to false"
   const relayEnabled =
-    'DORKOS_RELAY_ENABLED' in process.env
-      ? env.DORKOS_RELAY_ENABLED
-      : (relayConfig?.enabled ?? false);
+    'DORKOS_RELAY_ENABLED' in process.env ? env.DORKOS_RELAY_ENABLED : relayConfig.enabled;
 
   // Phase A: core relay infrastructure (RelayCore + TraceStore)
   // AdapterManager construction is deferred to Phase C (after meshCore init)
   // so that meshCore is available for CWD resolution via buildContext().
-  const relayDataDir = relayConfig?.dataDir ?? path.join(dorkHome, 'relay');
+  const relayDataDir = relayConfig.dataDir ?? path.join(dorkHome, 'relay');
   if (relayEnabled) {
     try {
       adapterRegistry = new AdapterRegistry();

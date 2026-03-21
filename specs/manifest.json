@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 150,
+  "nextNumber": 159,
   "specs": [
+    {
+      "number": 158,
+      "slug": "relay-subject-folder-names",
+      "title": "Use Subject Strings as Mailbox Folder Names Instead of SHA-256 Hashes",
+      "created": "2026-03-21",
+      "status": "specified"
+    },
     {
       "number": 149,
       "slug": "attention-item-detail-navigation",
@@ -1137,7 +1144,21 @@
       "title": "Agents Page — Dedicated Fleet Management",
       "created": "2026-03-20",
       "status": "specification"
+    },
+    {
+      "number": 159,
+      "slug": "enable-subsystems-by-default",
+      "title": "Enable Relay and Pulse by Default",
+      "created": "2026-03-21",
+      "status": "specified"
+    },
+    {
+      "number": 160,
+      "slug": "relay-tool-rename",
+      "title": "Rename Relay MCP Tools for Clarity",
+      "created": "2026-03-21",
+      "status": "specified"
     }
   ],
-  "nextNumber": 158
+  "nextNumber": 161
 }

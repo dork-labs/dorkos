@@ -192,6 +192,11 @@ if (values.pulse !== undefined) {
   process.env.DORKOS_PULSE_ENABLED = 'true';
 }
 
+// Relay: env var > config (no CLI flag for relay)
+if (!process.env.DORKOS_RELAY_ENABLED && cfgMgr.getDot('relay.enabled')) {
+  process.env.DORKOS_RELAY_ENABLED = 'true';
+}
+
 // Working directory: CLI flag > env var > config > cwd
 const cliDir = values.dir;
 if (cliDir) {

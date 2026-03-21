@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Enable Relay and Pulse by default on fresh installs
 - Correct llms.txt Feature Categories section format
 - Fix Stop hook hang, add auto-format on file write
 - Fix Stop hook hang, add auto-format on file write

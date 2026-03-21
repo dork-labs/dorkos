@@ -142,7 +142,7 @@ Tools that agents can call via the DorkOS MCP server. Defined in `apps/server/sr
 
 ## TODOs
 
-### [TODO] Use subject strings as mailbox folder names instead of SHA-256 hashes
+### [IN PROGRESS] Use subject strings as mailbox folder names instead of SHA-256 hashes
 
 **Why:** The current hashed folder names (`02cdb2a9d371`, `00744772b841`, etc.) are opaque — you can't tell what endpoint a mailbox belongs to without reading a message inside it. The hash-to-subject mapping only lives in memory while the server runs. Subjects are already filesystem-safe (lowercase alphanumeric + dots), so the hashing adds no real safety benefit.
 
@@ -168,7 +168,7 @@ Tools that agents can call via the DorkOS MCP server. Defined in `apps/server/sr
 6. **No migration needed** — dev mailboxes in `apps/server/.temp/.dork/` can be deleted and recreated. For production, the mailboxes are ephemeral (re-registered on server start), so old hash-named folders just become orphans that can be cleaned up.
 7. **Validate** that subject strings don't contain path separators (`/`, `\`) — the `validateSubject()` function in `subject-matcher.ts` should already enforce this, but confirm.
 
-### [TODO] Enable Relay, Mesh, and Pulse by default
+### [IN PROGRESS] Enable Relay, Mesh, and Pulse by default
 
 **Why:** These are core DorkOS subsystems, not optional extras. A fresh install should have full functionality out of the box. Currently Relay and Pulse default to disabled and only activate through onboarding or manual config edits. Mesh is already always-on (ADR-0062) — Relay and Pulse should follow the same pattern.
 
