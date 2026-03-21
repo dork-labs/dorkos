@@ -47,8 +47,8 @@ export { FeatureCard } from './ui/FeatureCard';
 export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
 
 // Data — feature catalog
-export { features, CATEGORY_LABELS } from './lib/features';
-export type { Feature, FeatureStatus, FeatureCategory } from './lib/features';
+export { features, PRODUCT_LABELS, CATEGORY_LABELS } from './lib/features';
+export type { Feature, FeatureStatus, FeatureProduct, FeatureCategory } from './lib/features';
 
 // Data
 export { projects } from './lib/projects';

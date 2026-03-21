@@ -34,7 +34,8 @@ vi.mock('../../lib/features', () => ({
     {
       slug: 'test-feature',
       name: 'Test Feature',
-      category: 'core',
+      product: 'core',
+      category: 'infrastructure',
       tagline: 'A test tagline under 80 chars',
       description:
         'A test description that is between 120 and 160 characters long to satisfy the catalog data integrity rules.',
@@ -45,7 +46,8 @@ vi.mock('../../lib/features', () => ({
     {
       slug: 'hidden-feature',
       name: 'Hidden Feature',
-      category: 'pulse',
+      product: 'pulse',
+      category: 'scheduling',
       tagline: 'This should not appear on the homepage',
       description:
         'A test description that is between 120 and 160 characters long to satisfy the catalog data integrity rules.',
@@ -54,12 +56,22 @@ vi.mock('../../lib/features', () => ({
       benefits: ['Benefit one', 'Benefit two', 'Benefit three'],
     },
   ],
-  CATEGORY_LABELS: {
+  PRODUCT_LABELS: {
     console: 'Console',
     pulse: 'Pulse',
     relay: 'Relay',
     mesh: 'Mesh',
     core: 'Core',
+  },
+  CATEGORY_LABELS: {
+    chat: 'Chat',
+    'agent-control': 'Agent Control',
+    scheduling: 'Scheduling',
+    messaging: 'Messaging',
+    integration: 'Integration',
+    discovery: 'Discovery',
+    visualization: 'Visualization',
+    infrastructure: 'Infrastructure',
   },
 }));
 
@@ -101,8 +113,8 @@ describe('FeatureCatalogSection', () => {
   it('renders mobile "View all features" link pointing to /features', () => {
     render(<FeatureCatalogSection />);
     const links = screen.getAllByRole('link');
-    const mobileLink = links.find((l) =>
-      l.textContent?.includes('View all features') && l.getAttribute('href') === '/features'
+    const mobileLink = links.find(
+      (l) => l.textContent?.includes('View all features') && l.getAttribute('href') === '/features'
     );
     expect(mobileLink).toBeTruthy();
   });

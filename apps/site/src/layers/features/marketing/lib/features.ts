@@ -2,18 +2,44 @@
 export type FeatureStatus = 'ga' | 'beta' | 'coming-soon';
 
 /**
- * Subsystem category — maps 1:1 to DorkOS architecture subsystems.
- * Used for grouping and URL param filtering on /features.
+ * DorkOS product subsystem — maps 1:1 to architecture subsystems.
+ * Used for tab filtering on /features.
  */
-export type FeatureCategory = 'console' | 'pulse' | 'relay' | 'mesh' | 'core';
+export type FeatureProduct = 'console' | 'pulse' | 'relay' | 'mesh' | 'core';
 
-/** Display labels for each category tab on /features. */
-export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
+/** Display labels for each product tab on /features. */
+export const PRODUCT_LABELS: Record<FeatureProduct, string> = {
   console: 'Console',
   pulse: 'Pulse',
   relay: 'Relay',
   mesh: 'Mesh',
   core: 'Core',
+};
+
+/**
+ * Feature type — describes what the feature *is* (its nature/function).
+ * Used for badges on cards and feature pages.
+ */
+export type FeatureCategory =
+  | 'chat'
+  | 'agent-control'
+  | 'scheduling'
+  | 'messaging'
+  | 'integration'
+  | 'discovery'
+  | 'visualization'
+  | 'infrastructure';
+
+/** Display labels for feature type badges. */
+export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
+  chat: 'Chat',
+  'agent-control': 'Agent Control',
+  scheduling: 'Scheduling',
+  messaging: 'Messaging',
+  integration: 'Integration',
+  discovery: 'Discovery',
+  visualization: 'Visualization',
+  infrastructure: 'Infrastructure',
 };
 
 /**
@@ -27,7 +53,9 @@ export interface Feature {
   slug: string;
   /** Display name, e.g. "Pulse Scheduler". */
   name: string;
-  /** Subsystem grouping — used for tab filtering on catalog index. */
+  /** DorkOS product subsystem — used for tab filtering on catalog index. */
+  product: FeatureProduct;
+  /** Feature type — describes what this feature is (chat, scheduling, etc.). */
   category: FeatureCategory;
   /**
    * Benefit one-liner ≤80 chars.
@@ -83,7 +111,8 @@ export const features: Feature[] = [
   {
     slug: 'chat-interface',
     name: 'Chat Interface',
-    category: 'console',
+    product: 'console',
+    category: 'chat',
     tagline: 'A web UI for every agent session, with streaming output in real time',
     description:
       'Stop SSH-ing into terminal windows to watch agents run. The Console gives every agent session a persistent, streaming chat UI accessible from any browser.',
@@ -103,7 +132,8 @@ export const features: Feature[] = [
   {
     slug: 'tool-approval',
     name: 'Tool Approval',
-    category: 'console',
+    product: 'console',
+    category: 'agent-control',
     tagline: 'Approve or reject agent tool calls before they execute',
     description:
       "Agents sometimes ask before they act. Tool Approval surfaces those requests in real time so you stay in the loop without blocking your agents' flow.",
@@ -121,7 +151,8 @@ export const features: Feature[] = [
   {
     slug: 'question-prompts',
     name: 'Question Prompts',
-    category: 'console',
+    product: 'console',
+    category: 'agent-control',
     tagline: 'Agents ask questions; you answer from anywhere',
     description:
       "When an agent needs input, it surfaces a structured question prompt in the Console. Answer inline or via a chat adapter — agents don't stall.",
@@ -139,7 +170,8 @@ export const features: Feature[] = [
   {
     slug: 'file-uploads',
     name: 'File Uploads',
-    category: 'console',
+    product: 'console',
+    category: 'chat',
     tagline: 'Drop files into the chat — agents read them as context',
     description:
       'Paste a spec, attach a screenshot, or upload a log file. File uploads give your agents rich context without terminal copy-paste gymnastics.',
@@ -158,7 +190,8 @@ export const features: Feature[] = [
   {
     slug: 'pulse-scheduler',
     name: 'Pulse Scheduler',
-    category: 'pulse',
+    product: 'pulse',
+    category: 'scheduling',
     tagline: "Schedule agents to run on any cron — they work while you don't",
     description:
       'Stop manually triggering agent runs. Pulse lets you schedule any agent on any cron expression, with a visual builder, preset gallery, and full run history.',
@@ -180,7 +213,8 @@ export const features: Feature[] = [
   {
     slug: 'relay-message-bus',
     name: 'Relay Message Bus',
-    category: 'relay',
+    product: 'relay',
+    category: 'messaging',
     tagline: 'Agents send and receive messages across any channel',
     description:
       "Relay is the DorkOS inter-agent message bus. It routes messages between agents, operators, and external services — so your agents aren't isolated.",
@@ -200,7 +234,8 @@ export const features: Feature[] = [
   {
     slug: 'slack-adapter',
     name: 'Slack Adapter',
-    category: 'relay',
+    product: 'relay',
+    category: 'integration',
     tagline: 'Chat with your agents in Slack — no context switching required',
     description:
       'The Slack adapter connects DorkOS Relay to your Slack workspace. Send messages, receive agent updates, and approve tool calls without leaving Slack.',
@@ -218,7 +253,8 @@ export const features: Feature[] = [
   {
     slug: 'telegram-adapter',
     name: 'Telegram Adapter',
-    category: 'relay',
+    product: 'relay',
+    category: 'integration',
     tagline: 'Monitor and control your agents via Telegram bot',
     description:
       'The Telegram adapter gives every DorkOS agent a Telegram bot interface. Monitor runs, receive notifications, and send commands from your phone.',
@@ -238,7 +274,8 @@ export const features: Feature[] = [
   {
     slug: 'mesh-agent-discovery',
     name: 'Agent Discovery',
-    category: 'mesh',
+    product: 'mesh',
+    category: 'discovery',
     tagline: 'DorkOS finds your agents — you just point it at a directory',
     description:
       'Mesh scans your filesystem for running agents and registers them automatically. No config files, no IDs to manage — agents are discoverable instantly.',
@@ -258,7 +295,8 @@ export const features: Feature[] = [
   {
     slug: 'mesh-topology',
     name: 'Mesh Topology Graph',
-    category: 'mesh',
+    product: 'mesh',
+    category: 'visualization',
     tagline: 'See every agent and connection in your mesh at a glance',
     description:
       'The Topology panel renders your entire agent network as an interactive graph — nodes, bindings, and cross-namespace edges. No log reading required.',
@@ -280,7 +318,8 @@ export const features: Feature[] = [
   {
     slug: 'mcp-server',
     name: 'MCP Server',
-    category: 'core',
+    product: 'core',
+    category: 'integration',
     tagline: 'All DorkOS tools available to any MCP-compatible agent',
     description:
       'DorkOS exposes its full tool suite via a Streamable HTTP MCP server. Any MCP-compatible agent — Claude Code, Cursor, Windsurf — can call DorkOS tools directly.',
@@ -300,7 +339,8 @@ export const features: Feature[] = [
   {
     slug: 'cli',
     name: 'CLI',
-    category: 'core',
+    product: 'core',
+    category: 'infrastructure',
     tagline: 'One command to install and run DorkOS anywhere',
     description:
       'The `dorkos` CLI installs via npm and starts the full DorkOS stack — server and Console — with a single command. Zero config required to get started.',
@@ -318,7 +358,8 @@ export const features: Feature[] = [
   {
     slug: 'tunnel',
     name: 'Remote Tunnel',
-    category: 'core',
+    product: 'core',
+    category: 'infrastructure',
     tagline: 'Access your local DorkOS instance from anywhere via secure tunnel',
     description:
       'The built-in ngrok tunnel exposes your local DorkOS server to the internet with a single toggle. Control agents from your phone or any remote machine.',

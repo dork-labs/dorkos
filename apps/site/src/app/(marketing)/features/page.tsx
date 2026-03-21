@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { siteConfig } from '@/config/site';
-import { features, CATEGORY_LABELS, type FeatureCategory } from '@/layers/features/marketing';
+import { features, PRODUCT_LABELS, type FeatureProduct } from '@/layers/features/marketing';
 import { FeatureCard } from '@/layers/features/marketing';
 
 export const metadata: Metadata = {
@@ -17,28 +17,28 @@ export const metadata: Metadata = {
   },
 };
 
-const VALID_CATEGORIES = Object.keys(CATEGORY_LABELS) as FeatureCategory[];
+const VALID_PRODUCTS = Object.keys(PRODUCT_LABELS) as FeatureProduct[];
 
 /**
- * Feature catalog index page — server-rendered category filtering via ?category= param.
+ * Feature catalog index page — server-rendered product filtering via ?product= param.
  */
 export default async function FeaturesPage(props: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const searchParams = await props.searchParams;
-  const rawCategory = searchParams['category'];
-  const activeCategory =
-    typeof rawCategory === 'string' && VALID_CATEGORIES.includes(rawCategory as FeatureCategory)
-      ? (rawCategory as FeatureCategory)
+  const rawProduct = searchParams['product'];
+  const activeProduct =
+    typeof rawProduct === 'string' && VALID_PRODUCTS.includes(rawProduct as FeatureProduct)
+      ? (rawProduct as FeatureProduct)
       : null;
 
-  const filteredFeatures = activeCategory
-    ? features.filter((f) => f.category === activeCategory)
+  const filteredFeatures = activeProduct
+    ? features.filter((f) => f.product === activeProduct)
     : features;
 
-  // Sort within each category by sortOrder, then insertion order
+  // Sort within each product by sortOrder, then insertion order
   const sortedFeatures = [...filteredFeatures].sort((a, b) => {
-    if (a.category !== b.category) return 0;
+    if (a.product !== b.product) return 0;
     return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
   });
 
@@ -51,15 +51,15 @@ export default async function FeaturesPage(props: {
         </p>
       </header>
 
-      {/* Category tab strip — pure links, no JS */}
-      <nav className="mb-10 flex flex-wrap gap-2" aria-label="Filter by category">
-        <CategoryTab href="/features" active={activeCategory === null} label="All" />
-        {VALID_CATEGORIES.map((cat) => (
-          <CategoryTab
-            key={cat}
-            href={`/features?category=${cat}`}
-            active={activeCategory === cat}
-            label={CATEGORY_LABELS[cat]}
+      {/* Product tab strip — pure links, no JS */}
+      <nav className="mb-10 flex flex-wrap gap-2" aria-label="Filter by product">
+        <ProductTab href="/features" active={activeProduct === null} label="All" />
+        {VALID_PRODUCTS.map((prod) => (
+          <ProductTab
+            key={prod}
+            href={`/features?product=${prod}`}
+            active={activeProduct === prod}
+            label={PRODUCT_LABELS[prod]}
           />
         ))}
       </nav>
@@ -77,7 +77,7 @@ export default async function FeaturesPage(props: {
   );
 }
 
-function CategoryTab({ href, active, label }: { href: string; active: boolean; label: string }) {
+function ProductTab({ href, active, label }: { href: string; active: boolean; label: string }) {
   return (
     <Link
       href={href}

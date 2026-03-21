@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split feature category into product + category
 - Clean up routing migration — remove dead code, fix test/code consistency
 
 ### Fixed

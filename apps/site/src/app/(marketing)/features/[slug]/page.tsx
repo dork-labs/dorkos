@@ -2,7 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, ArrowRight, ExternalLink, CheckCircle } from 'lucide-react';
-import { features, CATEGORY_LABELS, type FeatureStatus } from '@/layers/features/marketing';
+import {
+  features,
+  PRODUCT_LABELS,
+  CATEGORY_LABELS,
+  type FeatureStatus,
+} from '@/layers/features/marketing';
 import { siteConfig } from '@/config/site';
 
 export function generateStaticParams() {
@@ -99,9 +104,12 @@ export default async function FeaturePage(props: { params: Promise<{ slug: strin
       </Link>
 
       <div className="max-w-3xl">
-        {/* Category + status badges */}
+        {/* Product + category + status badges */}
         <div className="mb-4 flex items-center gap-2">
           <span className="text-warm-gray-light border-warm-gray-light/30 rounded-full border px-2.5 py-0.5 font-mono text-xs">
+            {PRODUCT_LABELS[feature.product]}
+          </span>
+          <span className="text-warm-gray-light/70 rounded-full px-2.5 py-0.5 font-mono text-xs">
             {CATEGORY_LABELS[feature.category]}
           </span>
           <StatusBadge status={feature.status} />
@@ -155,7 +163,7 @@ export default async function FeaturePage(props: { params: Promise<{ slug: strin
         {/* Related features */}
         {relatedFeatureData.length > 0 && (
           <section className="mt-12">
-            <h2 className="text-charcoal mb-4 font-mono text-sm font-semibold uppercase tracking-[0.08em]">
+            <h2 className="text-charcoal mb-4 font-mono text-sm font-semibold tracking-[0.08em] uppercase">
               Related Features
             </h2>
             <div className="flex flex-wrap gap-2">

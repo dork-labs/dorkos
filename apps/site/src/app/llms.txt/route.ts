@@ -99,7 +99,7 @@ function buildCapabilitiesSection(): string {
 
 function buildFeaturesSection(): string {
   return features
-    .map((f) => `- **${f.name}** (${f.category}): ${f.tagline}`)
+    .map((f) => `- **${f.name}** (${f.product}/${f.category}): ${f.tagline}`)
     .join('\n');
 }
 

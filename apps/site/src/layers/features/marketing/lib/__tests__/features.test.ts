@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { features, CATEGORY_LABELS, type FeatureCategory } from '../features';
+import { features, PRODUCT_LABELS, CATEGORY_LABELS, type FeatureProduct } from '../features';
 
 describe('features catalog data integrity', () => {
   it('all slugs are unique', () => {
@@ -42,11 +42,17 @@ describe('features catalog data integrity', () => {
     expect(featuredCount).toBeLessThanOrEqual(6);
   });
 
-  it('covers all 5 categories', () => {
-    const categories = new Set(features.map((f) => f.category));
-    const allCategories = Object.keys(CATEGORY_LABELS) as FeatureCategory[];
-    for (const cat of allCategories) {
-      expect(categories.has(cat)).toBe(true);
+  it('covers all 5 products', () => {
+    const products = new Set(features.map((f) => f.product));
+    const allProducts = Object.keys(PRODUCT_LABELS) as FeatureProduct[];
+    for (const prod of allProducts) {
+      expect(products.has(prod)).toBe(true);
+    }
+  });
+
+  it('all categories have valid labels', () => {
+    for (const feature of features) {
+      expect(CATEGORY_LABELS[feature.category]).toBeDefined();
     }
   });
 

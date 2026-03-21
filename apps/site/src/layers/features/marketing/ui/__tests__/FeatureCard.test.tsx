@@ -25,7 +25,8 @@ vi.mock('next/link', () => ({
 const gaFeature: Feature = {
   slug: 'pulse-scheduler',
   name: 'Pulse Scheduler',
-  category: 'pulse',
+  product: 'pulse',
+  category: 'scheduling',
   tagline: "Schedule agents to run on any cron — they work while you don't",
   description:
     'Stop manually triggering agent runs. Pulse lets you schedule any agent on any cron expression, with a visual builder, preset gallery, and full run history.',
@@ -40,7 +41,8 @@ const gaFeature: Feature = {
 const betaFeature: Feature = {
   slug: 'slack-adapter',
   name: 'Slack Adapter',
-  category: 'relay',
+  product: 'relay',
+  category: 'integration',
   tagline: 'Chat with your agents in Slack — no context switching required',
   description:
     'The Slack adapter connects DorkOS Relay to your Slack workspace. Send messages, receive agent updates, and approve tool calls without leaving Slack.',
@@ -55,7 +57,8 @@ const betaFeature: Feature = {
 const comingSoonFeature: Feature = {
   slug: 'future-feature',
   name: 'Future Feature',
-  category: 'core',
+  product: 'core',
+  category: 'infrastructure',
   tagline: 'Something great is coming',
   description:
     'A future feature that will be available soon. This is a placeholder for testing the coming-soon status badge rendering and display behavior.',
@@ -100,20 +103,37 @@ describe('FeatureCard', () => {
     });
   });
 
-  describe('category badge', () => {
-    it('renders the category label for pulse', () => {
+  describe('product badge', () => {
+    it('renders the product label for pulse', () => {
       render(<FeatureCard feature={gaFeature} />);
       expect(screen.getByText('Pulse')).toBeTruthy();
     });
 
-    it('renders the category label for relay', () => {
+    it('renders the product label for relay', () => {
       render(<FeatureCard feature={betaFeature} />);
       expect(screen.getByText('Relay')).toBeTruthy();
     });
 
-    it('renders the category label for core', () => {
+    it('renders the product label for core', () => {
       render(<FeatureCard feature={comingSoonFeature} />);
       expect(screen.getByText('Core')).toBeTruthy();
+    });
+  });
+
+  describe('category badge', () => {
+    it('renders the category label for scheduling', () => {
+      render(<FeatureCard feature={gaFeature} />);
+      expect(screen.getByText('Scheduling')).toBeTruthy();
+    });
+
+    it('renders the category label for integration', () => {
+      render(<FeatureCard feature={betaFeature} />);
+      expect(screen.getByText('Integration')).toBeTruthy();
+    });
+
+    it('renders the category label for infrastructure', () => {
+      render(<FeatureCard feature={comingSoonFeature} />);
+      expect(screen.getByText('Infrastructure')).toBeTruthy();
     });
   });
 
