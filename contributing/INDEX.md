@@ -47,7 +47,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `architecture.md`                | 2026-03-19    | Claude   | Added getLastMessageIds to Transport and AgentRuntime, sendMessage options parameter                    |
 | `design-system.md`               | 2026-03-19    | Claude   | Added FieldCard/FieldCardContent/CollapsibleFieldCard to Form Fields section                            |
 | `api-reference.md`               | 2026-03-19    | Claude   | Reconciled — route changes are bug fixes, no new API surface                                            |
-| `configuration.md`               | 2026-03-19    | Claude   | Reconciled — CLI UX improvements are internal, port convention already applied                          |
+| `configuration.md`               | 2026-03-21    | Claude   | Updated DORKOS_RELAY_ENABLED default false → true (enabled by default)                                  |
 | `interactive-tools.md`           | 2026-03-19    | Claude   | Added onDecided to QuestionPrompt, 409 INTERACTION_ALREADY_RESOLVED handling, force-complete safety net |
 | `keyboard-shortcuts.md`          | 2026-03-19    | Claude   | Reconciled — no matching changes                                                                        |
 | `obsidian-plugin-development.md` | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                   |
@@ -107,11 +107,11 @@ Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source c
 | `docs/changelog.mdx`                          | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/getting-started/installation.mdx`       | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/getting-started/quickstart.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
-| `docs/getting-started/configuration.mdx`      | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                              |
+| `docs/getting-started/configuration.mdx`      | 2026-03-21    | Claude   | Updated DORKOS_RELAY_ENABLED and DORKOS_PULSE_ENABLED defaults false → true                                       |
 | `docs/concepts/architecture.mdx`              | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/concepts/sessions.mdx`                  | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/concepts/transport.mdx`                 | 2026-03-19    | Claude   | Added getLastMessageIds to Sessions table                                                                         |
-| `docs/concepts/relay.mdx`                     | 2026-03-11    | Claude   | Reviewed — conceptually accurate, no updates needed                                                               |
+| `docs/concepts/relay.mdx`                     | 2026-03-21    | Claude   | Updated "opt-in" framing to "runs by default" (Relay enabled by default as of 88d1bb7e)                           |
 | `docs/concepts/mesh.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/integrations/sse-protocol.mdx`          | 2026-03-19    | Claude   | Added thinking_delta/tool_progress events, clientMessageId, lastMessageIds in done, 409 for interactive endpoints |
 | `docs/integrations/building-integrations.mdx` | 2026-03-09    | Claude   | Added uploadFiles() to Transport interface listing                                                                |

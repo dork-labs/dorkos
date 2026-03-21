@@ -96,7 +96,7 @@ Relay is the messaging layer that lets agents reach you on Telegram, notify each
       description:
         'Enable the Relay messaging layer for inter-agent communication. Adapter configuration lives in `~/.dork/config.json` under the `relay` key.',
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
   }}
 />
@@ -110,7 +110,7 @@ Pulse schedules agent tasks on a cron — independently, without keeping a termi
     DORKOS_PULSE_ENABLED: {
       description: 'Enable the Pulse scheduler for autonomous cron-based agent execution.',
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
   }}
 />

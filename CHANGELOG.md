@@ -21,18 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update docs for Relay/Pulse enabled-by-default change
 - Rename relay_query → relay_send_and_wait, relay_dispatch → relay_send_async
 - Use subject strings as mailbox directory names instead of SHA-256 hashes
 - Split feature category into product + category
 - Clean up routing migration — remove dead code, fix test/code consistency
+- Move scan line effect to chat input area and add subtle edge fade for cleaner visual separation
 
 ### Fixed
 
 - Enable Relay and Pulse by default on fresh installs
 - Correct llms.txt Feature Categories section format
 - Fix Stop hook hang, add auto-format on file write
-- Fix Stop hook hang, add auto-format on file write
-- Fix dashboard navigation — use router context in beforeLoad, suppress auto-select
 - Fix dashboard navigation — use router context in beforeLoad, suppress auto-select
 - Add messageIds to DoneEventSchema, export SubagentStatus, extract history helpers
 
