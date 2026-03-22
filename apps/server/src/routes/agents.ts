@@ -18,8 +18,16 @@ import {
   ResolveAgentsRequestSchema,
   CreateAgentRequestSchema,
   UpdateAgentRequestSchema,
+  UpdateAgentConventionsSchema,
 } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import {
+  buildSoulContent,
+  defaultSoulTemplate,
+  defaultNopeTemplate,
+} from '@dorkos/shared/convention-files';
+import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 
@@ -50,7 +58,12 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!manifest) {
         return res.status(404).json({ error: 'No agent registered at this path' });
       }
-      return res.json(manifest);
+
+      // Include convention file contents alongside manifest data
+      const soulContent = await readConventionFile(agentPath, 'SOUL.md');
+      const nopeContent = await readConventionFile(agentPath, 'NOPE.md');
+
+      return res.json({ ...manifest, soulContent, nopeContent });
     } catch (err) {
       if (err instanceof BoundaryError) {
         return res.status(403).json({ error: err.message, code: err.code });
@@ -125,6 +138,14 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
       await writeManifest(agentPath, manifest);
 
+      // Scaffold convention files with sensible defaults
+      const traitBlock = renderTraits(DEFAULT_TRAITS);
+      const soulContent = defaultSoulTemplate(manifest.name ?? 'agent', traitBlock);
+      const nopeContent = defaultNopeTemplate();
+
+      await writeConventionFile(agentPath, 'SOUL.md', soulContent);
+      await writeConventionFile(agentPath, 'NOPE.md', nopeContent);
+
       // ADR-0043: sync to Mesh DB cache (best-effort)
       try {
         await meshCore?.syncFromDisk(agentPath);
@@ -164,6 +185,18 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         return res.status(404).json({ error: 'No agent registered at this path' });
       }
 
+      // Write convention files if provided alongside manifest fields
+      const conventionsResult = UpdateAgentConventionsSchema.safeParse(req.body);
+      const conventionUpdates = conventionsResult.success ? conventionsResult.data : {};
+
+      if (conventionUpdates.soulContent !== undefined) {
+        await writeConventionFile(agentPath, 'SOUL.md', conventionUpdates.soulContent);
+      }
+      if (conventionUpdates.nopeContent !== undefined) {
+        await writeConventionFile(agentPath, 'NOPE.md', conventionUpdates.nopeContent);
+      }
+
+      // traits and conventions go into agent.json via the manifest update
       const updated: AgentManifest = { ...existing, ...result.data };
       await writeManifest(agentPath, updated);
 
@@ -180,6 +213,54 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         return res.status(403).json({ error: err.message, code: err.code });
       }
       logger.error('[agents] PATCH /current failed', { err });
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // POST /api/agents/current/migrate-persona?path=/path/to/project
+  // Migrates legacy persona field to SOUL.md convention file
+  router.post('/current/migrate-persona', async (req, res) => {
+    try {
+      const agentPath = req.query.path as string;
+      if (!agentPath) {
+        return res.status(400).json({ error: 'path query parameter required' });
+      }
+      await validateBoundary(agentPath);
+
+      const manifest = await readManifest(agentPath);
+      if (!manifest) {
+        return res.status(404).json({ error: 'No agent registered at this path' });
+      }
+
+      // Check if already migrated
+      const existingSoul = await readConventionFile(agentPath, 'SOUL.md');
+      if (existingSoul) {
+        return res.json({ migrated: false, reason: 'SOUL.md already exists' });
+      }
+
+      const { persona } = manifest as { persona?: string };
+      if (!persona) {
+        return res.json({ migrated: false, reason: 'No persona to migrate' });
+      }
+
+      // Migrate persona text to SOUL.md custom prose
+      const traits = (manifest as { traits?: Record<string, number> }).traits;
+      const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
+      const soulContent = buildSoulContent(traitBlock, persona);
+      await writeConventionFile(agentPath, 'SOUL.md', soulContent);
+
+      // Scaffold NOPE.md if missing
+      const existingNope = await readConventionFile(agentPath, 'NOPE.md');
+      if (!existingNope) {
+        await writeConventionFile(agentPath, 'NOPE.md', defaultNopeTemplate());
+      }
+
+      return res.json({ migrated: true });
+    } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      logger.error('[agents] POST /current/migrate-persona failed', { err });
       return res.status(500).json({ error: 'Internal server error' });
     }
   });

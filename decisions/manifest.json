@@ -1,7 +1,79 @@
 {
   "version": 1,
-  "nextNumber": 172,
+  "nextNumber": 180,
   "decisions": [
+    {
+      "number": 179,
+      "slug": "centralized-adapter-stream-manager",
+      "title": "Centralized AdapterStreamManager with AsyncIterable Streaming",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "chat-sdk-relay-adapter-refactor",
+      "specSlug": "chat-sdk-relay-adapter-refactor"
+    },
+    {
+      "number": 178,
+      "slug": "platform-client-interface-for-relay-adapters",
+      "title": "PlatformClient Interface for Relay Adapters",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "chat-sdk-relay-adapter-refactor",
+      "specSlug": "chat-sdk-relay-adapter-refactor"
+    },
+    {
+      "number": 177,
+      "slug": "standalone-channel-plugin-as-mcp-server-process",
+      "title": "Standalone Channel Plugin as MCP Server Process",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "a2a-channels-interoperability",
+      "specSlug": "a2a-channels-interoperability"
+    },
+    {
+      "number": 176,
+      "slug": "use-a2a-js-sdk-for-a2a-protocol-implementation",
+      "title": "Use @a2a-js/sdk for A2A Protocol Implementation",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "a2a-channels-interoperability",
+      "specSlug": "a2a-channels-interoperability"
+    },
+    {
+      "number": 175,
+      "slug": "use-a2a-protocol-as-external-gateway-only",
+      "title": "Use A2A Protocol as External Gateway Only",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "a2a-channels-interoperability",
+      "specSlug": "a2a-channels-interoperability"
+    },
+    {
+      "number": 174,
+      "slug": "per-request-file-reads-for-convention-files",
+      "title": "Per-Request File Reads for Convention Files",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "agent-personality-convention-files",
+      "specSlug": "agent-personality-convention-files"
+    },
+    {
+      "number": 173,
+      "slug": "static-template-rendering-for-personality-traits",
+      "title": "Static Template Rendering for Personality Traits",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "agent-personality-convention-files",
+      "specSlug": "agent-personality-convention-files"
+    },
+    {
+      "number": 172,
+      "slug": "adopt-soul-nope-agent-convention-files",
+      "title": "Adopt SOUL.md and NOPE.md as Agent Convention Files",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "agent-personality-convention-files",
+      "specSlug": "agent-personality-convention-files"
+    },
     {
       "number": 171,
       "slug": "enable-relay-and-pulse-by-default",

@@ -258,6 +258,23 @@ export interface AgentRuntime {
    */
   getInternalSessionId(sessionId: string): string | undefined;
 
+  // --- Conventions (optional) ---
+
+  /**
+   * Apply personality and safety convention content to an agent session.
+   * Called by the server before session start. Each runtime implements
+   * its own injection mechanism.
+   *
+   * @param persona - Rendered SOUL.md content (traits + custom prose), or null if disabled
+   * @param safetyBoundaries - NOPE.md content, or null if disabled
+   * @param agentPath - Absolute path to the agent's working directory
+   */
+  applyConventions?(
+    persona: string | null,
+    safetyBoundaries: string | null,
+    agentPath: string
+  ): Promise<void>;
+
   // --- Tool server (optional) ---
 
   /** Return the MCP tool server config, if this runtime supports it. */

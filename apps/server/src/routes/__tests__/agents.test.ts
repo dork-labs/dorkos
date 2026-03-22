@@ -23,6 +23,27 @@ vi.mock('@dorkos/shared/manifest', () => ({
   writeManifest: (...args: unknown[]) => mockWriteManifest(...args),
 }));
 
+const mockReadConventionFile = vi.fn().mockResolvedValue(null);
+const mockWriteConventionFile = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('@dorkos/shared/convention-files', () => ({
+  readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
+  writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  buildSoulContent: vi.fn(
+    (traitBlock: string, prose: string) =>
+      `<!-- TRAITS:START -->\n${traitBlock}\n<!-- TRAITS:END -->\n\n${prose}`
+  ),
+  defaultSoulTemplate: vi.fn(
+    (name: string) => `<!-- TRAITS:START -->\ntraits\n<!-- TRAITS:END -->\n\nYou are ${name}`
+  ),
+  defaultNopeTemplate: vi.fn(() => '# Safety Boundaries'),
+}));
+
+vi.mock('@dorkos/shared/trait-renderer', () => ({
+  renderTraits: vi.fn(() => 'rendered-traits'),
+  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+}));
+
 vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'MOCK_ULID_001'),
 }));

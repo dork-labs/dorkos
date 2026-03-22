@@ -1,7 +1,28 @@
 {
   "version": 1,
-  "nextNumber": 159,
+  "nextNumber": 162,
   "specs": [
+    {
+      "number": 161,
+      "slug": "chat-sdk-relay-adapter-refactor",
+      "title": "Chat SDK Relay Adapter Refactor",
+      "created": "2026-03-22",
+      "status": "specified"
+    },
+    {
+      "number": 160,
+      "slug": "a2a-channels-interoperability",
+      "title": "A2A & Channels Interoperability Layer",
+      "created": "2026-03-21",
+      "status": "ideation"
+    },
+    {
+      "number": 159,
+      "slug": "agent-personality-convention-files",
+      "title": "Agent Personality & Convention Files",
+      "created": "2026-03-21",
+      "status": "ideation"
+    },
     {
       "number": 158,
       "slug": "relay-subject-folder-names",

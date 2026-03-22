@@ -75,6 +75,31 @@ export const EnabledToolGroupsSchema = z
 
 export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
 
+// === Agent Personality ===
+
+/** Personality trait levels (1-5 scale, default 3 = Balanced) */
+export const TraitsSchema = z
+  .object({
+    tone: z.number().int().min(1).max(5).default(3),
+    autonomy: z.number().int().min(1).max(5).default(3),
+    caution: z.number().int().min(1).max(5).default(3),
+    communication: z.number().int().min(1).max(5).default(3),
+    creativity: z.number().int().min(1).max(5).default(3),
+  })
+  .openapi('Traits');
+
+export type Traits = z.infer<typeof TraitsSchema>;
+
+/** Convention file injection toggles */
+export const ConventionsSchema = z
+  .object({
+    soul: z.boolean().default(true),
+    nope: z.boolean().default(true),
+  })
+  .openapi('Conventions');
+
+export type Conventions = z.infer<typeof ConventionsSchema>;
+
 // === Agent Manifest ===
 
 export const AgentManifestSchema = z
@@ -96,6 +121,8 @@ export const AgentManifestSchema = z
     personaEnabled: z.boolean().default(true).openapi({
       description: 'Whether persona text is injected into system prompt',
     }),
+    traits: TraitsSchema.optional(),
+    conventions: ConventionsSchema.optional(),
     color: z.string().optional().openapi({
       description: 'CSS color override for visual identity (e.g., "#6366f1")',
       example: '#6366f1',
@@ -252,6 +279,8 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   namespace: true,
   persona: true,
   personaEnabled: true,
+  traits: true,
+  conventions: true,
   color: true,
   icon: true,
   enabledToolGroups: true,
@@ -260,6 +289,18 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   .openapi('UpdateAgentRequest');
 
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
+
+/** Request body for PATCH /api/mesh/agents/:id/conventions — update convention file content and personality toggles. */
+export const UpdateAgentConventionsSchema = z
+  .object({
+    soulContent: z.string().max(4000).optional(),
+    nopeContent: z.string().max(2000).optional(),
+    traits: TraitsSchema.optional(),
+    conventions: ConventionsSchema.optional(),
+  })
+  .openapi('UpdateAgentConventions');
+
+export type UpdateAgentConventions = z.infer<typeof UpdateAgentConventionsSchema>;
 
 /** Request body for PUT /api/mesh/topology/access */
 export const UpdateAccessRuleRequestSchema = z

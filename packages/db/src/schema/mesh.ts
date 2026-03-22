@@ -26,6 +26,8 @@ export const agents = sqliteTable('agents', {
   lastSeenEvent: text('last_seen_event'),
   persona: text('persona'),
   personaEnabled: integer('persona_enabled', { mode: 'boolean' }).notNull().default(true),
+  traitsJson: text('traits_json'), // JSON string of Traits — null = no traits configured
+  conventionsJson: text('conventions_json'), // JSON string of Conventions — null = no conventions configured
   color: text('color'),
   icon: text('icon'),
   registeredAt: text('registered_at').notNull(),

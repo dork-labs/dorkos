@@ -2,6 +2,13 @@ import os from 'node:os';
 import { getGitStatus } from '../../core/git-status.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
+import {
+  extractCustomProse,
+  buildSoulContent,
+  TRAIT_SECTION_START,
+} from '@dorkos/shared/convention-files';
+import { readConventionFile } from '@dorkos/shared/convention-files-io';
+import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
@@ -320,13 +327,15 @@ async function buildGitBlock(cwd: string): Promise<string> {
 }
 
 /**
- * Build agent identity and persona blocks from `.dork/agent.json`.
+ * Build agent identity, persona, and safety boundary blocks from `.dork/` convention files.
  *
- * When a manifest exists, always includes `<agent_identity>` (informational).
- * Includes `<agent_persona>` only when `personaEnabled` is true and `persona`
- * text is non-empty.
+ * Reads `agent.json` for identity data and trait values, `SOUL.md` for personality,
+ * and `NOPE.md` for safety boundaries. Falls back to the legacy `persona` field
+ * when no SOUL.md exists (pre-migration agents).
  *
- * @param cwd - Working directory to check for agent manifest
+ * Injection order: identity -> persona (SOUL.md) -> safety boundaries (NOPE.md).
+ *
+ * @param cwd - Working directory to check for agent manifest and convention files
  * @returns XML block string, or empty string if no manifest
  */
 async function buildAgentBlock(cwd: string): Promise<string> {
@@ -334,11 +343,14 @@ async function buildAgentBlock(cwd: string): Promise<string> {
   if (!manifest) return '';
 
   // Zod v4 + openapi extension drops persona fields from inferred type
-  const { persona, personaEnabled } = manifest as {
+  const { persona, personaEnabled, traits, conventions } = manifest as {
     persona?: string;
     personaEnabled?: boolean;
+    traits?: Record<string, number>;
+    conventions?: { soul?: boolean; nope?: boolean };
   };
 
+  // --- Identity block ---
   const identityLines = [
     `Name: ${manifest.name}`,
     `ID: ${manifest.id}`,
@@ -348,8 +360,34 @@ async function buildAgentBlock(cwd: string): Promise<string> {
 
   const blocks = [`<agent_identity>\n${identityLines.join('\n')}\n</agent_identity>`];
 
-  if (personaEnabled !== false && persona) {
-    blocks.push(`<agent_persona>\n${persona}\n</agent_persona>`);
+  // --- Persona block (SOUL.md or legacy persona) ---
+  const soulEnabled = conventions?.soul !== false;
+
+  if (soulEnabled) {
+    let soulContent = await readConventionFile(cwd, 'SOUL.md');
+
+    if (soulContent) {
+      // If SOUL.md has a trait section, regenerate it with current trait values
+      if (soulContent.includes(TRAIT_SECTION_START)) {
+        const customProse = extractCustomProse(soulContent);
+        const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
+        soulContent = buildSoulContent(traitBlock, customProse);
+      }
+      blocks.push(`<agent_persona>\n${soulContent}\n</agent_persona>`);
+    } else if (personaEnabled !== false && persona) {
+      // Legacy fallback: use persona field
+      blocks.push(`<agent_persona>\n${persona}\n</agent_persona>`);
+    }
+  }
+
+  // --- Safety boundaries block (NOPE.md) ---
+  const nopeEnabled = conventions?.nope !== false;
+
+  if (nopeEnabled) {
+    const nopeContent = await readConventionFile(cwd, 'NOPE.md');
+    if (nopeContent) {
+      blocks.push(`<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
+    }
   }
 
   return blocks.join('\n\n');

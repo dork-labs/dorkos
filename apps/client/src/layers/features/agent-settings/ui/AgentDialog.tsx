@@ -18,9 +18,9 @@ import {
   NavigationLayoutPanel,
   NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, Traits, Conventions } from '@dorkos/shared/mesh-schemas';
 import { IdentityTab } from './IdentityTab';
-import { PersonaTab } from './PersonaTab';
+import { PersonalityTab } from './PersonalityTab';
 import { CapabilitiesTab } from './CapabilitiesTab';
 import { ConnectionsTab } from './ConnectionsTab';
 
@@ -32,7 +32,7 @@ interface AgentDialogProps {
 
 /**
  * Dialog shell for agent configuration with sidebar navigation.
- * Four sections: Identity, Persona, Capabilities, and Connections.
+ * Four sections: Identity, Personality, Capabilities, and Connections.
  */
 export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProps) {
   const [activeTab, setActiveTab] = useState('identity');
@@ -42,6 +42,23 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
   const handleUpdate = useCallback(
     (updates: Partial<AgentManifest>) => {
       updateAgent.mutate({ path: projectPath, updates });
+    },
+    [projectPath, updateAgent]
+  );
+
+  const handlePersonalityUpdate = useCallback(
+    (updates: {
+      traits?: Traits;
+      conventions?: Conventions;
+      soulContent?: string;
+      nopeContent?: string;
+    }) => {
+      // Pass manifest-level fields through; soulContent/nopeContent are handled
+      // by the server's convention file PATCH (task 2.2).
+      updateAgent.mutate({
+        path: projectPath,
+        updates: updates as Partial<AgentManifest>,
+      });
     },
     [projectPath, updateAgent]
   );
@@ -94,8 +111,8 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
               <NavigationLayoutItem value="identity" icon={User}>
                 Identity
               </NavigationLayoutItem>
-              <NavigationLayoutItem value="persona" icon={Sparkles}>
-                Persona
+              <NavigationLayoutItem value="personality" icon={Sparkles}>
+                Personality
               </NavigationLayoutItem>
               <NavigationLayoutItem value="capabilities" icon={Zap}>
                 Capabilities
@@ -113,10 +130,19 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
                 </div>
               </NavigationLayoutPanel>
 
-              <NavigationLayoutPanel value="persona">
+              <NavigationLayoutPanel value="personality">
                 <div className="space-y-4">
-                  <NavigationLayoutPanelHeader>Persona</NavigationLayoutPanelHeader>
-                  <PersonaTab agent={agent} onUpdate={handleUpdate} />
+                  <NavigationLayoutPanelHeader>Personality</NavigationLayoutPanelHeader>
+                  <PersonalityTab
+                    agent={agent}
+                    soulContent={
+                      (agent as AgentManifest & { soulContent?: string | null }).soulContent ?? null
+                    }
+                    nopeContent={
+                      (agent as AgentManifest & { nopeContent?: string | null }).nopeContent ?? null
+                    }
+                    onUpdate={handlePersonalityUpdate}
+                  />
                 </div>
               </NavigationLayoutPanel>
 

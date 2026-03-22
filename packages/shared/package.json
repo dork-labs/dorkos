@@ -43,6 +43,18 @@
     "./agent-runtime": {
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
+    },
+    "./convention-files": {
+      "types": "./src/convention-files.ts",
+      "default": "./dist/convention-files.js"
+    },
+    "./convention-files-io": {
+      "types": "./src/convention-files-io.ts",
+      "default": "./dist/convention-files-io.js"
+    },
+    "./trait-renderer": {
+      "types": "./src/trait-renderer.ts",
+      "default": "./dist/trait-renderer.js"
     }
   },
   "scripts": {
