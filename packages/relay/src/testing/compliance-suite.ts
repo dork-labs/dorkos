@@ -162,6 +162,46 @@ export function runAdapterComplianceSuite(options: ComplianceSuiteOptions): void
       }
     });
 
+    // --- StreamEvent handling ---
+
+    it('deliver() does not send raw JSON for text_delta StreamEvents', async () => {
+      await adapter.start(relay);
+      const envelope = createMockRelayEnvelope({
+        subject: deliverSubject,
+        from: 'relay.agents.compliance-test',
+        payload: { type: 'text_delta', data: { text: 'chunk' } },
+      });
+      const result = await adapter.deliver(deliverSubject, envelope);
+      // Must succeed (buffered or delivered) — must not fail with serialization errors
+      expect(result).toBeDefined();
+      expect(result.success).toBe(true);
+    });
+
+    it('deliver() succeeds for done StreamEvents', async () => {
+      await adapter.start(relay);
+      const envelope = createMockRelayEnvelope({
+        subject: deliverSubject,
+        from: 'relay.agents.compliance-test',
+        payload: { type: 'done', data: {} },
+      });
+      const result = await adapter.deliver(deliverSubject, envelope);
+      expect(result).toBeDefined();
+      expect(result.success).toBe(true);
+    });
+
+    it('deliver() silently drops unrecognized StreamEvent types', async () => {
+      await adapter.start(relay);
+      const envelope = createMockRelayEnvelope({
+        subject: deliverSubject,
+        from: 'relay.agents.compliance-test',
+        payload: { type: 'session_status', data: { status: 'active' } },
+      });
+      const result = await adapter.deliver(deliverSubject, envelope);
+      // Must succeed without error — unrecognized types are silently dropped
+      expect(result).toBeDefined();
+      expect(result.success).toBe(true);
+    });
+
     // --- deliverStream() shape (optional) ---
 
     it('deliverStream() is a function if present', () => {

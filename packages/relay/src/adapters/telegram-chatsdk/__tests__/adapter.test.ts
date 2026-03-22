@@ -216,6 +216,128 @@ describe('ChatSdkTelegramAdapter', () => {
     expect(raw).toContain('bash');
   });
 
+  // --- StreamEvent handling ---
+
+  it('buffers text_delta events and flushes on done', async () => {
+    await adapter.start(relay);
+
+    const delta1 = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'text_delta', data: { text: 'Hello ' } },
+    });
+    const delta2 = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'text_delta', data: { text: 'world!' } },
+    });
+    const done = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'done', data: {} },
+    });
+
+    const subject = 'relay.human.telegram-chatsdk.test-chatsdk.12345';
+
+    await adapter.deliver(subject, delta1);
+    await adapter.deliver(subject, delta2);
+    // No message sent yet — still buffering
+    expect(mockPostMessage).not.toHaveBeenCalled();
+
+    await adapter.deliver(subject, done);
+    // Now the buffer should have flushed
+    expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    const [threadId, { raw }] = mockPostMessage.mock.calls[0] as [string, { raw: string }];
+    expect(threadId).toBe('12345');
+    expect(raw).toContain('Hello');
+    expect(raw).toContain('world');
+  });
+
+  it('silently drops session_status StreamEvents without sending', async () => {
+    await adapter.start(relay);
+
+    const statusEvent = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'session_status', data: { status: 'active' } },
+    });
+
+    const result = await adapter.deliver(
+      'relay.human.telegram-chatsdk.test-chatsdk.12345',
+      statusEvent
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockPostMessage).not.toHaveBeenCalled();
+  });
+
+  it('flushes buffer with error message on error StreamEvent', async () => {
+    await adapter.start(relay);
+
+    const subject = 'relay.human.telegram-chatsdk.test-chatsdk.12345';
+
+    const delta = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'text_delta', data: { text: 'Partial response' } },
+    });
+    const error = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'error', data: { message: 'Something went wrong' } },
+    });
+
+    await adapter.deliver(subject, delta);
+    expect(mockPostMessage).not.toHaveBeenCalled();
+
+    await adapter.deliver(subject, error);
+    expect(mockPostMessage).toHaveBeenCalledTimes(1);
+    const [, { raw }] = mockPostMessage.mock.calls[0] as [string, { raw: string }];
+    expect(raw).toContain('Partial response');
+    expect(raw).toContain('Something went wrong');
+  });
+
+  it('flushes buffered text before approval_required event', async () => {
+    await adapter.start(relay);
+
+    const subject = 'relay.human.telegram-chatsdk.test-chatsdk.12345';
+
+    const delta = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'text_delta', data: { text: 'Before approval' } },
+    });
+    const approval = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'call-002',
+          toolName: 'Write',
+          input: JSON.stringify({ path: '/tmp/test.txt' }),
+          timeoutMs: 60_000,
+        },
+      },
+    });
+
+    await adapter.deliver(subject, delta);
+    await adapter.deliver(subject, approval);
+
+    // Two messages: flushed buffer + approval prompt
+    expect(mockPostMessage).toHaveBeenCalledTimes(2);
+    const [, first] = mockPostMessage.mock.calls[0] as [string, { raw: string }];
+    const [, second] = mockPostMessage.mock.calls[1] as [string, { raw: string }];
+    expect(first.raw).toContain('Before approval');
+    expect(second.raw).toContain('Tool Approval Required');
+  });
+
+  it('done with empty buffer succeeds without posting', async () => {
+    await adapter.start(relay);
+
+    const done = createMockRelayEnvelope({
+      from: 'relay.agents.some-agent',
+      payload: { type: 'done', data: {} },
+    });
+
+    const result = await adapter.deliver('relay.human.telegram-chatsdk.test-chatsdk.12345', done);
+
+    expect(result.success).toBe(true);
+    expect(mockPostMessage).not.toHaveBeenCalled();
+  });
+
   // --- deliverStream ---
 
   it('deliverStream returns error when not started', async () => {

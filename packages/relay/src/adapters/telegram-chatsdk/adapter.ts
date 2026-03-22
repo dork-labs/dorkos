@@ -18,6 +18,7 @@ import type { RelayPublisher, AdapterContext, DeliveryResult } from '../../types
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { handleInboundMessage } from './inbound.js';
 import { deliverMessage, deliverStream as deliverStreamMsg } from './outbound.js';
+import type { ResponseBuffer } from './outbound.js';
 import { ChatSdkTelegramThreadIdCodec } from '../../lib/thread-id.js';
 
 /** Configuration for the Chat SDK Telegram adapter. */
@@ -147,6 +148,8 @@ class MemoryStateAdapter implements StateAdapter {
 export class ChatSdkTelegramAdapter extends BaseRelayAdapter {
   private readonly config: ChatSdkTelegramAdapterConfig;
   private readonly codec: ChatSdkTelegramThreadIdCodec;
+  /** Per-chat response buffers for StreamEvent accumulation. */
+  private readonly responseBuffers = new Map<string, ResponseBuffer>();
   private chat: Chat | null = null;
   /** Underlying Chat SDK TelegramAdapter, stored separately for direct postMessage access. */
   private telegramAdapter: ChatSdkTelegramAdapterImpl | null = null;
@@ -249,6 +252,7 @@ export class ChatSdkTelegramAdapter extends BaseRelayAdapter {
       this.chat = null;
       this.telegramAdapter = null;
     }
+    this.responseBuffers.clear();
   }
 
   /**
@@ -275,6 +279,7 @@ export class ChatSdkTelegramAdapter extends BaseRelayAdapter {
       subject,
       envelope,
       this.telegramAdapter,
+      this.responseBuffers,
       this.makeOutboundCallbacks(),
       this.logger,
       this.codec
