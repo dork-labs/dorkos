@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.20.0] - 2026-03-22
+
+> Adapter ecosystem expansion — Chat SDK Telegram integration, A2A gateway spec, and agent personality conventions
+
+### Added
+
 - Improve adapter binding validation, routing, and instance-aware codecs
 - Add A2A external gateway spec and drop Channels from scope
 - Add Chat SDK Telegram adapter and PlatformClient architecture
@@ -25,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Eliminate visible scroll animation on session load
 - Improve binding row UX with consistent icons and clearer overflow
 - Add missing traits_json and conventions_json migration
+
 ---
 
 ## [0.19.0] - 2026-03-21

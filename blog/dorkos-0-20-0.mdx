@@ -1,0 +1,45 @@
+---
+title: DorkOS 0.20.0
+description: Adapter ecosystem expansion with Chat SDK Telegram integration, A2A gateway specification, and agent personality conventions.
+date: 2026-03-22
+author: DorkOS Team
+category: release
+tags: [release, relay, adapters, telegram, a2a, personality]
+---
+
+DorkOS 0.20.0 expands the adapter ecosystem with a production-ready Chat SDK Telegram integration, lays the groundwork for inter-agent communication via A2A, and introduces convention files for shaping agent personality.
+
+## Highlights
+
+**Chat SDK Telegram Adapter** - Connect agents to Telegram with full StreamEvent buffering, thread ID normalization, and the new PlatformClient architecture. Messages arrive as clean formatted text, not raw JSON.
+
+**A2A External Gateway** - New specification for Agent-to-Agent protocol integration, enabling DorkOS agents to communicate beyond closed system boundaries.
+
+**Agent Personality Conventions** - Define agent behavior through SOUL.md (traits, tone, values) and NOPE.md (hard boundaries) convention files that inject into the system prompt.
+
+## All Changes
+
+### Added
+
+- Improve adapter binding validation, routing, and instance-aware codecs
+- Add A2A external gateway spec and drop Channels from scope
+- Add Chat SDK Telegram adapter and PlatformClient architecture
+- Add SOUL.md and NOPE.md convention files for agent personality
+
+### Changed
+
+- Reconcile guides after chat-sdk-relay-adapter-refactor spec
+
+### Fixed
+
+- Add StreamEvent buffering to Chat SDK Telegram adapter
+- Normalize Chat SDK thread IDs before relay subject encoding
+- Eliminate visible scroll animation on session load
+- Improve binding row UX with consistent icons and clearer overflow
+- Add missing traits_json and conventions_json migration
+
+## Install / Update
+
+```
+npm install -g dorkos@0.20.0
+```

@@ -5,6 +5,29 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-03-22
+
+> Adapter ecosystem expansion — Chat SDK Telegram integration, A2A gateway spec, and agent personality conventions
+
+### Added
+
+- Improve adapter binding validation, routing, and instance-aware codecs
+- Add A2A external gateway spec and drop Channels from scope
+- Add Chat SDK Telegram adapter and PlatformClient architecture
+- Add SOUL.md and NOPE.md convention files for agent personality
+
+### Changed
+
+- Reconcile guides after chat-sdk-relay-adapter-refactor spec
+
+### Fixed
+
+- Add StreamEvent buffering to Chat SDK Telegram adapter
+- Normalize Chat SDK thread IDs before relay subject encoding
+- Eliminate visible scroll animation on session load
+- Improve binding row UX with consistent icons and clearer overflow
+- Add missing traits_json and conventions_json migration
+
 ## [0.19.0] - 2026-03-21
 
 > Fleet management dashboard — dedicated agents page, mission control, and client-side routing
