@@ -50,6 +50,13 @@
       "when": 1773871887093,
       "tag": "0006_cooing_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1774188665966,
+      "tag": "0007_plain_satana",
+      "breakpoints": true
     }
   ]
 }

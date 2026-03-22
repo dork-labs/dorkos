@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add missing traits_json and conventions_json migration
 ---
 
 ## [0.19.0] - 2026-03-21
