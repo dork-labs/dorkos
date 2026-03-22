@@ -74,10 +74,12 @@ Access rules live in `access-rules.json` inside the Relay data directory and are
 
 ## Adapters
 
-Relay connects to external platforms through **adapters** — plugins that bridge external channels into the Relay subject hierarchy. DorkOS ships with three built-in adapters:
+Relay connects to external platforms through **adapters** — plugins that bridge external channels into the Relay subject hierarchy. DorkOS ships with five built-in adapters:
 
 - **Claude Code adapter** — Routes messages to Claude sessions. When a message arrives on `relay.agent.*`, this adapter creates or resumes a Claude session and passes the message as a prompt. Response chunks flow back to the sender's reply-to subject.
-- **Telegram adapter** — Connects a Telegram bot to the bus. Inbound messages publish to `relay.human.telegram.{chatId}`. Outbound messages on matching subjects are delivered to the chat.
+- **Telegram adapter** — Connects a Telegram bot to the bus via grammy. Inbound messages publish to `relay.human.telegram.{chatId}`. Outbound messages on matching subjects are delivered to the chat. Supports real-time streaming via `sendMessageDraft`.
+- **Telegram Chat SDK adapter** — An experimental alternative Telegram adapter backed by the Chat SDK. Same bot token, different integration path. Useful as a reference for building Chat SDK-backed adapters.
+- **Slack adapter** — Bridges Slack workspaces into Relay using Socket Mode. Supports streaming responses, threading, and typing indicators.
 - **Webhook adapter** — A generic HTTP webhook bridge with HMAC-SHA256 signature verification for both directions.
 
 You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters.

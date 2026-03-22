@@ -13,7 +13,7 @@ Relay adapters bridge external communication platforms into DorkOS messaging. Wh
 
 ## The RelayAdapter Interface
 
-Every adapter implements four methods and three readonly properties:
+Every adapter implements four required methods, one optional method, and three readonly properties:
 
 ```typescript
 interface RelayAdapter {
@@ -29,6 +29,14 @@ interface RelayAdapter {
     context?: AdapterContext
   ): Promise<DeliveryResult>;
   getStatus(): AdapterStatus;
+
+  // Optional — streaming delivery
+  deliverStream?(
+    subject: string,
+    threadId: string,
+    stream: AsyncIterable<string>,
+    context?: AdapterContext
+  ): Promise<DeliveryResult>;
 }
 ```
 
@@ -44,6 +52,7 @@ The four methods handle the adapter lifecycle:
 - **stop()** — Disconnect gracefully and clean up resources.
 - **deliver()** — Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope.
 - **getStatus()** — Return a snapshot of your adapter's runtime state for the UI.
+- **deliverStream()** — Optional. When present, the `AdapterStreamManager` aggregates `text_delta` events into an `AsyncIterable<string>` and calls this method instead of sending per-event `deliver()` calls. This enables real-time streaming to platforms that support progressive message updates.
 
 ## Adapter Lifecycle
 
@@ -422,6 +431,25 @@ To use this adapter, add it to `~/.dork/relay/adapters.json`:
   ]
 }
 ```
+
+## Advanced Architecture
+
+As of Relay API v0.2.0, three additional abstractions help reduce boilerplate across adapters:
+
+- **PlatformClient** — Separates platform-specific communication (posting messages, editing, streaming, typing indicators) from relay orchestration (subject routing, envelope handling, status tracking). The adapter owns a `PlatformClient` and delegates platform API calls to it. The built-in Telegram and Slack adapters use `GrammyPlatformClient` and `SlackPlatformClient` respectively.
+
+- **AdapterStreamManager** — Sits in the delivery pipeline and intercepts `StreamEvent` payloads. For adapters that implement `deliverStream()`, it aggregates `text_delta` events into `AsyncIterable<string>` streams, handles `done`/`error`/`approval_required` lifecycle events, and includes TTL reaping for abandoned streams. Adapters without `deliverStream()` continue receiving per-event `deliver()` calls unchanged.
+
+- **ThreadIdCodec** — Standardizes how adapters encode and decode platform thread IDs to and from relay subjects. Each codec defines an `encode(platformId, channelType)` and `decode(subject)` method, replacing per-adapter `buildSubject()`/`extractId()` functions.
+
+For implementation details, see the [internal relay-adapters guide](https://github.com/anthropics/dork-os/blob/main/contributing/relay-adapters.md).
+
+<Callout type="info">
+  The Chat SDK Telegram adapter (`telegram-chatsdk`) demonstrates how to build an adapter backed by
+  the [Chat SDK](https://github.com/anthropics/chat) instead of a platform-native library. See its
+  source at `packages/relay/src/adapters/telegram-chatsdk/` for a reference implementation using all
+  three abstractions.
+</Callout>
 
 ## Security Considerations
 

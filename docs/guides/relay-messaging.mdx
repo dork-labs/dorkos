@@ -25,36 +25,16 @@ When Relay is enabled, it takes over the standard session messaging path. Instea
 
 ## Enabling Relay
 
-<Steps>
-<Step>
-### Set the environment variable
-
-Add `DORKOS_RELAY_ENABLED=true` to your `.env` file or export it:
-
-```bash
-export DORKOS_RELAY_ENABLED=true
-```
-
-</Step>
-
-<Step>
-### Start DorkOS
-
-```bash
-dorkos
-```
+Relay is enabled by default on fresh installs. When DorkOS starts, you should see:
 
 ```
-DorkOS server listening on port 4242 // [!code highlight]
-Relay message bus enabled // [!code highlight]
+DorkOS server listening on port 4242
+Relay message bus enabled
 ```
 
 Relay creates its data directory at `~/.dork/relay/` on first start.
 
-</Step>
-
-<Step>
-### Verify with the config endpoint
+To verify, check the config endpoint:
 
 ```bash
 curl http://localhost:4242/api/config
@@ -62,12 +42,9 @@ curl http://localhost:4242/api/config
 
 The response includes `relay.enabled: true` when the subsystem is active.
 
-</Step>
-</Steps>
-
 <Callout type="info">
-  Relay is fully opt-in. When `DORKOS_RELAY_ENABLED` is not set or is `false`, all Relay routes
-  return 404 and session messaging uses the direct Agent SDK call. The Maildir files and SQLite
+  To disable Relay, set `DORKOS_RELAY_ENABLED=false` in your `.env` file. All Relay routes will
+  return 404 and session messaging will use the direct Agent SDK call. The Maildir files and SQLite
   index persist between restarts — you can toggle Relay without losing data.
 </Callout>
 
@@ -161,7 +138,7 @@ curl -X POST http://localhost:4242/api/relay/messages \
 
 ## Built-in Adapters
 
-Adapters bridge external platforms into the Relay subject hierarchy. DorkOS ships with three built-in adapters, configured through `~/.dork/relay/adapters.json`.
+Adapters bridge external platforms into the Relay subject hierarchy. DorkOS ships with five built-in adapters, configured through `~/.dork/relay/adapters.json`.
 
 ### Claude Code Adapter
 
@@ -188,7 +165,7 @@ The Claude Code adapter is enabled by default when Relay starts. It subscribes t
 
 ### Telegram Adapter
 
-The Telegram adapter connects a Telegram bot to the Relay bus. Inbound messages from Telegram are published to `relay.human.telegram.{chatId}`, and outbound messages on matching subjects are delivered back to the chat.
+The Telegram adapter connects a Telegram bot to the Relay bus using grammy. Inbound messages from Telegram are published to `relay.human.telegram.{chatId}`, and outbound messages on matching subjects are delivered back to the chat. Supports real-time streaming via Telegram's `sendMessageDraft` API.
 
 ```json
 {
@@ -198,6 +175,43 @@ The Telegram adapter connects a Telegram bot to the Relay bus. Inbound messages 
   "enabled": true,
   "config": {
     "token": "123456:ABC-DEF..."
+  }
+}
+```
+
+### Telegram Chat SDK Adapter
+
+An experimental alternative Telegram adapter backed by the [Chat SDK](https://github.com/anthropics/chat). Uses the same BotFather token but integrates via Chat SDK's adapter abstraction instead of grammy directly. Streaming uses post+edit at ~500ms intervals (vs the native adapter's 200ms `sendMessageDraft`).
+
+```json
+{
+  "id": "telegram-chatsdk",
+  "type": "telegram-chatsdk",
+  "builtin": true,
+  "enabled": true,
+  "config": {
+    "token": "123456:ABC-DEF...",
+    "mode": "polling"
+  }
+}
+```
+
+### Slack Adapter
+
+The Slack adapter bridges Slack workspaces into Relay using Socket Mode — no public URL required. Supports streaming responses, threading, and typing indicators via emoji reactions.
+
+```json
+{
+  "id": "slack",
+  "type": "slack",
+  "builtin": true,
+  "enabled": true,
+  "config": {
+    "botToken": "xoxb-...",
+    "appToken": "xapp-...",
+    "signingSecret": "abc123...",
+    "streaming": true,
+    "typingIndicator": "reaction"
   }
 }
 ```

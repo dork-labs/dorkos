@@ -56,8 +56,8 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `animations.md`                  | 2026-03-19    | Claude   | Reconciled — no matching changes                                                                        |
 | `styling-theming.md`             | 2026-03-19    | Claude   | Reconciled — new shared/ui components covered in design-system.md                                       |
 | `parallel-execution.md`          | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                                   |
-| `relay-adapters.md`              | 2026-03-19    | Claude   | Reconciled — 8 relay commits are bug fixes, guide already updated in 0f9de937/9cffd1dd                  |
-| `adapter-catalog.md`             | 2026-03-19    | Claude   | Reconciled — ConfigFieldInput layout changes only                                                       |
+| `relay-adapters.md`              | 2026-03-22    | Claude   | Added telegram-chatsdk to AdapterConfig type union (chat-sdk-relay-adapter-refactor spec)               |
+| `adapter-catalog.md`             | 2026-03-22    | Claude   | Added Slack and Telegram Chat SDK to Built-in Adapter Manifests section                                 |
 | `browser-testing.md`             | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                   |
 | `environment-variables.md`       | 2026-03-19    | Claude   | Reconciled — already updated in port convention commit                                                  |
 
@@ -111,7 +111,7 @@ Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source c
 | `docs/concepts/architecture.mdx`              | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/concepts/sessions.mdx`                  | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/concepts/transport.mdx`                 | 2026-03-19    | Claude   | Added getLastMessageIds to Sessions table                                                                         |
-| `docs/concepts/relay.mdx`                     | 2026-03-21    | Claude   | Updated "opt-in" framing to "runs by default" (Relay enabled by default as of 88d1bb7e)                           |
+| `docs/concepts/relay.mdx`                     | 2026-03-22    | Claude   | Updated adapter count from 3 to 5, added Slack and Telegram Chat SDK adapter descriptions                         |
 | `docs/concepts/mesh.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/integrations/sse-protocol.mdx`          | 2026-03-19    | Claude   | Added thinking_delta/tool_progress events, clientMessageId, lastMessageIds in done, 409 for interactive endpoints |
 | `docs/integrations/building-integrations.mdx` | 2026-03-09    | Claude   | Added uploadFiles() to Transport interface listing                                                                |
@@ -129,8 +129,8 @@ Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source c
 | `docs/guides/agent-discovery.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/guides/agent-coordination.mdx`          | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/guides/pulse-scheduler.mdx`             | 2026-03-12    | Claude   | Added Preset Gallery section (PresetCard, PresetGallery, preset onboarding UX)                                    |
-| `docs/guides/relay-messaging.mdx`             | 2026-03-11    | Claude   | Reviewed — may need new API entries for adapter events/binding updates                                            |
+| `docs/guides/relay-messaging.mdx`             | 2026-03-22    | Claude   | Added Slack + Telegram Chat SDK adapters, fixed enabled-by-default framing                                        |
 | `docs/guides/relay-observability.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
-| `docs/guides/building-relay-adapters.mdx`     | 2026-03-11    | Claude   | Reviewed — interface listing and examples still accurate                                                          |
+| `docs/guides/building-relay-adapters.mdx`     | 2026-03-22    | Claude   | Added deliverStream() to interface, PlatformClient/StreamManager/ThreadIdCodec section, Chat SDK reference        |
 | `docs/guides/obsidian-plugin.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                             |
 | `docs/guides/persona.mdx`                     | 2026-03-06    | Claude   | Added to coverage map                                                                                             |

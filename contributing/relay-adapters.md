@@ -294,7 +294,7 @@ Adapter configurations are persisted in `~/.dork/relay/adapters.json`:
 ```typescript
 interface AdapterConfig {
   id: string; // Unique adapter ID
-  type: 'telegram' | 'webhook' | 'slack' | 'claude-code' | 'plugin'; // Adapter type
+  type: 'telegram' | 'telegram-chatsdk' | 'webhook' | 'slack' | 'claude-code' | 'plugin'; // Adapter type
   enabled: boolean; // Whether this adapter should be running
   plugin?: PluginSource; // Required when type is 'plugin'
   config: TelegramAdapterConfig | WebhookAdapterConfig | Record<string, unknown>; // Type-specific config
