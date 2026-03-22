@@ -14,12 +14,13 @@ import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-sche
 const mockUseBindings = vi.fn();
 const mockUseRegisteredAgents = vi.fn();
 const mockMutate = vi.fn();
+const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/layers/entities/binding', () => ({
   useBindings: (...args: unknown[]) => mockUseBindings(...args),
-  useCreateBinding: () => ({ mutate: mockMutate }),
-  useUpdateBinding: () => ({ mutate: mockMutate }),
-  useDeleteBinding: () => ({ mutate: mockMutate }),
+  useCreateBinding: () => ({ mutate: mockMutate, mutateAsync: mockMutateAsync, isPending: false }),
+  useUpdateBinding: () => ({ mutate: mockMutate, mutateAsync: mockMutateAsync, isPending: false }),
+  useDeleteBinding: () => ({ mutate: mockMutate, mutateAsync: mockMutateAsync, isPending: false }),
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({

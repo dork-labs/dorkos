@@ -1,7 +1,7 @@
 ---
 number: 177
 title: Standalone Channel Plugin as MCP Server Process
-status: proposed
+status: rejected
 created: 2026-03-22
 spec: a2a-channels-interoperability
 superseded-by: null
@@ -11,7 +11,9 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Rejected (2026-03-22)
+
+Research revealed Claude Code Channels is not viable for production use. See `research/20260322_channels_idle_sdk_lifecycle_behavior.md` for full findings.
 
 ## Context
 
@@ -19,22 +21,16 @@ Claude Code Channels (research preview, March 2026) can push external events int
 
 ## Decision
 
-Build the Channel plugin as a standalone process at `packages/channel-plugin/`. Claude Code spawns it as a subprocess via `.mcp.json` configuration using stdio transport. The plugin subscribes to Relay events via SSE from the DorkOS server and emits MCP notifications into the Claude Code session. This follows Claude Code's expected plugin architecture where MCP servers run as independent subprocesses.
+~~Build the Channel plugin as a standalone process at `packages/channel-plugin/`.~~
+
+**Rejected.** The Channel plugin was removed from scope after research confirmed Channels is fundamentally broken for DorkOS use cases:
+
+1. **CLI-only** — Channels is not supported by the Claude Agent SDK. The notification injection mechanism exists only in the CLI's interactive REPL layer. DorkOS agents use the SDK.
+2. **Broken when idle** — Bug #36800 causes duplicate subprocess spawns that orphan notification listeners after ~3 minutes. Notifications are silently consumed but never routed.
+3. **Narrow happy path** — Requires ALL of: CLI usage, `claude.ai` login (not API key), `tengu_harbor` feature flag, first notification in session, session under ~3 minutes old, macOS/Linux.
+
+Relay's persistent mailbox remains the sole reliable delivery path. Revisit when Anthropic stabilizes the Channels feature.
 
 ## Consequences
 
-### Positive
-
-- **Process isolation** — A crash in the Channel plugin does not affect the DorkOS server or other subsystems
-- **Independent updates** — The plugin can be versioned and updated separately from the main DorkOS server
-- **Follows Claude Code's plugin architecture** — Uses the expected stdio-based MCP subprocess model, ensuring forward compatibility
-- **Graceful degradation** — When the plugin is offline, Relay's persistent mailbox stores messages for later delivery; nothing is lost
-- **Simple lifecycle** — Claude Code manages the plugin process lifecycle (start, restart, cleanup)
-
-### Negative
-
-- **Requires SSE endpoint** — The DorkOS server must expose an SSE subscription endpoint for the plugin to consume Relay events
-- **Bug #36800 (duplicate spawn)** — Claude Code may spawn duplicate plugin processes; requires defensive coding with idempotent subscriptions or process-level dedup
-- **One-way delivery only** — Until Bug #37072 is resolved, the plugin can push events into sessions but cannot receive responses back through the Channel
-- **Additional process overhead** — Each active Claude Code session with DorkOS integration runs an extra subprocess
-- **Configuration complexity** — Users must configure `.mcp.json` correctly to enable the Channel integration
+N/A — Decision was rejected before implementation.

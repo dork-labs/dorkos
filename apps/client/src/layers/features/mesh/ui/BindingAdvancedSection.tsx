@@ -166,44 +166,44 @@ export function BindingAdvancedSection({
           )}
         </div>
 
-        {/* Permission toggles */}
+        {/* Message direction toggles */}
         <div className="space-y-2.5 px-4 py-3">
-          <p className="text-muted-foreground text-xs font-medium">Permissions</p>
+          <p className="text-muted-foreground text-xs font-medium">Message Direction</p>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label
               htmlFor="perm-initiate"
               className="flex cursor-pointer items-center gap-1.5 text-xs font-normal"
             >
               <Shield className="text-muted-foreground size-3" />
-              Allow agent to initiate messages
+              Agent can initiate messages
             </Label>
             <Switch
               id="perm-initiate"
               checked={canInitiate}
               onCheckedChange={onCanInitiateChange}
-              aria-label="Allow agent to initiate messages"
+              aria-label="Agent can initiate messages"
             />
           </div>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label htmlFor="perm-reply" className="cursor-pointer text-xs font-normal">
-              Allow agent to reply
+              Agent can reply to messages
             </Label>
             <Switch
               id="perm-reply"
               checked={canReply}
               onCheckedChange={onCanReplyChange}
-              aria-label="Allow agent to reply"
+              aria-label="Agent can reply to messages"
             />
           </div>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label htmlFor="perm-receive" className="cursor-pointer text-xs font-normal">
-              Receive inbound messages
+              Agent receives inbound messages
             </Label>
             <Switch
               id="perm-receive"
               checked={canReceive}
               onCheckedChange={onCanReceiveChange}
-              aria-label="Receive inbound messages"
+              aria-label="Agent receives inbound messages"
             />
           </div>
         </div>

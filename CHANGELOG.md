@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add A2A external gateway spec and drop Channels from scope
 - Add Chat SDK Telegram adapter and PlatformClient architecture
 - Add SOUL.md and NOPE.md convention files for agent personality
 

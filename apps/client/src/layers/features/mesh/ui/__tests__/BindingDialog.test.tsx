@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
@@ -209,21 +209,40 @@ describe('BindingDialog', () => {
       expect(screen.getByText(/one session per chat\/conversation/i)).toBeInTheDocument();
     });
 
-    it('calls onConfirm with correct values on submit', () => {
-      const onConfirm = vi.fn();
-      render(<BindingDialog {...defaultCreateProps} onConfirm={onConfirm} />, { wrapper: Wrapper });
+    it('calls onConfirm with correct values on submit', async () => {
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
+      render(
+        <BindingDialog
+          {...defaultCreateProps}
+          onConfirm={onConfirm}
+          initialValues={{ adapterId: 'telegram-1', agentId: 'agent-1' }}
+        />,
+        { wrapper: Wrapper }
+      );
       const labelInput = screen.getByPlaceholderText('e.g., Customer support bot');
       fireEvent.change(labelInput, { target: { value: 'Customer support' } });
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
-      expect(onConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionStrategy: 'per-chat', label: 'Customer support' })
-      );
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalledWith(
+          expect.objectContaining({ sessionStrategy: 'per-chat', label: 'Customer support' })
+        );
+      });
     });
 
-    it('calls onConfirm with undefined chatId when chat filter is blank', () => {
-      const onConfirm = vi.fn();
-      render(<BindingDialog {...defaultCreateProps} onConfirm={onConfirm} />, { wrapper: Wrapper });
+    it('calls onConfirm with undefined chatId when chat filter is blank', async () => {
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
+      render(
+        <BindingDialog
+          {...defaultCreateProps}
+          onConfirm={onConfirm}
+          initialValues={{ adapterId: 'telegram-1', agentId: 'agent-1' }}
+        />,
+        { wrapper: Wrapper }
+      );
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalled();
+      });
       const call = onConfirm.mock.calls[0][0];
       expect(call.chatId).toBeUndefined();
       expect(call.channelType).toBeUndefined();
@@ -260,18 +279,20 @@ describe('BindingDialog', () => {
       expect(labelInput).toHaveValue('My binding');
     });
 
-    it('calls onConfirm with updated values on save', () => {
-      const onConfirm = vi.fn();
+    it('calls onConfirm with updated values on save', async () => {
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
       render(<BindingDialog {...defaultEditProps} onConfirm={onConfirm} />, { wrapper: Wrapper });
       const labelInput = screen.getByPlaceholderText('e.g., Customer support bot');
       fireEvent.change(labelInput, { target: { value: 'Updated label' } });
       fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
-      expect(onConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          label: 'Updated label',
-          sessionStrategy: 'per-chat',
-        })
-      );
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalledWith(
+          expect.objectContaining({
+            label: 'Updated label',
+            sessionStrategy: 'per-chat',
+          })
+        );
+      });
     });
   });
 
@@ -311,33 +332,43 @@ describe('BindingDialog', () => {
       expect(mockUseObservedChats).toHaveBeenCalledWith('telegram-1');
     });
 
-    it('passes chatId in onConfirm when filter is set via initialValues', () => {
-      const onConfirm = vi.fn();
+    it('passes chatId in onConfirm when filter is set via initialValues', async () => {
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
       render(
         <BindingDialog
           {...defaultCreateProps}
           onConfirm={onConfirm}
-          initialValues={{ chatId: '999' }}
+          initialValues={{ adapterId: 'telegram-1', agentId: 'agent-1', chatId: '999' }}
         />,
         { wrapper: Wrapper }
       );
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
-      expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ chatId: '999' }));
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ chatId: '999' }));
+      });
     });
 
-    it('"Clear filters" button resets chatId and channelType', () => {
-      const onConfirm = vi.fn();
+    it('"Clear filters" button resets chatId and channelType', async () => {
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
       render(
         <BindingDialog
           {...defaultCreateProps}
           onConfirm={onConfirm}
-          initialValues={{ chatId: '111', channelType: 'dm' }}
+          initialValues={{
+            adapterId: 'telegram-1',
+            agentId: 'agent-1',
+            chatId: '111',
+            channelType: 'dm',
+          }}
         />,
         { wrapper: Wrapper }
       );
       const clearBtn = screen.getByRole('button', { name: /clear filters/i });
       fireEvent.click(clearBtn);
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalled();
+      });
       const call = onConfirm.mock.calls[0][0];
       expect(call.chatId).toBeUndefined();
       expect(call.channelType).toBeUndefined();
@@ -356,8 +387,8 @@ describe('BindingDialog', () => {
   });
 
   describe('pre-fill behavior', () => {
-    it('pre-fills all fields when initialValues provided', () => {
-      const onConfirm = vi.fn();
+    it('pre-fills all fields when initialValues provided', async () => {
+      const onConfirm = vi.fn().mockResolvedValue(undefined);
       render(
         <BindingDialog
           {...defaultCreateProps}
@@ -372,14 +403,16 @@ describe('BindingDialog', () => {
         { wrapper: Wrapper }
       );
       fireEvent.click(screen.getByRole('button', { name: /create binding/i }));
-      expect(onConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          adapterId: 'telegram-1',
-          agentId: 'agent-1',
-          sessionStrategy: 'stateless',
-          label: 'Pre-filled',
-        })
-      );
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalledWith(
+          expect.objectContaining({
+            adapterId: 'telegram-1',
+            agentId: 'agent-1',
+            sessionStrategy: 'stateless',
+            label: 'Pre-filled',
+          })
+        );
+      });
     });
   });
 });

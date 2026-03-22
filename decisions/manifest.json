@@ -24,7 +24,7 @@
       "number": 177,
       "slug": "standalone-channel-plugin-as-mcp-server-process",
       "title": "Standalone Channel Plugin as MCP Server Process",
-      "status": "proposed",
+      "status": "rejected",
       "created": "2026-03-22",
       "extractedFrom": "a2a-channels-interoperability",
       "specSlug": "a2a-channels-interoperability"

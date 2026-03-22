@@ -9,6 +9,7 @@ import {
   Settings,
   Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import {
@@ -51,6 +52,7 @@ import { getCategoryColorClasses } from '../lib/category-colors';
 import { AdapterEventLog } from './AdapterEventLog';
 import { AdapterBindingRow } from './AdapterBindingRow';
 import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
+import { QuickBindingPopover } from './QuickBindingPopover';
 
 /** Maximum binding rows to display before showing overflow link. */
 const MAX_VISIBLE_BINDINGS = 3;
@@ -152,18 +154,43 @@ export function AdapterCard({
     setBindingDialogOpen(true);
   }
 
-  function handleBindingConfirm(values: BindingFormValues) {
-    if (bindingDialogMode === 'edit' && editingBinding) {
-      updateBinding.mutate({ id: editingBinding.id, updates: values });
-    } else {
-      createBinding.mutate(values);
+  async function handleQuickBind(agentId: string) {
+    try {
+      await createBinding.mutateAsync({
+        adapterId: instance.id,
+        agentId,
+        sessionStrategy: 'per-chat',
+        label: '',
+      });
+      toast.success('Binding created');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create binding');
     }
-    setBindingDialogOpen(false);
   }
 
-  function handleBindingDelete(bindingId: string) {
-    deleteBinding.mutate(bindingId);
-    setBindingDialogOpen(false);
+  async function handleBindingConfirm(values: BindingFormValues) {
+    try {
+      if (bindingDialogMode === 'edit' && editingBinding) {
+        await updateBinding.mutateAsync({ id: editingBinding.id, updates: values });
+        toast.success('Binding updated');
+      } else {
+        await createBinding.mutateAsync(values);
+        toast.success('Binding created');
+      }
+      setBindingDialogOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save binding');
+    }
+  }
+
+  async function handleBindingDelete(bindingId: string) {
+    try {
+      await deleteBinding.mutateAsync(bindingId);
+      toast.success('Binding deleted');
+      setBindingDialogOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete binding');
+    }
   }
 
   return (
@@ -290,26 +317,38 @@ export function AdapterCard({
                   Show less
                 </button>
               )}
+              <QuickBindingPopover
+                adapterId={instance.id}
+                onQuickBind={handleQuickBind}
+                onAdvanced={openBindingCreate}
+                isPending={createBinding.isPending}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground mt-1 h-6 gap-1 px-2 text-xs"
+                >
+                  <Plus className="size-3" />
+                  Add binding
+                </Button>
+              </QuickBindingPopover>
+            </>
+          ) : isConnected ? (
+            <QuickBindingPopover
+              adapterId={instance.id}
+              onQuickBind={handleQuickBind}
+              onAdvanced={openBindingCreate}
+              isPending={createBinding.isPending}
+            >
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground hover:text-foreground mt-1 h-6 gap-1 px-2 text-xs"
-                onClick={openBindingCreate}
+                className="mt-1 h-6 gap-1 px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-500 dark:hover:bg-amber-950"
               >
                 <Plus className="size-3" />
                 Add binding
               </Button>
-            </>
-          ) : isConnected ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-6 gap-1 px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-500 dark:hover:bg-amber-950"
-              onClick={openBindingCreate}
-            >
-              <Plus className="size-3" />
-              Add binding
-            </Button>
+            </QuickBindingPopover>
           ) : null}
         </div>
 
@@ -411,6 +450,7 @@ export function AdapterCard({
         onConfirm={handleBindingConfirm}
         onDelete={editingBinding ? handleBindingDelete : undefined}
         bindingId={editingBinding?.id}
+        isPending={createBinding.isPending || updateBinding.isPending}
       />
     </>
   );
