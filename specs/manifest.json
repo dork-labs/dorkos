@@ -1,7 +1,28 @@
 {
   "version": 1,
-  "nextNumber": 162,
+  "nextNumber": 165,
   "specs": [
+    {
+      "number": 164,
+      "slug": "fix-chatsdk-thread-id-subject-validation",
+      "title": "Fix Chat SDK Thread ID Subject Validation",
+      "created": "2026-03-22",
+      "status": "specified"
+    },
+    {
+      "number": 163,
+      "slug": "tanstack-form-adoption",
+      "title": "TanStack Form Adoption",
+      "created": "2026-03-22",
+      "status": "specified"
+    },
+    {
+      "number": 162,
+      "slug": "adapter-binding-improvements",
+      "title": "Relay Binding Robustness & Multi-Instance Routing",
+      "created": "2026-03-22",
+      "status": "specified"
+    },
     {
       "number": 161,
       "slug": "chat-sdk-relay-adapter-refactor",

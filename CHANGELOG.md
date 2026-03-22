@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Normalize Chat SDK thread IDs before relay subject encoding
 - Eliminate visible scroll animation on session load
 - Improve binding row UX with consistent icons and clearer overflow
 - Add missing traits_json and conventions_json migration

@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatSdkTelegramAdapter } from '../adapter.js';
+import { extractChatIdFromThreadId } from '../inbound.js';
 import { ChatSdkTelegramThreadIdCodec } from '../../../lib/thread-id.js';
 import { createMockRelayPublisher } from '../../../testing/mock-relay-publisher.js';
 import { createMockRelayEnvelope } from '../../../testing/mock-relay-envelope.js';
@@ -150,10 +151,13 @@ describe('ChatSdkTelegramAdapter', () => {
     await adapter.start(relay);
 
     const envelope = createMockRelayEnvelope({
-      from: 'relay.human.telegram-chatsdk.bot',
+      from: 'relay.human.telegram-chatsdk.test-chatsdk.bot',
     });
 
-    const result = await adapter.deliver('relay.human.telegram-chatsdk.12345', envelope);
+    const result = await adapter.deliver(
+      'relay.human.telegram-chatsdk.test-chatsdk.12345',
+      envelope
+    );
 
     expect(result.success).toBe(true);
     expect(mockPostMessage).not.toHaveBeenCalled();
@@ -169,7 +173,10 @@ describe('ChatSdkTelegramAdapter', () => {
       payload: { type: 'text', body: 'Hello from the agent' },
     });
 
-    const result = await adapter.deliver('relay.human.telegram-chatsdk.12345', envelope);
+    const result = await adapter.deliver(
+      'relay.human.telegram-chatsdk.test-chatsdk.12345',
+      envelope
+    );
 
     expect(result.success).toBe(true);
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
@@ -196,7 +203,10 @@ describe('ChatSdkTelegramAdapter', () => {
       },
     });
 
-    const result = await adapter.deliver('relay.human.telegram-chatsdk.12345', envelope);
+    const result = await adapter.deliver(
+      'relay.human.telegram-chatsdk.test-chatsdk.12345',
+      envelope
+    );
 
     expect(result.success).toBe(true);
     expect(mockPostMessage).toHaveBeenCalledTimes(1);
@@ -214,7 +224,7 @@ describe('ChatSdkTelegramAdapter', () => {
     }
 
     const result = await adapter.deliverStream(
-      'relay.human.telegram-chatsdk.12345',
+      'relay.human.telegram-chatsdk.test-chatsdk.12345',
       '12345',
       singleChunk()
     );
@@ -233,7 +243,7 @@ describe('ChatSdkTelegramAdapter', () => {
     }
 
     const result = await adapter.deliverStream(
-      'relay.human.telegram-chatsdk.12345',
+      'relay.human.telegram-chatsdk.test-chatsdk.12345',
       '12345',
       multiChunk()
     );
@@ -257,13 +267,13 @@ describe('ChatSdkTelegramAdapter', () => {
     await messageHandlers['directMessage']!(thread, message);
 
     expect(relay.publish).toHaveBeenCalledWith(
-      'relay.human.telegram-chatsdk.99999',
+      'relay.human.telegram-chatsdk.test-chatsdk.99999',
       expect.objectContaining({
         content: 'Hey agent!',
         senderName: 'Test User',
         channelType: 'dm',
       }),
-      expect.objectContaining({ from: 'relay.human.telegram-chatsdk.bot' })
+      expect.objectContaining({ from: 'relay.human.telegram-chatsdk.test-chatsdk.bot' })
     );
   });
 
@@ -289,8 +299,72 @@ describe('ChatSdkTelegramAdapter', () => {
     await messageHandlers['newMention']!(thread, message);
 
     expect(relay.publish).toHaveBeenCalledWith(
-      'relay.human.telegram-chatsdk.group.grp-123',
+      'relay.human.telegram-chatsdk.test-chatsdk.group.grp-123',
       expect.objectContaining({ channelType: 'group' }),
+      expect.anything()
+    );
+  });
+
+  // --- Chat SDK thread ID normalization ---
+
+  it('normalizes Chat SDK thread ID format for DM messages', async () => {
+    await adapter.start(relay);
+
+    const thread = buildMockThread({ id: 'telegram:817732118', isDM: true });
+    const message = buildMockMessage({ text: 'Hello' });
+
+    await messageHandlers['directMessage']!(thread, message);
+
+    expect(relay.publish).toHaveBeenCalledWith(
+      'relay.human.telegram-chatsdk.test-chatsdk.817732118',
+      expect.objectContaining({ content: 'Hello' }),
+      expect.anything()
+    );
+  });
+
+  it('normalizes Chat SDK thread ID format for group messages', async () => {
+    await adapter.start(relay);
+
+    const thread = buildMockThread({ id: 'telegram:-100123456789', isDM: false });
+    const message = buildMockMessage({ text: 'Group msg' });
+
+    await messageHandlers['newMention']!(thread, message);
+
+    expect(relay.publish).toHaveBeenCalledWith(
+      'relay.human.telegram-chatsdk.test-chatsdk.group.-100123456789',
+      expect.objectContaining({ channelType: 'group' }),
+      expect.anything()
+    );
+  });
+
+  it('strips forum thread ID suffix from Chat SDK thread ID', async () => {
+    await adapter.start(relay);
+
+    const thread = buildMockThread({ id: 'telegram:817732118:42', isDM: true });
+    const message = buildMockMessage({ text: 'Forum msg' });
+
+    await messageHandlers['directMessage']!(thread, message);
+
+    expect(relay.publish).toHaveBeenCalledWith(
+      'relay.human.telegram-chatsdk.test-chatsdk.817732118',
+      expect.objectContaining({ content: 'Forum msg' }),
+      expect.anything()
+    );
+  });
+
+  it('preserves original Chat SDK thread ID in platformData.threadId', async () => {
+    await adapter.start(relay);
+
+    const thread = buildMockThread({ id: 'telegram:817732118', isDM: true });
+    const message = buildMockMessage({ text: 'Check platformData' });
+
+    await messageHandlers['directMessage']!(thread, message);
+
+    expect(relay.publish).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        platformData: expect.objectContaining({ threadId: 'telegram:817732118' }),
+      }),
       expect.anything()
     );
   });
@@ -316,12 +390,40 @@ describe('ChatSdkTelegramAdapter', () => {
   });
 });
 
+// --- extractChatIdFromThreadId ---
+
+describe('extractChatIdFromThreadId', () => {
+  it('extracts chatId from telegram:chatId format', () => {
+    expect(extractChatIdFromThreadId('telegram:817732118')).toBe('817732118');
+  });
+
+  it('extracts chatId from negative group ID', () => {
+    expect(extractChatIdFromThreadId('telegram:-100123456789')).toBe('-100123456789');
+  });
+
+  it('strips messageThreadId from forum topic format', () => {
+    expect(extractChatIdFromThreadId('telegram:817732118:42')).toBe('817732118');
+  });
+
+  it('passes through IDs without colons', () => {
+    expect(extractChatIdFromThreadId('817732118')).toBe('817732118');
+  });
+
+  it('handles empty string', () => {
+    expect(extractChatIdFromThreadId('')).toBe('');
+  });
+
+  it('handles slack format for future adapters', () => {
+    expect(extractChatIdFromThreadId('slack:C01234567')).toBe('C01234567');
+  });
+});
+
 // --- Adapter compliance suite ---
 
 runAdapterComplianceSuite({
   name: 'ChatSdkTelegramAdapter',
   createAdapter: () => new ChatSdkTelegramAdapter('test-chatsdk', { token: 'test:token' }),
-  deliverSubject: 'relay.human.telegram-chatsdk.12345',
-  codec: new ChatSdkTelegramThreadIdCodec(),
+  deliverSubject: 'relay.human.telegram-chatsdk.test-chatsdk.12345',
+  codec: new ChatSdkTelegramThreadIdCodec('test-chatsdk'),
   samplePlatformId: '12345',
 });

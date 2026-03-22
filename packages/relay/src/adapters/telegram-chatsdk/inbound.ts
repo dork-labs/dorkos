@@ -15,9 +15,6 @@ import { ChatSdkTelegramThreadIdCodec } from '../../lib/thread-id.js';
 /** Subject prefix for all Chat SDK Telegram adapter subjects. */
 export const SUBJECT_PREFIX = 'relay.human.telegram-chatsdk';
 
-/** Codec instance for encoding/decoding thread IDs. */
-const codec = new ChatSdkTelegramThreadIdCodec();
-
 /** Max length for a single Telegram message (Telegram's hard limit is 4096). */
 export const MAX_MESSAGE_LENGTH = 4096;
 
@@ -26,6 +23,31 @@ const MAX_CONTENT_LENGTH = 32_768;
 
 /** Sender name used when publishing inbound messages from unresolvable users. */
 const UNKNOWN_SENDER = 'unknown';
+
+/**
+ * Extract the numeric chat ID from a Chat SDK thread ID.
+ *
+ * Chat SDK encodes thread IDs as `{platform}:{chatId}` (simple chats) or
+ * `{platform}:{chatId}:{messageThreadId}` (forum topics). For Relay subject
+ * encoding we only need the chatId segment — the platform prefix is already
+ * captured in the adapter's subject namespace (telegram-chatsdk), and
+ * messageThreadId is not used for routing.
+ *
+ * Falls back to the raw thread.id if no colon is found, preserving existing
+ * behavior for unknown formats.
+ *
+ * @internal Exported for testing only.
+ * @param threadId - The Chat SDK thread ID (e.g. "telegram:817732118")
+ * @returns The numeric chat ID as a string (e.g. "817732118")
+ */
+export function extractChatIdFromThreadId(threadId: string): string {
+  const colonIdx = threadId.indexOf(':');
+  if (colonIdx === -1) return threadId;
+  const afterPlatform = threadId.slice(colonIdx + 1);
+  // For forum topics: "telegram:817732118:42" → strip messageThreadId
+  const secondColon = afterPlatform.indexOf(':');
+  return secondColon === -1 ? afterPlatform : afterPlatform.slice(0, secondColon);
+}
 
 /** Telegram-specific formatting rules injected into agent system prompts via responseContext. */
 const TELEGRAM_FORMATTING_RULES = [
@@ -54,8 +76,11 @@ export async function handleInboundMessage(
   message: Message,
   relay: RelayPublisher,
   callbacks: AdapterInboundCallbacks,
-  logger: RelayLogger = noopLogger
+  logger: RelayLogger = noopLogger,
+  codec?: ChatSdkTelegramThreadIdCodec
 ): Promise<void> {
+  const resolvedCodec = codec ?? new ChatSdkTelegramThreadIdCodec();
+
   const rawText = message.text ?? '';
   if (!rawText.trim()) {
     logger.debug(`[TelegramChatSdk] inbound skipped: empty text in thread ${thread.id}`);
@@ -67,9 +92,12 @@ export async function handleInboundMessage(
 
   const senderName = message.author.fullName || message.author.userName || UNKNOWN_SENDER;
 
-  // Derive subject from thread ID — Chat SDK Telegram encodes chatId into the thread ID
+  // Derive subject from thread ID — Chat SDK encodes thread IDs as
+  // "telegram:{chatId}" but relay subjects only allow [a-zA-Z0-9_-] tokens.
+  // Strip the platform prefix to get the bare numeric chat ID.
   const channelType = thread.isDM ? 'dm' : 'group';
-  const subject = codec.encode(thread.id, channelType);
+  const chatId = extractChatIdFromThreadId(thread.id);
+  const subject = resolvedCodec.encode(chatId, channelType);
 
   const channelName = thread.isDM ? undefined : thread.id;
 
@@ -95,7 +123,7 @@ export async function handleInboundMessage(
 
   try {
     const result = await relay.publish(subject, payload, {
-      from: `${SUBJECT_PREFIX}.bot`,
+      from: `${resolvedCodec.prefix}.bot`,
       replyTo: subject,
     });
 
