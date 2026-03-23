@@ -740,6 +740,58 @@ describe('TelegramAdapter', () => {
     expect(adapter.getStatus().errorCount).toBe(0);
   });
 
+  // --- Inbound-triggered typing indicator ---
+
+  it('starts typing indicator after successful inbound publish', async () => {
+    await adapter.start(mockRelay);
+
+    const ctx = createInboundCtx({ chatId: 12345, text: 'Hello agent!' });
+    await capturedMessageHandler!(ctx);
+
+    // Should have called sendChatAction('typing') for the chat
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+  });
+
+  it('clears typing indicator when first outbound text_delta arrives', async () => {
+    await adapter.start(mockRelay);
+
+    // Trigger inbound to start typing
+    const ctx = createInboundCtx({ chatId: 12345, text: 'Hello!' });
+    await capturedMessageHandler!(ctx);
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+
+    // Deliver an outbound text_delta — should clear the typing interval
+    const envelope = createEnvelope('relay.human.telegram.tg1.12345', {
+      type: 'text_delta',
+      data: { text: 'Hello' },
+    });
+    await adapter.deliver('relay.human.telegram.tg1.12345', envelope);
+
+    // Clear mock to check that no more typing calls happen
+    mockSendChatAction.mockClear();
+
+    // Wait some time — no further typing calls should occur
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockSendChatAction).not.toHaveBeenCalled();
+  });
+
+  it('does not start typing when inbound publish is rejected', async () => {
+    // Mock publish to return a rejected result
+    vi.mocked(mockRelay.publish).mockResolvedValueOnce({
+      messageId: 'msg-1',
+      deliveredTo: 0,
+      rejected: [{ endpointHash: 'ep-1', reason: 'rate_limited' }],
+    });
+
+    await adapter.start(mockRelay);
+
+    const ctx = createInboundCtx({ chatId: 12345, text: 'Hello!' });
+    await capturedMessageHandler!(ctx);
+
+    // Typing should NOT have been triggered for rejected publishes
+    expect(mockSendChatAction).not.toHaveBeenCalled();
+  });
+
   // --- testConnection() ---
 
   it('testConnection() returns ok with botUsername when init succeeds', async () => {

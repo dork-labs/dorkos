@@ -177,6 +177,7 @@ export async function handleInboundMessage(
     }
 
     callbacks.trackInbound();
+    callbacks.onPublished?.(chat.id);
     logger.debug(
       `inbound from ${senderName} in chat ${chat.id}: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}" (${text.length} chars) → ${subject}`
     );

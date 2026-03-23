@@ -225,6 +225,8 @@ export const noopLogger: RelayLogger = { debug: noop, info: noop, warn: noop, er
 export interface AdapterInboundCallbacks {
   trackInbound: () => void;
   recordError: (err: unknown) => void;
+  /** Called after a message is successfully published. Adapters can use this to trigger typing indicators. */
+  onPublished?: (chatId: number) => void;
 }
 
 /** Callbacks for outbound message delivery (used by adapter sub-modules). */

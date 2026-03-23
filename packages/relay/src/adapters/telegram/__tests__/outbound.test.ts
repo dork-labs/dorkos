@@ -3,8 +3,11 @@ import {
   deliverMessage,
   handleTypingSignal,
   clearAllTypingIntervals,
+  clearTypingInterval,
   createTelegramOutboundState,
+  startTypingWithTimeout,
   BUFFER_TTL_MS,
+  MAX_TYPING_DURATION_MS,
 } from '../outbound.js';
 import type { ResponseBuffer, TelegramOutboundState } from '../outbound.js';
 import type { Bot } from 'grammy';
@@ -249,6 +252,241 @@ describe('typing indicator -- interval refresh', () => {
     await vi.advanceTimersByTimeAsync(8_000);
     // Only the 2 immediate calls, no interval refreshes
     expect(mockSendChatAction).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('startTypingWithTimeout', () => {
+  let bot: Bot;
+  let state: TelegramOutboundState;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    bot = buildMockBot();
+    state = createTelegramOutboundState();
+  });
+
+  afterEach(() => {
+    clearAllTypingIntervals(state);
+    vi.useRealTimers();
+  });
+
+  it('sends immediate sendChatAction and sets interval', () => {
+    startTypingWithTimeout(bot, 12345, state);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+    expect(state.typingIntervals.has(12345)).toBe(true);
+  });
+
+  it('refreshes every 4 seconds like handleTypingSignal', async () => {
+    startTypingWithTimeout(bot, 12345, state);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(3);
+  });
+
+  it('auto-clears after MAX_TYPING_DURATION_MS', async () => {
+    startTypingWithTimeout(bot, 12345, state);
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(MAX_TYPING_DURATION_MS);
+    expect(state.typingIntervals.has(12345)).toBe(false);
+
+    // No more sendChatAction calls after timeout
+    mockSendChatAction.mockClear();
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(mockSendChatAction).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when bot is null', () => {
+    startTypingWithTimeout(null, 12345, state);
+    expect(mockSendChatAction).not.toHaveBeenCalled();
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  it('replaces existing interval for the same chatId', () => {
+    startTypingWithTimeout(bot, 12345, state);
+    const firstInterval = state.typingIntervals.get(12345);
+
+    startTypingWithTimeout(bot, 12345, state);
+    const secondInterval = state.typingIntervals.get(12345);
+
+    // Should have replaced the interval (different timer reference)
+    expect(firstInterval).not.toBe(secondInterval);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears interval when sendChatAction fails on refresh', async () => {
+    startTypingWithTimeout(bot, 12345, state);
+
+    mockSendChatAction.mockRejectedValueOnce(new Error('chat not found'));
+    await vi.advanceTimersByTimeAsync(4_000);
+
+    // Interval should have been cleared on failure
+    await vi.advanceTimersByTimeAsync(4_000);
+    // 1 immediate + 1 failed interval = 2 total (no more after clear)
+    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('orphan timeout does not clear a newer typing session for the same chat', async () => {
+    // Start first typing session (60s timeout)
+    startTypingWithTimeout(bot, 12345, state);
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    // Simulate outbound delivery clearing the first session at t=10s
+    await vi.advanceTimersByTimeAsync(10_000);
+    clearTypingInterval(state, 12345);
+    expect(state.typingIntervals.has(12345)).toBe(false);
+
+    // Start second typing session at t=30s
+    await vi.advanceTimersByTimeAsync(20_000);
+    startTypingWithTimeout(bot, 12345, state);
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    // Advance to t=60s — old timeout would have fired here without the fix
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    // Second session's interval should STILL be active (not cleared by orphan timeout)
+    expect(state.typingIntervals.has(12345)).toBe(true);
+  });
+});
+
+describe('deliverMessage clears typing on first outbound', () => {
+  let bot: Bot;
+  let responseBuffers: Map<number, ResponseBuffer>;
+  let callbacks: AdapterOutboundCallbacks;
+  let state: TelegramOutboundState;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    bot = buildMockBot();
+    responseBuffers = new Map();
+    callbacks = createCallbacks();
+    state = createTelegramOutboundState();
+  });
+
+  afterEach(() => {
+    clearAllTypingIntervals(state);
+  });
+
+  it('clears typing interval on text_delta delivery', async () => {
+    // Simulate an active typing interval
+    state.typingIntervals.set(
+      12345,
+      setInterval(() => {}, 4_000)
+    );
+
+    const envelope = createEnvelope('relay.human.telegram.12345', {
+      type: 'text_delta',
+      data: { text: 'Hello' },
+    });
+    await deliverMessage({
+      adapterId: 'telegram',
+      subject: 'relay.human.telegram.12345',
+      envelope,
+      bot,
+      responseBuffers,
+      state,
+      callbacks,
+      streaming: false,
+      codec: testCodec,
+    });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  it('clears typing interval on done event', async () => {
+    state.typingIntervals.set(
+      12345,
+      setInterval(() => {}, 4_000)
+    );
+    responseBuffers.set(12345, { text: 'Accumulated', startedAt: Date.now() });
+
+    const envelope = createEnvelope('relay.human.telegram.12345', {
+      type: 'done',
+      data: {},
+    });
+    await deliverMessage({
+      adapterId: 'telegram',
+      subject: 'relay.human.telegram.12345',
+      envelope,
+      bot,
+      responseBuffers,
+      state,
+      callbacks,
+      streaming: false,
+      codec: testCodec,
+    });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  it('clears typing interval on error event', async () => {
+    state.typingIntervals.set(
+      12345,
+      setInterval(() => {}, 4_000)
+    );
+
+    const envelope = createEnvelope('relay.human.telegram.12345', {
+      type: 'error',
+      data: { message: 'Session failed' },
+    });
+    await deliverMessage({
+      adapterId: 'telegram',
+      subject: 'relay.human.telegram.12345',
+      envelope,
+      bot,
+      responseBuffers,
+      state,
+      callbacks,
+      streaming: false,
+      codec: testCodec,
+    });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  it('clears typing interval on standard payload delivery', async () => {
+    state.typingIntervals.set(
+      12345,
+      setInterval(() => {}, 4_000)
+    );
+
+    const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Direct reply' });
+    await deliverMessage({
+      adapterId: 'telegram',
+      subject: 'relay.human.telegram.12345',
+      envelope,
+      bot,
+      responseBuffers,
+      state,
+      callbacks,
+      streaming: false,
+      codec: testCodec,
+    });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  it('does not fail when no typing interval exists', async () => {
+    const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Hello' });
+    const result = await deliverMessage({
+      adapterId: 'telegram',
+      subject: 'relay.human.telegram.12345',
+      envelope,
+      bot,
+      responseBuffers,
+      state,
+      callbacks,
+      streaming: false,
+      codec: testCodec,
+    });
+
+    expect(result.success).toBe(true);
   });
 });
 

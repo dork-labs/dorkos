@@ -35,6 +35,9 @@ const TELEGRAM_TYPING_ACTION = 'typing' as const;
 /** Refresh interval for Telegram typing indicator (expires after 5s). */
 const TYPING_REFRESH_MS = 4_000;
 
+/** Safety timeout for inbound-triggered typing — stop after 60s even if no response arrives. */
+export const MAX_TYPING_DURATION_MS = 60_000;
+
 /** Minimum interval (ms) between sendMessageDraft calls for a single chat. */
 const DRAFT_UPDATE_INTERVAL_MS = 200;
 
@@ -54,6 +57,8 @@ const CALLBACK_ID_TTL_MS = 15 * 60 * 1_000;
 export interface TelegramOutboundState {
   /** Active typing intervals keyed by chatId. */
   typingIntervals: Map<number, ReturnType<typeof setInterval>>;
+  /** Safety timeouts for inbound-triggered typing indicators, keyed by chatId. */
+  typingTimeouts: Map<number, ReturnType<typeof setTimeout>>;
   /** Last sendMessageDraft timestamp per chat (for throttling). */
   lastDraftUpdate: Map<number, number>;
   /**
@@ -71,6 +76,7 @@ export interface TelegramOutboundState {
 export function createTelegramOutboundState(): TelegramOutboundState {
   return {
     typingIntervals: new Map(),
+    typingTimeouts: new Map(),
     lastDraftUpdate: new Map(),
     callbackIdMap: new Map(),
     pendingApprovalTimeouts: new Map(),
@@ -244,6 +250,11 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     };
   }
 
+  // Stop typing indicator — first outbound event means the agent is responding.
+  // Telegram also clears it automatically on sendMessage, but clearing the
+  // interval prevents unnecessary API calls during the remaining stream.
+  clearTypingInterval(state, chatId);
+
   // Reap stale buffers to prevent unbounded memory growth. A buffer is
   // considered stale if no done/error event arrived within BUFFER_TTL_MS —
   // e.g. the agent crashed mid-stream or the session was abandoned.
@@ -402,11 +413,16 @@ export async function handleTypingSignal(
  * @param state - The adapter's outbound state container
  * @param chatId - The Telegram chat ID to clear the interval for
  */
-function clearTypingInterval(state: TelegramOutboundState, chatId: number): void {
+export function clearTypingInterval(state: TelegramOutboundState, chatId: number): void {
   const existing = state.typingIntervals.get(chatId);
   if (existing !== undefined) {
     clearInterval(existing);
     state.typingIntervals.delete(chatId);
+  }
+  const timeout = state.typingTimeouts.get(chatId);
+  if (timeout !== undefined) {
+    clearTimeout(timeout);
+    state.typingTimeouts.delete(chatId);
   }
 }
 
@@ -420,7 +436,51 @@ function clearTypingInterval(state: TelegramOutboundState, chatId: number): void
 export function clearAllTypingIntervals(state: TelegramOutboundState): void {
   for (const interval of state.typingIntervals.values()) clearInterval(interval);
   state.typingIntervals.clear();
+  for (const timeout of state.typingTimeouts.values()) clearTimeout(timeout);
+  state.typingTimeouts.clear();
   state.lastDraftUpdate.clear();
+}
+
+/**
+ * Start a typing indicator for a chat after an inbound message is published.
+ *
+ * Sends an immediate `sendChatAction('typing')`, refreshes every 4s, and
+ * auto-clears after {@link MAX_TYPING_DURATION_MS} as a safety net if no
+ * outbound response arrives.
+ *
+ * @param bot - The grammy Bot instance, or null if not started
+ * @param chatId - The Telegram chat ID to show typing in
+ * @param state - The adapter's instance-scoped outbound state
+ */
+export function startTypingWithTimeout(
+  bot: Bot | null,
+  chatId: number,
+  state: TelegramOutboundState
+): void {
+  if (!bot) return;
+
+  // Clear any existing interval (idempotent)
+  clearTypingInterval(state, chatId);
+
+  // Send immediately
+  bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {});
+
+  // Refresh every 4s
+  const intervalId = setInterval(() => {
+    bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {
+      clearTypingInterval(state, chatId);
+    });
+  }, TYPING_REFRESH_MS);
+  state.typingIntervals.set(chatId, intervalId);
+
+  // Safety timeout — stop typing after 60s even if no response arrives.
+  // Tracked in state so clearTypingInterval can cancel it, preventing an
+  // orphan timeout from clearing a newer typing session for the same chat.
+  const timeoutId = setTimeout(() => {
+    state.typingTimeouts.delete(chatId);
+    clearTypingInterval(state, chatId);
+  }, MAX_TYPING_DURATION_MS);
+  state.typingTimeouts.set(chatId, timeoutId);
 }
 
 // === Approval handling ===

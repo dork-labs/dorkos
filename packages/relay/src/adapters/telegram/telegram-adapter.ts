@@ -29,6 +29,7 @@ import {
   clearAllTypingIntervals,
   clearApprovalTimeout,
   createTelegramOutboundState,
+  startTypingWithTimeout,
 } from './outbound.js';
 import type { ResponseBuffer, TelegramOutboundState } from './outbound.js';
 import { startWebhookMode, stopWebhookServer } from './webhook.js';
@@ -198,7 +199,13 @@ export class TelegramAdapter extends BaseRelayAdapter {
     const bot = new Bot(this.config.token);
     bot.api.config.use(autoRetry());
     bot.on('message', (ctx) =>
-      handleInboundMessage(ctx, relay, this.makeInboundCallbacks(), this.logger, this.codec)
+      handleInboundMessage(
+        ctx,
+        relay,
+        this.makeInboundCallbacksWithTyping(),
+        this.logger,
+        this.codec
+      )
     );
 
     // Register callback query handler for tool approval inline keyboard buttons
@@ -377,6 +384,21 @@ export class TelegramAdapter extends BaseRelayAdapter {
   // --- Private helpers ---
 
   /**
+   * Build inbound callbacks with typing indicator support.
+   *
+   * Extends the base callbacks with an `onPublished` hook that starts a
+   * typing indicator immediately after a successful inbound publish.
+   */
+  private makeInboundCallbacksWithTyping() {
+    return {
+      ...this.makeInboundCallbacks(),
+      onPublished: (chatId: number) => {
+        startTypingWithTimeout(this.bot, chatId, this.outboundState);
+      },
+    };
+  }
+
+  /**
    * Call bot.init() with a timeout guard.
    *
    * Prevents indefinite hangs when the Telegram API is unreachable or the
@@ -440,7 +462,13 @@ export class TelegramAdapter extends BaseRelayAdapter {
       const newBot = new Bot(this.config.token);
       newBot.api.config.use(autoRetry());
       newBot.on('message', (ctx) =>
-        handleInboundMessage(ctx, this.relay!, this.makeInboundCallbacks(), this.logger, this.codec)
+        handleInboundMessage(
+          ctx,
+          this.relay!,
+          this.makeInboundCallbacksWithTyping(),
+          this.logger,
+          this.codec
+        )
       );
       newBot.catch((e) => this.recordError(e));
       this.bot = newBot;
