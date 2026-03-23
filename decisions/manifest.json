@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 183,
+  "nextNumber": 184,
   "decisions": [
+    {
+      "number": 183,
+      "slug": "content-type-classified-tool-output-rendering",
+      "title": "Content-Type Classified Tool Output Rendering",
+      "status": "draft",
+      "created": "2026-03-23",
+      "extractedFrom": "tool-call-display-overhaul",
+      "specSlug": "tool-call-display-overhaul"
+    },
     {
       "number": 182,
       "slug": "shared-message-splitting-utility",

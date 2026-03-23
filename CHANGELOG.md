@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Overhaul tool call display with MCP parsing, streaming fixes, and classified output rendering
 - Redesign agents page as fleet management surface
 - Add 8 world-class Slack adapter improvements
 - Implement A2A external gateway for agent interoperability

@@ -1,6 +1,7 @@
 interface ToolArgumentsDisplayProps {
   toolName: string;
   input: string; // JSON string
+  isStreaming?: boolean;
 }
 
 /** Humanize a snake_case or camelCase key into a readable label */
@@ -72,8 +73,23 @@ function renderValue(value: unknown, maxLen: number): React.ReactNode {
 }
 
 /** Render a tool call's JSON arguments as a human-readable key-value grid. */
-export function ToolArgumentsDisplay({ toolName: _toolName, input }: ToolArgumentsDisplayProps) {
+export function ToolArgumentsDisplay({
+  toolName: _toolName,
+  input,
+  isStreaming = false,
+}: ToolArgumentsDisplayProps) {
   if (!input) return null;
+
+  // During streaming, show raw accumulating text — don't try to parse
+  if (isStreaming) {
+    const displayInput = input.length > 5120 ? input.slice(0, 5120) + '\u2026' : input;
+    return (
+      <pre className="text-muted-foreground overflow-x-auto text-xs whitespace-pre-wrap">
+        {displayInput}
+        <span className="ml-0.5 inline-block size-1.5 animate-pulse rounded-full bg-current" />
+      </pre>
+    );
+  }
 
   let parsed: Record<string, unknown>;
   try {

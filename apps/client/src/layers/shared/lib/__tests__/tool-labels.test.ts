@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getToolLabel } from '../tool-labels';
+import { getToolLabel, getMcpServerBadge, parseMcpToolName } from '../tool-labels';
 
 describe('getToolLabel', () => {
   it('returns raw tool name for non-JSON input', () => {
@@ -132,5 +132,92 @@ describe('getToolLabel', () => {
   // Unknown tool
   it('returns raw name for unknown tools', () => {
     expect(getToolLabel('CustomMCPTool', '{"foo":"bar"}')).toBe('CustomMCPTool');
+  });
+
+  // MCP tool names via getToolLabel
+  it('humanizes MCP tool name for known server', () => {
+    expect(getToolLabel('mcp__slack__send_message', '{}')).toBe('Send Message');
+  });
+
+  it('humanizes MCP tool name for unknown server', () => {
+    expect(getToolLabel('mcp__my_custom_server__do_thing', '{}')).toBe('Do Thing');
+  });
+
+  it('returns raw name for mcp__ prefix with only one segment', () => {
+    expect(getToolLabel('mcp__slack', '{}')).toBe('mcp__slack');
+  });
+});
+
+describe('parseMcpToolName', () => {
+  it('returns null for non-MCP tool names', () => {
+    expect(parseMcpToolName('Bash')).toBeNull();
+    expect(parseMcpToolName('Read')).toBeNull();
+    expect(parseMcpToolName('CustomTool')).toBeNull();
+  });
+
+  it('returns null for mcp__ prefix without enough segments', () => {
+    expect(parseMcpToolName('mcp__slack')).toBeNull();
+  });
+
+  it('parses a known server correctly', () => {
+    const result = parseMcpToolName('mcp__slack__send_message');
+    expect(result).toEqual({
+      server: 'slack',
+      serverLabel: 'Slack',
+      tool: 'send_message',
+      toolLabel: 'Send Message',
+    });
+  });
+
+  it('parses an unknown server using humanizeSnakeCase', () => {
+    const result = parseMcpToolName('mcp__my_server__do_thing');
+    expect(result).toEqual({
+      server: 'my_server',
+      serverLabel: 'My Server',
+      tool: 'do_thing',
+      toolLabel: 'Do Thing',
+    });
+  });
+
+  it('uses known label overrides for all predefined servers', () => {
+    expect(parseMcpToolName('mcp__dorkos__relay_send')?.serverLabel).toBe('DorkOS');
+    expect(parseMcpToolName('mcp__telegram__send_message')?.serverLabel).toBe('Telegram');
+    expect(parseMcpToolName('mcp__github__create_issue')?.serverLabel).toBe('GitHub');
+    expect(parseMcpToolName('mcp__filesystem__read_file')?.serverLabel).toBe('Files');
+    expect(parseMcpToolName('mcp__playwright__navigate')?.serverLabel).toBe('Browser');
+    expect(parseMcpToolName('mcp__context7__get_context')?.serverLabel).toBe('Context7');
+  });
+
+  it('joins extra segments into the tool name', () => {
+    const result = parseMcpToolName('mcp__slack__channel__send');
+    expect(result?.tool).toBe('channel__send');
+    // humanizeSnakeCase splits on '_', so double underscores produce an intermediate
+    // empty word and a double space — this is expected behavior for the simple utility
+    expect(result?.toolLabel).toBe('Channel  Send');
+  });
+});
+
+describe('getMcpServerBadge', () => {
+  it('returns null for non-MCP tool names', () => {
+    expect(getMcpServerBadge('Bash')).toBeNull();
+    expect(getMcpServerBadge('Read')).toBeNull();
+  });
+
+  it('returns null for DorkOS MCP tools', () => {
+    expect(getMcpServerBadge('mcp__dorkos__relay_send')).toBeNull();
+  });
+
+  it('returns the server label for non-DorkOS MCP tools', () => {
+    expect(getMcpServerBadge('mcp__slack__send_message')).toBe('Slack');
+    expect(getMcpServerBadge('mcp__github__create_issue')).toBe('GitHub');
+    expect(getMcpServerBadge('mcp__playwright__navigate')).toBe('Browser');
+  });
+
+  it('humanizes unknown servers', () => {
+    expect(getMcpServerBadge('mcp__my_custom__do_thing')).toBe('My Custom');
+  });
+
+  it('returns null for malformed mcp__ names', () => {
+    expect(getMcpServerBadge('mcp__slack')).toBeNull();
   });
 });

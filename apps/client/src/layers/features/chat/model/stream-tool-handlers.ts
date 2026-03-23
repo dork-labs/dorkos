@@ -42,6 +42,7 @@ export function handleToolCallStart(
     toolName: tc.toolName,
     input: '',
     status: 'running',
+    startedAt: Date.now(),
     ...(buffered && buffered.length > 0 ? { hooks: buffered } : {}),
   });
   helpers.updateAssistantMessage(assistantId);
@@ -110,6 +111,7 @@ export function handleToolResult(
   if (existing) {
     existing.result = tc.result;
     existing.status = 'complete';
+    existing.completedAt = Date.now();
     existing.progressOutput = undefined;
     // Mark AskUserQuestion as answered so QuestionPrompt shows collapsed on remount
     if (existing.interactiveType === 'question' && !existing.answers) {

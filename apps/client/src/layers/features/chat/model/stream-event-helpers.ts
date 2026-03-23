@@ -30,6 +30,8 @@ export function deriveFromParts(parts: MessagePart[]): {
         answers: part.answers,
         timeoutMs: part.timeoutMs,
         hooks: part.hooks,
+        startedAt: part.startedAt,
+        completedAt: part.completedAt,
       });
     }
   }

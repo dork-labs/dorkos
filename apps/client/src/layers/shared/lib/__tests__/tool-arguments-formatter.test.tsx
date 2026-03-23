@@ -1,10 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ToolArgumentsDisplay } from '../tool-arguments-formatter';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('ToolArgumentsDisplay', () => {
   it('returns null for empty input', () => {
@@ -77,6 +81,47 @@ describe('ToolArgumentsDisplay', () => {
     render(<ToolArgumentsDisplay toolName="Test" input={input} />);
     const nullEl = screen.getByText('null');
     expect(nullEl.className).toContain('italic');
+  });
+});
+
+describe('ToolArgumentsDisplay streaming mode', () => {
+  it('shows raw text with pulse indicator during streaming', () => {
+    const partialJson = '{"command": "echo hel';
+    const { container } = render(
+      <ToolArgumentsDisplay toolName="Bash" input={partialJson} isStreaming />
+    );
+    const pre = container.querySelector('pre');
+    expect(pre).not.toBeNull();
+    expect(pre!.textContent).toContain(partialJson);
+    // Pulse dot is rendered as a sibling span inside the pre
+    const pulse = pre!.querySelector('.animate-pulse');
+    expect(pulse).not.toBeNull();
+  });
+
+  it('shows formatted key-value grid after completion', () => {
+    const validJson = JSON.stringify({ command: 'echo hello' });
+    render(<ToolArgumentsDisplay toolName="Bash" input={validJson} isStreaming={false} />);
+    expect(screen.getByText('Command')).toBeInTheDocument();
+    expect(screen.getByText('echo hello')).toBeInTheDocument();
+  });
+
+  it('returns null for empty input when not streaming', () => {
+    const { container } = render(
+      <ToolArgumentsDisplay toolName="Bash" input="" isStreaming={false} />
+    );
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('truncates long streaming input at 5KB with ellipsis', () => {
+    const longInput = 'x'.repeat(6000);
+    const { container } = render(
+      <ToolArgumentsDisplay toolName="Bash" input={longInput} isStreaming />
+    );
+    const pre = container.querySelector('pre');
+    expect(pre).not.toBeNull();
+    // textContent includes the pulse span (zero-width), so check startsWith
+    expect(pre!.textContent!.startsWith('x'.repeat(5120))).toBe(true);
+    expect(pre!.textContent!.includes('\u2026')).toBe(true);
   });
 });
 

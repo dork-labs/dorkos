@@ -42,6 +42,10 @@ export interface ToolCallState {
   timeoutMs?: number;
   /** Hook executions attached to this tool call (pre-tool and post-tool hooks). */
   hooks?: HookState[];
+  /** Timestamp (ms since epoch) when tool_call_start was received. */
+  startedAt?: number;
+  /** Timestamp (ms since epoch) when tool_result was received. */
+  completedAt?: number;
 }
 
 /** Structured error information for transport-level failures. */

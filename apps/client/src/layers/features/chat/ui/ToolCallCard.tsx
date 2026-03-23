@@ -2,8 +2,15 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Loader2, Check, X } from 'lucide-react';
 import type { ToolCallState, HookState } from '../model/use-chat-session';
-import { getToolLabel, ToolArgumentsDisplay, cn } from '@/layers/shared/lib';
+import {
+  getToolLabel,
+  getMcpServerBadge,
+  ToolArgumentsDisplay,
+  cn,
+  formatDuration,
+} from '@/layers/shared/lib';
 import { getToolStatusIcon, CollapsibleCard } from './primitives';
+import { OutputRenderer } from './OutputRenderer';
 
 /** Maximum characters to render before truncation (5KB). */
 const TRUNCATE_THRESHOLD = 5120;
@@ -131,6 +138,13 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
       </div>
     ) : undefined;
 
+  const duration =
+    toolCall.startedAt && toolCall.completedAt
+      ? toolCall.completedAt - toolCall.startedAt
+      : undefined;
+
+  const badge = getMcpServerBadge(toolCall.toolName);
+
   return (
     <CollapsibleCard
       expanded={expanded}
@@ -142,19 +156,44 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
       header={
         <>
           {getToolStatusIcon(toolCall.status)}
+          {badge && (
+            <span className="bg-muted text-muted-foreground text-3xs rounded px-1 py-0.5 font-medium">
+              {badge}
+            </span>
+          )}
           <span className="text-3xs font-mono">
             {getToolLabel(toolCall.toolName, toolCall.input)}
           </span>
+          {duration !== undefined && (
+            <span className="text-muted-foreground text-3xs ml-auto tabular-nums">
+              {formatDuration(duration)}
+            </span>
+          )}
         </>
       }
     >
-      {toolCall.input && (
-        <ToolArgumentsDisplay toolName={toolCall.toolName} input={toolCall.input} />
-      )}
+      {toolCall.status === 'running' && !toolCall.input ? (
+        <div className="text-muted-foreground flex items-center gap-1.5 py-1 text-xs">
+          <Loader2 className="size-3 animate-spin" />
+          <span>Preparing...</span>
+        </div>
+      ) : toolCall.input !== undefined && toolCall.input !== '' ? (
+        <ToolArgumentsDisplay
+          toolName={toolCall.toolName}
+          input={toolCall.input}
+          isStreaming={toolCall.status === 'running'}
+        />
+      ) : null}
       {toolCall.progressOutput && !toolCall.result && (
         <TruncatedOutput content={toolCall.progressOutput} />
       )}
-      {toolCall.result && <TruncatedOutput content={toolCall.result} />}
+      {toolCall.result && (
+        <OutputRenderer
+          content={toolCall.result}
+          toolName={toolCall.toolName}
+          input={toolCall.input}
+        />
+      )}
     </CollapsibleCard>
   );
 }

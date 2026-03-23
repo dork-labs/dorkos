@@ -3,6 +3,50 @@
  * Extracts the most relevant detail from each tool's JSON input.
  */
 
+/** Known MCP server display name overrides. */
+const MCP_SERVER_LABELS: Record<string, string> = {
+  dorkos: 'DorkOS',
+  slack: 'Slack',
+  telegram: 'Telegram',
+  github: 'GitHub',
+  filesystem: 'Files',
+  playwright: 'Browser',
+  context7: 'Context7',
+};
+
+/** Convert snake_case to Title Case. */
+function humanizeSnakeCase(s: string): string {
+  return s
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** Parse an MCP tool name into server + tool components. */
+export function parseMcpToolName(toolName: string): {
+  server: string;
+  serverLabel: string;
+  tool: string;
+  toolLabel: string;
+} | null {
+  if (!toolName.startsWith('mcp__')) return null;
+  const parts = toolName.split('__');
+  if (parts.length < 3) return null;
+  const server = parts[1];
+  const tool = parts.slice(2).join('__');
+  const serverLabel = MCP_SERVER_LABELS[server] ?? humanizeSnakeCase(server);
+  const toolLabel = humanizeSnakeCase(tool);
+  return { server, serverLabel, tool, toolLabel };
+}
+
+/** Return the MCP server badge label, or null for non-MCP / DorkOS tools. */
+export function getMcpServerBadge(toolName: string): string | null {
+  const mcp = parseMcpToolName(toolName);
+  if (!mcp) return null;
+  if (mcp.server === 'dorkos') return null;
+  return mcp.serverLabel;
+}
+
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -90,7 +134,10 @@ export function getToolLabel(toolName: string, input: string): string {
     }
     case 'ReadMcpResourceTool':
       return `Read MCP resource ${truncate(str(parsed.uri), 30)}`;
-    default:
+    default: {
+      const mcp = parseMcpToolName(toolName);
+      if (mcp) return mcp.toolLabel;
       return toolName;
+    }
   }
 }

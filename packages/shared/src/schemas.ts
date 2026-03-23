@@ -535,6 +535,10 @@ export const ToolCallPartSchema = z
     answers: z.record(z.string(), z.string()).optional(),
     timeoutMs: z.number().optional().describe('Approval timeout duration in milliseconds'),
     hooks: z.array(HookPartSchema).optional(),
+    /** Client-only: timestamp (ms since epoch) when tool_call_start was received. Never serialized. */
+    startedAt: z.number().optional(),
+    /** Client-only: timestamp (ms since epoch) when tool_result was received. Never serialized. */
+    completedAt: z.number().optional(),
   })
   .openapi('ToolCallPart');
 

@@ -8,7 +8,7 @@ export { getPlatform, setPlatformAdapter, isMac, type PlatformAdapter } from './
 export { fuzzyMatch } from './fuzzy-match';
 export { HttpTransport } from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
-export { getToolLabel } from './tool-labels';
+export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
 export {
   EMOJI_SET,
@@ -75,3 +75,5 @@ export {
 } from './text-effects';
 export type { TextEffectMode, TextEffectConfig } from './text-effects';
 export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } from './form';
+export { formatDuration } from './format-duration';
+export { classifyContent, type ContentType } from './classify-content';
