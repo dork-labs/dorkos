@@ -115,6 +115,21 @@ Pulse schedules agent tasks on a cron — independently, without keeping a termi
   }}
 />
 
+## A2A Gateway
+
+The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (other agent frameworks, orchestrators, or tools that speak Google's Agent-to-Agent protocol). Requires Relay to be enabled.
+
+<TypeTable
+  type={{
+    DORKOS_A2A_ENABLED: {
+      description:
+        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses `MCP_API_KEY`.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
 ## Mesh
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.

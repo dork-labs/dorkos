@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 166,
+  "nextNumber": 168,
   "specs": [
+    {
+      "number": 167,
+      "slug": "agents-page-10x-redesign",
+      "title": "Agents Page 10x Redesign",
+      "created": "2026-03-22",
+      "status": "specified"
+    },
+    {
+      "number": 166,
+      "slug": "slack-adapter-world-class",
+      "title": "Slack Adapter World-Class Improvements",
+      "created": "2026-03-22",
+      "status": "ideation"
+    },
     {
       "number": 165,
       "slug": "connections-tab-ux-improvements",

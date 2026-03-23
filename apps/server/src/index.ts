@@ -24,6 +24,7 @@ import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshEnabled, setMeshInitError } from './services/mesh/mesh-state.js';
+import { createA2aRouter } from './routes/a2a.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -309,6 +310,30 @@ async function start() {
   if (meshCore) {
     app.use('/api/discovery', createDiscoveryRouter(meshCore));
     logger.info('[Discovery] Routes mounted');
+  }
+
+  // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
+  if (env.DORKOS_A2A_ENABLED && relayCore && meshCore) {
+    const baseUrl = `http://${env.DORKOS_HOST}:${PORT}`;
+    const version = env.DORKOS_VERSION_OVERRIDE ?? '0.0.0';
+    const { router: a2aRouter, fleetCardHandler } = createA2aRouter({
+      meshCore,
+      relay: relayCore,
+      db,
+      baseUrl,
+      version,
+    });
+
+    // Fleet Agent Card at the well-known path (outside /a2a prefix)
+    app.get('/.well-known/agent.json', mcpApiKeyAuth, fleetCardHandler);
+
+    // Per-agent cards and JSON-RPC under /a2a
+    app.use('/a2a', mcpApiKeyAuth, a2aRouter);
+
+    const a2aAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
+    logger.info(
+      `[A2A] Gateway mounted (fleet card: /.well-known/agent.json, RPC: POST /a2a, ${a2aAuthMode})`
+    );
   }
 
   // Mount Admin routes (reset, restart)

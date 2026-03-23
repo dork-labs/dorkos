@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 181,
+  "nextNumber": 183,
   "decisions": [
+    {
+      "number": 182,
+      "slug": "shared-message-splitting-utility",
+      "title": "Shared Message Splitting Utility Across Relay Adapters",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "slack-adapter-world-class",
+      "specSlug": "slack-adapter-world-class"
+    },
+    {
+      "number": 181,
+      "slug": "thread-aware-respond-mode-default",
+      "title": "Default Slack Adapter to Thread-Aware Respond Mode",
+      "status": "draft",
+      "created": "2026-03-22",
+      "extractedFrom": "slack-adapter-world-class",
+      "specSlug": "slack-adapter-world-class"
+    },
     {
       "number": 180,
       "slug": "adopt-tanstack-form",

@@ -57,6 +57,13 @@
       "when": 1774188665966,
       "tag": "0007_plain_satana",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774235539322,
+      "tag": "0008_rich_blindfold",
+      "breakpoints": true
     }
   ]
 }

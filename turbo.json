@@ -4,6 +4,7 @@
   "globalPassThroughEnv": [
     "CLIENT_DIST_PATH",
     "DORK_HOME",
+    "DORKOS_A2A_ENABLED",
     "DORKOS_BOUNDARY",
     "DORKOS_CORS_ORIGIN",
     "DORKOS_DEFAULT_CWD",

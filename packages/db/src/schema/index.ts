@@ -7,6 +7,7 @@
  *
  * @module db/schema
  */
+export * from './a2a.js';
 export * from './pulse.js';
 export * from './relay.js';
 export * from './mesh.js';

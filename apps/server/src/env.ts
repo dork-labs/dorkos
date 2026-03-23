@@ -20,6 +20,7 @@ const serverEnvSchema = z.object({
   // MCP external server — optional API key for authenticated access
   MCP_API_KEY: z.string().optional(),
   // Feature flags (boolean after transform)
+  DORKOS_A2A_ENABLED: boolFlag,
   DORKOS_PULSE_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime

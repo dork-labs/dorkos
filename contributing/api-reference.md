@@ -217,9 +217,10 @@ Schedules support an optional `agentId` field for agent-linked scheduling. When 
 
 The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).
 
-| Flag                   | Default | Guards                |
-| ---------------------- | ------- | --------------------- |
-| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes |
+| Flag                   | Default | Guards                                                        |
+| ---------------------- | ------- | ------------------------------------------------------------- |
+| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes                                         |
+| `DORKOS_A2A_ENABLED`   | `false` | `/.well-known/agent.json`, `/a2a/*` (requires Relay to be on) |
 
 This flag also controls the behavior of `POST /api/sessions/:id/messages`:
 
@@ -1206,3 +1207,70 @@ Via ngrok tunnel:
 ```
 
 **Cursor / Windsurf:** Add an MCP server in settings with URL `http://localhost:6242/mcp` and type `http`. If using an API key, configure the `Authorization: Bearer <key>` header in the MCP server settings.
+
+## A2A Gateway
+
+The A2A gateway implements Google's Agent-to-Agent protocol, exposing DorkOS agents to external A2A-compatible clients. Feature-flag gated via `DORKOS_A2A_ENABLED` (requires `DORKOS_RELAY_ENABLED=true`).
+
+Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not REST.
+
+### Authentication
+
+Same as MCP: optional `MCP_API_KEY` via `Authorization: Bearer <key>`. When `MCP_API_KEY` is not set, authentication is disabled.
+
+### GET /.well-known/agent.json
+
+Fleet-level Agent Card describing all registered DorkOS agents as a single A2A-compatible agent. This is the standard A2A discovery endpoint.
+
+**Responses:**
+
+- `200` - A2A Agent Card (JSON) with agent name, description, URL, and supported capabilities
+
+### GET /a2a/agents/:id/card
+
+Per-agent Agent Card for a specific registered agent.
+
+**Path parameters:**
+
+| Parameter | Type   | Description                     |
+| --------- | ------ | ------------------------------- |
+| `id`      | string | Agent ID from the Mesh registry |
+
+**Responses:**
+
+- `200` - A2A Agent Card (JSON) for the specified agent
+- `404` - Agent not found in the Mesh registry
+
+### POST /a2a
+
+JSON-RPC 2.0 endpoint for A2A protocol messages. Supports the standard A2A methods:
+
+| Method           | Description                                    |
+| ---------------- | ---------------------------------------------- |
+| `message/send`   | Send a message and receive a complete response |
+| `message/stream` | Send a message and stream the response via SSE |
+| `tasks/get`      | Get the current state of a task                |
+| `tasks/cancel`   | Cancel an in-progress task                     |
+
+**Request body:** JSON-RPC 2.0 envelope:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "req-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "role": "user",
+      "parts": [{ "type": "text", "text": "Run the tests" }]
+    }
+  }
+}
+```
+
+**Responses:**
+
+- `200` - JSON-RPC 2.0 response (for `message/send`, `tasks/get`, `tasks/cancel`)
+- `200` - SSE stream (for `message/stream`, `Content-Type: text/event-stream`)
+- `400` - Invalid JSON-RPC request
+- `404` - Unknown method

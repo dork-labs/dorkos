@@ -380,6 +380,14 @@ packages/
       telegram/             -- Telegram Bot API via grammY (modular: telegram-adapter.ts, inbound.ts, outbound.ts, webhook.ts)
       webhook-adapter.ts    -- Generic HTTP POST with HMAC-SHA256 verification
 
+  a2a-gateway/src/
+    agent-card-generator.ts -- A2A Agent Card generation from Mesh manifests
+    schema-translator.ts    -- A2A ↔ DorkOS type translation
+    task-store.ts           -- SQLite task state persistence
+    dorkos-executor.ts      -- Bridges A2A tasks to Relay publish/subscribe
+    express-handlers.ts     -- Express handlers for A2A endpoints
+    index.ts                -- Barrel export
+
   mesh/src/
     mesh-core.ts            -- Thin coordinator composing discovery, agent management, and denial modules
     mesh-discovery.ts       -- Discovery & registration logic (discover, register, registerByPath)
@@ -497,6 +505,7 @@ apps/
       relay.ts              -- Relay HTTP routes (feature-flag guarded)
       mesh.ts               -- Mesh HTTP routes (always mounted)
       mcp.ts                -- MCP server endpoint (/mcp, Streamable HTTP transport)
+      a2a.ts                -- A2A protocol endpoints (feature-flag gated: DORKOS_A2A_ENABLED)
       models.ts             -- GET /api/models (dynamic via runtimeRegistry.getDefault())
       capabilities.ts       -- GET /api/capabilities (all runtime capability flags)
       discovery.ts          -- POST /api/discovery/scan (SSE agent discovery)
@@ -698,6 +707,40 @@ Standard Vite React build. Server compiled separately via `tsc`.
 `Dockerfile.integration` supports two install modes via `INSTALL_MODE` build arg: `tarball` (local build, default) or `npm` (published package). Use `pnpm smoke:npm` to test the published npm package. Both integration and runnable images set `DORKOS_HOST=0.0.0.0` to enable Docker port forwarding.
 
 The GitHub Actions workflow (`.github/workflows/cli-smoke-test.yml`) runs smoke tests on bare Ubuntu runners (Node 20/22 matrix), Docker smoke tests, and full integration tests on every push to main.
+
+## A2A Gateway
+
+The A2A gateway (`packages/a2a-gateway/src/`) exposes DorkOS agents to external A2A-compatible clients using Google's Agent-to-Agent protocol. It is feature-flag gated behind `DORKOS_A2A_ENABLED` (default `false`) and requires `DORKOS_RELAY_ENABLED=true`.
+
+### Key Modules
+
+| Module                    | Purpose                                                      |
+| ------------------------- | ------------------------------------------------------------ |
+| `agent-card-generator.ts` | Generates A2A Agent Cards from Mesh agent manifests          |
+| `schema-translator.ts`    | Translates between A2A protocol types and DorkOS Relay types |
+| `task-store.ts`           | SQLite-backed task state persistence for A2A task lifecycle  |
+| `dorkos-executor.ts`      | Bridges A2A task execution to Relay publish/subscribe        |
+| `express-handlers.ts`     | Express request handlers for the three A2A endpoints         |
+
+### Data Flow
+
+```
+External A2A Client → POST /a2a (JSON-RPC)
+  → express-handlers → schema-translator → relayCore.publish() → Agent
+Agent response → Relay subscription → schema-translator → A2A TaskStatusUpdate → SSE to client
+```
+
+### Auth
+
+Reuses `MCP_API_KEY` via the existing `mcpApiKeyAuth` middleware — the same authentication used by the MCP endpoint.
+
+### Server Integration
+
+Routes are mounted in `apps/server/src/routes/a2a.ts`:
+
+- `GET /.well-known/agent.json` — Fleet Agent Card (mounted at app root)
+- `GET /a2a/agents/:id/card` — Per-agent Agent Card
+- `POST /a2a` — JSON-RPC 2.0 endpoint
 
 ## Relay
 

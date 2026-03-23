@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Implement A2A external gateway for agent interoperability
 - Improve ConnectionsTab UX with decomposed components and actionable deep-links
 - Adopt TanStack Form for submit-lifecycle forms
 - Add Telegram typing indicator during agent processing
