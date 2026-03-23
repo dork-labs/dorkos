@@ -27,6 +27,7 @@ describe('Database Migrations', () => {
     const tableNames = result.map((r) => r.name).sort();
 
     expect(tableNames).toEqual([
+      'a2a_tasks',
       'agent_denials',
       'agents',
       'pulse_runs',

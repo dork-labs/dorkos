@@ -1,0 +1,45 @@
+---
+title: DorkOS 0.21.0
+description: Agent creation pipeline, fleet management surface, and A2A gateway
+date: 2026-03-23
+author: DorkOS Team
+category: release
+tags: [release, agent-creation, fleet-management, a2a, tool-calls, slack]
+---
+
+DorkOS 0.21.0 introduces a complete agent creation pipeline with workspace templates, redesigns the agents page as a fleet management surface, and adds an A2A gateway for cross-platform agent interoperability.
+
+## Highlights
+
+**Agent Creation Pipeline** — Create agents from a guided dialog with name validation, directory resolution, personality sliders, and a workspace template picker. Templates are cloned via git with giget fallback, and auth tokens are redacted from error output.
+
+**Fleet Management Surface** — The agents page is now a dedicated fleet management view with health monitoring, filtering, and one-click session launch. Manage your entire agent fleet from a single control surface.
+
+**A2A External Gateway** — Agents can now interoperate across platforms through the new A2A gateway, enabling cross-system coordination without custom integration code.
+
+## All Changes
+
+### Added
+
+- Create agents from a guided dialog with name validation, directory resolution, personality sliders, and workspace template picker
+- Overhaul tool call display with MCP server parsing, streaming state tracking, and classified output rendering
+- Redesign agents page as a fleet management surface with health monitoring, filtering, and session launch
+- Improve Slack adapter with 8 enhancements including message threading, reaction management, and format fidelity
+- Implement A2A external gateway for cross-platform agent interoperability
+- Improve ConnectionsTab UX with decomposed components and actionable deep-links to adapter setup
+- Adopt TanStack Form for submit-lifecycle forms with validation and error handling
+- Add Telegram typing indicator during agent processing for real-time feedback
+
+### Fixed
+
+- Resolve architectural debt from agent creation review — consolidate duplicated route/service logic, fix FSD cross-feature import, add auth token redaction
+- Restore result border separator and clean up OutputRenderer imports
+- Make dashboard responsive on mobile with proper viewport handling
+- Fix Chat SDK HTML rendering, port splitMessage utility, and deprecate legacy adapter
+- Update server integration tests for new validation and convention-files patterns
+
+## Install / Update
+
+```
+npm install -g dorkos@0.21.0
+```

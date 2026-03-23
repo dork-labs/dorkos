@@ -9,24 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Implement agent creation pipeline with workspace templates
-- Overhaul tool call display with MCP parsing, streaming fixes, and classified output rendering
-- Redesign agents page as fleet management surface
-- Add 8 world-class Slack adapter improvements
-- Implement A2A external gateway for agent interoperability
-- Improve ConnectionsTab UX with decomposed components and actionable deep-links
-- Adopt TanStack Form for submit-lifecycle forms
-- Add Telegram typing indicator during agent processing
-
 ### Changed
 
 ### Fixed
 
-- Resolve architectural debt from agent creation review
+---
+
+## [0.21.0] - 2026-03-23
+
+> Agent creation pipeline, fleet management surface, and A2A gateway
+
+### Added
+
+- Create agents from a guided dialog with name validation, directory resolution, personality sliders, and workspace template picker
+- Overhaul tool call display with MCP server parsing, streaming state tracking, and classified output rendering
+- Redesign agents page as a fleet management surface with health monitoring, filtering, and session launch
+- Improve Slack adapter with 8 enhancements including message threading, reaction management, and format fidelity
+- Implement A2A external gateway for cross-platform agent interoperability
+- Improve ConnectionsTab UX with decomposed components and actionable deep-links to adapter setup
+- Adopt TanStack Form for submit-lifecycle forms with validation and error handling
+- Add Telegram typing indicator during agent processing for real-time feedback
+
+### Fixed
+
+- Resolve architectural debt from agent creation review — consolidate duplicated route/service logic, fix FSD cross-feature import, add auth token redaction
 - Restore result border separator and clean up OutputRenderer imports
-- Make dashboard responsive on mobile
-- Fix Chat SDK HTML rendering, port splitMessage, deprecate adapter
-- Update server integration tests for new validation and convention-files
+- Make dashboard responsive on mobile with proper viewport handling
+- Fix Chat SDK HTML rendering, port splitMessage utility, and deprecate legacy adapter
+- Update server integration tests for new validation and convention-files patterns
+
 ---
 
 ## [0.20.0] - 2026-03-22
@@ -740,7 +751,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/dork-labs/dorkos/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/dork-labs/dorkos/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/dork-labs/dorkos/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/dork-labs/dorkos/compare/v0.17.2...v0.18.0
 [0.17.2]: https://github.com/dork-labs/dorkos/compare/v0.17.1...v0.17.2
