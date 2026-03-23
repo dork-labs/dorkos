@@ -38,6 +38,35 @@ vi.mock('../ui/SessionLaunchPopover', () => ({
   ),
 }));
 
+// Mock relativeTime to return a deterministic value in tests
+vi.mock('@/layers/features/mesh/lib/relative-time', () => ({
+  relativeTime: (iso: string | null) => (iso ? '5m ago' : 'Never'),
+}));
+
+// Mock UnregisterAgentDialog to capture open state and agent props
+const mockUnregisterDialogOnOpenChange = vi.fn();
+vi.mock('../ui/UnregisterAgentDialog', () => ({
+  UnregisterAgentDialog: ({
+    agentName,
+    agentId,
+    open,
+    onOpenChange,
+  }: {
+    agentName: string;
+    agentId: string;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) => {
+    mockUnregisterDialogOnOpenChange.mockImplementation(onOpenChange);
+    if (!open) return null;
+    return (
+      <div data-testid="unregister-dialog" data-agent-id={agentId} data-agent-name={agentName}>
+        <button onClick={() => onOpenChange(false)}>Cancel</button>
+      </div>
+    );
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Browser API mocks
 // ---------------------------------------------------------------------------
@@ -166,8 +195,8 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    // Click the CollapsibleTrigger (the flex row div inside)
-    const trigger = container.querySelector('[data-slot="collapsible-trigger"]') as HTMLElement;
+    // Click the cursor-pointer card header to toggle expansion
+    const trigger = container.querySelector('.cursor-pointer') as HTMLElement;
     expect(trigger).toBeInTheDocument();
     fireEvent.click(trigger);
 
@@ -175,7 +204,7 @@ describe('AgentRow', () => {
     expect(screen.getByText('Handles UI tasks')).toBeInTheDocument();
   });
 
-  it('truncates capabilities at 3 with +N more badge', () => {
+  it('does not show capability badges in collapsed state', () => {
     render(
       <AgentRow
         agent={agentFixture}
@@ -187,8 +216,30 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    // Overflow badge visible in collapsed state
-    expect(screen.getAllByText('+2 more').length).toBeGreaterThanOrEqual(1);
+    // Capabilities are only shown in expanded state — none visible when collapsed
+    expect(screen.queryByText('code')).not.toBeInTheDocument();
+    expect(screen.queryByText('+2 more')).not.toBeInTheDocument();
+  });
+
+  it('shows all capability badges in expanded state', () => {
+    const { container } = render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const trigger = container.querySelector('.cursor-pointer') as HTMLElement;
+    fireEvent.click(trigger);
+
+    // All 5 capabilities should be visible after expansion
+    expect(screen.getByText('code')).toBeInTheDocument();
+    expect(screen.getByText('review')).toBeInTheDocument();
+    expect(screen.getByText('deploy')).toBeInTheDocument();
   });
 
   it('shows session count badge when sessions exist', () => {
@@ -222,7 +273,7 @@ describe('AgentRow', () => {
     expect(screen.queryByText(/\d+ active/)).not.toBeInTheDocument();
   });
 
-  it('calls unregister mutation on unregister confirm', () => {
+  it('opens UnregisterAgentDialog when Unregister button is clicked', () => {
     const { container } = render(
       <AgentRow
         agent={agentFixture}
@@ -234,21 +285,81 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    // Expand the row first via CollapsibleTrigger
-    const trigger = container.querySelector('[data-slot="collapsible-trigger"]') as HTMLElement;
+    // Expand the row first
+    const trigger = container.querySelector('.cursor-pointer') as HTMLElement;
     fireEvent.click(trigger);
 
-    // Click Unregister
-    const unregisterBtns = screen.getAllByRole('button', { name: /unregister/i });
-    fireEvent.click(unregisterBtns[0]);
+    // Click Unregister button
+    const unregisterBtn = screen.getByRole('button', { name: /unregister/i });
+    fireEvent.click(unregisterBtn);
 
-    // Confirmation appears
-    expect(screen.getByText('Are you sure?')).toBeInTheDocument();
+    // UnregisterAgentDialog should now be open with correct agent props
+    const dialog = screen.getByTestId('unregister-dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('data-agent-id', 'agent-1');
+    expect(dialog).toHaveAttribute('data-agent-name', 'Frontend Agent');
+  });
 
-    // Confirm
-    const confirmBtn = screen.getByRole('button', { name: /confirm/i });
-    fireEvent.click(confirmBtn);
+  it('displays relative time from relativeTime()', () => {
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive="2026-03-23T10:00:00.000Z"
+      />,
+      { wrapper: createWrapper() }
+    );
 
-    expect(mockUnregisterMutate).toHaveBeenCalledWith('agent-1');
+    // Mock returns '5m ago' for any non-null ISO string
+    expect(screen.getByText('5m ago')).toBeInTheDocument();
+  });
+
+  it('displays "Never" when lastActive is null', () => {
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.getByText('Never')).toBeInTheDocument();
+  });
+
+  it('adds animate-health-pulse class to dot when healthStatus is active', () => {
+    const { container } = render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const dot = container.querySelector('.bg-emerald-500');
+    expect(dot).toHaveClass('animate-health-pulse');
+  });
+
+  it('does not add animate-health-pulse class when healthStatus is inactive', () => {
+    const { container } = render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="inactive"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const dot = container.querySelector('.bg-amber-500');
+    expect(dot).not.toHaveClass('animate-health-pulse');
   });
 });

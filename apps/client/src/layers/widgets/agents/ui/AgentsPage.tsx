@@ -1,11 +1,10 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/layers/shared/ui';
+import { useSearch } from '@tanstack/react-router';
 import { Button } from '@/layers/shared/ui/button';
 import { useTopology } from '@/layers/entities/mesh';
-import { AgentsList } from '@/layers/features/agents-list';
-import { DiscoveryView } from '@/layers/features/mesh';
+import { AgentsList, AgentGhostRows } from '@/layers/features/agents-list';
 
 // Lazy-load topology to avoid pulling ReactFlow into the initial bundle.
 // Direct internal path used intentionally — barrel re-exports break code splitting.
@@ -15,6 +14,7 @@ const LazyTopologyGraph = lazy(() =>
 
 /** Agents page — full-viewport fleet management surface at /agents. */
 export function AgentsPage() {
+  const { view: viewMode } = useSearch({ from: '/_shell/agents' });
   const { data: topology, isLoading, isError, refetch } = useTopology();
 
   // Flatten topology namespaces into a single agent array with health + projectPath attached.
@@ -50,10 +50,10 @@ export function AgentsPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="flex h-full flex-col"
+          transition={{ duration: 0.15 }}
+          className="flex h-full flex-col items-center justify-center"
         >
-          <DiscoveryView fullBleed />
+          <AgentGhostRows />
         </motion.div>
       ) : (
         <motion.div
@@ -61,34 +61,45 @@ export function AgentsPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: 0.15 }}
           className="flex h-full flex-col"
         >
-          <Tabs defaultValue="agents" className="flex h-full flex-col">
-            <TabsList className="mx-4 mt-3 shrink-0">
-              <TabsTrigger value="agents">Agents</TabsTrigger>
-              <TabsTrigger value="topology">Topology</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="agents" className="min-h-0 flex-1 overflow-hidden">
-              <AgentsList agents={agents} isLoading={isLoading} />
-            </TabsContent>
-
-            <TabsContent value="topology" className="relative flex-1 overflow-hidden">
-              <div className="absolute inset-0">
-                <Suspense
-                  fallback={
-                    <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                      Loading topology...
-                    </div>
-                  }
-                >
-                  <LazyTopologyGraph />
-                </Suspense>
-              </div>
-            </TabsContent>
-          </Tabs>
+          <AnimatePresence mode="wait" initial={false}>
+            {viewMode === 'topology' ? (
+              <motion.div
+                key="view-topology"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="relative flex-1 overflow-hidden"
+              >
+                <div className="absolute inset-0">
+                  <Suspense
+                    fallback={
+                      <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Loading topology...
+                      </div>
+                    }
+                  >
+                    <LazyTopologyGraph />
+                  </Suspense>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="view-list"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex h-full flex-col"
+              >
+                <AgentsList agents={agents} isLoading={isLoading} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -13,6 +13,12 @@ import type { ReactNode } from 'react';
 
 const mockRefetch = vi.fn();
 const mockUseTopology = vi.fn();
+let mockViewMode: 'list' | 'topology' = 'list';
+
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({ view: mockViewMode }),
+}));
+
 vi.mock('@/layers/entities/mesh', () => ({
   useTopology: () => mockUseTopology(),
 }));
@@ -23,43 +29,11 @@ vi.mock('@/layers/features/agents-list', () => ({
       AgentsList
     </div>
   ),
-}));
-
-vi.mock('@/layers/features/mesh', () => ({
-  DiscoveryView: ({ fullBleed }: { fullBleed?: boolean }) => (
-    <div data-testid="discovery-view" data-full-bleed={String(fullBleed ?? false)}>
-      DiscoveryView
-    </div>
-  ),
+  AgentGhostRows: () => <div data-testid="agent-ghost-rows">AgentGhostRows</div>,
 }));
 
 vi.mock('@/layers/features/mesh/ui/TopologyGraph', () => ({
   TopologyGraph: () => <div data-testid="topology-graph">TopologyGraph</div>,
-}));
-
-vi.mock('@radix-ui/react-tabs', () => ({
-  Root: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
-    <div {...props}>{children}</div>
-  ),
-  List: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
-    <div role="tablist" {...props}>
-      {children}
-    </div>
-  ),
-  Trigger: ({
-    children,
-    value,
-    ...props
-  }: Record<string, unknown> & { children?: ReactNode; value?: string }) => (
-    <button role="tab" data-value={value} {...props}>
-      {children}
-    </button>
-  ),
-  Content: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
-    <div role="tabpanel" {...props}>
-      {children}
-    </div>
-  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -134,7 +108,10 @@ const makeTopologyResult = (agentCount: number) => ({
       : [],
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mockViewMode = 'list';
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -146,7 +123,7 @@ describe('AgentsPage', () => {
     mockRefetch.mockResolvedValue(undefined);
   });
 
-  it('renders DiscoveryView in Mode A when zero agents', () => {
+  it('renders AgentGhostRows in Mode A when zero agents', () => {
     mockUseTopology.mockReturnValue({
       data: makeTopologyResult(0),
       isLoading: false,
@@ -156,13 +133,14 @@ describe('AgentsPage', () => {
 
     render(<AgentsPage />, { wrapper: createWrapper() });
 
-    expect(screen.getByTestId('discovery-view')).toBeInTheDocument();
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agent-ghost-rows')).toBeInTheDocument();
+    expect(screen.queryByTestId('agents-list')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('topology-graph')).not.toBeInTheDocument();
   });
 
-  it('renders Agents and Topology tabs in Mode B when agents exist', () => {
+  it('does not render the Tabs component in Mode A', () => {
     mockUseTopology.mockReturnValue({
-      data: makeTopologyResult(2),
+      data: makeTopologyResult(0),
       isLoading: false,
       isError: false,
       refetch: mockRefetch,
@@ -170,11 +148,11 @@ describe('AgentsPage', () => {
 
     render(<AgentsPage />, { wrapper: createWrapper() });
 
-    expect(screen.getByRole('tab', { name: /agents/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /topology/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
-  it('renders AgentsList in agents tab', () => {
+  it('renders AgentsList in Mode B when viewMode is list', () => {
+    mockViewMode = 'list';
     mockUseTopology.mockReturnValue({
       data: makeTopologyResult(3),
       isLoading: false,
@@ -185,6 +163,37 @@ describe('AgentsPage', () => {
     render(<AgentsPage />, { wrapper: createWrapper() });
 
     expect(screen.getByTestId('agents-list')).toBeInTheDocument();
+    expect(screen.queryByTestId('topology-graph')).not.toBeInTheDocument();
+  });
+
+  it('renders TopologyGraph in Mode B when viewMode is topology', async () => {
+    mockViewMode = 'topology';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(2),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+
+    // LazyTopologyGraph is behind Suspense — wait for the lazy import to resolve.
+    await waitFor(() => expect(screen.getByTestId('topology-graph')).toBeInTheDocument());
+    expect(screen.queryByTestId('agents-list')).not.toBeInTheDocument();
+  });
+
+  it('does not render Tabs in Mode B', () => {
+    mockViewMode = 'list';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(2),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
   it('renders error state with retry button on isError', () => {

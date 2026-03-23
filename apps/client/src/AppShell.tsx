@@ -74,7 +74,9 @@ function useHeaderSlot({
   agentVisual: AgentVisual;
   isStreaming: boolean;
 }): HeaderSlot {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { pathname, searchStr } = useRouterState({
+    select: (s) => ({ pathname: s.location.pathname, searchStr: s.location.searchStr }),
+  });
   switch (pathname) {
     case '/':
       return {
@@ -82,12 +84,15 @@ function useHeaderSlot({
         content: <DashboardHeader />,
         borderStyle: undefined,
       };
-    case '/agents':
+    case '/agents': {
+      const viewParam = new URLSearchParams(searchStr).get('view');
+      const viewMode = viewParam === 'topology' ? 'topology' : 'list';
       return {
         key: 'agents',
-        content: <AgentsHeader />,
+        content: <AgentsHeader viewMode={viewMode} />,
         borderStyle: undefined,
       };
+    }
     default:
       return {
         key: 'session',

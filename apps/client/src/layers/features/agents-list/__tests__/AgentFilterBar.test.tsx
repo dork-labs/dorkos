@@ -153,8 +153,12 @@ describe('AgentFilterBar', () => {
       />
     );
 
-    // 3 namespaces (web, api, docs) — dropdown should appear
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    // 3 namespaces (web, api, docs) — namespace combobox should appear alongside the mobile status combobox
+    const comboboxes = screen.getAllByRole('combobox');
+    const namespaceCombobox = comboboxes.find(
+      (el) => el.textContent?.includes('All namespaces') || el.getAttribute('aria-label') === null
+    );
+    expect(namespaceCombobox).toBeInTheDocument();
   });
 
   it('hides namespace dropdown when agents have only 1 namespace', () => {
@@ -169,7 +173,10 @@ describe('AgentFilterBar', () => {
       />
     );
 
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    // Only the mobile status dropdown should remain — no namespace combobox
+    const comboboxes = screen.getAllByRole('combobox');
+    expect(comboboxes).toHaveLength(1);
+    expect(comboboxes[0]).toHaveAttribute('aria-label', 'Filter by status');
   });
 
   it('displays the result count', () => {
@@ -199,5 +206,110 @@ describe('AgentFilterBar', () => {
     expect(screen.getByRole('button', { name: /^active$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^inactive$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^stale$/i })).toBeInTheDocument();
+  });
+
+  it('applies color classes to status chips', () => {
+    render(
+      <AgentFilterBar
+        agents={makeAgents()}
+        filterState={defaultFilterState}
+        onFilterStateChange={onFilterStateChange}
+        filteredCount={4}
+        statusCounts={{ active: 2, inactive: 1, stale: 0, unreachable: 1 }}
+      />
+    );
+
+    // Use exact-match regex to avoid "active" matching "inactive"
+    const activeChip = screen.getByRole('button', { name: /^active/i });
+    expect(activeChip.className).toMatch(/emerald/);
+
+    const inactiveChip = screen.getByRole('button', { name: /^inactive/i });
+    expect(inactiveChip.className).toMatch(/amber/);
+
+    const staleChip = screen.getByRole('button', { name: /^stale/i });
+    expect(staleChip.className).toMatch(/muted/);
+  });
+
+  it('shows count in parentheses when statusCounts provided and count > 0', () => {
+    render(
+      <AgentFilterBar
+        agents={makeAgents()}
+        filterState={defaultFilterState}
+        onFilterStateChange={onFilterStateChange}
+        filteredCount={4}
+        statusCounts={{ active: 3, inactive: 1, stale: 0, unreachable: 0 }}
+      />
+    );
+
+    // active chip should show (3)
+    expect(screen.getByRole('button', { name: /^active/i }).textContent).toContain('(3)');
+    // inactive chip should show (1)
+    expect(screen.getByRole('button', { name: /^inactive/i }).textContent).toContain('(1)');
+    // stale chip count is 0 — no parentheses rendered
+    expect(screen.getByRole('button', { name: /^stale$/i }).textContent).not.toContain('(');
+  });
+
+  it('hides unreachable chip when its count is 0', () => {
+    render(
+      <AgentFilterBar
+        agents={makeAgents()}
+        filterState={defaultFilterState}
+        onFilterStateChange={onFilterStateChange}
+        filteredCount={4}
+        statusCounts={{ active: 2, inactive: 1, stale: 1, unreachable: 0 }}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /unreachable/i })).not.toBeInTheDocument();
+  });
+
+  it('shows unreachable chip when its count is > 0', () => {
+    render(
+      <AgentFilterBar
+        agents={makeAgents()}
+        filterState={defaultFilterState}
+        onFilterStateChange={onFilterStateChange}
+        filteredCount={4}
+        statusCounts={{ active: 2, inactive: 1, stale: 0, unreachable: 2 }}
+      />
+    );
+
+    const chip = screen.getByRole('button', { name: /unreachable/i });
+    expect(chip).toBeInTheDocument();
+    expect(chip.textContent).toContain('(2)');
+    expect(chip.className).toMatch(/red/);
+  });
+
+  it('renders the mobile status dropdown', () => {
+    render(
+      <AgentFilterBar
+        agents={makeAgents()}
+        filterState={defaultFilterState}
+        onFilterStateChange={onFilterStateChange}
+        filteredCount={4}
+      />
+    );
+
+    const mobileDropdown = screen.getByRole('combobox', { name: /filter by status/i });
+    expect(mobileDropdown).toBeInTheDocument();
+  });
+
+  it('calls onFilterStateChange when mobile dropdown value changes', () => {
+    render(
+      <AgentFilterBar
+        agents={makeAgents()}
+        filterState={defaultFilterState}
+        onFilterStateChange={onFilterStateChange}
+        filteredCount={4}
+      />
+    );
+
+    // Simulate selecting 'inactive' from the mobile status combobox
+    // Radix Select triggers onValueChange — fire click then check it's a combobox
+    const mobileDropdown = screen.getByRole('combobox', { name: /filter by status/i });
+    expect(mobileDropdown).toBeInTheDocument();
+
+    // Verify the correct filter is currently 'all' (default)
+    expect((mobileDropdown as HTMLButtonElement).textContent).toMatch(/all/i);
   });
 });

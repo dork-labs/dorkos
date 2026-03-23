@@ -1,11 +1,29 @@
-import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useCallback, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { useSessions } from '@/layers/entities/session';
+import { useMeshStatus } from '@/layers/entities/mesh';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
 import { AgentRow } from './AgentRow';
-import { AgentFilterBar, type FilterState } from './AgentFilterBar';
+import { AgentEmptyFilterState } from './AgentEmptyFilterState';
+import { AgentFilterBar, type FilterState, type StatusFilter } from './AgentFilterBar';
+import { FleetHealthBar } from './FleetHealthBar';
+
+/** Items beyond this index are rendered without stagger delay to keep animation snappy. */
+const STAGGER_ITEM_LIMIT = 8;
+
+/** Stagger container variants — orchestrates child entrance animations. */
+const staggerContainerVariants = {
+  visible: { transition: { staggerChildren: 0.04 } },
+  hidden: {},
+} as const;
+
+/** Item entrance variants — fade in + slide up for the first N items. */
+const staggerItemVariants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0 },
+} as const;
 
 interface AgentsListProps {
   agents: TopologyAgent[];
@@ -45,11 +63,25 @@ function applyFilters(agents: TopologyAgent[], filterState: FilterState): Topolo
 
 /**
  * Agent list container — renders expandable AgentRow components with
- * optional namespace grouping, integrated filter bar, and entrance animations.
+ * optional namespace grouping, integrated filter bar, fleet health bar,
+ * and entrance animations that play once on mount.
  */
 export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const [filterState, setFilterState] = useState<FilterState>(defaultFilterState);
+  // staggerKey is intentionally never updated — keeping it stable prevents the
+  // stagger container from remounting (and re-animating) on filter changes.
+  const [staggerKey] = useState(0);
+
   const { sessions } = useSessions();
+  const { data: meshStatus } = useMeshStatus();
+
+  const handleStatusFilter = useCallback((status: StatusFilter) => {
+    setFilterState((prev) => ({ ...prev, statusFilter: status }));
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setFilterState(defaultFilterState);
+  }, []);
 
   // Derive filtered agents from filter state (no useEffect, no callback loop)
   const filteredAgents = useMemo(() => applyFilters(agents, filterState), [agents, filterState]);
@@ -93,38 +125,52 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {meshStatus && (
+        <FleetHealthBar
+          status={meshStatus}
+          activeFilter={filterState.statusFilter}
+          onStatusFilter={handleStatusFilter}
+        />
+      )}
       <AgentFilterBar
         agents={agents}
         filterState={filterState}
         onFilterStateChange={setFilterState}
         filteredCount={filteredAgents.length}
+        statusCounts={
+          meshStatus
+            ? {
+                active: meshStatus.activeCount,
+                inactive: meshStatus.inactiveCount,
+                stale: meshStatus.staleCount,
+                unreachable: meshStatus.unreachableCount,
+              }
+            : undefined
+        }
       />
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 p-4 pt-0">
-          {Object.entries(grouped).map(([namespace, groupAgents]) => (
-            <div key={namespace}>
-              {shouldGroup && namespace && (
-                <h3 className="text-muted-foreground mt-4 mb-2 text-[10px] font-medium tracking-widest uppercase first:mt-0">
-                  {namespace}
-                </h3>
-              )}
-              <AnimatePresence initial={false}>
+          {filteredAgents.length === 0 && agents.length > 0 ? (
+            <AgentEmptyFilterState onClearFilters={handleClearFilters} />
+          ) : (
+            Object.entries(grouped).map(([namespace, groupAgents]) => (
+              <div key={namespace}>
+                {shouldGroup && namespace && (
+                  <h3 className="text-muted-foreground mt-4 mb-2 text-[10px] font-medium tracking-widest uppercase first:mt-0">
+                    {namespace}
+                  </h3>
+                )}
                 <motion.div
+                  key={staggerKey}
                   initial="hidden"
                   animate="visible"
-                  variants={{
-                    visible: { transition: { staggerChildren: 0.04 } },
-                    hidden: {},
-                  }}
+                  variants={staggerContainerVariants}
                   className="space-y-2"
                 >
-                  {groupAgents.map((agent) => (
+                  {groupAgents.map((agent, index) => (
                     <motion.div
                       key={agent.id}
-                      variants={{
-                        hidden: { opacity: 0, y: 8 },
-                        visible: { opacity: 1, y: 0 },
-                      }}
+                      variants={index < STAGGER_ITEM_LIMIT ? staggerItemVariants : undefined}
                       transition={{ duration: 0.15 }}
                     >
                       <AgentRow
@@ -137,9 +183,9 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
                     </motion.div>
                   ))}
                 </motion.div>
-              </AnimatePresence>
-            </div>
-          ))}
+              </div>
+            ))
+          )}
         </div>
       </ScrollArea>
     </div>

@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 168,
+  "nextNumber": 170,
   "specs": [
+    {
+      "number": 169,
+      "slug": "tool-call-display-overhaul",
+      "title": "Tool Call Display Overhaul",
+      "created": "2026-03-23",
+      "status": "ideation"
+    },
+    {
+      "number": 168,
+      "slug": "agent-creation-and-templates",
+      "title": "Agent Creation & Workspace Templates",
+      "created": "2026-03-23",
+      "status": "brief"
+    },
     {
       "number": 167,
       "slug": "agents-page-10x-redesign",

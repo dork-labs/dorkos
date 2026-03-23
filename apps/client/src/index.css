@@ -434,6 +434,19 @@ body {
   animation-name: drain;
 }
 
+@keyframes health-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(16 185 129 / 0);
+  }
+}
+.animate-health-pulse {
+  animation: health-pulse 2s ease-in-out infinite;
+}
+
 /* Assistant message typography */
 .msg-assistant p + p {
   margin-top: 1em;

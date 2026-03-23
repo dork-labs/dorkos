@@ -8,6 +8,17 @@ import { AgentsHeader } from '../ui/AgentsHeader';
 // Mocks
 // ---------------------------------------------------------------------------
 
+const mockNavigate = vi.fn();
+let mockIsMobile = false;
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+vi.mock('@/layers/shared/model', () => ({
+  useIsMobile: () => mockIsMobile,
+}));
+
 vi.mock('@/layers/features/mesh', () => ({
   DiscoveryView: () => <div data-testid="discovery-view">DiscoveryView</div>,
 }));
@@ -40,7 +51,10 @@ beforeAll(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mockIsMobile = false;
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -51,18 +65,20 @@ describe('AgentsHeader', () => {
     vi.clearAllMocks();
   });
 
-  it('renders "Agents" page title', () => {
-    render(<AgentsHeader />);
-    expect(screen.getByText('Agents')).toBeInTheDocument();
+  it('renders "Agents" page title span', () => {
+    render(<AgentsHeader viewMode="list" />);
+    // The title is a <span> with class text-sm font-medium — query by its specific role/selector
+    // to avoid collision with the "Agents" view-switcher tab button.
+    expect(screen.getByText('Agents', { selector: 'span' })).toBeInTheDocument();
   });
 
   it('renders Scan for Agents button', () => {
-    render(<AgentsHeader />);
+    render(<AgentsHeader viewMode="list" />);
     expect(screen.getByRole('button', { name: /scan for agents/i })).toBeInTheDocument();
   });
 
   it('opens discovery dialog on Scan button click', () => {
-    render(<AgentsHeader />);
+    render(<AgentsHeader viewMode="list" />);
 
     // Discovery view not visible initially
     expect(screen.queryByTestId('discovery-view')).not.toBeInTheDocument();
@@ -75,7 +91,37 @@ describe('AgentsHeader', () => {
   });
 
   it('renders CommandPaletteTrigger', () => {
-    render(<AgentsHeader />);
+    render(<AgentsHeader viewMode="list" />);
     expect(screen.getByTestId('command-palette-trigger')).toBeInTheDocument();
+  });
+
+  describe('view switcher (desktop)', () => {
+    it('renders Agents and Topology tabs on desktop', () => {
+      mockIsMobile = false;
+      render(<AgentsHeader viewMode="list" />);
+      expect(screen.getByRole('button', { name: 'Agents' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Topology' })).toBeInTheDocument();
+    });
+
+    it('hides view switcher on mobile', () => {
+      mockIsMobile = true;
+      render(<AgentsHeader viewMode="list" />);
+      expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Topology' })).not.toBeInTheDocument();
+    });
+
+    it('applies active styling to the current view tab', () => {
+      render(<AgentsHeader viewMode="topology" />);
+      const topologyBtn = screen.getByRole('button', { name: 'Topology' });
+      expect(topologyBtn).toHaveClass('bg-background');
+      const agentsBtn = screen.getByRole('button', { name: 'Agents' });
+      expect(agentsBtn).not.toHaveClass('bg-background');
+    });
+
+    it('calls navigate with correct view param on tab click', () => {
+      render(<AgentsHeader viewMode="list" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Topology' }));
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'topology' } });
+    });
   });
 });

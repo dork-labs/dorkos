@@ -50,6 +50,13 @@ const dashboardSearchSchema = z.object({
 /** Search params available on the `/` (dashboard) route. */
 export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
 
+const agentsSearchSchema = z.object({
+  view: z.enum(['list', 'topology']).optional().default('list'),
+});
+
+/** Search params available on the `/agents` route. */
+export type AgentsSearch = z.infer<typeof agentsSearchSchema>;
+
 // ── Dashboard at / ──────────────────────────────────────────
 const indexRoute = createRoute({
   getParentRoute: () => appShellRoute,
@@ -81,6 +88,7 @@ const sessionRoute = createRoute({
 const agentsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/agents',
+  validateSearch: zodValidator(agentsSearchSchema),
   component: AgentsPage,
 });
 

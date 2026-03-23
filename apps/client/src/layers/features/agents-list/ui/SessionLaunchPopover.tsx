@@ -33,7 +33,7 @@ export function SessionLaunchPopover({ projectPath }: SessionLaunchPopoverProps)
       <Button
         variant="outline"
         size="sm"
-        className="h-7 text-xs"
+        className="h-7 min-h-[44px] text-xs sm:min-h-0"
         onClick={() => navigate({ to: '/session', search: { dir: projectPath } })}
       >
         Start Session
@@ -44,7 +44,7 @@ export function SessionLaunchPopover({ projectPath }: SessionLaunchPopoverProps)
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+        <Button variant="outline" size="sm" className="h-7 min-h-[44px] gap-1.5 text-xs sm:min-h-0">
           Open Session
           <Badge variant="secondary" className="ml-1 text-[10px]">
             {activeCount}
@@ -57,7 +57,7 @@ export function SessionLaunchPopover({ projectPath }: SessionLaunchPopoverProps)
             <button
               key={session.id}
               type="button"
-              className="hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              className="hover:bg-accent flex min-h-[44px] w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm sm:min-h-0"
               onClick={() => navigate({ to: '/session', search: { session: session.id } })}
             >
               <div className="flex-1 truncate">
