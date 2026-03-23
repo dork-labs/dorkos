@@ -27,6 +27,22 @@ vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: (...args: unknown[]) => mockUseRegisteredAgents(...args),
 }));
 
+// Mock adapter logos — renders a simple span for testability
+vi.mock('@dorkos/icons/adapter-logos', () => ({
+  ADAPTER_LOGO_MAP: {
+    telegram: ({ size, className }: { size?: number; className?: string }) => (
+      <span data-testid="adapter-logo" data-icon="telegram" className={className}>
+        TelegramLogo
+      </span>
+    ),
+    'claude-code': ({ size, className }: { size?: number; className?: string }) => (
+      <span data-testid="adapter-logo" data-icon="claude-code" className={className}>
+        AnthropicLogo
+      </span>
+    ),
+  },
+}));
+
 // BindingDialog is no longer rendered inside AdapterCard — dialogs live in ConnectionsTab.
 
 // ---------------------------------------------------------------------------
@@ -37,7 +53,7 @@ const baseManifest: AdapterManifest = {
   type: 'telegram',
   displayName: 'Telegram',
   description: 'Telegram messaging adapter',
-  iconEmoji: '📨',
+  iconId: 'telegram',
   category: 'messaging',
   builtin: false,
   configFields: [],
@@ -48,7 +64,7 @@ const claudeManifest: AdapterManifest = {
   type: 'claude-code',
   displayName: 'Claude Code',
   description: 'Built-in Claude Code adapter',
-  iconEmoji: '🤖',
+  iconId: 'claude-code',
   category: 'internal',
   builtin: true,
   configFields: [],
@@ -178,9 +194,9 @@ describe('AdapterCard', () => {
     expect(screen.getByText('messaging')).toBeTruthy();
   });
 
-  it('renders the icon emoji', () => {
+  it('renders the adapter icon', () => {
     render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByText('📨')).toBeTruthy();
+    expect(screen.getByTestId('adapter-logo')).toBeTruthy();
   });
 
   it('does not render raw message counts', () => {

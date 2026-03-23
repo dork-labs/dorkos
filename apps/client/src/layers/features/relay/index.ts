@@ -16,6 +16,7 @@ export { MessageTrace } from './ui/MessageTrace';
 export { ConfigFieldInput, ConfigFieldGroup } from './ui/ConfigFieldInput';
 export { AdapterSetupWizard } from './ui/AdapterSetupWizard';
 export { RelayHealthBar } from './ui/RelayHealthBar';
+export { AdapterIcon } from './ui/AdapterIcon';
 export { DeadLetterSection } from './ui/DeadLetterSection';
 export { ComposeMessageDialog } from './ui/ComposeMessageDialog';
 export { AdapterEventLog } from './ui/AdapterEventLog';

@@ -234,7 +234,7 @@ export const AdapterManifestSchema = z
     type: z.string(),
     displayName: z.string(),
     description: z.string(),
-    iconEmoji: z.string().optional(),
+    iconId: z.string().optional(),
     category: AdapterCategorySchema,
     docsUrl: z.string().url().optional(),
     builtin: z.boolean(),

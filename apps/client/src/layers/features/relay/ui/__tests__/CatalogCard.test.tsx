@@ -7,6 +7,17 @@ import '@testing-library/jest-dom/vitest';
 import { CatalogCard } from '../CatalogCard';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 
+// Mock adapter logos — renders a simple span with the component name for testability
+vi.mock('@dorkos/icons/adapter-logos', () => ({
+  ADAPTER_LOGO_MAP: {
+    slack: ({ size, className }: { size?: number; className?: string }) => (
+      <span data-testid="adapter-logo" data-icon="slack" className={className}>
+        SlackIcon
+      </span>
+    ),
+  },
+}));
+
 const baseManifest: AdapterManifest = {
   type: 'slack',
   displayName: 'Slack',
@@ -39,18 +50,19 @@ describe('CatalogCard', () => {
     expect(screen.getByText('messaging')).toBeInTheDocument();
   });
 
-  it('renders icon emoji when provided', () => {
-    const manifest: AdapterManifest = { ...baseManifest, iconEmoji: '💬' };
+  it('renders adapter icon when iconId is provided', () => {
+    const manifest: AdapterManifest = { ...baseManifest, iconId: 'slack' };
     render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);
 
-    expect(screen.getByRole('img', { hidden: true })).toBeInTheDocument();
-    expect(screen.getByText('💬')).toBeInTheDocument();
+    expect(screen.getByTestId('adapter-logo')).toBeInTheDocument();
   });
 
-  it('does not render icon emoji when not provided', () => {
-    render(<CatalogCard manifest={baseManifest} onAdd={vi.fn()} />);
+  it('renders fallback icon when adapter type is unknown', () => {
+    const manifest: AdapterManifest = { ...baseManifest, type: 'unknown-adapter' };
+    render(<CatalogCard manifest={manifest} onAdd={vi.fn()} />);
 
-    expect(screen.queryByRole('img', { hidden: true })).not.toBeInTheDocument();
+    // Falls back to Bot icon (no adapter-logo testid for unknown types)
+    expect(screen.queryByTestId('adapter-logo')).not.toBeInTheDocument();
   });
 
   it('calls onAdd when the Add button is clicked', () => {

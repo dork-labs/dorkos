@@ -1,9 +1,10 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { AnimatePresence, motion } from 'motion/react';
-import { MessageSquare, Webhook, Bot, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
+import { AdapterIcon } from '@/layers/features/relay';
 import { useLodBand } from '../lib/use-lod-band';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
 
@@ -46,15 +47,11 @@ const STATUS_COLORS: Record<string, string> = {
   error: 'bg-red-500',
 };
 
-const PLATFORM_ICONS: Record<string, React.ElementType> = {
-  telegram: MessageSquare,
-  webhook: Webhook,
-};
-
 /** Renders the platform icon for an adapter type. Extracted as a component to satisfy React Compiler. */
 function PlatformIcon({ adapterType }: { adapterType: string }) {
-  const Icon = PLATFORM_ICONS[adapterType] ?? Bot;
-  return <Icon className="text-muted-foreground size-4 shrink-0" />;
+  return (
+    <AdapterIcon adapterType={adapterType} size={16} className="text-muted-foreground shrink-0" />
+  );
 }
 
 /** Resolve the status indicator color, falling back to zinc. */

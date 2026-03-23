@@ -2,6 +2,7 @@ import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useAdapterCatalog } from '@/layers/entities/relay';
+import { AdapterIcon } from '@/layers/features/relay';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 
 /** Fallback adapter types shown when the catalog API is unavailable. */
@@ -10,28 +11,24 @@ const PLACEHOLDER_ADAPTERS = [
     type: 'telegram',
     displayName: 'Telegram',
     description: 'Receive agent messages and reply via Telegram bot.',
-    iconEmoji: '✈',
     category: 'messaging' as const,
   },
   {
     type: 'webhook',
     displayName: 'Webhook',
     description: 'Send agent output to any HTTP endpoint.',
-    iconEmoji: '🔗',
     category: 'automation' as const,
   },
   {
     type: 'slack',
     displayName: 'Slack',
     description: 'Connect agents to Slack channels and DMs.',
-    iconEmoji: '💬',
     category: 'messaging' as const,
   },
   {
     type: 'claude-code',
     displayName: 'Claude Code',
     description: 'Built-in adapter for Claude Code agent sessions.',
-    iconEmoji: '🤖',
     category: 'internal' as const,
   },
 ];
@@ -57,7 +54,7 @@ export function AdapterSetupStep({ onStepComplete }: AdapterSetupStepProps) {
     type: string;
     displayName: string;
     description: string;
-    iconEmoji?: string;
+    iconId?: string;
     category: string;
   }> = catalog?.length
     ? catalog.map((entry: CatalogEntry) => entry.manifest)
@@ -90,11 +87,12 @@ export function AdapterSetupStep({ onStepComplete }: AdapterSetupStepProps) {
               )}
             >
               <div className="flex items-center gap-2">
-                {adapter.iconEmoji && (
-                  <span className="text-lg" role="img" aria-hidden>
-                    {adapter.iconEmoji}
-                  </span>
-                )}
+                <AdapterIcon
+                  iconId={adapter.iconId}
+                  adapterType={adapter.type}
+                  size={20}
+                  className="text-muted-foreground shrink-0"
+                />
                 <span className="text-sm font-medium">{adapter.displayName}</span>
               </div>
               <p className="text-muted-foreground line-clamp-2 text-xs">{adapter.description}</p>

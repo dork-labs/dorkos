@@ -105,7 +105,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
   type: 'slack',
   displayName: 'Slack',
   description: 'Send and receive messages in Slack channels and DMs.',
-  iconEmoji: '#',
+  iconId: 'slack',
   category: 'messaging',
   docsUrl: 'https://api.slack.com/start',
   builtin: true,

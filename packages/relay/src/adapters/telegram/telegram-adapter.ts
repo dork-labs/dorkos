@@ -39,7 +39,7 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
   type: 'telegram',
   displayName: 'Telegram',
   description: 'Send and receive messages via a Telegram bot.',
-  iconEmoji: '\u2708\uFE0F',
+  iconId: 'telegram',
   category: 'messaging',
   docsUrl: 'https://core.telegram.org/bots',
   builtin: true,

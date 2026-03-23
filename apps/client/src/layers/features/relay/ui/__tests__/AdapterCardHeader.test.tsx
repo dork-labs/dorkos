@@ -8,6 +8,17 @@ import '@testing-library/jest-dom/vitest';
 import { AdapterCardHeader } from '../AdapterCardHeader';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
+// Mock adapter logos — renders a simple span with the component name for testability
+vi.mock('@dorkos/icons/adapter-logos', () => ({
+  ADAPTER_LOGO_MAP: {
+    telegram: ({ size, className }: { size?: number; className?: string }) => (
+      <span data-testid="adapter-logo" data-icon="telegram" className={className}>
+        TelegramLogo
+      </span>
+    ),
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -16,7 +27,7 @@ const baseManifest: AdapterManifest = {
   type: 'telegram',
   displayName: 'Telegram',
   description: 'Telegram messaging adapter',
-  iconEmoji: '📨',
+  iconId: 'telegram',
   category: 'messaging',
   builtin: false,
   configFields: [],
@@ -107,9 +118,9 @@ describe('AdapterCardHeader', () => {
     expect(screen.getByText('Main Telegram')).toBeInTheDocument();
   });
 
-  it('renders the icon emoji', () => {
+  it('renders adapter icon when iconId is provided', () => {
     render(<AdapterCardHeader {...defaultProps()} />);
-    expect(screen.getByText('📨')).toBeInTheDocument();
+    expect(screen.getByTestId('adapter-logo')).toBeInTheDocument();
   });
 
   it('renders the category badge', () => {

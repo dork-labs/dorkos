@@ -57,7 +57,7 @@ export const CLAUDE_CODE_MANIFEST: AdapterManifest = {
   type: 'claude-code',
   displayName: 'Claude Code',
   description: 'Routes messages to Claude Agent SDK sessions. Auto-configured.',
-  iconEmoji: '🤖',
+  iconId: 'claude-code',
   category: 'internal',
   builtin: true,
   multiInstance: false,

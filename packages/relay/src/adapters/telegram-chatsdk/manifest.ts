@@ -12,7 +12,7 @@ export const TELEGRAM_CHATSDK_MANIFEST: AdapterManifest = {
   description:
     'Deprecated — use the Telegram adapter instead. Lacks streaming previews, interactive approvals, typing indicators, and reconnection logic.',
   deprecated: true,
-  iconEmoji: '\u2708\uFE0F',
+  iconId: 'telegram',
   category: 'messaging',
   docsUrl: 'https://github.com/anthropics/chat',
   builtin: true,

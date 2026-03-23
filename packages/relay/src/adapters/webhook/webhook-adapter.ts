@@ -40,7 +40,7 @@ export const WEBHOOK_MANIFEST: AdapterManifest = {
   type: 'webhook',
   displayName: 'Webhook',
   description: 'Send and receive messages via HMAC-signed HTTP webhooks.',
-  iconEmoji: '🔗',
+  iconId: 'webhook',
   category: 'automation',
   builtin: true,
   multiInstance: true,
