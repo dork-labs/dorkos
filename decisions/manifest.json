@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 188,
+  "nextNumber": 189,
   "decisions": [
+    {
+      "number": 188,
+      "slug": "speculative-uuid-session-creation",
+      "title": "Use Speculative UUIDs for New Session Creation",
+      "status": "draft",
+      "created": "2026-03-23",
+      "extractedFrom": "improved-new-session-creation",
+      "specSlug": "improved-new-session-creation"
+    },
     {
       "number": 187,
       "slug": "typed-adapter-icon-identifiers",

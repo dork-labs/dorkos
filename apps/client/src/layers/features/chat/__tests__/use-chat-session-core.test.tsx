@@ -7,6 +7,7 @@ import {
   MockEventSource,
   resetUuidCounter,
   createWrapper,
+  createWrapperWithClient,
   createSendMessageMock,
 } from './chat-session-test-helpers';
 
@@ -621,6 +622,74 @@ describe('useChatSession — core', () => {
       expect(userMessages).toHaveLength(1);
       expect(userMessages[0].content).toBe('test');
       expect(result.current.status).toBe('idle');
+    });
+  });
+
+  describe('speculative UUID optimistic insert', () => {
+    it('inserts optimistic session on first message for speculative UUID', async () => {
+      const sendMessage = createSendMessageMock([
+        { type: 'done', data: { sessionId: 'spec-uuid' } } as StreamEvent,
+      ]);
+      const transport = createMockTransport({ sendMessage });
+      const { wrapper, queryClient } = createWrapperWithClient(transport);
+
+      const { result } = renderHook(() => useChatSession('spec-uuid'), {
+        wrapper,
+      });
+
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+
+      await act(async () => {
+        result.current.setInput('Hello');
+      });
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      // Session should now exist in the sessions cache
+      const sessions = queryClient.getQueryData<Array<{ id: string }>>(['sessions', '/test/cwd']);
+      expect(sessions).toBeDefined();
+      expect(sessions!.some((s) => s.id === 'spec-uuid')).toBe(true);
+    });
+
+    it('skips optimistic insert when session already exists in cache', async () => {
+      const sendMessage = createSendMessageMock([
+        { type: 'done', data: { sessionId: 'existing-id' } } as StreamEvent,
+      ]);
+      const transport = createMockTransport({ sendMessage });
+      const { wrapper, queryClient } = createWrapperWithClient(transport);
+
+      // Pre-populate session cache
+      queryClient.setQueryData(
+        ['sessions', '/test/cwd'],
+        [
+          {
+            id: 'existing-id',
+            title: 'Existing session',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            permissionMode: 'default',
+          },
+        ]
+      );
+
+      const { result } = renderHook(() => useChatSession('existing-id'), {
+        wrapper,
+      });
+
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+
+      await act(async () => {
+        result.current.setInput('Hello');
+      });
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      // Should still have exactly one session (no duplicate inserted)
+      const sessions = queryClient.getQueryData<Array<{ id: string }>>(['sessions', '/test/cwd']);
+      expect(sessions).toHaveLength(1);
+      expect(sessions![0].id).toBe('existing-id');
     });
   });
 });

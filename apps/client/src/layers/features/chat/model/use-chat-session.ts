@@ -9,6 +9,7 @@ import type {
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { QUERY_TIMING, TIMING } from '@/layers/shared/lib';
 import { insertOptimisticSession } from '@/layers/entities/session';
+import type { Session } from '@dorkos/shared/types';
 import type { ChatMessage, ChatSessionOptions, TransportErrorInfo } from './chat-types';
 import { createStreamEventHandler } from './stream-event-handler';
 import { deriveFromParts } from './stream-event-helpers';
@@ -353,10 +354,13 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
    */
   const executeSubmission = useCallback(
     async (content: string, clearInput: boolean, restoreContentOnLock: string) => {
-      // Create session on first message if no active session
-      let targetSessionId = sessionId;
-      if (!targetSessionId) {
-        targetSessionId = crypto.randomUUID();
+      // sessionId is always a speculative UUID (guaranteed by router loader).
+      // If this UUID doesn't exist in the sessions cache yet, optimistically
+      // insert a placeholder so the sidebar shows it immediately.
+      const targetSessionId = sessionId!;
+      const sessions =
+        queryClient.getQueryData<Session[]>(['sessions', selectedCwdRef.current]) ?? [];
+      if (!sessions.some((s) => s.id === targetSessionId)) {
         const now = new Date().toISOString();
         insertOptimisticSession(queryClient, selectedCwdRef.current, {
           id: targetSessionId,
@@ -365,7 +369,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
           updatedAt: now,
           permissionMode: 'default',
         });
-        onSessionIdChangeRef.current?.(targetSessionId);
       }
 
       // Add optimistic user message directly to the messages array so it appears

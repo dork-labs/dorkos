@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Eliminate null sessionId with speculative UUID pattern
 - Replace emoji adapter icons with real brand SVG logos
 
 ### Changed

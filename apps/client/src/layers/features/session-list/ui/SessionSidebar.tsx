@@ -19,7 +19,7 @@ import { SessionsView } from './SessionsView';
 import { SchedulesView } from './SchedulesView';
 import { ConnectionsView } from './ConnectionsView';
 import { Home, Plus } from 'lucide-react';
-import { useNavigate, useLocation } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { useConnectionsStatus } from '../model/use-connections-status';
 
 /** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
@@ -27,34 +27,15 @@ export function SessionSidebar() {
   const { sessions, activeSessionId, setActiveSession } = useSessions();
   const { setSidebarOpen, setPulseOpen } = useAppStore();
   const isMobile = useIsMobile();
-  // Suppresses auto-select after user intentionally clicks "New session"
-  const intentionallyNullRef = useRef(false);
   const pulseEnabled = usePulseEnabled();
   const { unviewedCount, clearBadge } = useCompletedRunBadge(pulseEnabled);
   const enablePulseNotifications = useAppStore((s) => s.enablePulseNotifications);
   const pulseOpen = useAppStore((s) => s.pulseOpen);
   // Null when rendered in embedded mode (no SidebarProvider); used to close the mobile Sheet.
   const sidebarCtx = useContext(SidebarContext);
-  const routerLocation = useLocation();
-
-  // Auto-select most recent session when directory changes and no session is active.
-  // Skip when the user intentionally cleared the session via "New session" button.
-  // Skip when on the dashboard — it intentionally has no active session.
-  useEffect(() => {
-    if (intentionallyNullRef.current) {
-      intentionallyNullRef.current = false;
-      return;
-    }
-    // On the dashboard route, no session should be auto-selected.
-    if (routerLocation.pathname === '/') return;
-    if (!activeSessionId && sessions.length > 0) {
-      setActiveSession(sessions[0].id);
-    }
-  }, [activeSessionId, sessions, setActiveSession, routerLocation.pathname]);
 
   const handleNewSession = useCallback(() => {
-    intentionallyNullRef.current = true;
-    setActiveSession(null);
+    setActiveSession(crypto.randomUUID());
     if (isMobile) {
       setTimeout(() => {
         setSidebarOpen(false);
@@ -155,7 +136,6 @@ export function SessionSidebar() {
   }, [sidebarOpen, visibleTabs, setSidebarActiveTab]);
 
   const handleDashboard = useCallback(() => {
-    intentionallyNullRef.current = true;
     navigate({ to: '/' });
     if (isMobile) {
       setSidebarOpen(false);

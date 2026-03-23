@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
@@ -23,19 +24,23 @@ export function useSessionId(): [string | null, (id: string | null) => void] {
   const search = useSessionSearch();
   const navigate = useNavigate();
 
+  // Stable reference — navigate from TanStack Router is already stable.
+  const setSessionId = useCallback(
+    (id: string | null) => {
+      navigate({
+        to: '/session',
+        search: (prev) => ({
+          ...prev,
+          session: id ?? undefined,
+        }),
+      });
+    },
+    [navigate]
+  );
+
   if (platform.isEmbedded) {
     return [storeId, setStoreId];
   }
-
-  const setSessionId = (id: string | null) => {
-    navigate({
-      to: '/session',
-      search: (prev) => ({
-        ...prev,
-        session: id ?? undefined,
-      }),
-    });
-  };
 
   return [search.session ?? null, setSessionId];
 }

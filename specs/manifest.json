@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 171,
+  "nextNumber": 173,
   "specs": [
+    {
+      "number": 172,
+      "slug": "mcp-tool-result-streaming",
+      "title": "Fix MCP Tool Results Missing During Streaming",
+      "created": "2026-03-23",
+      "status": "specified"
+    },
+    {
+      "number": 171,
+      "slug": "improved-new-session-creation",
+      "title": "Improved New Session Creation",
+      "created": "2026-03-23",
+      "status": "specified"
+    },
     {
       "number": 170,
       "slug": "real-brand-adapter-logos",
@@ -1243,6 +1257,5 @@
       "created": "2026-03-21",
       "status": "specified"
     }
-  ],
-  "nextNumber": 161
+  ]
 }

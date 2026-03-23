@@ -246,11 +246,28 @@ describe('SessionSidebar', () => {
     expect(screen.getByText('Old session')).toBeDefined();
   });
 
-  it('sets active session to null on "New session" click', () => {
+  it('sets active session to a UUID on "New session" click', () => {
     renderWithQuery(<SessionSidebar />);
     fireEvent.click(screen.getByText('New session'));
 
-    expect(mockSetSessionId).toHaveBeenCalledWith(null);
+    expect(mockSetSessionId).toHaveBeenCalledTimes(1);
+    const calledWith = mockSetSessionId.mock.calls[0][0];
+    expect(calledWith).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+  });
+
+  it('generates unique UUIDs on each "New session" click', () => {
+    renderWithQuery(<SessionSidebar />);
+    const newSessionButton = screen.getByText('New session');
+
+    fireEvent.click(newSessionButton);
+    fireEvent.click(newSessionButton);
+
+    expect(mockSetSessionId).toHaveBeenCalledTimes(2);
+    const firstUUID = mockSetSessionId.mock.calls[0][0];
+    const secondUUID = mockSetSessionId.mock.calls[1][0];
+    expect(firstUUID).not.toBe(secondUUID);
   });
 
   it('hides "Today" header when it is the only group', async () => {
@@ -282,24 +299,6 @@ describe('SessionSidebar', () => {
     renderWithQuery(<SessionSidebar />);
     // Footer with branding and settings now lives in AppShell, not the sidebar
     expect(screen.queryByLabelText('Settings')).toBeNull();
-  });
-
-  it('auto-selects first session when no active session', async () => {
-    // mockPathname defaults to '/session' in beforeEach (not dashboard)
-    mockTransport = createMockTransport({
-      listSessions: vi
-        .fn()
-        .mockResolvedValue([
-          makeSession({ id: 's1', title: 'First session' }),
-          makeSession({ id: 's2', title: 'Second session' }),
-        ]),
-    });
-
-    renderWithQuery(<SessionSidebar />);
-
-    await waitFor(() => {
-      expect(mockSetSessionId).toHaveBeenCalledWith('s1');
-    });
   });
 
   describe('tab switching', () => {

@@ -90,6 +90,21 @@ export function createWrapper(transport: Transport) {
   );
 }
 
+/** Like `createWrapper` but also returns the QueryClient for cache inspection. */
+export function createWrapperWithClient(transport: Transport) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+    },
+  });
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+  return { wrapper: Wrapper, queryClient };
+}
+
 // ---------------------------------------------------------------------------
 // sendMessage mock factory
 // ---------------------------------------------------------------------------

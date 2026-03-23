@@ -12,6 +12,7 @@ import { AppShell } from './AppShell';
 import { DashboardPage } from '@/layers/widgets/dashboard';
 import { SessionPage } from '@/layers/widgets/session';
 import { AgentsPage } from '@/layers/widgets/agents';
+import type { Session } from '@dorkos/shared/types';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
@@ -77,11 +78,53 @@ const indexRoute = createRoute({
 });
 
 // ── Session/chat at /session ────────────────────────────────
+
+/**
+ * Loader for the /session route. Redirects to the most recent cached session
+ * or generates a speculative UUID when no session param is provided.
+ *
+ * @internal Exported for testing only.
+ */
+export function sessionRouteLoader({
+  context: { queryClient },
+  location,
+}: {
+  context: { queryClient: QueryClient };
+  location: { searchStr: string };
+}) {
+  const params = new URLSearchParams(location.searchStr);
+  const session = params.get('session');
+
+  // Session already specified — nothing to do
+  if (session) return;
+
+  // Read cached session list (may be stale or empty on first load)
+  const dir = params.get('dir') ?? undefined;
+  const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
+
+  if (sessions && sessions.length > 0) {
+    // Auto-select most recent session
+    throw redirect({
+      to: '/session',
+      search: { session: sessions[0].id, dir },
+      replace: true,
+    });
+  }
+
+  // No sessions cached — generate a fresh UUID for a new session
+  throw redirect({
+    to: '/session',
+    search: { session: crypto.randomUUID(), dir },
+    replace: true,
+  });
+}
+
 const sessionRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/session',
   validateSearch: zodValidator(sessionSearchSchema),
   component: SessionPage,
+  loader: sessionRouteLoader,
 });
 
 // ── Agents fleet management at /agents ──────────────────────
