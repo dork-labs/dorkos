@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make dashboard responsive on mobile
 - Fix Chat SDK HTML rendering, port splitMessage, deprecate adapter
 - Update server integration tests for new validation and convention-files
 ---

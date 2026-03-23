@@ -251,7 +251,7 @@ export function AppShell() {
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           transition={{ duration: 0.1 }}
-                          className="flex flex-1 items-center gap-2"
+                          className="flex min-w-0 flex-1 items-center gap-2"
                         >
                           {headerSlot.content}
                         </motion.div>
