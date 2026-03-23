@@ -19,10 +19,12 @@ import {
   extractErrorMessage,
   extractApprovalData,
   formatForPlatform,
-  truncateText,
+  splitMessage,
+  SLACK_MAX_LENGTH,
 } from '../../lib/payload-utils.js';
-import { extractChannelId, MAX_MESSAGE_LENGTH } from './inbound.js';
+import { extractChannelId, isGroupChannel } from './inbound.js';
 import type { SlackThreadIdCodec } from '../../lib/thread-id.js';
+import type { ThreadParticipationTracker } from './thread-tracker.js';
 import {
   handleTextDelta,
   handleDone,
@@ -64,6 +66,8 @@ export interface SlackDeliverOptions {
   approvalState: SlackOutboundState;
   /** Instance-scoped codec for subject encoding/decoding. */
   codec: SlackThreadIdCodec;
+  /** Thread participation tracker for marking threads the bot has replied to. */
+  threadTracker?: ThreadParticipationTracker;
   logger?: RelayLogger;
 }
 
@@ -162,6 +166,11 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
 
   const threadTs = resolveThreadTs(envelope);
 
+  // Safety warning: channel messages without threadTs may post to the main channel
+  if (isGroupChannel(channelId) && !threadTs) {
+    logger.warn(`outbound: no threadTs for channel message in ${channelId}`);
+  }
+
   // For stream key differentiation, use a value consistent across all events
   // in a single agent response stream. Priority:
   // 1. threadTs — real Slack timestamp (always present for messages from Slack users)
@@ -184,6 +193,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     typingIndicator: opts.typingIndicator,
     streamKeyTs,
     pendingReactions,
+    threadTracker: opts.threadTracker,
     logger,
   };
 
@@ -227,7 +237,8 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
           client,
           callbacks,
           startTime,
-          opts.approvalState
+          opts.approvalState,
+          opts.threadTracker
         );
       }
     }
@@ -238,21 +249,36 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   }
 
   // --- Standard payload (non-StreamEvent) ---
-  const text = truncateText(
-    formatForPlatform(extractPayloadContent(envelope.payload), 'slack'),
-    MAX_MESSAGE_LENGTH
+  const formatted = formatForPlatform(extractPayloadContent(envelope.payload), 'slack');
+  const chunks = splitMessage(formatted, SLACK_MAX_LENGTH);
+  logger.debug(
+    `deliver: standard payload to ${channelId} (${formatted.length} chars, ${chunks.length} chunk${chunks.length === 1 ? '' : 's'})`
   );
-  logger.debug(`deliver: standard payload to ${channelId} (${text.length} chars)`);
 
-  return wrapSlackCall(
-    () =>
-      client.chat.postMessage({
-        channel: channelId,
-        text,
-        ...(threadTs ? { thread_ts: threadTs } : {}),
-      }),
-    callbacks,
-    startTime,
-    true
-  );
+  let lastResult: DeliveryResult = { success: true, durationMs: 0 };
+  for (let i = 0; i < chunks.length; i++) {
+    lastResult = await wrapSlackCall(
+      () =>
+        client.chat.postMessage({
+          channel: channelId,
+          text: chunks[i],
+          ...(threadTs ? { thread_ts: threadTs } : {}),
+        }),
+      callbacks,
+      startTime,
+      i === chunks.length - 1
+    );
+    if (!lastResult.success) return lastResult;
+
+    // Mark thread participation after the first successful post
+    if (i === 0 && opts.threadTracker && threadTs) {
+      opts.threadTracker.markParticipating(channelId, threadTs);
+    }
+
+    // Rate-limit between chunks to avoid Slack API throttling
+    if (i < chunks.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+    }
+  }
+  return lastResult;
 }

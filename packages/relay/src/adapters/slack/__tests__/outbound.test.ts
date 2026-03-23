@@ -4,6 +4,7 @@ import { deliverMessage, createSlackOutboundState } from '../outbound.js';
 import type { ActiveStream } from '../outbound.js';
 import type { AdapterOutboundCallbacks } from '../../../types.js';
 import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
+import { ThreadParticipationTracker } from '../thread-tracker.js';
 
 /** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
 const testCodec = new SlackThreadIdCodec();
@@ -21,6 +22,7 @@ vi.mock('../inbound.js', () => ({
     if (!decoded) return null;
     return decoded.platformId || null;
   },
+  isGroupChannel: (channelId: string) => channelId.startsWith('C') || channelId.startsWith('G'),
 }));
 
 // Mock payload-utils.js to avoid slackify-markdown dependency noise in tests.
@@ -93,6 +95,30 @@ vi.mock('../../../lib/payload-utils.js', () => {
         // not JSON
       }
       return `wants to use tool \`${toolName}\``;
+    },
+    SLACK_MAX_LENGTH: 3500,
+    splitMessage: (text: string, maxLen = 3500): string[] => {
+      if (text.length <= maxLen) return [text];
+      const chunks: string[] = [];
+      let remaining = text;
+      while (remaining.length > maxLen) {
+        let splitAt = -1;
+        const paraBreak = remaining.lastIndexOf('\n\n', maxLen);
+        if (paraBreak > 0) splitAt = paraBreak + 2;
+        if (splitAt === -1) {
+          const lineBreak = remaining.lastIndexOf('\n', maxLen);
+          if (lineBreak > 0) splitAt = lineBreak + 1;
+        }
+        if (splitAt === -1) {
+          const space = remaining.lastIndexOf(' ', maxLen);
+          if (space > 0) splitAt = space + 1;
+        }
+        if (splitAt === -1) splitAt = maxLen;
+        chunks.push(remaining.slice(0, splitAt));
+        remaining = remaining.slice(splitAt);
+      }
+      if (remaining.length > 0) chunks.push(remaining);
+      return chunks;
     },
     truncateText: (text: string, maxLen: number) => {
       if (text.length <= maxLen) return text;
@@ -186,7 +212,8 @@ function deliver(
   streaming = true,
   typingIndicator: 'none' | 'reaction' = 'none',
   nativeStreaming = false,
-  pendingReactions: Map<string, string[]> = new Map()
+  pendingReactions: Map<string, string[]> = new Map(),
+  threadTracker?: ThreadParticipationTracker
 ) {
   return deliverMessage({
     adapterId: 'slack',
@@ -202,6 +229,7 @@ function deliver(
     typingIndicator,
     approvalState: createSlackOutboundState(),
     codec: testCodec,
+    threadTracker,
   });
 }
 
@@ -307,13 +335,16 @@ describe('deliverMessage', () => {
       );
     });
 
-    it('truncates messages to MAX_MESSAGE_LENGTH (4000 chars)', async () => {
+    it('splits long messages into multiple postMessage calls', async () => {
       const longContent = 'A'.repeat(5000);
       const envelope = createEnvelope('relay.human.slack.D123', { content: longContent });
       await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
-      const call = mockPostMessage.mock.calls[0][0] as { text: string };
-      expect(call.text.length).toBeLessThanOrEqual(4000);
-      expect(call.text.endsWith('...')).toBe(true);
+      // 5000 chars at SLACK_MAX_LENGTH=3500 produces 2 chunks
+      expect(mockPostMessage).toHaveBeenCalledTimes(2);
+      const call1 = mockPostMessage.mock.calls[0][0] as { text: string };
+      const call2 = mockPostMessage.mock.calls[1][0] as { text: string };
+      expect(call1.text.length).toBeLessThanOrEqual(3500);
+      expect(call1.text.length + call2.text.length).toBe(5000);
     });
 
     it('records error and returns failure when postMessage throws', async () => {
@@ -329,6 +360,78 @@ describe('deliverMessage', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('channel_not_found');
       expect(callbacks.recordError).toHaveBeenCalled();
+    });
+  });
+
+  describe('message splitting', () => {
+    it('sends a single postMessage for short content', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', { content: 'Short message' });
+      const result = await deliver(
+        'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        callbacks
+      );
+      expect(result.success).toBe(true);
+      expect(mockPostMessage).toHaveBeenCalledTimes(1);
+      expect(mockPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: 'D123', text: 'Short message' })
+      );
+    });
+
+    it('posts all chunks to the same thread_ts', async () => {
+      const longContent = 'word '.repeat(1000); // ~5000 chars
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        content: longContent,
+        platformData: { ts: '9999.0001' },
+      });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+      expect(mockPostMessage.mock.calls.length).toBeGreaterThan(1);
+      for (const call of mockPostMessage.mock.calls) {
+        const args = call[0] as { thread_ts?: string };
+        expect(args.thread_ts).toBe('9999.0001');
+      }
+    });
+
+    it('delays 1.1s between chunks for rate limiting', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      // Restore Date.now spy on top of fake timers
+      vi.spyOn(Date, 'now').mockImplementation(() => 1_000_000);
+
+      const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+      const longContent = 'A'.repeat(5000);
+      const envelope = createEnvelope('relay.human.slack.D123', { content: longContent });
+      await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
+
+      // Find setTimeout calls with 1100ms delay (rate-limiting between chunks)
+      const delayCalls = timeoutSpy.mock.calls.filter((call) => call[1] === 1_100);
+      // 2 chunks means 1 delay between them
+      expect(delayCalls).toHaveLength(1);
+
+      timeoutSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('stops sending chunks when a postMessage call fails', async () => {
+      // First call succeeds, second fails
+      mockPostMessage
+        .mockResolvedValueOnce({ ts: 'msg-ts-1' })
+        .mockRejectedValueOnce(new Error('rate_limited'));
+
+      const longContent = 'A'.repeat(8000); // produces 3 chunks
+      const envelope = createEnvelope('relay.human.slack.D123', { content: longContent });
+      const result = await deliver(
+        'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        callbacks
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('rate_limited');
+      // Should not attempt the third chunk after the second failed
+      expect(mockPostMessage).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1587,6 +1690,236 @@ describe('deliverMessage', () => {
       expect(mockPostMessage).toHaveBeenCalledTimes(1);
       const approvalCall = mockPostMessage.mock.calls[0][0];
       expect(approvalCall.blocks[2].block_id).toBe('tool_approval');
+    });
+  });
+
+  describe('thread-first warning', () => {
+    it('logs warning for group channel messages without threadTs', async () => {
+      const loggerSpy = { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+      const envelope = createEnvelope('relay.human.slack.group.C12345', {
+        content: 'No thread',
+      });
+      await deliverMessage({
+        adapterId: 'slack',
+        subject: 'relay.human.slack.group.C12345',
+        envelope,
+        client,
+        streamState,
+        pendingReactions: new Map(),
+        botUserId: 'UBOTID',
+        callbacks,
+        streaming: true,
+        nativeStreaming: false,
+        typingIndicator: 'none',
+        approvalState: createSlackOutboundState(),
+        codec: testCodec,
+        logger: loggerSpy,
+      });
+      expect(loggerSpy.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no threadTs for channel message in C12345')
+      );
+    });
+
+    it('does not log warning for DM messages without threadTs', async () => {
+      const loggerSpy = { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        content: 'DM message',
+      });
+      await deliverMessage({
+        adapterId: 'slack',
+        subject: 'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        pendingReactions: new Map(),
+        botUserId: 'UBOTID',
+        callbacks,
+        streaming: true,
+        nativeStreaming: false,
+        typingIndicator: 'none',
+        approvalState: createSlackOutboundState(),
+        codec: testCodec,
+        logger: loggerSpy,
+      });
+      expect(loggerSpy.warn).not.toHaveBeenCalledWith(expect.stringContaining('no threadTs'));
+    });
+
+    it('does not log warning when threadTs is present for group channel', async () => {
+      const loggerSpy = { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+      const envelope = createEnvelope('relay.human.slack.group.C12345', {
+        content: 'Threaded reply',
+        platformData: { ts: '1234.0001' },
+      });
+      await deliverMessage({
+        adapterId: 'slack',
+        subject: 'relay.human.slack.group.C12345',
+        envelope,
+        client,
+        streamState,
+        pendingReactions: new Map(),
+        botUserId: 'UBOTID',
+        callbacks,
+        streaming: true,
+        nativeStreaming: false,
+        typingIndicator: 'none',
+        approvalState: createSlackOutboundState(),
+        codec: testCodec,
+        logger: loggerSpy,
+      });
+      expect(loggerSpy.warn).not.toHaveBeenCalledWith(expect.stringContaining('no threadTs'));
+    });
+  });
+
+  describe('thread participation tracking', () => {
+    it('marks participation after successful standard delivery with threadTs', async () => {
+      const tracker = new ThreadParticipationTracker();
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        content: 'Hello!',
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        false,
+        new Map(),
+        tracker
+      );
+      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
+    });
+
+    it('does not mark participation when threadTs is missing', async () => {
+      const tracker = new ThreadParticipationTracker();
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        content: 'No thread',
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        false,
+        new Map(),
+        tracker
+      );
+      expect(tracker.size).toBe(0);
+    });
+
+    it('does not mark participation when delivery fails', async () => {
+      mockPostMessage.mockRejectedValueOnce(new Error('channel_not_found'));
+      const tracker = new ThreadParticipationTracker();
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        content: 'fail',
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        false,
+        new Map(),
+        tracker
+      );
+      expect(tracker.isParticipating('D123', '1234.0001')).toBe(false);
+    });
+
+    it('marks participation on stream start (legacy)', async () => {
+      const tracker = new ThreadParticipationTracker();
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        delta,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        false,
+        new Map(),
+        tracker
+      );
+      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
+    });
+
+    it('marks participation on stream start (buffered mode)', async () => {
+      const tracker = new ThreadParticipationTracker();
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        delta,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        false,
+        'none',
+        false,
+        new Map(),
+        tracker
+      );
+      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
+    });
+
+    it('marks participation on native stream start', async () => {
+      const tracker = new ThreadParticipationTracker();
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'Hello' },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        delta,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        true,
+        new Map(),
+        tracker
+      );
+      expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
+    });
+
+    it('does not mark participation when tracker is not provided', async () => {
+      const envelope = createEnvelope('relay.human.slack.D123', {
+        content: 'Hello!',
+        platformData: { ts: '1234.0001' },
+      });
+      // No tracker passed — should not throw
+      const result = await deliver(
+        'relay.human.slack.D123',
+        envelope,
+        client,
+        streamState,
+        callbacks
+      );
+      expect(result.success).toBe(true);
     });
   });
 });

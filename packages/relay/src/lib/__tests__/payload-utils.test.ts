@@ -9,6 +9,9 @@ import {
   formatToolDescription,
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
+  splitMessage,
+  TELEGRAM_MAX_LENGTH,
+  SLACK_MAX_LENGTH,
 } from '../payload-utils.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
@@ -452,5 +455,90 @@ describe('extractSessionIdFromEnvelope', () => {
   it('returns undefined when payload is null', () => {
     const envelope = makeEnvelope(null);
     expect(extractSessionIdFromEnvelope(envelope)).toBeUndefined();
+  });
+});
+
+describe('splitMessage', () => {
+  it('returns single chunk for short text', () => {
+    expect(splitMessage('hello')).toEqual(['hello']);
+  });
+
+  it('returns single empty chunk for empty string', () => {
+    expect(splitMessage('')).toEqual(['']);
+  });
+
+  it('splits at paragraph boundary (\\n\\n)', () => {
+    const first = 'a'.repeat(50);
+    const second = 'b'.repeat(50);
+    const text = `${first}\n\n${second}`;
+    const chunks = splitMessage(text, 60);
+    expect(chunks).toEqual([`${first}\n\n`, second]);
+  });
+
+  it('splits at line boundary when no paragraph break', () => {
+    const first = 'a'.repeat(50);
+    const second = 'b'.repeat(50);
+    const text = `${first}\n${second}`;
+    const chunks = splitMessage(text, 60);
+    expect(chunks).toEqual([`${first}\n`, second]);
+  });
+
+  it('splits at word boundary when no line break', () => {
+    const text = 'word '.repeat(20).trimEnd(); // 99 chars
+    const chunks = splitMessage(text, 30);
+    // Each chunk should end at a space boundary
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(30);
+    }
+    expect(chunks.join('')).toBe(text);
+  });
+
+  it('hard cuts when no word boundary', () => {
+    const text = 'a'.repeat(100);
+    const chunks = splitMessage(text, 30);
+    expect(chunks).toEqual(['a'.repeat(30), 'a'.repeat(30), 'a'.repeat(30), 'a'.repeat(10)]);
+  });
+
+  it('closes and reopens code fences at split points', () => {
+    // A code block with no paragraph breaks — forces split inside the fenced region
+    const text = '```\n' + 'line\n'.repeat(15) + '```';
+    const chunks = splitMessage(text, 40);
+    // First chunk contains the opening fence but not the closing one,
+    // so the function should append a closing fence
+    expect(chunks[0]).toMatch(/```$/);
+    // Next chunk should start with a re-opened fence
+    expect(chunks[1]).toMatch(/^```/);
+    // All original content should be preserved across chunks
+    const joined = chunks.join('');
+    expect(joined).toContain('line');
+  });
+
+  it('handles multiple code blocks', () => {
+    const text = '```\nfoo\n```\n\nSome text\n\n```\nbar\n```';
+    // With a large enough limit, no splitting needed
+    expect(splitMessage(text, 5000)).toEqual([text]);
+    // The fence count is even (4 fences), so no re-opening needed
+  });
+
+  it('respects custom maxLen parameter', () => {
+    const text = 'a'.repeat(100);
+    const chunks = splitMessage(text, 50);
+    expect(chunks).toEqual(['a'.repeat(50), 'a'.repeat(50)]);
+  });
+
+  it('exports correct constant values', () => {
+    expect(TELEGRAM_MAX_LENGTH).toBe(4000);
+    expect(SLACK_MAX_LENGTH).toBe(3500);
+  });
+
+  it('uses TELEGRAM_MAX_LENGTH as default maxLen', () => {
+    // Text shorter than TELEGRAM_MAX_LENGTH should not be split
+    const text = 'a'.repeat(3999);
+    expect(splitMessage(text)).toEqual([text]);
+
+    // Text longer than TELEGRAM_MAX_LENGTH should be split
+    const longText = 'a'.repeat(4001);
+    const chunks = splitMessage(longText);
+    expect(chunks.length).toBe(2);
   });
 });

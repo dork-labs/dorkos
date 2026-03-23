@@ -18,6 +18,8 @@ import type {
   PublishOptions,
 } from '../../types.js';
 import { handleInboundMessage, clearCaches } from './inbound.js';
+import type { InboundOptions } from './inbound.js';
+import { ThreadParticipationTracker } from './thread-tracker.js';
 import {
   deliverMessage,
   clearApprovalTimeout,
@@ -27,6 +29,23 @@ import {
 import type { ActiveStream, SlackOutboundState } from './outbound.js';
 import { SlackPlatformClient } from './slack-platform-client.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
+
+/**
+ * Slack API error codes that indicate permanent auth/permission failures.
+ *
+ * When one of these is returned, retrying is futile — the bot token is invalid,
+ * revoked, or lacks required scopes. The adapter should stop immediately to
+ * prevent a retry loop.
+ */
+const FATAL_SLACK_ERRORS = new Set([
+  'account_inactive',
+  'invalid_auth',
+  'token_revoked',
+  'not_authed',
+  'missing_scope',
+  'team_access_not_granted',
+  'app_uninstalled',
+]);
 
 /**
  * Slack App Manifest YAML for one-click app creation.
@@ -193,7 +212,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
       label: 'Typing Indicator',
       type: 'select',
       required: false,
-      description: 'Show a visual indicator while the agent is working.',
+      description: 'Show a visual indicator while the agent is working. Enabled by default.',
       options: [
         { label: 'None', value: 'none' },
         { label: 'Emoji reaction', value: 'reaction' },
@@ -202,6 +221,72 @@ export const SLACK_MANIFEST: AdapterManifest = {
       helpMarkdown:
         'When set to "Emoji reaction", adds an :hourglass_flowing_sand: reaction to your message ' +
         'while the agent is processing. Requires the `reactions:write` and `reactions:read` scopes.',
+    },
+    {
+      key: 'respondMode',
+      label: 'Respond Mode',
+      type: 'select',
+      required: false,
+      description: 'When should the bot respond in channels?',
+      section: 'Access Control',
+      options: [
+        {
+          label: 'Thread-aware',
+          value: 'thread-aware',
+          description: 'Respond to @mentions and continue in threads the bot has joined.',
+        },
+        {
+          label: 'Mention only',
+          value: 'mention-only',
+          description: 'Only respond when explicitly @mentioned.',
+        },
+        {
+          label: 'Always',
+          value: 'always',
+          description: 'Respond to every message in every channel.',
+        },
+      ],
+      displayAs: 'radio-cards',
+    },
+    {
+      key: 'dmPolicy',
+      label: 'DM Access',
+      type: 'select',
+      required: false,
+      description: 'Control who can DM the bot.',
+      section: 'Access Control',
+      options: [
+        {
+          label: 'Open (anyone)',
+          value: 'open',
+          description: 'Any workspace member can DM the bot.',
+        },
+        {
+          label: 'Allowlist only',
+          value: 'allowlist',
+          description: 'Only users in the allowlist can DM the bot.',
+        },
+      ],
+      displayAs: 'radio-cards',
+    },
+    {
+      key: 'dmAllowlist',
+      label: 'DM Allowlist',
+      type: 'textarea',
+      required: false,
+      description: 'Slack user IDs allowed to DM the bot (one per line).',
+      placeholder: 'U01ABC123\nU02DEF456',
+      section: 'Access Control',
+      showWhen: { field: 'dmPolicy', equals: 'allowlist' },
+    },
+    {
+      key: 'channelOverrides',
+      label: 'Channel Overrides',
+      type: 'textarea',
+      required: false,
+      description: 'Per-channel settings as JSON.',
+      placeholder: '{"C01ABC": {"respondMode": "always"}, "C02DEF": {"enabled": false}}',
+      section: 'Access Control',
     },
   ],
   setupInstructions:
@@ -237,12 +322,50 @@ export class SlackAdapter extends BaseRelayAdapter {
   private readonly outboundState: SlackOutboundState = createSlackOutboundState();
   private platformClient: SlackPlatformClient | null = null;
   private readonly codec: SlackThreadIdCodec;
+  private readonly threadTracker: ThreadParticipationTracker;
 
   constructor(id: string, config: SlackAdapterConfig, displayName = 'Slack') {
     const codec = new SlackThreadIdCodec(id);
     super(id, codec.prefix, displayName);
     this.codec = codec;
     this.config = config;
+    this.threadTracker = new ThreadParticipationTracker();
+  }
+
+  /** Build InboundOptions from adapter config, with an optional event ID. */
+  private buildInboundOptions(eventId?: string, respondModeOverride?: 'always'): InboundOptions {
+    const allowlist = Array.isArray(this.config.dmAllowlist)
+      ? this.config.dmAllowlist
+      : typeof this.config.dmAllowlist === 'string'
+        ? (this.config.dmAllowlist as string)
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+
+    // channelOverrides may arrive as a JSON string from the UI textarea field
+    // when Zod union falls back to the generic record schema. Parse defensively
+    // so the feature works regardless of config source.
+    let overrides: Record<string, import('./inbound.js').ChannelOverride> = {};
+    const rawOverrides: unknown = this.config.channelOverrides;
+    if (typeof rawOverrides === 'object' && rawOverrides !== null && !Array.isArray(rawOverrides)) {
+      overrides = rawOverrides as typeof overrides;
+    } else if (typeof rawOverrides === 'string' && rawOverrides.trim().startsWith('{')) {
+      try {
+        overrides = JSON.parse(rawOverrides) as typeof overrides;
+      } catch {
+        this.logger.warn('channelOverrides: invalid JSON, ignoring');
+      }
+    }
+
+    return {
+      eventId,
+      respondMode: respondModeOverride ?? this.config.respondMode ?? 'thread-aware',
+      dmPolicy: this.config.dmPolicy ?? 'open',
+      dmAllowlist: allowlist,
+      channelOverrides: overrides,
+      threadTracker: this.threadTracker,
+    };
   }
 
   /**
@@ -282,7 +405,8 @@ export class SlackAdapter extends BaseRelayAdapter {
     });
 
     // Register event listeners before starting
-    app.message(async ({ event, client }) => {
+    app.message(async ({ event, client, body }) => {
+      const eventId = (body as { event_id?: string }).event_id;
       await handleInboundMessage(
         event as Parameters<typeof handleInboundMessage>[0],
         client,
@@ -292,11 +416,15 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.logger,
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
-        this.codec
+        this.codec,
+        this.buildInboundOptions(eventId)
       );
     });
 
-    app.event('app_mention', async ({ event, client }) => {
+    // app_mention events are already filtered by Slack to only include @mentions,
+    // so bypass respond mode gating by forcing 'always'.
+    app.event('app_mention', async ({ event, client, body }) => {
+      const eventId = (body as { event_id?: string }).event_id;
       await handleInboundMessage(
         event as Parameters<typeof handleInboundMessage>[0],
         client,
@@ -306,7 +434,8 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.logger,
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
-        this.codec
+        this.codec,
+        this.buildInboundOptions(eventId, 'always')
       );
     });
 
@@ -320,8 +449,25 @@ export class SlackAdapter extends BaseRelayAdapter {
       await this.handleToolAction(false, action, body, client, relay);
     });
 
-    // Surface unhandled listener errors through adapter status
+    // Surface unhandled listener errors through adapter status.
+    // Fatal auth errors stop the adapter to prevent retry loops.
     app.error(async (error) => {
+      const errorCode =
+        (error as { code?: string }).code ?? (error as { data?: { error?: string } }).data?.error;
+
+      if (errorCode && FATAL_SLACK_ERRORS.has(errorCode)) {
+        this.logger.error('fatal Slack error — stopping adapter', { errorCode });
+        this.recordError(
+          `Fatal Slack error: ${errorCode}. Re-check your bot token and app configuration.`
+        );
+        try {
+          await app.stop();
+        } catch {
+          // best-effort — app may already be disconnected
+        }
+        return;
+      }
+
       this.recordError(error);
     });
 
@@ -353,6 +499,7 @@ export class SlackAdapter extends BaseRelayAdapter {
     this.botUserId = '';
     this.streamState.clear();
     this.pendingReactions.clear();
+    this.threadTracker.clear();
     clearAllApprovalTimeouts(this.outboundState);
     clearCaches();
   }
@@ -385,6 +532,7 @@ export class SlackAdapter extends BaseRelayAdapter {
       typingIndicator: this.config.typingIndicator ?? 'none',
       approvalState: this.outboundState,
       codec: this.codec,
+      threadTracker: this.threadTracker,
       logger: this.logger,
     });
   }

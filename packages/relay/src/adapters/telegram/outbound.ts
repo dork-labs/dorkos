@@ -23,6 +23,7 @@ import {
   formatForPlatform,
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
+  splitMessage,
 } from '../../lib/payload-utils.js';
 import type { ApprovalData } from '../../lib/payload-utils.js';
 import { extractChatId, MAX_MESSAGE_LENGTH } from './inbound.js';
@@ -124,36 +125,6 @@ export interface TelegramDeliverOptions {
   /** Instance-scoped codec for subject encoding/decoding. */
   codec: TelegramThreadIdCodec;
   logger?: RelayLogger;
-}
-
-/**
- * Split a message string into chunks that respect Telegram's character limit.
- *
- * Prefers splitting at newline boundaries to avoid breaking mid-sentence.
- * Unlike truncation, this preserves all content across multiple messages.
- *
- * @param text - The full message text (already HTML-formatted)
- * @param maxLen - Maximum characters per chunk
- */
-export function splitMessage(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > maxLen) {
-    // Prefer splitting at a newline boundary within the limit
-    const boundary = remaining.lastIndexOf('\n', maxLen);
-    const splitAt = boundary > 0 ? boundary + 1 : maxLen;
-    chunks.push(remaining.slice(0, splitAt));
-    remaining = remaining.slice(splitAt);
-  }
-
-  if (remaining.length > 0) {
-    chunks.push(remaining);
-  }
-
-  return chunks;
 }
 
 /**

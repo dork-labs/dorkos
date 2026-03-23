@@ -137,6 +137,9 @@ export {
   formatForPlatform,
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
+  splitMessage,
+  TELEGRAM_MAX_LENGTH,
+  SLACK_MAX_LENGTH,
 } from './lib/payload-utils.js';
 
 // Thread ID codecs

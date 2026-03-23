@@ -194,6 +194,88 @@ export function extractSessionIdFromEnvelope(envelope: RelayEnvelope): string | 
   return undefined;
 }
 
+// === Message splitting ===
+
+/** Maximum message length for Telegram (4096 minus safety margin). */
+export const TELEGRAM_MAX_LENGTH = 4000;
+
+/** Maximum message length for Slack (4000 minus safety margin). */
+export const SLACK_MAX_LENGTH = 3500;
+
+/**
+ * Split a message string into chunks that respect a platform's character limit.
+ *
+ * Prefers splitting at natural boundaries (paragraph breaks, line breaks, word
+ * boundaries) to avoid breaking mid-sentence. Handles code fence awareness so
+ * split chunks close and re-open fenced code blocks correctly.
+ *
+ * @param text - The full message text
+ * @param maxLen - Maximum characters per chunk (defaults to {@link TELEGRAM_MAX_LENGTH})
+ */
+export function splitMessage(text: string, maxLen = TELEGRAM_MAX_LENGTH): string[] {
+  if (text.length <= maxLen) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > maxLen) {
+    let splitAt = -1;
+
+    // Priority 1: paragraph break
+    const paraBreak = remaining.lastIndexOf('\n\n', maxLen);
+    if (paraBreak > 0) splitAt = paraBreak + 2;
+
+    // Priority 2: line break
+    if (splitAt === -1) {
+      const lineBreak = remaining.lastIndexOf('\n', maxLen);
+      if (lineBreak > 0) splitAt = lineBreak + 1;
+    }
+
+    // Priority 3: word boundary
+    if (splitAt === -1) {
+      const space = remaining.lastIndexOf(' ', maxLen);
+      if (space > 0) splitAt = space + 1;
+    }
+
+    // Priority 4: hard cut
+    if (splitAt === -1) splitAt = maxLen;
+
+    let chunk = remaining.slice(0, splitAt);
+    remaining = remaining.slice(splitAt);
+
+    // Code-block fence awareness: close and re-open unclosed fences at split points
+    const fenceCount = countUnmatchedFences(chunk);
+    if (fenceCount % 2 !== 0) {
+      chunk += '\n```';
+      remaining = '```\n' + remaining;
+    }
+
+    chunks.push(chunk);
+  }
+
+  if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
+}
+
+/**
+ * Count triple-backtick fences in a text fragment.
+ *
+ * An odd count means a code block was opened but not closed within the fragment.
+ *
+ * @param text - The text to scan for fences
+ */
+function countUnmatchedFences(text: string): number {
+  let count = 0;
+  let idx = 0;
+  while (idx < text.length) {
+    const pos = text.indexOf('```', idx);
+    if (pos === -1) break;
+    count++;
+    idx = pos + 3;
+  }
+  return count;
+}
+
 // === Format conversion ===
 
 /**

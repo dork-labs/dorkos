@@ -14,6 +14,7 @@
 import { randomUUID } from 'node:crypto';
 import type { WebClient } from '@slack/web-api';
 import type { AdapterOutboundCallbacks, DeliveryResult } from '../../types.js';
+import type { ThreadParticipationTracker } from './thread-tracker.js';
 import { formatForPlatform, truncateText } from '../../lib/payload-utils.js';
 import { MAX_MESSAGE_LENGTH } from './inbound.js';
 import {
@@ -67,6 +68,8 @@ export interface StreamContext {
   typingIndicator: 'none' | 'reaction';
   streamKeyTs: string;
   pendingReactions: PendingReactions;
+  /** Thread participation tracker for marking threads the bot has replied to. */
+  threadTracker?: ThreadParticipationTracker;
   logger?: { debug: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
 }
 
@@ -108,6 +111,17 @@ export async function wrapSlackCall(
  */
 export function buildStreamKey(channelId: string, streamKeyTs?: string): string {
   return streamKeyTs ? `${channelId}:${streamKeyTs}` : channelId;
+}
+
+/** Mark a thread as participating after a successful outbound post. */
+function markParticipation(
+  threadTracker: ThreadParticipationTracker | undefined,
+  channelId: string,
+  threadTs: string | undefined
+): void {
+  if (threadTracker && threadTs) {
+    threadTracker.markParticipating(channelId, threadTs);
+  }
 }
 
 /** Add :hourglass_flowing_sand: reaction — fire-and-forget with logged failures. */
@@ -234,6 +248,7 @@ export async function handleTextDelta(
         streamId: randomUUID(),
       });
       addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
+      markParticipation(ctx.threadTracker, channelId, threadTs);
     }
     return { success: true, durationMs: Date.now() - startTime };
   }
@@ -295,6 +310,7 @@ export async function handleTextDelta(
       });
       await nativeAppendStream(client, nativeStreamId, formatForPlatform(textChunk, 'slack'));
       addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
+      markParticipation(ctx.threadTracker, channelId, threadTs);
       return { success: true, durationMs: Date.now() - startTime };
     } catch (err) {
       // Fallback to chat.postMessage (e.g., missing scope, API not available)
@@ -320,6 +336,7 @@ export async function handleTextDelta(
       streamId: randomUUID(),
     });
     addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
+    markParticipation(ctx.threadTracker, channelId, threadTs);
     return { success: true, durationMs: now - startTime };
   } catch (err) {
     callbacks.recordError(err);

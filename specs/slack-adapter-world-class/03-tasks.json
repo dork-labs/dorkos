@@ -1,0 +1,129 @@
+{
+  "spec": "specs/slack-adapter-world-class/02-specification.md",
+  "slug": "slack-adapter-world-class",
+  "generatedAt": "2026-03-23T03:30:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[slack-adapter-world-class] [P1] Extract shared splitMessage() to payload-utils.ts",
+      "description": "Extract and enhance the Telegram `splitMessage()` function from `packages/relay/src/adapters/telegram/outbound.ts` (line 138) into `packages/relay/src/lib/payload-utils.ts` as a shared utility.\n\n**What to build:**\n\nAdd to `packages/relay/src/lib/payload-utils.ts`:\n\n```typescript\nexport const TELEGRAM_MAX_LENGTH = 4000;\nexport const SLACK_MAX_LENGTH = 3500;\n\nexport function splitMessage(text: string, maxLen = TELEGRAM_MAX_LENGTH): string[] {\n  if (text.length <= maxLen) return [text];\n  const chunks: string[] = [];\n  let remaining = text;\n  while (remaining.length > maxLen) {\n    let splitAt = -1;\n    // Priority 1: paragraph break\n    const paraBreak = remaining.lastIndexOf('\\n\\n', maxLen);\n    if (paraBreak > 0) splitAt = paraBreak + 2;\n    // Priority 2: line break\n    if (splitAt === -1) {\n      const lineBreak = remaining.lastIndexOf('\\n', maxLen);\n      if (lineBreak > 0) splitAt = lineBreak + 1;\n    }\n    // Priority 3: word boundary\n    if (splitAt === -1) {\n      const space = remaining.lastIndexOf(' ', maxLen);\n      if (space > 0) splitAt = space + 1;\n    }\n    // Priority 4: hard cut\n    if (splitAt === -1) splitAt = maxLen;\n    let chunk = remaining.slice(0, splitAt);\n    remaining = remaining.slice(splitAt);\n    // Code-block fence awareness\n    const fenceCount = countUnmatchedFences(chunk);\n    if (fenceCount % 2 !== 0) {\n      chunk += '\\n```';\n      remaining = '```\\n' + remaining;\n    }\n    chunks.push(chunk);\n  }\n  if (remaining.length > 0) chunks.push(remaining);\n  return chunks;\n}\n\nfunction countUnmatchedFences(text: string): number {\n  let count = 0;\n  let idx = 0;\n  while (idx < text.length) {\n    const pos = text.indexOf('```', idx);\n    if (pos === -1) break;\n    count++;\n    idx = pos + 3;\n  }\n  return count;\n}\n```\n\n**Refactor Telegram adapter:**\n\nIn `packages/relay/src/adapters/telegram/outbound.ts`:\n- Remove the local `splitMessage()` function (lines 138-157)\n- Add import: `import { splitMessage } from '../../lib/payload-utils.js';`\n- Keep existing call sites unchanged (they pass `maxLen = 4000` which matches the default)\n\n**Tests in `packages/relay/src/lib/__tests__/payload-utils.test.ts`:**\n\nAdd a new `describe('splitMessage')` block:\n- Short text returns single chunk\n- Splits at paragraph boundary (`\\n\\n`)\n- Splits at line boundary when no paragraph break\n- Splits at word boundary when no line break\n- Hard cuts when no word boundary\n- Closes and reopens code fences at split points\n- Handles multiple code blocks\n- Respects custom maxLen parameter\n- Empty string returns single empty chunk\n\n**Verify Telegram tests still pass** after the import change.\n\n**Acceptance criteria:**\n- `splitMessage()` exported from `payload-utils.ts`\n- `TELEGRAM_MAX_LENGTH` and `SLACK_MAX_LENGTH` exported as constants\n- Telegram adapter imports from shared location\n- All existing Telegram tests pass\n- New payload-utils tests pass for splitMessage",
+      "activeForm": "Extracting shared splitMessage utility",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2", "1.3"]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[slack-adapter-world-class] [P1] Create ThreadParticipationTracker",
+      "description": "Create `packages/relay/src/adapters/slack/thread-tracker.ts` with the `ThreadParticipationTracker` class.\n\n**What to build:**\n\n```typescript\nconst DEFAULT_MAX_SIZE = 1_000;\nconst DEFAULT_TTL_MS = 24 * 60 * 60 * 1_000; // 24 hours\n\nexport class ThreadParticipationTracker {\n  private readonly entries = new Map<string, number>();\n  private readonly maxSize: number;\n  private readonly ttlMs: number;\n\n  constructor(maxSize = DEFAULT_MAX_SIZE, ttlMs = DEFAULT_TTL_MS) {\n    this.maxSize = maxSize;\n    this.ttlMs = ttlMs;\n  }\n\n  markParticipating(channelId: string, threadTs: string): void {\n    const key = `${channelId}:${threadTs}`;\n    this.entries.delete(key); // refresh LRU position\n    if (this.entries.size >= this.maxSize) {\n      const firstKey = this.entries.keys().next().value;\n      if (firstKey !== undefined) this.entries.delete(firstKey);\n    }\n    this.entries.set(key, Date.now());\n  }\n\n  isParticipating(channelId: string, threadTs: string): boolean {\n    const key = `${channelId}:${threadTs}`;\n    const timestamp = this.entries.get(key);\n    if (timestamp === undefined) return false;\n    if (Date.now() - timestamp > this.ttlMs) {\n      this.entries.delete(key);\n      return false;\n    }\n    return true;\n  }\n\n  clear(): void { this.entries.clear(); }\n  get size(): number { return this.entries.size; }\n}\n```\n\n**CRITICAL: Instance-scoped, NOT module-level.** Per `contributing/adapter-catalog.md` multiInstance rule.\n\n**Tests in `packages/relay/src/adapters/slack/__tests__/thread-tracker.test.ts`:**\n\n- `markParticipating()` stores entries\n- `isParticipating()` returns true for tracked threads\n- `isParticipating()` returns false for unknown threads\n- TTL expiration removes stale entries (use `vi.useFakeTimers()`)\n- LRU eviction removes oldest when at capacity (construct with small maxSize like 3)\n- `clear()` removes all entries\n- `size` returns correct count\n\n**Acceptance criteria:**\n- Class is instance-scoped (no module-level state)\n- LRU eviction works at capacity\n- TTL expiration works\n- All tests pass",
+      "activeForm": "Creating ThreadParticipationTracker",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.3"]
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[slack-adapter-world-class] [P1] Add new config fields to SlackAdapterConfigSchema",
+      "description": "Update `packages/shared/src/relay-adapter-schemas.ts` to add the new config fields to `SlackAdapterConfigSchema`.\n\n**Changes to `SlackAdapterConfigSchema`:**\n\n```typescript\nexport const SlackAdapterConfigSchema = z\n  .object({\n    botToken: z.string().min(1),\n    appToken: z.string().min(1),\n    signingSecret: z.string().min(1),\n    streaming: z.boolean().default(true),\n    nativeStreaming: z.boolean().default(true),\n    typingIndicator: z.enum(['none', 'reaction']).default('reaction'), // Changed from 'none'\n    respondMode: z.enum(['always', 'mention-only', 'thread-aware']).default('thread-aware'),\n    dmPolicy: z.enum(['open', 'allowlist']).default('open'),\n    dmAllowlist: z.array(z.string()).default([]),\n    channelOverrides: z\n      .record(\n        z.string(),\n        z.object({\n          enabled: z.boolean().optional(),\n          respondMode: z.enum(['always', 'mention-only', 'thread-aware']).optional(),\n        })\n      )\n      .default({}),\n  })\n  .openapi('SlackAdapterConfig');\n```\n\n**Key changes:**\n1. `typingIndicator` default: `'none'` -> `'reaction'` (Improvement 3)\n2. New `respondMode` field with `'thread-aware'` default (Improvement 4)\n3. New `dmPolicy` field with `'open'` default (Improvement 5)\n4. New `dmAllowlist` field with empty array default (Improvement 5)\n5. New `channelOverrides` field with empty object default (Improvement 8)\n\n**Update `SlackAdapterConfig` type** — it derives from the schema via `z.infer`, so it auto-updates.\n\n**Backward compatibility:** All new fields have defaults. Only `typingIndicator` changes its default from `'none'` to `'reaction'`. Existing configs that explicitly set `typingIndicator: 'none'` are preserved.\n\n**Acceptance criteria:**\n- Schema parses correctly with no config (all defaults apply)\n- Schema parses correctly with explicit old config (backward compatible)\n- New fields have correct defaults\n- TypeScript types updated automatically via z.infer\n- `pnpm typecheck` passes",
+      "activeForm": "Adding config fields to SlackAdapterConfigSchema",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1", "1.2"]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Core Features",
+      "subject": "[slack-adapter-world-class] [P2] Add event deduplication to inbound handler",
+      "description": "Add event_id-based deduplication to `handleInboundMessage()` in `packages/relay/src/adapters/slack/inbound.ts`.\n\n**What to build:**\n\n1. Add constants and dedup cache at module level in `inbound.ts`:\n```typescript\nconst EVENT_DEDUP_MAX_SIZE = 500;\nconst EVENT_DEDUP_TTL_MS = 5 * 60 * 1_000;\ninterface DedupEntry { expiresAt: number; }\nconst seenEvents = new Map<string, DedupEntry>();\n```\n\n2. Add `InboundOptions` interface to `handleInboundMessage()` as a new optional parameter:\n```typescript\nexport interface InboundOptions {\n  eventId?: string;\n  respondMode?: 'always' | 'mention-only' | 'thread-aware';\n  dmPolicy?: 'open' | 'allowlist';\n  dmAllowlist?: string[];\n  channelOverrides?: Record<string, { enabled?: boolean; respondMode?: 'always' | 'mention-only' | 'thread-aware' }>;\n  threadTracker?: ThreadParticipationTracker;\n}\n```\n\n3. At the very top of `handleInboundMessage()` (before echo prevention), add the dedup check:\n- If `options?.eventId` is set, check `seenEvents`\n- If found and not expired, return early with debug log\n- Evict expired entries when at capacity, then oldest if still full\n- Add new entry with TTL\n\n4. Add `seenEvents.clear()` to the existing `clearCaches()` function.\n\n5. In `slack-adapter.ts`, update `app.message()` and `app.event('app_mention')` handlers to pass `body.event_id` via the new `InboundOptions` parameter.\n\n**Tests in `inbound.test.ts`:**\n- Duplicate event_id skips processing (no `relay.publish` call)\n- Different event_id processes normally\n- No event_id provided processes normally\n- Expired entries are cleaned up (use fake timers)\n\n**Acceptance criteria:**\n- Duplicate events are silently skipped\n- Event dedup cache bounded at 500 entries\n- TTL of 5 minutes works correctly\n- `clearCaches()` clears the dedup cache\n- All tests pass",
+      "activeForm": "Adding event deduplication",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.3"],
+      "parallelWith": ["2.2"]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Core Features",
+      "subject": "[slack-adapter-world-class] [P2] Add graceful auth failure handling",
+      "description": "Add fatal Slack error detection to `slack-adapter.ts` to prevent retry loops on auth failures.\n\n**What to build:**\n\n1. Add `FATAL_SLACK_ERRORS` Set at module level in `slack-adapter.ts`:\n```typescript\nconst FATAL_SLACK_ERRORS = new Set([\n  'account_inactive', 'invalid_auth', 'token_revoked',\n  'not_authed', 'missing_scope', 'team_access_not_granted', 'app_uninstalled',\n]);\n```\n\n2. Update the `app.error()` handler in `_start()` method:\n- Extract error code from `error.code` and `error.data?.error`\n- Check against `FATAL_SLACK_ERRORS`\n- If fatal: log error, call `this.recordError()` with descriptive message, call `app.stop()`\n- If non-fatal: existing behavior (just `this.recordError(error)`)\n\nThe `recordError()` method (from `BaseRelayAdapter`) already sets adapter status to `'error'` with the message, which surfaces in the Relay panel UI.\n\n**Tests in `slack-adapter.test.ts`:**\n- Fatal error code (e.g., `'invalid_auth'`) stops the adapter\n- Fatal error in `data.error` field stops the adapter\n- Non-fatal error is recorded but adapter continues\n- Error message is descriptive (mentions re-checking bot token)\n\n**Acceptance criteria:**\n- Fatal auth errors stop the adapter immediately\n- Descriptive error message surfaces in Relay panel\n- Non-fatal errors continue normal behavior\n- No retry loop on token revocation",
+      "activeForm": "Adding auth failure handling",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["2.1"]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Core Features",
+      "subject": "[slack-adapter-world-class] [P2] Add respond mode gating and DM access control",
+      "description": "Add respond mode gating (Improvement 4), DM access control (Improvement 5), and channel overrides (Improvement 8) to the inbound handler.\n\n**What to build in `inbound.ts`:**\n\nAfter echo/bot/subtype filtering and after event dedup, add gating logic:\n\n1. **Channel overrides check:**\n   - Check `options?.channelOverrides[channelId]`\n   - If `enabled === false`, skip with debug log\n   - If `respondMode` is set, use it instead of global\n\n2. **DM policy check:**\n   - If channel starts with 'D' (DM) and `dmPolicy === 'allowlist'`\n   - Check if `event.user` is in `dmAllowlist`\n   - If not, skip silently (no rejection message)\n\n3. **Respond mode gating** (non-DM channels only):\n   - `'always'`: process everything (current behavior)\n   - `'mention-only'`: check for `<@${botUserId}>` in event.text\n   - `'thread-aware'`:\n     - If `event.thread_ts` exists: check `threadTracker.isParticipating()` OR has @mention\n     - If no `thread_ts` (main channel): only process if @mentioned\n\n4. **Export `getEffectiveChannelConfig()` utility:**\n```typescript\nexport type RespondMode = 'always' | 'mention-only' | 'thread-aware';\nexport interface ChannelOverride { enabled?: boolean; respondMode?: RespondMode; }\nexport interface EffectiveChannelConfig { enabled: boolean; respondMode: RespondMode; }\nexport function getEffectiveChannelConfig(\n  channelId: string, globalRespondMode: RespondMode,\n  overrides: Record<string, ChannelOverride>\n): EffectiveChannelConfig {\n  const override = overrides[channelId];\n  return {\n    enabled: override?.enabled ?? true,\n    respondMode: override?.respondMode ?? globalRespondMode,\n  };\n}\n```\n\n5. **In `slack-adapter.ts`:** Pass config values through `InboundOptions`:\n   - `respondMode`, `dmPolicy`, `dmAllowlist`, `channelOverrides`, `threadTracker`\n\n6. **Parse dmAllowlist from textarea string:**\n```typescript\nconst allowlist = Array.isArray(config.dmAllowlist)\n  ? config.dmAllowlist\n  : typeof config.dmAllowlist === 'string'\n    ? config.dmAllowlist.split('\\n').map(s => s.trim()).filter(Boolean)\n    : [];\n```\n\n**Tests in `inbound.test.ts`:**\n- Respond mode `'always'` processes all messages\n- Respond mode `'mention-only'` processes @mentions, skips others\n- Respond mode `'thread-aware'` processes DMs always\n- Respond mode `'thread-aware'` processes @mentions in main channel\n- Respond mode `'thread-aware'` skips non-mention in main channel\n- Respond mode `'thread-aware'` processes in participating threads\n- Respond mode `'thread-aware'` skips non-participating threads without mention\n- Respond mode `'thread-aware'` processes @mentions in non-participating threads\n- DM allowlist: allowed user processes\n- DM allowlist: non-allowed user skips silently\n- DM open policy: all DMs process\n- Channel override `enabled: false` skips\n- Channel override `respondMode` overrides global\n\n**Acceptance criteria:**\n- All respond mode variants work correctly\n- DM policy gating works\n- Channel overrides work\n- All state is instance-scoped via options parameter\n- All tests pass",
+      "activeForm": "Adding respond mode and DM access control",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["1.2", "1.3", "2.1"],
+      "parallelWith": []
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Integration",
+      "subject": "[slack-adapter-world-class] [P3] Replace Slack truncation with message splitting",
+      "description": "Replace `truncateText()` calls in Slack outbound with `splitMessage()` and post multiple messages.\n\n**What to change in `packages/relay/src/adapters/slack/outbound.ts`:**\n\n1. Add import: `import { splitMessage, SLACK_MAX_LENGTH } from '../../lib/payload-utils.js';`\n\n2. In the standard message delivery path, replace truncation with splitting:\n```typescript\nconst formatted = formatForPlatform(content, 'slack');\nconst chunks = splitMessage(formatted, SLACK_MAX_LENGTH);\nfor (let i = 0; i < chunks.length; i++) {\n  await wrapSlackCall(\n    () => client.chat.postMessage({\n      channel: channelId,\n      text: chunks[i],\n      thread_ts: threadTs,\n    }),\n    logger\n  );\n  if (i < chunks.length - 1) {\n    await new Promise((resolve) => setTimeout(resolve, 1_100));\n  }\n}\n```\n\n3. All chunks must post to the same thread (same `thread_ts`).\n\n4. Check `stream.ts` and `approval.ts` — if they use `truncateText()` for outbound content, evaluate if splitting is needed there too. Stream messages are typically under 3500 chars since they accumulate incrementally. Approval cards have structured Block Kit content, not raw text. Only replace where appropriate.\n\n**Tests in `outbound.test.ts`:**\n- Long message produces multiple `chat.postMessage` calls\n- Short message produces single call\n- All chunks posted to same thread_ts\n- 1.1s delay between chunks (use fake timers)\n\n**Acceptance criteria:**\n- No more silent truncation of long messages\n- Messages split at natural boundaries\n- Rate limiting between chunks\n- Existing tests still pass",
+      "activeForm": "Replacing Slack truncation with splitting",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["3.2", "3.3"]
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Integration",
+      "subject": "[slack-adapter-world-class] [P3] Enforce thread-first responses and track participation",
+      "description": "Verify and enforce thread-first responses in all outbound code paths, and add thread participation tracking after successful outbound posts.\n\n**Thread-first enforcement:**\n\n1. In `outbound.ts` after `resolveThreadTs()`, add a safety warning for channel messages without threadTs:\n```typescript\nif (isGroupChannel(channelId) && !threadTs) {\n  logger.warn(`outbound: no threadTs for channel message in ${channelId}`);\n}\n```\n\n2. Verify `isGroupChannel()` is exported from `inbound.ts` (check if it's already exported; if not, export it). `isGroupChannel()` checks if channelId starts with 'C' or 'G'.\n\n3. Audit `stream.ts` `handleTextDelta()` — the first `chat.postMessage` that starts a stream must include `thread_ts`. Verify the stream context carries `threadTs`.\n\n4. Audit `approval.ts` `handleApprovalRequired()` — the Block Kit card must be posted in-thread. Verify `thread_ts` is passed.\n\n**Outbound participation tracking:**\n\nAdd `ThreadParticipationTracker` parameter to outbound functions. After every successful `chat.postMessage` (standard, stream start, approval card), call:\n```typescript\nif (threadTracker && channelId && threadTs) {\n  threadTracker.markParticipating(channelId, threadTs);\n}\n```\n\nIn `slack-adapter.ts`:\n- Pass `this.threadTracker` to `deliverMessage()`, stream handlers, and approval handlers\n- Clear tracker in `_stop()`\n\n**Tests:**\n- Channel messages log warning when threadTs missing\n- DM messages don't log warning\n- `markParticipating` called after successful post\n- Stream start marks participation\n\n**Acceptance criteria:**\n- All channel messages use thread_ts\n- Warning logged for missing thread_ts in channels\n- Thread participation tracked on all outbound paths\n- ThreadParticipationTracker cleared on adapter stop",
+      "activeForm": "Enforcing thread-first and tracking participation",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2", "2.3"],
+      "parallelWith": ["3.1", "3.3"]
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Integration",
+      "subject": "[slack-adapter-world-class] [P3] Update SLACK_MANIFEST configFields for new settings",
+      "description": "Add new configFields to the `SLACK_MANIFEST` in `slack-adapter.ts` for all new config options.\n\n**New configFields to add (in an 'Access Control' section):**\n\n1. **respondMode** — select with `displayAs: 'radio-cards'`:\n```typescript\n{\n  key: 'respondMode',\n  label: 'Respond Mode',\n  type: 'select',\n  required: false,\n  description: 'When should the bot respond in channels?',\n  section: 'Access Control',\n  options: [\n    { label: 'Thread-aware', value: 'thread-aware', description: 'Respond to @mentions and continue in threads the bot has joined.' },\n    { label: 'Mention only', value: 'mention-only', description: 'Only respond when explicitly @mentioned.' },\n    { label: 'Always', value: 'always', description: 'Respond to every message in every channel.' },\n  ],\n  displayAs: 'radio-cards',\n}\n```\n\n2. **dmPolicy** — select with `displayAs: 'radio-cards'`:\n```typescript\n{\n  key: 'dmPolicy',\n  label: 'DM Access',\n  type: 'select',\n  required: false,\n  description: 'Control who can DM the bot.',\n  section: 'Access Control',\n  options: [\n    { label: 'Open (anyone)', value: 'open', description: 'Any workspace member can DM the bot.' },\n    { label: 'Allowlist only', value: 'allowlist', description: 'Only users in the allowlist can DM the bot.' },\n  ],\n  displayAs: 'radio-cards',\n}\n```\n\n3. **dmAllowlist** — textarea, shown when dmPolicy = 'allowlist':\n```typescript\n{\n  key: 'dmAllowlist',\n  label: 'DM Allowlist',\n  type: 'textarea',\n  required: false,\n  description: 'Slack user IDs allowed to DM the bot (one per line).',\n  placeholder: 'U01ABC123\\nU02DEF456',\n  section: 'Access Control',\n  showWhen: { field: 'dmPolicy', equals: 'allowlist' },\n}\n```\n\n4. **channelOverrides** — textarea (JSON):\n```typescript\n{\n  key: 'channelOverrides',\n  label: 'Channel Overrides',\n  type: 'textarea',\n  required: false,\n  description: 'Per-channel settings as JSON.',\n  placeholder: '{\"C01ABC\": {\"respondMode\": \"always\"}, \"C02DEF\": {\"enabled\": false}}',\n  section: 'Access Control',\n}\n```\n\n5. **Update typingIndicator** description to note new default: 'Enabled by default.'\n\n6. **Update setupSteps[0].fields** to include new field keys.\n\n**Tests in `slack-adapter.test.ts`:**\n- SLACK_MANIFEST includes new configFields\n- New fields have correct types and sections\n- showWhen condition on dmAllowlist references correct field\n\n**Acceptance criteria:**\n- All new config fields appear in SLACK_MANIFEST\n- Fields grouped in 'Access Control' section\n- dmAllowlist conditionally shown\n- setupSteps include new field keys",
+      "activeForm": "Updating SLACK_MANIFEST configFields",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.3"],
+      "parallelWith": ["3.1", "3.2"]
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Testing & Documentation",
+      "subject": "[slack-adapter-world-class] [P4] Comprehensive test coverage and documentation",
+      "description": "Ensure all tests pass, add any missing test coverage, and update documentation.\n\n**Test verification checklist:**\n\n1. Run `pnpm vitest run packages/relay/src/lib/__tests__/payload-utils.test.ts` — splitMessage tests\n2. Run `pnpm vitest run packages/relay/src/adapters/slack/__tests__/thread-tracker.test.ts` — tracker tests\n3. Run `pnpm vitest run packages/relay/src/adapters/slack/__tests__/inbound.test.ts` — dedup, respond mode, DM policy tests\n4. Run `pnpm vitest run packages/relay/src/adapters/slack/__tests__/outbound.test.ts` — splitting, thread-first tests\n5. Run `pnpm vitest run packages/relay/src/adapters/slack/__tests__/slack-adapter.test.ts` — auth failure, config tests\n6. Run `pnpm vitest run packages/relay/src/adapters/telegram/` — verify Telegram still works\n7. Run full `pnpm test` to catch any regressions\n8. Run `pnpm typecheck` to verify type correctness\n9. Run `pnpm lint` to verify code quality\n\n**Documentation updates:**\n\n1. Update `contributing/relay-adapters.md` with:\n   - New config fields: respondMode, dmPolicy, dmAllowlist, channelOverrides\n   - Explain respond mode semantics (always, mention-only, thread-aware)\n   - Note the typing indicator default change\n\n2. Update `docs/relay-messaging.mdx` (if it exists and documents Slack config) with:\n   - New respond mode options\n   - DM policy documentation\n   - Channel overrides format\n\n**Acceptance criteria:**\n- All tests pass across all affected packages\n- No lint errors\n- No type errors\n- Documentation updated for new features\n- No regressions in Telegram adapter",
+      "activeForm": "Running tests and updating documentation",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["2.3", "3.1", "3.2", "3.3"],
+      "parallelWith": []
+    }
+  ]
+}

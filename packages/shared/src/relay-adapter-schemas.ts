@@ -86,7 +86,19 @@ export const SlackAdapterConfigSchema = z
     signingSecret: z.string().min(1),
     streaming: z.boolean().default(true),
     nativeStreaming: z.boolean().default(true),
-    typingIndicator: z.enum(['none', 'reaction']).default('none'),
+    typingIndicator: z.enum(['none', 'reaction']).default('reaction'),
+    respondMode: z.enum(['always', 'mention-only', 'thread-aware']).default('thread-aware'),
+    dmPolicy: z.enum(['open', 'allowlist']).default('open'),
+    dmAllowlist: z.array(z.string()).default([]),
+    channelOverrides: z
+      .record(
+        z.string(),
+        z.object({
+          enabled: z.boolean().optional(),
+          respondMode: z.enum(['always', 'mention-only', 'thread-aware']).optional(),
+        })
+      )
+      .default({}),
   })
   .openapi('SlackAdapterConfig');
 

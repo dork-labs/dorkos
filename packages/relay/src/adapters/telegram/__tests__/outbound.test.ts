@@ -123,6 +123,31 @@ vi.mock('../../../lib/payload-utils.js', () => ({
   },
   // Pass-through: outbound tests do not test Markdown→HTML conversion
   formatForPlatform: (content: string) => content,
+  TELEGRAM_MAX_LENGTH: 4000,
+  SLACK_MAX_LENGTH: 3500,
+  splitMessage: (text: string, maxLen = 4000) => {
+    if (text.length <= maxLen) return [text];
+    const chunks: string[] = [];
+    let remaining = text;
+    while (remaining.length > maxLen) {
+      let splitAt = -1;
+      const paraBreak = remaining.lastIndexOf('\n\n', maxLen);
+      if (paraBreak > 0) splitAt = paraBreak + 2;
+      if (splitAt === -1) {
+        const lineBreak = remaining.lastIndexOf('\n', maxLen);
+        if (lineBreak > 0) splitAt = lineBreak + 1;
+      }
+      if (splitAt === -1) {
+        const space = remaining.lastIndexOf(' ', maxLen);
+        if (space > 0) splitAt = space + 1;
+      }
+      if (splitAt === -1) splitAt = maxLen;
+      chunks.push(remaining.slice(0, splitAt));
+      remaining = remaining.slice(splitAt);
+    }
+    if (remaining.length > 0) chunks.push(remaining);
+    return chunks;
+  },
 }));
 
 const mockSendChatAction = vi.fn().mockResolvedValue(true);

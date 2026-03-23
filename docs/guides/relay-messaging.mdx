@@ -198,7 +198,7 @@ An experimental alternative Telegram adapter backed by the [Chat SDK](https://gi
 
 ### Slack Adapter
 
-The Slack adapter bridges Slack workspaces into Relay using Socket Mode — no public URL required. Supports streaming responses, threading, and typing indicators via emoji reactions.
+The Slack adapter bridges Slack workspaces into Relay using Socket Mode — no public URL required. Supports streaming responses, threading, typing indicators via emoji reactions, and fine-grained access control.
 
 ```json
 {
@@ -211,10 +211,14 @@ The Slack adapter bridges Slack workspaces into Relay using Socket Mode — no p
     "appToken": "xapp-...",
     "signingSecret": "abc123...",
     "streaming": true,
-    "typingIndicator": "reaction"
+    "typingIndicator": "reaction",
+    "respondMode": "thread-aware",
+    "dmPolicy": "open"
   }
 }
 ```
+
+`respondMode` controls when the bot responds in channels: `thread-aware` (default -- responds to @mentions and thread replies where the bot is already participating), `mention-only` (only @mentions), or `always` (every message). `dmPolicy` controls DM access: `open` (default) or `allowlist` (restrict to user IDs in `dmAllowlist`). Per-channel overrides are available via `channelOverrides`.
 
 ### Webhook Adapter
 

@@ -397,6 +397,48 @@ Bridges Slack workspaces into the Relay subject hierarchy using Socket Mode (no 
 - DMs: `relay.human.slack.{channelId}` (D-prefix channels)
 - Groups/Channels: `relay.human.slack.group.{channelId}` (C/G-prefix channels)
 
+**Respond Modes:**
+
+The `respondMode` config field controls when the bot responds in channels (DMs are always responded to unless restricted by `dmPolicy`):
+
+| Mode           | Behavior                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `thread-aware` | Responds to @mentions and replies in threads the bot has already participated in. Default since v0.21. Most channel-friendly mode. |
+| `mention-only` | Responds only when explicitly @mentioned. Ignores thread replies.                                                                  |
+| `always`       | Responds to every message in every channel. Use with caution in shared channels.                                                   |
+
+**DM Access Control:**
+
+The `dmPolicy` field controls who can DM the bot:
+
+| Policy      | Behavior                                                                  |
+| ----------- | ------------------------------------------------------------------------- |
+| `open`      | Any Slack user can DM the bot. Default.                                   |
+| `allowlist` | Only user IDs listed in `dmAllowlist` can DM the bot. Others are ignored. |
+
+**Channel Overrides:**
+
+The `channelOverrides` field allows per-channel configuration that overrides global settings:
+
+```json
+{
+  "channelOverrides": {
+    "C12345": { "respondMode": "always" },
+    "C67890": { "enabled": false }
+  }
+}
+```
+
+Each override can set `enabled` (boolean) and/or `respondMode` for that specific channel. Channels with `enabled: false` are completely ignored.
+
+**Event Deduplication:**
+
+Inbound events are deduplicated by `event_id` using an LRU set (500 entries, 5-minute TTL). This prevents duplicate processing when Slack retries event delivery.
+
+**Auth Failure Handling:**
+
+When the Slack API returns a fatal authentication error (`invalid_auth`, `token_revoked`, `not_authed`, `missing_scope`, `app_uninstalled`, `account_inactive`, `team_access_not_granted`), the adapter stops itself immediately instead of retrying in a loop.
+
 **Inbound:**
 
 Receives Slack messages via Socket Mode (`message` and `app_mention` events). Skips bot messages, file shares, and edits. Normalizes into `StandardPayload`:
@@ -433,7 +475,7 @@ Supports two delivery modes controlled by the `streaming` config field:
 | Streaming (`true`) | Posts initial message on first `text_delta`, then updates via `chat.update` every 1 second. Final update on `done`. |
 | Buffered (`false`) | Accumulates text in memory, posts once on `done`. Reduces API quota usage.                                          |
 
-All bot responses thread under the original inbound message using `platformData.ts`. Messages are truncated to Slack's 4000-character limit.
+All bot responses thread under the original inbound message using `platformData.ts`. Messages exceeding Slack's 4000-character limit are split into multiple chunks (at paragraph or sentence boundaries) and sent sequentially with a 1.1-second delay between chunks for rate limiting.
 
 **Typing Indicators:**
 
@@ -441,6 +483,12 @@ All bot responses thread under the original inbound message using `platformData.
 | ---------- | ------------------------------------------------------------------------ |
 | `reaction` | Adds/removes `:hourglass_flowing_sand:` emoji reaction during processing |
 | `none`     | No visual feedback                                                       |
+
+Default is `reaction` (changed from `none` in v0.21).
+
+**Thread Participation Tracking:**
+
+The adapter maintains an LRU map (1000 entries, 24h TTL) of threads the bot has participated in. When `respondMode` is `thread-aware`, the bot responds to replies in these tracked threads even without an @mention. Participation is recorded whenever the bot sends a message to a thread.
 
 **Connection:**
 
@@ -458,7 +506,13 @@ Uses `@slack/bolt` with `socketMode: true`. No public URL or ngrok required — 
     "appToken": "xapp-...",
     "signingSecret": "abc123...",
     "streaming": true,
-    "typingIndicator": "reaction"
+    "typingIndicator": "reaction",
+    "respondMode": "thread-aware",
+    "dmPolicy": "open",
+    "channelOverrides": {
+      "C_PROJECT": { "respondMode": "always" },
+      "C_NOISY": { "enabled": false }
+    }
   }
 }
 ```
@@ -1053,12 +1107,13 @@ The returned callback objects contain only the methods that each direction needs
 
 Common envelope-parsing logic lives in `packages/relay/src/lib/payload-utils.ts` and is exported from the `@dorkos/relay` barrel. Adapters should import these shared helpers rather than duplicating the logic:
 
-| Utility                                  | Purpose                                                                                    |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `extractAgentIdFromEnvelope(envelope)`   | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent.     |
-| `extractSessionIdFromEnvelope(envelope)` | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent. |
-| `extractApprovalData(payload)`           | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`.       |
-| `formatToolDescription(toolName, input)` | Returns a human-readable summary of a tool action for approval prompts.                    |
+| Utility                                  | Purpose                                                                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `extractAgentIdFromEnvelope(envelope)`   | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent.                                     |
+| `extractSessionIdFromEnvelope(envelope)` | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent.                                 |
+| `extractApprovalData(payload)`           | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`.                                       |
+| `formatToolDescription(toolName, input)` | Returns a human-readable summary of a tool action for approval prompts.                                                    |
+| `splitMessage(text, maxLength)`          | Splits text at paragraph/sentence boundaries. Platform constants: `TELEGRAM_MAX_LENGTH` (4000), `SLACK_MAX_LENGTH` (3500). |
 
 ```typescript
 import {
@@ -1404,12 +1459,13 @@ The Slack adapter demonstrates the full split:
 ```
 packages/relay/src/adapters/slack/
 ├── index.ts              # Barrel
-├── slack-adapter.ts      # Main class, lifecycle
-├── inbound.ts            # Socket Mode message handling
-├── outbound.ts           # Delivery router
+├── slack-adapter.ts      # Main class, lifecycle, auth failure handling
+├── inbound.ts            # Socket Mode message handling, respond mode gating, DM policy, event dedup
+├── outbound.ts           # Delivery router, message splitting
 ├── stream.ts             # Streaming chat.update logic
 ├── stream-api.ts         # Typed wrapper for Slack streaming API
-└── approval.ts           # Approval state, Block Kit buttons, timeouts
+├── approval.ts           # Approval state, Block Kit buttons, timeouts
+└── thread-tracker.ts     # LRU thread participation tracker for thread-aware mode
 ```
 
 Each file receives its dependencies (state, callbacks, client) via function parameters rather than importing module-level singletons. This makes every function independently testable.

@@ -18,6 +18,7 @@ import {
 } from '../../lib/payload-utils.js';
 import type { ApprovalData } from '../../lib/payload-utils.js';
 import { wrapSlackCall } from './stream.js';
+import type { ThreadParticipationTracker } from './thread-tracker.js';
 
 // === Approval timeout state ===
 
@@ -92,7 +93,8 @@ export async function handleApprovalRequired(
   client: WebClient,
   callbacks: AdapterOutboundCallbacks,
   startTime: number,
-  state: SlackOutboundState
+  state: SlackOutboundState,
+  threadTracker?: ThreadParticipationTracker
 ): Promise<DeliveryResult> {
   const agentId = extractAgentIdFromEnvelope(envelope) ?? 'unknown';
   const sessionId = extractSessionIdFromEnvelope(envelope) ?? 'unknown';
@@ -155,6 +157,11 @@ export async function handleApprovalRequired(
     startTime,
     true
   );
+
+  // Mark thread participation after successful approval card post
+  if (result.success && threadTracker && threadTs) {
+    threadTracker.markParticipating(channelId, threadTs);
+  }
 
   // Register timeout to update message when approval expires
   if (result.success && postedTs && data.timeoutMs > 0) {

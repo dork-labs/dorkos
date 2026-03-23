@@ -1,17 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   buildSubject,
   extractChannelId,
   handleInboundMessage,
+  getEffectiveChannelConfig,
   clearCaches,
   SUBJECT_PREFIX,
   MAX_CONTENT_LENGTH,
 } from '../inbound.js';
-import type { SlackMessageEvent } from '../inbound.js';
+import type { SlackMessageEvent, InboundOptions } from '../inbound.js';
 import type { WebClient } from '@slack/web-api';
 import type { AdapterInboundCallbacks } from '../../../types.js';
 import type { RelayPublisher } from '../../../types.js';
 import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
+import { ThreadParticipationTracker } from '../thread-tracker.js';
 
 /** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
 const testCodec = new SlackThreadIdCodec();
@@ -334,5 +336,375 @@ describe('handleInboundMessage', () => {
       // Should not track a reaction that failed to add
       expect(pendingReactions.has('D67890')).toBe(false);
     });
+  });
+
+  describe('event deduplication', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('skips duplicate event_id (no relay.publish call)', async () => {
+      const event = createEvent();
+      const options: InboundOptions = { eventId: 'evt-abc-123' };
+
+      // First call — should process normally
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        options
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Second call with same event_id — should be skipped
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        options
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes different event_id normally', async () => {
+      const event = createEvent();
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-1' }
+      );
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-2' }
+      );
+
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('processes normally when no event_id is provided', async () => {
+      const event = createEvent();
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        {}
+      );
+      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('cleans up expired entries and allows reprocessing', async () => {
+      vi.useFakeTimers();
+      const event = createEvent();
+
+      // Process with event_id
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-expire' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Advance past TTL (5 minutes)
+      vi.advanceTimersByTime(5 * 60 * 1_000 + 1);
+
+      // Same event_id should now process again (entry expired)
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-expire' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('clearCaches clears the dedup cache', async () => {
+      const event = createEvent();
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-clear' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Clear all caches including dedup
+      clearCaches();
+
+      // Same event_id should now process again
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-clear' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('respond mode gating', () => {
+    const BOT_ID = 'UBOTID';
+
+    /** Helper to call handleInboundMessage with InboundOptions shorthand. */
+    async function callWithOptions(event: SlackMessageEvent, opts: InboundOptions): Promise<void> {
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        BOT_ID,
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        opts
+      );
+    }
+
+    it("'always' processes all messages", async () => {
+      const event = createEvent({ channel: 'C12345', text: 'hello' });
+      await callWithOptions(event, { respondMode: 'always' });
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it("'mention-only' processes @mentions", async () => {
+      const event = createEvent({ channel: 'C12345', text: `Hey <@${BOT_ID}> help` });
+      await callWithOptions(event, { respondMode: 'mention-only' });
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it("'mention-only' skips non-mentions", async () => {
+      const event = createEvent({ channel: 'C12345', text: 'just chatting' });
+      await callWithOptions(event, { respondMode: 'mention-only' });
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it("'thread-aware' processes DMs always", async () => {
+      const event = createEvent({ channel: 'D67890', text: 'hi in DM' });
+      await callWithOptions(event, { respondMode: 'thread-aware' });
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it("'thread-aware' processes @mentions in main channel", async () => {
+      const event = createEvent({ channel: 'C12345', text: `<@${BOT_ID}> help` });
+      await callWithOptions(event, { respondMode: 'thread-aware' });
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it("'thread-aware' skips non-mention in main channel", async () => {
+      const event = createEvent({ channel: 'C12345', text: 'general chatter' });
+      await callWithOptions(event, { respondMode: 'thread-aware' });
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it("'thread-aware' processes in participating threads", async () => {
+      const tracker = new ThreadParticipationTracker();
+      tracker.markParticipating('C12345', '1111.0000');
+      const event = createEvent({
+        channel: 'C12345',
+        text: 'follow-up',
+        thread_ts: '1111.0000',
+      });
+      await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it("'thread-aware' skips non-participating threads without mention", async () => {
+      const tracker = new ThreadParticipationTracker();
+      const event = createEvent({
+        channel: 'C12345',
+        text: 'thread reply',
+        thread_ts: '2222.0000',
+      });
+      await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it("'thread-aware' processes @mentions in non-participating threads", async () => {
+      const tracker = new ThreadParticipationTracker();
+      const event = createEvent({
+        channel: 'C12345',
+        text: `<@${BOT_ID}> can you help?`,
+        thread_ts: '3333.0000',
+      });
+      await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('DM policy gating', () => {
+    it('allowlist: allowed user processes', async () => {
+      const event = createEvent({ channel: 'D67890', user: 'U12345', text: 'hi' });
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { dmPolicy: 'allowlist', dmAllowlist: ['U12345'] }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it('allowlist: non-allowed user skips silently', async () => {
+      const event = createEvent({ channel: 'D67890', user: 'U99999', text: 'hi' });
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { dmPolicy: 'allowlist', dmAllowlist: ['U12345'] }
+      );
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it('open policy: all DMs process', async () => {
+      const event = createEvent({ channel: 'D67890', user: 'U99999', text: 'hi' });
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { dmPolicy: 'open' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('channel overrides', () => {
+    it('enabled: false skips the channel', async () => {
+      const event = createEvent({ channel: 'C12345', text: 'hello' });
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { respondMode: 'always', channelOverrides: { C12345: { enabled: false } } }
+      );
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it('respondMode override takes precedence over global', async () => {
+      // Global is 'always' but channel override is 'mention-only' — should skip non-mention
+      const event = createEvent({ channel: 'C12345', text: 'hello' });
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        {
+          respondMode: 'always',
+          channelOverrides: { C12345: { respondMode: 'mention-only' } },
+        }
+      );
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('getEffectiveChannelConfig', () => {
+  it('returns global defaults when no override exists', () => {
+    const config = getEffectiveChannelConfig('C12345', 'thread-aware', {});
+    expect(config).toEqual({ enabled: true, respondMode: 'thread-aware' });
+  });
+
+  it('merges channel override respondMode', () => {
+    const config = getEffectiveChannelConfig('C12345', 'thread-aware', {
+      C12345: { respondMode: 'always' },
+    });
+    expect(config).toEqual({ enabled: true, respondMode: 'always' });
+  });
+
+  it('merges channel override enabled: false', () => {
+    const config = getEffectiveChannelConfig('C12345', 'always', {
+      C12345: { enabled: false },
+    });
+    expect(config).toEqual({ enabled: false, respondMode: 'always' });
   });
 });

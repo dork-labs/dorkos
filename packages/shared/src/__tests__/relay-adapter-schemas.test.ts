@@ -115,11 +115,11 @@ describe('SlackAdapterConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts config without typingIndicator field (defaults to none)', () => {
+  it('accepts config without typingIndicator field (defaults to reaction)', () => {
     const result = SlackAdapterConfigSchema.safeParse(baseConfig);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.typingIndicator).toBe('none');
+      expect(result.data.typingIndicator).toBe('reaction');
     }
   });
 
@@ -151,6 +151,112 @@ describe('SlackAdapterConfigSchema', () => {
       typingIndicator: 'emoji',
     });
     expect(result.success).toBe(false);
+  });
+
+  it('defaults respondMode to thread-aware', () => {
+    const result = SlackAdapterConfigSchema.safeParse(baseConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.respondMode).toBe('thread-aware');
+    }
+  });
+
+  it('accepts explicit respondMode values', () => {
+    for (const mode of ['always', 'mention-only', 'thread-aware'] as const) {
+      const result = SlackAdapterConfigSchema.safeParse({ ...baseConfig, respondMode: mode });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.respondMode).toBe(mode);
+      }
+    }
+  });
+
+  it('rejects invalid respondMode value', () => {
+    const result = SlackAdapterConfigSchema.safeParse({
+      ...baseConfig,
+      respondMode: 'never',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults dmPolicy to open', () => {
+    const result = SlackAdapterConfigSchema.safeParse(baseConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.dmPolicy).toBe('open');
+    }
+  });
+
+  it('defaults dmAllowlist to empty array', () => {
+    const result = SlackAdapterConfigSchema.safeParse(baseConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.dmAllowlist).toEqual([]);
+    }
+  });
+
+  it('accepts dmAllowlist with user IDs', () => {
+    const result = SlackAdapterConfigSchema.safeParse({
+      ...baseConfig,
+      dmPolicy: 'allowlist',
+      dmAllowlist: ['U12345', 'U67890'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.dmAllowlist).toEqual(['U12345', 'U67890']);
+    }
+  });
+
+  it('defaults channelOverrides to empty object', () => {
+    const result = SlackAdapterConfigSchema.safeParse(baseConfig);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.channelOverrides).toEqual({});
+    }
+  });
+
+  it('accepts channelOverrides with per-channel config', () => {
+    const result = SlackAdapterConfigSchema.safeParse({
+      ...baseConfig,
+      channelOverrides: {
+        C12345: { enabled: true, respondMode: 'always' },
+        C67890: { enabled: false },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.channelOverrides).toEqual({
+        C12345: { enabled: true, respondMode: 'always' },
+        C67890: { enabled: false },
+      });
+    }
+  });
+
+  it('rejects invalid respondMode in channelOverrides', () => {
+    const result = SlackAdapterConfigSchema.safeParse({
+      ...baseConfig,
+      channelOverrides: {
+        C12345: { respondMode: 'invalid' },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('preserves backward compatibility with explicit old config', () => {
+    const result = SlackAdapterConfigSchema.safeParse({
+      ...baseConfig,
+      streaming: true,
+      nativeStreaming: true,
+      typingIndicator: 'none',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.typingIndicator).toBe('none');
+      expect(result.data.respondMode).toBe('thread-aware');
+      expect(result.data.dmPolicy).toBe('open');
+      expect(result.data.dmAllowlist).toEqual([]);
+      expect(result.data.channelOverrides).toEqual({});
+    }
   });
 });
 
