@@ -3,9 +3,8 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { Button } from '@/layers/shared/ui/button';
-import { ConfigFieldGroup, AdapterBindingRow } from '@/layers/features/relay';
+import { ConfigFieldGroup, ConfigFieldInput, AdapterBindingRow } from '@/layers/features/relay';
 import { StepIndicator } from '@/layers/features/relay/ui/wizard/StepIndicator';
-import { ConfigureStep } from '@/layers/features/relay/ui/wizard/ConfigureStep';
 import { TestStep } from '@/layers/features/relay/ui/wizard/TestStep';
 import { ConfirmStep } from '@/layers/features/relay/ui/wizard/ConfirmStep';
 import { BindStep } from '@/layers/features/relay/ui/wizard/BindStep';
@@ -53,33 +52,15 @@ function StepIndicatorShowcase() {
 }
 
 function ConfigureStepShowcase() {
-  const [label, setLabel] = React.useState('');
-  const [values, setValues] = React.useState<Record<string, unknown>>({});
-  const [errors] = React.useState<Record<string, string>>({});
-
-  const handleChange = React.useCallback((key: string, value: unknown) => {
-    setValues((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
   return (
     <PlaygroundSection
       title="ConfigureStep"
-      description="Full configure form step with Slack adapter fields, setup instructions, and action button."
+      description="Full configure form step with Slack adapter fields, setup instructions, and action button. Use AdapterSetupWizard for a live demo."
     >
       <ShowcaseDemo>
-        <div className="mx-auto max-w-md">
-          <ConfigureStep
-            manifest={SLACK_MANIFEST}
-            label={label}
-            onLabelChange={setLabel}
-            fields={SLACK_MANIFEST.configFields}
-            values={values}
-            errors={errors}
-            onChange={handleChange}
-            currentSetupStep={SLACK_MANIFEST.setupSteps?.[0]}
-            hasSetupGuide
-            onOpenGuide={() => {}}
-          />
+        <div className="text-muted-foreground mx-auto max-w-md text-sm">
+          ConfigureStep requires a TanStack Form instance from AdapterSetupWizard. Open the full
+          wizard via AdapterCard to interact with this step.
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -106,9 +87,17 @@ function ConfigFieldInputShowcase() {
         <div className="mx-auto max-w-md">
           <ConfigFieldGroup
             fields={ALL_FIELD_TYPES}
-            values={values}
-            onChange={handleChange}
-            errors={errors}
+            allValues={values}
+            renderField={(field) => (
+              <ConfigFieldInput
+                key={field.key}
+                field={field}
+                value={values[field.key]}
+                onChange={handleChange}
+                error={errors[field.key]}
+                allValues={values}
+              />
+            )}
           />
         </div>
       </ShowcaseDemo>
@@ -132,9 +121,17 @@ function ConfigFieldInputErrorShowcase() {
         <div className="mx-auto max-w-md">
           <ConfigFieldGroup
             fields={ERROR_FIELDS}
-            values={values}
-            onChange={handleChange}
-            errors={ERROR_MAP}
+            allValues={values}
+            renderField={(field) => (
+              <ConfigFieldInput
+                key={field.key}
+                field={field}
+                value={values[field.key]}
+                onChange={handleChange}
+                error={ERROR_MAP[field.key]}
+                allValues={values}
+              />
+            )}
           />
         </div>
       </ShowcaseDemo>

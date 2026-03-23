@@ -3,17 +3,48 @@ import { Button } from '@/layers/shared/ui/button';
 import { Input } from '@/layers/shared/ui/input';
 import { Label } from '@/layers/shared/ui/label';
 import { MarkdownContent } from '@/layers/shared/ui/markdown-content';
-import { ConfigFieldGroup } from '../ConfigFieldInput';
-import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
+import { ConfigFieldGroup, ConfigFieldInput } from '../ConfigFieldInput';
+import type { AdapterManifest, ConfigField } from '@dorkos/shared/relay-schemas';
+import type { ReactNode } from 'react';
+
+/** Field render callback shape passed from form.AppField. */
+interface AdapterFormField {
+  state: { value: unknown; meta: { isTouched: boolean; errors: ValidationError[] } };
+  handleChange: (v: unknown) => void;
+  handleBlur: () => void;
+}
+
+/** Opaque validation error — TanStack Form stores strings or ValidationError objects. */
+type ValidationError = { toString(): string } | string | undefined;
+
+/**
+ * Minimal structural interface for the TanStack Form instance used by ConfigureStep.
+ *
+ * Types only the two methods actually called here — `Subscribe` for reactive value
+ * access and `AppField` for per-field binding — avoiding the full 14-param generic
+ * signature of `AppFieldExtendedReactFormApi`.
+ */
+interface AdapterConfigFormApi {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Subscribe: React.ComponentType<{
+    selector: (s: { values: Record<string, unknown> }) => Record<string, unknown>;
+    children: (v: Record<string, unknown>) => ReactNode;
+  }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  AppField: React.ComponentType<{
+    name: string;
+    key?: string;
+    children: (field: AdapterFormField) => ReactNode;
+  }>;
+}
 
 interface ConfigureStepProps {
   manifest: AdapterManifest;
   label: string;
   onLabelChange: (label: string) => void;
-  fields: AdapterManifest['configFields'];
-  values: Record<string, unknown>;
-  errors: Record<string, string>;
-  onChange: (key: string, value: unknown) => void;
+  fields: ConfigField[];
+  /** TanStack Form instance for the adapter config fields. */
+  form: AdapterConfigFormApi;
   currentSetupStep?: { title: string; description?: string };
   /** Whether the adapter has a setup guide available. */
   hasSetupGuide?: boolean;
@@ -27,13 +58,13 @@ export function ConfigureStep({
   label,
   onLabelChange,
   fields,
-  values,
-  errors,
-  onChange,
+  form,
   currentSetupStep,
   hasSetupGuide,
   onOpenGuide,
 }: ConfigureStepProps) {
+  const { Subscribe, AppField } = form;
+
   return (
     <div className="space-y-4">
       {manifest.setupInstructions && (
@@ -79,7 +110,32 @@ export function ConfigureStep({
         </p>
       </div>
 
-      <ConfigFieldGroup fields={fields} values={values} onChange={onChange} errors={errors} />
+      <Subscribe selector={(s) => s.values}>
+        {(allValues) => (
+          <ConfigFieldGroup
+            fields={fields}
+            allValues={allValues}
+            renderField={(fieldDef) => (
+              <AppField key={fieldDef.key} name={fieldDef.key}>
+                {(formField) => (
+                  <ConfigFieldInput
+                    field={fieldDef}
+                    value={formField.state.value}
+                    onChange={(_, v) => formField.handleChange(v)}
+                    onBlur={formField.handleBlur}
+                    error={
+                      formField.state.meta.isTouched
+                        ? formField.state.meta.errors[0]?.toString()
+                        : undefined
+                    }
+                    allValues={allValues}
+                  />
+                )}
+              </AppField>
+            )}
+          />
+        )}
+      </Subscribe>
     </div>
   );
 }

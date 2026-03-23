@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -31,9 +31,22 @@ function createWrapper() {
   };
 }
 
-/** Radix renders dialog content twice in jsdom. Scope queries to the visible role=dialog element. */
-function getDialog() {
-  return screen.getByRole('dialog');
+/**
+ * Radix Dialog renders content twice in jsdom — once in the portal (role=dialog)
+ * and once hidden. Scope all queries to `within(getByRole('dialog'))` to avoid
+ * "multiple elements found" errors.
+ */
+function d() {
+  return within(screen.getByRole('dialog'));
+}
+
+/**
+ * Fill a field and fire blur so TanStack Form marks it touched.
+ * Required for Zod `onSubmit` validators to surface errors.
+ */
+function fill(el: Element, value: string) {
+  fireEvent.change(el, { target: { value } });
+  fireEvent.blur(el);
 }
 
 describe('ComposeMessageDialog', () => {
@@ -50,44 +63,53 @@ describe('ComposeMessageDialog', () => {
   });
 
   describe('dialog content (controlled open)', () => {
-    it('renders form fields and title when open', () => {
+    it('renders all three fields and the title when open', () => {
       const { wrapper } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const dialog = getDialog();
-      expect(within(dialog).getByText('Send Test Message')).toBeInTheDocument();
-      // Inputs are present via placeholder text
-      expect(within(dialog).getByPlaceholderText('e.g. relay.test.ping')).toBeInTheDocument();
-      expect(within(dialog).getByDisplayValue('relay.human.console')).toBeInTheDocument();
+      expect(d().getByText('Send Test Message')).toBeInTheDocument();
+      expect(d().getByPlaceholderText('e.g. relay.test.ping')).toBeInTheDocument();
+      expect(d().getByDisplayValue('relay.human.console')).toBeInTheDocument();
+      expect(d().getByPlaceholderText(/plain text or json/i)).toBeInTheDocument();
     });
 
     it('has default from value of relay.human.console', () => {
       const { wrapper } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      expect(within(getDialog()).getByDisplayValue('relay.human.console')).toBeInTheDocument();
+      expect(d().getByDisplayValue('relay.human.console')).toHaveValue('relay.human.console');
     });
 
-    it('subject input is present and required', () => {
+    it('subject field accepts input', () => {
       const { wrapper } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const subjectInput = within(getDialog()).getByPlaceholderText('e.g. relay.test.ping');
-      expect(subjectInput).toBeRequired();
+      const subjectInput = d().getByPlaceholderText('e.g. relay.test.ping');
+      fireEvent.change(subjectInput, { target: { value: 'relay.test.ping' } });
+      expect(subjectInput).toHaveValue('relay.test.ping');
     });
 
-    it('from input is present and required', () => {
-      const { wrapper } = createWrapper();
-      render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const fromInput = within(getDialog()).getByDisplayValue('relay.human.console');
-      expect(fromInput).toBeRequired();
-    });
-
-    it('sends message on submit', async () => {
+    it('does not submit when required fields are empty', async () => {
       const { wrapper, transport } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const dialog = getDialog();
-      fireEvent.change(within(dialog).getByPlaceholderText('e.g. relay.test.ping'), {
-        target: { value: 'test.subject' },
+
+      // Leave subject and payload empty, just click send
+      await act(async () => {
+        fireEvent.click(d().getByRole('button', { name: /send/i }));
       });
-      fireEvent.click(within(dialog).getByRole('button', { name: /send/i }));
+
+      // Wait a tick to ensure any async submission would have fired
+      await new Promise((r) => setTimeout(r, 50));
+      expect(transport.sendRelayMessage).not.toHaveBeenCalled();
+    });
+
+    it('calls sendRelayMessage on valid submit', async () => {
+      const { wrapper, transport } = createWrapper();
+      render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
+
+      fill(d().getByPlaceholderText('e.g. relay.test.ping'), 'test.subject');
+      fill(d().getByPlaceholderText(/plain text or json/i), 'hello');
+
+      await act(async () => {
+        fireEvent.click(d().getByRole('button', { name: /send/i }));
+      });
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalled();
@@ -97,14 +119,13 @@ describe('ComposeMessageDialog', () => {
     it('wraps plain-text payload as { content }', async () => {
       const { wrapper, transport } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const dialog = getDialog();
-      fireEvent.change(within(dialog).getByPlaceholderText('e.g. relay.test.ping'), {
-        target: { value: 'relay.test.ping' },
+
+      fill(d().getByPlaceholderText('e.g. relay.test.ping'), 'relay.test.ping');
+      fill(d().getByPlaceholderText(/plain text or json/i), 'plain text');
+
+      await act(async () => {
+        fireEvent.click(d().getByRole('button', { name: /send/i }));
       });
-      fireEvent.change(within(dialog).getByPlaceholderText(/plain text or json/i), {
-        target: { value: 'plain text' },
-      });
-      fireEvent.click(within(dialog).getByRole('button', { name: /send/i }));
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalledWith(
@@ -116,14 +137,13 @@ describe('ComposeMessageDialog', () => {
     it('passes parsed JSON payload directly', async () => {
       const { wrapper, transport } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const dialog = getDialog();
-      fireEvent.change(within(dialog).getByPlaceholderText('e.g. relay.test.ping'), {
-        target: { value: 'relay.test.ping' },
+
+      fill(d().getByPlaceholderText('e.g. relay.test.ping'), 'relay.test.ping');
+      fill(d().getByPlaceholderText(/plain text or json/i), '{"key":"value"}');
+
+      await act(async () => {
+        fireEvent.click(d().getByRole('button', { name: /send/i }));
       });
-      fireEvent.change(within(dialog).getByPlaceholderText(/plain text or json/i), {
-        target: { value: '{"key":"value"}' },
-      });
-      fireEvent.click(within(dialog).getByRole('button', { name: /send/i }));
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalledWith(
@@ -132,17 +152,17 @@ describe('ComposeMessageDialog', () => {
       });
     });
 
-    it('includes from field value in mutation call', async () => {
+    it('includes updated from field value in mutation call', async () => {
       const { wrapper, transport } = createWrapper();
       render(<ComposeMessageDialog open={true} onOpenChange={vi.fn()} />, { wrapper });
-      const dialog = getDialog();
-      fireEvent.change(within(dialog).getByPlaceholderText('e.g. relay.test.ping'), {
-        target: { value: 'relay.test.ping' },
+
+      fill(d().getByPlaceholderText('e.g. relay.test.ping'), 'relay.test.ping');
+      fill(d().getByDisplayValue('relay.human.console'), 'relay.agent.mybot');
+      fill(d().getByPlaceholderText(/plain text or json/i), 'hello');
+
+      await act(async () => {
+        fireEvent.click(d().getByRole('button', { name: /send/i }));
       });
-      fireEvent.change(within(dialog).getByDisplayValue('relay.human.console'), {
-        target: { value: 'relay.agent.mybot' },
-      });
-      fireEvent.click(within(dialog).getByRole('button', { name: /send/i }));
 
       await waitFor(() => {
         expect(transport.sendRelayMessage).toHaveBeenCalledWith(

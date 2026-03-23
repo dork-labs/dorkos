@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { PenLine, Loader2, Send } from 'lucide-react';
+import { PenLine, Send } from 'lucide-react';
+import { z } from 'zod';
 import {
   Dialog,
   DialogContent,
@@ -9,9 +10,7 @@ import {
   DialogDescription,
 } from '@/layers/shared/ui';
 import { Button } from '@/layers/shared/ui';
-import { Input } from '@/layers/shared/ui';
-import { Label } from '@/layers/shared/ui';
-import { Textarea } from '@/layers/shared/ui';
+import { useAppForm } from '@/layers/shared/lib/form';
 import { useSendRelayMessage } from '@/layers/entities/relay';
 import { toast } from 'sonner';
 
@@ -23,6 +22,12 @@ function parsePayload(raw: string): Record<string, unknown> {
     return { content: raw };
   }
 }
+
+const composeSchema = z.object({
+  subject: z.string().min(1, 'Subject is required'),
+  from: z.string().min(1, 'From is required'),
+  payload: z.string().min(1, 'Payload is required'),
+});
 
 interface ComposeMessageDialogProps {
   /** Controlled open state. When provided, the trigger button is omitted. */
@@ -37,22 +42,34 @@ export function ComposeMessageDialog({
   onOpenChange: controlledOnOpenChange,
 }: ComposeMessageDialogProps = {}) {
   const [internalOpen, setInternalOpen] = useState(false);
-  const [subject, setSubject] = useState('');
-  const [from, setFrom] = useState('relay.human.console');
-  const [payload, setPayload] = useState('');
-  const [error, setError] = useState<string | null>(null);
 
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
 
   const sendMessage = useSendRelayMessage();
 
-  function resetForm() {
-    setSubject('');
-    setFrom('relay.human.console');
-    setPayload('');
-    setError(null);
-  }
+  const form = useAppForm({
+    defaultValues: {
+      subject: '',
+      from: 'relay.human.console',
+      payload: '',
+    },
+    validators: {
+      onSubmit: composeSchema,
+    },
+    onSubmit: ({ value }) => {
+      sendMessage.mutate(
+        { subject: value.subject, from: value.from, payload: parsePayload(value.payload) },
+        {
+          onSuccess: () => {
+            toast.success('Message sent');
+            form.reset();
+            handleOpenChange(false);
+          },
+        }
+      );
+    },
+  });
 
   function handleOpenChange(value: boolean) {
     if (isControlled) {
@@ -60,26 +77,7 @@ export function ComposeMessageDialog({
     } else {
       setInternalOpen(value);
     }
-    if (!value) resetForm();
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    sendMessage.mutate(
-      { subject, from, payload: parsePayload(payload) },
-      {
-        onSuccess: () => {
-          toast.success('Message sent');
-          resetForm();
-          handleOpenChange(false);
-        },
-        onError: (err) => {
-          setError(err instanceof Error ? err.message : 'Failed to send message');
-        },
-      }
-    );
+    if (!value) form.reset();
   }
 
   return (
@@ -97,48 +95,35 @@ export function ComposeMessageDialog({
           <DialogTitle>Send Test Message</DialogTitle>
           <DialogDescription>Compose a message to send through the Relay bus.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="compose-subject">Subject</Label>
-            <Input
-              id="compose-subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g. relay.test.ping"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="compose-from">From</Label>
-            <Input
-              id="compose-from"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="compose-payload">Payload</Label>
-            <Textarea
-              id="compose-payload"
-              value={payload}
-              onChange={(e) => setPayload(e.target.value)}
-              placeholder='Plain text or JSON (e.g. {"content": "hello"})'
-              rows={4}
-            />
-          </div>
-          {error !== null && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          <div className="flex justify-end">
-            <Button type="submit" disabled={sendMessage.isPending}>
-              {sendMessage.isPending ? (
-                <Loader2 className="mr-2 size-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 size-4" />
+        <form.AppForm>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void form.handleSubmit();
+            }}
+            className="space-y-4"
+          >
+            <form.AppField name="subject">
+              {(field) => <field.TextField label="Subject" placeholder="e.g. relay.test.ping" />}
+            </form.AppField>
+            <form.AppField name="from">{(field) => <field.TextField label="From" />}</form.AppField>
+            <form.AppField name="payload">
+              {(field) => (
+                <field.TextareaField
+                  label="Payload"
+                  placeholder='Plain text or JSON (e.g. {"content": "hello"})'
+                  rows={4}
+                />
               )}
-              Send
-            </Button>
-          </div>
-        </form>
+            </form.AppField>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={sendMessage.isPending}>
+                <Send className="mr-2 size-4" />
+                Send
+              </Button>
+            </div>
+          </form>
+        </form.AppForm>
       </DialogContent>
     </Dialog>
   );

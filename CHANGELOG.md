@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Adopt TanStack Form for submit-lifecycle forms
 - Add Telegram typing indicator during agent processing
 
 ### Changed

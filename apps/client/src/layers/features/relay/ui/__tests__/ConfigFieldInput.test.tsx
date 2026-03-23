@@ -281,41 +281,52 @@ describe('ConfigFieldGroup', () => {
     { key: 'retries', label: 'Retries', type: 'number', required: false, section: 'Advanced' },
   ];
 
-  it('renders all ungrouped fields without section headings', () => {
-    render(
-      <ConfigFieldGroup fields={ungroupedFields} values={{}} onChange={vi.fn()} errors={{}} />
+  /** Helper: renders ConfigFieldGroup with a simple stateless renderField using ConfigFieldInput. */
+  function renderGroup(
+    fields: ConfigField[],
+    allValues: Record<string, unknown> = {},
+    errors: Record<string, string> = {}
+  ) {
+    return render(
+      <ConfigFieldGroup
+        fields={fields}
+        allValues={allValues}
+        renderField={(field) => (
+          <ConfigFieldInput
+            key={field.key}
+            field={field}
+            value={allValues[field.key]}
+            onChange={vi.fn()}
+            error={errors[field.key]}
+            allValues={allValues}
+          />
+        )}
+      />
     );
+  }
+
+  it('renders all ungrouped fields without section headings', () => {
+    renderGroup(ungroupedFields);
     expect(screen.getByText('Name')).toBeInTheDocument();
     expect(screen.getByText('Token')).toBeInTheDocument();
     expect(screen.queryByRole('heading')).toBeNull();
   });
 
   it('renders section headings for fields with a section property', () => {
-    render(
-      <ConfigFieldGroup fields={sectionedFields} values={{}} onChange={vi.fn()} errors={{}} />
-    );
+    renderGroup(sectionedFields);
     expect(screen.getByText('Connection')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
   });
 
   it('renders all fields within their respective sections', () => {
-    render(
-      <ConfigFieldGroup fields={sectionedFields} values={{}} onChange={vi.fn()} errors={{}} />
-    );
+    renderGroup(sectionedFields);
     expect(screen.getByText('Host')).toBeInTheDocument();
     expect(screen.getByText('Port')).toBeInTheDocument();
     expect(screen.getByText('Retries')).toBeInTheDocument();
   });
 
   it('passes error messages down to each field', () => {
-    render(
-      <ConfigFieldGroup
-        fields={ungroupedFields}
-        values={{}}
-        onChange={vi.fn()}
-        errors={{ name: 'Name is required' }}
-      />
-    );
+    renderGroup(ungroupedFields, {}, { name: 'Name is required' });
     expect(screen.getByText('Name is required')).toBeInTheDocument();
   });
 });

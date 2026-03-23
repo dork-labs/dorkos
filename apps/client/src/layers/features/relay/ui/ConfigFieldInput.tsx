@@ -32,6 +32,8 @@ interface ConfigFieldInputProps {
   value: unknown;
   /** Called when the field value changes; receives the field key and new value. */
   onChange: (key: string, value: unknown) => void;
+  /** Called when the field loses focus — used by TanStack Form for touched tracking. */
+  onBlur?: () => void;
   /** Validation error message to display below the input. */
   error?: string;
   /** All current form values — used for `showWhen` conditional visibility evaluation. */
@@ -307,12 +309,13 @@ export function ConfigFieldInput({
 interface ConfigFieldGroupProps {
   /** All field descriptors to render, potentially spanning multiple sections. */
   fields: ConfigField[];
-  /** Current form values keyed by field key. */
-  values: Record<string, unknown>;
-  /** Called when any field value changes. */
-  onChange: (key: string, value: unknown) => void;
-  /** Validation errors keyed by field key. */
-  errors: Record<string, string>;
+  /** All current form values — used to evaluate section visibility via `showWhen`. */
+  allValues: Record<string, unknown>;
+  /**
+   * Render prop called for each visible field.
+   * Receives the field descriptor; caller is responsible for rendering the input.
+   */
+  renderField: (field: ConfigField) => React.ReactNode;
 }
 
 /** Check whether a field is visible given current form values. */
@@ -324,8 +327,9 @@ function isFieldVisible(field: ConfigField, allValues: Record<string, unknown>):
 /**
  * Renders a list of `ConfigField` descriptors grouped by their `section` property.
  * Fields without a section are rendered first under no heading.
+ * Field rendering is delegated to the `renderField` prop.
  */
-export function ConfigFieldGroup({ fields, values, onChange, errors }: ConfigFieldGroupProps) {
+export function ConfigFieldGroup({ fields, allValues, renderField }: ConfigFieldGroupProps) {
   // Preserve insertion-order grouping by section name.
   const sections = new Map<string | undefined, ConfigField[]>();
   for (const field of fields) {
@@ -340,24 +344,15 @@ export function ConfigFieldGroup({ fields, values, onChange, errors }: ConfigFie
     <div className="space-y-6">
       {Array.from(sections.entries()).map(([section, sectionFields]) => {
         // Filter to visible fields to avoid empty separator gaps from showWhen nulls.
-        const visibleFields = sectionFields.filter((f) => isFieldVisible(f, values));
-        if (visibleFields.length === 0) return null;
+        const visibleSectionFields = sectionFields.filter((f) => isFieldVisible(f, allValues));
+        if (visibleSectionFields.length === 0) return null;
 
         return (
           <div key={section ?? '__default'} className="space-y-3">
             {section && <h4 className="text-sm font-semibold">{section}</h4>}
             <FieldCard>
               <FieldCardContent>
-                {visibleFields.map((field) => (
-                  <ConfigFieldInput
-                    key={field.key}
-                    field={field}
-                    value={values[field.key]}
-                    onChange={onChange}
-                    error={errors[field.key]}
-                    allValues={values}
-                  />
-                ))}
+                {visibleSectionFields.map((field) => renderField(field))}
               </FieldCardContent>
             </FieldCard>
           </div>

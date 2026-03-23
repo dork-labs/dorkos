@@ -1,17 +1,17 @@
 ---
 number: 142
 title: Defer Form Library Adoption
-status: proposed
+status: superseded
 created: 2026-03-18
 spec: form-field-standardization
-superseded-by: null
+superseded-by: 180
 ---
 
 # 0142. Defer Form Library Adoption
 
 ## Status
 
-Proposed
+Superseded by [ADR-0180: Adopt TanStack Form for Submit-Lifecycle Forms](0180-adopt-tanstack-form.md).
 
 ## Context
 

@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 165,
+  "nextNumber": 166,
   "specs": [
+    {
+      "number": 165,
+      "slug": "connections-tab-ux-improvements",
+      "title": "ConnectionsTab UX Improvements",
+      "created": "2026-03-22",
+      "status": "specified"
+    },
     {
       "number": 164,
       "slug": "fix-chatsdk-thread-id-subject-validation",

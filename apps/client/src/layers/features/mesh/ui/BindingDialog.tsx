@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
 import {
   ResponsiveDialog,
@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
   FieldDescription,
 } from '@/layers/shared/ui';
+import { useAppForm } from '@/layers/shared/lib/form';
 import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
@@ -62,36 +63,6 @@ export interface BindingFormValues {
   canReceive?: boolean;
 }
 
-/** Internal form state — includes data fields and UI chrome (collapsible sections). */
-interface BindingFormState {
-  adapterId: string;
-  agentId: string;
-  strategy: SessionStrategy;
-  label: string;
-  chatId: string;
-  channelType: string;
-  permissionMode: PermissionMode;
-  canInitiate: boolean;
-  canReply: boolean;
-  canReceive: boolean;
-  chatFilterOpen: boolean;
-  advancedOpen: boolean;
-}
-
-/** Data field keys used for dirty checking (excludes UI chrome). */
-const DATA_KEYS: (keyof BindingFormState)[] = [
-  'adapterId',
-  'agentId',
-  'strategy',
-  'label',
-  'chatId',
-  'channelType',
-  'permissionMode',
-  'canInitiate',
-  'canReply',
-  'canReceive',
-];
-
 /** Compute whether advanced section should auto-open from initial values. */
 function hasNonDefaultAdvanced(vals?: Partial<BindingFormValues>): boolean {
   return !!(
@@ -110,39 +81,41 @@ const STRATEGY_LABELS: Record<SessionStrategy, string> = {
   stateless: 'stateless sessions',
 };
 
-/** Build a human-readable preview of what the binding will do. */
+/**
+ * Build a human-readable preview of what the binding will do.
+ *
+ * @param values - Current form values
+ * @param agentName - Resolved display name of the selected agent
+ */
 function buildPreviewSentence(
-  form: BindingFormState,
-  agentName: string | undefined,
-  selectAny: string
+  values: { chatId: string; channelType: string; strategy: SessionStrategy },
+  agentName: string | undefined
 ): string | null {
   if (!agentName) return null;
 
   const scope =
-    form.chatId !== selectAny
-      ? `Messages from #${form.chatId}`
-      : form.channelType !== selectAny
-        ? `${form.channelType.charAt(0).toUpperCase() + form.channelType.slice(1)} messages`
+    values.chatId !== SELECT_ANY
+      ? `Messages from #${values.chatId}`
+      : values.channelType !== SELECT_ANY
+        ? `${values.channelType.charAt(0).toUpperCase() + values.channelType.slice(1)} messages`
         : 'All messages';
 
-  return `${scope} will be routed to ${agentName} using ${STRATEGY_LABELS[form.strategy]}.`;
+  return `${scope} will be routed to ${agentName} using ${STRATEGY_LABELS[values.strategy]}.`;
 }
 
-/** Build form state from optional initial values or defaults. */
-function buildInitialState(vals?: Partial<BindingFormValues>): BindingFormState {
+/** Build TanStack Form default values from optional initial values. */
+function buildDefaultValues(vals?: Partial<BindingFormValues>) {
   return {
     adapterId: vals?.adapterId ?? '',
     agentId: vals?.agentId ?? '',
-    strategy: vals?.sessionStrategy ?? 'per-chat',
+    strategy: (vals?.sessionStrategy ?? 'per-chat') as SessionStrategy,
     label: vals?.label ?? '',
     chatId: vals?.chatId ?? SELECT_ANY,
     channelType: vals?.channelType ?? SELECT_ANY,
-    permissionMode: vals?.permissionMode ?? 'acceptEdits',
+    permissionMode: (vals?.permissionMode ?? 'acceptEdits') as PermissionMode,
     canInitiate: vals?.canInitiate ?? false,
     canReply: vals?.canReply ?? true,
     canReceive: vals?.canReceive ?? true,
-    chatFilterOpen: !!(vals?.chatId || vals?.channelType),
-    advancedOpen: hasNonDefaultAdvanced(vals),
   };
 }
 
@@ -190,35 +163,54 @@ export function BindingDialog({
 }: BindingDialogProps) {
   const isEdit = mode === 'edit';
 
-  const [form, setForm] = useState<BindingFormState>(() => buildInitialState(initialValues));
-  // Track whether the bypass-permissions security warning is open (UI chrome, not form data).
+  // UI chrome — collapsible section state and security warning, separate from form data.
+  const [chatFilterOpen, setChatFilterOpen] = useState(
+    () => !!(initialValues?.chatId || initialValues?.channelType)
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(() => hasNonDefaultAdvanced(initialValues));
+  // Track whether the bypass-permissions security warning is open.
   const [bypassWarningOpen, setBypassWarningOpen] = useState(false);
-  // Local submitting state to track async onConfirm lifecycle.
-  const [submitting, setSubmitting] = useState(false);
 
-  /** Update a single form field. */
-  function updateField<K extends keyof BindingFormState>(key: K, value: BindingFormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
+  // Snapshot the initial defaults once — used for value-based dirty tracking in edit mode.
+  // TanStack Form's built-in isDirty is a one-way ratchet (never resets on revert),
+  // so we compare current values against this snapshot ourselves.
+  const [defaultValues] = useState(() => buildDefaultValues(initialValues));
 
-  // Sync form state when initialValues change (e.g. opening a different binding to edit).
-  useEffect(() => {
-    setForm(buildInitialState(initialValues));
-  }, [initialValues]);
-
-  // Memoized initial state snapshot for dirty tracking in edit mode.
-  const initialState = useMemo(() => buildInitialState(initialValues), [initialValues]);
-
-  const isDirty = useMemo(() => {
-    if (!isEdit) return true;
-    return DATA_KEYS.some((k) => form[k] !== initialState[k]);
-  }, [form, initialState, isEdit]);
+  const form = useAppForm({
+    defaultValues,
+    onSubmit: async ({ value }) => {
+      await onConfirm({
+        adapterId: value.adapterId,
+        agentId: value.agentId,
+        sessionStrategy: value.strategy,
+        label: value.label,
+        permissionMode: value.permissionMode,
+        // Convert sentinel back to undefined before submitting.
+        chatId: value.chatId === SELECT_ANY ? undefined : value.chatId,
+        channelType:
+          value.channelType === SELECT_ANY
+            ? undefined
+            : (value.channelType as BindingFormValues['channelType']),
+        canInitiate: value.canInitiate,
+        canReply: value.canReply,
+        canReceive: value.canReceive,
+      });
+      if (!isEdit) {
+        form.reset();
+      }
+    },
+  });
 
   const { data: catalog = [] } = useAdapterCatalog();
   const { data: agentsData } = useRegisteredAgents();
-  const { data: observedChats = [] } = useObservedChats(form.adapterId || undefined);
 
-  // Flatten enabled adapter instances from the catalog for the picker
+  // Mirror adapterId in local state so useObservedChats stays reactive when
+  // the user changes the adapter select — form.state is a synchronous snapshot
+  // but doesn't trigger re-renders on its own.
+  const [selectedAdapterId, setSelectedAdapterId] = useState(() => initialValues?.adapterId ?? '');
+  const { data: observedChats = [] } = useObservedChats(selectedAdapterId || undefined);
+
+  // Flatten enabled adapter instances from the catalog for the picker.
   const adapterOptions = catalog.flatMap((entry) =>
     entry.instances
       .filter((inst) => inst.enabled)
@@ -232,74 +224,19 @@ export function BindingDialog({
 
   const agentOptions = agentsData?.agents ?? [];
 
-  // In create mode, both adapter and agent are required for a valid submission.
-  const isValid = isEdit || (!!form.adapterId && !!form.agentId);
-
-  // Resolve agent display name for the preview sentence.
-  const resolvedAgentName = isEdit
-    ? agentName
-    : agentOptions.find((a) => a.id === form.agentId)?.name;
-  const previewSentence = isValid
-    ? buildPreviewSentence(form, resolvedAgentName, SELECT_ANY)
-    : null;
-
-  // SELECT_ANY means "no filter selected" — convert back to undefined before submitting.
-  const hasChatFilter = form.chatId !== SELECT_ANY || form.channelType !== SELECT_ANY;
-  // Advanced section has non-default values when strategy or permissions deviate from defaults.
-  const hasAdvancedChanges =
-    form.strategy !== 'per-chat' ||
-    form.permissionMode !== 'acceptEdits' ||
-    form.canInitiate ||
-    !form.canReply ||
-    !form.canReceive;
-
-  async function handleConfirm() {
-    if (!isValid || submitting) return;
-
-    setSubmitting(true);
-    try {
-      await onConfirm({
-        adapterId: form.adapterId,
-        agentId: form.agentId,
-        sessionStrategy: form.strategy,
-        label: form.label,
-        permissionMode: form.permissionMode,
-        chatId: form.chatId === SELECT_ANY ? undefined : form.chatId,
-        channelType:
-          form.channelType === SELECT_ANY
-            ? undefined
-            : (form.channelType as BindingFormValues['channelType']),
-        canInitiate: form.canInitiate,
-        canReply: form.canReply,
-        canReceive: form.canReceive,
-      });
-      if (!isEdit) {
-        setForm(buildInitialState());
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   /** Handle permission mode selection with security warning for bypassPermissions. */
   function handlePermissionModeChange(value: string) {
     if (value === 'bypassPermissions') {
       setBypassWarningOpen(true);
     } else {
-      updateField('permissionMode', value as PermissionMode);
+      form.setFieldValue('permissionMode', value as PermissionMode);
     }
   }
 
-  function handleCancel() {
-    onOpenChange(false);
-  }
-
   function handleClearFilters() {
-    setForm((prev) => ({ ...prev, chatId: SELECT_ANY, channelType: SELECT_ANY }));
+    form.setFieldValue('chatId', SELECT_ANY);
+    form.setFieldValue('channelType', SELECT_ANY);
   }
-
-  const isSubmitDisabled = !isValid || !isDirty || !!isPending || submitting;
-  const isLoading = !!isPending || submitting;
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -315,210 +252,291 @@ export function BindingDialog({
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        <div className="space-y-5 overflow-y-auto px-4 py-5">
-          {isEdit ? (
-            /* Edit mode: adapter and agent are read-only */
-            <p className="text-muted-foreground text-sm">
-              Binding: <span className="text-foreground font-medium">{adapterName}</span> to{' '}
-              <span className="text-foreground font-medium">{agentName}</span>
-            </p>
-          ) : (
-            /* Create mode: adapter and agent pickers */
-            <>
-              <div className="space-y-1.5">
-                <Label htmlFor="binding-adapter">Adapter</Label>
-                {adapterOptions.length === 0 ? (
-                  <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
-                    No adapters configured
-                  </p>
-                ) : (
-                  <Select value={form.adapterId} onValueChange={(v) => updateField('adapterId', v)}>
-                    <SelectTrigger id="binding-adapter" className="w-full">
-                      <SelectValue placeholder="Select an adapter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {adapterOptions.map((opt) => (
-                        <SelectItem key={opt.id} value={opt.id}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
+        <form.Subscribe selector={(s) => ({ values: s.values, isSubmitting: s.isSubmitting })}>
+          {({ values, isSubmitting }) => {
+            // In create mode, both adapter and agent are required for a valid submission.
+            const isValid = isEdit || (!!values.adapterId && !!values.agentId);
+            // Dirty tracking via value comparison against the captured defaultValues snapshot.
+            // TanStack Form's built-in isDirty is a one-way ratchet and never resets on revert,
+            // so we compare each field value directly instead.
+            const isDirty =
+              !isEdit ||
+              values.adapterId !== defaultValues.adapterId ||
+              values.agentId !== defaultValues.agentId ||
+              values.strategy !== defaultValues.strategy ||
+              values.label !== defaultValues.label ||
+              values.chatId !== defaultValues.chatId ||
+              values.channelType !== defaultValues.channelType ||
+              values.permissionMode !== defaultValues.permissionMode ||
+              values.canInitiate !== defaultValues.canInitiate ||
+              values.canReply !== defaultValues.canReply ||
+              values.canReceive !== defaultValues.canReceive;
+            // Resolve agent display name for the preview sentence.
+            const resolvedAgentName = isEdit
+              ? agentName
+              : agentOptions.find((a) => a.id === values.agentId)?.name;
+            const previewSentence = isValid
+              ? buildPreviewSentence(
+                  {
+                    chatId: values.chatId,
+                    channelType: values.channelType,
+                    strategy: values.strategy,
+                  },
+                  resolvedAgentName
+                )
+              : null;
+            // SELECT_ANY means "no filter selected" — used for badge and clear button visibility.
+            const hasChatFilter = values.chatId !== SELECT_ANY || values.channelType !== SELECT_ANY;
+            // Advanced section badge: non-default when strategy or permissions deviate from defaults.
+            const hasAdvancedChanges =
+              values.strategy !== 'per-chat' ||
+              values.permissionMode !== 'acceptEdits' ||
+              values.canInitiate ||
+              !values.canReply ||
+              !values.canReceive;
+            const isSubmitDisabled = !isValid || !isDirty || !!isPending || isSubmitting;
+            const isLoading = !!isPending || isSubmitting;
 
-              <div className="space-y-1.5">
-                <Label htmlFor="binding-agent">Agent</Label>
-                {agentOptions.length === 0 ? (
-                  <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
-                    No agents registered
-                  </p>
-                ) : (
-                  <Select value={form.agentId} onValueChange={(v) => updateField('agentId', v)}>
-                    <SelectTrigger id="binding-agent" className="w-full">
-                      <SelectValue placeholder="Select an agent" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {agentOptions.map((agent) => (
-                        <SelectItem key={agent.id} value={agent.id}>
-                          {agent.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            </>
-          )}
+            return (
+              <>
+                <div className="space-y-5 overflow-y-auto px-4 py-5">
+                  {isEdit ? (
+                    /* Edit mode: adapter and agent are read-only */
+                    <p className="text-muted-foreground text-sm">
+                      Binding: <span className="text-foreground font-medium">{adapterName}</span> to{' '}
+                      <span className="text-foreground font-medium">{agentName}</span>
+                    </p>
+                  ) : (
+                    /* Create mode: adapter and agent pickers */
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="binding-adapter">Adapter</Label>
+                        {adapterOptions.length === 0 ? (
+                          <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
+                            No adapters configured
+                          </p>
+                        ) : (
+                          <form.AppField name="adapterId">
+                            {(field) => (
+                              <Select
+                                value={field.state.value}
+                                onValueChange={(v) => {
+                                  field.handleChange(v);
+                                  setSelectedAdapterId(v);
+                                }}
+                              >
+                                <SelectTrigger id="binding-adapter" className="w-full">
+                                  <SelectValue placeholder="Select an adapter" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {adapterOptions.map((opt) => (
+                                    <SelectItem key={opt.id} value={opt.id}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </form.AppField>
+                        )}
+                      </div>
 
-          {/* Optional label */}
-          <div className="space-y-1.5">
-            <Label htmlFor="binding-label">Label (optional)</Label>
-            <Input
-              id="binding-label"
-              placeholder="e.g., Customer support bot"
-              value={form.label}
-              onChange={(e) => updateField('label', e.target.value)}
-            />
-            <FieldDescription>A display name for this binding</FieldDescription>
-          </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="binding-agent">Agent</Label>
+                        {agentOptions.length === 0 ? (
+                          <p className="text-muted-foreground border-input rounded-md border px-3 py-2 text-sm opacity-50">
+                            No agents registered
+                          </p>
+                        ) : (
+                          <form.AppField name="agentId">
+                            {(field) => (
+                              <Select value={field.state.value} onValueChange={field.handleChange}>
+                                <SelectTrigger id="binding-agent" className="w-full">
+                                  <SelectValue placeholder="Select an agent" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {agentOptions.map((agent) => (
+                                    <SelectItem key={agent.id} value={agent.id}>
+                                      {agent.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </form.AppField>
+                        )}
+                      </div>
+                    </>
+                  )}
 
-          {/* Chat filter — collapsible */}
-          <CollapsibleFieldCard
-            open={form.chatFilterOpen}
-            onOpenChange={(v) => updateField('chatFilterOpen', v)}
-            trigger="Chat Filter"
-            badge={
-              hasChatFilter ? (
-                <Badge variant="secondary" className="text-xs">
-                  Active
-                </Badge>
-              ) : undefined
-            }
-          >
-            {/* ChatId picker */}
-            <div className="space-y-1.5 px-4 py-3">
-              <Label htmlFor="binding-chat-id">Chat ID</Label>
-              <Select value={form.chatId} onValueChange={(v) => updateField('chatId', v)}>
-                <SelectTrigger id="binding-chat-id" className="w-full">
-                  <SelectValue placeholder="Any chat (wildcard)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={SELECT_ANY}>Any chat (wildcard)</SelectItem>
-                  {observedChats.map((chat) => (
-                    <SelectItem key={chat.chatId} value={chat.chatId}>
-                      <span>{chat.displayName ?? chat.chatId}</span>
-                      {(chat.channelType || chat.messageCount > 0) && (
-                        <span className="text-muted-foreground ml-2 text-xs">
-                          {[chat.channelType, `${chat.messageCount} msgs`]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </span>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                Route only messages from a specific chat or channel
-              </FieldDescription>
-            </div>
+                  {/* Optional label */}
+                  <form.AppField name="label">
+                    {(field) => (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="binding-label">Label (optional)</Label>
+                        <Input
+                          id="binding-label"
+                          placeholder="e.g., Customer support bot"
+                          value={field.state.value}
+                          onBlur={field.handleBlur}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                        <FieldDescription>A display name for this binding</FieldDescription>
+                      </div>
+                    )}
+                  </form.AppField>
 
-            {/* ChannelType picker */}
-            <div className="space-y-1.5 px-4 py-3">
-              <Label htmlFor="binding-channel-type">Channel Type</Label>
-              <Select value={form.channelType} onValueChange={(v) => updateField('channelType', v)}>
-                <SelectTrigger id="binding-channel-type" className="w-full">
-                  <SelectValue placeholder="Any type (wildcard)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={SELECT_ANY}>Any type (wildcard)</SelectItem>
-                  {CHANNEL_TYPE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {hasChatFilter && (
-              <div className="px-4 py-3">
-                <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-                  Clear filters
-                </Button>
-              </div>
-            )}
-          </CollapsibleFieldCard>
-
-          {/* Advanced — collapsible: session strategy + permission toggles */}
-          <BindingAdvancedSection
-            strategy={form.strategy}
-            onStrategyChange={(v) => updateField('strategy', v)}
-            permissionMode={form.permissionMode}
-            onPermissionModeChange={handlePermissionModeChange}
-            bypassWarningOpen={bypassWarningOpen}
-            onBypassWarningOpenChange={setBypassWarningOpen}
-            onBypassConfirm={() => updateField('permissionMode', 'bypassPermissions')}
-            canInitiate={form.canInitiate}
-            onCanInitiateChange={(v) => updateField('canInitiate', v)}
-            canReply={form.canReply}
-            onCanReplyChange={(v) => updateField('canReply', v)}
-            canReceive={form.canReceive}
-            onCanReceiveChange={(v) => updateField('canReceive', v)}
-            open={form.advancedOpen}
-            onOpenChange={(v) => updateField('advancedOpen', v)}
-            hasChanges={hasAdvancedChanges}
-          />
-          {/* Preview sentence — shown when the form produces a valid binding */}
-          {previewSentence && (
-            <p className="text-muted-foreground bg-muted/50 rounded-md px-3 py-2 text-xs italic">
-              {previewSentence}
-            </p>
-          )}
-        </div>
-
-        <ResponsiveDialogFooter className="border-t px-4 py-3">
-          {isEdit && onDelete && bindingId && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
-                >
-                  <Trash2 className="mr-1.5 size-3.5" />
-                  Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete binding</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Are you sure you want to delete this binding? The adapter will no longer route
-                    messages to the connected agent.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => onDelete(bindingId)}
-                    className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                  {/* Chat filter — collapsible */}
+                  <CollapsibleFieldCard
+                    open={chatFilterOpen}
+                    onOpenChange={setChatFilterOpen}
+                    trigger="Chat Filter"
+                    badge={
+                      hasChatFilter ? (
+                        <Badge variant="secondary" className="text-xs">
+                          Active
+                        </Badge>
+                      ) : undefined
+                    }
                   >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-          <Button variant="ghost" size="sm" onClick={handleCancel}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={handleConfirm} disabled={isSubmitDisabled}>
-            {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-            {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Binding'}
-          </Button>
-        </ResponsiveDialogFooter>
+                    {/* ChatId picker */}
+                    <form.AppField name="chatId">
+                      {(field) => (
+                        <div className="space-y-1.5 px-4 py-3">
+                          <Label htmlFor="binding-chat-id">Chat ID</Label>
+                          <Select value={field.state.value} onValueChange={field.handleChange}>
+                            <SelectTrigger id="binding-chat-id" className="w-full">
+                              <SelectValue placeholder="Any chat (wildcard)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={SELECT_ANY}>Any chat (wildcard)</SelectItem>
+                              {observedChats.map((chat) => (
+                                <SelectItem key={chat.chatId} value={chat.chatId}>
+                                  <span>{chat.displayName ?? chat.chatId}</span>
+                                  {(chat.channelType || chat.messageCount > 0) && (
+                                    <span className="text-muted-foreground ml-2 text-xs">
+                                      {[chat.channelType, `${chat.messageCount} msgs`]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                    </span>
+                                  )}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FieldDescription>
+                            Route only messages from a specific chat or channel
+                          </FieldDescription>
+                        </div>
+                      )}
+                    </form.AppField>
+
+                    {/* ChannelType picker */}
+                    <form.AppField name="channelType">
+                      {(field) => (
+                        <div className="space-y-1.5 px-4 py-3">
+                          <Label htmlFor="binding-channel-type">Channel Type</Label>
+                          <Select value={field.state.value} onValueChange={field.handleChange}>
+                            <SelectTrigger id="binding-channel-type" className="w-full">
+                              <SelectValue placeholder="Any type (wildcard)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={SELECT_ANY}>Any type (wildcard)</SelectItem>
+                              {CHANNEL_TYPE_OPTIONS.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </form.AppField>
+
+                    {hasChatFilter && (
+                      <div className="px-4 py-3">
+                        <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+                          Clear filters
+                        </Button>
+                      </div>
+                    )}
+                  </CollapsibleFieldCard>
+
+                  {/* Advanced — collapsible: session strategy + permission toggles */}
+                  <BindingAdvancedSection
+                    strategy={values.strategy}
+                    onStrategyChange={(v) => form.setFieldValue('strategy', v)}
+                    permissionMode={values.permissionMode}
+                    onPermissionModeChange={handlePermissionModeChange}
+                    bypassWarningOpen={bypassWarningOpen}
+                    onBypassWarningOpenChange={setBypassWarningOpen}
+                    onBypassConfirm={() =>
+                      form.setFieldValue('permissionMode', 'bypassPermissions')
+                    }
+                    canInitiate={values.canInitiate}
+                    onCanInitiateChange={(v) => form.setFieldValue('canInitiate', v)}
+                    canReply={values.canReply}
+                    onCanReplyChange={(v) => form.setFieldValue('canReply', v)}
+                    canReceive={values.canReceive}
+                    onCanReceiveChange={(v) => form.setFieldValue('canReceive', v)}
+                    open={advancedOpen}
+                    onOpenChange={setAdvancedOpen}
+                    hasChanges={hasAdvancedChanges}
+                  />
+
+                  {/* Preview sentence — shown when the form produces a valid binding */}
+                  {previewSentence && (
+                    <p className="text-muted-foreground bg-muted/50 rounded-md px-3 py-2 text-xs italic">
+                      {previewSentence}
+                    </p>
+                  )}
+                </div>
+
+                <ResponsiveDialogFooter className="border-t px-4 py-3">
+                  {isEdit && onDelete && bindingId && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
+                        >
+                          <Trash2 className="mr-1.5 size-3.5" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete binding</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete this binding? The adapter will no longer
+                            route messages to the connected agent.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => onDelete(bindingId)}
+                            className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
+                    {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Binding'}
+                  </Button>
+                </ResponsiveDialogFooter>
+              </>
+            );
+          }}
+        </form.Subscribe>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );
