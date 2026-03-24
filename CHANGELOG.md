@@ -9,15 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add TodoWrite support to task system
-- Eliminate null sessionId with speculative UUID pattern
-- Replace emoji adapter icons with real brand SVG logos
-
 ### Changed
 
 ### Fixed
 
-- Preserve session state across SDK remaps and inline errors
+---
+
+## [0.22.0] - 2026-03-23
+
+> TodoWrite task system, speculative sessions, and brand icon refresh
+
+### Added
+
+- Add TodoWrite support to task system — recognize the SDK's new batch todo tool with snapshot semantics so tasks appear in the TaskListPanel during streaming and on reload
+- Eliminate null sessionId with speculative UUID pattern — sessions get a client-generated ID immediately, avoiding null guards and 404s during the first message
+- Replace emoji adapter icons with real brand SVG logos for Slack, Telegram, and other adapters
+
+### Fixed
+
+- Preserve session state across SDK remaps and inline errors — model, permission mode, and cost survive session ID transitions and tool validation failures
+
 ---
 
 ## [0.21.0] - 2026-03-23

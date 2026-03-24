@@ -1,0 +1,36 @@
+---
+title: DorkOS 0.22.0
+description: TodoWrite task system, speculative sessions, and brand icon refresh
+date: 2026-03-23
+author: DorkOS Team
+category: release
+tags: [release, tasks, sessions, icons]
+---
+
+DorkOS 0.22.0 adds support for the Claude Code SDK's new TodoWrite tool, eliminates null session IDs with a speculative UUID pattern, and replaces emoji adapter icons with real brand SVGs.
+
+## Highlights
+
+- **TodoWrite Task Support** - The Claude Code SDK replaced its individual TaskCreate/TaskUpdate tools with a single TodoWrite tool. DorkOS now recognizes TodoWrite with snapshot semantics so tasks appear in the TaskListPanel during streaming and on page reload.
+
+- **Speculative Session IDs** - Sessions get a client-generated UUID immediately instead of waiting for the SDK to assign one. This eliminates null guards, 404 errors on the first message, and simplifies the session lifecycle.
+
+- **Brand SVG Icons** - Adapter icons for Slack, Telegram, and other platforms are now real brand SVGs instead of emoji placeholders.
+
+## All Changes
+
+### Added
+
+- Add TodoWrite support to task system — recognize the SDK's new batch todo tool with snapshot semantics so tasks appear in the TaskListPanel during streaming and on reload
+- Eliminate null sessionId with speculative UUID pattern — sessions get a client-generated ID immediately, avoiding null guards and 404s during the first message
+- Replace emoji adapter icons with real brand SVG logos for Slack, Telegram, and other adapters
+
+### Fixed
+
+- Preserve session state across SDK remaps and inline errors — model, permission mode, and cost survive session ID transitions and tool validation failures
+
+## Install / Update
+
+```
+npm install -g dorkos@0.22.0
+```
