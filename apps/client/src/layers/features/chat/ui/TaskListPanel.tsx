@@ -40,10 +40,6 @@ export function TaskListPanel({
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
-  if (tasks.length === 0) return null;
-
-  const visibleTasks = tasks.slice(0, MAX_VISIBLE);
-
   const handleToggleExpand = useCallback((taskId: string) => {
     setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
   }, []);
@@ -56,6 +52,10 @@ export function TaskListPanel({
       setTimeout(() => el.classList.remove('bg-blue-500/10'), 1000);
     }
   }, []);
+
+  if (tasks.length === 0) return null;
+
+  const visibleTasks = tasks.slice(0, MAX_VISIBLE);
 
   // Pre-compute hover highlights
   const hoveredTask = hoveredTaskId ? taskMap.get(hoveredTaskId) : null;

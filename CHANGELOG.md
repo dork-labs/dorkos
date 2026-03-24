@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Move useCallback hooks before early return in TaskListPanel
 ---
 
 ## [0.22.0] - 2026-03-23
