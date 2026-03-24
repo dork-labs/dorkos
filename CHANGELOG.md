@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Removing unnecessary border from SidebarFooterBar component
 - Reconcile harness inventory counts with actual files
 
 ### Fixed

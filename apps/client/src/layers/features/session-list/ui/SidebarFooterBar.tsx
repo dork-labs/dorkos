@@ -27,7 +27,7 @@ export function SidebarFooterBar() {
   }, [theme, setTheme]);
 
   return (
-    <div className="border-border flex items-center border-t px-2 py-1.5">
+    <div className="flex items-center px-2 py-1.5">
       <a
         href="https://dorkos.ai"
         target="_blank"
