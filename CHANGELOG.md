@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhance StatusShowcases with taskMap and statusTimestamps
 - Rebuild TaskListPanel with progress bar, deps, and expand
 - Add animated background agent indicator with running figures
 

@@ -36,3 +36,9 @@ test-results/
 .vercel
 .worktrees/
 .superpowers/
+mockups/background-agent-indicator.html
+mockups/running-figure-drafts.html
+mockups/running-figure-final.html
+mockups/running-figure-transitions.html
+mockups/running-figure-v2.html
+mockups/running-figure-v3.html

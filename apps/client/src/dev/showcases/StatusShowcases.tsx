@@ -278,9 +278,11 @@ export function StatusShowcases() {
         <ShowcaseDemo>
           <TaskListPanel
             tasks={SAMPLE_TASKS}
+            taskMap={new Map(SAMPLE_TASKS.map((t) => [t.id, t]))}
             activeForm="Implementing authentication service"
             isCollapsed={taskCollapsed}
             onToggleCollapse={() => setTaskCollapsed((c) => !c)}
+            statusTimestamps={new Map()}
           />
         </ShowcaseDemo>
 
@@ -288,9 +290,11 @@ export function StatusShowcases() {
         <ShowcaseDemo>
           <TaskListPanel
             tasks={SAMPLE_TASKS}
+            taskMap={new Map(SAMPLE_TASKS.map((t) => [t.id, t]))}
             activeForm="Implementing authentication service"
             isCollapsed={taskCollapsed2}
             onToggleCollapse={() => setTaskCollapsed2((c) => !c)}
+            statusTimestamps={new Map()}
           />
         </ShowcaseDemo>
       </PlaygroundSection>
