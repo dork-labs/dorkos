@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "nextNumber": 189,
+  "nextNumber": 193,
   "decisions": [
+    {
+      "number": 192,
+      "slug": "relay-notify-user-convenience-tool",
+      "title": "High-Level relay_notify_user MCP Tool for Agent-Initiated Messaging",
+      "status": "draft",
+      "created": "2026-03-24",
+      "extractedFrom": "relay-outbound-awareness",
+      "specSlug": "relay-outbound-awareness"
+    },
+    {
+      "number": 191,
+      "slug": "dynamic-relay-connections-context-block",
+      "title": "Dynamic <relay_connections> Context Block for Agent Outbound Awareness",
+      "status": "draft",
+      "created": "2026-03-24",
+      "extractedFrom": "relay-outbound-awareness",
+      "specSlug": "relay-outbound-awareness"
+    },
+    {
+      "number": 190,
+      "slug": "sse-page-visibility-optimization",
+      "title": "Close SSE Connections on Tab Background with Grace Period",
+      "status": "draft",
+      "created": "2026-03-24",
+      "extractedFrom": "sse-resilience-connection-health",
+      "specSlug": "sse-resilience-connection-health"
+    },
+    {
+      "number": 189,
+      "slug": "shared-sse-resilience-primitive",
+      "title": "Shared SSE Resilience Primitive (Class + Hook)",
+      "status": "draft",
+      "created": "2026-03-24",
+      "extractedFrom": "sse-resilience-connection-health",
+      "specSlug": "sse-resilience-connection-health"
+    },
     {
       "number": 188,
       "slug": "speculative-uuid-session-creation",

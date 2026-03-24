@@ -86,6 +86,8 @@ const BINDING_TOOLS = [
   'mcp__dorkos__binding_list',
   'mcp__dorkos__binding_create',
   'mcp__dorkos__binding_delete',
+  'mcp__dorkos__binding_list_sessions',
+  'mcp__dorkos__relay_notify_user',
 ] as const;
 
 /** Follows the relay toggle — disabled when relay=false. */

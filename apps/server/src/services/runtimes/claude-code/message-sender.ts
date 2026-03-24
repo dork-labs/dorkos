@@ -21,7 +21,10 @@ import { createToolState } from './agent-types.js';
 import { createCanUseTool } from './interactive-handlers.js';
 import { mapSdkMessage } from './sdk-event-mapper.js';
 import { makeUserPrompt } from './sdk-utils.js';
-import { buildSystemPromptAppend } from './context-builder.js';
+import { buildSystemPromptAppend, type RelayContextDeps } from './context-builder.js';
+import type { BindingRouter } from '../../relay/binding-router.js';
+import type { BindingStore } from '../../relay/binding-store.js';
+import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { resolveToolConfig, buildAllowedTools } from './tool-filter.js';
 import { validateBoundary } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';
@@ -43,6 +46,9 @@ export interface MessageSenderOpts {
   sessionCwd?: string;
   claudeCliPath?: string;
   meshCore?: AgentRegistryPort | null;
+  bindingRouter?: BindingRouter;
+  bindingStore?: BindingStore;
+  adapterManager?: AdapterManager;
   mcpServerFactory?: (() => Record<string, McpServerConfig>) | null;
   onModelsReceived?: (
     models: Array<{ value: string; displayName: string; description: string }>
@@ -136,10 +142,21 @@ export async function* executeSdkQuery(
     globalConfig,
   });
 
+  const relayContext: RelayContextDeps | undefined =
+    opts.bindingRouter && opts.bindingStore && opts.adapterManager && meshAgentId
+      ? {
+          agentId: meshAgentId,
+          bindingRouter: opts.bindingRouter,
+          bindingStore: opts.bindingStore,
+          adapterManager: opts.adapterManager,
+        }
+      : undefined;
+
   const baseAppend = await buildSystemPromptAppend(
     effectiveCwd,
     opts.meshCore ?? undefined,
-    toolConfig
+    toolConfig,
+    relayContext
   );
   // Concatenate caller-supplied append (e.g. Pulse scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend

@@ -342,6 +342,124 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
   };
 }
 
+/** Send a message to a user on a bound external channel. */
+export function createRelayNotifyUserHandler(deps: McpToolDeps) {
+  return async (args: { message: string; channel?: string; agentId?: string }) => {
+    const err = requireRelay(deps);
+    if (err) return err;
+    if (!deps.bindingRouter || !deps.bindingStore) {
+      return jsonContent(
+        { error: 'Binding system not available', code: 'BINDINGS_DISABLED' },
+        true
+      );
+    }
+
+    const agentId = args.agentId;
+    if (!agentId) {
+      return jsonContent(
+        {
+          error: 'agentId is required. Pass your agent ID from <agent_identity>.',
+          code: 'MISSING_AGENT_ID',
+        },
+        true
+      );
+    }
+
+    const allBindings = deps.bindingStore.getAll();
+    let myBindings = allBindings.filter((b) => b.agentId === agentId);
+
+    if (args.channel) {
+      const channel = args.channel.toLowerCase();
+
+      // Tier 1: exact adapter ID match
+      const exactIdMatches = myBindings.filter((b) => b.adapterId.toLowerCase() === channel);
+      if (exactIdMatches.length > 0) {
+        myBindings = exactIdMatches;
+      } else if (deps.adapterManager) {
+        // Tier 2: exact adapter type match (e.g., "telegram" matches all telegram adapters)
+        const adapters = deps.adapterManager.listAdapters();
+        const typeMatchIds = new Set(
+          adapters.filter((a) => a.config.type.toLowerCase() === channel).map((a) => a.config.id)
+        );
+        const typeMatches = myBindings.filter((b) => typeMatchIds.has(b.adapterId));
+        // Tier 3: substring ID match (fallback for partial IDs like "tele")
+        myBindings =
+          typeMatches.length > 0
+            ? typeMatches
+            : myBindings.filter((b) => b.adapterId.toLowerCase().includes(channel));
+      } else {
+        // No adapterManager — fall back to substring match
+        myBindings = myBindings.filter((b) => b.adapterId.toLowerCase().includes(channel));
+      }
+    }
+
+    if (myBindings.length === 0) {
+      const available = allBindings.filter((b) => b.agentId === agentId).map((b) => b.adapterId);
+      return jsonContent(
+        {
+          sent: false,
+          error: args.channel
+            ? `No binding found for channel "${args.channel}"`
+            : 'No adapter bindings found for this agent',
+          availableChannels: available,
+          code: 'NO_BINDING',
+        },
+        true
+      );
+    }
+
+    let bestSession: {
+      bindingId: string;
+      chatId: string;
+      sessionId: string;
+      adapterId: string;
+    } | null = null;
+    for (const binding of myBindings) {
+      const sessions = deps.bindingRouter.getSessionsByBinding(binding.id);
+      if (sessions.length > 0) {
+        const latest = sessions[sessions.length - 1]!;
+        bestSession = { ...latest, bindingId: binding.id, adapterId: binding.adapterId };
+      }
+    }
+
+    if (!bestSession) {
+      return jsonContent(
+        {
+          sent: false,
+          error:
+            'No active chat sessions found. The user must message the bot first to establish a chat.',
+          availableAdapters: myBindings.map((b) => b.adapterId),
+          code: 'NO_ACTIVE_SESSIONS',
+        },
+        true
+      );
+    }
+
+    const adapters = deps.adapterManager?.listAdapters() ?? [];
+    const adapter = adapters.find((a) => a.config.id === bestSession!.adapterId);
+    const adapterType = adapter?.config?.type ?? 'unknown';
+    const subject = `relay.human.${adapterType}.${bestSession.adapterId}.${bestSession.chatId}`;
+
+    try {
+      const result = await deps.relayCore!.publish(subject, args.message, {
+        from: agentId,
+      });
+      return jsonContent({
+        sent: true,
+        subject,
+        adapterId: bestSession.adapterId,
+        adapterType,
+        chatId: bestSession.chatId,
+        messageId: result.messageId,
+        deliveredTo: result.deliveredTo,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Send failed';
+      return jsonContent({ sent: false, error: message, code: 'SEND_FAILED' }, true);
+    }
+  };
+}
+
 /** Returns the Relay tool definitions for registration with the MCP server. */
 export function getRelayTools(deps: McpToolDeps) {
   return [
@@ -467,6 +585,26 @@ export function getRelayTools(deps: McpToolDeps) {
         subject: z.string().describe('Subject of the endpoint to unregister'),
       },
       createRelayUnregisterEndpointHandler(deps)
+    ),
+    tool(
+      'relay_notify_user',
+      'Send a message to the user on a bound external channel (Telegram, Slack, etc.). ' +
+        'Automatically resolves the best active chat. If channel is omitted, sends to the ' +
+        'most recently active chat across all bound adapters. Specify channel to target a ' +
+        'specific adapter type (e.g., "telegram") or adapter ID (e.g., "telegram-lifeos").',
+      {
+        message: z.string().describe('Message text to send to the user'),
+        channel: z
+          .string()
+          .optional()
+          .describe(
+            'Optional adapter type or ID to target (e.g., "telegram", "telegram-lifeos"). Omit for most recent.'
+          ),
+        agentId: z
+          .string()
+          .describe('Your agent ID from <agent_identity>. Required to identify your bindings.'),
+      },
+      createRelayNotifyUserHandler(deps)
     ),
   ];
 }

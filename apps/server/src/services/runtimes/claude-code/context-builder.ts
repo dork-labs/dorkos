@@ -17,6 +17,17 @@ import { isPulseEnabled } from '../../pulse/pulse-state.js';
 import { configManager } from '../../core/config-manager.js';
 import type { ResolvedToolConfig } from './tool-filter.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
+import type { BindingRouter } from '../../relay/binding-router.js';
+import type { BindingStore } from '../../relay/binding-store.js';
+import type { AdapterManager } from '../../relay/adapter-manager.js';
+
+/** Dependencies for building the <relay_connections> context block. */
+export interface RelayContextDeps {
+  agentId: string;
+  bindingRouter: BindingRouter;
+  bindingStore: BindingStore;
+  adapterManager: AdapterManager;
+}
 
 const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
@@ -61,9 +72,14 @@ inherit the parent MCP server). The orchestrator pattern workaround:
           2. Pass the inboxSubject into the Task() prompt if needed
           3. Poll relay_inbox() in this session after Task() returns
 
-IMPORTANT: When YOU receive a relay message, respond naturally — do NOT call relay_send.
-Your response is automatically forwarded by the relay system.
-Only call relay_send/relay_send_and_wait/relay_send_async to INITIATE a new message.
+IMPORTANT — Outbound messaging rules:
+- When your CURRENT message has a <relay_context> block: respond naturally. Your response
+  is automatically forwarded to the sender. Do NOT call relay_send.
+- When your current message does NOT have <relay_context> (e.g., from the DorkOS console)
+  and the user asks you to message them on another channel: use relay_send() with the
+  subject from <relay_connections>, or use relay_notify_user() for convenience.
+- Only call relay_send/relay_send_and_wait/relay_send_async to INITIATE a new message
+  to another agent or external platform.
 
 relay_list_endpoints returns type ("dispatch"|"query"|"persistent"|"agent"|"unknown") and expiresAt
 (ISO string or null) for each endpoint. Use these to identify active inboxes and their expiry.
@@ -97,8 +113,14 @@ const ADAPTER_TOOLS_CONTEXT = `<adapter_tools>
 Relay adapters bridge external platforms (Telegram, webhooks) to the agent message bus.
 
 Subject conventions for external messages:
-  relay.human.telegram.{chatId}    — send to / receive from Telegram
-  relay.human.webhook.{webhookId}  — send to / receive from webhooks
+  relay.human.telegram.{adapterId}.{chatId}        — Telegram DM
+  relay.human.telegram.{adapterId}.group.{chatId}  — Telegram group
+  relay.human.slack.{adapterId}.{chatId}            — Slack channel/DM
+  relay.human.webhook.{webhookId}                   — Webhook
+
+The {adapterId} is the adapter's ID from relay_list_adapters() (e.g., "telegram-lifeos").
+The {chatId} is the platform-specific chat identifier (e.g., "817732118" for Telegram).
+Use <relay_connections> or binding_list_sessions() to get pre-computed subjects.
 
 Adapter management:
 - relay_list_adapters() — see all adapters and their status (connected, disconnected, error)
@@ -196,6 +218,67 @@ function buildPulseToolsBlock(toolConfig?: ResolvedToolConfig): string {
 }
 
 /**
+ * Build the `<relay_connections>` context block showing bound adapters and active chats.
+ *
+ * Follows the ADR-0069 dual-gate pattern:
+ * 1. relayContext must be provided (no deps = no block)
+ * 2. Relay feature must be enabled (via isRelayEnabled() or toolConfig)
+ * 3. Adapter tools must be enabled (via toolConfig.adapter)
+ * 4. Agent must have at least one binding
+ */
+function buildRelayConnectionsBlock(
+  relayContext?: RelayContextDeps,
+  toolConfig?: ResolvedToolConfig
+): string {
+  if (!relayContext) return '';
+  if (toolConfig && !toolConfig.adapter) return '';
+  if (!toolConfig && !isRelayEnabled()) return '';
+
+  const { agentId, bindingStore, bindingRouter, adapterManager } = relayContext;
+
+  const allBindings = bindingStore.getAll();
+  const myBindings = allBindings.filter((b) => b.agentId === agentId);
+  if (myBindings.length === 0) return '';
+
+  const adapters = adapterManager.listAdapters();
+  const adapterMap = new Map(adapters.map((a) => [a.config.id, a]));
+
+  const lines: string[] = [`Adapters bound to this agent (${agentId}):`];
+
+  for (const binding of myBindings) {
+    const adapter = adapterMap.get(binding.adapterId);
+    const displayName = adapter?.config?.type ?? binding.adapterId;
+    const label = adapter?.config?.label ?? '';
+    const state = adapter?.status?.state ?? 'unknown';
+    const labelSuffix = label ? ` ${label}` : '';
+
+    lines.push('');
+    lines.push(`- ${binding.adapterId} (${displayName}${labelSuffix}) [${state}]`);
+
+    const sessions = bindingRouter.getSessionsByBinding(binding.id);
+    if (sessions.length > 0) {
+      lines.push('  Active chats:');
+      for (const session of sessions) {
+        const adapterType = adapter?.config?.type ?? 'unknown';
+        const subject = `relay.human.${adapterType}.${binding.adapterId}.${session.chatId}`;
+        const keyParts = session.key.split(':');
+        const channelType = keyParts[1] === 'chat' ? 'DM' : (keyParts[1] ?? 'unknown');
+        lines.push(`  - ${subject} (${channelType})`);
+      }
+    } else {
+      lines.push('  No active chats yet (user must message the bot first)');
+    }
+  }
+
+  lines.push('');
+  lines.push('To message a user on a bound adapter:');
+  lines.push(`  relay_send(subject="{chat subject}", payload="your message", from="${agentId}")`);
+  lines.push(`  OR: relay_notify_user(message="your message", channel="{adapter type or ID}")`);
+
+  return `<relay_connections>\n${lines.join('\n')}\n</relay_connections>`;
+}
+
+/**
  * Build the `<peer_agents>` context block with a summary of registered agents.
  *
  * Uses `listWithPaths()` for lightweight agent data including project paths.
@@ -227,11 +310,13 @@ async function buildPeerAgentsBlock(
  * @param cwd - Working directory for the session
  * @param meshCore - Optional agent registry port for peer agents block
  * @param toolConfig - Optional resolved tool config for agent-aware block gating
+ * @param relayContext - Optional relay context deps for building relay connections block
  */
 export async function buildSystemPromptAppend(
   cwd: string,
   meshCore?: AgentRegistryPort | null,
-  toolConfig?: ResolvedToolConfig
+  toolConfig?: ResolvedToolConfig,
+  relayContext?: RelayContextDeps
 ): Promise<string> {
   const results = await Promise.allSettled([
     buildEnvBlock(cwd),
@@ -245,6 +330,7 @@ export async function buildSystemPromptAppend(
   const meshBlock = buildMeshToolsBlock(toolConfig);
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const pulseBlock = buildPulseToolsBlock(toolConfig);
+  const relayConnectionsBlock = buildRelayConnectionsBlock(relayContext, toolConfig);
 
   return [
     ...results
@@ -254,6 +340,7 @@ export async function buildSystemPromptAppend(
     meshBlock,
     adapterBlock,
     pulseBlock,
+    relayConnectionsBlock,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -416,6 +503,7 @@ export {
   buildAdapterToolsBlock as _buildAdapterToolsBlock,
   buildPulseToolsBlock as _buildPulseToolsBlock,
   buildPeerAgentsBlock as _buildPeerAgentsBlock,
+  buildRelayConnectionsBlock as _buildRelayConnectionsBlock,
   RELAY_TOOLS_CONTEXT as _RELAY_TOOLS_CONTEXT,
   MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,

@@ -1,7 +1,28 @@
 {
   "version": 1,
-  "nextNumber": 173,
+  "nextNumber": 176,
   "specs": [
+    {
+      "number": 175,
+      "slug": "relay-outbound-awareness",
+      "title": "Relay Outbound Awareness — Agent-Initiated Messaging",
+      "created": "2026-03-24",
+      "status": "implemented"
+    },
+    {
+      "number": 174,
+      "slug": "sse-resilience-connection-health",
+      "title": "SSE Resilience & Connection Health",
+      "created": "2026-03-24",
+      "status": "implemented"
+    },
+    {
+      "number": 173,
+      "slug": "plugin-extension-system",
+      "title": "Plugin / Extension System",
+      "created": "2026-03-24",
+      "status": "ideation"
+    },
     {
       "number": 172,
       "slug": "mcp-tool-result-streaming",

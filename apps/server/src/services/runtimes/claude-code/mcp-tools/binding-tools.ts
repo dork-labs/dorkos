@@ -68,6 +68,49 @@ export function createBindingDeleteHandler(deps: McpToolDeps) {
   };
 }
 
+/** List active session mappings from the binding router. */
+export function createBindingListSessionsHandler(deps: McpToolDeps) {
+  return async (args: { bindingId?: string }) => {
+    if (!deps.bindingRouter) {
+      return jsonContent(
+        { error: 'Binding router not available', code: 'BINDINGS_DISABLED' },
+        true
+      );
+    }
+    if (!deps.bindingStore) {
+      return jsonContent({ error: 'Binding store not available', code: 'BINDINGS_DISABLED' }, true);
+    }
+
+    const rawSessions = args.bindingId
+      ? deps.bindingRouter.getSessionsByBinding(args.bindingId).map((s) => ({
+          ...s,
+          bindingId: args.bindingId!,
+        }))
+      : deps.bindingRouter.getAllSessions();
+
+    const adapters = deps.adapterManager?.listAdapters() ?? [];
+    const adapterMap = new Map(adapters.map((a) => [a.config.id, a]));
+
+    const sessions = rawSessions.map((s) => {
+      const binding = deps.bindingStore!.getById(s.bindingId);
+      const adapterId = binding?.adapterId ?? 'unknown';
+      const adapter = adapterMap.get(adapterId);
+      const adapterType = adapter?.config?.type ?? 'unknown';
+      const subject = `relay.human.${adapterType}.${adapterId}.${s.chatId}`;
+      return {
+        bindingId: s.bindingId,
+        adapterId,
+        adapterType,
+        chatId: s.chatId,
+        sessionId: s.sessionId,
+        subject,
+      };
+    });
+
+    return jsonContent({ sessions, count: sessions.length });
+  };
+}
+
 /** Returns the binding tool definitions — only when bindingStore is provided. */
 export function getBindingTools(deps: McpToolDeps) {
   if (!deps.bindingStore) return [];
@@ -98,6 +141,17 @@ export function getBindingTools(deps: McpToolDeps) {
       'Delete an adapter-to-agent binding by ID.',
       { id: z.string().describe('Binding UUID to delete') },
       createBindingDeleteHandler(deps)
+    ),
+    tool(
+      'binding_list_sessions',
+      'List active chat sessions for adapter-agent bindings. Returns active chats with pre-computed relay subjects for outbound messaging. Use this to discover what channels are available for sending messages.',
+      {
+        bindingId: z
+          .string()
+          .optional()
+          .describe('Optional binding ID to filter sessions. Omit to get all sessions.'),
+      },
+      createBindingListSessionsHandler(deps)
     ),
   ];
 }

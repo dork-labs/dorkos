@@ -47,7 +47,9 @@ import {
   _buildAdapterToolsBlock,
   _buildPulseToolsBlock,
   _buildPeerAgentsBlock,
+  _buildRelayConnectionsBlock,
 } from '../../runtimes/claude-code/context-builder.js';
+import type { RelayContextDeps } from '../../runtimes/claude-code/context-builder.js';
 import { getGitStatus } from '../git-status.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../relay/relay-state.js';
@@ -723,5 +725,151 @@ describe('buildPeerAgentsBlock', () => {
     });
     const result = await _buildPeerAgentsBlock(mockMesh);
     expect(result).toBe('');
+  });
+});
+
+describe('buildRelayConnectionsBlock', () => {
+  const AGENT_ID = '01JTEST000000000000000000';
+  const OTHER_AGENT_ID = '01JTEST111111111111111111';
+
+  function makeBinding(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'binding-uuid-1',
+      adapterId: 'telegram-lifeos',
+      agentId: AGENT_ID,
+      sessionStrategy: 'per-chat' as const,
+      label: '',
+      permissionMode: 'acceptEdits' as const,
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  function makeAdapterEntry(overrides: Record<string, unknown> = {}) {
+    const config = {
+      id: 'telegram-lifeos',
+      type: 'telegram',
+      enabled: true,
+      builtin: false,
+      label: 'LifeOS Bot',
+      config: {},
+      ...(overrides.config as Record<string, unknown> | undefined),
+    };
+    const status = {
+      state: 'connected' as const,
+      messageCount: 0,
+      errorCount: 0,
+      ...(overrides.status as Record<string, unknown> | undefined),
+    };
+    return { config, status };
+  }
+
+  function makeRelayContext(overrides: Partial<RelayContextDeps> = {}): RelayContextDeps {
+    return {
+      agentId: AGENT_ID,
+      bindingStore: {
+        getAll: vi.fn(() => [makeBinding()]),
+      } as unknown as RelayContextDeps['bindingStore'],
+      bindingRouter: {
+        getSessionsByBinding: vi.fn(() => []),
+      } as unknown as RelayContextDeps['bindingRouter'],
+      adapterManager: {
+        listAdapters: vi.fn(() => [makeAdapterEntry()]),
+      } as unknown as RelayContextDeps['adapterManager'],
+      ...overrides,
+    };
+  }
+
+  const allOnToolConfig = { pulse: true, relay: true, mesh: true, adapter: true };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isRelayEnabled).mockReturnValue(true);
+  });
+
+  it('returns empty string when relayContext is undefined', () => {
+    const result = _buildRelayConnectionsBlock(undefined, allOnToolConfig);
+    expect(result).toBe('');
+  });
+
+  it('returns empty string when toolConfig.adapter is false', () => {
+    const ctx = makeRelayContext();
+    const result = _buildRelayConnectionsBlock(ctx, { ...allOnToolConfig, adapter: false });
+    expect(result).toBe('');
+  });
+
+  it('returns empty string when agent has no bindings (only other agents)', () => {
+    const ctx = makeRelayContext({
+      bindingStore: {
+        getAll: vi.fn(() => [makeBinding({ agentId: OTHER_AGENT_ID })]),
+      } as unknown as RelayContextDeps['bindingStore'],
+    });
+    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
+    expect(result).toBe('');
+  });
+
+  it('includes adapter display name, label, and connection state', () => {
+    const ctx = makeRelayContext();
+    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
+    expect(result).toContain('telegram-lifeos');
+    expect(result).toContain('telegram');
+    expect(result).toContain('LifeOS Bot');
+    expect(result).toContain('[connected]');
+  });
+
+  it('lists active chats with pre-computed relay subjects', () => {
+    const ctx = makeRelayContext({
+      bindingRouter: {
+        getSessionsByBinding: vi.fn(() => [
+          { key: 'binding-uuid-1:chat:817732118', chatId: '817732118', sessionId: 'sess-1' },
+        ]),
+      } as unknown as RelayContextDeps['bindingRouter'],
+    });
+    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
+    expect(result).toContain('Active chats:');
+    expect(result).toContain('relay.human.telegram.telegram-lifeos.817732118');
+    expect(result).toContain('(DM)');
+  });
+
+  it('shows "No active chats yet" for bindings without sessions', () => {
+    const ctx = makeRelayContext({
+      bindingRouter: {
+        getSessionsByBinding: vi.fn(() => []),
+      } as unknown as RelayContextDeps['bindingRouter'],
+    });
+    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
+    expect(result).toContain('No active chats yet');
+  });
+
+  it('output is wrapped in <relay_connections> XML tags', () => {
+    const ctx = makeRelayContext();
+    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
+    expect(result).toMatch(/^<relay_connections>\n/);
+    expect(result).toMatch(/\n<\/relay_connections>$/);
+  });
+
+  it('includes relay_send and relay_notify_user usage instructions', () => {
+    const ctx = makeRelayContext();
+    const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
+    expect(result).toContain('relay_send(');
+    expect(result).toContain('relay_notify_user(');
+  });
+
+  it('falls back to isRelayEnabled when toolConfig is not provided', () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    const ctx = makeRelayContext();
+    const result = _buildRelayConnectionsBlock(ctx);
+    expect(result).toBe('');
+  });
+
+  it('returns block when toolConfig not provided and relay is enabled', () => {
+    vi.mocked(isRelayEnabled).mockReturnValue(true);
+    const ctx = makeRelayContext();
+    const result = _buildRelayConnectionsBlock(ctx);
+    expect(result).toContain('<relay_connections>');
   });
 });

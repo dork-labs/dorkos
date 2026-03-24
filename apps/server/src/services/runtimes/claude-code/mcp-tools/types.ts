@@ -3,6 +3,7 @@ import type { PulseStore } from '../../../pulse/pulse-store.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
+import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { TraceStore } from '../../../relay/trace-store.js';
 import type { MeshCore } from '@dorkos/mesh';
 
@@ -24,6 +25,8 @@ export interface McpToolDeps {
   traceStore?: TraceStore;
   /** Optional BindingStore — undefined when Relay bindings are not configured */
   bindingStore?: BindingStore;
+  /** Optional BindingRouter for session map queries. */
+  bindingRouter?: BindingRouter;
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
 }

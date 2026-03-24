@@ -101,6 +101,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
   private cachedSdkCommands: SdkCommandEntry[] | null = null;
   private meshCore: AgentRegistryPort | null = null;
+  private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
+  private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
+  private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
 
   constructor(cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
@@ -129,6 +132,24 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   setMeshCore(meshCore: AgentRegistryPort): void {
     this.meshCore = meshCore;
+  }
+
+  /**
+   * Inject relay binding context for outbound awareness.
+   *
+   * Provides the runtime with access to the binding router (session map),
+   * binding store (binding CRUD), and adapter manager (adapter status).
+   * These are threaded to `buildSystemPromptAppend` to generate the
+   * `<relay_connections>` context block.
+   */
+  setRelayBindingContext(
+    bindingRouter: import('../../relay/binding-router.js').BindingRouter,
+    bindingStore: import('../../relay/binding-store.js').BindingStore,
+    adapterManager: import('../../relay/adapter-manager.js').AdapterManager
+  ): void {
+    this.bindingRouter = bindingRouter;
+    this.bindingStore = bindingStore;
+    this.adapterManager = adapterManager;
   }
 
   /** Inject a Relay core instance for Relay-aware context building. */
@@ -301,6 +322,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         sessionCwd: session.cwd,
         claudeCliPath: this.claudeCliPath,
         meshCore: this.meshCore,
+        bindingRouter: this.bindingRouter,
+        bindingStore: this.bindingStore,
+        adapterManager: this.adapterManager,
         mcpServerFactory: this.mcpServerFactory,
         onModelsReceived: !this.cachedModels
           ? (models) => {

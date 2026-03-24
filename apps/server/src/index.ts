@@ -209,6 +209,14 @@ async function start() {
       });
       await adapterManager.initialize();
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));
+
+      // Provide relay binding context to runtime for <relay_connections> system prompt block
+      const bindingRouter = adapterManager.getBindingRouter();
+      const bindingStore = adapterManager.getBindingStore();
+      if (claudeRuntime && bindingRouter && bindingStore) {
+        claudeRuntime.setRelayBindingContext(bindingRouter, bindingStore, adapterManager);
+      }
+
       logger.info('[Relay] AdapterManager initialized');
     } catch (err) {
       const errInfo = logError(err);
@@ -238,6 +246,7 @@ async function start() {
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),
       ...(adapterManager && { bindingStore: adapterManager.getBindingStore() }),
+      ...(adapterManager && { bindingRouter: adapterManager.getBindingRouter() }),
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
     };

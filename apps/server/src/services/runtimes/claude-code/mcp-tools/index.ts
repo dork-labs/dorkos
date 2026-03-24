@@ -39,6 +39,7 @@ export {
   createRelayQueryHandler,
   createRelayDispatchHandler,
   createRelayUnregisterEndpointHandler,
+  createRelayNotifyUserHandler,
 } from './relay-tools.js';
 export {
   createRelayListAdaptersHandler,
@@ -50,6 +51,7 @@ export {
   createBindingListHandler,
   createBindingCreateHandler,
   createBindingDeleteHandler,
+  createBindingListSessionsHandler,
 } from './binding-tools.js';
 export { createRelayGetTraceHandler, createRelayGetMetricsHandler } from './trace-tools.js';
 export { createCreateAgentHandler } from './agent-tools.js';

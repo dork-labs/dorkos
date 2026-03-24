@@ -527,11 +527,11 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 17 tools (4 core + 5 pulse + 7 relay + 1 agent)', () => {
+    it('registers 18 tools (4 core + 5 pulse + 8 relay + 1 agent)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(17);
+      expect(server.tools).toHaveLength(18);
     });
 
     it('registers tools with correct names', () => {
@@ -553,6 +553,7 @@ describe('MCP Tool Handlers', () => {
       expect(toolNames).toContain('relay_send_and_wait');
       expect(toolNames).toContain('relay_send_async');
       expect(toolNames).toContain('relay_unregister_endpoint');
+      expect(toolNames).toContain('relay_notify_user');
     });
   });
 });

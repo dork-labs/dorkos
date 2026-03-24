@@ -117,6 +117,43 @@ export class BindingRouter {
     return removed;
   }
 
+  /**
+   * Get active sessions for a specific binding.
+   *
+   * @param bindingId - Binding UUID to filter by
+   * @returns Array of session entries with parsed chatId
+   */
+  getSessionsByBinding(
+    bindingId: string
+  ): Array<{ key: string; chatId: string; sessionId: string }> {
+    const results: Array<{ key: string; chatId: string; sessionId: string }> = [];
+    for (const [key, sessionId] of this.sessionMap) {
+      if (key.startsWith(`${bindingId}:`)) {
+        const parts = key.split(':');
+        const chatId = parts.length >= 3 ? parts.slice(2).join(':') : 'unknown';
+        results.push({ key, chatId, sessionId });
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Get all active sessions across all bindings.
+   *
+   * @returns Array of session entries with parsed bindingId and chatId
+   */
+  getAllSessions(): Array<{ key: string; bindingId: string; chatId: string; sessionId: string }> {
+    const results: Array<{ key: string; bindingId: string; chatId: string; sessionId: string }> =
+      [];
+    for (const [key, sessionId] of this.sessionMap) {
+      const parts = key.split(':');
+      const bindingId = parts[0] ?? 'unknown';
+      const chatId = parts.length >= 3 ? parts.slice(2).join(':') : 'unknown';
+      results.push({ key, bindingId, chatId, sessionId });
+    }
+    return results;
+  }
+
   private async handleInbound(envelope: RelayEnvelope): Promise<void> {
     try {
       // Skip response events from agents — only route inbound human messages.

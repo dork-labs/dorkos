@@ -6,6 +6,7 @@ import {
   createDorkOsToolServer,
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { createBindingListSessionsHandler } from '../../runtimes/claude-code/mcp-tools/binding-tools.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(),
@@ -197,6 +198,171 @@ describe('Binding MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.result).toBe('Not found');
       expect(data.id).toBe('nonexistent');
+    });
+  });
+
+  describe('binding_list_sessions', () => {
+    const TEST_SESSIONS = [
+      { key: 'b-1:user1:chat-abc', bindingId: 'b-1', chatId: 'chat-abc', sessionId: 'sess-1' },
+      { key: 'b-1:user2:chat-xyz', bindingId: 'b-1', chatId: 'chat-xyz', sessionId: 'sess-2' },
+    ];
+
+    function makeMockBindingRouter(overrides?: Record<string, unknown>) {
+      return {
+        getSessionsByBinding: vi
+          .fn()
+          .mockReturnValue(
+            TEST_SESSIONS.map(({ key, chatId, sessionId }) => ({ key, chatId, sessionId }))
+          ),
+        getAllSessions: vi.fn().mockReturnValue(TEST_SESSIONS),
+        ...overrides,
+      };
+    }
+
+    function makeMockAdapterManager(overrides?: Record<string, unknown>) {
+      return {
+        listAdapters: vi
+          .fn()
+          .mockReturnValue([{ config: { id: 'tg-main', type: 'telegram' }, status: 'connected' }]),
+        ...overrides,
+      };
+    }
+
+    function makeSessionDeps(
+      opts: {
+        bindingStore?: ReturnType<typeof makeMockBindingStore>;
+        bindingRouter?: ReturnType<typeof makeMockBindingRouter>;
+        adapterManager?: ReturnType<typeof makeMockAdapterManager>;
+      } = {}
+    ): McpToolDeps {
+      return {
+        transcriptReader: {} as McpToolDeps['transcriptReader'],
+        defaultCwd: '/test',
+        bindingStore: opts.bindingStore as unknown as McpToolDeps['bindingStore'],
+        bindingRouter: opts.bindingRouter as unknown as McpToolDeps['bindingRouter'],
+        adapterManager: opts.adapterManager as unknown as McpToolDeps['adapterManager'],
+      };
+    }
+
+    it('returns enriched sessions with pre-computed relay subject', async () => {
+      const store = makeMockBindingStore({
+        getById: vi.fn().mockReturnValue({ adapterId: 'tg-main' }),
+      });
+      const router = makeMockBindingRouter();
+      const adapterMgr = makeMockAdapterManager();
+      const handler = createBindingListSessionsHandler(
+        makeSessionDeps({ bindingStore: store, bindingRouter: router, adapterManager: adapterMgr })
+      );
+
+      const result = await handler({});
+      const data = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBeUndefined();
+      expect(data.count).toBe(2);
+      expect(data.sessions[0]).toMatchObject({
+        bindingId: 'b-1',
+        adapterId: 'tg-main',
+        adapterType: 'telegram',
+        chatId: 'chat-abc',
+        sessionId: 'sess-1',
+        subject: 'relay.human.telegram.tg-main.chat-abc',
+      });
+    });
+
+    it('filters by bindingId when provided (calls getSessionsByBinding)', async () => {
+      const store = makeMockBindingStore({
+        getById: vi.fn().mockReturnValue({ adapterId: 'tg-main' }),
+      });
+      const router = makeMockBindingRouter();
+      const adapterMgr = makeMockAdapterManager();
+      const handler = createBindingListSessionsHandler(
+        makeSessionDeps({ bindingStore: store, bindingRouter: router, adapterManager: adapterMgr })
+      );
+
+      await handler({ bindingId: 'b-1' });
+
+      expect(router.getSessionsByBinding).toHaveBeenCalledWith('b-1');
+      expect(router.getAllSessions).not.toHaveBeenCalled();
+    });
+
+    it('returns all sessions when bindingId omitted (calls getAllSessions)', async () => {
+      const store = makeMockBindingStore({
+        getById: vi.fn().mockReturnValue({ adapterId: 'tg-main' }),
+      });
+      const router = makeMockBindingRouter();
+      const adapterMgr = makeMockAdapterManager();
+      const handler = createBindingListSessionsHandler(
+        makeSessionDeps({ bindingStore: store, bindingRouter: router, adapterManager: adapterMgr })
+      );
+
+      await handler({});
+
+      expect(router.getAllSessions).toHaveBeenCalledOnce();
+      expect(router.getSessionsByBinding).not.toHaveBeenCalled();
+    });
+
+    it('returns BINDINGS_DISABLED error when bindingRouter is undefined', async () => {
+      const store = makeMockBindingStore();
+      const handler = createBindingListSessionsHandler(makeSessionDeps({ bindingStore: store }));
+
+      const result = await handler({});
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'BINDINGS_DISABLED' });
+    });
+
+    it('returns BINDINGS_DISABLED error when bindingStore is undefined', async () => {
+      const router = makeMockBindingRouter();
+      const handler = createBindingListSessionsHandler(makeSessionDeps({ bindingRouter: router }));
+
+      const result = await handler({});
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'BINDINGS_DISABLED' });
+    });
+
+    it('subject follows pattern relay.human.{adapterType}.{adapterId}.{chatId}', async () => {
+      const store = makeMockBindingStore({
+        getById: vi.fn().mockReturnValue({ adapterId: 'slack-eng' }),
+      });
+      const router = makeMockBindingRouter({
+        getAllSessions: vi
+          .fn()
+          .mockReturnValue([
+            { key: 'b-2:u1:general', bindingId: 'b-2', chatId: 'general', sessionId: 'sess-10' },
+          ]),
+      });
+      const adapterMgr = makeMockAdapterManager({
+        listAdapters: vi
+          .fn()
+          .mockReturnValue([{ config: { id: 'slack-eng', type: 'slack' }, status: 'connected' }]),
+      });
+      const handler = createBindingListSessionsHandler(
+        makeSessionDeps({ bindingStore: store, bindingRouter: router, adapterManager: adapterMgr })
+      );
+
+      const result = await handler({});
+      const data = JSON.parse(result.content[0].text);
+
+      expect(data.sessions[0].subject).toBe('relay.human.slack.slack-eng.general');
+    });
+
+    it('returns empty sessions array when no sessions exist', async () => {
+      const store = makeMockBindingStore();
+      const router = makeMockBindingRouter({
+        getAllSessions: vi.fn().mockReturnValue([]),
+      });
+      const adapterMgr = makeMockAdapterManager();
+      const handler = createBindingListSessionsHandler(
+        makeSessionDeps({ bindingStore: store, bindingRouter: router, adapterManager: adapterMgr })
+      );
+
+      const result = await handler({});
+      const data = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBeUndefined();
+      expect(data.count).toBe(0);
+      expect(data.sessions).toEqual([]);
     });
   });
 
