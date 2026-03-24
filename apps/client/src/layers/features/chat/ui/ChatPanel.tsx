@@ -398,11 +398,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
       <TaskListPanel
         tasks={taskState.tasks}
+        taskMap={taskState.taskMap}
         activeForm={taskState.activeForm}
         isCollapsed={taskState.isCollapsed}
         onToggleCollapse={taskState.toggleCollapse}
         celebratingTaskId={celebrations.celebratingTaskId}
         onCelebrationComplete={celebrations.clearCelebration}
+        statusTimestamps={taskState.statusTimestamps}
       />
 
       {error && (

@@ -1,73 +1,74 @@
-import { Loader2, Circle, CheckCircle2, ChevronDown, ChevronRight, ListTodo } from 'lucide-react';
+import { useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { TaskItem, TaskStatus } from '@dorkos/shared/types';
+import type { TaskItem } from '@dorkos/shared/types';
+import { TaskProgressHeader } from './TaskProgressHeader';
+import { TaskActiveForm } from './TaskActiveForm';
+import { TaskRow } from './TaskRow';
 
 interface TaskListPanelProps {
   tasks: TaskItem[];
+  taskMap: Map<string, TaskItem>;
   activeForm: string | null;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   celebratingTaskId?: string | null;
   onCelebrationComplete?: () => void;
+  statusTimestamps: Map<string, { status: string; since: number }>;
 }
 
-const STATUS_ICON: Record<TaskStatus, React.ReactNode> = {
-  in_progress: <Loader2 className="size-(--size-icon-xs) shrink-0 animate-spin text-blue-400" />,
-  pending: <Circle className="text-muted-foreground size-(--size-icon-xs) shrink-0" />,
-  completed: <CheckCircle2 className="size-(--size-icon-xs) shrink-0 text-green-500" />,
-};
+function isTaskBlocked(task: TaskItem, taskMap: Map<string, TaskItem>): boolean {
+  if (!task.blockedBy?.length) return false;
+  return task.blockedBy.some((depId) => {
+    const dep = taskMap.get(depId);
+    return dep && dep.status !== 'completed';
+  });
+}
 
 const MAX_VISIBLE = 10;
 
-/** Collapsible panel showing agent task progress with status icons and celebration effects. */
+/** Orchestrator composing progress header, active form, and task rows with dependency visualization. */
 export function TaskListPanel({
   tasks,
+  taskMap,
   activeForm,
   isCollapsed,
   onToggleCollapse,
   celebratingTaskId,
   onCelebrationComplete,
+  statusTimestamps,
 }: TaskListPanelProps) {
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+
   if (tasks.length === 0) return null;
 
-  const done = tasks.filter((t) => t.status === 'completed').length;
-  const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
-  const open = tasks.filter((t) => t.status === 'pending').length;
   const visibleTasks = tasks.slice(0, MAX_VISIBLE);
-  const overflow = tasks.length - MAX_VISIBLE;
+
+  const handleToggleExpand = useCallback((taskId: string) => {
+    setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
+  }, []);
+
+  const handleScrollToTask = useCallback((taskId: string) => {
+    const el = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      el.classList.add('bg-blue-500/10');
+      setTimeout(() => el.classList.remove('bg-blue-500/10'), 1000);
+    }
+  }, []);
+
+  // Pre-compute hover highlights
+  const hoveredTask = hoveredTaskId ? taskMap.get(hoveredTaskId) : null;
 
   return (
     <div className="border-t px-4 py-2">
-      <AnimatePresence>
-        {activeForm && !isCollapsed && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-1 flex items-center gap-2 text-xs text-blue-400"
-          >
-            <Loader2 className="size-(--size-icon-xs) shrink-0 animate-spin" />
-            <span className="truncate">{activeForm}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <TaskActiveForm activeForm={activeForm} isCollapsed={isCollapsed} />
 
-      <button
-        onClick={onToggleCollapse}
-        className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 text-xs"
-      >
-        {isCollapsed ? (
-          <ChevronRight className="size-(--size-icon-xs)" />
-        ) : (
-          <ChevronDown className="size-(--size-icon-xs)" />
-        )}
-        <ListTodo className="size-(--size-icon-xs)" />
-        <span>
-          {tasks.length} task{tasks.length !== 1 ? 's' : ''} ({done} done
-          {inProgress > 0 ? `, ${inProgress} in progress` : ''}, {open} open)
-          {overflow > 0 && ` +${overflow} more`}
-        </span>
-      </button>
+      <TaskProgressHeader
+        tasks={tasks}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={onToggleCollapse}
+      />
 
       <AnimatePresence>
         {!isCollapsed && (
@@ -79,62 +80,29 @@ export function TaskListPanel({
           >
             {visibleTasks.map((task) => {
               const isCelebrating = task.id === celebratingTaskId && task.status === 'completed';
+              const blocked = isTaskBlocked(task, taskMap);
+              const timestamp = statusTimestamps.get(task.id);
+
+              // Hover highlight computation
+              const isHighlightedAsDep = hoveredTask?.blockedBy?.includes(task.id) ?? false;
+              const isHighlightedAsDependent = hoveredTask?.blocks?.includes(task.id) ?? false;
 
               return (
-                <motion.li
+                <TaskRow
                   key={task.id}
-                  className={`relative flex items-center gap-2 py-0.5 text-xs ${
-                    task.status === 'completed'
-                      ? 'text-muted-foreground/50 line-through'
-                      : task.status === 'in_progress'
-                        ? 'text-foreground font-medium'
-                        : 'text-muted-foreground'
-                  }`}
-                  animate={
-                    isCelebrating
-                      ? {
-                          scale: [1, 1.05, 1],
-                        }
-                      : undefined
-                  }
-                  transition={
-                    isCelebrating ? { type: 'spring', stiffness: 400, damping: 10 } : undefined
-                  }
-                  onAnimationComplete={() => {
-                    if (isCelebrating) onCelebrationComplete?.();
-                  }}
-                >
-                  {/* Shimmer background for celebrating row */}
-                  {isCelebrating && (
-                    <motion.div
-                      aria-hidden="true"
-                      className="absolute inset-0 rounded"
-                      initial={{ backgroundPosition: '-200% 0' }}
-                      animate={{ backgroundPosition: '200% 0' }}
-                      transition={{ duration: 0.4, ease: 'easeOut' }}
-                      style={{
-                        backgroundImage:
-                          'linear-gradient(90deg, transparent 0%, rgba(255,215,0,0.2) 50%, transparent 100%)',
-                        backgroundSize: '200% 100%',
-                      }}
-                    />
-                  )}
-
-                  {/* Checkmark spring-pop */}
-                  {isCelebrating ? (
-                    <motion.span
-                      initial={{ scale: 1 }}
-                      animate={{ scale: [1, 1.4, 1] }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 10 }}
-                    >
-                      {STATUS_ICON[task.status]}
-                    </motion.span>
-                  ) : (
-                    STATUS_ICON[task.status]
-                  )}
-
-                  <span className="truncate">{task.subject}</span>
-                </motion.li>
+                  task={task}
+                  isBlocked={blocked}
+                  isExpanded={expandedTaskId === task.id}
+                  onToggleExpand={() => handleToggleExpand(task.id)}
+                  onHover={setHoveredTaskId}
+                  isHighlightedAsDep={isHighlightedAsDep}
+                  isHighlightedAsDependent={isHighlightedAsDependent}
+                  taskMap={taskMap}
+                  statusSince={timestamp?.since ?? null}
+                  isCelebrating={isCelebrating}
+                  onCelebrationComplete={onCelebrationComplete}
+                  onScrollToTask={handleScrollToTask}
+                />
               );
             })}
           </motion.ul>
