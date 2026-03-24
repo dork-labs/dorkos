@@ -57,6 +57,7 @@ export {
   QUERY_TIMING,
   CELEBRATIONS,
   TIME_UNITS,
+  SSE_RESILIENCE,
 } from './constants';
 export type { FileEntry } from './file-types';
 export { createChannel, type Channel } from './broadcast-channel';

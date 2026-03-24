@@ -1,10 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-
-/** Number of consecutive errors before the connection is considered fully disconnected. */
-const DISCONNECTED_THRESHOLD = 3;
-
-export type RelayConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+import type { ConnectionState } from '@dorkos/shared/types';
+import { useSSEConnection } from '@/layers/shared/model';
 
 /**
  * Connect to the Relay SSE event stream and inject incoming messages into the query cache.
@@ -16,52 +13,26 @@ export type RelayConnectionState = 'connected' | 'reconnecting' | 'disconnected'
 export function useRelayEventStream(
   enabled: boolean,
   pattern?: string
-): { connectionState: RelayConnectionState; failedAttempts: number } {
+): { connectionState: ConnectionState; failedAttempts: number } {
   const queryClient = useQueryClient();
-  const [connectionState, setConnectionState] = useState<RelayConnectionState>('connected');
-  const [failedAttempts, setFailedAttempts] = useState(0);
 
-  useEffect(() => {
-    if (!enabled) return;
-
-    const params = pattern ? `?subject=${encodeURIComponent(pattern)}` : '';
-    const source = new EventSource(`/api/relay/stream${params}`);
-
-    source.onopen = () => {
-      setConnectionState('connected');
-      setFailedAttempts(0);
-    };
-
-    source.onerror = () => {
-      setFailedAttempts((prev) => {
-        const next = prev + 1;
-        setConnectionState(next >= DISCONNECTED_THRESHOLD ? 'disconnected' : 'reconnecting');
-        return next;
-      });
-    };
-
-    source.addEventListener('relay_message', (e) => {
-      try {
-        JSON.parse(e.data); // validate parseable
-        // Invalidate conversations — the buildConversations() server function
-        // handles grouping, so we let TanStack Query refetch the structured data
+  const eventHandlers = useMemo(
+    () => ({
+      relay_message: () => {
         queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] });
-      } catch {
-        console.warn('[Relay] Failed to parse relay_message event:', e.data);
-      }
-    });
-
-    source.addEventListener('relay_delivery', (e) => {
-      try {
-        JSON.parse(e.data); // validate parseable
+      },
+      relay_delivery: () => {
         queryClient.invalidateQueries({ queryKey: ['relay', 'conversations'] });
-      } catch {
-        console.warn('[Relay] Failed to parse relay_delivery event:', e.data);
-      }
-    });
+      },
+    }),
+    [queryClient]
+  );
 
-    return () => source.close();
-  }, [enabled, pattern, queryClient]);
+  const url = enabled
+    ? `/api/relay/stream${pattern ? `?subject=${encodeURIComponent(pattern)}` : ''}`
+    : null;
+
+  const { connectionState, failedAttempts } = useSSEConnection(url, { eventHandlers });
 
   return { connectionState, failedAttempts };
 }

@@ -41,6 +41,25 @@ export const TIMING = {
   SYSTEM_STATUS_DISMISS_MS: 4_000,
 } as const;
 
+export const SSE_RESILIENCE = {
+  /** Client heartbeat watchdog timeout — 3x server heartbeat interval (ms). */
+  HEARTBEAT_TIMEOUT_MS: 45_000,
+  /** Exponential backoff base delay (ms). */
+  BACKOFF_BASE_MS: 500,
+  /** Exponential backoff maximum delay (ms). */
+  BACKOFF_CAP_MS: 30_000,
+  /** Grace period before closing SSE when tab is hidden (ms). */
+  VISIBILITY_GRACE_MS: 30_000,
+  /** Consecutive failures before entering 'disconnected' state. */
+  DISCONNECTED_THRESHOLD: 5,
+  /** Delay before auto-retrying a failed POST chat stream (ms). */
+  POST_RETRY_DELAY_MS: 2_000,
+  /** Maximum auto-retries for transient POST stream failures. */
+  POST_MAX_RETRIES: 1,
+  /** Time connected before resetting failure counter (ms). */
+  STABILITY_WINDOW_MS: 10_000,
+} as const;
+
 /** Time conversion constants (milliseconds). */
 export const TIME_UNITS = {
   MS_PER_MINUTE: 60_000,

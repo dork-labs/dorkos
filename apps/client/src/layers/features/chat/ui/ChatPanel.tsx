@@ -126,6 +126,9 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     promptSuggestions,
     presenceInfo,
     presencePulse,
+    syncConnectionState,
+    syncFailedAttempts,
+    retryMessage,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
@@ -215,6 +218,14 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
       submitContent(lastUserMsg.content);
     }
   }, [messages, submitContent]);
+
+  /** Retry the last user message after a transport-level POST stream failure. */
+  const handleTransportRetry = useCallback(() => {
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+    if (lastUserMsg?.content) {
+      retryMessage(lastUserMsg.content);
+    }
+  }, [messages, retryMessage]);
 
   const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 
@@ -413,7 +424,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
             message={error.message}
             heading={error.heading}
             subtext={error.message}
-            onRetry={error.retryable ? handleRetry : undefined}
+            onRetry={error.retryable ? handleTransportRetry : undefined}
           />
         </div>
       )}
@@ -449,6 +460,8 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         onToolRef={handleToolRef}
         onToolDecided={markToolCallResponded}
         runningAgents={runningAgents}
+        syncConnectionState={syncConnectionState}
+        syncFailedAttempts={syncFailedAttempts}
       />
     </div>
   );

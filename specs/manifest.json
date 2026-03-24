@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 176,
+  "nextNumber": 177,
   "specs": [
+    {
+      "number": 176,
+      "slug": "friendly-tool-name-display",
+      "title": "Friendly Tool Name Display in ToolApproval",
+      "created": "2026-03-24",
+      "status": "specified"
+    },
     {
       "number": 175,
       "slug": "relay-outbound-awareness",

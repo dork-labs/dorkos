@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { PanInfo } from 'motion/react';
-import type { SessionStatusEvent, PresenceUpdateEvent } from '@dorkos/shared/types';
+import type {
+  SessionStatusEvent,
+  PresenceUpdateEvent,
+  ConnectionState,
+} from '@dorkos/shared/types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIsMobile, useAppStore, useTransport } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
@@ -22,6 +26,7 @@ import {
   TunnelItem,
   VersionItem,
   ClientsItem,
+  ConnectionItem,
   useGitStatus,
 } from '@/layers/features/status';
 
@@ -32,6 +37,10 @@ interface ChatStatusSectionProps {
   onChipClick: (trigger: string) => void;
   presenceInfo: PresenceUpdateEvent | null;
   presencePulse: boolean;
+  /** SSE sync connection state for the ConnectionItem indicator. */
+  syncConnectionState: ConnectionState;
+  /** Number of failed reconnection attempts. */
+  syncFailedAttempts: number;
 }
 
 const SWIPE_THRESHOLD = 80;
@@ -51,6 +60,8 @@ export function ChatStatusSection({
   onChipClick,
   presenceInfo,
   presencePulse,
+  syncConnectionState,
+  syncFailedAttempts,
 }: ChatStatusSectionProps) {
   const isMobile = useIsMobile();
 
@@ -205,6 +216,7 @@ export function ChatStatusSection({
           />
         )}
       </StatusLine.Item>
+      <ConnectionItem connectionState={syncConnectionState} failedAttempts={syncFailedAttempts} />
       <StatusLine.Item itemKey="clients" visible={!!presenceInfo && presenceInfo.clientCount > 1}>
         {presenceInfo && (
           <ClientsItem

@@ -111,6 +111,8 @@ const baseProps = {
   onToolRef: vi.fn(),
   onToolDecided: vi.fn(),
   runningAgents: [],
+  syncConnectionState: 'connected' as const,
+  syncFailedAttempts: 0,
 };
 
 afterEach(() => {

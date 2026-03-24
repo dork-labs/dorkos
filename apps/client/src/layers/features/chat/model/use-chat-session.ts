@@ -6,8 +6,13 @@ import type {
   PresenceUpdateEvent,
   HookPart,
 } from '@dorkos/shared/types';
-import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
-import { QUERY_TIMING, TIMING } from '@/layers/shared/lib';
+import {
+  useTransport,
+  useAppStore,
+  useTabVisibility,
+  useSSEConnection,
+} from '@/layers/shared/model';
+import { QUERY_TIMING, TIMING, SSE_RESILIENCE } from '@/layers/shared/lib';
 import { insertOptimisticSession } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import type { ChatMessage, ChatSessionOptions, TransportErrorInfo } from './chat-types';
@@ -127,6 +132,9 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const messagesRef = useRef<ChatMessage[]>(messages);
   // Tracks the optimistic user message ID so it can be removed on error
   const pendingUserIdRef = useRef<string | null>(null);
+  // Tracks auto-retry attempts for transient POST stream failures
+  const retryCountRef = useRef<number>(0);
+
   // Signals that a sessionId change is a server remap (not user navigation).
   // Set synchronously in the done handler BEFORE onSessionIdChange fires,
   // so the session change effect can skip clearing messages.
@@ -283,47 +291,48 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     }
   }, [historyQuery.data, isStreaming]);
 
-  // Persistent SSE connection for session sync updates.
-  // Closes during streaming since SSE events arrive inline on the POST response.
-  useEffect(() => {
-    if (!sessionId) return;
-    if (isStreaming) return;
-    if (!enableCrossClientSync) return;
-
+  // Build sync URL (null when streaming or sync disabled)
+  const syncUrl = useMemo(() => {
+    if (!sessionId || isStreaming || !enableCrossClientSync) return null;
     const clientIdParam = transport.clientId
       ? `?clientId=${encodeURIComponent(transport.clientId)}`
       : '';
-    const url = `/api/sessions/${sessionId}/stream${clientIdParam}`;
-    const eventSource = new EventSource(url);
+    return `/api/sessions/${sessionId}/stream${clientIdParam}`;
+  }, [sessionId, isStreaming, enableCrossClientSync, transport.clientId]);
 
-    eventSource.addEventListener('sync_update', () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', sessionId, selectedCwdRef.current] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', sessionId, selectedCwdRef.current] });
+  const syncEventHandlers = useMemo(
+    () => ({
+      sync_update: () => {
+        queryClient.invalidateQueries({
+          queryKey: ['messages', sessionId, selectedCwdRef.current],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ['tasks', sessionId, selectedCwdRef.current],
+        });
 
-      // Pulse the presence badge when another client's change arrives
-      if (presenceInfoRef.current && presenceInfoRef.current.clientCount > 1) {
-        setPresencePulse(true);
-        if (presencePulseTimerRef.current) clearTimeout(presencePulseTimerRef.current);
-        presencePulseTimerRef.current = setTimeout(() => {
-          setPresencePulse(false);
-          presencePulseTimerRef.current = null;
-        }, 1000);
-      }
-    });
+        // Pulse the presence badge when another client's change arrives
+        if (presenceInfoRef.current && presenceInfoRef.current.clientCount > 1) {
+          setPresencePulse(true);
+          if (presencePulseTimerRef.current) clearTimeout(presencePulseTimerRef.current);
+          presencePulseTimerRef.current = setTimeout(() => {
+            setPresencePulse(false);
+            presencePulseTimerRef.current = null;
+          }, 1000);
+        }
+      },
+      presence_update: (data: unknown) => {
+        try {
+          setPresenceInfo(data as PresenceUpdateEvent);
+        } catch {
+          /* ignore malformed */
+        }
+      },
+    }),
+    [sessionId, queryClient]
+  );
 
-    eventSource.addEventListener('presence_update', (e) => {
-      try {
-        const data = JSON.parse(e.data) as PresenceUpdateEvent;
-        setPresenceInfo(data);
-      } catch {
-        // Ignore malformed presence events
-      }
-    });
-
-    return () => {
-      eventSource.close();
-    };
-  }, [sessionId, isStreaming, queryClient, transport.clientId, enableCrossClientSync]);
+  const { connectionState: syncConnectionState, failedAttempts: syncFailedAttempts } =
+    useSSEConnection(syncUrl, { eventHandlers: syncEventHandlers });
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -332,6 +341,15 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       if (systemStatusTimerRef.current) clearTimeout(systemStatusTimerRef.current);
       if (presencePulseTimerRef.current) clearTimeout(presencePulseTimerRef.current);
     };
+  }, []);
+
+  /** Reset text-streaming and rate-limit state after a stream ends or fails. */
+  const resetStreamingState = useCallback(() => {
+    if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
+    isTextStreamingRef.current = false;
+    setIsTextStreaming(false);
+    setIsRateLimited(false);
+    setRateLimitRetryAfter(null);
   }, []);
 
   /**
@@ -382,6 +400,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       setStatus('streaming');
       statusRef.current = 'streaming'; // Sync ref immediately — closes the timing window where sync_update could invalidate stale history
       setError(null);
+      retryCountRef.current = 0; // Reset auto-retry counter for each new submission
       currentPartsRef.current = [];
       const streamStart = Date.now();
       streamStartTimeRef.current = streamStart;
@@ -411,36 +430,125 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         pendingUserIdRef.current = null;
         setStatus('idle');
       } catch (err) {
-        // Remove optimistic user message on error — must not linger if delivery fails
+        // Abort is not an error — user cancelled intentionally
+        if ((err as Error).name === 'AbortError') {
+          resetStreamingState();
+          return;
+        }
+
+        const errorInfo = classifyTransportError(err);
+
+        // Session locked — restore input and show auto-dismissing banner
+        if ((err as { code?: string }).code === 'SESSION_LOCKED') {
+          // Remove optimistic user message — delivery was rejected
+          if (pendingUserIdRef.current) {
+            const failedId = pendingUserIdRef.current;
+            setMessages((prev) => prev.filter((m) => m.id !== failedId));
+            pendingUserIdRef.current = null;
+          }
+          setSessionBusy(true);
+          setError(errorInfo);
+          if (clearInput) setInput(restoreContentOnLock);
+          if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
+          sessionBusyTimerRef.current = setTimeout(() => {
+            setSessionBusy(false);
+            setError(null);
+            sessionBusyTimerRef.current = null;
+          }, TIMING.SESSION_BUSY_CLEAR_MS);
+          setStatus('error');
+          resetStreamingState();
+          return;
+        }
+
+        // Retryable transient error — auto-retry once before surfacing to user.
+        // Only auto-retry if no events were received yet (connection failed before
+        // streaming started). If events already arrived, the server-side session
+        // state has been modified — retrying would send a duplicate message. In that
+        // case, preserve the partial response and let the user decide via the Retry button.
+        const hasPartialResponse = assistantCreatedRef.current;
+        if (
+          errorInfo.retryable &&
+          !hasPartialResponse &&
+          retryCountRef.current < SSE_RESILIENCE.POST_MAX_RETRIES
+        ) {
+          retryCountRef.current += 1;
+          // Show transient "retrying" banner — keep any partial assistant response visible
+          setError({
+            heading: 'Connection interrupted',
+            message: 'Retrying…',
+            retryable: false,
+          });
+
+          // Wait before retry attempt
+          await new Promise((resolve) => setTimeout(resolve, SSE_RESILIENCE.POST_RETRY_DELAY_MS));
+
+          try {
+            // Re-attempt with same args — reuse the existing abort controller
+            const retryContent = transformContentRef.current
+              ? await transformContentRef.current(content)
+              : content;
+
+            await transport.sendMessage(
+              targetSessionId,
+              retryContent,
+              (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
+              abortController.signal,
+              selectedCwdRef.current ?? undefined,
+              { clientMessageId: pendingUserIdRef.current ?? pendingUserId }
+            );
+
+            // Retry succeeded — clear error, reset counter, go idle
+            pendingUserIdRef.current = null;
+            retryCountRef.current = 0;
+            setError(null);
+            setStatus('idle');
+            resetStreamingState();
+            return;
+          } catch (retryErr) {
+            // Retry also failed — fall through to show error with retry button
+            if ((retryErr as Error).name === 'AbortError') {
+              resetStreamingState();
+              return;
+            }
+            // Remove optimistic user message only if it was never delivered
+            if (pendingUserIdRef.current) {
+              const failedId = pendingUserIdRef.current;
+              setMessages((prev) => prev.filter((m) => m.id !== failedId));
+              pendingUserIdRef.current = null;
+            }
+            setError(classifyTransportError(retryErr));
+            setStatus('error');
+            resetStreamingState();
+            return;
+          }
+        }
+
+        // Non-retryable error, retries exhausted, or mid-stream failure — show error banner.
+        // Remove optimistic user message only if it was never delivered
         if (pendingUserIdRef.current) {
           const failedId = pendingUserIdRef.current;
           setMessages((prev) => prev.filter((m) => m.id !== failedId));
           pendingUserIdRef.current = null;
         }
-        if ((err as Error).name !== 'AbortError') {
-          if ((err as { code?: string }).code === 'SESSION_LOCKED') {
-            setSessionBusy(true);
-            setError(classifyTransportError(err));
-            if (clearInput) setInput(restoreContentOnLock);
-            if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-            sessionBusyTimerRef.current = setTimeout(() => {
-              setSessionBusy(false);
-              setError(null);
-              sessionBusyTimerRef.current = null;
-            }, TIMING.SESSION_BUSY_CLEAR_MS);
-          } else {
-            setError(classifyTransportError(err));
-          }
-          setStatus('error');
-        }
-        if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
-        isTextStreamingRef.current = false;
-        setIsTextStreaming(false);
-        setIsRateLimited(false);
-        setRateLimitRetryAfter(null);
+
+        // Mid-stream interruption: override the error message to explain that the
+        // partial response is preserved and the user can retry manually.
+        const displayError =
+          hasPartialResponse && errorInfo.retryable
+            ? {
+                heading: 'Response interrupted',
+                message:
+                  'The connection was lost mid-response. The partial response is preserved above.',
+                retryable: true,
+              }
+            : errorInfo;
+
+        setError(displayError);
+        setStatus('error');
+        resetStreamingState();
       }
     },
-    [sessionId, transport, streamEventHandler, queryClient]
+    [sessionId, transport, streamEventHandler, queryClient, resetStreamingState]
   );
 
   const handleSubmit = useCallback(async () => {
@@ -464,13 +572,19 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
-    if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
-    isTextStreamingRef.current = false;
-    setIsTextStreaming(false);
-    setIsRateLimited(false);
-    setRateLimitRetryAfter(null);
+    resetStreamingState();
     setStatus('idle');
-  }, []);
+  }, [resetStreamingState]);
+
+  /** Retry a failed message submission, resetting the retry counter. */
+  const retryMessage = useCallback(
+    async (content: string) => {
+      setError(null);
+      retryCountRef.current = 0;
+      await executeSubmission(content, false, '');
+    },
+    [executeSubmission]
+  );
 
   /** Optimistically mark a tool call as responded (approved/denied/answered). */
   const markToolCallResponded = useCallback(
@@ -526,6 +640,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     error,
     sessionBusy,
     stop,
+    retryMessage,
     isLoadingHistory,
     sessionStatus,
     streamStartTime,
@@ -541,5 +656,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     promptSuggestions,
     presenceInfo,
     presencePulse,
+    syncConnectionState,
+    syncFailedAttempts,
   };
 }

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add SSE resilience infrastructure with connection health UI
 - Display friendly tool names in ToolApproval
 - Add relay outbound awareness for agent-initiated messaging
 

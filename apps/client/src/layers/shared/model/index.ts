@@ -21,3 +21,8 @@ export { useFeatureEnabled } from './use-feature-enabled';
 export { useNow } from './use-now';
 export { useAgentCreationStore } from './agent-creation-store';
 export { useTabVisibility } from './use-tab-visibility';
+export {
+  useSSEConnection,
+  type UseSSEConnectionOptions,
+  type UseSSEConnectionReturn,
+} from './use-sse-connection';

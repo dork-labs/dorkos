@@ -25,6 +25,11 @@ vi.mock('@/layers/shared/model', async () => {
     useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
       return selector ? selector(mockAppState) : mockAppState;
     },
+    useSSEConnection: () => ({
+      connectionState: 'connected' as const,
+      failedAttempts: 0,
+      lastEventAt: null,
+    }),
   };
 });
 

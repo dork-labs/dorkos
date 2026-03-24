@@ -11,6 +11,7 @@ import {
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
+import { SSE } from '../config/constants.js';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -305,6 +306,9 @@ router.get('/:id/stream', async (req, res) => {
 
   initSSEStream(res);
 
+  // Send retry hint so EventSource uses a reasonable reconnection delay
+  res.write('retry: 3000\n\n');
+
   // Translate agent session ID to backend-internal session ID so the broadcaster
   // watches the correct .jsonl file on disk (filename matches internal ID, not agent ID).
   // Falls back to sessionId if no mapping exists (e.g. CLI-started sessions).
@@ -314,15 +318,35 @@ router.get('/:id/stream', async (req, res) => {
   // Send initial connection event
   sendSSEEvent(res, { type: 'sync_connected', data: { sessionId } });
 
-  // Watch session via runtime interface — callback writes events to SSE stream
+  // Periodic heartbeat — named event so the client watchdog can detect it
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write('event: heartbeat\ndata: {}\n\n');
+    } catch {
+      clearInterval(heartbeatInterval);
+    }
+  }, SSE.HEARTBEAT_INTERVAL_MS);
+
+  // Watch session — add event IDs for future Last-Event-ID support
   const unsubscribe = runtime.watchSession(
     internalSessionId,
     cwd,
-    (event) => sendSSEEvent(res, event),
+    (event) => {
+      const eventId = `${sessionId}-${Date.now()}`;
+      const payload = `id: ${eventId}\nevent: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
+      try {
+        res.write(payload);
+      } catch {
+        // Connection may be closed
+      }
+    },
     clientId
   );
 
-  res.on('close', () => unsubscribe());
+  res.on('close', () => {
+    clearInterval(heartbeatInterval);
+    unsubscribe();
+  });
 });
 
 export default router;

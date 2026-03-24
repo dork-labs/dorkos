@@ -16,5 +16,6 @@ export { PollingItem } from './ui/PollingItem';
 export { TunnelItem } from './ui/TunnelItem';
 export { VersionItem } from './ui/VersionItem';
 export { ClientsItem } from './ui/ClientsItem';
+export { ConnectionItem } from './ui/ConnectionItem';
 export { useGitStatus } from './model/use-git-status';
 export { isNewer, isFeatureUpdate } from './lib/version-compare';

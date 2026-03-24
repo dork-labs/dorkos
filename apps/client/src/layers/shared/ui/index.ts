@@ -155,6 +155,7 @@ export { Skeleton } from './skeleton';
 export { Textarea } from './textarea';
 export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
+export { ConnectionStatusBanner } from './ConnectionStatusBanner';
 export { FeatureDisabledState } from './FeatureDisabledState';
 export { MarkdownContent } from './markdown-content';
 export {

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useDropzone } from 'react-dropzone';
 import type { RefObject } from 'react';
-import type { SessionStatusEvent, PresenceUpdateEvent } from '@dorkos/shared/types';
+import type {
+  SessionStatusEvent,
+  PresenceUpdateEvent,
+  ConnectionState,
+} from '@dorkos/shared/types';
 import type { ToolCallState } from '../model/chat-types';
 import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
@@ -75,6 +79,10 @@ interface ChatInputContainerProps {
   onToolDecided: (toolCallId: string) => void;
   /** Running background agents to display in the indicator. */
   runningAgents: RunningAgent[];
+  /** SSE sync connection state for the ConnectionItem indicator. */
+  syncConnectionState: ConnectionState;
+  /** Number of failed reconnection attempts. */
+  syncFailedAttempts: number;
 }
 
 /** Container for chat input, autocomplete palettes, drag-and-drop, and status chips. */
@@ -109,6 +117,8 @@ export function ChatInputContainer({
   onToolRef,
   onToolDecided,
   runningAgents,
+  syncConnectionState,
+  syncFailedAttempts,
 }: ChatInputContainerProps) {
   const mode = activeInteraction ? 'interactive' : 'normal';
   const isStreaming = status === 'streaming';
@@ -318,6 +328,8 @@ export function ChatInputContainer({
               onChipClick={autocomplete.handleChipClick}
               presenceInfo={presenceInfo}
               presencePulse={presencePulse}
+              syncConnectionState={syncConnectionState}
+              syncFailedAttempts={syncFailedAttempts}
             />
           </motion.div>
         )}

@@ -31,6 +31,8 @@ export const SSE = {
   MAX_CLIENTS_PER_SESSION: 10,
   /** Max total SSE clients across all sessions. */
   MAX_TOTAL_CLIENTS: 500,
+  /** Server keepalive interval for SSE connections (ms). */
+  HEARTBEAT_INTERVAL_MS: 15_000,
 } as const;
 
 export const SESSIONS = {

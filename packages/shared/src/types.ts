@@ -131,3 +131,6 @@ export type {
   CreateAgentRequest,
   HeartbeatRequest,
 } from './mesh-schemas.js';
+
+/** SSE connection health state. */
+export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';

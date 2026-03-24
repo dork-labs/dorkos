@@ -185,7 +185,7 @@ describe('POST chat stream retry logic', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('preserves partial assistant message parts after a streaming error', async () => {
+  it('does NOT auto-retry when events were already received (mid-stream failure)', async () => {
     (mockTransport.sendMessage as Mock).mockImplementation(
       async (
         _sessionId: string,
@@ -212,12 +212,17 @@ describe('POST chat stream retry logic', () => {
       await promise;
     });
 
-    // After both attempts fail, the assistant message with partial content should remain.
-    // The retry logic does NOT discard partial assistant messages — only the pending
-    // user message is removed on final failure.
+    // Should NOT auto-retry — events were already received, retrying would duplicate
+    expect(mockTransport.sendMessage).toHaveBeenCalledTimes(1);
+
+    // Partial assistant message should be preserved
     const assistantMessages = result.current.messages.filter((m) => m.role === 'assistant');
     expect(assistantMessages.length).toBeGreaterThanOrEqual(1);
+
+    // Error banner should explain the mid-stream interruption
     expect(result.current.status).toBe('error');
+    expect(result.current.error?.heading).toBe('Response interrupted');
+    expect(result.current.error?.retryable).toBe(true);
   });
 
   it('retryMessage clears error, resets retry counter, and re-submits', async () => {
