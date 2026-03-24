@@ -38,10 +38,12 @@ vi.mock('@/layers/entities/command/model/use-commands', () => ({
 vi.mock('../model/use-task-state', () => ({
   useTaskState: () => ({
     tasks: [],
+    taskMap: new Map(),
     activeForm: null,
     isCollapsed: true,
     toggleCollapse: vi.fn(),
     handleTaskEvent: vi.fn(),
+    statusTimestamps: new Map(),
   }),
 }));
 

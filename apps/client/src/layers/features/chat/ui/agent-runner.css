@@ -1,0 +1,200 @@
+/* === V3D Running Figure Keyframes === */
+
+/* Body bounce — whole figure translateY + subtle rotate */
+.r-all {
+  animation: r-bounce 0.36s ease-in-out infinite;
+  transform-origin: 11px 12px;
+}
+@keyframes r-bounce {
+  0% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  25% {
+    transform: translateY(1px) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-1.5px) rotate(1deg);
+  }
+  75% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+/* Right leg — thigh and shin */
+.r-rt {
+  animation: r-rt 0.36s ease-in-out infinite;
+  transform-origin: 11px 14px;
+}
+.r-rs {
+  animation: r-rs 0.36s ease-in-out infinite;
+  transform-origin: 13px 17px;
+}
+@keyframes r-rt {
+  0% {
+    transform: rotate(-32deg);
+  }
+  25% {
+    transform: rotate(2deg);
+  }
+  50% {
+    transform: rotate(28deg);
+  }
+  75% {
+    transform: rotate(8deg);
+  }
+}
+@keyframes r-rs {
+  0% {
+    transform: rotate(8deg);
+  }
+  25% {
+    transform: rotate(-28deg);
+  }
+  50% {
+    transform: rotate(-8deg);
+  }
+  75% {
+    transform: rotate(-38deg);
+  }
+}
+
+/* Left leg — thigh and shin (opposite phase) */
+.r-lt {
+  animation: r-lt 0.36s ease-in-out infinite;
+  transform-origin: 11px 14px;
+}
+.r-ls {
+  animation: r-ls 0.36s ease-in-out infinite;
+  transform-origin: 9px 17px;
+}
+@keyframes r-lt {
+  0% {
+    transform: rotate(28deg);
+  }
+  25% {
+    transform: rotate(8deg);
+  }
+  50% {
+    transform: rotate(-32deg);
+  }
+  75% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes r-ls {
+  0% {
+    transform: rotate(-8deg);
+  }
+  25% {
+    transform: rotate(-38deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+  75% {
+    transform: rotate(-28deg);
+  }
+}
+
+/* Right arm — upper arm and forearm */
+.r-rua {
+  animation: r-rua 0.36s ease-in-out infinite;
+  transform-origin: 12px 9px;
+}
+.r-rfa {
+  animation: r-rfa 0.36s ease-in-out infinite;
+  transform-origin: 14px 11px;
+}
+@keyframes r-rua {
+  0% {
+    transform: rotate(28deg);
+  }
+  50% {
+    transform: rotate(-22deg);
+  }
+}
+@keyframes r-rfa {
+  0% {
+    transform: rotate(12deg);
+  }
+  50% {
+    transform: rotate(-15deg);
+  }
+}
+
+/* Left arm — upper arm and forearm (opposite phase) */
+.r-lua {
+  animation: r-lua 0.36s ease-in-out infinite;
+  transform-origin: 10px 9px;
+}
+.r-lfa {
+  animation: r-lfa 0.36s ease-in-out infinite;
+  transform-origin: 8px 11px;
+}
+@keyframes r-lua {
+  0% {
+    transform: rotate(-22deg);
+  }
+  50% {
+    transform: rotate(28deg);
+  }
+}
+@keyframes r-lfa {
+  0% {
+    transform: rotate(-15deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+
+/* === Completion Celebration === */
+
+/* Checkmark scale-in */
+.check-appear {
+  animation: check-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+@keyframes check-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Particle burst */
+@keyframes burst-particle {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--bx), var(--by)) scale(0);
+    opacity: 0;
+  }
+}
+
+/* === Reduced Motion === */
+
+@media (prefers-reduced-motion: reduce) {
+  .r-all,
+  .r-rt,
+  .r-rs,
+  .r-lt,
+  .r-ls,
+  .r-rua,
+  .r-rfa,
+  .r-lua,
+  .r-lfa {
+    animation: none;
+  }
+
+  .check-appear {
+    animation: none;
+    opacity: 1;
+    transform: scale(1);
+  }
+}

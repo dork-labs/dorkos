@@ -9,13 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rebuild TaskListPanel with progress bar, deps, and expand
+- Add animated background agent indicator with running figures
+
 ### Changed
 
+- Extract useTabVisibility to shared model
+- Extract TaskActiveForm component
 - Add task list 10x implementation plan
 - Add task list 10x design spec
 
 ### Fixed
 
+- Fix indicator bar exit animation and always-render pattern
+- Move useCallback hooks before early return in TaskListPanel
 ---
 
 ## [0.22.0] - 2026-03-23

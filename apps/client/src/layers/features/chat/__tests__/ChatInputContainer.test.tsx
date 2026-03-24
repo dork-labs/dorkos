@@ -110,6 +110,7 @@ const baseProps = {
   focusedOptionIndex: 0,
   onToolRef: vi.fn(),
   onToolDecided: vi.fn(),
+  runningAgents: [],
 };
 
 afterEach(() => {

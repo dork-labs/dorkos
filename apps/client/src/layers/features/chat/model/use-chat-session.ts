@@ -6,7 +6,7 @@ import type {
   PresenceUpdateEvent,
   HookPart,
 } from '@dorkos/shared/types';
-import { useTransport, useAppStore } from '@/layers/shared/model';
+import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
 import { QUERY_TIMING, TIMING } from '@/layers/shared/lib';
 import { insertOptimisticSession } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
@@ -123,7 +123,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const presenceInfoRef = useRef<PresenceUpdateEvent | null>(null);
   const presencePulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCwdRef = useRef(selectedCwd);
-  const [isTabVisible, setIsTabVisible] = useState(!document.hidden);
+  const isTabVisible = useTabVisibility();
   const messagesRef = useRef<ChatMessage[]>(messages);
   // Tracks the optimistic user message ID so it can be removed on error
   const pendingUserIdRef = useRef<string | null>(null);
@@ -142,17 +142,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   useEffect(() => {
     presenceInfoRef.current = presenceInfo;
   }, [presenceInfo]);
-
-  // Track tab visibility for adaptive polling interval
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      setIsTabVisible(!document.hidden);
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
   const isStreaming = status === 'streaming';
   // Keep status in a ref so the sync_update handler sees current status without a stale closure

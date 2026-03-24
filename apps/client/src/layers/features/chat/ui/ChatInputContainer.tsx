@@ -7,6 +7,8 @@ import type { ToolCallState } from '../model/chat-types';
 import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
 import { ChatStatusSection } from './ChatStatusSection';
+import { RunningAgentIndicator } from './RunningAgentIndicator';
+import type { RunningAgent } from '../model/use-running-subagents';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
 import { ToolApproval } from './ToolApproval';
@@ -71,6 +73,8 @@ interface ChatInputContainerProps {
   onToolRef: (handle: InteractiveToolHandle | null) => void;
   /** Called after the user approves/denies/submits to clear waiting state. */
   onToolDecided: (toolCallId: string) => void;
+  /** Running background agents to display in the indicator. */
+  runningAgents: RunningAgent[];
 }
 
 /** Container for chat input, autocomplete palettes, drag-and-drop, and status chips. */
@@ -104,6 +108,7 @@ export function ChatInputContainer({
   focusedOptionIndex,
   onToolRef,
   onToolDecided,
+  runningAgents,
 }: ChatInputContainerProps) {
   const mode = activeInteraction ? 'interactive' : 'normal';
   const isStreaming = status === 'streaming';
@@ -264,6 +269,8 @@ export function ChatInputContainer({
               onEdit={onQueueEdit}
               onRemove={onQueueRemove}
             />
+
+            <RunningAgentIndicator agents={runningAgents} />
 
             <ChatInput
               ref={chatInputRef}

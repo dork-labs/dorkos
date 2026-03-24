@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChatSession } from '../model/use-chat-session';
+import { useRunningSubagents } from '../model/use-running-subagents';
 import { useMessageQueue } from '../model/use-message-queue';
 import { useCommands } from '@/layers/entities/command';
 import { useTaskState } from '../model/use-task-state';
@@ -139,6 +140,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     }, [enableNotificationSound, queryClient]),
   });
   const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
+  const runningAgents = useRunningSubagents(messages);
 
   const { handleToolRef, focusedOptionIndex } = useToolShortcuts(activeInteraction);
   const { isAtBottom, hasNewMessages, scrollToBottom, handleScrollStateChange } = useScrollOverlay(
@@ -396,11 +398,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
       <TaskListPanel
         tasks={taskState.tasks}
+        taskMap={taskState.taskMap}
         activeForm={taskState.activeForm}
         isCollapsed={taskState.isCollapsed}
         onToggleCollapse={taskState.toggleCollapse}
         celebratingTaskId={celebrations.celebratingTaskId}
         onCelebrationComplete={celebrations.clearCelebration}
+        statusTimestamps={taskState.statusTimestamps}
       />
 
       {error && (
@@ -444,6 +448,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         focusedOptionIndex={focusedOptionIndex}
         onToolRef={handleToolRef}
         onToolDecided={markToolCallResponded}
+        runningAgents={runningAgents}
       />
     </div>
   );
