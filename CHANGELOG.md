@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extract useTabVisibility to shared model
 - Extract TaskActiveForm component
 - Add task list 10x implementation plan
 - Add task list 10x design spec
