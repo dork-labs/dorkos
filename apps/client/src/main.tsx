@@ -5,6 +5,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
 import { HttpTransport, QUERY_TIMING } from '@/layers/shared/lib';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { PasscodeGateWrapper } from '@/layers/features/tunnel-gate';
 import './index.css';
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
@@ -39,7 +40,9 @@ function Root() {
   return (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <RouterProvider router={router} />
+        <PasscodeGateWrapper>
+          <RouterProvider router={router} />
+        </PasscodeGateWrapper>
       </TransportProvider>
       {import.meta.env.DEV && <DevtoolsToggle />}
     </QueryClientProvider>
@@ -55,7 +58,20 @@ const queryClient = new QueryClient({
   },
 });
 
-const transport = new HttpTransport('/api');
+/**
+ * Detect Electron environment and resolve the API base URL.
+ * In Electron, the server runs on a dynamic localhost port exposed via preload.
+ * In web mode, use the relative /api path (proxied by Vite or served directly).
+ */
+function getApiBaseUrl(): string {
+  if (window.electronAPI?.getServerPort) {
+    const port = window.electronAPI.getServerPort();
+    return `http://localhost:${port}/api`;
+  }
+  return '/api';
+}
+
+const transport = new HttpTransport(getApiBaseUrl());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

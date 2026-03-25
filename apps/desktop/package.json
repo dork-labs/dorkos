@@ -1,0 +1,32 @@
+{
+  "name": "@dorkos/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "@dorkos/server": "workspace:*",
+    "@dorkos/shared": "workspace:*",
+    "@dorkos/db": "workspace:*",
+    "electron-updater": "^6.3.0",
+    "electron-log": "^5.2.0"
+  },
+  "devDependencies": {
+    "@dorkos/client": "workspace:*",
+    "electron": "^33.0.0",
+    "electron-vite": "^3.0.0",
+    "electron-builder": "^26.0.0",
+    "@electron/rebuild": "^3.7.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}

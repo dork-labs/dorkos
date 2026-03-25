@@ -1,0 +1,37 @@
+appId: com.dorkos.desktop
+productName: DorkOS
+directories:
+  output: release
+  buildResources: build
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - universal
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  icon: build/icon.icns
+
+dmg:
+  sign: false
+  artifactName: DorkOS-${version}-${arch}.dmg
+
+publish:
+  provider: github
+  owner: dorkos
+  repo: core
+
+asar: true
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk/**'
+
+extraResources:
+  - from: '../server/node_modules/better-sqlite3'
+    to: 'node_modules/better-sqlite3'
+
+npmRebuild: true
