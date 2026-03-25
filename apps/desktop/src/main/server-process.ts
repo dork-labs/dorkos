@@ -1,8 +1,21 @@
 import { utilityProcess, BrowserWindow, dialog, app } from 'electron';
+import { fork, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 
-let child: Electron.UtilityProcess | null = null;
+/**
+ * Unified interface for server child process, abstracting the difference
+ * between Electron UtilityProcess (production) and child_process.fork (dev).
+ */
+interface ServerChild {
+  on(event: 'message', handler: (msg: unknown) => void): void;
+  on(event: 'exit', handler: (code: number | null) => void): void;
+  off(event: 'exit', handler: (code: number | null) => void): void;
+  send(msg: unknown): void;
+  kill(): void;
+}
+
+let child: ServerChild | null = null;
 let serverPort: number | null = null;
 
 /** Find a free port by binding to port 0 and immediately releasing it. */
@@ -18,7 +31,77 @@ async function getFreePort(): Promise<number> {
 }
 
 /**
- * Spawn the Express server in an Electron UtilityProcess.
+ * Wrap an Electron UtilityProcess to conform to the ServerChild interface.
+ * UtilityProcess uses postMessage/on('message') with MessageEvent.
+ */
+function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
+  return {
+    on(event: string, handler: (...args: unknown[]) => void) {
+      proc.on(event as 'exit', handler as (code: number) => void);
+    },
+    off(event: string, handler: (...args: unknown[]) => void) {
+      proc.off(event as 'exit', handler as (code: number) => void);
+    },
+    send(msg: unknown) {
+      proc.postMessage(msg);
+    },
+    kill() {
+      proc.kill();
+    },
+  };
+}
+
+/**
+ * Wrap a Node.js ChildProcess to conform to the ServerChild interface.
+ * ChildProcess uses send/on('message') with direct message objects.
+ */
+function wrapChildProcess(proc: ChildProcess): ServerChild {
+  return {
+    on(event: string, handler: (...args: unknown[]) => void) {
+      proc.on(event, handler as (...args: unknown[]) => void);
+    },
+    off(event: string, handler: (...args: unknown[]) => void) {
+      proc.off(event, handler as (...args: unknown[]) => void);
+    },
+    send(msg: unknown) {
+      proc.send!(msg);
+    },
+    kill() {
+      proc.kill();
+    },
+  };
+}
+
+/**
+ * Spawn the server process.
+ *
+ * In production (packaged app): uses Electron UtilityProcess (Electron's Node runtime).
+ * electron-builder rebuilds native modules for Electron's ABI during packaging.
+ *
+ * In development: uses child_process.fork (system Node runtime).
+ * This avoids ABI mismatch — the shared better-sqlite3 binary stays compiled
+ * for system Node, so both `pnpm dev` (server) and `pnpm dev:desktop` work.
+ */
+function spawnServer(entryPath: string, env: Record<string, string>): ServerChild {
+  if (app.isPackaged) {
+    return wrapUtilityProcess(
+      utilityProcess.fork(entryPath, [], { env: { ...process.env, ...env } })
+    );
+  }
+
+  // Dev mode: use system Node via child_process.fork.
+  // The entry file is TypeScript — use tsx to run it.
+  const tsxBin = path.resolve(__dirname, '../../../../node_modules/.bin/tsx');
+  const cp = fork(entryPath.replace('.js', '.ts'), [], {
+    execPath: tsxBin,
+    env: { ...process.env, ...env },
+    stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
+  });
+  return wrapChildProcess(cp);
+}
+
+/**
+ * Start the Express server in an isolated process.
  *
  * @returns The port number the server is listening on.
  * @throws If the server fails to start within 15 seconds.
@@ -27,17 +110,15 @@ export async function startServer(): Promise<number> {
   const port = await getFreePort();
   const dorkHome = path.join(app.getPath('home'), '.dork');
 
-  child = utilityProcess.fork(path.join(__dirname, '../server-entry.js'), [], {
-    env: {
-      ...process.env,
-      DORKOS_PORT: String(port),
-      DORK_HOME: dorkHome,
-      NODE_ENV: 'production',
-    },
+  const serverEntry = path.join(__dirname, '../server-entry.js');
+  child = spawnServer(serverEntry, {
+    DORKOS_PORT: String(port),
+    DORK_HOME: dorkHome,
+    NODE_ENV: app.isPackaged ? 'production' : 'development',
   });
 
   // Wait for the server to signal readiness
-  const onEarlyExit = (code: number) => {
+  const onEarlyExit = (code: number | null) => {
     clearTimeout(timeout);
     if (code !== 0) reject(new Error(`Server exited with code ${code}`));
   };
@@ -47,8 +128,13 @@ export async function startServer(): Promise<number> {
   await new Promise<void>((res, rej) => {
     reject = rej;
     timeout = setTimeout(() => rej(new Error('Server start timeout')), 15_000);
-    child!.on('message', (msg: { type: string }) => {
-      if (msg.type === 'ready') {
+    child!.on('message', (msg: unknown) => {
+      if (
+        msg &&
+        typeof msg === 'object' &&
+        'type' in msg &&
+        (msg as { type: string }).type === 'ready'
+      ) {
         clearTimeout(timeout);
         res();
       }
@@ -61,7 +147,7 @@ export async function startServer(): Promise<number> {
   serverPort = port;
 
   // Monitor for unexpected crashes after successful startup
-  child.on('exit', (code) => {
+  child.on('exit', (code: number | null) => {
     if (code !== 0 && code !== null) {
       const win = BrowserWindow.getFocusedWindow();
       if (win) {
@@ -91,7 +177,7 @@ export async function startServer(): Promise<number> {
 /** Gracefully stop the server process. Forcibly kills after 5 seconds. */
 export async function stopServer(): Promise<void> {
   if (child) {
-    child.postMessage({ type: 'shutdown' });
+    child.send({ type: 'shutdown' });
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
         child?.kill();

@@ -8,8 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "dist": "electron-builder"
   },
   "dependencies": {
     "@dorkos/server": "workspace:*",

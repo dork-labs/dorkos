@@ -1,8 +1,9 @@
 /**
- * Server entry point for the Electron UtilityProcess.
+ * Server entry point for the desktop app's server process.
  *
- * This file runs in an isolated process spawned by the main process.
- * It starts the DorkOS Express server and signals readiness via IPC.
+ * Runs in either:
+ * - Electron UtilityProcess (production) — IPC via process.parentPort
+ * - child_process.fork via tsx (development) — IPC via process.send
  */
 
 /** Poll the health endpoint until the server is responding. */
@@ -20,11 +21,31 @@ async function waitForServer(port: number, timeoutMs = 10_000): Promise<void> {
   throw new Error('Server did not become ready in time');
 }
 
-async function main() {
-  if (!process.parentPort) {
-    throw new Error('server-entry must run inside an Electron UtilityProcess');
+/** Send a message to the parent process (works in both UtilityProcess and fork). */
+function sendToParent(msg: unknown): void {
+  if (process.parentPort) {
+    // Electron UtilityProcess
+    process.parentPort.postMessage(msg);
+  } else if (process.send) {
+    // child_process.fork
+    process.send(msg);
+  } else {
+    throw new Error('server-entry must run inside a UtilityProcess or child_process.fork');
   }
-  const parentPort = process.parentPort;
+}
+
+/** Listen for messages from the parent process. */
+function onParentMessage(handler: (msg: unknown) => void): void {
+  if (process.parentPort) {
+    // UtilityProcess: messages arrive as MessageEvent with .data
+    process.parentPort.on('message', (event) => handler(event.data));
+  } else {
+    // child_process.fork: messages arrive directly
+    process.on('message', handler);
+  }
+}
+
+async function main() {
   const port = Number(process.env.DORKOS_PORT);
 
   // Import triggers server start — the server reads DORKOS_PORT and DORK_HOME from env
@@ -34,11 +55,16 @@ async function main() {
   await waitForServer(port);
 
   // Signal to main process that server is ready
-  parentPort.postMessage({ type: 'ready' });
+  sendToParent({ type: 'ready' });
 
   // Listen for shutdown signal from main process
-  parentPort.on('message', (event) => {
-    if (event.data?.type === 'shutdown') {
+  onParentMessage((msg) => {
+    if (
+      msg &&
+      typeof msg === 'object' &&
+      'type' in msg &&
+      (msg as { type: string }).type === 'shutdown'
+    ) {
       process.exit(0);
     }
   });
