@@ -13,6 +13,7 @@ import type { TranscriptLine } from './transcript-parser.js';
 import { parseTasks } from './task-reader.js';
 import { TRANSCRIPT } from '../../../config/constants.js';
 import { validateBoundary } from '../../../lib/boundary.js';
+import { logger } from '../../../lib/logger.js';
 
 export type { HistoryMessage, HistoryToolCall };
 
@@ -343,11 +344,64 @@ export class TranscriptReader {
     }
   }
 
+  /** Resolve the SDK todo file path for a given session ID. */
+  private getTodoFilePath(sessionId: string): string {
+    return path.join(os.homedir(), '.claude', 'todos', `${sessionId}.json`);
+  }
+
   /**
-   * Read task state from an SDK session transcript.
-   * Parses TaskCreate/TaskUpdate tool_use blocks and reconstructs final state.
+   * Read task items from the SDK's dedicated todo file (`~/.claude/todos/{sessionId}.json`).
+   * Returns null when the file does not exist; throws on other filesystem errors.
+   */
+  async readTodosFromFile(sessionId: string): Promise<TaskItem[] | null> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.getTodoFilePath(sessionId), 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      logger.warn('[readTodosFromFile] malformed JSON in todo file', { sessionId });
+      return null;
+    }
+
+    if (!Array.isArray(parsed)) {
+      logger.warn('[readTodosFromFile] expected array in todo file', { sessionId });
+      return null;
+    }
+
+    return parsed.map((entry: Record<string, unknown>, index: number) => ({
+      id: (entry.id as string) ?? String(index + 1),
+      subject: entry.content as string,
+      status: ((entry.status as string) ?? 'pending') as TaskItem['status'],
+      activeForm: entry.activeForm as string | undefined,
+    }));
+  }
+
+  /** Get an ETag for a session's todo file (mtime + size) for HTTP caching. */
+  async getTodoFileETag(sessionId: string): Promise<string | null> {
+    try {
+      const stat = await fs.stat(this.getTodoFilePath(sessionId));
+      return `"${stat.mtimeMs}-${stat.size}"`;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Read task state — tries the SDK todo file first, falls back to JSONL transcript parsing.
    */
   async readTasks(vaultRoot: string, sessionId: string): Promise<TaskItem[]> {
+    // File-first: SDK todo file is the authoritative source when present
+    const fileTasks = await this.readTodosFromFile(sessionId);
+    if (fileTasks !== null) return fileTasks;
+
+    // Fallback: parse TaskCreate/TaskUpdate tool_use blocks from JSONL transcript
     await validateBoundary(vaultRoot);
     const transcriptsDir = this.getTranscriptsDir(vaultRoot);
     const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);

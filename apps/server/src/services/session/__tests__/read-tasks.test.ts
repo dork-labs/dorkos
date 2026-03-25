@@ -31,13 +31,20 @@ describe('TranscriptReader.readTasks', () => {
   let reader: TranscriptReader;
   const vaultRoot = '/test/vault';
 
+  /** Create an ENOENT error for the todo file (readTodosFromFile returns null). */
+  function enoentError(): NodeJS.ErrnoException {
+    const err = new Error('ENOENT') as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
+    return err;
+  }
+
   beforeEach(() => {
     reader = new TranscriptReader();
     vi.clearAllMocks();
   });
 
   it('returns empty array when file does not exist', async () => {
-    mockFs.readFile.mockRejectedValue(new Error('ENOENT'));
+    mockFs.readFile.mockRejectedValue(enoentError());
     const tasks = await reader.readTasks(vaultRoot, 'nonexistent');
     expect(tasks).toEqual([]);
   });
@@ -76,7 +83,7 @@ describe('TranscriptReader.readTasks', () => {
       }),
     ];
 
-    mockFs.readFile.mockResolvedValue(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(2);
@@ -132,7 +139,7 @@ describe('TranscriptReader.readTasks', () => {
       }),
     ];
 
-    mockFs.readFile.mockResolvedValue(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(1);
@@ -161,7 +168,7 @@ describe('TranscriptReader.readTasks', () => {
       }),
     ];
 
-    mockFs.readFile.mockResolvedValue(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toEqual([]);
@@ -184,7 +191,7 @@ describe('TranscriptReader.readTasks', () => {
       }),
     ];
 
-    mockFs.readFile.mockResolvedValue(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toEqual([]);
@@ -203,7 +210,7 @@ describe('TranscriptReader.readTasks', () => {
       }),
     ];
 
-    mockFs.readFile.mockResolvedValue(lines.join('\n'));
+    mockFs.readFile.mockRejectedValueOnce(enoentError()).mockResolvedValueOnce(lines.join('\n'));
 
     const tasks = await reader.readTasks(vaultRoot, 'session-1');
     expect(tasks).toHaveLength(1);
