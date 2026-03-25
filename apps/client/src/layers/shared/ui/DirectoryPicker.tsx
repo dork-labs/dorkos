@@ -156,7 +156,7 @@ export function DirectoryPicker({
       toast.error(err instanceof Error ? err.message : 'Failed to create folder');
     }
   }, [
-    data?.path,
+    data,
     newFolderName,
     newFolderError,
     transport,

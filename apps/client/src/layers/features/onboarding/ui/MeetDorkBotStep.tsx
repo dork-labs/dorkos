@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useDeferredValue } from 'react';
+import { useState, useCallback, useMemo, useDeferredValue, useEffect, useRef } from 'react';
 import { Bot } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { validateAgentName } from '@dorkos/shared/validation';
@@ -44,6 +44,12 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
 
   const createAgent = useCreateAgent();
   const setDorkbotFirstMessage = useAppStore((s) => s.setDorkbotFirstMessage);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus name input on mount (avoids jsx-a11y/no-autofocus)
+  useEffect(() => {
+    nameInputRef.current?.focus();
+  }, []);
 
   // Validation
   const nameValidation = useMemo(() => {
@@ -127,12 +133,12 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
           <div className="space-y-2">
             <Label htmlFor="dorkbot-name">Name</Label>
             <Input
+              ref={nameInputRef}
               id="dorkbot-name"
               value={name}
               onChange={handleNameChange}
               aria-invalid={!!nameError}
               aria-describedby={nameError ? 'dorkbot-name-error' : undefined}
-              autoFocus
             />
             {nameError && (
               <p id="dorkbot-name-error" className="text-destructive text-xs" role="alert">

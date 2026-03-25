@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { validateAgentName } from '@dorkos/shared/validation';
@@ -44,6 +44,12 @@ export function CreateAgentDialog() {
   const { isOpen, close } = useAgentCreationStore();
   const createAgent = useCreateAgent();
   const transport = useTransport();
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus name input when dialog opens (avoids jsx-a11y/no-autofocus)
+  useEffect(() => {
+    if (isOpen) nameInputRef.current?.focus();
+  }, [isOpen]);
 
   // Fetch config for default directory
   const { data: config } = useQuery({
@@ -131,13 +137,13 @@ export function CreateAgentDialog() {
           <div className="space-y-2">
             <Label htmlFor="agent-name">Name</Label>
             <Input
+              ref={nameInputRef}
               id="agent-name"
               placeholder="my-agent"
               value={name}
               onChange={(e) => setName(e.target.value)}
               aria-invalid={showNameError}
               aria-describedby={showNameError ? 'agent-name-error' : undefined}
-              autoFocus
             />
             {showNameError && (
               <p id="agent-name-error" className="text-destructive text-xs" role="alert">

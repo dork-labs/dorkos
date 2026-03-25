@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 /** Interval between placeholder text transitions (ms). */
 const DEFAULT_INTERVAL_MS = 5000;
@@ -46,13 +46,9 @@ export function useRotatingPlaceholder({
   intervalMs = DEFAULT_INTERVAL_MS,
 }: UseRotatingPlaceholderOptions): RotatingPlaceholderResult {
   const [tick, setTick] = useState(0);
-  const shuffledRef = useRef<string[]>([]);
+  const [shuffled] = useState(() => (hints.length > 0 ? shuffle(hints) : []));
 
-  // Shuffle hints on first use
-  if (shuffledRef.current.length === 0 && hints.length > 0) {
-    shuffledRef.current = shuffle(hints);
-  }
-
+  /* eslint-disable react-hooks/set-state-in-effect -- intentional reset when disabled */
   useEffect(() => {
     if (!enabled || hints.length === 0) {
       setTick(0);
@@ -61,11 +57,12 @@ export function useRotatingPlaceholder({
     const id = setInterval(() => setTick((t) => t + 1), intervalMs);
     return () => clearInterval(id);
   }, [enabled, hints.length, intervalMs]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Even ticks show default, odd ticks show a hint
   const isHint = tick > 0 && tick % 2 === 1;
-  const hintIndex = Math.floor(tick / 2) % (shuffledRef.current.length || 1);
-  const text = isHint ? (shuffledRef.current[hintIndex] ?? defaultText) : defaultText;
+  const hintIndex = Math.floor(tick / 2) % (shuffled.length || 1);
+  const text = isHint ? (shuffled[hintIndex] ?? defaultText) : defaultText;
 
   return { text, key: tick, isHint };
 }

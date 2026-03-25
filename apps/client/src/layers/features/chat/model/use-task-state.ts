@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
@@ -61,6 +61,21 @@ export interface TaskState {
 
 const MAX_VISIBLE = 10;
 
+type StatusTimestampMap = Map<string, { status: TaskStatus; since: number }>;
+
+/** Combined state for tasks and their status timestamps, kept in sync atomically. */
+interface TaskInternalState {
+  taskMap: Map<string, TaskItem>;
+  statusTimestamps: StatusTimestampMap;
+  nextId: number;
+}
+
+const EMPTY_STATE: TaskInternalState = {
+  taskMap: new Map(),
+  statusTimestamps: new Map(),
+  nextId: 1,
+};
+
 /**
  * Manages task state for a session, combining historical tasks from the API
  * with real-time streaming updates.
@@ -75,10 +90,8 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const isTabVisible = useTabVisibility();
-  const [taskMap, setTaskMap] = useState<Map<string, TaskItem>>(new Map());
+  const [state, setState] = useState<TaskInternalState>(EMPTY_STATE);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const nextIdRef = useRef(1);
-  const statusTimestampsRef = useRef<Map<string, { status: TaskStatus; since: number }>>(new Map());
 
   // Load historical tasks via TanStack Query (invalidated on sync_update)
   const { data: initialTasks } = useQuery({
@@ -96,57 +109,59 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     },
   });
 
-  // Reset taskMap when query data changes (initial load or sync invalidation)
+  // Reset state when query data changes (initial load or sync invalidation)
+  /* eslint-disable react-hooks/set-state-in-effect -- sync TanStack Query data to local state */
   useEffect(() => {
-    setTaskMap(new Map());
-    nextIdRef.current = 1;
-    statusTimestampsRef.current = new Map();
-
     if (initialTasks && initialTasks.tasks.length > 0) {
-      const map = new Map<string, TaskItem>();
+      const taskMap = new Map<string, TaskItem>();
+      const statusTimestamps: StatusTimestampMap = new Map();
       const now = Date.now();
       for (const task of initialTasks.tasks) {
-        map.set(task.id, task);
-        statusTimestampsRef.current.set(task.id, { status: task.status, since: now });
+        taskMap.set(task.id, task);
+        statusTimestamps.set(task.id, { status: task.status, since: now });
       }
-      setTaskMap(map);
-      nextIdRef.current = initialTasks.tasks.length + 1;
+      setState({ taskMap, statusTimestamps, nextId: initialTasks.tasks.length + 1 });
+    } else {
+      setState(EMPTY_STATE);
     }
   }, [initialTasks]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTaskEvent = useCallback((event: TaskUpdateEvent) => {
-    setTaskMap((prev) => {
-      const next = new Map(prev);
+    setState((prev) => {
+      const taskMap = new Map(prev.taskMap);
+      const statusTimestamps = new Map(prev.statusTimestamps);
+      let { nextId } = prev;
+      const now = Date.now();
+
       if (event.action === 'snapshot') {
         // TodoWrite: full overwrite — clear and rebuild from tasks array
-        next.clear();
+        taskMap.clear();
+        statusTimestamps.clear();
         const items = event.tasks ?? [event.task];
-        statusTimestampsRef.current = new Map();
         for (const item of items) {
-          next.set(item.id, item);
-          statusTimestampsRef.current.set(item.id, { status: item.status, since: Date.now() });
+          taskMap.set(item.id, item);
+          statusTimestamps.set(item.id, { status: item.status, since: now });
         }
-        nextIdRef.current = items.length + 1;
+        nextId = items.length + 1;
       } else if (event.action === 'create') {
-        const id = String(nextIdRef.current++);
-        next.set(id, { ...event.task, id });
-        statusTimestampsRef.current.set(id, { status: event.task.status, since: Date.now() });
+        const id = String(nextId++);
+        taskMap.set(id, { ...event.task, id });
+        statusTimestamps.set(id, { status: event.task.status, since: now });
       } else if (event.action === 'update' && event.task.id) {
-        const existing = next.get(event.task.id);
+        const existing = taskMap.get(event.task.id);
         if (existing) {
-          next.set(event.task.id, {
+          taskMap.set(event.task.id, {
             ...existing,
             ...stripDefaults(event.task as unknown as Record<string, unknown>),
           });
           if (event.task.status && event.task.status !== existing.status) {
-            statusTimestampsRef.current.set(event.task.id, {
-              status: event.task.status,
-              since: Date.now(),
-            });
+            statusTimestamps.set(event.task.id, { status: event.task.status, since: now });
           }
         }
       }
-      return next;
+
+      return { taskMap, statusTimestamps, nextId };
     });
   }, []);
 
@@ -154,18 +169,18 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     setIsCollapsed((prev) => !prev);
   }, []);
 
-  const allTasks = Array.from(taskMap.values());
-  const sorted = sortTasks(allTasks, taskMap);
+  const allTasks = Array.from(state.taskMap.values());
+  const sorted = sortTasks(allTasks, state.taskMap);
   const inProgressTask = allTasks.find((t) => t.status === 'in_progress');
   const activeForm = inProgressTask?.activeForm ?? null;
 
   return {
     tasks: sorted.slice(0, MAX_VISIBLE),
-    taskMap,
+    taskMap: state.taskMap,
     activeForm,
     isCollapsed,
     toggleCollapse,
     handleTaskEvent,
-    statusTimestamps: statusTimestampsRef.current,
+    statusTimestamps: state.statusTimestamps,
   };
 }

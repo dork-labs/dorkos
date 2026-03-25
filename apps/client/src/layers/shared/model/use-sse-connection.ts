@@ -53,11 +53,14 @@ export function useSSEConnection(
 
   // Ref-stabilize handlers to prevent reconnection on identity changes
   const handlersRef = useRef(options.eventHandlers);
-  handlersRef.current = options.eventHandlers;
+  useEffect(() => {
+    handlersRef.current = options.eventHandlers;
+  });
 
   const visibilityOptimization = options.visibilityOptimization ?? true;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs;
 
+  /* eslint-disable react-hooks/set-state-in-effect -- SSE connection lifecycle state sync */
   useEffect(() => {
     if (!url) {
       // No URL — clean up and reset to initial state
@@ -103,6 +106,7 @@ export function useSSEConnection(
       connectionRef.current = null;
     };
   }, [url, visibilityOptimization, heartbeatTimeoutMs]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return { connectionState, failedAttempts, lastEventAt };
 }

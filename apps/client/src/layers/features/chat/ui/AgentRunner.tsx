@@ -28,6 +28,7 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
   const [phase, setPhase] = useState<RunnerPhase>('running');
   const prevStatusRef = useRef(agent.status);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- phase transition on agent completion */
   useEffect(() => {
     if (
       prevStatusRef.current === 'running' &&
@@ -40,6 +41,7 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
     }
     prevStatusRef.current = agent.status;
   }, [agent.status, phase]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (phase === 'done') {
     return (

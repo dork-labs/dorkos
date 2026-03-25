@@ -121,6 +121,7 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
 
   // Build the visible task list
   return useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity -- Date.now() is intentional for visibility threshold filtering
     const now = Date.now();
     const result: VisibleBackgroundTask[] = [];
 
