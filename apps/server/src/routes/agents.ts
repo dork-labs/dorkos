@@ -11,7 +11,6 @@
  * @module routes/agents
  */
 import { Router } from 'express';
-import fs from 'fs/promises';
 import path from 'path';
 import { ulid } from 'ulidx';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';

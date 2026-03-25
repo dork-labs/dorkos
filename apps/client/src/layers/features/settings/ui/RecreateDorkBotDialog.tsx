@@ -67,7 +67,7 @@ export function RecreateDorkBotDialog({ open, onOpenChange }: RecreateDorkBotDia
         <DialogHeader>
           <DialogTitle>Recreate DorkBot</DialogTitle>
           <DialogDescription>
-            Configure DorkBot's personality. All settings can be changed later.
+            Configure DorkBot&apos;s personality. All settings can be changed later.
           </DialogDescription>
         </DialogHeader>
 

@@ -11,7 +11,7 @@ import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-sche
 // Mock adapter logos — renders a simple span with the component name for testability
 vi.mock('@dorkos/icons/adapter-logos', () => ({
   ADAPTER_LOGO_MAP: {
-    telegram: ({ size, className }: { size?: number; className?: string }) => (
+    telegram: ({ className }: { size?: number; className?: string }) => (
       <span data-testid="adapter-logo" data-icon="telegram" className={className}>
         TelegramLogo
       </span>

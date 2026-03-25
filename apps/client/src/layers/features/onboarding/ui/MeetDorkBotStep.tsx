@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import { validateAgentName } from '@dorkos/shared/validation';
 import {
   TRAIT_ORDER,
-  TRAIT_LEVELS,
   DEFAULT_TRAITS,
   getPreviewText,
   hashPreviewText,

@@ -101,7 +101,6 @@ export function useAdapterWizard({
         const val = values[field.key];
         if (val === undefined || val === null || val === '') {
           // Dynamic field keys from manifest don't satisfy the typed path constraint.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           form.setFieldMeta(field.key as never, (meta) => ({
             ...meta,
             isTouched: true,

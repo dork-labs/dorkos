@@ -24,7 +24,6 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => ({
     open !== false ? <div data-testid="responsive-popover">{children}</div> : null,
   ResponsivePopoverTrigger: ({
     children,
-    asChild,
     ...props
   }: {
     children: React.ReactNode;

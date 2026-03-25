@@ -10,7 +10,7 @@ import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 // Mock adapter logos — renders a simple span with the component name for testability
 vi.mock('@dorkos/icons/adapter-logos', () => ({
   ADAPTER_LOGO_MAP: {
-    slack: ({ size, className }: { size?: number; className?: string }) => (
+    slack: ({ className }: { size?: number; className?: string }) => (
       <span data-testid="adapter-logo" data-icon="slack" className={className}>
         SlackIcon
       </span>

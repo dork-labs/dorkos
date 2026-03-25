@@ -162,6 +162,5 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
 
     return result;
     // celebratingRef is a ref — renderTick (state) drives re-computation when celebrations expire
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskMap /* renderTick drives re-computation via state change */]);
 }

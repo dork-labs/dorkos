@@ -314,7 +314,7 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
       return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
     }
     res.json({ success: true, taskId });
-  } catch (err) {
+  } catch (_err) {
     return sendError(res, 500, 'Failed to stop task', 'STOP_TASK_ERROR');
   }
 });

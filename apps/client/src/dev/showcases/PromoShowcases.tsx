@@ -157,7 +157,8 @@ function OverrideControls() {
       )}
 
       <div className="text-muted-foreground text-xs">
-        Dismiss a promo card above to see its ID appear here. Use "Reset dismissals" to restore it.
+        Dismiss a promo card above to see its ID appear here. Use &quot;Reset dismissals&quot; to
+        restore it.
       </div>
 
       <ShowcaseLabel>Dismiss individual promos</ShowcaseLabel>

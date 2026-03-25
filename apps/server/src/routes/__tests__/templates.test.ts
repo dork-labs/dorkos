@@ -19,7 +19,6 @@ vi.mock('../../lib/logger.js', () => ({
 import request from 'supertest';
 import express from 'express';
 import { createTemplateRouter } from '../templates.js';
-import { DEFAULT_TEMPLATES } from '@dorkos/shared/template-catalog';
 
 const DORK_HOME = '/tmp/dork-test';
 

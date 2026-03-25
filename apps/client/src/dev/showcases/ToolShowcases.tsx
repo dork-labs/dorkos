@@ -446,12 +446,14 @@ function BackgroundTaskShowcases() {
           </div>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Agent (click → "Stop?" → click to confirm, 3s auto-dismiss)</ShowcaseLabel>
+        <ShowcaseLabel>
+          Agent (click → &quot;Stop?&quot; → click to confirm, 3s auto-dismiss)
+        </ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex items-center gap-4">
             <InlineKillButton taskType="agent" onConfirm={() => logStop('agent-demo')} />
             <span className="text-muted-foreground text-xs">
-              Click × → morphs to "Stop?" → click again to confirm or wait 3s
+              Click × → morphs to &quot;Stop?&quot; → click again to confirm or wait 3s
             </span>
           </div>
         </ShowcaseDemo>

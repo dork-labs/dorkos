@@ -25,12 +25,10 @@ type ValidationError = { toString(): string } | string | undefined;
  * signature of `AppFieldExtendedReactFormApi`.
  */
 interface AdapterConfigFormApi {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Subscribe: React.ComponentType<{
     selector: (s: { values: Record<string, unknown> }) => Record<string, unknown>;
     children: (v: Record<string, unknown>) => ReactNode;
   }>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AppField: React.ComponentType<{
     name: string;
     key?: string;

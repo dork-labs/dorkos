@@ -3,11 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import {
-  useBackgroundTasks,
-  TASK_COLORS,
-  type VisibleBackgroundTask,
-} from '../use-background-tasks';
+import { useBackgroundTasks, TASK_COLORS } from '../use-background-tasks';
 import type { ChatMessage } from '../chat-types';
 import type { BackgroundTaskPart } from '@dorkos/shared/types';
 

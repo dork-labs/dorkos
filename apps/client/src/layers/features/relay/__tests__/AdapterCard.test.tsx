@@ -30,12 +30,12 @@ vi.mock('@/layers/entities/mesh', () => ({
 // Mock adapter logos — renders a simple span for testability
 vi.mock('@dorkos/icons/adapter-logos', () => ({
   ADAPTER_LOGO_MAP: {
-    telegram: ({ size, className }: { size?: number; className?: string }) => (
+    telegram: ({ className }: { size?: number; className?: string }) => (
       <span data-testid="adapter-logo" data-icon="telegram" className={className}>
         TelegramLogo
       </span>
     ),
-    'claude-code': ({ size, className }: { size?: number; className?: string }) => (
+    'claude-code': ({ className }: { size?: number; className?: string }) => (
       <span data-testid="adapter-logo" data-icon="claude-code" className={className}>
         AnthropicLogo
       </span>

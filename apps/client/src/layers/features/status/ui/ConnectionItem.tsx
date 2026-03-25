@@ -79,7 +79,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
       <div className="space-y-1.5">
         <p className={base}>
           The live-sync connection was interrupted and is reconnecting automatically. Your chat
-          works normally — you just won't see real-time updates from other clients until it
+          works normally — you just won&apos;t see real-time updates from other clients until it
           reconnects.
         </p>
         <p className={cn(base, 'text-muted-foreground/70')}>No action needed.</p>

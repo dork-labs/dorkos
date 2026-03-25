@@ -242,10 +242,8 @@ export function getPreviewText(traits: Record<TraitName, number>): string {
 export function hashPreviewText(text: string): string {
   let hash = 5381;
   for (let i = 0; i < text.length; i++) {
-    // eslint-disable-next-line no-bitwise
     hash = ((hash << 5) + hash) ^ text.charCodeAt(i);
   }
   // Convert to unsigned 32-bit then hex
-  // eslint-disable-next-line no-bitwise
   return (hash >>> 0).toString(16);
 }
