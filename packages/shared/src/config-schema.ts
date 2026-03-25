@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 /** Sensitive fields that trigger a warning when set via CLI or API */
-export const SENSITIVE_CONFIG_KEYS = ['tunnel.authtoken', 'tunnel.auth'] as const;
+export const SENSITIVE_CONFIG_KEYS = [
+  'tunnel.authtoken',
+  'tunnel.auth',
+  'tunnel.passcodeHash',
+  'tunnel.passcodeSalt',
+] as const;
 
 /** The guided onboarding steps a first-time user walks through. */
 export const ONBOARDING_STEPS = ['meet-dorkbot', 'discovery', 'pulse', 'adapters'] as const;
@@ -39,8 +44,19 @@ export const UserConfigSchema = z.object({
       domain: z.string().nullable().default(null),
       authtoken: z.string().nullable().default(null),
       auth: z.string().nullable().default(null),
+      passcodeEnabled: z.boolean().default(false),
+      passcodeHash: z.string().nullable().default(null),
+      passcodeSalt: z.string().nullable().default(null),
     })
-    .default(() => ({ enabled: false, domain: null, authtoken: null, auth: null })),
+    .default(() => ({
+      enabled: false,
+      domain: null,
+      authtoken: null,
+      auth: null,
+      passcodeEnabled: false,
+      passcodeHash: null,
+      passcodeSalt: null,
+    })),
   ui: z
     .object({
       theme: z.enum(['light', 'dark', 'system']).default('system'),
@@ -114,6 +130,7 @@ export const UserConfigSchema = z.object({
       defaultAgent: z.string().default('dorkbot'),
     })
     .default(() => ({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' })),
+  sessionSecret: z.string().nullable().default(null),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

@@ -38,6 +38,13 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: vi.fn().mockReturnValue(null),
+    set: vi.fn(),
+  },
+}));
+
 // Dynamically import after mocks are set up
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';

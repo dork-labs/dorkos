@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import cookieSession from 'cookie-session';
+import crypto from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { apiReference } from '@scalar/express-api-reference';
+import { PASSCODE_SESSION_MAX_AGE_MS } from '@dorkos/shared/constants';
 import sessionRoutes from './routes/sessions.js';
 import commandRoutes from './routes/commands.js';
 import healthRoutes from './routes/health.js';
@@ -18,7 +21,9 @@ import mcpConfigRoutes from './routes/mcp-config.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
+import { tunnelPasscodeAuth } from './middleware/tunnel-auth.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
+import { configManager } from './services/core/config-manager.js';
 import { testControlRouter } from './routes/test-control.js';
 import { env } from './env.js';
 
@@ -74,10 +79,34 @@ function buildCorsOrigin(): cors.CorsOptions['origin'] {
 export function createApp() {
   const app = express();
 
+  // Trust the first proxy (ngrok) for correct req.hostname, req.ip, req.protocol
+  app.set('trust proxy', 1);
+
   app.use(cors({ origin: buildCorsOrigin() }));
 
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);
+
+  // Session middleware for tunnel passcode authentication
+  let sessionSecret = configManager.get('sessionSecret');
+  if (!sessionSecret) {
+    sessionSecret = crypto.randomBytes(32).toString('hex');
+    configManager.set('sessionSecret', sessionSecret);
+  }
+
+  app.use(
+    cookieSession({
+      name: 'dorkos_session',
+      keys: [sessionSecret],
+      maxAge: PASSCODE_SESSION_MAX_AGE_MS,
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    })
+  );
+
+  // Gate tunnel requests behind passcode when enabled
+  app.use(tunnelPasscodeAuth);
 
   // API routes
   app.use('/api/sessions', sessionRoutes);

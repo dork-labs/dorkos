@@ -340,6 +340,23 @@ export const serverOnlyStubs = {
     // No-op in embedded mode
   },
 
+  async verifyTunnelPasscode(
+    _passcode: string
+  ): Promise<{ ok: boolean; error?: string; retryAfter?: number }> {
+    return { ok: false, error: 'Not available in embedded mode' };
+  },
+
+  async checkTunnelSession(): Promise<{ authenticated: boolean; passcodeRequired: boolean }> {
+    return { authenticated: false, passcodeRequired: false };
+  },
+
+  async setTunnelPasscode(_opts: {
+    passcode?: string;
+    enabled: boolean;
+  }): Promise<{ ok: boolean }> {
+    return { ok: false };
+  },
+
   async updateConfig(_patch: Record<string, unknown>): Promise<void> {
     // No-op in embedded mode — config is not persisted via DirectTransport.
   },

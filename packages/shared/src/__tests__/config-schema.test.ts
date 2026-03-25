@@ -14,7 +14,15 @@ describe('UserConfigSchema', () => {
     expect(result).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null },
-      tunnel: { enabled: false, domain: null, authtoken: null, auth: null },
+      tunnel: {
+        enabled: false,
+        domain: null,
+        authtoken: null,
+        auth: null,
+        passcodeEnabled: false,
+        passcodeHash: null,
+        passcodeSalt: null,
+      },
       ui: { theme: 'system', dismissedUpgradeVersions: [] },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
@@ -24,6 +32,7 @@ describe('UserConfigSchema', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      sessionSecret: null,
     });
   });
 
@@ -176,10 +185,12 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
   it('contains expected sensitive keys', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.authtoken');
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
+    expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeHash');
+    expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeSalt');
   });
 
-  it('has exactly 2 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(2);
+  it('has exactly 4 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
   });
 
   it('is readonly array', () => {
@@ -194,7 +205,15 @@ describe('USER_CONFIG_DEFAULTS', () => {
     expect(USER_CONFIG_DEFAULTS).toEqual({
       version: 1,
       server: { port: 4242, cwd: null, boundary: null },
-      tunnel: { enabled: false, domain: null, authtoken: null, auth: null },
+      tunnel: {
+        enabled: false,
+        domain: null,
+        authtoken: null,
+        auth: null,
+        passcodeEnabled: false,
+        passcodeHash: null,
+        passcodeSalt: null,
+      },
       ui: { theme: 'system', dismissedUpgradeVersions: [] },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
       relay: { enabled: true, dataDir: null },
@@ -204,6 +223,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, pulseTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      sessionSecret: null,
     });
   });
 

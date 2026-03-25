@@ -740,10 +740,29 @@ export const TunnelStatusSchema = z
     authEnabled: z.boolean(),
     tokenConfigured: z.boolean(),
     domain: z.string().nullable(),
+    passcodeEnabled: z.boolean(),
   })
   .openapi('TunnelStatus');
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
+
+export const PasscodeVerifyRequestSchema = z.object({
+  passcode: z.string().regex(/^\d{6}$/),
+});
+export type PasscodeVerifyRequest = z.infer<typeof PasscodeVerifyRequestSchema>;
+
+export const PasscodeVerifyResponseSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+  retryAfter: z.number().optional(),
+});
+export type PasscodeVerifyResponse = z.infer<typeof PasscodeVerifyResponseSchema>;
+
+export const PasscodeSessionResponseSchema = z.object({
+  authenticated: z.boolean(),
+  passcodeRequired: z.boolean(),
+});
+export type PasscodeSessionResponse = z.infer<typeof PasscodeSessionResponseSchema>;
 
 // === Health Response ===
 

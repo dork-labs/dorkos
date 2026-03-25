@@ -1,13 +1,21 @@
 /**
- * Tunnel route — endpoints to start/stop/stream ngrok tunnel status.
+ * Tunnel route — endpoints to start/stop/stream ngrok tunnel status,
+ * and passcode authentication for remote access.
  *
  * @module routes/tunnel
  */
 import { Router } from 'express';
-import { DEFAULT_PORT } from '@dorkos/shared/constants';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import {
+  DEFAULT_PORT,
+  PASSCODE_RATE_LIMIT_WINDOW_MS,
+  PASSCODE_RATE_LIMIT_MAX,
+} from '@dorkos/shared/constants';
+import { PasscodeVerifyRequestSchema } from '@dorkos/shared/schemas';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { configManager } from '../services/core/config-manager.js';
+import { verifyPasscode, hashPasscode } from '../lib/passcode-hash.js';
 
 const router = Router();
 
@@ -97,6 +105,89 @@ router.post('/stop', async (_req, res) => {
     const message = err instanceof Error ? err.message : 'Failed to stop tunnel';
     return res.status(500).json({ error: message });
   }
+});
+
+// ---------- Passcode endpoints ----------
+
+const passcodeRateLimiter = rateLimit({
+  windowMs: PASSCODE_RATE_LIMIT_WINDOW_MS,
+  max: PASSCODE_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Too many attempts. Try again later.',
+    retryAfter: PASSCODE_RATE_LIMIT_WINDOW_MS / 1000,
+  },
+  keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
+});
+
+/** POST /api/tunnel/passcode/verify — Rate-limited passcode verification. */
+router.post('/passcode/verify', passcodeRateLimiter, async (req, res) => {
+  const parsed = PasscodeVerifyRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: 'Invalid passcode format' });
+  }
+
+  const tunnelConfig = configManager.get('tunnel');
+  if (!tunnelConfig?.passcodeHash || !tunnelConfig?.passcodeSalt) {
+    return res.status(400).json({ ok: false, error: 'No passcode configured' });
+  }
+
+  const valid = await verifyPasscode(
+    parsed.data.passcode,
+    tunnelConfig.passcodeHash,
+    tunnelConfig.passcodeSalt
+  );
+
+  if (!valid) {
+    return res.status(401).json({ ok: false, error: 'Incorrect passcode' });
+  }
+
+  req.session!.tunnelAuthenticated = true;
+  return res.json({ ok: true });
+});
+
+/** GET /api/tunnel/passcode/session — Check passcode session status. */
+router.get('/passcode/session', (_req, res) => {
+  const tunnelConfig = configManager.get('tunnel');
+  const passcodeRequired = !!(tunnelConfig?.passcodeEnabled && tunnelConfig?.passcodeHash);
+  const authenticated = !!_req.session?.tunnelAuthenticated;
+  return res.json({ authenticated, passcodeRequired });
+});
+
+/** POST /api/tunnel/passcode/set — Set, update, or disable the passcode (localhost only). */
+router.post('/passcode/set', async (req, res) => {
+  if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+    return res.status(403).json({ error: 'Passcode can only be changed locally' });
+  }
+
+  const { passcode, enabled } = req.body;
+
+  // Handle disable
+  if (enabled === false) {
+    const currentConfig = configManager.get('tunnel');
+    configManager.set('tunnel', { ...currentConfig, passcodeEnabled: false });
+    tunnelManager.refreshStatus();
+    return res.json({ ok: true });
+  }
+
+  // Validate passcode format
+  if (!passcode || !/^\d{6}$/.test(passcode)) {
+    return res.status(400).json({ error: 'Passcode must be exactly 6 digits' });
+  }
+
+  const { hash, salt } = await hashPasscode(passcode);
+  const currentConfig = configManager.get('tunnel');
+  configManager.set('tunnel', {
+    ...currentConfig,
+    passcodeEnabled: true,
+    passcodeHash: hash,
+    passcodeSalt: salt,
+  });
+
+  tunnelManager.refreshStatus();
+  return res.json({ ok: true });
 });
 
 export default router;

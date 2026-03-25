@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Check, Copy, Link } from 'lucide-react';
+import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { toast } from 'sonner';
 import QRCode from 'react-qr-code';
 import {
@@ -11,12 +12,14 @@ import {
   ResponsiveDialogDescription,
   Separator,
   Switch,
+  Button,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
   Field,
   FieldLabel,
 } from '@/layers/shared/ui';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/layers/shared/ui/input-otp';
 import { useTransport } from '@/layers/shared/model';
 import { cn, TIMING, getPlatform } from '@/layers/shared/lib';
 import { useSessionId } from '@/layers/entities/session';
@@ -91,6 +94,8 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
   const [copiedSession, setCopiedSession] = useState(false);
   const [domain, setDomain] = useState('');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [passcodeEnabled, setPasscodeEnabled] = useState(false);
+  const [passcodeInput, setPasscodeInput] = useState('');
 
   // Track previous connected state for disconnect/reconnect toasts
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
@@ -113,6 +118,12 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local domain input from server config
     if (tunnel?.domain) setDomain(tunnel.domain);
   }, [tunnel?.domain]);
+
+  // Sync passcode enabled state from server config
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local passcode toggle from server config
+    if (tunnel?.passcodeEnabled !== undefined) setPasscodeEnabled(tunnel.passcodeEnabled);
+  }, [tunnel?.passcodeEnabled]);
 
   // Disconnect/reconnect toast notifications
   useEffect(() => {
@@ -234,6 +245,37 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
       // Silently fail — domain will be re-synced from config
     }
   }, [domain, queryClient, transport]);
+
+  const handlePasscodeToggle = useCallback(
+    async (checked: boolean) => {
+      if (!checked) {
+        try {
+          await transport.setTunnelPasscode({ enabled: false });
+          setPasscodeEnabled(false);
+          setPasscodeInput('');
+          queryClient.invalidateQueries({ queryKey: ['config'] });
+          broadcastTunnelChange();
+        } catch {
+          toast.error('Failed to disable passcode');
+        }
+      } else {
+        setPasscodeEnabled(true);
+      }
+    },
+    [transport, queryClient]
+  );
+
+  const handleSavePasscode = useCallback(async () => {
+    try {
+      await transport.setTunnelPasscode({ passcode: passcodeInput, enabled: true });
+      setPasscodeInput('');
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+      broadcastTunnelChange();
+      toast.success('Passcode saved');
+    } catch {
+      toast.error('Failed to save passcode');
+    }
+  }, [passcodeInput, transport, queryClient]);
 
   const handleCopyUrl = useCallback(() => {
     if (url) {
@@ -384,6 +426,46 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
                 </a>
                 {' — '}same URL every restart, reusable QR codes, persistent bookmarks.
               </p>
+            </div>
+          )}
+
+          {/* Passcode section — visible when token configured and not connected */}
+          {tunnel?.tokenConfigured && state !== 'connected' && state !== 'stopping' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Passcode</p>
+                  <p className="text-muted-foreground text-xs">
+                    Require a 6-digit PIN for remote access
+                  </p>
+                </div>
+                <Switch checked={passcodeEnabled} onCheckedChange={handlePasscodeToggle} />
+              </div>
+
+              {passcodeEnabled && (
+                <div className="space-y-2">
+                  <InputOTP
+                    maxLength={6}
+                    pattern={REGEXP_ONLY_DIGITS}
+                    inputMode="numeric"
+                    value={passcodeInput}
+                    onChange={setPasscodeInput}
+                  >
+                    <InputOTPGroup>
+                      {[0, 1, 2, 3, 4, 5].map((i) => (
+                        <InputOTPSlot key={i} index={i} />
+                      ))}
+                    </InputOTPGroup>
+                  </InputOTP>
+                  <Button
+                    size="sm"
+                    onClick={handleSavePasscode}
+                    disabled={passcodeInput.length !== 6}
+                  >
+                    {tunnel?.passcodeEnabled ? 'Update passcode' : 'Set passcode'}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

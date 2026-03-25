@@ -249,6 +249,7 @@ export class DirectTransport implements Transport {
         authEnabled: false,
         tokenConfigured: false,
         domain: null,
+        passcodeEnabled: false,
       },
       boundary: this.services.vaultRoot,
     };
@@ -413,6 +414,9 @@ export class DirectTransport implements Transport {
 
   startTunnel = serverOnlyStubs.startTunnel;
   stopTunnel = serverOnlyStubs.stopTunnel;
+  verifyTunnelPasscode = serverOnlyStubs.verifyTunnelPasscode;
+  checkTunnelSession = serverOnlyStubs.checkTunnelSession;
+  setTunnelPasscode = serverOnlyStubs.setTunnelPasscode;
   updateConfig = serverOnlyStubs.updateConfig;
   getMcpConfig = serverOnlyStubs.getMcpConfig;
   resetAllData = serverOnlyStubs.resetAllData;

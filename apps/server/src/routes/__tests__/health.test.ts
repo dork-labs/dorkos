@@ -15,6 +15,13 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: vi.fn().mockReturnValue(null),
+    set: vi.fn(),
+  },
+}));
+
 const defaultStatus = {
   enabled: false,
   connected: false,

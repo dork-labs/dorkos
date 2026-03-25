@@ -203,6 +203,18 @@ export interface Transport {
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
   stopTunnel(): Promise<void>;
+  /** Verify a 6-digit passcode for remote tunnel access. */
+  verifyTunnelPasscode(
+    passcode: string
+  ): Promise<{ ok: boolean; error?: string; retryAfter?: number }>;
+  /** Check if the current session is authenticated for tunnel access. */
+  checkTunnelSession(): Promise<{ authenticated: boolean; passcodeRequired: boolean }>;
+  /**
+   * Set, update, or disable the tunnel passcode (localhost-only endpoint).
+   *
+   * @param opts - Pass `{ passcode, enabled: true }` to set a 6-digit PIN, or `{ enabled: false }` to disable.
+   */
+  setTunnelPasscode(opts: { passcode?: string; enabled: boolean }): Promise<{ ok: boolean }>;
 
   // --- Pulse Scheduler ---
 

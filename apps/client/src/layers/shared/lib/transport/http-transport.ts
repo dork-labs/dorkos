@@ -440,6 +440,26 @@ export class HttpTransport implements Transport {
     await fetchJSON<{ ok: boolean }>(this.baseUrl, '/tunnel/stop', { method: 'POST' });
   }
 
+  verifyTunnelPasscode(
+    passcode: string
+  ): Promise<{ ok: boolean; error?: string; retryAfter?: number }> {
+    return fetchJSON(this.baseUrl, '/tunnel/passcode/verify', {
+      method: 'POST',
+      body: JSON.stringify({ passcode }),
+    });
+  }
+
+  checkTunnelSession(): Promise<{ authenticated: boolean; passcodeRequired: boolean }> {
+    return fetchJSON(this.baseUrl, '/tunnel/passcode/session');
+  }
+
+  setTunnelPasscode(opts: { passcode?: string; enabled: boolean }): Promise<{ ok: boolean }> {
+    return fetchJSON(this.baseUrl, '/tunnel/passcode/set', {
+      method: 'POST',
+      body: JSON.stringify(opts),
+    });
+  }
+
   // --- Admin Operations ---
 
   async resetAllData(confirm: string): Promise<{ message: string }> {

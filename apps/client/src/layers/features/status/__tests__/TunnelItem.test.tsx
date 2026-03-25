@@ -86,6 +86,7 @@ function makeTunnel(overrides?: Partial<ServerConfig['tunnel']>): ServerConfig['
     authEnabled: false,
     tokenConfigured: true,
     domain: null,
+    passcodeEnabled: false,
     ...overrides,
   };
 }

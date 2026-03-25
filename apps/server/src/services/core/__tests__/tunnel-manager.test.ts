@@ -9,7 +9,14 @@ vi.mock('@ngrok/ngrok', () => ({
   forward: vi.fn().mockResolvedValue(mockListener),
 }));
 
+vi.mock('../config-manager.js', () => ({
+  configManager: {
+    get: vi.fn().mockReturnValue({ passcodeEnabled: false, passcodeHash: null }),
+  },
+}));
+
 import { TunnelManager } from '../tunnel-manager.js';
+import { configManager } from '../config-manager.js';
 
 let manager: TunnelManager;
 
@@ -29,6 +36,7 @@ describe('TunnelManager', () => {
       authEnabled: false,
       tokenConfigured: false,
       domain: null,
+      passcodeEnabled: false,
     });
   });
 
@@ -92,6 +100,47 @@ describe('TunnelManager', () => {
     const status1 = manager.status;
     status1.url = 'tampered';
     expect(manager.status.url).toBe('https://test.ngrok.io');
+  });
+
+  describe('passcodeEnabled', () => {
+    it('reports passcodeEnabled true when config has both passcodeEnabled and passcodeHash', () => {
+      vi.mocked(configManager.get).mockReturnValue({
+        passcodeEnabled: true,
+        passcodeHash: 'abc123',
+      } as ReturnType<typeof configManager.get>);
+
+      expect(manager.status.passcodeEnabled).toBe(true);
+    });
+
+    it('reports passcodeEnabled false when passcodeHash is missing', () => {
+      vi.mocked(configManager.get).mockReturnValue({
+        passcodeEnabled: true,
+        passcodeHash: null,
+      } as ReturnType<typeof configManager.get>);
+
+      expect(manager.status.passcodeEnabled).toBe(false);
+    });
+
+    it('reports passcodeEnabled false when config flag is false', () => {
+      vi.mocked(configManager.get).mockReturnValue({
+        passcodeEnabled: false,
+        passcodeHash: 'abc123',
+      } as ReturnType<typeof configManager.get>);
+
+      expect(manager.status.passcodeEnabled).toBe(false);
+    });
+  });
+
+  describe('refreshStatus', () => {
+    it('emits status_change event', () => {
+      const handler = vi.fn();
+      manager.on('status_change', handler);
+
+      manager.refreshStatus();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ passcodeEnabled: false }));
+    });
   });
 
   describe('EventEmitter', () => {

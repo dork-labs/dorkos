@@ -37,6 +37,13 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: vi.fn().mockReturnValue(null),
+    set: vi.fn(),
+  },
+}));
+
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 

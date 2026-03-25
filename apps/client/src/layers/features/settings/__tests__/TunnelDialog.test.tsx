@@ -67,6 +67,7 @@ const baseTunnel = {
   authEnabled: false,
   tokenConfigured: true,
   domain: null as string | null,
+  passcodeEnabled: false,
 };
 
 function createTunnelTransport(tunnelOverrides?: Partial<typeof baseTunnel>): Transport {

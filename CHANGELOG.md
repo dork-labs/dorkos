@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add 6-digit passcode gate for remote access
 - Add Electron desktop app for native macOS distribution
 - Add status bar inline management with scroll and configure popover
 - Generalize subagent system to background task model with stopTask support
