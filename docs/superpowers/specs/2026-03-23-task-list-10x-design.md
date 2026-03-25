@@ -1,3 +1,7 @@
+---
+title: 'Task List 10x: Rich Task Panel with Dependencies & Polling'
+---
+
 # Task List 10x: Rich Task Panel with Dependencies & Polling
 
 **Date:** 2026-03-23

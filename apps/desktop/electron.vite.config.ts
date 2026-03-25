@@ -31,9 +31,9 @@ export default defineConfig({
       outDir: path.resolve(__dirname, 'dist/renderer'),
       rollupOptions: {
         input: path.resolve(__dirname, '../client/index.html'),
-        // @dorkos/shared/manifest uses Node.js fs/path — stub it for the browser build
-        // rather than externalizing (externals don't resolve in Chromium renderer)
-        // If any component imports it, the import will be tree-shaken or needs a browser shim
+        // @dorkos/shared/manifest uses Node.js built-ins (fs, path, crypto).
+        // It's only imported by DirectTransport (not used in Electron renderer).
+        external: ['@dorkos/shared/manifest'],
       },
     },
   },

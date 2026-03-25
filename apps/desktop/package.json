@@ -7,8 +7,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "pack": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "dist": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
   },
   "dependencies": {
     "@dorkos/server": "workspace:*",

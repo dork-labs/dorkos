@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Target arm64, externalize manifest, skip codesign discovery
 - Remove postinstall electron-rebuild, add dual-mode server spawning
 - Exclude desktop from default dev, approve electron builds
 ---
