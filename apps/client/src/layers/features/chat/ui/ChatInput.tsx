@@ -43,6 +43,8 @@ interface ChatInputProps {
   onAttach?: (files: File[]) => void;
   /** Custom placeholder text for the textarea. Defaults to "Message Claude...". */
   placeholder?: string;
+  /** Overlay element rendered in place of the native placeholder (e.g. animated hints). */
+  placeholderOverlay?: React.ReactNode;
   /** Navigate up through the message queue (shell-history style). */
   onQueueNavigateUp?: () => void;
   /** Navigate down through the message queue (shell-history style). */
@@ -75,6 +77,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onCursorChange,
     onAttach,
     placeholder = 'Message Claude...',
+    placeholderOverlay,
     onQueueNavigateUp,
     onQueueNavigateDown,
     queueHasItems = false,
@@ -357,30 +360,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             </button>
           </>
         )}
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          onSelect={handleSelect}
-          role="combobox"
-          aria-autocomplete="list"
-          aria-controls={
-            isPaletteOpen
-              ? activeDescendantId?.startsWith('file-')
-                ? 'file-palette-listbox'
-                : 'command-palette-listbox'
-              : undefined
-          }
-          aria-expanded={isPaletteOpen ?? false}
-          aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
-          placeholder={placeholder}
-          className="max-h-[200px] min-h-[24px] flex-1 resize-none bg-transparent py-0.5 text-sm focus:outline-none"
-          rows={1}
-          disabled={isInputDisabled}
-        />
+        <div className="relative min-h-[24px] flex-1">
+          {!hasText && placeholderOverlay}
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onSelect={handleSelect}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={
+              isPaletteOpen
+                ? activeDescendantId?.startsWith('file-')
+                  ? 'file-palette-listbox'
+                  : 'command-palette-listbox'
+                : undefined
+            }
+            aria-expanded={isPaletteOpen ?? false}
+            aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
+            placeholder={placeholderOverlay ? '' : placeholder}
+            className="max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-0.5 text-sm focus:outline-none"
+            rows={1}
+            disabled={isInputDisabled}
+          />
+        </div>
         <motion.button
           animate={{ opacity: showClear ? 0.5 : 0, scale: showClear ? 1 : 0.8 }}
           transition={{ duration: 0.15 }}

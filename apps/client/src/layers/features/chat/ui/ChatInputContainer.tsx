@@ -11,8 +11,8 @@ import type { ToolCallState } from '../model/chat-types';
 import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
 import { ChatStatusSection } from './ChatStatusSection';
-import { RunningAgentIndicator } from './RunningAgentIndicator';
-import type { RunningAgent } from '../model/use-running-subagents';
+import { BackgroundTaskBar } from './BackgroundTaskBar';
+import type { VisibleBackgroundTask } from '../model/use-background-tasks';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
 import { ToolApproval } from './ToolApproval';
@@ -24,6 +24,9 @@ import { useAppStore } from '@/layers/shared/model';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useDirectoryState } from '@/layers/entities/session';
 import type { InteractiveToolHandle } from './message';
+import { useRotatingPlaceholder } from '../model/use-rotating-placeholder';
+import { AnimatedPlaceholder } from './AnimatedPlaceholder';
+import placeholderHints from '../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../model/use-input-autocomplete';
 import type { PendingFile } from '../model/use-file-upload';
 import type { QueueItem } from '../model/use-message-queue';
@@ -77,8 +80,10 @@ interface ChatInputContainerProps {
   onToolRef: (handle: InteractiveToolHandle | null) => void;
   /** Called after the user approves/denies/submits to clear waiting state. */
   onToolDecided: (toolCallId: string) => void;
-  /** Running background agents to display in the indicator. */
-  runningAgents: RunningAgent[];
+  /** Background tasks to display in the task bar. */
+  backgroundTasks: VisibleBackgroundTask[];
+  /** Callback to stop a running background task. */
+  onStopTask: (taskId: string) => void;
   /** SSE sync connection state for the ConnectionItem indicator. */
   syncConnectionState: ConnectionState;
   /** Number of failed reconnection attempts. */
@@ -116,12 +121,19 @@ export function ChatInputContainer({
   focusedOptionIndex,
   onToolRef,
   onToolDecided,
-  runningAgents,
+  backgroundTasks,
+  onStopTask,
   syncConnectionState,
   syncFailedAttempts,
 }: ChatInputContainerProps) {
   const mode = activeInteraction ? 'interactive' : 'normal';
   const isStreaming = status === 'streaming';
+  const isIdle = !isStreaming && editingIndex === null;
+  const rotatingPlaceholder = useRotatingPlaceholder({
+    defaultText: 'Message Claude...',
+    hints: placeholderHints,
+    enabled: isIdle && input === '',
+  });
   const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const [selectedCwd] = useDirectoryState();
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
@@ -280,7 +292,7 @@ export function ChatInputContainer({
               onRemove={onQueueRemove}
             />
 
-            <RunningAgentIndicator agents={runningAgents} />
+            <BackgroundTaskBar tasks={backgroundTasks} onStopTask={onStopTask} />
 
             <ChatInput
               ref={chatInputRef}
@@ -312,13 +324,20 @@ export function ChatInputContainer({
               onQueueNavigateDown={onQueueNavigateDown}
               queueHasItems={queue.length > 0}
               placeholder={(() => {
-                const isStreaming = status === 'streaming';
                 if (editingIndex !== null) return '';
                 if (isStreaming && queue.length > 0)
                   return `Compose another \u2014 ${queue.length} queued`;
                 if (isStreaming) return 'Compose next \u2014 will send when ready';
                 return 'Message Claude...';
               })()}
+              placeholderOverlay={
+                isIdle ? (
+                  <AnimatedPlaceholder
+                    text={rotatingPlaceholder.text}
+                    animationKey={rotatingPlaceholder.key}
+                  />
+                ) : null
+              }
             />
 
             <ChatStatusSection
