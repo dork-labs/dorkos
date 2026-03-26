@@ -214,7 +214,7 @@ export function AppShell() {
                     className="flex-1 overflow-hidden"
                     style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
                   >
-                    <Sidebar variant="floating">
+                    <Sidebar variant="inset">
                       {/* ── Dynamic sidebar body with cross-fade ── */}
                       <AnimatePresence mode="wait" initial={false}>
                         <motion.div

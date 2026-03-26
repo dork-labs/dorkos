@@ -8,6 +8,7 @@ import { relativeTime } from '../lib/relative-time';
 import { toast } from 'sonner';
 import { cn } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
+import { AgentAvatar } from '@/layers/entities/agent';
 
 /**
  * Data shape stored in each agent node for React Flow rendering.
@@ -29,6 +30,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   budget?: { maxHopsPerMessage: number; maxCallsPerHour: number };
   behavior?: { responseMode: string };
   color?: string | null;
+  /** Resolved agent visual color (from resolveAgentVisual) for the AgentAvatar. */
+  avatarColor: string;
   emoji: string;
   /** Absolute filesystem path for the agent's project directory. */
   projectPath?: string;
@@ -36,13 +39,6 @@ export interface AgentNodeData extends Record<string, unknown> {
   onViewHealth?: (agentId: string) => void;
   onOpenChat?: (agentId: string, projectPath: string) => void;
 }
-
-const STATUS_COLORS: Record<AgentNodeData['healthStatus'], string> = {
-  active: 'bg-green-500',
-  inactive: 'bg-amber-500',
-  stale: 'bg-zinc-400',
-  unreachable: 'bg-red-500',
-};
 
 /** Resolve the left-border color: agent color overrides namespace color. */
 function resolveBorderColor(d: AgentNodeData): string | undefined {
@@ -64,37 +60,23 @@ const AGENT_BAND_WIDTHS: Record<string, number> = {
 
 /**
  * Shared card header used by both DefaultCard and ExpandedCard.
- * Renders the health status dot, agent name (with optional emoji), the "Agent"
- * badge, and the runtime + capability badge row.
+ * Renders the AgentAvatar (with health ring), agent name, and the
+ * runtime + capability badge row.
  */
-function CardHeader({
-  d,
-  dotColor,
-  prefersReducedMotion,
-}: {
-  d: AgentNodeData;
-  dotColor: string;
-  prefersReducedMotion: boolean;
-}) {
+function CardHeader({ d }: { d: AgentNodeData }) {
   const overflowCount = Math.max(0, d.capabilities.length - 3);
 
   return (
     <>
-      {/* Header row: health dot + name + type badge */}
+      {/* Header row: avatar + name */}
       <div className="flex items-center gap-2">
-        <span className="relative flex shrink-0">
-          <span className={`h-2.5 w-2.5 rounded-full ${dotColor}`} />
-          {d.healthStatus === 'active' && !prefersReducedMotion && (
-            <span className="absolute inset-0 animate-ping rounded-full bg-green-500 opacity-30" />
-          )}
-        </span>
-        <span className="text-foreground truncate text-sm font-medium">
-          {d.emoji ? `${d.emoji} ` : ''}
-          {d.label}
-        </span>
-        <Badge variant="outline" className="text-muted-foreground ml-auto shrink-0 text-[10px]">
-          Agent
-        </Badge>
+        <AgentAvatar
+          color={d.avatarColor}
+          emoji={d.emoji}
+          healthStatus={d.healthStatus}
+          size="sm"
+        />
+        <span className="text-foreground truncate text-sm font-medium">{d.label}</span>
       </div>
 
       {/* Runtime + capability badges */}
@@ -118,48 +100,27 @@ function CardHeader({
 }
 
 /** Compact pill rendered when zoom < 0.6 (~120x28px). */
-function CompactPill({
-  d,
-  dotColor,
-  selected,
-}: {
-  d: AgentNodeData;
-  dotColor: string;
-  selected?: boolean;
-}) {
+function CompactPill({ d, selected }: { d: AgentNodeData; selected?: boolean }) {
   const borderColor = resolveBorderColor(d);
 
   return (
     <div
       className={cn(
-        'bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2.5 py-1 shadow-sm',
+        'bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2 py-0.5 shadow-sm',
         selected && 'ring-primary ring-2'
       )}
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
       <Handle type="target" position={Position.Left} className="bg-muted-foreground!" />
-      <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
-      <span className="text-foreground truncate text-xs font-medium">
-        {d.emoji ? `${d.emoji} ` : ''}
-        {d.label}
-      </span>
+      <AgentAvatar color={d.avatarColor} emoji={d.emoji} healthStatus={d.healthStatus} size="xs" />
+      <span className="text-foreground truncate text-xs font-medium">{d.label}</span>
       <Handle type="source" position={Position.Right} className="bg-muted-foreground!" />
     </div>
   );
 }
 
 /** Default card rendered when zoom is 0.6-1.2 (~200x72px). */
-function DefaultCard({
-  d,
-  dotColor,
-  prefersReducedMotion,
-  selected,
-}: {
-  d: AgentNodeData;
-  dotColor: string;
-  prefersReducedMotion: boolean;
-  selected?: boolean;
-}) {
+function DefaultCard({ d, selected }: { d: AgentNodeData; selected?: boolean }) {
   const borderColor = resolveBorderColor(d);
   const hasRelay = d.relayAdapters && d.relayAdapters.length > 0;
   const hasPulse = d.pulseScheduleCount != null && d.pulseScheduleCount > 0;
@@ -174,7 +135,7 @@ function DefaultCard({
     >
       <Handle type="target" position={Position.Left} className="bg-muted-foreground!" />
 
-      <CardHeader d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} />
+      <CardHeader d={d} />
 
       {/* Bottom indicator row */}
       {(hasRelay || hasPulse) && (
@@ -195,17 +156,7 @@ function DefaultCard({
 }
 
 /** Expanded card rendered when zoom > 1.2 (~240x120px). */
-function ExpandedCard({
-  d,
-  dotColor,
-  prefersReducedMotion,
-  selected,
-}: {
-  d: AgentNodeData;
-  dotColor: string;
-  prefersReducedMotion: boolean;
-  selected?: boolean;
-}) {
+function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean }) {
   const borderColor = resolveBorderColor(d);
   const hasRelay = d.relayAdapters && d.relayAdapters.length > 0;
   const hasPulse = d.pulseScheduleCount != null && d.pulseScheduleCount > 0;
@@ -220,7 +171,7 @@ function ExpandedCard({
     >
       <Handle type="target" position={Position.Left} className="bg-muted-foreground!" />
 
-      <CardHeader d={d} dotColor={dotColor} prefersReducedMotion={prefersReducedMotion} />
+      <CardHeader d={d} />
 
       {/* Description */}
       {d.description && (
@@ -294,7 +245,6 @@ function ToolbarButton({
 /** React Flow custom node that renders a mesh agent with contextual zoom LOD. */
 function AgentNodeComponent({ data, selected, id }: NodeProps) {
   const d = data as unknown as AgentNodeData;
-  const dotColor = STATUS_COLORS[d.healthStatus] ?? STATUS_COLORS.stale;
   const band = useLodBand();
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -328,25 +278,11 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
 
   let content: React.ReactNode;
   if (band === 'compact') {
-    content = <CompactPill d={d} dotColor={dotColor} selected={selected} />;
+    content = <CompactPill d={d} selected={selected} />;
   } else if (band === 'expanded') {
-    content = (
-      <ExpandedCard
-        d={d}
-        dotColor={dotColor}
-        prefersReducedMotion={prefersReducedMotion}
-        selected={selected}
-      />
-    );
+    content = <ExpandedCard d={d} selected={selected} />;
   } else {
-    content = (
-      <DefaultCard
-        d={d}
-        dotColor={dotColor}
-        prefersReducedMotion={prefersReducedMotion}
-        selected={selected}
-      />
-    );
+    content = <DefaultCard d={d} selected={selected} />;
   }
 
   return (

@@ -7,7 +7,7 @@
  *
  * @module services/core/template-downloader
  */
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { logger } from '../../lib/logger.js';
@@ -192,9 +192,9 @@ export async function execGitClone(
       }
     });
 
-    proc.on('error', (err) => reject(err));
+    (proc as ChildProcess).on('error', (err: Error) => reject(err));
 
-    proc.on('close', async (code) => {
+    (proc as ChildProcess).on('close', async (code: number | null) => {
       if (code !== 0) {
         reject(new Error(`git clone exited with code ${code}: ${redactAuthTokens(stderr)}`));
         return;

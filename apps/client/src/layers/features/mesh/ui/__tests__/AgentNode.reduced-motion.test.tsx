@@ -53,6 +53,8 @@ function makeMockProps(overrides: Record<string, unknown> = {}) {
       capabilities: ['code', 'review'],
       namespace: 'default',
       namespaceColor: '#3b82f6',
+      avatarColor: 'hsl(200, 70%, 55%)',
+      emoji: '🤖',
       ...overrides,
     },
     selected: false,
@@ -96,29 +98,31 @@ afterEach(cleanup);
 // ---------------------------------------------------------------------------
 
 describe('AgentNode reduced motion', () => {
+  // AgentAvatar handles reduced-motion via CSS (motion-reduce:hidden) rather
+  // than conditional DOM removal. The ping element is always rendered for active
+  // agents; the browser respects the prefers-reduced-motion media query.
+
   describe('default card (zoom 0.6-1.2)', () => {
-    it('shows animate-ping health pulse ring when reduced motion is not preferred', () => {
+    it('renders animate-ping health pulse for active agents', () => {
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'active' })} />);
       const pingElement = container.querySelector('.animate-ping');
       expect(pingElement).toBeInTheDocument();
     });
 
-    it('hides animate-ping health pulse ring when reduced motion is preferred', () => {
-      mockUsePrefersReducedMotion.mockReturnValue(true);
+    it('applies motion-reduce:hidden to the ping element for a11y', () => {
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'active' })} />);
       const pingElement = container.querySelector('.animate-ping');
-      expect(pingElement).not.toBeInTheDocument();
+      expect(pingElement).toBeInTheDocument();
+      expect(pingElement!.className).toContain('motion-reduce:hidden');
     });
 
-    it('does not render animate-ping for inactive agents regardless of motion preference', () => {
-      mockUsePrefersReducedMotion.mockReturnValue(false);
+    it('does not render animate-ping for inactive agents', () => {
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'inactive' })} />);
       const pingElement = container.querySelector('.animate-ping');
       expect(pingElement).not.toBeInTheDocument();
     });
 
-    it('does not render animate-ping for stale agents regardless of motion preference', () => {
-      mockUsePrefersReducedMotion.mockReturnValue(false);
+    it('does not render animate-ping for stale agents', () => {
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'stale' })} />);
       const pingElement = container.querySelector('.animate-ping');
       expect(pingElement).not.toBeInTheDocument();
@@ -130,17 +134,10 @@ describe('AgentNode reduced motion', () => {
       mockUseLodBand.mockReturnValue('expanded');
     });
 
-    it('shows animate-ping when reduced motion is not preferred and agent is active', () => {
+    it('renders animate-ping for active agents in expanded view', () => {
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'active' })} />);
       const pingElement = container.querySelector('.animate-ping');
       expect(pingElement).toBeInTheDocument();
-    });
-
-    it('hides animate-ping when reduced motion is preferred and agent is active', () => {
-      mockUsePrefersReducedMotion.mockReturnValue(true);
-      const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'active' })} />);
-      const pingElement = container.querySelector('.animate-ping');
-      expect(pingElement).not.toBeInTheDocument();
     });
   });
 
@@ -149,8 +146,14 @@ describe('AgentNode reduced motion', () => {
       mockUseLodBand.mockReturnValue('compact');
     });
 
-    it('does not render animate-ping in compact mode (no pulse ring)', () => {
+    it('renders animate-ping for active agents via AgentAvatar', () => {
       const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'active' })} />);
+      const pingElement = container.querySelector('.animate-ping');
+      expect(pingElement).toBeInTheDocument();
+    });
+
+    it('does not render animate-ping for inactive agents in compact mode', () => {
+      const { container } = render(<AgentNode {...makeMockProps({ healthStatus: 'inactive' })} />);
       const pingElement = container.querySelector('.animate-ping');
       expect(pingElement).not.toBeInTheDocument();
     });

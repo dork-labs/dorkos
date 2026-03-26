@@ -148,6 +148,7 @@ export function buildTopologyElements(
 
     for (const agent of ns.agents) {
       const typedAgent = agent as TopologyAgent;
+      const visual = resolveAgentVisual(typedAgent);
       const agentNode: Node = {
         id: agent.id,
         type: 'agent',
@@ -173,7 +174,8 @@ export function buildTopologyElements(
             : undefined,
           behavior: agent.behavior ? { responseMode: agent.behavior.responseMode } : undefined,
           color: typedAgent.color ?? null,
-          emoji: resolveAgentVisual(typedAgent).emoji,
+          avatarColor: visual.color,
+          emoji: visual.emoji,
           projectPath: typedAgent.projectPath ?? '',
           onOpenSettings: (id: string) =>
             callbacks.onOpenSettings?.(id, typedAgent.projectPath ?? ''),

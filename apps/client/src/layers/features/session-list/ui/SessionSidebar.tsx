@@ -1,196 +1,51 @@
-import { useMemo, useCallback, useEffect, useRef, useContext } from 'react';
-import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { cn, groupSessionsByTime, TIMING, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
-import {
-  SidebarContent,
-  SidebarContext,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  Kbd,
-} from '@/layers/shared/ui';
-import { usePulseEnabled, useCompletedRunBadge, useActiveRunCount } from '@/layers/entities/pulse';
-import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
-import { toast } from 'sonner';
+import { useMemo } from 'react';
+import { useAppStore } from '@/layers/shared/model';
+import { cn, groupSessionsByTime } from '@/layers/shared/lib';
+import { SidebarContent } from '@/layers/shared/ui';
+import { useActiveRunCount } from '@/layers/entities/pulse';
+import { useAgentToolStatus, useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useSessions } from '@/layers/entities/session';
 import { SidebarTabRow } from './SidebarTabRow';
 import { SessionsView } from './SessionsView';
 import { SchedulesView } from './SchedulesView';
 import { ConnectionsView } from './ConnectionsView';
-import { Home, Plus } from 'lucide-react';
-import { PromoSlot } from '@/layers/features/feature-promos';
-import { useNavigate } from '@tanstack/react-router';
+import { OverviewTabPanel } from './OverviewTabPanel';
+import { SidebarAgentHeader } from './SidebarAgentHeader';
 import { useConnectionsStatus } from '../model/use-connections-status';
+import { usePulseNotifications } from '../model/use-pulse-notifications';
+import { useSidebarTabs } from '../model/use-sidebar-tabs';
+import { useSidebarNavigation } from '../model/use-sidebar-navigation';
 
 /** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
 export function SessionSidebar() {
-  const { sessions, activeSessionId, setActiveSession } = useSessions();
-  const { setSidebarOpen, setPulseOpen } = useAppStore();
-  const isMobile = useIsMobile();
-  const pulseEnabled = usePulseEnabled();
-  const { unviewedCount, clearBadge } = useCompletedRunBadge(pulseEnabled);
-  const enablePulseNotifications = useAppStore((s) => s.enablePulseNotifications);
-  const pulseOpen = useAppStore((s) => s.pulseOpen);
-  // Null when rendered in embedded mode (no SidebarProvider); used to close the mobile Sheet.
-  const sidebarCtx = useContext(SidebarContext);
-
-  const handleNewSession = useCallback(() => {
-    setActiveSession(crypto.randomUUID());
-    if (isMobile) {
-      setTimeout(() => {
-        setSidebarOpen(false);
-        sidebarCtx?.setOpenMobile(false);
-      }, TIMING.SIDEBAR_AUTO_CLOSE_MS);
-    }
-  }, [setActiveSession, isMobile, setSidebarOpen, sidebarCtx]);
-
-  const handleSessionClick = useCallback(
-    (sessionId: string) => {
-      setActiveSession(sessionId);
-      if (isMobile) {
-        setSidebarOpen(false);
-        sidebarCtx?.setOpenMobile(false);
-      }
-    },
-    [isMobile, setActiveSession, setSidebarOpen, sidebarCtx]
-  );
-
-  // Clear completion badge when Pulse panel opens
-  useEffect(() => {
-    if (pulseOpen) clearBadge();
-  }, [pulseOpen, clearBadge]);
-
-  // Toast on new run completions
-  const prevUnviewedRef = useRef(0);
-  useEffect(() => {
-    if (!enablePulseNotifications) return;
-    if (unviewedCount > prevUnviewedRef.current) {
-      toast('Pulse run completed', {
-        description: 'A scheduled run has finished.',
-        duration: 6000,
-        action: {
-          label: 'View history',
-          onClick: () => setPulseOpen(true),
-        },
-      });
-    }
-    prevUnviewedRef.current = unviewedCount;
-  }, [unviewedCount, enablePulseNotifications, setPulseOpen]);
-
-  // Flow badge count to Zustand so useDocumentTitle can render it
-  const setPulseBadgeCount = useAppStore((s) => s.setPulseBadgeCount);
-  useEffect(() => {
-    setPulseBadgeCount(unviewedCount);
-    return () => setPulseBadgeCount(0);
-  }, [unviewedCount, setPulseBadgeCount]);
-
-  const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
-
-  const { sidebarActiveTab, setSidebarActiveTab } = useAppStore();
+  const { sessions, activeSessionId } = useSessions();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const toolStatus = useAgentToolStatus(selectedCwd);
   const pulseToolEnabled = toolStatus.pulse !== 'disabled-by-server';
   const { data: activeRunCount = 0 } = useActiveRunCount(pulseToolEnabled);
-
+  const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   const connectionsStatus = useConnectionsStatus(selectedCwd);
-  const navigate = useNavigate();
 
-  const visibleTabs = useMemo(() => {
-    const tabs: ('overview' | 'sessions' | 'schedules' | 'connections')[] = [
-      'overview',
-      'sessions',
-    ];
-    if (pulseToolEnabled) tabs.push('schedules');
-    // Connections always visible (Mesh has no server feature flag)
-    tabs.push('connections');
-    return tabs;
-  }, [pulseToolEnabled]);
+  // Side-effect hooks
+  usePulseNotifications();
+  const { visibleTabs, sidebarActiveTab, setSidebarActiveTab } = useSidebarTabs(pulseToolEnabled);
+  const { handleNewSession, handleSessionClick, handleDashboard } = useSidebarNavigation();
 
-  // Fall back to 'overview' if active tab becomes hidden due to feature flag changes
-  useEffect(() => {
-    if (!visibleTabs.includes(sidebarActiveTab)) {
-      setSidebarActiveTab('overview');
-    }
-  }, [visibleTabs, sidebarActiveTab, setSidebarActiveTab]);
-
-  // Keyboard shortcuts for sidebar tab switching (Cmd/Ctrl + 1/2/3)
-  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
-
-  useEffect(() => {
-    if (!sidebarOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const tabMap: Record<string, 'overview' | 'sessions' | 'schedules' | 'connections'> = {
-        '1': 'overview',
-        '2': 'sessions',
-        '3': 'schedules',
-        '4': 'connections',
-      };
-      const tab = tabMap[e.key];
-      if (tab && visibleTabs.includes(tab)) {
-        e.preventDefault();
-        setSidebarActiveTab(tab);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [sidebarOpen, visibleTabs, setSidebarActiveTab]);
-
-  const handleDashboard = useCallback(() => {
-    navigate({ to: '/' });
-    if (isMobile) {
-      setSidebarOpen(false);
-      sidebarCtx?.setOpenMobile(false);
-    }
-  }, [navigate, isMobile, setSidebarOpen, sidebarCtx]);
-
-  // Cmd/Ctrl+Shift+N → new session (global, works regardless of sidebar state)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'N') {
-        e.preventDefault();
-        handleNewSession();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleNewSession]);
+  const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
+  const recentSessions = useMemo(
+    () => [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3),
+    [sessions]
+  );
 
   return (
     <>
-      <SidebarHeader className="border-b p-3">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              data-slot="dashboard-link"
-              onClick={handleDashboard}
-              className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98]"
-            >
-              <Home className="size-(--size-icon-sm)" />
-              Dashboard
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={handleNewSession}
-              className="group border-border text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98] disabled:opacity-50"
-            >
-              <span className="flex items-center gap-1.5">
-                <Plus className="size-(--size-icon-sm)" />
-                New session
-              </span>
-              <Kbd className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                {formatShortcutKey(SHORTCUTS.NEW_SESSION)}
-              </Kbd>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+      <SidebarAgentHeader
+        agentVisual={agentVisual}
+        agentName={currentAgent?.name}
+        onDashboard={handleDashboard}
+        onNewSession={handleNewSession}
+      />
 
       <SidebarTabRow
         activeTab={sidebarActiveTab}
@@ -201,32 +56,13 @@ export function SessionSidebar() {
       />
 
       <SidebarContent data-testid="session-list" className="!overflow-hidden">
-        {/* Overview tab panel */}
-        <div
-          role="tabpanel"
-          id="sidebar-tabpanel-overview"
-          aria-labelledby="sidebar-tab-overview"
-          className={cn('h-full', sidebarActiveTab !== 'overview' && 'hidden')}
-        >
-          <div className="space-y-4 p-3">
-            {currentAgent ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium">{currentAgent.name}</p>
-                <p className="text-muted-foreground text-[11px]">
-                  {currentAgent.description || 'No description'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <p className="text-xs font-medium">Welcome</p>
-                <p className="text-muted-foreground text-[11px]">
-                  Select an agent or start a new session
-                </p>
-              </div>
-            )}
-            <PromoSlot placement="agent-sidebar" maxUnits={3} />
-          </div>
-        </div>
+        <OverviewTabPanel
+          recentSessions={recentSessions}
+          activeSessionId={activeSessionId}
+          onSessionClick={handleSessionClick}
+          onViewMore={() => setSidebarActiveTab('sessions')}
+          isVisible={sidebarActiveTab === 'overview'}
+        />
 
         {/* Sessions view */}
         <div

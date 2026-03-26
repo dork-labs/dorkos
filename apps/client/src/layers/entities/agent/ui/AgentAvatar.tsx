@@ -68,7 +68,7 @@ export function AgentAvatar({ color, emoji, size, healthStatus, className }: Age
       <span className="leading-none">{emoji}</span>
       {healthStatus === 'active' && (
         <span className="absolute -top-px -right-px size-2 rounded-full bg-emerald-500" aria-hidden>
-          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-40" />
+          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-40 motion-reduce:hidden" />
         </span>
       )}
     </span>
