@@ -160,7 +160,7 @@ describe('AgentRow', () => {
     expect(screen.getAllByText('projects/frontend').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows health status dot with correct color class for active', () => {
+  it('renders AgentAvatar with health status for active', () => {
     const { container } = render(
       <AgentRow
         agent={agentFixture}
@@ -172,11 +172,13 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    const dot = container.querySelector('.bg-emerald-500');
-    expect(dot).toBeInTheDocument();
+    const avatar = container.querySelector('[data-slot="agent-avatar"]');
+    expect(avatar).toBeInTheDocument();
+    // Active health ring
+    expect(avatar).toHaveClass('ring-emerald-500/60');
   });
 
-  it('shows health status dot with correct color class for inactive', () => {
+  it('renders AgentAvatar with health status for inactive', () => {
     const { container } = render(
       <AgentRow
         agent={agentFixture}
@@ -188,8 +190,10 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    const dot = container.querySelector('.bg-amber-500');
-    expect(dot).toBeInTheDocument();
+    const avatar = container.querySelector('[data-slot="agent-avatar"]');
+    expect(avatar).toBeInTheDocument();
+    // Inactive health ring
+    expect(avatar).toHaveClass('ring-amber-500/60');
   });
 
   it('expands on click revealing full description', () => {
@@ -340,7 +344,7 @@ describe('AgentRow', () => {
     expect(screen.getByText('Never')).toBeInTheDocument();
   });
 
-  it('adds animate-health-pulse class to dot when healthStatus is active', () => {
+  it('shows active pulse indicator inside AgentAvatar when healthStatus is active', () => {
     const { container } = render(
       <AgentRow
         agent={agentFixture}
@@ -352,11 +356,13 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    const dot = container.querySelector('.bg-emerald-500');
-    expect(dot).toHaveClass('animate-health-pulse');
+    const avatar = container.querySelector('[data-slot="agent-avatar"]');
+    // AgentAvatar renders a pulsing dot for active status
+    const pulseDot = avatar?.querySelector('.bg-emerald-500');
+    expect(pulseDot).toBeInTheDocument();
   });
 
-  it('does not add animate-health-pulse class when healthStatus is inactive', () => {
+  it('does not show active pulse indicator when healthStatus is inactive', () => {
     const { container } = render(
       <AgentRow
         agent={agentFixture}
@@ -368,8 +374,9 @@ describe('AgentRow', () => {
       { wrapper: createWrapper() }
     );
 
-    const dot = container.querySelector('.bg-amber-500');
-    expect(dot).not.toHaveClass('animate-health-pulse');
+    const avatar = container.querySelector('[data-slot="agent-avatar"]');
+    const pulseDot = avatar?.querySelector('.bg-emerald-500');
+    expect(pulseDot).not.toBeInTheDocument();
   });
 
   it('shows "Default" badge when agent is the default', async () => {

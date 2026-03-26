@@ -7,6 +7,7 @@ import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
+import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { AgentDialog } from '@/layers/features/agent-settings';
 import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
 import { SessionLaunchPopover } from './SessionLaunchPopover';
@@ -26,13 +27,6 @@ interface AgentRowProps {
   healthStatus: AgentHealthStatus;
   lastActive: string | null;
 }
-
-const healthDotClass: Record<AgentHealthStatus, string> = {
-  active: 'bg-emerald-500',
-  inactive: 'bg-amber-500',
-  stale: 'bg-muted-foreground/30',
-  unreachable: 'bg-red-500',
-};
 
 /** Animation variants for the expandable detail section. */
 const expandVariants = {
@@ -57,6 +51,7 @@ export function AgentRow({
   healthStatus,
   lastActive,
 }: AgentRowProps) {
+  const { color, emoji } = resolveAgentVisual(agent);
   const [open, setOpen] = useState(false);
   const [unregisterOpen, setUnregisterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -84,14 +79,7 @@ export function AgentRow({
         <div className="cursor-pointer" onClick={() => setOpen((v) => !v)}>
           {/* Line 1: health dot + name + runtime badge + relative time + chevron */}
           <div className="flex items-center gap-3">
-            <span
-              className={cn(
-                'size-2 shrink-0 rounded-full',
-                healthDotClass[healthStatus],
-                healthStatus === 'active' && 'animate-health-pulse'
-              )}
-              aria-label={`Status: ${healthStatus}`}
-            />
+            <AgentAvatar color={color} emoji={emoji} size="xs" healthStatus={healthStatus} />
 
             <span className="text-sm font-medium">{agent.name}</span>
 

@@ -8,7 +8,8 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/layers/shared/ui';
-import { cn, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
+import { cn, shortenHomePath } from '@/layers/shared/lib';
+import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface AgentPickerProps {
@@ -68,11 +69,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
       >
         {selectedAgent ? (
           <span className="flex items-center gap-2 truncate">
-            <span
-              className="inline-block size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: selectedVisual!.color }}
-            />
-            <span className="text-xs leading-none">{selectedVisual!.emoji}</span>
+            <AgentAvatar color={selectedVisual!.color} emoji={selectedVisual!.emoji} size="xs" />
             <span className="truncate">{selectedAgent.name}</span>
           </span>
         ) : (
@@ -96,11 +93,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
                       value={`${agent.name} ${agent.projectPath}`}
                       onSelect={() => handleSelect(agent.id)}
                     >
-                      <span
-                        className="inline-block size-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: visual.color }}
-                      />
-                      <span className="text-xs leading-none">{visual.emoji}</span>
+                      <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
                       <span className="truncate font-medium">{agent.name}</span>
                       <span className="text-muted-foreground truncate text-xs">
                         {shortenHomePath(agent.projectPath)}

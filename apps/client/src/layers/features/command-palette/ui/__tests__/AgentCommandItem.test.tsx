@@ -81,15 +81,16 @@ describe('AgentCommandItem', () => {
     expect(within(item as HTMLElement).getByText(/projects\/auth/)).toBeInTheDocument();
   });
 
-  it('renders colored dot with override color', () => {
+  it('renders AgentAvatar with override color', () => {
     const { container } = renderWithCommand(
       <AgentCommandItem agent={mockAgentWithOverrides} isActive={false} onSelect={vi.fn()} />
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const dot = item?.querySelector('span[style]');
-    expect(dot).toBeInTheDocument();
-    expect(dot).toHaveStyle({ backgroundColor: '#6366f1' });
+    const avatar = item?.querySelector('[data-slot="agent-avatar"]');
+    expect(avatar).toBeInTheDocument();
+    // AgentAvatar uses color-mix with the override color (jsdom converts hex to rgb)
+    expect((avatar as HTMLElement).style.backgroundColor).toContain('99, 102, 241');
   });
 
   it('renders emoji from agent icon override', () => {
@@ -107,10 +108,10 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const dot = item?.querySelector('span[style]');
-    expect(dot).toBeInTheDocument();
-    // Should have some background color (hash-based)
-    const style = (dot as HTMLElement).style.backgroundColor;
+    const avatar = item?.querySelector('[data-slot="agent-avatar"]');
+    expect(avatar).toBeInTheDocument();
+    // Should have some background color (hash-based via color-mix)
+    const style = (avatar as HTMLElement).style.backgroundColor;
     expect(style).toBeTruthy();
     expect(style).not.toBe('');
   });
@@ -121,9 +122,9 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const emojiSpan = item?.querySelector('span.text-sm');
-    expect(emojiSpan).toBeInTheDocument();
-    expect(emojiSpan?.textContent).toBeTruthy();
+    const avatar = item?.querySelector('[data-slot="agent-avatar"]');
+    expect(avatar).toBeInTheDocument();
+    expect(avatar?.textContent).toBeTruthy();
   });
 
   it('shows checkmark icon when isActive is true', () => {

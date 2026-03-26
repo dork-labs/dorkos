@@ -1,7 +1,8 @@
 import { Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CommandItem } from '@/layers/shared/ui';
-import { shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
+import { shortenHomePath } from '@/layers/shared/lib';
+import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { HighlightedText } from './HighlightedText';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -67,16 +68,11 @@ export function AgentCommandItem({
 
       {/* Content above the selection indicator */}
       <div className="relative z-10 flex w-full items-start gap-2">
-        {/* Colored dot */}
-        <span
-          className="mt-1.5 size-2.5 flex-shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-        />
+        <AgentAvatar color={color} emoji={emoji} size="xs" className="mt-0.5 flex-shrink-0" />
 
         {/* Agent info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-sm">{emoji}</span>
             {nameIndices ? (
               <HighlightedText
                 text={agent.name}

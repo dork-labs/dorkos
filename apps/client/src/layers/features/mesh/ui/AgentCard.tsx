@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 
 interface AgentCardProps {
   agent: AgentManifest;
@@ -11,6 +12,7 @@ interface AgentCardProps {
 
 /** Displays a registered agent with expandable details and edit/unregister actions. */
 export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
+  const { color, emoji } = resolveAgentVisual(agent);
   const [expanded, setExpanded] = useState(false);
 
   const Chevron = expanded ? ChevronDown : ChevronRight;
@@ -26,6 +28,7 @@ export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
           >
             <Chevron className="text-muted-foreground size-4" />
           </button>
+          <AgentAvatar color={color} emoji={emoji} size="xs" />
           <span className="text-foreground truncate text-sm font-medium">{agent.name}</span>
           <Badge variant="secondary" className="text-xs">
             {agent.runtime}
