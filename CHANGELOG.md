@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add enumFilter and Zod searchValidator to filter engine
 - Add filter engine foundation with textFilter
 - Show default agent in dashboard sidebar
 - Add AgentAvatar and AgentIdentity entity primitives
