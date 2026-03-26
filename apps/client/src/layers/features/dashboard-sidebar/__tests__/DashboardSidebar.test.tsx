@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
@@ -18,12 +19,29 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const mockRecentCwds = vi.fn<() => RecentCwd[]>(() => []);
+const mockSetGlobalPaletteOpen = vi.fn();
+const mockTransport = {
+  getConfig: vi.fn().mockResolvedValue({
+    agents: { defaultAgent: 'dorkbot', defaultDirectory: '~/.dork/agents' },
+  }),
+  resolveAgents: vi.fn().mockResolvedValue({}),
+};
+
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
-    useAppStore: (selector: (s: { recentCwds: RecentCwd[] }) => unknown) => {
-      return selector({ recentCwds: mockRecentCwds() });
+    useTransport: () => mockTransport,
+    useAppStore: (
+      selector: (s: {
+        recentCwds: RecentCwd[];
+        setGlobalPaletteOpen: (open: boolean) => void;
+      }) => unknown
+    ) => {
+      return selector({
+        recentCwds: mockRecentCwds(),
+        setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
+      });
     },
   };
 });
@@ -64,10 +82,15 @@ beforeAll(() => {
 });
 
 function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <TooltipProvider>
-      <SidebarProvider>{ui}</SidebarProvider>
-    </TooltipProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <SidebarProvider>{ui}</SidebarProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -105,6 +128,25 @@ describe('DashboardSidebar', () => {
     renderWithProviders(<DashboardSidebar />);
     const agentsBtns = screen.getAllByText('Agents').map((el) => el.closest('button'));
     expect(agentsBtns.some((btn) => btn?.getAttribute('data-active') === 'true')).toBe(true);
+  });
+
+  it('renders Default Agent section with fallback name', () => {
+    renderWithProviders(<DashboardSidebar />);
+    const labels = screen.getAllByText('Default Agent');
+    expect(labels.length).toBeGreaterThanOrEqual(1);
+    // Falls back to 'dorkbot' before config loads
+    const names = screen.getAllByText('dorkbot');
+    expect(names.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('navigates to default agent session on click', () => {
+    renderWithProviders(<DashboardSidebar />);
+    const dorkbotElements = screen.getAllByText('dorkbot');
+    fireEvent.click(dorkbotElements[0]);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '~/.dork/agents/dorkbot' },
+    });
   });
 
   it('hides Recent Agents section when recentCwds is empty', () => {

@@ -1,5 +1,6 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { LayoutDashboard, MessageSquare, Users } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { LayoutDashboard, Search, Star, Users } from 'lucide-react';
 import {
   SidebarHeader,
   SidebarContent,
@@ -8,9 +9,11 @@ import {
   SidebarMenuButton,
   SidebarGroup,
   SidebarGroupLabel,
+  Kbd,
 } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
-import { useResolvedAgents } from '@/layers/entities/agent';
+import { useAppStore, useTransport } from '@/layers/shared/model';
+import { formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import { useResolvedAgents, useAgentVisual, AgentIdentity } from '@/layers/entities/agent';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { RecentAgentItem } from './RecentAgentItem';
 
@@ -24,9 +27,25 @@ const MAX_RECENT_AGENTS = 8;
 export function DashboardSidebar() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const transport = useTransport();
   const recentCwds = useAppStore((s) => s.recentCwds);
+  const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
   const paths = recentCwds.map((r) => r.path);
   const { data: agents } = useResolvedAgents(paths);
+
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => transport.getConfig(),
+    staleTime: 30_000,
+  });
+
+  const defaultAgentName = config?.agents?.defaultAgent ?? 'dorkbot';
+  const defaultAgentDir = config?.agents?.defaultDirectory ?? '~/.dork/agents';
+  const defaultAgentPath = `${defaultAgentDir}/${defaultAgentName}`;
+
+  const { data: defaultAgentResolved } = useResolvedAgents([defaultAgentPath]);
+  const defaultManifest = defaultAgentResolved?.[defaultAgentPath] ?? null;
+  const defaultVisual = useAgentVisual(defaultManifest, defaultAgentPath);
 
   return (
     <>
@@ -44,16 +63,6 @@ export function DashboardSidebar() {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
-              isActive={pathname === '/session'}
-              onClick={() => navigate({ to: '/session' })}
-              className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
-            >
-              <MessageSquare className="size-(--size-icon-sm)" />
-              Sessions
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
               isActive={pathname === '/agents'}
               onClick={() => navigate({ to: '/agents' })}
               className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
@@ -62,10 +71,45 @@ export function DashboardSidebar() {
               Agents
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => setGlobalPaletteOpen(true)}
+              className="group text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98]"
+            >
+              <span className="flex items-center gap-1.5">
+                <Search className="size-(--size-icon-sm)" />
+                Search
+              </span>
+              <Kbd className="shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                {formatShortcutKey(SHORTCUTS.COMMAND_PALETTE)}
+              </Kbd>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent className="p-3">
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-muted-foreground/70 text-[10px] font-medium tracking-wider uppercase">
+            <Star className="mr-1 inline size-3" />
+            Default Agent
+          </SidebarGroupLabel>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => navigate({ to: '/session', search: { dir: defaultAgentPath } })}
+                className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98]"
+              >
+                <AgentIdentity
+                  {...defaultVisual}
+                  name={defaultManifest?.name ?? defaultAgentName}
+                  size="xs"
+                />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+
         {recentCwds.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-muted-foreground/70 text-[10px] font-medium tracking-wider uppercase">
