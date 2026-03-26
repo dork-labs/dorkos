@@ -81,3 +81,18 @@ export { formatDuration } from './format-duration';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
+export {
+  textFilter,
+  enumFilter,
+  dateRangeFilter,
+  booleanFilter,
+  numericRangeFilter,
+  createFilterSchema,
+  createSortOptions,
+  applySortAndFilter,
+  isEnumFilter,
+  type FilterDefinition,
+  type EnumFilterDefinition,
+  type FilterSchema,
+  type FilterValues,
+} from './filter-engine';
