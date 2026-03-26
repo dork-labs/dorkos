@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve workspace packages in electron-vite renderer build
 - Display human-readable labels for dateRange, boolean, numericRange filters
 - Fix dynamic enum deserialize and color dot rendering in FilterBar
 - Provide TanStack Router context in DevPlayground
