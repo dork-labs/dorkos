@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 180,
+  "nextNumber": 181,
   "specs": [
+    {
+      "number": 180,
+      "slug": "composable-filter-system",
+      "title": "Composable Filter System — Shared Filtering Infrastructure for List Views",
+      "created": "2026-03-26",
+      "status": "specified"
+    },
     {
       "number": 179,
       "slug": "sidebar-upgrade-notification",
