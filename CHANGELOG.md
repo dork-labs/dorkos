@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Absorb superpowers plugin into first-party skills and agents
+- Absorb superpowers plugin into first-party skills and agents
+- Absorb superpowers plugin into first-party skills and agents
+- Absorb superpowers plugin into first-party skills and agents
 - Add FilterBar to dev playground with mock data demo
 - Add agent filter schema and integrate with router search params
 - Add FilterBar compound UI components

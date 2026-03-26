@@ -142,4 +142,29 @@ if [ ${#AFFECTED_GUIDES[@]} -gt 0 ] || [ ${#AFFECTED_DOCS[@]} -gt 0 ]; then
   echo ""
 fi
 
+# Check for specs that have specifications but no ADRs
+SPECS_WITHOUT_ADRS=""
+for spec_dir in specs/*/; do
+  [ -d "$spec_dir" ] || continue
+  slug=$(basename "$spec_dir")
+  if [ -f "$spec_dir/02-specification.md" ]; then
+    # Check if any ADR references this slug
+    adr_count=$(grep -rl "extractedFrom.*$slug\|spec:.*$slug" decisions/ 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$adr_count" -eq 0 ]; then
+      SPECS_WITHOUT_ADRS="$SPECS_WITHOUT_ADRS  - specs/$slug has a specification but no linked ADRs. Run /adr:from-spec $slug\n"
+    fi
+  fi
+done
+
+if [ -n "$SPECS_WITHOUT_ADRS" ]; then
+  echo ""
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}📋 ADR Extraction Reminder${NC}"
+  echo ""
+  echo "   Specs with specifications but no linked ADRs:"
+  echo -e "$SPECS_WITHOUT_ADRS"
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+fi
+
 exit 0

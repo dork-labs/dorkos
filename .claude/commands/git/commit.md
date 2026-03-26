@@ -106,6 +106,16 @@ Otherwise, analyze the staged changes and generate an appropriate commit message
 2. Summarize the nature of changes (feature, fix, refactor, docs, etc.)
 3. Write a concise message focusing on "why" not "what"
 
+### Step 5.5: Verification Gate
+
+Before committing, verify all checks pass with FRESH evidence:
+
+1. Confirm Step 1 validation passed (or was skipped with --no-verify)
+2. Review the staged diff one more time
+3. Ensure no incomplete work is being committed (no TODO markers, no commented-out code, no partial implementations)
+
+Refer to the `verification-before-completion` skill: never claim work is ready to commit without fresh verification evidence.
+
 ### Step 6: Create Commit
 
 **If `--amend` flag was provided:**

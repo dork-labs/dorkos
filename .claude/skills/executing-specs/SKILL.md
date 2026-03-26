@@ -205,7 +205,34 @@ Options:
 - "Stop execution" - Pause for manual intervention
 ```
 
-**Step D: APPEND batch results to 04-implementation.md (INCREMENTAL WRITE)**
+**Step D: Two-Stage Review (per task)**
+
+After each task's agent completes successfully:
+
+**Stage 1 — Spec Compliance Review:**
+Dispatch a review agent to verify the implementation matches the task spec:
+
+- Did the agent implement everything requested?
+- Did the agent add anything not requested?
+- Did the agent misinterpret any requirements?
+- CRITICAL: The reviewer must read actual code, not trust the implementer's report.
+
+If issues found: dispatch the implementer agent to fix, then re-review.
+
+**Stage 2 — Code Quality Review (only after Stage 1 passes):**
+Dispatch the `code-reviewer` agent with:
+
+- `{WHAT_WAS_IMPLEMENTED}`: from the implementer's report
+- `{PLAN_OR_REQUIREMENTS}`: the task description from `03-tasks.json`
+- `{BASE_SHA}`: commit before task
+- `{HEAD_SHA}`: current commit
+- `{DESCRIPTION}`: task summary
+
+If Critical or Important issues found: dispatch fix agent, then re-review.
+
+Never start Stage 2 before Stage 1 passes.
+
+**Step E: APPEND batch results to 04-implementation.md (INCREMENTAL WRITE)**
 
 This is the second critical behavioral change: persist results after EACH batch, not at the end.
 
@@ -220,14 +247,14 @@ This is the second critical behavioral change: persist results after EACH batch,
 6. **Update task count** — Increment "Tasks Completed: X / Total" in the Progress section
 7. Write the updated file
 
-**Step E: Update task status**
+**Step F: Update task status**
 
 ```
 for task in batch.successful_tasks:
   TaskUpdate({ taskId: task.id, status: "completed" })
 ```
 
-**Step F: Display batch summary**
+**Step G: Display batch summary**
 
 ```
 Batch <N> complete: <X>/<Y> tasks succeeded
@@ -322,7 +349,7 @@ If circular dependencies detected:
 ## Session Continuity
 
 1. **First run**: Phase 1 scaffolds `04-implementation.md` with Session 1
-2. **Each batch**: Phase 3 Step D appends results incrementally
+2. **Each batch**: Phase 3 Step E appends results incrementally
 3. **Subsequent runs**: Phase 1 detects existing file, increments session number
 4. **Context preservation**: Completed tasks, files modified, known issues passed to agents via cross-session context
 5. **No duplication**: Completed tasks skipped automatically via TaskList status

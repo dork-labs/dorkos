@@ -34,3 +34,19 @@ For each function reviewed:
 
 **Issues Found**: [none, or list of issues with fixes applied]
 ```
+
+## Structured Review Option
+
+This command provides a quick inline self-review. For deeper, more rigorous review — especially after completing a major feature, finishing a spec task, or before merging to main — dispatch the **code-reviewer** subagent instead.
+
+The code-reviewer agent (`.claude/agents/code-reviewer.md`) is a senior reviewer that independently inspects actual code against plans, specs, and DorkOS coding standards. It verifies FSD layer compliance, SDK import confinement, architecture boundaries, test coverage, and production readiness.
+
+**How to dispatch:** Follow the instructions in the `/skill:requesting-code-review` skill, which walks through obtaining git SHAs, assembling the review context, dispatching the subagent, and acting on feedback.
+
+**When to escalate from self-review to structured review:**
+
+- The changes span multiple packages or architectural layers
+- You modified shared interfaces or transport contracts
+- You added or changed database schemas
+- You are about to merge to main
+- You want a fresh perspective after being stuck

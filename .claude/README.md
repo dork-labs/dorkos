@@ -20,10 +20,10 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | Component    | Count | Location                                                                   |
 | ------------ | ----- | -------------------------------------------------------------------------- |
 | Commands     | 48    | `.claude/commands/`                                                        |
-| Agents       | 5     | `.claude/agents/`                                                          |
-| Skills       | 12    | `.claude/skills/`                                                          |
+| Agents       | 6     | `.claude/agents/`                                                          |
+| Skills       | 17    | `.claude/skills/`                                                          |
 | Rules        | 10    | `.claude/rules/`                                                           |
-| Claude Hooks | 11    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
+| Claude Hooks | 13    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers  | 3     | `.mcp.json`                                                                |
 | ADRs         | 164   | `decisions/`                                                               |
@@ -74,6 +74,7 @@ Agents run in isolated context windows via the Task tool. Use for complex, multi
 | `product-manager`       | Roadmap, prioritization, scope management       | Strategic decisions, feature prioritization             |
 | `research-expert`       | Web research, information gathering             | External research (non-Claude Code topics)              |
 | `code-search`           | Finding files, patterns, functions              | Locating code by pattern or content                     |
+| `code-reviewer`         | Code review, production readiness               | After major tasks, features, or before merge            |
 
 **Explore vs code-search:**
 
@@ -86,20 +87,25 @@ Agents run in isolated context windows via the Task tool. Use for complex, multi
 
 Skills provide reusable expertise that Claude applies automatically when relevant. They teach "how to think" about problems.
 
-| Skill                          | Expertise                                             | When Applied                                                       |
-| ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------ |
-| `clarifying-requirements`      | Identifying gaps, asking clarifying questions         | Vague requests, ambiguous scope, hidden complexity                 |
-| `debugging-systematically`     | Debugging methodology, troubleshooting patterns       | Investigating bugs, tracing issues                                 |
-| `designing-frontend`           | Calm Tech design language, UI decisions               | Planning UI, reviewing designs, hierarchy decisions                |
-| `styling-with-tailwind-shadcn` | Tailwind CSS v4, Shadcn UI implementation             | Writing styles, building components, theming                       |
-| `writing-developer-guides`     | Developer guide structure for AI agents               | Creating/updating files in contributing/                           |
-| `orchestrating-parallel-work`  | Parallel agent execution, batch scheduling            | Coordinating multiple concurrent tasks, optimizing task ordering   |
-| `writing-changelogs`           | Human-friendly changelog entries, release notes       | Populating changelog, preparing releases                           |
-| `organizing-fsd-architecture`  | Feature-Sliced Design layer placement, imports        | Structuring client code, creating features, reviewing architecture |
-| `executing-specs`              | Parallel spec implementation, incremental persistence | Orchestrating `/spec:execute` with batch result tracking           |
-| `writing-adrs`                 | Architecture Decision Records, decision signals       | Creating ADRs, extracting decisions from specs, ADR quality        |
-| `browser-testing`              | Browser test methodology, Playwright patterns         | Writing and maintaining DorkOS browser tests                       |
-| `reading-session-transcripts`  | DorkOS session URL → JSONL file resolution            | User shares session URLs, asks to read transcripts/chats           |
+| Skill                            | Expertise                                             | When Applied                                                       |
+| -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `clarifying-requirements`        | Identifying gaps, asking clarifying questions         | Vague requests, ambiguous scope, hidden complexity                 |
+| `debugging-systematically`       | Debugging methodology, troubleshooting patterns       | Investigating bugs, tracing issues                                 |
+| `designing-frontend`             | Calm Tech design language, UI decisions               | Planning UI, reviewing designs, hierarchy decisions                |
+| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation             | Writing styles, building components, theming                       |
+| `writing-developer-guides`       | Developer guide structure for AI agents               | Creating/updating files in contributing/                           |
+| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling            | Coordinating multiple concurrent tasks, optimizing task ordering   |
+| `writing-changelogs`             | Human-friendly changelog entries, release notes       | Populating changelog, preparing releases                           |
+| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports        | Structuring client code, creating features, reviewing architecture |
+| `executing-specs`                | Parallel spec implementation, incremental persistence | Orchestrating `/spec:execute` with batch result tracking           |
+| `writing-adrs`                   | Architecture Decision Records, decision signals       | Creating ADRs, extracting decisions from specs, ADR quality        |
+| `browser-testing`                | Browser test methodology, Playwright patterns         | Writing and maintaining DorkOS browser tests                       |
+| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution            | User shares session URLs, asks to read transcripts/chats           |
+| `test-driven-development`        | TDD methodology, red-green-refactor cycle             | Implementing features, bug fixes, before writing code              |
+| `verification-before-completion` | Evidence-based completion claims                      | Before claiming work is complete, committing, or creating PRs      |
+| `receiving-code-review`          | Technical evaluation of review feedback               | Receiving code review, before implementing suggestions             |
+| `requesting-code-review`         | Dispatching code-reviewer subagent                    | After major tasks, features, or before merge                       |
+| `visual-companion`               | Browser-based visual mockups and diagrams             | When user would understand better by seeing than reading           |
 
 ### Rules (Path-Triggered)
 
@@ -126,13 +132,13 @@ Hooks run automatically at lifecycle events. Configured in `settings.json` with 
 
 Git hooks (post-commit, etc.) are separate and live in `.claude/git-hooks/`. Install via `.claude/scripts/install-git-hooks.sh`.
 
-| Event              | Hooks                                                                            | Purpose                                                                                            |
-| ------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `PreToolUse`       | file-guard                                                                       | Block access to sensitive files (.env, .key, .pem)                                                 |
-| `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed | Format, validate, and test code after edits                                                        |
-| `UserPromptSubmit` | thinking-level                                                                   | Adjust Claude's thinking mode based on prompt complexity                                           |
-| `Stop`             | create-checkpoint, check-docs-changed, autonomous-check                          | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work |
-| `SessionStart`     | check-adr-curation                                                               | Remind about draft ADRs needing curation                                                           |
+| Event              | Hooks                                                                                                                 | Purpose                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `PreToolUse`       | file-guard                                                                                                            | Block access to sensitive files (.env, .key, .pem)                                                 |
+| `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed, auto-extract-adrs, spec-status-sync | Format, validate, and test code after edits; remind about ADR extraction; sync spec status         |
+| `UserPromptSubmit` | thinking-level                                                                                                        | Adjust Claude's thinking mode based on prompt complexity                                           |
+| `Stop`             | create-checkpoint, check-docs-changed, autonomous-check                                                               | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work |
+| `SessionStart`     | check-adr-curation                                                                                                    | Remind about draft ADRs needing curation                                                           |
 
 ### MCP Servers
 
@@ -257,16 +263,17 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── ideate-to-spec.md  # Ideation → specification
 │   └── review-recent-work.md
 │
-├── agents/                # Specialized agents (5 total)
+├── agents/                # Specialized agents (6 total)
 │   ├── react/
 │   │   └── react-tanstack-expert.md
 │   ├── typescript/
 │   │   └── typescript-expert.md
 │   ├── code-search.md
+│   ├── code-reviewer.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Reusable expertise (12 total)
+├── skills/                # Reusable expertise (17 total)
 │   ├── browser-testing/
 │   ├── clarifying-requirements/
 │   ├── debugging-systematically/
@@ -278,6 +285,11 @@ Project-wide documentation? ─────────────► CLAUDE.md
 │   ├── writing-developer-guides/
 │   ├── orchestrating-parallel-work/
 │   ├── reading-session-transcripts/
+│   ├── receiving-code-review/
+│   ├── requesting-code-review/
+│   ├── test-driven-development/
+│   ├── verification-before-completion/
+│   ├── visual-companion/
 │   └── writing-changelogs/
 │
 └── rules/                 # Path-specific guidance (10 total)

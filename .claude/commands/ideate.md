@@ -27,6 +27,31 @@ This command uses **parallel background agents** for maximum efficiency:
 
 ---
 
+## Phase 0: Input Assessment
+
+### Step 0.1: Detect Existing Materials
+
+Before creating anything, check if the user provided existing work:
+
+1. If `$ARGUMENTS` contains a file path or the user referenced an existing document:
+   - Read the document
+   - Classify its maturity:
+     - **rough-notes**: Bullet points, stream-of-consciousness, no structure → proceed with normal ideation
+     - **partial-spec**: Has requirements, some decisions, but incomplete → skip ideation, fast-track to /ideate-to-spec
+     - **detailed-spec**: Has architecture, API design, data models → skip ideation AND spec creation, adapt directly to 02-specification.md format
+
+2. If maturity is `partial-spec` or `detailed-spec`:
+   - Create `specs/{slug}/` and update manifest
+   - Copy/adapt the document preserving ALL original content (never summarize away detail)
+   - Add a "## Source Material" section at the top linking to the original file path
+   - Display: "Detected existing [maturity] — preserving full fidelity, skipping redundant phases"
+   - For `partial-spec`: suggest `/ideate-to-spec` as next step
+   - For `detailed-spec`: write directly as `02-specification.md`, run ADR extraction, suggest `/spec:decompose`
+
+3. If maturity is `rough-notes` or no existing document: proceed to Phase 1
+
+---
+
 ## Phase 1: Setup (Main Context - Lightweight)
 
 ### Step 1.1: Create Task Slug & Setup
@@ -52,6 +77,13 @@ Write a quick "Intent & Assumptions" block:
 - Restate the task brief in 1-3 sentences
 - List explicit assumptions
 - List what's explicitly out-of-scope
+
+**If the task brief references or was derived from an existing document (brief, RFC, design doc, research report):**
+
+- Add a "## Source Brief" section to the ideation document
+- Include the file path to the original document
+- Extract and preserve key details VERBATIM — numbers, names, constraints, examples, acceptance criteria
+- Instruction: "Preserve all specific details from the brief — do not paraphrase away precision. The original document is the floor for detail, not the ceiling."
 
 Store this for the ideation document.
 
@@ -151,41 +183,53 @@ Now that you have exploration and research findings, resolve key decisions with 
 
 ### Step 3.5.1: Identify Key Decisions
 
-Analyze the exploration and research findings to identify 2-4 unresolved decisions that would meaningfully affect the ideation outcome. Look for:
+Analyze exploration and research findings. Identify unresolved decisions, but apply these filters:
 
-- **Scope boundaries** — What's included vs excluded when the task brief is ambiguous
-- **Technical approach** — When research found multiple viable solutions with different trade-offs
-- **Architecture choices** — When exploration revealed multiple valid integration points or patterns
-- **Behavioral decisions** — Error handling, edge cases, UX flows that aren't specified
+**Skip questions where:**
 
-**Skip this phase if** the task brief is sufficiently clear and exploration/research findings converge on an obvious approach. Not every ideation needs interactive clarification — use judgment.
+- The codebase exploration already provides a clear answer (state the answer, ask for confirmation)
+- The research findings converge on an obvious approach
+- The brief/source material already specified the answer
+- The decision is a standard DorkOS convention (check CLAUDE.md, contributing/ guides)
+
+**Ask questions about:**
+
+- Scope boundaries when the task brief is genuinely ambiguous
+- Technical approach when research found multiple viable solutions with meaningfully different trade-offs
+- Behavioral decisions (error handling, edge cases, UX flows) not specified anywhere
 
 ### Step 3.5.2: Ask Clarifying Questions
 
-Use AskUserQuestion with up to 4 questions in a single call. For EACH question:
+**One question per message.** Do not batch questions.
 
-1. **Think deeply** before formulating — consider what the codebase exploration revealed about existing patterns, what the research found about best practices, and what the user's intent likely is
-2. **The FIRST option MUST be your recommendation**, with `(Recommended)` appended to the label
-3. **The recommended option's description MUST explain WHY** — reference specific findings (e.g., "Follows the existing pattern in `features/chat/`" or "Research shows this is the industry standard for...")
-4. Provide 2-3 alternative options that represent genuinely different approaches, not minor variations
+For each question:
 
-Example:
+1. Provide context: why this decision matters, what the exploration/research revealed
+2. Offer 2-3 options as multiple-choice, with the first being your recommendation (labeled "(Recommended)" with rationale)
+3. Include an "Other" option for custom answers
+4. Wait for the answer before asking the next question
 
-```
-AskUserQuestion:
-  questions:
-    - question: "How should error states be displayed in the new panel?"
-      header: "Error UX"
-      options:
-        - label: "Inline toast notification (Recommended)"
-          description: "Consistent with the existing pattern in ChatPanel — exploration found 4 other features using toasts via sonner. Least disruptive to user flow."
-        - label: "Inline error banner"
-          description: "More visible but takes up panel space. Would be a new pattern in the codebase."
-        - label: "Status bar indicator"
-          description: "Minimal UI impact but easy to miss. Used by StatusLine for non-critical info."
-```
+**If only 1-2 decisions need resolving**, ask them and move on quickly. Do not pad with confirmatory questions about obvious choices.
 
-### Step 3.5.3: Incorporate Answers
+### Step 3.5.3: Propose Approaches (for non-trivial features)
+
+If the feature involves meaningful architectural choices (not simple bug fixes or small additions):
+
+1. Present 2-3 approaches with trade-offs in a comparison table
+2. Include your recommendation with rationale
+3. Ask the user to choose
+
+This replaces the old pattern of jumping to a single approach.
+
+### Step 3.5.4: Visual Companion (conditional)
+
+If this feature involves UI, architecture with multiple components, or comparison of approaches:
+
+- Reference `Skill(visual-companion)` to show the user a visual alongside the current question
+- Use for: architecture diagrams, UI mockups, side-by-side comparisons
+- Skip for: pure backend logic, config changes, simple bug fixes, features where the user already provided detailed mockups
+
+### Step 3.5.5: Incorporate Answers
 
 Store the user's answers (including any custom "Other" responses) for incorporation into the ideation document. These become resolved decisions in Section 6, not open questions.
 
@@ -424,6 +468,15 @@ You are researching solutions and best practices for a development task.
 - **Is Bug Fix**: [true/false]
 
 ## Your Tasks
+
+### 0. Check Research Cache
+
+Before doing any new research, search `research/` directory for existing reports:
+
+- Glob for `research/*{relevant-keywords}*.md`
+- If relevant reports exist, read them and incorporate findings
+- Only research topics NOT already covered by existing reports
+- Reference existing reports in your findings: "See research/YYYYMMDD_topic.md"
 
 ### 1. Identify Research Topics
 

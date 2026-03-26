@@ -1,32 +1,71 @@
 {
   "version": 1,
-  "nextNumber": 181,
+  "nextNumber": 186,
   "specs": [
+    {
+      "number": 185,
+      "slug": "absorb-superpowers-plugin",
+      "title": "Absorb Superpowers Plugin into DorkOS Harness",
+      "created": "2026-03-26",
+      "status": "specified"
+    },
+    {
+      "number": 184,
+      "slug": "ext-platform-04-agent-extensions",
+      "title": "Extensibility Platform Phase 4 \u2014 Agent-Built Extensions",
+      "created": "2026-03-26",
+      "status": "brief",
+      "project": "extensibility-platform"
+    },
+    {
+      "number": 183,
+      "slug": "ext-platform-03-extension-system",
+      "title": "Extensibility Platform Phase 3 \u2014 Extension System Core",
+      "created": "2026-03-26",
+      "status": "brief",
+      "project": "extensibility-platform"
+    },
+    {
+      "number": 182,
+      "slug": "ext-platform-02-extension-registry",
+      "title": "Extensibility Platform Phase 2 \u2014 Extension Point Registry",
+      "created": "2026-03-26",
+      "status": "brief",
+      "project": "extensibility-platform"
+    },
+    {
+      "number": 181,
+      "slug": "ext-platform-01-agent-ui-control",
+      "title": "Extensibility Platform Phase 1 \u2014 Agent UI Control & Canvas",
+      "created": "2026-03-26",
+      "status": "brief",
+      "project": "extensibility-platform"
+    },
     {
       "number": 180,
       "slug": "composable-filter-system",
-      "title": "Composable Filter System — Shared Filtering Infrastructure for List Views",
+      "title": "Composable Filter System \u2014 Shared Filtering Infrastructure for List Views",
       "created": "2026-03-26",
       "status": "specified"
     },
     {
       "number": 179,
       "slug": "sidebar-upgrade-notification",
-      "title": "Sidebar Upgrade Notification — Move Version Display to Sidebar Footer",
+      "title": "Sidebar Upgrade Notification \u2014 Move Version Display to Sidebar Footer",
       "created": "2026-03-24",
       "status": "specified"
     },
     {
       "number": 178,
       "slug": "feature-promo-system",
-      "title": "Feature Promo System — Declarative Feature Discovery Framework",
+      "title": "Feature Promo System \u2014 Declarative Feature Discovery Framework",
       "created": "2026-03-24",
       "status": "specified"
     },
     {
       "number": 177,
       "slug": "background-task-visibility",
-      "title": "Background Task Visibility — Unified Indicator for Agents and Bash",
+      "title": "Background Task Visibility \u2014 Unified Indicator for Agents and Bash",
       "created": "2026-03-24",
       "status": "ideation"
     },
@@ -40,7 +79,7 @@
     {
       "number": 175,
       "slug": "relay-outbound-awareness",
-      "title": "Relay Outbound Awareness — Agent-Initiated Messaging",
+      "title": "Relay Outbound Awareness \u2014 Agent-Initiated Messaging",
       "created": "2026-03-24",
       "status": "implemented"
     },
@@ -54,9 +93,9 @@
     {
       "number": 173,
       "slug": "plugin-extension-system",
-      "title": "Plugin / Extension System",
+      "title": "Plugin / Extension System (superseded by ext-platform-01 through ext-platform-04)",
       "created": "2026-03-24",
-      "status": "ideation"
+      "status": "superseded"
     },
     {
       "number": 172,
@@ -173,14 +212,14 @@
     {
       "number": 148,
       "slug": "site-feature-category-pages",
-      "title": "Site Feature Category Pages — /features/category/{category}",
+      "title": "Site Feature Category Pages \u2014 /features/category/{category}",
       "created": "2026-03-21",
       "status": "ideation"
     },
     {
       "number": 147,
       "slug": "dashboard-content",
-      "title": "Dashboard Content — Mission Control for Your Agent Workforce",
+      "title": "Dashboard Content \u2014 Mission Control for Your Agent Workforce",
       "created": "2026-03-20",
       "status": "ideation"
     },
@@ -944,7 +983,7 @@
     {
       "number": 107,
       "slug": "mcp-server",
-      "title": "MCP Server — Expose DorkOS Tools to External Agents",
+      "title": "MCP Server \u2014 Expose DorkOS Tools to External Agents",
       "created": "2026-03-09",
       "status": "specified"
     },
@@ -979,7 +1018,7 @@
     {
       "number": 112,
       "slug": "update-top-nav",
-      "title": "Update Top Nav — Agent Identity, Command Palette Trigger, 10x Elevation",
+      "title": "Update Top Nav \u2014 Agent Identity, Command Palette Trigger, 10x Elevation",
       "created": "2026-03-10",
       "status": "specified"
     },
@@ -1014,7 +1053,7 @@
     {
       "number": 117,
       "slug": "sidebar-tabbed-views",
-      "title": "Sidebar Tabbed Views — Sessions, Schedules, Connections",
+      "title": "Sidebar Tabbed Views \u2014 Sessions, Schedules, Connections",
       "created": "2026-03-10",
       "status": "specified"
     },
@@ -1071,14 +1110,14 @@
     {
       "number": 125,
       "slug": "client-direct-sse",
-      "title": "Client Direct SSE — Remove Relay Message Path from Web Client",
+      "title": "Client Direct SSE \u2014 Remove Relay Message Path from Web Client",
       "created": "2026-03-12",
       "status": "ideation"
     },
     {
       "number": 126,
       "slug": "fix-chat-stream-remap-bugs",
-      "title": "Fix Chat UI Streaming Bugs — Duplicate Messages & Stale Model Display",
+      "title": "Fix Chat UI Streaming Bugs \u2014 Duplicate Messages & Stale Model Display",
       "created": "2026-03-12",
       "status": "specified"
     },
@@ -1232,7 +1271,7 @@
     {
       "number": 148,
       "slug": "sdk-error-observability",
-      "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
+      "title": "SDK Error Observability \u2014 Break Infinite Retry Loop, Surface Errors to Adapters",
       "created": "2026-03-18",
       "status": "specification"
     },
@@ -1246,7 +1285,7 @@
     {
       "number": 150,
       "slug": "streaming-message-integrity",
-      "title": "Streaming Message Integrity — Eliminate Post-Stream Replace",
+      "title": "Streaming Message Integrity \u2014 Eliminate Post-Stream Replace",
       "created": "2026-03-19",
       "status": "specification"
     },
@@ -1260,14 +1299,14 @@
     {
       "number": 152,
       "slug": "chat-streaming-motion",
-      "title": "Chat Streaming Motion — Premium Text & Scroll Animation",
+      "title": "Chat Streaming Motion \u2014 Premium Text & Scroll Animation",
       "created": "2026-03-20",
       "status": "specified"
     },
     {
       "number": 153,
       "slug": "unified-status-strip",
-      "title": "Unified Status Strip — Consolidate InferenceIndicator & SystemStatusZone",
+      "title": "Unified Status Strip \u2014 Consolidate InferenceIndicator & SystemStatusZone",
       "created": "2026-03-20",
       "status": "specified"
     },
@@ -1295,7 +1334,7 @@
     {
       "number": 157,
       "slug": "agents-page",
-      "title": "Agents Page — Dedicated Fleet Management",
+      "title": "Agents Page \u2014 Dedicated Fleet Management",
       "created": "2026-03-20",
       "status": "specification"
     },

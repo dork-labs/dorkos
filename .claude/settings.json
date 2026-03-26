@@ -55,6 +55,19 @@
             "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/test-changed.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && bash .claude/hooks/auto-extract-adrs.sh"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && bash .claude/hooks/spec-status-sync.sh"
+          }
+        ]
       }
     ],
     "Stop": [

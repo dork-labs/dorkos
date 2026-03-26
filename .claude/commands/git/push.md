@@ -43,6 +43,16 @@ pnpm build
 
 **If any check fails**: Stop and report the errors. Do not push.
 
+### Step 2.5: Verification Gate
+
+After all checks pass, verify with fresh evidence:
+
+1. Re-read the output of lint, typecheck, and build
+2. Confirm zero errors in each
+3. Do not push based on a previous run — the checks in Step 2 ARE the fresh evidence
+
+Refer to the `verification-before-completion` skill.
+
 ### Step 3: Review What Will Be Pushed
 
 Show the commits that will be pushed:
