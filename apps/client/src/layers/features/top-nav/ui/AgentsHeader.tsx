@@ -15,7 +15,7 @@ import { cn } from '@/layers/shared/lib';
 import type { AgentsSearch } from '@/router';
 import { CommandPaletteTrigger } from './CommandPaletteTrigger';
 
-type ViewMode = AgentsSearch['view'];
+type ViewMode = 'list' | 'topology';
 
 const VIEW_TABS: { mode: ViewMode; label: string }[] = [
   { mode: 'list', label: 'Agents' },

@@ -12,6 +12,7 @@ import { AppShell } from './AppShell';
 import { DashboardPage } from '@/layers/widgets/dashboard';
 import { SessionPage } from '@/layers/widgets/session';
 import { AgentsPage } from '@/layers/widgets/agents';
+import { agentFilterSchema } from '@/layers/features/agents-list';
 import type { Session } from '@dorkos/shared/types';
 
 // ── Router context ──────────────────────────────────────────
@@ -51,9 +52,11 @@ const dashboardSearchSchema = z.object({
 /** Search params available on the `/` (dashboard) route. */
 export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
 
-const agentsSearchSchema = z.object({
-  view: z.enum(['list', 'topology']).optional().default('list'),
-});
+const agentsSearchSchema = z
+  .object({
+    view: z.enum(['list', 'topology']).optional().default('list'),
+  })
+  .merge(agentFilterSchema.searchValidator);
 
 /** Search params available on the `/agents` route. */
 export type AgentsSearch = z.infer<typeof agentsSearchSchema>;

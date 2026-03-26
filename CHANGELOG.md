@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add agent filter schema and integrate with router search params
 - Add FilterBar compound UI components
 - Add useFilterState hook with URL sync via TanStack Router
 - Complete filter engine with all filter types, sort, and describeActive
