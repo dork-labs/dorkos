@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import type { PulsePreset, PulseSchedule } from '@dorkos/shared/types';
+import type { PulsePreset, PulseRun, PulseSchedule } from '@dorkos/shared/types';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { SchedulesView } from '../ui/SchedulesView';
 
 // All entities/pulse hooks mocked via barrel to avoid export conflicts
 const mockSchedules = vi.fn<() => { data: PulseSchedule[] }>(() => ({ data: [] }));
 const mockActiveRunCount = vi.fn<() => { data: number }>(() => ({ data: 0 }));
+const mockRuns = vi.fn<() => { data: PulseRun[] }>(() => ({ data: [] }));
 const mockPresets = vi.fn<() => { data: PulsePreset[] }>(() => ({ data: [] }));
 const mockOpenWithPreset = vi.fn();
 vi.mock('@/layers/entities/pulse', async (importOriginal) => {
@@ -16,6 +17,7 @@ vi.mock('@/layers/entities/pulse', async (importOriginal) => {
     ...actual,
     useSchedules: () => mockSchedules(),
     useActiveRunCount: () => mockActiveRunCount(),
+    useRuns: () => mockRuns(),
     usePulsePresets: () => mockPresets(),
     usePulsePresetDialog: () => ({ openWithPreset: mockOpenWithPreset }),
   };
@@ -30,11 +32,17 @@ vi.mock('@/layers/features/pulse', async (importOriginal) => {
   };
 });
 
-// Mock app store — capture setPulseOpen calls
+// Mock app store — capture setPulseOpen, openPulseForAgent, openPulseToEdit calls
 const mockSetPulseOpen = vi.fn();
+const mockOpenPulseForAgent = vi.fn();
+const mockOpenPulseToEdit = vi.fn();
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { setPulseOpen: mockSetPulseOpen };
+    const state = {
+      setPulseOpen: mockSetPulseOpen,
+      openPulseForAgent: mockOpenPulseForAgent,
+      openPulseToEdit: mockOpenPulseToEdit,
+    };
     return selector ? selector(state) : state;
   },
 }));
@@ -91,11 +99,28 @@ function makeSchedule(
   };
 }
 
+/** Minimal run fixture. */
+function makeRun(overrides: Partial<PulseRun> & { id: string; scheduleId: string }): PulseRun {
+  return {
+    status: 'running',
+    startedAt: '2026-01-01T00:00:00Z',
+    finishedAt: null,
+    durationMs: null,
+    outputSummary: null,
+    error: null,
+    sessionId: null,
+    trigger: 'scheduled',
+    createdAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 describe('SchedulesView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSchedules.mockReturnValue({ data: [] });
     mockActiveRunCount.mockReturnValue({ data: 0 });
+    mockRuns.mockReturnValue({ data: [] });
     mockPresets.mockReturnValue({
       data: [
         {
@@ -149,22 +174,26 @@ describe('SchedulesView', () => {
     expect(screen.getByText('No schedules yet.')).toBeInTheDocument();
   });
 
-  it('renders Active section when active schedules exist', () => {
+  it('renders Running section when there are active runs', () => {
     mockSchedules.mockReturnValue({
       data: [makeSchedule({ id: 's1', name: 'Deploy Bot', status: 'active', enabled: true })],
     });
+    mockRuns.mockReturnValue({
+      data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
+    });
+    mockActiveRunCount.mockReturnValue({ data: 1 });
     render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByText('Running')).toBeInTheDocument();
     expect(screen.getByText('Deploy Bot')).toBeInTheDocument();
   });
 
-  it('renders Upcoming section for non-active schedules', () => {
+  it('renders Upcoming section for active schedules with nextRun', () => {
     mockSchedules.mockReturnValue({
       data: [
         makeSchedule({
           id: 's1',
           name: 'Nightly Sync',
-          status: 'paused',
+          status: 'active',
           enabled: true,
           nextRun: '2026-03-10T22:00:00Z',
         }),
@@ -181,8 +210,8 @@ describe('SchedulesView', () => {
         makeSchedule({
           id: 's1',
           name: 'Scheduled Task',
-          status: 'paused',
-          enabled: false,
+          status: 'active',
+          enabled: true,
           nextRun: '2026-03-10T22:00:00Z',
         }),
       ],
@@ -191,13 +220,16 @@ describe('SchedulesView', () => {
     expect(screen.getByText('in 2h')).toBeInTheDocument();
   });
 
-  it('shows active run count badge for active schedules', () => {
+  it('shows active run count in Running section header', () => {
     mockSchedules.mockReturnValue({
       data: [makeSchedule({ id: 's1', name: 'Active Job', status: 'active', enabled: true })],
     });
+    mockRuns.mockReturnValue({
+      data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
+    });
     mockActiveRunCount.mockReturnValue({ data: 3 });
     render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('3 running')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('Open Pulse button calls setPulseOpen(true) in empty state', () => {
@@ -214,18 +246,27 @@ describe('SchedulesView', () => {
     expect(mockSetPulseOpen).toHaveBeenCalledWith(true);
   });
 
-  it('renders both Active and Upcoming sections when mixed schedules exist', () => {
+  it('renders both Running and Upcoming sections when applicable', () => {
     mockSchedules.mockReturnValue({
       data: [
         makeSchedule({ id: 's1', name: 'Running Task', status: 'active', enabled: true }),
-        makeSchedule({ id: 's2', name: 'Paused Task', status: 'paused', enabled: false }),
+        makeSchedule({
+          id: 's2',
+          name: 'Queued Task',
+          status: 'active',
+          enabled: true,
+          nextRun: '2026-03-10T22:00:00Z',
+        }),
       ],
     });
+    mockRuns.mockReturnValue({
+      data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
+    });
     render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
-    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByText('Running')).toBeInTheDocument();
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     expect(screen.getByText('Running Task')).toBeInTheDocument();
-    expect(screen.getByText('Paused Task')).toBeInTheDocument();
+    expect(screen.getByText('Queued Task')).toBeInTheDocument();
   });
 
   it('filters schedules by agentId when provided', () => {
@@ -235,6 +276,9 @@ describe('SchedulesView', () => {
         makeSchedule({ id: 's2', name: 'Agent B Task', agentId: 'agent-b' }),
         makeSchedule({ id: 's3', name: 'Unassigned Task', agentId: null }),
       ],
+    });
+    mockRuns.mockReturnValue({
+      data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
     render(<SchedulesView toolStatus="enabled" agentId="agent-a" />, { wrapper: Wrapper });
     expect(screen.getByText('Agent A Task')).toBeInTheDocument();
@@ -280,6 +324,9 @@ describe('SchedulesView', () => {
   it('does not show preset cards when schedules exist', () => {
     mockSchedules.mockReturnValue({
       data: [makeSchedule({ id: 's1', name: 'My Schedule', status: 'active', enabled: true })],
+    });
+    mockRuns.mockReturnValue({
+      data: [makeRun({ id: 'r1', scheduleId: 's1', status: 'running' })],
     });
     render(<SchedulesView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
     expect(screen.queryByText('Health Check')).not.toBeInTheDocument();
