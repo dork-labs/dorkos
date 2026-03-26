@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add useFilterState hook with URL sync via TanStack Router
 - Complete filter engine with all filter types, sort, and describeActive
 - Add enumFilter and Zod searchValidator to filter engine
 - Add filter engine foundation with textFilter

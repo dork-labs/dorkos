@@ -26,3 +26,4 @@ export {
   type UseSSEConnectionOptions,
   type UseSSEConnectionReturn,
 } from './use-sse-connection';
+export { useFilterState, type UseFilterStateReturn } from './use-filter-state';
