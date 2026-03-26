@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add better-sqlite3 as direct dependency for packaging
 - Alias @dorkos/shared subpaths to source for CI compat
 - Update SchedulesView tests to match rewritten component
 - Resolve workspace packages in electron-vite renderer build

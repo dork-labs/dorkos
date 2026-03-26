@@ -32,7 +32,7 @@ asarUnpack:
   - '**/node_modules/@anthropic-ai/claude-agent-sdk/**'
 
 extraResources:
-  - from: '../server/node_modules/better-sqlite3'
+  - from: 'node_modules/better-sqlite3'
     to: 'node_modules/better-sqlite3'
 
 npmRebuild: true
