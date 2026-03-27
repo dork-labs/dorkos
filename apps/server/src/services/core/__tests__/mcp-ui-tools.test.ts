@@ -116,7 +116,7 @@ describe('get_ui_state handler', () => {
     expect(parsed).toEqual({
       canvas: { open: false, contentType: null },
       panels: { settings: false, pulse: false, relay: false, mesh: false },
-      sidebar: { open: true, activeTab: 'sessions' },
+      sidebar: { open: true, activeTab: 'overview' },
       agent: { id: null, cwd: null },
     });
   });
@@ -125,7 +125,7 @@ describe('get_ui_state handler', () => {
     const sessionState: UiState = {
       canvas: { open: true, contentType: 'markdown' },
       panels: { settings: false, pulse: true, relay: false, mesh: false },
-      sidebar: { open: true, activeTab: 'agents' },
+      sidebar: { open: true, activeTab: 'connections' },
       agent: { id: 'agent-1', cwd: '/projects/my-app' },
     };
     const session = createMockSession(sessionState);
@@ -144,6 +144,6 @@ describe('get_ui_state handler', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.canvas.open).toBe(false);
     expect(parsed.sidebar.open).toBe(true);
-    expect(parsed.sidebar.activeTab).toBe('sessions');
+    expect(parsed.sidebar.activeTab).toBe('overview');
   });
 });

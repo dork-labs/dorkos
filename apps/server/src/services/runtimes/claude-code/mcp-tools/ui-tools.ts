@@ -19,7 +19,7 @@ import { jsonContent } from './types.js';
 const DEFAULT_UI_STATE: UiState = {
   canvas: { open: false, contentType: null },
   panels: { settings: false, pulse: false, relay: false, mesh: false },
-  sidebar: { open: true, activeTab: 'sessions' },
+  sidebar: { open: true, activeTab: 'overview' },
   agent: { id: null, cwd: null },
 };
 
@@ -76,7 +76,7 @@ export function createGetUiStateHandler(session: UiToolSession) {
 const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_panel / close_panel / toggle_panel: { panel: "settings"|"pulse"|"relay"|"mesh"|"picker" }
 - open_sidebar / close_sidebar
-- switch_sidebar_tab: { tab: "sessions"|"agents" }
+- switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
 - open_canvas: { content: { type: "url"|"markdown"|"json", ... }, preferredWidth?: 20-80 }
 - update_canvas: { content: { type: "url"|"markdown"|"json", ... } }
 - close_canvas

@@ -58,10 +58,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   // This avoids calling useAppStore.getState() (which bypasses the mock in tests) while
   // still satisfying the DispatcherContext interface expected by executeUiCommand.
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
-  // Cast: AppState uses a narrow union for setSidebarActiveTab, but DispatcherStore
-  // declares (tab: string) => void for forward-compatibility. The cast is safe because
-  // the dispatcher only passes validated UiSidebarTab values ('sessions' | 'agents').
-  const setSidebarActiveTab = useAppStore((s) => s.setSidebarActiveTab as (tab: string) => void);
+  const setSidebarActiveTab = useAppStore((s) => s.setSidebarActiveTab);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const pulseOpen = useAppStore((s) => s.pulseOpen);
@@ -73,6 +70,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const pickerOpen = useAppStore((s) => s.pickerOpen);
   const setPickerOpen = useAppStore((s) => s.setPickerOpen);
   const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
+  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
+  const setCanvasContent = useAppStore((s) => s.setCanvasContent);
+  const setCanvasPreferredWidth = useAppStore((s) => s.setCanvasPreferredWidth);
 
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
@@ -87,46 +87,35 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
   );
 
+  // Shared store snapshot for all dispatcher calls — avoids repeating 16 fields.
+  const dispatcherStore: DispatcherStore = {
+    setSidebarOpen,
+    setSidebarActiveTab,
+    settingsOpen,
+    setSettingsOpen,
+    pulseOpen,
+    setPulseOpen,
+    relayOpen,
+    setRelayOpen,
+    meshOpen,
+    setMeshOpen,
+    pickerOpen,
+    setPickerOpen,
+    setGlobalPaletteOpen,
+    setCanvasOpen,
+    setCanvasContent,
+    setCanvasPreferredWidth,
+  };
+
   const handleFeatureAction = useCallback(
     (action: string) => {
       closePalette();
       const command = paletteActionToUiCommand(action);
       if (command) {
-        const store: DispatcherStore = {
-          setSidebarOpen,
-          setSidebarActiveTab,
-          settingsOpen,
-          setSettingsOpen,
-          pulseOpen,
-          setPulseOpen,
-          relayOpen,
-          setRelayOpen,
-          meshOpen,
-          setMeshOpen,
-          pickerOpen,
-          setPickerOpen,
-          setGlobalPaletteOpen,
-        };
-        executeUiCommand({ store, setTheme }, command);
+        executeUiCommand({ store: dispatcherStore, setTheme }, command);
       }
     },
-    [
-      closePalette,
-      setSidebarOpen,
-      setSidebarActiveTab,
-      settingsOpen,
-      setSettingsOpen,
-      pulseOpen,
-      setPulseOpen,
-      relayOpen,
-      setRelayOpen,
-      meshOpen,
-      setMeshOpen,
-      pickerOpen,
-      setPickerOpen,
-      setGlobalPaletteOpen,
-      setTheme,
-    ]
+    [closePalette, dispatcherStore, setTheme]
   );
 
   const handleQuickAction = useCallback(
@@ -144,67 +133,17 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       // toggleTheme requires the current theme value to compute the next state.
       if (action === 'toggleTheme') {
         executeUiCommand(
-          {
-            store: {
-              setSidebarOpen,
-              setSidebarActiveTab,
-              settingsOpen,
-              setSettingsOpen,
-              pulseOpen,
-              setPulseOpen,
-              relayOpen,
-              setRelayOpen,
-              meshOpen,
-              setMeshOpen,
-              pickerOpen,
-              setPickerOpen,
-              setGlobalPaletteOpen,
-            },
-            setTheme,
-          },
+          { store: dispatcherStore, setTheme },
           { action: 'set_theme', theme: theme === 'dark' ? 'light' : 'dark' }
         );
         return;
       }
       const command = paletteActionToUiCommand(action);
       if (command) {
-        const store: DispatcherStore = {
-          setSidebarOpen,
-          setSidebarActiveTab,
-          settingsOpen,
-          setSettingsOpen,
-          pulseOpen,
-          setPulseOpen,
-          relayOpen,
-          setRelayOpen,
-          meshOpen,
-          setMeshOpen,
-          pickerOpen,
-          setPickerOpen,
-          setGlobalPaletteOpen,
-        };
-        executeUiCommand({ store, setTheme }, command);
+        executeUiCommand({ store: dispatcherStore, setTheme }, command);
       }
     },
-    [
-      closePalette,
-      navigate,
-      setSidebarOpen,
-      setSidebarActiveTab,
-      settingsOpen,
-      setSettingsOpen,
-      pulseOpen,
-      setPulseOpen,
-      relayOpen,
-      setRelayOpen,
-      meshOpen,
-      setMeshOpen,
-      pickerOpen,
-      setPickerOpen,
-      setGlobalPaletteOpen,
-      setTheme,
-      theme,
-    ]
+    [closePalette, navigate, dispatcherStore, setTheme, theme]
   );
 
   return {

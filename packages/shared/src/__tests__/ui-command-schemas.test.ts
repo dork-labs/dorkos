@@ -35,8 +35,8 @@ describe('UiCommandSchema', () => {
   });
 
   it('parses switch_sidebar_tab command', () => {
-    const result = UiCommandSchema.parse({ action: 'switch_sidebar_tab', tab: 'agents' });
-    expect(result).toEqual({ action: 'switch_sidebar_tab', tab: 'agents' });
+    const result = UiCommandSchema.parse({ action: 'switch_sidebar_tab', tab: 'connections' });
+    expect(result).toEqual({ action: 'switch_sidebar_tab', tab: 'connections' });
   });
 
   it('parses open_canvas with URL content', () => {
@@ -207,9 +207,11 @@ describe('UiPanelIdSchema', () => {
 });
 
 describe('UiSidebarTabSchema', () => {
-  it('accepts sessions and agents', () => {
+  it('accepts all sidebar tabs', () => {
+    expect(UiSidebarTabSchema.parse('overview')).toBe('overview');
     expect(UiSidebarTabSchema.parse('sessions')).toBe('sessions');
-    expect(UiSidebarTabSchema.parse('agents')).toBe('agents');
+    expect(UiSidebarTabSchema.parse('schedules')).toBe('schedules');
+    expect(UiSidebarTabSchema.parse('connections')).toBe('connections');
   });
 
   it('rejects unknown tab', () => {

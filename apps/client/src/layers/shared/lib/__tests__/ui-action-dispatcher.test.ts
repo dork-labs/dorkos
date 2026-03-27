@@ -100,10 +100,10 @@ describe('executeUiCommand — sidebar commands', () => {
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
-  it('switch_sidebar_tab works with agents tab', () => {
+  it('switch_sidebar_tab works with connections tab', () => {
     const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'agents' });
-    expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('agents');
+    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' });
+    expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('connections');
     expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
   });
 });
@@ -160,24 +160,6 @@ describe('executeUiCommand — canvas commands', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_canvas' });
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(false);
-  });
-
-  it('canvas commands are no-ops when canvas setters are absent', () => {
-    const ctx = makeMockCtx();
-    // Remove optional canvas setters to simulate pre-task-5.1 store
-    delete (ctx.store as Partial<DispatcherStore>).setCanvasOpen;
-    delete (ctx.store as Partial<DispatcherStore>).setCanvasContent;
-    delete (ctx.store as Partial<DispatcherStore>).setCanvasPreferredWidth;
-
-    // Should not throw
-    expect(() => executeUiCommand(ctx, { action: 'close_canvas' })).not.toThrow();
-    expect(() =>
-      executeUiCommand(ctx, {
-        action: 'open_canvas',
-        content: { type: 'markdown', content: '# Hi' },
-        preferredWidth: 50,
-      })
-    ).not.toThrow();
   });
 });
 

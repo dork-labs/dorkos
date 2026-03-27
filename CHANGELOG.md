@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Wire UI tools to session, align sidebar tab schema
 - Harden extension system security, fix flaky tests, resolve lint warnings
 - Add better-sqlite3 as direct dependency for packaging
 - Alias @dorkos/shared subpaths to source for CI compat

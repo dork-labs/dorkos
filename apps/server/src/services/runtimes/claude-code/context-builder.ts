@@ -159,7 +159,7 @@ Available tools:
 Actions:
   open_panel / close_panel / toggle_panel: { panel: "settings"|"pulse"|"relay"|"mesh"|"picker" }
   open_sidebar / close_sidebar
-  switch_sidebar_tab: { tab: "sessions"|"agents" }
+  switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
   open_canvas: { content: { type: "url"|"markdown"|"json", ... }, preferredWidth?: 20-80 }
   update_canvas / close_canvas
   show_toast: { message, level?: "success"|"error"|"info"|"warning", description? }

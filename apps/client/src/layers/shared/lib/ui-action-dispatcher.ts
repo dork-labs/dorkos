@@ -1,4 +1,4 @@
-import type { UiCommand, UiCanvasContent, UiPanelId } from '@dorkos/shared/types';
+import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
 import { toast } from 'sonner';
 
 /**
@@ -11,11 +11,7 @@ import { toast } from 'sonner';
 export interface DispatcherStore {
   // Sidebar
   setSidebarOpen: (open: boolean) => void;
-  /**
-   * Accepts a string so `UiSidebarTab` values ('sessions' | 'agents')
-   * can be passed without a type cast. The store validates at runtime.
-   */
-  setSidebarActiveTab: (tab: string) => void;
+  setSidebarActiveTab: (tab: UiSidebarTab) => void;
 
   // Panels
   settingsOpen: boolean;
@@ -32,10 +28,10 @@ export interface DispatcherStore {
   // Command palette
   setGlobalPaletteOpen: (open: boolean) => void;
 
-  // Canvas — optional until task 5.1 adds these to the store
-  setCanvasOpen?: (open: boolean) => void;
-  setCanvasContent?: (content: UiCanvasContent | null) => void;
-  setCanvasPreferredWidth?: (width: number | null) => void;
+  // Canvas
+  setCanvasOpen: (open: boolean) => void;
+  setCanvasContent: (content: UiCanvasContent | null) => void;
+  setCanvasPreferredWidth: (width: number | null) => void;
 }
 
 /** Dependencies injected by the caller. All are obtainable outside React. */
@@ -89,17 +85,17 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
 
     // --- Canvas ---
     case 'open_canvas':
-      store.setCanvasOpen?.(true);
-      store.setCanvasContent?.(command.content);
+      store.setCanvasOpen(true);
+      store.setCanvasContent(command.content);
       if (command.preferredWidth != null) {
-        store.setCanvasPreferredWidth?.(command.preferredWidth);
+        store.setCanvasPreferredWidth(command.preferredWidth);
       }
       break;
     case 'update_canvas':
-      store.setCanvasContent?.(command.content);
+      store.setCanvasContent(command.content);
       break;
     case 'close_canvas':
-      store.setCanvasOpen?.(false);
+      store.setCanvasOpen(false);
       break;
 
     // --- Toast ---

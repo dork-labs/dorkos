@@ -1168,7 +1168,9 @@ export const UiPanelIdSchema = z
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
 
 /** Identifies a tab in the sidebar navigation. */
-export const UiSidebarTabSchema = z.enum(['sessions', 'agents']).openapi('UiSidebarTab');
+export const UiSidebarTabSchema = z
+  .enum(['overview', 'sessions', 'schedules', 'connections'])
+  .openapi('UiSidebarTab');
 
 export type UiSidebarTab = z.infer<typeof UiSidebarTabSchema>;
 

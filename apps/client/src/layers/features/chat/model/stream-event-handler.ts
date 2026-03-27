@@ -246,10 +246,7 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         const store = useAppStore.getState();
         executeUiCommand(
           {
-            store: {
-              ...store,
-              setSidebarActiveTab: store.setSidebarActiveTab as (tab: string) => void,
-            },
+            store,
             setTheme: deps.themeRef.current,
             scrollToMessage: deps.scrollToMessageRef?.current,
             switchAgent: deps.switchAgentRef?.current,

@@ -26,8 +26,7 @@ import { classifyTransportError } from './classify-transport-error';
 /** Snapshot the current Zustand UI state for agent awareness. */
 function snapshotUiState(activeCwd: string | null): UiState {
   const s = useAppStore.getState();
-  // Map store sidebar tab to UiState tab enum — only 'sessions' maps directly
-  const sidebarTab = s.sidebarActiveTab === 'sessions' ? 'sessions' : null;
+  const sidebarTab = s.sidebarActiveTab;
   return {
     canvas: {
       open: s.canvasOpen,
