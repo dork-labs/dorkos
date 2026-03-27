@@ -41,6 +41,9 @@ importers:
 
   apps/client:
     dependencies:
+      '@dorkos/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
       '@dorkos/icons':
         specifier: workspace:*
         version: link:../../packages/icons
@@ -365,6 +368,9 @@ importers:
       '@dorkos/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@dorkos/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
       '@dorkos/mesh':
         specifier: workspace:*
         version: link:../../packages/mesh
@@ -401,6 +407,9 @@ importers:
       croner:
         specifier: ^10.0.1
         version: 10.0.1
+      esbuild:
+        specifier: ^0.24.2
+        version: 0.24.2
       express:
         specifier: ^4.21.0
         version: 4.22.1
@@ -416,6 +425,9 @@ importers:
       multer:
         specifier: ^2.1.1
         version: 2.1.1
+      semver:
+        specifier: ^7.7.4
+        version: 7.7.4
       ulidx:
         specifier: ^2.4.0
         version: 2.4.1
@@ -450,6 +462,9 @@ importers:
       '@types/multer':
         specifier: ^2.1.0
         version: 2.1.0
+      '@types/semver':
+        specifier: ^7.7.1
+        version: 7.7.1
       '@types/supertest':
         specifier: ^6.0.3
         version: 6.0.3
@@ -781,6 +796,28 @@ importers:
       typescript-eslint:
         specifier: ^8.55.0
         version: 8.55.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
+
+  packages/extension-api:
+    dependencies:
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@dorkos/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@dorkos/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.13
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.0(@opentelemetry/api@1.9.0)(@types/node@25.3.2)(jsdom@28.0.0(@noble/hashes@1.8.0))(vite@6.4.1(@types/node@25.3.2)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2))
 
   packages/icons:
     dependencies:
@@ -6107,6 +6144,12 @@ packages:
     resolution:
       {
         integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==,
+      }
+
+  '@types/semver@7.7.1':
+    resolution:
+      {
+        integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==,
       }
 
   '@types/send@1.2.1':
@@ -18340,6 +18383,8 @@ snapshots:
       '@types/node': 25.3.2
 
   '@types/retry@0.12.0': {}
+
+  '@types/semver@7.7.1': {}
 
   '@types/send@1.2.1':
     dependencies:

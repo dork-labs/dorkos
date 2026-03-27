@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { Palette, Settings2, LayoutList, Server, Wrench, Cog, Bot } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useTransport, useAppStore, useTheme } from '@/layers/shared/model';
+import { useTransport, useAppStore, useTheme, useSlotContributions } from '@/layers/shared/model';
 import { FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
@@ -59,6 +59,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { theme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('appearance');
+  const extensionTabs = useSlotContributions('settings.tabs');
   const [tunnelDialogOpen, setTunnelDialogOpen] = useState(false);
   const [restartOverlayOpen, setRestartOverlayOpen] = useState(false);
   const {
@@ -133,6 +134,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <NavigationLayoutItem value="advanced" icon={Cog}>
                 Advanced
               </NavigationLayoutItem>
+              {extensionTabs.map((tab) => (
+                <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
+                  {tab.label}
+                </NavigationLayoutItem>
+              ))}
             </NavigationLayoutSidebar>
 
             <NavigationLayoutContent className="min-h-[280px] p-4">
@@ -361,6 +367,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   />
                 </div>
               </NavigationLayoutPanel>
+              {extensionTabs.map((tab) => {
+                const TabComponent = tab.component;
+                return (
+                  <NavigationLayoutPanel key={tab.id} value={tab.id}>
+                    <div className="space-y-4">
+                      <NavigationLayoutPanelHeader>{tab.label}</NavigationLayoutPanelHeader>
+                      <Suspense
+                        fallback={
+                          <div className="text-muted-foreground py-8 text-center text-sm">
+                            Loading…
+                          </div>
+                        }
+                      >
+                        <TabComponent />
+                      </Suspense>
+                    </div>
+                  </NavigationLayoutPanel>
+                );
+              })}
             </NavigationLayoutContent>
           </NavigationLayoutBody>
         </NavigationLayout>

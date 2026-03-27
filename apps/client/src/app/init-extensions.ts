@@ -1,3 +1,5 @@
+import { lazy } from 'react';
+import { Puzzle } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { PALETTE_FEATURES, PALETTE_QUICK_ACTIONS } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS, SIDEBAR_TAB_CONTRIBUTIONS } from '@/layers/features/session-list';
@@ -38,4 +40,15 @@ export function initializeExtensions(): void {
   for (const dialog of DIALOG_CONTRIBUTIONS) {
     register('dialog', dialog);
   }
+
+  // Extensions settings tab (lazy-loaded to avoid bloating the initial bundle)
+  register('settings.tabs', {
+    id: 'extensions',
+    label: 'Extensions',
+    icon: Puzzle,
+    component: lazy(() =>
+      import('@/layers/features/extensions').then((m) => ({ default: m.ExtensionsSettingsTab }))
+    ),
+    priority: 70,
+  });
 }

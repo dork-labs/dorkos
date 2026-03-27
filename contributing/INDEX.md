@@ -29,6 +29,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `adapter-catalog.md`             | AdapterManifest, ConfigField, plugin manifests, catalog API                     | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog`                            |
 | `browser-testing.md`             | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest | `apps/e2e/\|playwright.config\|browsertest`                                                        |
 | `environment-variables.md`       | env.ts validation pattern, boolFlag helper, complete env var reference          | `env.ts\|process\.env\|globalPassThroughEnv`                                                       |
+| `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                   | `packages/extension-api/\|services/extensions/\|examples/extensions/`                              |
 
 ## Pattern Syntax
 
@@ -60,6 +61,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `adapter-catalog.md`             | 2026-03-22    | Claude   | Added Slack and Telegram Chat SDK to Built-in Adapter Manifests section                    |
 | `browser-testing.md`             | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                      |
 | `environment-variables.md`       | 2026-03-19    | Claude   | Reconciled — already updated in port convention commit                                     |
+| `extension-authoring.md`         | 2026-03-27    | Claude   | Initial creation — extension system Phase 3 task 5.1                                       |
 
 ## External Docs Coverage
 

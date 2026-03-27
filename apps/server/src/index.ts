@@ -29,6 +29,8 @@ import { createAgentsRouter } from './routes/agents.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
+import { ExtensionManager } from './services/extensions/extension-manager.js';
+import { createExtensionsRouter } from './routes/extensions.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { mcpApiKeyAuth } from './middleware/mcp-auth.js';
@@ -48,6 +50,7 @@ let adapterRegistry: AdapterRegistry | undefined;
 let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
 let meshCore: MeshCore | undefined;
+let extensionManager: ExtensionManager | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 
 async function start() {
@@ -86,6 +89,18 @@ async function start() {
   const boundaryConfig = env.DORKOS_BOUNDARY;
   const resolvedBoundary = await initBoundary(boundaryConfig);
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
+
+  // Initialize Extension System
+  try {
+    extensionManager = new ExtensionManager(dorkHome);
+    const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
+    await extensionManager.initialize(initialCwd);
+    logger.info('[Extensions] Extension system initialized');
+  } catch (err) {
+    logger.error('[Extensions] Failed to initialize extension system', err);
+    // Extension failure is non-fatal: server continues without extensions
+    extensionManager = undefined;
+  }
 
   // --- Register runtime: TestModeRuntime in test mode, ClaudeCodeRuntime otherwise ---
   if (env.DORKOS_TEST_RUNTIME) {
@@ -318,6 +333,15 @@ async function start() {
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
+
+  // Mount Extensions routes if extension system initialized successfully.
+  if (extensionManager) {
+    app.use(
+      '/api/extensions',
+      createExtensionsRouter(extensionManager, dorkHome, () => env.DORKOS_DEFAULT_CWD ?? null)
+    );
+    logger.info('[Extensions] Routes mounted');
+  }
 
   // Mount Discovery routes when MeshCore is available (delegates to meshCore.discover())
   if (meshCore) {

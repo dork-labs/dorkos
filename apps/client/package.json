@@ -19,6 +19,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@dorkos/extension-api": "workspace:*",
     "@dorkos/icons": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@radix-ui/react-alert-dialog": "^1.1.15",

@@ -130,6 +130,12 @@ export const UserConfigSchema = z.object({
       defaultAgent: z.string().default('dorkbot'),
     })
     .default(() => ({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' })),
+  extensions: z
+    .object({
+      /** Extension IDs that the user has explicitly enabled. */
+      enabled: z.array(z.string()).default(() => []),
+    })
+    .default(() => ({ enabled: [] })),
   sessionSecret: z.string().nullable().default(null),
 });
 

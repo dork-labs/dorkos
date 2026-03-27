@@ -1,0 +1,11 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "A sample extension that adds a dashboard section",
+  "author": "DorkOS",
+  "contributions": {
+    "dashboard.sections": true,
+    "command-palette.items": true
+  }
+}

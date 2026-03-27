@@ -176,6 +176,7 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 | [`contributing/project-structure.md`](contributing/project-structure.md)                     | FSD layers, file organization                               |
 | [`contributing/relay-adapters.md`](contributing/relay-adapters.md)                           | Adapter development guide                                   |
 | [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md)                         | Adapter catalog system                                      |
+| [`contributing/extension-authoring.md`](contributing/extension-authoring.md)                 | Extension authoring guide                                   |
 
 `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 

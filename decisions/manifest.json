@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 201,
+  "nextNumber": 204,
   "decisions": [
+    {
+      "number": 203,
+      "slug": "extension-api-includes-ui-control-for-phase-4",
+      "title": "Include UI Control Methods in v1 ExtensionAPI for Phase 4 Readiness",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-03-extension-system",
+      "specSlug": "ext-platform-03-extension-system"
+    },
+    {
+      "number": 202,
+      "slug": "esbuild-content-hash-compilation-cache",
+      "title": "Content-Hash-Based esbuild Compilation Cache for Extensions",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-03-extension-system",
+      "specSlug": "ext-platform-03-extension-system"
+    },
+    {
+      "number": 201,
+      "slug": "extension-storage-separate-from-code",
+      "title": "Separate Extension Data Storage from Extension Code Directories",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-03-extension-system",
+      "specSlug": "ext-platform-03-extension-system"
+    },
     {
       "number": 200,
       "slug": "app-layer-synchronous-extension-initialization",

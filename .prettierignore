@@ -6,3 +6,4 @@ dist-obsidian
 coverage
 .scratch
 package-lock.json
+examples

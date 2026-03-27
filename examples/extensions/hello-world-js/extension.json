@@ -1,0 +1,6 @@
+{
+  "id": "hello-world-js",
+  "name": "Hello World (JS)",
+  "version": "1.0.0",
+  "description": "Pre-compiled JavaScript version of the hello-world extension"
+}

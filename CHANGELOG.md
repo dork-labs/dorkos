@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Implement Phase 3 — Extension System Core
 - Implement Phase 2 — Extension Point Registry
 - Implement Phase 1 — Agent UI Control & Canvas
 - Absorb superpowers plugin into first-party skills and agents
