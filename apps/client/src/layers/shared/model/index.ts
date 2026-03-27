@@ -27,3 +27,20 @@ export {
   type UseSSEConnectionReturn,
 } from './use-sse-connection';
 export { useFilterState, type UseFilterStateReturn } from './use-filter-state';
+export {
+  useExtensionRegistry,
+  useSlotContributions,
+  createInitialSlots,
+  SLOT_IDS,
+  type SlotId,
+  type SlotContributionMap,
+  type BaseContribution,
+  type SidebarFooterContribution,
+  type SidebarTabContribution,
+  type DashboardSectionContribution,
+  type HeaderActionContribution,
+  type CommandPaletteContribution,
+  type DialogContribution,
+  type SettingsTabContribution,
+  type SessionCanvasContribution,
+} from './extension-registry';

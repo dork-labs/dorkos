@@ -15,6 +15,8 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
 | URL state (router)   | `apps/client/src/layers/entities/session/model/use-session-id.ts` |
 | Theme hook           | `apps/client/src/layers/shared/model/use-theme.ts`                |
+| Extension registry   | `apps/client/src/layers/shared/model/extension-registry.ts`       |
+| Extension init       | `apps/client/src/app/init-extensions.ts`                          |
 
 ## When to Use What
 
@@ -30,6 +32,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Debounced derived state    | useDeferredValue                    | Preview panel data during rapid navigation                          | Defers expensive fetches without state management overhead                             |
 | Multi-source derived state | TanStack Query + `useMemo`          | Feature flags + entity data combined                                | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
 | Cross-feature signal       | Zustand (entity layer)              | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation                             |
+| Slot-based UI contribution | Extension registry (Zustand)        | Command palette items, sidebar tabs, dialogs                        | Decouples rendering surface from contributing features via typed slots                 |
 
 ## Core Patterns
 
@@ -272,6 +275,41 @@ useEffect(() => {
 ```
 
 **When to use**: A sibling feature needs to trigger a UI action (open a dialog, navigate to a view) in another feature, and lifting the state higher would add unnecessary coupling. Keep these stores small — just the signal payload and a `clear()` method.
+
+### Extension Registry (Slot-Based UI Contributions)
+
+The extension registry (`useExtensionRegistry`) is a Zustand store that decouples UI composition from hardcoded imports. Features register typed contributions into named slots, and consumers subscribe to those slots via `useSlotContributions`. This eliminates cross-feature imports for shared surfaces like the command palette, sidebar, and dialogs.
+
+```typescript
+// Registering: features export contribution arrays, registered at startup
+// apps/client/src/app/init-extensions.ts
+import { useExtensionRegistry } from '@/layers/shared/model';
+import { PALETTE_FEATURES } from '@/layers/features/command-palette';
+
+const { register } = useExtensionRegistry.getState();
+for (const feature of PALETTE_FEATURES) {
+  register('command-palette.items', feature);
+}
+```
+
+```typescript
+// Consuming: widgets/features read contributions via useSlotContributions
+const footerButtons = useSlotContributions('sidebar.footer');
+const dialogContributions = useSlotContributions('dialog');
+```
+
+Slots are type-safe — `SlotContributionMap` maps each slot ID to its contribution interface. Contributions are sorted by `priority` (lower = first, default 50). The `register` call returns an unsubscribe function for dynamic contributions.
+
+Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header.actions`, `command-palette.items`, `dialog`, `settings.tabs`, `session.canvas`.
+
+**Key files:**
+
+| File                                        | Purpose                                            |
+| ------------------------------------------- | -------------------------------------------------- |
+| `layers/shared/model/extension-registry.ts` | Store, slot types, `useSlotContributions` hook     |
+| `app/init-extensions.ts`                    | Startup registration of all built-in contributions |
+
+**When to use**: Any UI surface that accepts contributions from multiple features (command palette items, dialogs, sidebar tabs). Prefer over hardcoded imports when the rendering component should not know about every contributor.
 
 ### Combining Zustand with TanStack Query
 

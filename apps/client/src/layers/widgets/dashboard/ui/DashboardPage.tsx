@@ -1,31 +1,28 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ScrollArea } from '@/layers/shared/ui';
+import { useSlotContributions } from '@/layers/shared/model';
 import {
-  NeedsAttentionSection,
   DeadLetterDetailSheet,
   FailedRunDetailSheet,
   OfflineAgentDetailSheet,
 } from '@/layers/features/dashboard-attention';
-import { ActiveSessionsSection } from '@/layers/features/dashboard-sessions';
-import { SystemStatusRow } from '@/layers/features/dashboard-status';
-import { RecentActivityFeed } from '@/layers/features/dashboard-activity';
-import { PromoSlot } from '@/layers/features/feature-promos';
 import { useSearch, useNavigate } from '@tanstack/react-router';
 import type { DashboardSearch } from '@/router';
 
 /**
- * Dashboard page — mission control overview composing feature sections.
- * Answers questions in priority order:
- * 1. Does anything need my attention?
- * 2. What is active right now?
- * 3. Is the system healthy?
- *
- * Orchestrator widget that composes feature-level sections in a scrollable container.
- * Reads `?detail=` and `?itemId=` search params to open detail Sheets.
+ * Dashboard page -- mission control overview composing feature sections.
+ * Queries the extension registry's dashboard.sections slot and renders
+ * contributions in priority order.
  */
 export function DashboardPage() {
   const search = useSearch({ strict: false }) as Partial<DashboardSearch>;
   const navigate = useNavigate();
+  const sections = useSlotContributions('dashboard.sections');
+
+  const visibleSections = useMemo(
+    () => sections.filter((s) => !s.visibleWhen || s.visibleWhen()),
+    [sections]
+  );
 
   const closeDetail = useCallback(() => {
     void navigate({ to: '/', search: {} });
@@ -35,11 +32,9 @@ export function DashboardPage() {
     <>
       <ScrollArea className="h-full">
         <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8">
-          <NeedsAttentionSection />
-          <PromoSlot placement="dashboard-main" maxUnits={4} />
-          <ActiveSessionsSection />
-          <SystemStatusRow />
-          <RecentActivityFeed />
+          {visibleSections.map((section) => (
+            <section.component key={section.id} />
+          ))}
         </div>
       </ScrollArea>
 

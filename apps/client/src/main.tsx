@@ -6,6 +6,7 @@ import { createAppRouter } from './router';
 import { HttpTransport, QUERY_TIMING } from '@/layers/shared/lib';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { PasscodeGateWrapper } from '@/layers/features/tunnel-gate';
+import { initializeExtensions } from './app/init-extensions';
 import './index.css';
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
@@ -72,6 +73,9 @@ function getApiBaseUrl(): string {
 }
 
 const transport = new HttpTransport(getApiBaseUrl());
+
+// Register all built-in features into the extension registry
+initializeExtensions();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

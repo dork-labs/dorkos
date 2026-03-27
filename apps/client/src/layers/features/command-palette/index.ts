@@ -31,5 +31,8 @@ export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
 export { usePaletteActions } from './model/use-palette-actions';
 
+// --- Contribution data ---
+export { PALETTE_FEATURES, PALETTE_QUICK_ACTIONS } from './model/palette-contributions';
+
 /** @internal Exported for testing only. */
 export { usePreviewData } from './model/use-preview-data';

@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { LayoutDashboard, MessageSquare, Clock, Radio } from 'lucide-react';
 import { SessionSidebar } from '../ui/SessionSidebar';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
+import type { SidebarTabContribution } from '@/layers/shared/model';
 import { TooltipProvider, SidebarProvider } from '@/layers/shared/ui';
 
 // Mock useSessionId (TanStack Router search params)
@@ -165,6 +167,49 @@ vi.mock('@/layers/shared/lib/session-utils', () => ({
   formatRelativeTime: (iso: string) => (iso >= '2026-02-07' ? '1h ago' : 'Jan 1, 3pm'),
 }));
 
+/** Register the built-in sidebar tab contributions into the extension registry. */
+function registerMockTabContributions() {
+  const { register } = useExtensionRegistry.getState();
+  const tabs: SidebarTabContribution[] = [
+    {
+      id: 'overview',
+      icon: LayoutDashboard,
+      label: 'Overview',
+      component: () => null,
+      shortcut: '\u23181',
+      priority: 1,
+    },
+    {
+      id: 'sessions',
+      icon: MessageSquare,
+      label: 'Sessions',
+      component: () => null,
+      shortcut: '\u23182',
+      priority: 2,
+    },
+    {
+      id: 'schedules',
+      icon: Clock,
+      label: 'Schedules',
+      component: () => null,
+      visibleWhen: () => mockToolStatus.pulse !== 'disabled-by-server',
+      shortcut: '\u23183',
+      priority: 3,
+    },
+    {
+      id: 'connections',
+      icon: Radio,
+      label: 'Connections',
+      component: () => null,
+      shortcut: '\u23184',
+      priority: 4,
+    },
+  ];
+  for (const tab of tabs) {
+    register('sidebar.tabs', tab);
+  }
+}
+
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     id: overrides.id ?? 'session-1',
@@ -216,6 +261,10 @@ describe('SessionSidebar', () => {
     mockSetSidebarOpen.mockClear();
     mockSidebarActiveTab = 'overview';
     mockPathname = '/session';
+
+    // Reset the extension registry and populate with mock tab contributions
+    useExtensionRegistry.setState({ slots: createInitialSlots() });
+    registerMockTabContributions();
   });
   afterEach(() => {
     cleanup();

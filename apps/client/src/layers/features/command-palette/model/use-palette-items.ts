@@ -3,7 +3,7 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
 import { useSessions } from '@/layers/entities/session';
 import { useActiveRunCount } from '@/layers/entities/pulse';
-import { useAppStore, useNow } from '@/layers/shared/model';
+import { useAppStore, useNow, useSlotContributions } from '@/layers/shared/model';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { useAgentFrecency } from './use-agent-frecency';
 import type { SearchableItem } from './use-palette-search';
@@ -52,22 +52,6 @@ export interface PaletteItems {
   isLoading: boolean;
 }
 
-const FEATURES: FeatureItem[] = [
-  { id: 'pulse', label: 'Pulse Scheduler', icon: 'Clock', action: 'openPulse' },
-  { id: 'relay', label: 'Relay Messaging', icon: 'Radio', action: 'openRelay' },
-  { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
-  { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
-];
-
-const QUICK_ACTIONS: QuickActionItem[] = [
-  { id: 'dashboard', label: 'Go to Dashboard', icon: 'Home', action: 'navigateDashboard' },
-  { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
-  { id: 'create-agent', label: 'Create Agent', icon: 'Plus', action: 'createAgent' },
-  { id: 'discover', label: 'Discover Agents', icon: 'Search', action: 'discoverAgents' },
-  { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
-  { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
-];
-
 const MAX_RECENT_AGENTS = 5;
 const MAX_SUGGESTIONS = 3;
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -75,8 +59,8 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 /**
  * Assemble all content groups for the command palette.
  *
- * Combines mesh agent paths, slash commands, and static feature/action lists
- * into a single object consumed by CommandPaletteDialog.
+ * Combines mesh agent paths, slash commands, and registry-sourced feature/action
+ * contributions into a single object consumed by CommandPaletteDialog.
  *
  * @param activeCwd - Current working directory to identify the active agent and pin it first
  */
@@ -88,6 +72,18 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
   const { data: activeRunCount } = useActiveRunCount();
   const previousCwd = useAppStore((s) => s.previousCwd);
   const now = useNow();
+
+  const allPaletteItems = useSlotContributions('command-palette.items');
+
+  const features = useMemo(
+    () => allPaletteItems.filter((item) => item.category === 'feature'),
+    [allPaletteItems]
+  );
+
+  const quickActions = useMemo(
+    () => allPaletteItems.filter((item) => item.category === 'quick-action'),
+    [allPaletteItems]
+  );
 
   const allAgents = useMemo(() => agentPathsData?.agents ?? [], [agentPathsData]);
 
@@ -135,7 +131,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
       });
     }
 
-    for (const f of FEATURES) {
+    for (const f of features) {
       items.push({ id: f.id, name: f.label, type: 'feature', data: f });
     }
 
@@ -149,12 +145,12 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
       });
     }
 
-    for (const qa of QUICK_ACTIONS) {
+    for (const qa of quickActions) {
       items.push({ id: qa.id, name: qa.label, type: 'quick-action', data: qa });
     }
 
     return items;
-  }, [allAgents, commands]);
+  }, [allAgents, commands, features, quickActions]);
 
   const suggestions = useMemo(() => {
     const items: SuggestionItem[] = [];
@@ -208,9 +204,9 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
   return {
     recentAgents,
     allAgents,
-    features: FEATURES,
+    features,
     commands,
-    quickActions: QUICK_ACTIONS,
+    quickActions,
     searchableItems,
     suggestions,
     isLoading: agentsLoading,

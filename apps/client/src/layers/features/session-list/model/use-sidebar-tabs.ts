@@ -1,5 +1,5 @@
 import { useMemo, useEffect } from 'react';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useSlotContributions } from '@/layers/shared/model';
 
 /** Tab identifiers for the session sidebar. */
 export type SidebarTab = 'overview' | 'sessions' | 'schedules' | 'connections';
@@ -13,23 +13,23 @@ interface SidebarTabsResult {
 /**
  * Manage sidebar tab visibility, selection, and keyboard shortcuts.
  *
- * - Computes visible tabs based on feature flags (Pulse tool status).
+ * - Queries the extension registry for tab contributions.
+ * - Filters by `visibleWhen` predicates (e.g., Pulse tool status).
  * - Falls back to 'overview' if the active tab becomes hidden.
  * - Registers Cmd/Ctrl+1/2/3/4 shortcuts when the sidebar is open.
- *
- * @param pulseToolEnabled - Whether the Pulse tool is available for this agent.
  */
-export function useSidebarTabs(pulseToolEnabled: boolean): SidebarTabsResult {
+export function useSidebarTabs(): SidebarTabsResult {
   const { sidebarActiveTab, setSidebarActiveTab } = useAppStore();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const allTabs = useSlotContributions('sidebar.tabs');
 
-  const visibleTabs = useMemo(() => {
-    const tabs: SidebarTab[] = ['overview', 'sessions'];
-    if (pulseToolEnabled) tabs.push('schedules');
-    // Connections always visible (Mesh has no server feature flag)
-    tabs.push('connections');
-    return tabs;
-  }, [pulseToolEnabled]);
+  const visibleTabs = useMemo(
+    () =>
+      allTabs
+        .filter((tab) => !tab.visibleWhen || tab.visibleWhen())
+        .map((tab) => tab.id as SidebarTab),
+    [allTabs]
+  );
 
   // Fall back to 'overview' if active tab becomes hidden due to feature flag changes
   useEffect(() => {

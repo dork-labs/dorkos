@@ -47,6 +47,42 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
 }));
 
+// Mock extension registry — provide footer button contributions
+const MockIcon = () => null;
+vi.mock('@/layers/shared/model/extension-registry', () => ({
+  useSlotContributions: () => [
+    {
+      id: 'edit-agent',
+      icon: MockIcon,
+      label: 'Edit Agent',
+      onClick: () => mockSetAgentDialogOpen(true),
+      priority: 1,
+    },
+    {
+      id: 'settings',
+      icon: MockIcon,
+      label: 'Settings',
+      onClick: () => mockSetSettingsOpen(true),
+      priority: 2,
+    },
+    {
+      id: 'theme',
+      icon: MockIcon,
+      label: 'Toggle Theme',
+      onClick: () => {},
+      priority: 3,
+    },
+    {
+      id: 'devtools',
+      icon: MockIcon,
+      label: 'Devtools',
+      onClick: () => mockToggleDevtools(),
+      priority: 4,
+      showInDevOnly: true,
+    },
+  ],
+}));
+
 // Mock version-compare — use real semver-like logic
 vi.mock('@/layers/features/status', () => ({
   isNewer: (a: string, b: string) => {

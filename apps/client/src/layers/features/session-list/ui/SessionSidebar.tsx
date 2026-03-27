@@ -29,7 +29,7 @@ export function SessionSidebar() {
 
   // Side-effect hooks
   usePulseNotifications();
-  const { visibleTabs, sidebarActiveTab, setSidebarActiveTab } = useSidebarTabs(pulseToolEnabled);
+  const { visibleTabs, sidebarActiveTab, setSidebarActiveTab } = useSidebarTabs();
   const { handleNewSession, handleSessionClick, handleDashboard } = useSidebarNavigation();
 
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);

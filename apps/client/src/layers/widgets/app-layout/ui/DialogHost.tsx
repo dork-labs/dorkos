@@ -1,114 +1,52 @@
-import { useMemo } from 'react';
-import { useAppStore } from '@/layers/shared/model';
-import {
-  ResponsiveDialog,
-  ResponsiveDialogContent,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-  ResponsiveDialogDescription,
-  ResponsiveDialogFullscreenToggle,
-  DirectoryPicker,
-} from '@/layers/shared/ui';
-import { useDirectoryState } from '@/layers/entities/session';
-import { useResolvedAgents } from '@/layers/entities/agent';
-import { SettingsDialog } from '@/layers/features/settings';
-import { PulsePanel } from '@/layers/features/pulse';
-import { RelayPanel } from '@/layers/features/relay';
-import { MeshPanel } from '@/layers/features/mesh';
-import { AgentDialog } from '@/layers/features/agent-settings';
+import { useCallback } from 'react';
+import { useAppStore, useSlotContributions, type DialogContribution } from '@/layers/shared/model';
 import { OnboardingFlow } from '@/layers/features/onboarding';
+
+/**
+ * Derive the setter name from an `openStateKey` by capitalizing its first letter
+ * and prepending `set` (e.g., `'settingsOpen'` -> `'setSettingsOpen'`).
+ */
+function toSetterKey(openStateKey: string): string {
+  return `set${openStateKey.charAt(0).toUpperCase()}${openStateKey.slice(1)}`;
+}
+
+/**
+ * Renders a single registry-driven dialog by reading its open state and setter
+ * from the app store dynamically via the contribution's `openStateKey`.
+ */
+function RegistryDialog({ contribution }: { contribution: DialogContribution }) {
+  const openStateKey = contribution.openStateKey;
+  const setterKey = toSetterKey(openStateKey);
+
+  const open = useAppStore((state) => state[openStateKey as keyof typeof state] as boolean);
+  const setter = useAppStore(
+    (state) => state[setterKey as keyof typeof state] as (open: boolean) => void
+  );
+
+  const onOpenChange = useCallback((value: boolean) => setter(value), [setter]);
+
+  const Component = contribution.component;
+  return <Component open={open} onOpenChange={onOpenChange} />;
+}
 
 /**
  * Root-level dialog host that renders all application dialogs outside
  * the SidebarProvider. This ensures dialogs survive sidebar open/close
  * cycles and mobile Sheet unmounts.
+ *
+ * Dialogs are rendered from the extension registry's `dialog` slot.
+ * OnboardingFlow is hardcoded because it is not a standard open/close dialog.
  */
 export function DialogHost() {
-  const {
-    settingsOpen,
-    setSettingsOpen,
-    pulseOpen,
-    setPulseOpen,
-    relayOpen,
-    setRelayOpen,
-    meshOpen,
-    setMeshOpen,
-    pickerOpen,
-    setPickerOpen,
-    agentDialogOpen,
-    setAgentDialogOpen,
-    onboardingStep,
-    setOnboardingStep,
-    recentCwds,
-  } = useAppStore();
-
-  const [selectedCwd, setSelectedCwd] = useDirectoryState();
-  const recentPaths = useMemo(() => recentCwds.map((r) => r.path), [recentCwds]);
-  const { data: resolvedAgents } = useResolvedAgents(recentPaths);
+  const dialogContributions = useSlotContributions('dialog');
+  const onboardingStep = useAppStore((s) => s.onboardingStep);
+  const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 
   return (
     <>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <DirectoryPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        onSelect={(path) => setSelectedCwd(path)}
-        initialPath={selectedCwd}
-        resolvedAgents={resolvedAgents}
-      />
-      <ResponsiveDialog open={pulseOpen} onOpenChange={setPulseOpen}>
-        <ResponsiveDialogContent className="h-[85vh] max-w-2xl gap-0 p-0">
-          <ResponsiveDialogFullscreenToggle />
-          <ResponsiveDialogHeader className="border-b px-4 py-3">
-            <ResponsiveDialogTitle className="text-sm font-medium">
-              Pulse Scheduler
-            </ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="sr-only">
-              Manage scheduled AI agent tasks
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <PulsePanel />
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-      <ResponsiveDialog open={relayOpen} onOpenChange={setRelayOpen}>
-        <ResponsiveDialogContent className="h-[85vh] max-w-2xl gap-0 p-0">
-          <ResponsiveDialogFullscreenToggle />
-          <ResponsiveDialogHeader className="border-b px-4 py-3">
-            <ResponsiveDialogTitle className="text-sm font-medium">
-              Connections
-            </ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="sr-only">
-              Manage adapters and monitor message activity
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <RelayPanel />
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-      <ResponsiveDialog open={meshOpen} onOpenChange={setMeshOpen}>
-        <ResponsiveDialogContent className="h-[85vh] max-w-2xl gap-0 p-0">
-          <ResponsiveDialogFullscreenToggle />
-          <ResponsiveDialogHeader className="border-b px-4 py-3">
-            <ResponsiveDialogTitle className="text-sm font-medium">Mesh</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="sr-only">
-              Agent discovery and registry
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <MeshPanel />
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-      {selectedCwd && (
-        <AgentDialog
-          projectPath={selectedCwd}
-          open={agentDialogOpen}
-          onOpenChange={setAgentDialogOpen}
-        />
-      )}
+      {dialogContributions.map((contribution) => (
+        <RegistryDialog key={contribution.id} contribution={contribution} />
+      ))}
       {onboardingStep !== null && (
         <div className="bg-background fixed inset-0 z-50">
           <OnboardingFlow initialStep={onboardingStep} onComplete={() => setOnboardingStep(null)} />

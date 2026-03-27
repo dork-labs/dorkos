@@ -40,10 +40,12 @@ src/
 ├── router.tsx           # TanStack Router route tree (/, /session, _shell layout)
 ├── main.tsx             # Vite entry point — RouterProvider
 ├── index.css            # Global styles
+├── app/
+│   └── init-extensions.ts  # Registers all built-in contributions into the extension registry at startup
 ├── layers/              # FSD architecture layers
 │   ├── shared/          # Reusable utilities, UI primitives, hooks & stores
 │   │   ├── ui/          # Shadcn components (button, card, dialog, etc.)
-│   │   ├── model/       # TransportContext, app-store, hooks (useTheme, useIsMobile, etc.)
+│   │   ├── model/       # TransportContext, app-store, extension-registry, hooks (useTheme, useIsMobile, etc.)
 │   │   └── lib/         # cn(), Transports, font-config, favicon-utils, celebrations
 │   ├── entities/        # Business domain objects
 │   │   ├── session/     # Session types, hooks, transport calls
@@ -106,13 +108,13 @@ Unidirectional dependencies from top to bottom:
 app → widgets → features → entities → shared
 ```
 
-| Layer       | Purpose                                      | Can Import From            |
-| ----------- | -------------------------------------------- | -------------------------- |
-| `app/`      | App.tsx, AppShell.tsx, router.tsx, main.tsx  | All lower layers           |
-| `widgets/`  | Large compositions (layout, workspace)       | features, entities, shared |
-| `features/` | Complete user functionality (chat, commands) | entities, shared           |
-| `entities/` | Business domain objects (Session, Command)   | shared only                |
-| `shared/`   | UI primitives, utilities, Transport          | Nothing (base layer)       |
+| Layer       | Purpose                                                         | Can Import From            |
+| ----------- | --------------------------------------------------------------- | -------------------------- |
+| `app/`      | App.tsx, AppShell.tsx, router.tsx, main.tsx, init-extensions.ts | All lower layers           |
+| `widgets/`  | Large compositions (layout, workspace)                          | features, entities, shared |
+| `features/` | Complete user functionality (chat, commands)                    | entities, shared           |
+| `entities/` | Business domain objects (Session, Command)                      | shared only                |
+| `shared/`   | UI primitives, utilities, Transport                             | Nothing (base layer)       |
 
 **Critical rules:**
 

@@ -5,3 +5,6 @@
  */
 export { PermissionBanner } from './ui/PermissionBanner';
 export { DialogHost } from './ui/DialogHost';
+
+// --- Contribution data ---
+export { DIALOG_CONTRIBUTIONS } from './model/dialog-contributions';

@@ -1,9 +1,15 @@
 import { useState, useCallback, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Sun, Moon, Monitor, Settings, Bug, Pencil } from 'lucide-react';
+import { Sun, Moon, Monitor } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DorkLogo } from '@dorkos/icons/logos';
-import { useAppStore, useTheme, useTransport, type Theme } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useSlotContributions,
+  useTheme,
+  useTransport,
+  type Theme,
+} from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { isNewer, isFeatureUpdate } from '@/layers/features/status';
 import { SidebarUpgradeCard } from './SidebarUpgradeCard';
@@ -23,11 +29,17 @@ const THEME_ICONS = {
  * a newer version is available.
  */
 export function SidebarFooterBar() {
-  const { setSettingsOpen, setAgentDialogOpen, devtoolsOpen, toggleDevtools } = useAppStore();
+  const { devtoolsOpen } = useAppStore();
   const { theme, setTheme } = useTheme();
   const ThemeIcon = THEME_ICONS[theme];
   const transport = useTransport();
   const queryClient = useQueryClient();
+
+  const footerButtons = useSlotContributions('sidebar.footer');
+  const filteredButtons = useMemo(
+    () => footerButtons.filter((b) => !b.showInDevOnly || import.meta.env.DEV),
+    [footerButtons]
+  );
 
   const { data: serverConfig } = useQuery({
     queryKey: ['config'],
@@ -90,41 +102,31 @@ export function SidebarFooterBar() {
           <DorkLogo variant="current" size={60} />
         </a>
         <div className="ml-auto flex items-center gap-0.5">
-          <button
-            onClick={() => setAgentDialogOpen(true)}
-            className="text-muted-foreground/50 hover:text-muted-foreground rounded-md p-1 transition-colors duration-150"
-            aria-label="Edit agent"
-          >
-            <Pencil className="size-(--size-icon-sm)" />
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="text-muted-foreground/50 hover:text-muted-foreground rounded-md p-1 transition-colors duration-150"
-            aria-label="Settings"
-          >
-            <Settings className="size-(--size-icon-sm)" />
-          </button>
-          <button
-            onClick={cycleTheme}
-            className="text-muted-foreground/50 hover:text-muted-foreground rounded-md p-1 transition-colors duration-150"
-            aria-label={`Theme: ${theme}. Click to cycle.`}
-            title={`Theme: ${theme}`}
-          >
-            <ThemeIcon className="size-(--size-icon-sm)" />
-          </button>
-          {import.meta.env.DEV && (
-            <button
-              onClick={toggleDevtools}
-              className={cn(
-                'rounded-md p-1 transition-colors duration-150',
-                devtoolsOpen ? 'text-amber-500' : 'text-amber-500/60 hover:text-amber-500'
-              )}
-              title={devtoolsOpen ? 'Hide React Query devtools' : 'Show React Query devtools'}
-              aria-label="Toggle React Query devtools"
-            >
-              <Bug className="size-(--size-icon-sm)" />
-            </button>
-          )}
+          {filteredButtons.map((button) => {
+            // Theme button needs dynamic icon based on current theme
+            const Icon = button.id === 'theme' ? ThemeIcon : button.icon;
+            const handleClick = button.id === 'theme' ? cycleTheme : button.onClick;
+            const label = button.id === 'theme' ? `Theme: ${theme}. Click to cycle.` : button.label;
+
+            return (
+              <button
+                key={button.id}
+                onClick={handleClick}
+                className={cn(
+                  'rounded-md p-1 transition-colors duration-150',
+                  button.id === 'devtools' && devtoolsOpen
+                    ? 'text-amber-500'
+                    : button.id === 'devtools'
+                      ? 'text-amber-500/60 hover:text-amber-500'
+                      : 'text-muted-foreground/50 hover:text-muted-foreground'
+                )}
+                aria-label={label}
+                title={button.id === 'theme' ? `Theme: ${theme}` : undefined}
+              >
+                <Icon className="size-(--size-icon-sm)" />
+              </button>
+            );
+          })}
         </div>
       </div>
 
