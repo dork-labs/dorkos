@@ -57,6 +57,7 @@ import type {
 } from './mesh-schemas.js';
 import type { RuntimeCapabilities } from './agent-runtime.js';
 import type { TemplateEntry } from './template-catalog.js';
+import type { UiState } from './types.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -142,7 +143,7 @@ export interface Transport {
    * @param onEvent - Callback invoked for each streamed event
    * @param signal - Optional AbortSignal to cancel the request
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID)
+   * @param options - Optional additional parameters (clientMessageId for server-echo ID, uiState for agent awareness)
    */
   sendMessage(
     sessionId: string,
@@ -150,7 +151,7 @@ export interface Transport {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
     cwd?: string,
-    options?: { clientMessageId?: string }
+    options?: { clientMessageId?: string; uiState?: UiState }
   ): Promise<void>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;

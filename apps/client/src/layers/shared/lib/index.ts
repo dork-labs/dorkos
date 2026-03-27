@@ -82,6 +82,11 @@ export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
 export {
+  executeUiCommand,
+  type DispatcherContext,
+  type DispatcherStore,
+} from './ui-action-dispatcher';
+export {
   textFilter,
   enumFilter,
   dateRangeFilter,

@@ -108,7 +108,7 @@ export class DirectTransport implements Transport {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
     cwd?: string,
-    _options?: { clientMessageId?: string }
+    _options?: { clientMessageId?: string; uiState?: import('@dorkos/shared/types').UiState }
   ): Promise<void> {
     const generator = this.services.runtime.sendMessage(
       sessionId,

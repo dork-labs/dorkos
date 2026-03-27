@@ -61,6 +61,9 @@ function createMinimalDeps(overrides?: {
     onSessionIdChangeRef,
     onStreamingDoneRef,
     isRemappingRef,
+    themeRef: { current: vi.fn() },
+    scrollToMessageRef: { current: undefined },
+    switchAgentRef: { current: undefined },
   });
 
   return {

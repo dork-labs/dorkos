@@ -1,5 +1,5 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, PermissionMode } from '@dorkos/shared/types';
+import type { StreamEvent, PermissionMode, UiState } from '@dorkos/shared/types';
 import type { PendingInteraction } from './interactive-handlers.js';
 
 /** In-memory state for an active agent session. */
@@ -18,6 +18,8 @@ export interface AgentSession {
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
+  /** Client-reported UI state, updated with each message. Used by `get_ui_state` tool. */
+  uiState?: UiState;
 }
 
 /** Mutable tool tracking state passed by reference into the event mapper. */

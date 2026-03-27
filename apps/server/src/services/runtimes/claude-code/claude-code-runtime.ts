@@ -313,6 +313,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const session = this.findSession(sessionId) ?? this.sessions.get(sessionId)!;
 
+    // Store client-reported UI state so it's available to the system prompt and get_ui_state tool
+    if (opts?.uiState) {
+      session.uiState = opts.uiState;
+    }
+
     yield* executeSdkQuery(
       sessionId,
       content,

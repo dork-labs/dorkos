@@ -14,6 +14,7 @@ import type {
   ModelOption,
   CommandRegistry,
   PermissionMode,
+  UiState,
 } from './types.js';
 
 /** Minimal response interface for session locking — only needs close event detection. */
@@ -82,6 +83,8 @@ export interface MessageOpts {
   permissionMode?: PermissionMode;
   cwd?: string;
   systemPromptAppend?: string;
+  /** Client UI state snapshot for agent situational awareness. */
+  uiState?: UiState;
 }
 
 /**

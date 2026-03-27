@@ -128,6 +128,8 @@ describe('buildAllowedTools', () => {
     expect(result).toContain('mcp__dorkos__get_server_info');
     expect(result).toContain('mcp__dorkos__get_session_count');
     expect(result).toContain('mcp__dorkos__get_agent');
+    expect(result).toContain('mcp__dorkos__control_ui');
+    expect(result).toContain('mcp__dorkos__get_ui_state');
   });
 
   it('excludes pulse tools when pulse=false', () => {
@@ -220,12 +222,14 @@ describe('buildAllowedTools', () => {
 
   it('returns only core tools when all domains are disabled', () => {
     const result = buildAllowedTools({ pulse: false, relay: false, mesh: false, adapter: false })!;
-    // Should be exactly the 4 core tools
-    expect(result).toHaveLength(4);
+    // Should be exactly the 6 core tools (4 original + 2 UI control)
+    expect(result).toHaveLength(6);
     expect(result).toContain('mcp__dorkos__ping');
     expect(result).toContain('mcp__dorkos__get_server_info');
     expect(result).toContain('mcp__dorkos__get_session_count');
     expect(result).toContain('mcp__dorkos__get_agent');
+    expect(result).toContain('mcp__dorkos__control_ui');
+    expect(result).toContain('mcp__dorkos__get_ui_state');
   });
 
   it('returns a non-empty array when at least one domain is disabled', () => {

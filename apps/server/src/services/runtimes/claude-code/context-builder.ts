@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { getGitStatus } from '../../core/git-status.js';
-import type { GitStatusResponse } from '@dorkos/shared/types';
+import type { GitStatusResponse, UiState } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
   extractCustomProse,
@@ -148,6 +148,38 @@ Available tools:
 Schedules can target a specific agent (by agentId) or a directory (by cwd).
 Agent-linked schedules automatically resolve the agent's project path at run time.
 </pulse_tools>`;
+
+const UI_TOOLS_CONTEXT = `<ui_tools>
+DorkOS UI control lets you manipulate the client interface.
+
+Available tools:
+  control_ui(action, ...) -- send a UI command to the client
+  get_ui_state() -- query current UI state (panels, sidebar, canvas, active agent)
+
+Actions:
+  open_panel / close_panel / toggle_panel: { panel: "settings"|"pulse"|"relay"|"mesh"|"picker" }
+  open_sidebar / close_sidebar
+  switch_sidebar_tab: { tab: "sessions"|"agents" }
+  open_canvas: { content: { type: "url"|"markdown"|"json", ... }, preferredWidth?: 20-80 }
+  update_canvas / close_canvas
+  show_toast: { message, level?: "success"|"error"|"info"|"warning", description? }
+  set_theme: { theme: "light"|"dark" }
+  scroll_to_message: { messageId? } (omit for bottom)
+  switch_agent: { cwd: string }
+  open_command_palette
+
+Use get_ui_state() before making layout decisions to avoid redundant commands.
+</ui_tools>`;
+
+/**
+ * Build the `<ui_tools>` context block with optional current state.
+ *
+ * Always included — UI tools are core tools with no feature flag dependency.
+ */
+function buildUiToolsBlock(uiState?: UiState): string {
+  if (!uiState) return UI_TOOLS_CONTEXT;
+  return `${UI_TOOLS_CONTEXT}\n\n<ui_state>\n${JSON.stringify(uiState, null, 2)}\n</ui_state>`;
+}
 
 /**
  * Build the `<relay_tools>` context block.
@@ -311,12 +343,14 @@ async function buildPeerAgentsBlock(
  * @param meshCore - Optional agent registry port for peer agents block
  * @param toolConfig - Optional resolved tool config for agent-aware block gating
  * @param relayContext - Optional relay context deps for building relay connections block
+ * @param uiState - Optional client-reported UI state for the active session
  */
 export async function buildSystemPromptAppend(
   cwd: string,
   meshCore?: AgentRegistryPort | null,
   toolConfig?: ResolvedToolConfig,
-  relayContext?: RelayContextDeps
+  relayContext?: RelayContextDeps,
+  uiState?: UiState
 ): Promise<string> {
   const results = await Promise.allSettled([
     buildEnvBlock(cwd),
@@ -331,6 +365,7 @@ export async function buildSystemPromptAppend(
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const pulseBlock = buildPulseToolsBlock(toolConfig);
   const relayConnectionsBlock = buildRelayConnectionsBlock(relayContext, toolConfig);
+  const uiBlock = buildUiToolsBlock(uiState);
 
   return [
     ...results
@@ -341,6 +376,7 @@ export async function buildSystemPromptAppend(
     adapterBlock,
     pulseBlock,
     relayConnectionsBlock,
+    uiBlock,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -504,8 +540,10 @@ export {
   buildPulseToolsBlock as _buildPulseToolsBlock,
   buildPeerAgentsBlock as _buildPeerAgentsBlock,
   buildRelayConnectionsBlock as _buildRelayConnectionsBlock,
+  buildUiToolsBlock as _buildUiToolsBlock,
   RELAY_TOOLS_CONTEXT as _RELAY_TOOLS_CONTEXT,
   MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,
   PULSE_TOOLS_CONTEXT as _PULSE_TOOLS_CONTEXT,
+  UI_TOOLS_CONTEXT as _UI_TOOLS_CONTEXT,
 };

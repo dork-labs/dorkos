@@ -43,6 +43,9 @@ const CORE_TOOLS = [
   'mcp__dorkos__get_server_info',
   'mcp__dorkos__get_session_count',
   'mcp__dorkos__get_agent',
+  // UI control tools are always available — they mutate client UI, not the system
+  'mcp__dorkos__control_ui',
+  'mcp__dorkos__get_ui_state',
 ] as const;
 
 const PULSE_TOOLS = [

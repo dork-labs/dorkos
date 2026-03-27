@@ -156,7 +156,8 @@ export async function* executeSdkQuery(
     effectiveCwd,
     opts.meshCore ?? undefined,
     toolConfig,
-    relayContext
+    relayContext,
+    session.uiState
   );
   // Concatenate caller-supplied append (e.g. Pulse scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend

@@ -281,11 +281,12 @@ export class HttpTransport implements Transport {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
     cwd?: string,
-    options?: { clientMessageId?: string }
+    options?: { clientMessageId?: string; uiState?: import('@dorkos/shared/types').UiState }
   ): Promise<void> {
     const body: Record<string, unknown> = { content };
     if (cwd) body.cwd = cwd;
     if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
+    if (options?.uiState) body.uiState = options.uiState;
 
     const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/messages`, {
       method: 'POST',

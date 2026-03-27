@@ -13,16 +13,20 @@ import { SSE_RESILIENCE } from '@/layers/shared/lib';
 // Mock useAppStore and useTabVisibility to provide required state
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
+  const mockState = {
+    selectedCwd: '/test/cwd',
+    enableCrossClientSync: false,
+    enableMessagePolling: false,
+  };
+  const useAppStore = Object.assign(
+    (selector?: (s: Record<string, unknown>) => unknown) => {
+      return selector ? selector(mockState) : mockState;
+    },
+    { getState: () => mockState }
+  );
   return {
     ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = {
-        selectedCwd: '/test/cwd',
-        enableCrossClientSync: false,
-        enableMessagePolling: false,
-      };
-      return selector ? selector(state) : state;
-    },
+    useAppStore,
     useTabVisibility: () => true,
   };
 });

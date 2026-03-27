@@ -148,7 +148,7 @@ router.post('/:id/messages', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { content, cwd } = parsed.data;
+  const { content, cwd, uiState } = parsed.data;
 
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
@@ -188,7 +188,7 @@ router.post('/:id/messages', async (req, res) => {
   initSSEStream(res);
 
   try {
-    for await (const event of runtime.sendMessage(sessionId, content, { cwd })) {
+    for await (const event of runtime.sendMessage(sessionId, content, { cwd, uiState })) {
       // Intercept the done event to enrich it with server-assigned message IDs
       // and session ID remap info, rather than sending a second done event.
       if (event.type === 'done') {

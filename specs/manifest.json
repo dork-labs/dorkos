@@ -30,7 +30,7 @@
       "slug": "ext-platform-02-extension-registry",
       "title": "Extensibility Platform Phase 2 \u2014 Extension Point Registry",
       "created": "2026-03-26",
-      "status": "brief",
+      "status": "implemented",
       "project": "extensibility-platform"
     },
     {
@@ -38,7 +38,7 @@
       "slug": "ext-platform-01-agent-ui-control",
       "title": "Extensibility Platform Phase 1 \u2014 Agent UI Control & Canvas",
       "created": "2026-03-26",
-      "status": "brief",
+      "status": "implemented",
       "project": "extensibility-platform"
     },
     {

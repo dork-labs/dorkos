@@ -49,6 +49,14 @@ export interface StreamEventDeps {
   onStreamingDoneRef: React.MutableRefObject<(() => void) | undefined>;
   /** Set to true before `onSessionIdChange` in done handler to signal that the session change is a remap, not navigation. */
   isRemappingRef: React.MutableRefObject<boolean>;
+
+  // UI command dispatch dependencies
+  /** Theme setter ref — wired from useTheme() so ui_command/set_theme works without a React context. */
+  themeRef: React.MutableRefObject<(theme: 'light' | 'dark') => void>;
+  /** Optional scroll-to-message handler ref. */
+  scrollToMessageRef: React.MutableRefObject<((messageId?: string) => void) | undefined>;
+  /** Optional agent-switching handler ref — maps to setDir from useDirectoryState. */
+  switchAgentRef: React.MutableRefObject<((cwd: string) => void) | undefined>;
 }
 
 /** Context object passed to extracted handler functions. */

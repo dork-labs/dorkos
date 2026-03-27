@@ -16,8 +16,10 @@ import type {
   MessagePart,
   SystemStatusEvent,
   PromptSuggestionEvent,
+  UiCommand,
 } from '@dorkos/shared/types';
-import { TIMING } from '@/layers/shared/lib';
+import { TIMING, executeUiCommand } from '@/layers/shared/lib';
+import { useAppStore } from '@/layers/shared/model';
 import type { StreamEventDeps, StreamingTextPart } from './stream-event-types';
 import { createStreamHelpers, deriveFromParts } from './stream-event-helpers';
 import {
@@ -237,6 +239,23 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       case 'prompt_suggestion': {
         const { suggestions } = data as PromptSuggestionEvent;
         setPromptSuggestions(suggestions);
+        break;
+      }
+      case 'ui_command': {
+        const { command } = data as { command: UiCommand };
+        const store = useAppStore.getState();
+        executeUiCommand(
+          {
+            store: {
+              ...store,
+              setSidebarActiveTab: store.setSidebarActiveTab as (tab: string) => void,
+            },
+            setTheme: deps.themeRef.current,
+            scrollToMessage: deps.scrollToMessageRef?.current,
+            switchAgent: deps.switchAgentRef?.current,
+          },
+          command
+        );
         break;
       }
       case 'compact_boundary': {

@@ -20,11 +20,15 @@ let mockAppState: Record<string, unknown> = {
 
 vi.mock('@/layers/shared/model', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
-  return {
-    ...actual,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+  const useAppStore = Object.assign(
+    (selector?: (s: Record<string, unknown>) => unknown) => {
       return selector ? selector(mockAppState) : mockAppState;
     },
+    { getState: () => mockAppState }
+  );
+  return {
+    ...actual,
+    useAppStore,
     useSSEConnection: () => ({
       connectionState: 'connected' as const,
       failedAttempts: 0,

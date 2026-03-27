@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import type { UiCanvasContent } from '@dorkos/shared/types';
 import {
   type FontFamilyKey,
   DEFAULT_FONT,
@@ -145,6 +146,14 @@ interface AppState {
   addContextFile: (file: Omit<ContextFile, 'id'>) => void;
   removeContextFile: (id: string) => void;
   clearContextFiles: () => void;
+
+  // Canvas state (transient — not persisted)
+  canvasOpen: boolean;
+  setCanvasOpen: (open: boolean) => void;
+  canvasContent: UiCanvasContent | null;
+  setCanvasContent: (content: UiCanvasContent | null) => void;
+  canvasPreferredWidth: number | null;
+  setCanvasPreferredWidth: (width: number | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -490,6 +499,14 @@ export const useAppStore = create<AppState>()(
       removeContextFile: (id) =>
         set((s) => ({ contextFiles: s.contextFiles.filter((f) => f.id !== id) })),
       clearContextFiles: () => set({ contextFiles: [] }),
+
+      // Canvas state (transient — not persisted)
+      canvasOpen: false,
+      setCanvasOpen: (open) => set({ canvasOpen: open }),
+      canvasContent: null,
+      setCanvasContent: (content) => set({ canvasContent: content }),
+      canvasPreferredWidth: null,
+      setCanvasPreferredWidth: (width) => set({ canvasPreferredWidth: width }),
     }),
     { name: 'app-store' }
   )

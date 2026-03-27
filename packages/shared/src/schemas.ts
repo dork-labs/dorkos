@@ -57,6 +57,7 @@ export const StreamEventTypeSchema = z
     'hook_progress',
     'hook_response',
     'presence_update',
+    'ui_command',
   ])
   .openapi('StreamEventType');
 
@@ -126,6 +127,8 @@ export const SendMessageRequestSchema = z
     cwd: z.string().optional(),
     correlationId: z.string().uuid().optional(),
     clientMessageId: z.string().optional(),
+    /** Client UI state snapshot — validated against UiStateSchema via z.lazy (forward ref). */
+    uiState: z.lazy(() => UiStateSchema).optional(),
   })
   .openapi('SendMessageRequest');
 
@@ -1127,3 +1130,155 @@ export const UploadProgressSchema = z.object({
 });
 
 export type UploadProgress = z.infer<typeof UploadProgressSchema>;
+
+// === UI Control Schemas ===
+
+/**
+ * Content that can be rendered in the agent-controlled canvas panel.
+ * Discriminated on `type`: `'url'`, `'markdown'`, or `'json'`.
+ */
+export const UiCanvasContentSchema = z
+  .discriminatedUnion('type', [
+    z.object({
+      type: z.literal('url'),
+      url: z.string().url(),
+      title: z.string().optional(),
+      sandbox: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('markdown'),
+      content: z.string(),
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('json'),
+      data: z.unknown(),
+      title: z.string().optional(),
+    }),
+  ])
+  .openapi('UiCanvasContent');
+
+export type UiCanvasContent = z.infer<typeof UiCanvasContentSchema>;
+
+/** Identifies a named panel in the DorkOS UI. */
+export const UiPanelIdSchema = z
+  .enum(['settings', 'pulse', 'relay', 'mesh', 'picker'])
+  .openapi('UiPanelId');
+
+export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
+
+/** Identifies a tab in the sidebar navigation. */
+export const UiSidebarTabSchema = z.enum(['sessions', 'agents']).openapi('UiSidebarTab');
+
+export type UiSidebarTab = z.infer<typeof UiSidebarTabSchema>;
+
+/** Severity level for agent-emitted toast notifications. */
+export const UiToastLevelSchema = z
+  .enum(['success', 'error', 'info', 'warning'])
+  .openapi('UiToastLevel');
+
+export type UiToastLevel = z.infer<typeof UiToastLevelSchema>;
+
+/**
+ * A command issued by an agent to mutate the DorkOS client UI.
+ * Discriminated on `action` — 14 variants covering panels, sidebar, canvas,
+ * notifications, theme, scroll, agent switching, and command palette.
+ */
+export const UiCommandSchema = z
+  .discriminatedUnion('action', [
+    // Panel commands
+    z.object({ action: z.literal('open_panel'), panel: UiPanelIdSchema }),
+    z.object({ action: z.literal('close_panel'), panel: UiPanelIdSchema }),
+    z.object({ action: z.literal('toggle_panel'), panel: UiPanelIdSchema }),
+
+    // Sidebar commands
+    z.object({ action: z.literal('open_sidebar') }),
+    z.object({ action: z.literal('close_sidebar') }),
+    z.object({ action: z.literal('switch_sidebar_tab'), tab: UiSidebarTabSchema }),
+
+    // Canvas commands
+    z.object({
+      action: z.literal('open_canvas'),
+      content: UiCanvasContentSchema,
+      preferredWidth: z.number().min(20).max(80).optional(),
+    }),
+    z.object({
+      action: z.literal('update_canvas'),
+      content: UiCanvasContentSchema,
+    }),
+    z.object({ action: z.literal('close_canvas') }),
+
+    // Notification
+    z.object({
+      action: z.literal('show_toast'),
+      message: z.string().max(500),
+      level: UiToastLevelSchema.default('info'),
+      description: z.string().max(1000).optional(),
+    }),
+
+    // Theme
+    z.object({
+      action: z.literal('set_theme'),
+      theme: z.enum(['light', 'dark']),
+    }),
+
+    // Scroll
+    z.object({
+      action: z.literal('scroll_to_message'),
+      messageId: z.string().optional(),
+    }),
+
+    // Agent switching
+    z.object({
+      action: z.literal('switch_agent'),
+      cwd: z.string(),
+    }),
+
+    // Command palette
+    z.object({ action: z.literal('open_command_palette') }),
+  ])
+  .openapi('UiCommand');
+
+export type UiCommand = z.infer<typeof UiCommandSchema>;
+
+/**
+ * SSE event wrapper for agent-issued UI commands.
+ * Carried as a `StreamEvent` with `type: 'ui_command'`.
+ */
+export const UiCommandEventSchema = z
+  .object({
+    type: z.literal('ui_command'),
+    command: UiCommandSchema,
+  })
+  .openapi('UiCommandEvent');
+
+export type UiCommandEvent = z.infer<typeof UiCommandEventSchema>;
+
+/**
+ * Client UI state reported back to the agent via the Transport layer.
+ * Gives agents situational awareness of what is visible and active.
+ */
+export const UiStateSchema = z
+  .object({
+    canvas: z.object({
+      open: z.boolean(),
+      contentType: z.enum(['url', 'markdown', 'json']).nullable(),
+    }),
+    panels: z.object({
+      settings: z.boolean(),
+      pulse: z.boolean(),
+      relay: z.boolean(),
+      mesh: z.boolean(),
+    }),
+    sidebar: z.object({
+      open: z.boolean(),
+      activeTab: UiSidebarTabSchema.nullable(),
+    }),
+    agent: z.object({
+      id: z.string().nullable(),
+      cwd: z.string().nullable(),
+    }),
+  })
+  .openapi('UiState');
+
+export type UiState = z.infer<typeof UiStateSchema>;

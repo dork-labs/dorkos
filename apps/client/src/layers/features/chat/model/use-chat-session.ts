@@ -5,12 +5,14 @@ import type {
   MessagePart,
   PresenceUpdateEvent,
   HookPart,
+  UiState,
 } from '@dorkos/shared/types';
 import {
   useTransport,
   useAppStore,
   useTabVisibility,
   useSSEConnection,
+  useTheme,
 } from '@/layers/shared/model';
 import { QUERY_TIMING, TIMING, SSE_RESILIENCE } from '@/layers/shared/lib';
 import { insertOptimisticSession } from '@/layers/entities/session';
@@ -20,6 +22,31 @@ import { createStreamEventHandler } from './stream-event-handler';
 import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream-history-helpers';
 import { classifyTransportError } from './classify-transport-error';
+
+/** Snapshot the current Zustand UI state for agent awareness. */
+function snapshotUiState(activeCwd: string | null): UiState {
+  const s = useAppStore.getState();
+  return {
+    canvas: {
+      open: false, // Canvas fields not yet on store (task 5.1)
+      contentType: null,
+    },
+    panels: {
+      settings: s.settingsOpen,
+      pulse: s.pulseOpen,
+      relay: s.relayOpen,
+      mesh: s.meshOpen,
+    },
+    sidebar: {
+      open: s.sidebarOpen,
+      activeTab: null, // Store tab type differs from UiState tab enum; null until aligned
+    },
+    agent: {
+      id: null, // Derived from session, not stored client-side
+      cwd: activeCwd,
+    },
+  };
+}
 
 // Re-export types for backward compat
 export type {
@@ -89,6 +116,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // so the session change effect can skip clearing messages.
   const isRemappingRef = useRef(false);
 
+  // Refs for ui_command dispatch — kept stable so the stream handler never stales.
+  const themeRef = useRef<(theme: 'light' | 'dark') => void>(() => {});
+  const scrollToMessageRef = useRef<((messageId?: string) => void) | undefined>(undefined);
+  const switchAgentRef = useRef<((cwd: string) => void) | undefined>(undefined);
+
   // Keep refs in sync with state
   useEffect(() => {
     messagesRef.current = messages;
@@ -127,6 +159,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       }, TIMING.SYSTEM_STATUS_DISMISS_MS);
     }
   }, []);
+
+  // Wire theme setter into ref so ui_command/set_theme can call it without a React context.
+  const { setTheme } = useTheme();
+  /* eslint-disable react-hooks/refs -- Intentional render-time ref sync to avoid stale closures */
+  themeRef.current = setTheme;
+  /* eslint-enable react-hooks/refs */
 
   // Ref-stabilize callbacks to prevent streamEventHandler identity churn.
   // Synced on every render (refs are synchronous — no useEffect needed).
@@ -172,6 +210,9 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         onSessionIdChangeRef,
         onStreamingDoneRef,
         isRemappingRef,
+        themeRef,
+        scrollToMessageRef,
+        switchAgentRef,
       }),
 
     [sessionId, setSystemStatusWithClear]
@@ -374,7 +415,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
           (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
           abortController.signal,
           selectedCwdRef.current ?? undefined,
-          { clientMessageId: pendingUserId }
+          { clientMessageId: pendingUserId, uiState: snapshotUiState(selectedCwdRef.current) }
         );
         pendingUserIdRef.current = null;
         setStatus('idle');
@@ -443,7 +484,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
               (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
               abortController.signal,
               selectedCwdRef.current ?? undefined,
-              { clientMessageId: pendingUserIdRef.current ?? pendingUserId }
+              {
+                clientMessageId: pendingUserIdRef.current ?? pendingUserId,
+                uiState: snapshotUiState(selectedCwdRef.current),
+              }
             );
 
             // Retry succeeded — clear error, reset counter, go idle

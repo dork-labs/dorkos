@@ -1,7 +1,61 @@
 {
   "version": 1,
-  "nextNumber": 195,
+  "nextNumber": 201,
   "decisions": [
+    {
+      "number": 200,
+      "slug": "app-layer-synchronous-extension-initialization",
+      "title": "App-Layer Synchronous Extension Initialization",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-02-extension-registry",
+      "specSlug": "ext-platform-02-extension-registry"
+    },
+    {
+      "number": 199,
+      "slug": "generic-register-api-with-slot-contribution-map",
+      "title": "Generic register<K>() API with SlotContributionMap Interface",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-02-extension-registry",
+      "specSlug": "ext-platform-02-extension-registry"
+    },
+    {
+      "number": 198,
+      "slug": "dual-mechanism-agent-ui-state-awareness",
+      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-01-agent-ui-control",
+      "specSlug": "ext-platform-01-agent-ui-control"
+    },
+    {
+      "number": 197,
+      "slug": "ui-action-dispatcher-plain-function",
+      "title": "UiActionDispatcher as Plain Function Outside React Component Tree",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-01-agent-ui-control",
+      "specSlug": "ext-platform-01-agent-ui-control"
+    },
+    {
+      "number": 196,
+      "slug": "single-control-ui-tool-discriminated-union",
+      "title": "Single control_ui Tool with Discriminated Union Action Schema",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-01-agent-ui-control",
+      "specSlug": "ext-platform-01-agent-ui-control"
+    },
+    {
+      "number": 195,
+      "slug": "hybrid-agent-ui-control-pattern",
+      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
+      "created": "2026-03-26",
+      "status": "draft",
+      "extractedFrom": "ext-platform-01-agent-ui-control",
+      "specSlug": "ext-platform-01-agent-ui-control"
+    },
     {
       "number": 194,
       "slug": "version-display-in-sidebar-not-status-bar",

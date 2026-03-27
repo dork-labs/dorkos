@@ -111,6 +111,9 @@ export function createCanUseTool(
       'mcp__dorkos__mesh_status',
       'mcp__dorkos__mesh_query_topology',
       'mcp__dorkos__get_agent',
+      // UI control tools — pure client-side UI mutations, no system access
+      'mcp__dorkos__control_ui',
+      'mcp__dorkos__get_ui_state',
     ]);
 
     if (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) {

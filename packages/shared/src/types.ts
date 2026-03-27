@@ -83,6 +83,13 @@ export type {
   HookPart,
   PresenceClient,
   PresenceUpdateEvent,
+  UiCommand,
+  UiCanvasContent,
+  UiState,
+  UiPanelId,
+  UiSidebarTab,
+  UiToastLevel,
+  UiCommandEvent,
 } from './schemas.js';
 
 export type {
