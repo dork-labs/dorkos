@@ -19,12 +19,14 @@ interface Transport {
   getSession(id: string, cwd?: string): Promise<Session>;
   updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
-  sendMessage(sessionId, content, onEvent, signal?, cwd?): Promise<void>;
+  sendMessage(sessionId, content, onEvent, signal?, cwd?, options?): Promise<void>;
+  // options: { clientMessageId?: string; uiState?: UiState }
 
   // Tool interaction
   approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
   denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
   submitAnswers(sessionId, toolCallId, answers): Promise<{ ok: boolean }>;
+  stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
   getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }>;
 
   // Filesystem & git
@@ -52,6 +54,15 @@ interface Transport {
   // Tunnel
   startTunnel(): Promise<{ url: string }>;
   stopTunnel(): Promise<void>;
+
+  // Directory operations
+  createDirectory(parentPath: string, folderName: string): Promise<{ path: string }>;
+
+  // Templates
+  getTemplates(): Promise<TemplateEntry[]>;
+
+  // Default agent
+  setDefaultAgent(agentName: string): Promise<void>;
 
   // Admin
   resetAllData(confirm: string): Promise<{ message: string }>;
@@ -194,6 +205,11 @@ Events emitted during message streaming:
     done: { type: 'StreamEvent', description: 'Message stream complete' },
     session_status: { type: 'StreamEvent', description: 'Session state changed' },
     task_update: { type: 'StreamEvent', description: 'Task list updated' },
+    ui_command: {
+      type: 'StreamEvent',
+      description:
+        'Agent-issued UI command dispatched via the controlUI MCP tool (open panel, navigate, show notification)',
+    },
     relay_message: {
       type: 'StreamEvent (Relay)',
       description:

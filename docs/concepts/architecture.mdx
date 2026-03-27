@@ -77,7 +77,9 @@ The `RuntimeRegistry` holds all registered runtimes keyed by type string. The cu
 
 ### Server
 
-The Express server exposes fifteen route groups including sessions, commands, health, config, files, git, Pulse scheduling, Relay messaging, and Mesh agent discovery. Routes are thin HTTP handlers — all business logic delegates to services or the active runtime.
+The Express server exposes route groups including sessions, commands, health, config, files, git, Pulse scheduling, Relay messaging, Mesh agent discovery, and extensions. Routes are thin HTTP handlers — all business logic delegates to services or the active runtime.
+
+Server-side services are organized by domain: `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/pulse/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), and `services/extensions/` (extension lifecycle, compilation, and discovery).
 
 ### Client
 
@@ -85,9 +87,14 @@ The React SPA uses Feature-Sliced Design with strict unidirectional layer import
 
 - **Chat** — Message list, streaming text, tool call cards, and the input area
 - **Session list** — Sidebar for browsing and creating sessions
+- **Canvas** — Agent-controlled UI panels rendered via the extension system
 - **Commands** — Palette for discovering and using slash commands
 - **Settings** — Theme, configuration, and preferences
 - **Pulse / Relay / Mesh** — Scheduling, messaging, and agent discovery panels
+
+### Agent UI Control
+
+Agents can observe and control the DorkOS client UI through MCP tools exposed by the server. The `controlUI` tool dispatches UI commands (open panels, navigate, show notifications), and `get_ui_state` returns the current UI state (active session, visible panels, sidebar state). This enables agents to build interactive workflows that coordinate with the user's view. UI state is passed to the agent via the `uiState` field on `sendMessage`.
 
 ### Shared Package
 

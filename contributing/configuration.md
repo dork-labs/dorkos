@@ -95,6 +95,21 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `agentContext.adapterTools`   | boolean                                                                  | `true`             | Include adapter tool documentation in agent context                                |
 | `agentContext.pulseTools`     | boolean                                                                  | `true`             | Include Pulse scheduler tool documentation in agent context                        |
 
+The `agents` section configures agent storage defaults:
+
+| Key                       | Type   | Default          | Description                                      |
+| ------------------------- | ------ | ---------------- | ------------------------------------------------ |
+| `agents.defaultDirectory` | string | `~/.dork/agents` | Default directory for agent storage              |
+| `agents.defaultAgent`     | string | `dorkbot`        | Default agent ID used when no agent is specified |
+
+The `extensions` section controls the extension system:
+
+| Key                  | Type       | Default | Description                                        |
+| -------------------- | ---------- | ------- | -------------------------------------------------- |
+| `extensions.enabled` | `string[]` | `[]`    | Extension IDs that the user has explicitly enabled |
+
+Extensions are discovered automatically from `<cwd>/.dork/extensions/` and the global `~/.dork/extensions/` directory. The `enabled` array controls which discovered extensions are activated. See `contributing/extension-authoring.md` for the full extension system documentation.
+
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:

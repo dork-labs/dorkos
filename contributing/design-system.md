@@ -340,6 +340,93 @@ Pattern: `Popover` > `PopoverTrigger` > `PopoverContent` > `Command` > `CommandI
 
 ---
 
+## FilterBar (Compound Component)
+
+A composable filter bar system for list surfaces. Built using the compound component pattern (`FilterBar.Search`, `FilterBar.Primary`, etc.) with context-based state sharing. The filter engine (`shared/lib/filter-engine.ts`) is pure TypeScript with no React dependency; the UI components (`shared/ui/filter-bar/`) and the `useFilterState` hook (`shared/model/use-filter-state.ts`) bridge it to React and TanStack Router.
+
+### Architecture
+
+```
+filter-engine.ts          ← Pure TS: filter factories, schema builder, match/sort
+  ↓
+useFilterState()          ← React hook: URL sync via TanStack Router search params
+  ↓
+<FilterBar state={...}>   ← Compound UI: provides state via context to sub-components
+  <FilterBar.Search />
+  <FilterBar.Primary />
+  <FilterBar.AddFilter />
+  <FilterBar.Sort />
+  <FilterBar.ResultCount />
+  <FilterBar.ActiveFilters />
+```
+
+### Sub-Components
+
+| Sub-component             | Purpose                                            |
+| ------------------------- | -------------------------------------------------- |
+| `FilterBar`               | Root container, provides filter state via context  |
+| `FilterBar.Search`        | Debounced text input for text filter fields        |
+| `FilterBar.Primary`       | Inline enum filter rendered as segmented pills     |
+| `FilterBar.AddFilter`     | Popover menu for activating non-primary filters    |
+| `FilterBar.Sort`          | Sort field and direction selector                  |
+| `FilterBar.ResultCount`   | "4 of 12 agents" result summary                    |
+| `FilterBar.ActiveFilters` | Removable chips for currently active filter values |
+
+### Usage
+
+```tsx
+import { FilterBar } from '@/layers/shared/ui';
+import { useFilterState } from '@/layers/shared/model';
+import { agentFilterSchema, agentSortOptions } from '../lib/agent-filter-schema';
+
+function AgentFilterBar() {
+  const filterState = useFilterState(agentFilterSchema, {
+    debounce: { search: 200 },
+  });
+
+  return (
+    <FilterBar state={filterState}>
+      <FilterBar.Search name="search" placeholder="Filter agents..." />
+      <FilterBar.Primary name="status" />
+      <FilterBar.AddFilter />
+      <FilterBar.Sort options={agentSortOptions} />
+      <FilterBar.ResultCount count={filtered.length} total={all.length} noun="agent" />
+      <FilterBar.ActiveFilters />
+    </FilterBar>
+  );
+}
+```
+
+### Filter Types
+
+The filter engine provides five filter factories:
+
+| Factory              | Value Type                | Use Case                                |
+| -------------------- | ------------------------- | --------------------------------------- |
+| `textFilter`         | `string`                  | Substring search across multiple fields |
+| `enumFilter`         | `string \| string[]`      | Single-select or multi-select dropdowns |
+| `dateRangeFilter`    | `DateRangeFilterValue`    | Preset durations or explicit bounds     |
+| `booleanFilter`      | `boolean \| null`         | Tri-state toggle (null = no filter)     |
+| `numericRangeFilter` | `NumericRangeFilterValue` | Min/max range bounds                    |
+
+### Styling
+
+- Root container: `flex flex-wrap items-center gap-2 px-4 py-3`
+- Active filter chips: removable badges with `X` icon
+- Primary filters: enum pills inline in the bar
+- Search input: standard input with `text-sm` and debounced URL sync
+- Enum filter colors: defined per-option via `colors` record in filter schema (Tailwind classes like `text-emerald-400`)
+
+### Key Files
+
+| File                               | Purpose                                                  |
+| ---------------------------------- | -------------------------------------------------------- |
+| `shared/lib/filter-engine.ts`      | Pure filter factories, schema builder, sort/filter logic |
+| `shared/model/use-filter-state.ts` | URL-synced filter state hook                             |
+| `shared/ui/filter-bar/`            | Compound UI components (7 sub-components)                |
+
+---
+
 ## Form Fields
 
 DorkOS uses [Shadcn Field](https://ui.shadcn.com/docs/components/field) as the foundation for all form field layouts. Field provides accessible label/description/error association via `aria-describedby` and `role="alert"`. Two higher-level components sit on top.
@@ -678,3 +765,6 @@ Use instead of plain `Dialog` when the dialog content needs full-screen treatmen
 | Session components       | `apps/client/src/layers/features/session-list/`                  |
 | App state                | `apps/client/src/layers/shared/model/app-store.ts`               |
 | Chat state               | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
+| Filter engine            | `apps/client/src/layers/shared/lib/filter-engine.ts`             |
+| Filter state hook        | `apps/client/src/layers/shared/model/use-filter-state.ts`        |
+| FilterBar UI             | `apps/client/src/layers/shared/ui/filter-bar/`                   |

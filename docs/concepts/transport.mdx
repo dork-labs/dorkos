@@ -32,7 +32,8 @@ Transport defines methods for every operation the client needs, organized by dom
 | `getSession`        | Fetch metadata for a single session                                                        |
 | `updateSession`     | Change session settings (permission mode, model)                                           |
 | `getMessages`       | Load message history for a session                                                         |
-| `sendMessage`       | Send a message and stream the response                                                     |
+| `sendMessage`       | Send a message and stream the response (accepts optional `uiState` for agent UI awareness) |
+| `stopTask`          | Stop a running background task by ID                                                       |
 | `approveTool`       | Approve a pending tool call                                                                |
 | `denyTool`          | Deny a pending tool call                                                                   |
 | `submitAnswers`     | Respond to an interactive question prompt                                                  |
@@ -55,12 +56,15 @@ Transport defines methods for every operation the client needs, organized by dom
 
 ### Runtime and Capabilities
 
-| Method            | Purpose                                          |
-| ----------------- | ------------------------------------------------ |
-| `getModels`       | List available Claude models                     |
-| `getCapabilities` | Get capability flags for all registered runtimes |
-| `startTunnel`     | Start the ngrok tunnel and return the public URL |
-| `stopTunnel`      | Stop the ngrok tunnel                            |
+| Method            | Purpose                                             |
+| ----------------- | --------------------------------------------------- |
+| `getModels`       | List available Claude models                        |
+| `getCapabilities` | Get capability flags for all registered runtimes    |
+| `startTunnel`     | Start the ngrok tunnel and return the public URL    |
+| `stopTunnel`      | Stop the ngrok tunnel                               |
+| `getTemplates`    | Fetch the merged template catalog (builtin + user)  |
+| `setDefaultAgent` | Set the default agent by name                       |
+| `createDirectory` | Create a new directory (used by DirectoryPicker UI) |
 
 ### File Uploads
 
@@ -82,8 +86,10 @@ Transport also exposes full Pulse scheduler methods (`listSchedules`, `createSch
 `sendMessage` handles real-time streaming. Rather than returning a stream object, it accepts an `onEvent` callback:
 
 ```
-transport.sendMessage(sessionId, content, onEvent, signal, cwd)
+transport.sendMessage(sessionId, content, onEvent, signal, cwd, options)
 ```
+
+The optional `options` parameter accepts `clientMessageId` (for server-echo ID reconciliation) and `uiState` (a snapshot of the client's current UI state, enabling agent-driven UI control via MCP tools like `controlUI` and `get_ui_state`).
 
 Each time a new event arrives — a text chunk, a tool call, an approval request — the transport calls `onEvent` with a `StreamEvent` object. This callback pattern works naturally with both adapters:
 

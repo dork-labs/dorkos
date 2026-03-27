@@ -67,7 +67,9 @@ interface Transport {
   listSessions(cwd?)       → Promise<Session[]>
   getSession(id, cwd?)     → Promise<Session>
   getMessages(sessionId)   → Promise<{ messages: HistoryMessage[] }>
-  sendMessage(id, content, onEvent, signal?, cwd?) → Promise<void>
+  sendMessage(id, content, onEvent, signal?, cwd?, options?) → Promise<void>
+  // options: { clientMessageId?: string; uiState?: UiState }
+  stopTask(sessionId, taskId) → Promise<{ success: boolean; taskId: string }>
   approveTool(sessionId, toolCallId)  → Promise<{ ok: boolean }>
   denyTool(sessionId, toolCallId)     → Promise<{ ok: boolean }>
   getCommands(refresh?)    → Promise<CommandRegistry>
@@ -194,6 +196,10 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       type: 'route',
       description: 'External MCP server endpoint (Streamable HTTP, /mcp)',
     },
+    'extensions.ts': {
+      type: 'route',
+      description: 'Extension discovery, enable/disable, bundle serving, and data storage',
+    },
   }}
 />
 
@@ -244,6 +250,29 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       description:
         'External MCP server factory — Streamable HTTP transport, stateless, optional API key auth',
     },
+    'extension-manager.ts': {
+      type: 'extensions',
+      description:
+        'Extension lifecycle management — load, enable/disable, compile, and hot-reload extensions',
+    },
+    'extension-compiler.ts': {
+      type: 'extensions',
+      description: 'Compiles TypeScript extensions into executable bundles via esbuild',
+    },
+    'extension-discovery.ts': {
+      type: 'extensions',
+      description: 'Discovers extensions from filesystem paths and workspace directories',
+    },
+    'ui-tools.ts': {
+      type: 'mcp-tools',
+      description:
+        'MCP tools for agent UI control — controlUI dispatches UI commands, get_ui_state returns current UI state',
+    },
+    'extension-tools.ts': {
+      type: 'mcp-tools',
+      description:
+        'MCP tools for agent-driven extension operations (install, query, manage extensions)',
+    },
   }}
 />
 
@@ -264,24 +293,25 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 
 ### FSD Layers
 
-| Layer                    | Purpose                   | Examples                               |
-| ------------------------ | ------------------------- | -------------------------------------- |
-| `shared/ui/`             | Reusable UI primitives    | Badge, Dialog, Select, Tabs (shadcn)   |
-| `shared/model/`          | Hooks, stores, context    | TransportContext, app-store, useTheme  |
-| `shared/lib/`            | Domain-agnostic utilities | cn(), font-config, celebrations        |
-| `entities/session/`      | Session domain hooks      | useSessionId, useSessions              |
-| `entities/runtime/`      | Runtime capabilities      | useRuntimeCapabilities                 |
-| `entities/agent/`        | Agent identity hooks      | useCurrentAgent, useAgentVisual        |
-| `entities/pulse/`        | Pulse scheduler hooks     | usePulseEnabled, useSchedules, useRuns |
-| `entities/relay/`        | Relay messaging hooks     | useRelayEnabled, useRelayMessages      |
-| `entities/mesh/`         | Mesh discovery hooks      | useMeshEnabled, useRegisteredAgents    |
-| `features/chat/`         | Chat interface            | ChatPanel, MessageList, ToolCallCard   |
-| `features/session-list/` | Session management        | SessionSidebar, SessionItem            |
-| `features/settings/`     | Settings UI               | SettingsDialog                         |
-| `features/pulse/`        | Pulse scheduler UI        | PulsePanel, CreateScheduleDialog       |
-| `features/relay/`        | Relay messaging UI        | RelayPanel, AdapterCard                |
-| `features/mesh/`         | Mesh discovery UI         | MeshPanel, TopologyGraph               |
-| `widgets/app-layout/`    | App-level layout          | PermissionBanner                       |
+| Layer                    | Purpose                    | Examples                               |
+| ------------------------ | -------------------------- | -------------------------------------- |
+| `shared/ui/`             | Reusable UI primitives     | Badge, Dialog, Select, Tabs (shadcn)   |
+| `shared/model/`          | Hooks, stores, context     | TransportContext, app-store, useTheme  |
+| `shared/lib/`            | Domain-agnostic utilities  | cn(), font-config, celebrations        |
+| `entities/session/`      | Session domain hooks       | useSessionId, useSessions              |
+| `entities/runtime/`      | Runtime capabilities       | useRuntimeCapabilities                 |
+| `entities/agent/`        | Agent identity hooks       | useCurrentAgent, useAgentVisual        |
+| `entities/pulse/`        | Pulse scheduler hooks      | usePulseEnabled, useSchedules, useRuns |
+| `entities/relay/`        | Relay messaging hooks      | useRelayEnabled, useRelayMessages      |
+| `entities/mesh/`         | Mesh discovery hooks       | useMeshEnabled, useRegisteredAgents    |
+| `features/chat/`         | Chat interface             | ChatPanel, MessageList, ToolCallCard   |
+| `features/session-list/` | Session management         | SessionSidebar, SessionItem            |
+| `features/settings/`     | Settings UI                | SettingsDialog                         |
+| `features/pulse/`        | Pulse scheduler UI         | PulsePanel, CreateScheduleDialog       |
+| `features/relay/`        | Relay messaging UI         | RelayPanel, AdapterCard                |
+| `features/mesh/`         | Mesh discovery UI          | MeshPanel, TopologyGraph               |
+| `features/canvas/`       | Agent-controlled UI panels | Canvas renderer, extension host        |
+| `widgets/app-layout/`    | App-level layout           | PermissionBanner                       |
 
 <Callout type="warn">
   Layer imports are strictly unidirectional: `shared` ← `entities` ← `features` ← `widgets` ← `app`.
@@ -350,6 +380,10 @@ React state updates → UI re-renders with new message chunks
     done: { type: 'StreamEvent', description: 'Message stream complete' },
     session_status: { type: 'StreamEvent', description: 'Session state changed' },
     task_update: { type: 'StreamEvent', description: 'Task list updated' },
+    ui_command: {
+      type: 'StreamEvent',
+      description: 'Agent-issued UI command via controlUI MCP tool',
+    },
     relay_message: {
       type: 'StreamEvent (Relay)',
       description: 'Relay response chunk — nested StreamEvent. Only when DORKOS_RELAY_ENABLED=true',

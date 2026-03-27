@@ -14,6 +14,7 @@ This project uses Tailwind CSS v4 (CSS-first configuration) with Shadcn UI compo
 | Animation patterns  | `contributing/animations.md`                                        |
 | cn() utility        | `apps/client/src/layers/shared/lib/utils.ts`                        |
 | Theme hook          | `apps/client/src/layers/shared/model/use-theme.ts`                  |
+| FilterBar UI        | `apps/client/src/layers/shared/ui/filter-bar/`                      |
 
 ## When to Use What
 
@@ -292,6 +293,23 @@ Usage:
 <div className="container-narrow">Narrow content</div>
 <div className="card-interactive">Hover lifts card</div>
 ```
+
+## FilterBar Styling
+
+The `FilterBar` compound component (`shared/ui/filter-bar/`) uses standard Calm Tech tokens. Its sub-components follow these styling conventions:
+
+| Sub-component       | Key styles                                                      |
+| ------------------- | --------------------------------------------------------------- |
+| Root container      | `flex flex-wrap items-center gap-2 px-4 py-3`                   |
+| Search input        | Standard `text-sm` input with debounced URL sync                |
+| Primary pills       | Enum options as inline segmented buttons                        |
+| Active filter chips | Removable badges with `X` icon, semantic color via `colors` map |
+| Sort selector       | Dropdown with field + direction toggle                          |
+| Result count        | `text-xs text-muted-foreground` inline summary                  |
+
+Enum filters support per-option color classes via the schema's `colors` record (e.g., `{ active: 'text-emerald-400', stale: 'text-muted-foreground' }`). These are Tailwind classes, not raw colors — they participate in dark mode automatically.
+
+See `contributing/design-system.md` for the full FilterBar component specification.
 
 ## Anti-Patterns
 

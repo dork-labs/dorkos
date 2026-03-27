@@ -17,6 +17,8 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Theme hook           | `apps/client/src/layers/shared/model/use-theme.ts`                |
 | Extension registry   | `apps/client/src/layers/shared/model/extension-registry.ts`       |
 | Extension init       | `apps/client/src/app/init-extensions.ts`                          |
+| Filter engine        | `apps/client/src/layers/shared/lib/filter-engine.ts`              |
+| Filter state hook    | `apps/client/src/layers/shared/model/use-filter-state.ts`         |
 
 ## When to Use What
 
@@ -33,6 +35,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Multi-source derived state | TanStack Query + `useMemo`          | Feature flags + entity data combined                                | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
 | Cross-feature signal       | Zustand (entity layer)              | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation                             |
 | Slot-based UI contribution | Extension registry (Zustand)        | Command palette items, sidebar tabs, dialogs                        | Decouples rendering surface from contributing features via typed slots                 |
+| URL-synced filter state    | useFilterState + TanStack Router    | Agent list filters, sort, search — serialized to URL search params  | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
 
 ## Core Patterns
 
@@ -311,6 +314,53 @@ Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header
 | `app/init-extensions.ts`                    | Startup registration of all built-in contributions |
 
 **When to use**: Any UI surface that accepts contributions from multiple features (command palette items, dialogs, sidebar tabs). Prefer over hardcoded imports when the rendering component should not know about every contributor.
+
+### URL-Synced Filter State (useFilterState)
+
+The `useFilterState` hook bridges the pure filter engine (`shared/lib/filter-engine.ts`) to TanStack Router search params. Filter values are serialized to the URL (shareable, bookmarkable, survives browser back/forward) and deserialized on load. Text filters support per-key debounce to avoid hammering the URL on every keystroke.
+
+```typescript
+// apps/client/src/layers/features/agents-list/ui/AgentFilterBar.tsx
+import { useFilterState } from '@/layers/shared/model';
+import { agentFilterSchema } from '../lib/agent-filter-schema';
+
+const filterState = useFilterState(agentFilterSchema, {
+  debounce: { search: 200 }, // 200ms debounce on text search
+});
+
+// filterState.values — committed (debounced) values from URL
+// filterState.inputValues — live values (may lead URL during debounce)
+// filterState.set('status', ['active']) — update a filter (commits to URL)
+// filterState.clearAll() — reset all filters
+// filterState.isFiltered — true when any filter is active
+```
+
+The filter schema is defined in the feature's `lib/` segment using pure filter factories from the engine:
+
+```typescript
+// features/agents-list/lib/agent-filter-schema.ts
+import { createFilterSchema, textFilter, enumFilter, dateRangeFilter } from '@/layers/shared/lib';
+
+export const agentFilterSchema = createFilterSchema<TopologyAgent>({
+  search: textFilter({ fields: [(a) => a.name, (a) => a.description] }),
+  status: enumFilter({
+    field: (a) => a.healthStatus,
+    options: ['active', 'inactive'],
+    multi: true,
+  }),
+  lastSeen: dateRangeFilter({ field: (a) => a.lastSeenAt, presets: ['1h', '24h', '7d'] }),
+});
+```
+
+**When to use**: Any list surface that needs filterable, sortable data with URL persistence. The filter engine is pure TypeScript (no React), so schema definitions can be tested independently.
+
+**Key files:**
+
+| File                               | Purpose                                                         |
+| ---------------------------------- | --------------------------------------------------------------- |
+| `shared/lib/filter-engine.ts`      | Pure filter factories, schema builder, sort/filter logic        |
+| `shared/model/use-filter-state.ts` | React hook bridging filter schema to TanStack Router URL params |
+| `shared/ui/filter-bar/`            | Compound UI components (see `contributing/design-system.md`)    |
 
 ### Combining Zustand with TanStack Query
 
