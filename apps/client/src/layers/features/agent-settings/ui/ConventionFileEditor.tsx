@@ -46,17 +46,11 @@ export function ConventionFileEditor({
         {/* Header with toggle */}
         <Field orientation="horizontal" className="items-center justify-between">
           <FieldLabel className="text-sm font-medium">{title}</FieldLabel>
-          <Switch
-            checked={enabled}
-            onCheckedChange={onToggle}
-            aria-label={`Toggle ${title}`}
-          />
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`Toggle ${title}`} />
         </Field>
 
         {/* Disclaimer (NOPE.md) */}
-        {disclaimer && (
-          <p className="text-muted-foreground text-xs italic">{disclaimer}</p>
-        )}
+        {disclaimer && <p className="text-muted-foreground text-xs italic">{disclaimer}</p>}
 
         {/* Textarea */}
         <div className="space-y-2">

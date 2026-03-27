@@ -51,9 +51,7 @@ export function InjectionPreview({
       agentCapabilities?.length && `Capabilities: ${agentCapabilities.join(', ')}`,
     ].filter(Boolean);
 
-    const blocks: string[] = [
-      `<agent_identity>\n${identityLines.join('\n')}\n</agent_identity>`,
-    ];
+    const blocks: string[] = [`<agent_identity>\n${identityLines.join('\n')}\n</agent_identity>`];
 
     if (conventions.soul) {
       // Render SOUL.md with current trait values
@@ -73,9 +71,7 @@ export function InjectionPreview({
     }
 
     if (conventions.nope && nopeContent.trim()) {
-      blocks.push(
-        `<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`
-      );
+      blocks.push(`<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
     }
 
     return blocks.join('\n\n');
@@ -98,11 +94,7 @@ export function InjectionPreview({
         className="flex items-center gap-1.5 text-sm font-medium"
         aria-expanded={expanded}
       >
-        {expanded ? (
-          <ChevronDown className="size-4" />
-        ) : (
-          <ChevronRight className="size-4" />
-        )}
+        {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         Preview injected prompt
       </button>
 

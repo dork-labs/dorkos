@@ -25,7 +25,6 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
-
     "obsidian": "latest",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",

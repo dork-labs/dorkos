@@ -150,9 +150,7 @@ describe('Routing', () => {
       expect(router.state.location.pathname).toBe('/session');
     });
 
-    expect(router.state.location.search).toEqual(
-      expect.objectContaining({ session: 'abc' })
-    );
+    expect(router.state.location.search).toEqual(expect.objectContaining({ session: 'abc' }));
   });
 
   it('shows 404 for unknown routes', async () => {

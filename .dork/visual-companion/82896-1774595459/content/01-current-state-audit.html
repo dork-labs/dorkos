@@ -1,0 +1,621 @@
+<h2>Remote Access Dialog — Current State Audit</h2>
+<p class="subtitle">
+  Let's walk through every state of the current dialog before redesigning. Each mockup approximates
+  the real component.
+</p>
+
+<div class="cards" style="grid-template-columns: 1fr 1fr; gap: 24px">
+  <!-- State 1: Unconfigured / Onboarding -->
+  <div class="card" style="cursor: default">
+    <div class="card-image" style="background: #0a0a0a; padding: 24px">
+      <div
+        style="
+          background: #171717;
+          border-radius: 12px;
+          border: 1px solid #262626;
+          padding: 20px;
+          font-family: system-ui, sans-serif;
+          color: #e5e5e5;
+        "
+      >
+        <!-- Header -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #6b7280"></span>
+          <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+        </div>
+        <p style="font-size: 12px; color: #737373; margin: 0 0 16px 0">
+          Access DorkOS from any device, any browser.
+        </p>
+
+        <!-- SVG illustration area -->
+        <div
+          style="
+            background: #0f0f0f;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            margin-bottom: 12px;
+          "
+        >
+          <div style="display: flex; align-items: center; justify-content: center; gap: 20px">
+            <div
+              style="width: 50px; height: 35px; border: 1.5px solid #525252; border-radius: 4px"
+            ></div>
+            <div style="border-top: 1.5px dashed #525252; width: 30px"></div>
+            <div
+              style="width: 20px; height: 30px; border: 1.5px solid #525252; border-radius: 3px"
+            ></div>
+          </div>
+          <p style="font-size: 12px; color: #a3a3a3; margin: 8px 0 0">
+            Access DorkOS from any device
+          </p>
+        </div>
+
+        <!-- Steps -->
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px">
+          <div style="display: flex; gap: 8px; align-items: flex-start">
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                background: #262626;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 11px;
+                color: #e5e5e5;
+                flex-shrink: 0;
+              "
+              >1</span
+            >
+            <span style="font-size: 12px; color: #a3a3a3"
+              ><u style="color: #e5e5e5">Create a free ngrok account ↗</u></span
+            >
+          </div>
+          <div style="display: flex; gap: 8px; align-items: flex-start">
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                background: #262626;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 11px;
+                color: #e5e5e5;
+                flex-shrink: 0;
+              "
+              >2</span
+            >
+            <span style="font-size: 12px; color: #a3a3a3"
+              >Copy your auth token from the dashboard</span
+            >
+          </div>
+          <div style="display: flex; gap: 8px; align-items: flex-start">
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                background: #262626;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 11px;
+                color: #e5e5e5;
+                flex-shrink: 0;
+              "
+              >3</span
+            >
+            <span style="font-size: 12px; color: #a3a3a3">Paste it above and toggle on</span>
+          </div>
+        </div>
+
+        <!-- Token input -->
+        <div style="margin-bottom: 8px">
+          <span
+            style="
+              font-size: 10px;
+              color: #737373;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+              font-weight: 500;
+            "
+            >Auth Token</span
+          >
+          <div style="display: flex; gap: 8px; margin-top: 6px">
+            <input
+              type="text"
+              placeholder="Paste token here"
+              style="
+                flex: 1;
+                background: #0a0a0a;
+                border: 1px solid #262626;
+                border-radius: 6px;
+                padding: 6px 12px;
+                color: #e5e5e5;
+                font-size: 13px;
+                outline: none;
+              "
+              disabled
+            />
+            <button
+              style="
+                background: #e5e5e5;
+                color: #0a0a0a;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 500;
+              "
+            >
+              Save
+            </button>
+          </div>
+          <p style="font-size: 11px; color: #737373; margin-top: 6px">
+            Need a token? <u style="color: #e5e5e5">Sign up at ngrok.com ↗</u>
+          </p>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #262626; margin: 16px 0" />
+
+        <!-- Enable toggle -->
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-size: 14px">Enable remote access</span>
+          <div
+            style="
+              width: 36px;
+              height: 20px;
+              background: #262626;
+              border-radius: 10px;
+              position: relative;
+            "
+          >
+            <div
+              style="
+                width: 16px;
+                height: 16px;
+                background: #525252;
+                border-radius: 50%;
+                position: absolute;
+                top: 2px;
+                left: 2px;
+              "
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>State 1: Unconfigured</h3>
+      <p>
+        Illustration + 3 steps + token input + enable toggle. A lot of content competing for
+        attention. Step 3 says "paste it above" but the input IS above the steps — confusing spatial
+        reference.
+      </p>
+    </div>
+  </div>
+
+  <!-- State 2: Token Saved, Tunnel Off -->
+  <div class="card" style="cursor: default">
+    <div class="card-image" style="background: #0a0a0a; padding: 24px">
+      <div
+        style="
+          background: #171717;
+          border-radius: 12px;
+          border: 1px solid #262626;
+          padding: 20px;
+          font-family: system-ui, sans-serif;
+          color: #e5e5e5;
+        "
+      >
+        <!-- Header -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #6b7280"></span>
+          <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+        </div>
+        <p style="font-size: 12px; color: #737373; margin: 0 0 16px 0">
+          Access DorkOS from any device, any browser.
+        </p>
+
+        <!-- Token saved -->
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+          "
+        >
+          <span style="font-size: 13px; color: #a3a3a3"
+            >Auth token saved <span style="color: #22c55e">✓</span></span
+          >
+          <button
+            style="
+              background: none;
+              border: none;
+              color: #737373;
+              font-size: 12px;
+              text-decoration: underline;
+              cursor: pointer;
+            "
+          >
+            Change
+          </button>
+        </div>
+
+        <!-- Custom domain -->
+        <div style="margin-bottom: 16px">
+          <span
+            style="
+              font-size: 10px;
+              color: #737373;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+              font-weight: 500;
+            "
+            >Custom Domain</span
+          >
+          <input
+            type="text"
+            placeholder="e.g. my-dorkos.ngrok-free.app"
+            style="
+              width: 100%;
+              background: #0a0a0a;
+              border: 1px solid #262626;
+              border-radius: 6px;
+              padding: 6px 12px;
+              color: #e5e5e5;
+              font-size: 13px;
+              outline: none;
+              margin-top: 6px;
+              box-sizing: border-box;
+            "
+            disabled
+          />
+          <p style="font-size: 11px; color: #737373; margin-top: 6px">
+            <u style="color: #e5e5e5">Get a free static domain ↗</u> — same URL every restart.
+          </p>
+        </div>
+
+        <!-- Passcode -->
+        <div style="margin-bottom: 16px">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <div>
+              <p style="font-size: 14px; font-weight: 500; margin: 0">Passcode</p>
+              <p style="font-size: 12px; color: #737373; margin: 2px 0 0">
+                Require a 6-digit PIN for remote access
+              </p>
+            </div>
+            <div
+              style="
+                width: 36px;
+                height: 20px;
+                background: #262626;
+                border-radius: 10px;
+                position: relative;
+              "
+            >
+              <div
+                style="
+                  width: 16px;
+                  height: 16px;
+                  background: #525252;
+                  border-radius: 50%;
+                  position: absolute;
+                  top: 2px;
+                  left: 2px;
+                "
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #262626; margin: 16px 0" />
+
+        <!-- Enable toggle -->
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-size: 14px">Enable remote access</span>
+          <div
+            style="
+              width: 36px;
+              height: 20px;
+              background: #262626;
+              border-radius: 10px;
+              position: relative;
+            "
+          >
+            <div
+              style="
+                width: 16px;
+                height: 16px;
+                background: #525252;
+                border-radius: 50%;
+                position: absolute;
+                top: 2px;
+                left: 2px;
+              "
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>State 2: Configured, Off</h3>
+      <p>
+        Token confirmed, domain field, passcode toggle all visible at once. Three sections with no
+        visual grouping. The enable toggle at the bottom feels buried — it's the primary action but
+        positioned last.
+      </p>
+    </div>
+  </div>
+
+  <!-- State 3: Connected -->
+  <div class="card" style="cursor: default">
+    <div class="card-image" style="background: #0a0a0a; padding: 24px">
+      <div
+        style="
+          background: #171717;
+          border-radius: 12px;
+          border: 1px solid #262626;
+          padding: 20px;
+          font-family: system-ui, sans-serif;
+          color: #e5e5e5;
+        "
+      >
+        <!-- Header -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e"></span>
+          <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+        </div>
+
+        <!-- QR Code -->
+        <div
+          style="
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            justify-content: center;
+            margin-bottom: 12px;
+          "
+        >
+          <div
+            style="
+              width: 160px;
+              height: 160px;
+              background: repeating-conic-gradient(#000 0% 25%, #fff 0% 50%) 0 0/10px 10px;
+              border-radius: 4px;
+            "
+          ></div>
+        </div>
+
+        <!-- URL + copy -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
+          <span
+            style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0"
+          ></span>
+          <span
+            style="
+              font-size: 12px;
+              font-family: monospace;
+              color: #a3a3a3;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+              flex: 1;
+            "
+            >https://abc123.ngrok-free.app</span
+          >
+          <button
+            style="
+              background: transparent;
+              border: 1px solid #262626;
+              border-radius: 6px;
+              padding: 4px 10px;
+              font-size: 12px;
+              color: #e5e5e5;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+              white-space: nowrap;
+            "
+          >
+            📋 Copy
+          </button>
+        </div>
+
+        <!-- Session link -->
+        <button
+          style="
+            width: 100%;
+            background: transparent;
+            border: 1px solid #262626;
+            border-radius: 6px;
+            padding: 6px;
+            font-size: 12px;
+            color: #e5e5e5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            margin-bottom: 8px;
+          "
+        >
+          🔗 Copy session link
+        </button>
+
+        <p style="font-size: 12px; color: #737373; text-align: center; margin: 0 0 12px">
+          Scan or visit from any device
+        </p>
+
+        <hr style="border: none; border-top: 1px solid #262626; margin: 12px 0" />
+
+        <!-- Enable toggle (on) -->
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-size: 14px">Enable remote access</span>
+          <div
+            style="
+              width: 36px;
+              height: 20px;
+              background: #22c55e;
+              border-radius: 10px;
+              position: relative;
+            "
+          >
+            <div
+              style="
+                width: 16px;
+                height: 16px;
+                background: white;
+                border-radius: 50%;
+                position: absolute;
+                top: 2px;
+                right: 2px;
+              "
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>State 3: Connected</h3>
+      <p>
+        QR code dominates. URL + latency dot + copy is good. But passcode and domain settings vanish
+        when connected — you can't adjust security or check settings while live. No way to see
+        advanced config.
+      </p>
+    </div>
+  </div>
+
+  <!-- State 4: Error -->
+  <div class="card" style="cursor: default">
+    <div class="card-image" style="background: #0a0a0a; padding: 24px">
+      <div
+        style="
+          background: #171717;
+          border-radius: 12px;
+          border: 1px solid #262626;
+          padding: 20px;
+          font-family: system-ui, sans-serif;
+          color: #e5e5e5;
+        "
+      >
+        <!-- Header -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444"></span>
+          <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+        </div>
+
+        <!-- Error card -->
+        <div
+          style="
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+          "
+        >
+          <p style="font-size: 14px; font-weight: 500; color: #fca5a5; margin: 0 0 4px">
+            Connection failed
+          </p>
+          <p style="font-size: 12px; color: #fca5a5; margin: 0 0 10px; opacity: 0.8">
+            Check your auth token at dashboard.ngrok.com
+          </p>
+          <button
+            style="
+              background: transparent;
+              border: 1px solid #404040;
+              border-radius: 6px;
+              padding: 6px 12px;
+              font-size: 13px;
+              color: #e5e5e5;
+            "
+          >
+            Retry
+          </button>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #262626; margin: 16px 0" />
+
+        <!-- Enable toggle -->
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-size: 14px">Enable remote access</span>
+          <div
+            style="
+              width: 36px;
+              height: 20px;
+              background: #262626;
+              border-radius: 10px;
+              position: relative;
+            "
+          >
+            <div
+              style="
+                width: 16px;
+                height: 16px;
+                background: #525252;
+                border-radius: 50%;
+                position: absolute;
+                top: 2px;
+                left: 2px;
+              "
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>State 4: Error</h3>
+      <p>
+        Error card with friendly message and retry. Pretty good! But the error hides the token input
+        — user can't fix the token without dismissing the error first. The "Retry" button just
+        clears the error state.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 32px">
+  <h3>Issues Identified</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+    <div
+      style="
+        background: rgba(239, 68, 68, 0.06);
+        border: 1px solid rgba(239, 68, 68, 0.15);
+        border-radius: 8px;
+        padding: 16px;
+      "
+    >
+      <p style="font-weight: 600; margin: 0 0 8px; color: #fca5a5">Structural Issues</p>
+      <ul style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.7">
+        <li>Enable toggle buried at the bottom — should be the hero control</li>
+        <li>Settings vanish when connected (can't adjust passcode/domain)</li>
+        <li>Onboarding illustration wastes vertical space for expert users</li>
+        <li>570 lines / 14+ state variables — component is overloaded</li>
+        <li>Mobile drawer not full-width (<code>max-w-md</code> leaks to drawer)</li>
+      </ul>
+    </div>
+    <div
+      style="
+        background: rgba(251, 191, 36, 0.06);
+        border: 1px solid rgba(251, 191, 36, 0.15);
+        border-radius: 8px;
+        padding: 16px;
+      "
+    >
+      <p style="font-weight: 600; margin: 0 0 8px; color: #fbbf24">Missed Opportunities</p>
+      <ul style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.7">
+        <li>No progressive disclosure — all config visible at once</li>
+        <li>"Starting..." has no step-by-step progress feedback</li>
+        <li>No connection quality context (latency hidden in tooltip)</li>
+        <li>Copy feedback uses icon swap (good!) but passcode uses toasts</li>
+        <li>No scope transparency — doesn't explain what remote access enables</li>
+        <li>Token input has no format validation or paste detection</li>
+      </ul>
+    </div>
+  </div>
+</div>

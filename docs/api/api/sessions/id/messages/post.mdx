@@ -20,4 +20,7 @@ _openapi:
 
 Sends a message to the Claude agent and streams the response as Server-Sent Events. Event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, approval_required, question_prompt, error, done, session_status, task_update. Each SSE message has the format: `event: message\ndata: {"type":"<type>","data":{...}}\n\n`
 
-<APIPage document={"../../docs/api/openapi.json"} operations={[{"path":"/api/sessions/{id}/messages","method":"post"}]} />
+<APIPage
+  document={'../../docs/api/openapi.json'}
+  operations={[{ path: '/api/sessions/{id}/messages', method: 'post' }]}
+/>

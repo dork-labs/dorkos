@@ -1,0 +1,1413 @@
+<h2>Remote Access — Redesigned Flow</h2>
+<p class="subtitle">
+  Progressive disclosure: each state shows only what's needed. The dialog breathes. Settings stay
+  accessible.
+</p>
+
+<div style="display: flex; flex-direction: column; gap: 32px">
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 0: LANDING / NEVER CONFIGURED        -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #a78bfa">State 0 — First encounter</span>
+    <h3 style="margin-top: 4px">Landing</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      A clean information page. No form fields. Just the concept, value, and a single CTA.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header bar -->
+          <div
+            style="
+              padding: 16px 20px 0;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+            "
+          >
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #404040"></span>
+              <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+            </div>
+            <button
+              style="
+                background: none;
+                border: none;
+                color: #525252;
+                font-size: 16px;
+                cursor: pointer;
+              "
+            >
+              ✕
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div style="padding: 32px 32px 36px; text-align: center">
+            <!-- Illustration -->
+            <div style="margin-bottom: 24px">
+              <svg
+                viewBox="0 0 240 100"
+                style="width: 200px; height: 84px; margin: 0 auto; display: block"
+                aria-hidden="true"
+              >
+                <!-- Laptop -->
+                <rect
+                  x="80"
+                  y="20"
+                  width="80"
+                  height="50"
+                  rx="4"
+                  fill="none"
+                  stroke="#525252"
+                  stroke-width="2"
+                />
+                <rect x="70" y="70" width="100" height="6" rx="2" fill="#525252" opacity="0.3" />
+                <rect x="92" y="32" width="16" height="2" rx="1" fill="#a78bfa" opacity="0.6" />
+                <rect x="92" y="38" width="32" height="2" rx="1" fill="#525252" opacity="0.4" />
+                <rect x="92" y="44" width="24" height="2" rx="1" fill="#525252" opacity="0.3" />
+                <!-- Phone -->
+                <rect
+                  x="195"
+                  y="28"
+                  width="24"
+                  height="38"
+                  rx="4"
+                  fill="none"
+                  stroke="#525252"
+                  stroke-width="1.5"
+                />
+                <circle cx="207" cy="60" r="1.5" fill="#525252" opacity="0.5" />
+                <!-- Tablet -->
+                <rect
+                  x="14"
+                  y="24"
+                  width="34"
+                  height="46"
+                  rx="4"
+                  fill="none"
+                  stroke="#525252"
+                  stroke-width="1.5"
+                />
+                <circle cx="31" cy="64" r="1.5" fill="#525252" opacity="0.5" />
+                <!-- Connection lines with animated dots suggestion -->
+                <line
+                  x1="160"
+                  y1="45"
+                  x2="195"
+                  y2="45"
+                  stroke="#a78bfa"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 3"
+                  opacity="0.4"
+                />
+                <line
+                  x1="80"
+                  y1="45"
+                  x2="48"
+                  y2="45"
+                  stroke="#a78bfa"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 3"
+                  opacity="0.4"
+                />
+              </svg>
+            </div>
+
+            <!-- Value prop -->
+            <p style="font-size: 15px; font-weight: 500; margin: 0 0 6px; color: #e5e5e5">
+              Access DorkOS from any device
+            </p>
+            <p
+              style="
+                font-size: 13px;
+                color: #737373;
+                margin: 0 0 28px;
+                line-height: 1.5;
+                max-width: 280px;
+                margin-left: auto;
+                margin-right: auto;
+              "
+            >
+              Create a secure tunnel to access your sessions from your phone, tablet, or any
+              browser.
+            </p>
+
+            <!-- Single CTA -->
+            <button
+              style="
+                background: #e5e5e5;
+                color: #0a0a0a;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 24px;
+                font-size: 14px;
+                font-weight: 500;
+                cursor: pointer;
+                width: 100%;
+                max-width: 240px;
+              "
+            >
+              Get started
+            </button>
+
+            <p style="font-size: 12px; color: #525252; margin: 16px 0 0">
+              Requires a free <u style="color: #737373">ngrok</u> account
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(167, 139, 250, 0.06);
+            border: 1px solid rgba(167, 139, 250, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #a78bfa; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li>Zero form fields visible — pure information</li>
+            <li>Illustration earns its space on this landing view</li>
+            <li>"Get started" is the only action — no cognitive load</li>
+            <li>"Requires ngrok" is honest but not alarming (de-emphasized)</li>
+            <li>No numbered steps yet — those come in the setup flow</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 1: SETUP FLOW                        -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #38bdf8">State 1 — Setup</span>
+    <h3 style="margin-top: 4px">Token Configuration</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      After clicking "Get started". One focused task: paste your token. Nothing else.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header -->
+          <div
+            style="
+              padding: 16px 20px 0;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+            "
+          >
+            <div style="display: flex; align-items: center; gap: 8px">
+              <button
+                style="
+                  background: none;
+                  border: none;
+                  color: #737373;
+                  font-size: 14px;
+                  cursor: pointer;
+                  padding: 0;
+                "
+              >
+                ←
+              </button>
+              <span style="font-size: 14px; font-weight: 500">Set up remote access</span>
+            </div>
+            <button
+              style="
+                background: none;
+                border: none;
+                color: #525252;
+                font-size: 16px;
+                cursor: pointer;
+              "
+            >
+              ✕
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div style="padding: 24px 20px 28px">
+            <!-- Step indicator -->
+            <div style="display: flex; gap: 4px; margin-bottom: 24px">
+              <div style="flex: 1; height: 2px; background: #a78bfa; border-radius: 1px"></div>
+              <div style="flex: 1; height: 2px; background: #262626; border-radius: 1px"></div>
+            </div>
+
+            <!-- Instruction -->
+            <p style="font-size: 13px; color: #a3a3a3; margin: 0 0 16px; line-height: 1.5">
+              Paste your ngrok auth token. Find it at
+              <a
+                href="#"
+                style="color: #e5e5e5; text-decoration: underline; text-underline-offset: 2px"
+                >dashboard.ngrok.com ↗</a
+              >
+            </p>
+
+            <!-- Token field -->
+            <div style="position: relative; margin-bottom: 12px">
+              <input
+                type="password"
+                value="2xB7mK9nP3qR5tW8zA"
+                style="
+                  width: 100%;
+                  background: #0a0a0a;
+                  border: 1px solid #333;
+                  border-radius: 8px;
+                  padding: 10px 40px 10px 14px;
+                  color: #e5e5e5;
+                  font-size: 14px;
+                  font-family: monospace;
+                  outline: none;
+                  box-sizing: border-box;
+                "
+                disabled
+              />
+              <span
+                style="
+                  position: absolute;
+                  right: 12px;
+                  top: 50%;
+                  transform: translateY(-50%);
+                  color: #525252;
+                  font-size: 13px;
+                "
+                >👁</span
+              >
+            </div>
+
+            <!-- Format validation hint (would appear if format is wrong) -->
+            <p
+              style="
+                font-size: 12px;
+                color: #22c55e;
+                margin: 0 0 20px;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+              "
+            >
+              <span>✓</span> Token format looks valid
+            </p>
+
+            <!-- Continue button -->
+            <button
+              style="
+                background: #e5e5e5;
+                color: #0a0a0a;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 24px;
+                font-size: 14px;
+                font-weight: 500;
+                cursor: pointer;
+                width: 100%;
+              "
+            >
+              Continue
+            </button>
+
+            <p style="font-size: 12px; color: #525252; margin: 12px 0 0; text-align: center">
+              Don't have an account?
+              <a
+                href="#"
+                style="color: #737373; text-decoration: underline; text-underline-offset: 2px"
+                >Sign up free ↗</a
+              >
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(56, 189, 248, 0.06);
+            border: 1px solid rgba(56, 189, 248, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #38bdf8; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li>Back arrow — user can return to landing page</li>
+            <li>Progress bar (step 1 of 2) — sets expectations</li>
+            <li>One field, one action. Nothing else competes</li>
+            <li>Eye icon to reveal/mask token (password field)</li>
+            <li>Format validation as you type (non-blocking, green check)</li>
+            <li>Sign up link demoted to below the CTA — not a distraction</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 2: READY (CONFIGURED, OFF)            -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #34d399">State 2 — Ready</span>
+    <h3 style="margin-top: 4px">Configured, Tunnel Off</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      Token saved. The toggle is the hero — top of dialog, prominent. Settings accessible below.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header with toggle as hero -->
+          <div style="padding: 20px 20px 0">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span
+                  style="width: 8px; height: 8px; border-radius: 50%; background: #404040"
+                ></span>
+                <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+              </div>
+              <button
+                style="
+                  background: none;
+                  border: none;
+                  color: #525252;
+                  font-size: 16px;
+                  cursor: pointer;
+                "
+              >
+                ✕
+              </button>
+            </div>
+            <p style="font-size: 12px; color: #737373; margin: 4px 0 0">Disconnected</p>
+          </div>
+
+          <!-- Hero toggle card -->
+          <div style="margin: 16px 20px">
+            <div
+              style="
+                background: #0f0f0f;
+                border: 1px solid #262626;
+                border-radius: 10px;
+                padding: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+              "
+            >
+              <div>
+                <p style="font-size: 14px; font-weight: 500; margin: 0">Enable remote access</p>
+                <p style="font-size: 12px; color: #737373; margin: 4px 0 0">
+                  Open a secure tunnel via ngrok
+                </p>
+              </div>
+              <div
+                style="
+                  width: 44px;
+                  height: 24px;
+                  background: #262626;
+                  border-radius: 12px;
+                  position: relative;
+                  cursor: pointer;
+                "
+              >
+                <div
+                  style="
+                    width: 20px;
+                    height: 20px;
+                    background: #525252;
+                    border-radius: 50%;
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                  "
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings section -->
+          <div style="padding: 0 20px 20px">
+            <button
+              style="
+                background: none;
+                border: none;
+                color: #737373;
+                font-size: 12px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 0;
+                margin-bottom: 12px;
+              "
+            >
+              <span style="font-size: 10px">▸</span> Settings
+            </button>
+
+            <!-- Collapsed settings hint -->
+            <div style="display: flex; gap: 12px">
+              <span
+                style="
+                  font-size: 11px;
+                  color: #525252;
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                "
+              >
+                <span style="color: #22c55e">✓</span> Token saved
+              </span>
+              <span
+                style="
+                  font-size: 11px;
+                  color: #525252;
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                "
+              >
+                <span style="color: #525252">○</span> No passcode
+              </span>
+              <span
+                style="
+                  font-size: 11px;
+                  color: #525252;
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                "
+              >
+                <span style="color: #525252">○</span> No domain
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(52, 211, 153, 0.06);
+            border: 1px solid rgba(52, 211, 153, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #34d399; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li><strong>Toggle is the hero</strong> — elevated card, first thing you see</li>
+            <li>Settings collapsed by default — reduces noise</li>
+            <li>Status chips (token ✓, no passcode, no domain) give at-a-glance config summary</li>
+            <li>Click "Settings ▸" to expand domain, passcode, token management</li>
+            <li>Dialog is short and focused when settings are collapsed</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 2b: SETTINGS EXPANDED                 -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #34d399">State 2b — Settings expanded</span>
+    <h3 style="margin-top: 4px">Configuration Panel</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      Expanding "Settings" reveals all configuration. This view is identical whether connected or
+      not — settings are always accessible.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header -->
+          <div style="padding: 20px 20px 0">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span
+                  style="width: 8px; height: 8px; border-radius: 50%; background: #404040"
+                ></span>
+                <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+              </div>
+              <button
+                style="
+                  background: none;
+                  border: none;
+                  color: #525252;
+                  font-size: 16px;
+                  cursor: pointer;
+                "
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- Hero toggle card -->
+          <div style="margin: 16px 20px">
+            <div
+              style="
+                background: #0f0f0f;
+                border: 1px solid #262626;
+                border-radius: 10px;
+                padding: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+              "
+            >
+              <div>
+                <p style="font-size: 14px; font-weight: 500; margin: 0">Enable remote access</p>
+                <p style="font-size: 12px; color: #737373; margin: 4px 0 0">
+                  Open a secure tunnel via ngrok
+                </p>
+              </div>
+              <div
+                style="
+                  width: 44px;
+                  height: 24px;
+                  background: #262626;
+                  border-radius: 12px;
+                  position: relative;
+                  cursor: pointer;
+                "
+              >
+                <div
+                  style="
+                    width: 20px;
+                    height: 20px;
+                    background: #525252;
+                    border-radius: 50%;
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                  "
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expanded settings -->
+          <div style="padding: 0 20px 20px">
+            <button
+              style="
+                background: none;
+                border: none;
+                color: #a3a3a3;
+                font-size: 12px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 0;
+                margin-bottom: 16px;
+              "
+            >
+              <span style="font-size: 10px">▾</span> Settings
+            </button>
+
+            <!-- Token -->
+            <div style="margin-bottom: 16px">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 4px;
+                "
+              >
+                <span style="font-size: 12px; color: #737373">Auth token</span>
+                <span
+                  style="
+                    font-size: 11px;
+                    color: #22c55e;
+                    display: flex;
+                    align-items: center;
+                    gap: 3px;
+                  "
+                  >✓ Saved</span
+                >
+              </div>
+              <div style="display: flex; gap: 8px">
+                <div
+                  style="
+                    flex: 1;
+                    background: #0a0a0a;
+                    border: 1px solid #1f1f1f;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 13px;
+                    font-family: monospace;
+                    color: #525252;
+                  "
+                >
+                  ••••••••••••••••••
+                </div>
+                <button
+                  style="
+                    background: none;
+                    border: 1px solid #262626;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    font-size: 12px;
+                    color: #a3a3a3;
+                    white-space: nowrap;
+                  "
+                >
+                  Change
+                </button>
+              </div>
+            </div>
+
+            <!-- Custom Domain -->
+            <div style="margin-bottom: 16px">
+              <span style="font-size: 12px; color: #737373; display: block; margin-bottom: 6px"
+                >Custom domain</span
+              >
+              <input
+                type="text"
+                placeholder="e.g. my-dorkos.ngrok-free.app"
+                style="
+                  width: 100%;
+                  background: #0a0a0a;
+                  border: 1px solid #1f1f1f;
+                  border-radius: 6px;
+                  padding: 8px 12px;
+                  color: #e5e5e5;
+                  font-size: 13px;
+                  outline: none;
+                  box-sizing: border-box;
+                "
+                disabled
+              />
+              <p style="font-size: 11px; color: #525252; margin: 6px 0 0">
+                <a
+                  href="#"
+                  style="color: #737373; text-decoration: underline; text-underline-offset: 2px"
+                  >Get a free static domain ↗</a
+                >
+                — same URL every restart
+              </p>
+            </div>
+
+            <!-- Passcode -->
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center">
+                <div>
+                  <span style="font-size: 12px; color: #737373">Passcode</span>
+                  <p style="font-size: 11px; color: #404040; margin: 2px 0 0">
+                    Require a 6-digit PIN for remote access
+                  </p>
+                </div>
+                <div
+                  style="
+                    width: 36px;
+                    height: 20px;
+                    background: #262626;
+                    border-radius: 10px;
+                    position: relative;
+                    cursor: pointer;
+                  "
+                >
+                  <div
+                    style="
+                      width: 16px;
+                      height: 16px;
+                      background: #525252;
+                      border-radius: 50%;
+                      position: absolute;
+                      top: 2px;
+                      left: 2px;
+                    "
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(52, 211, 153, 0.06);
+            border: 1px solid rgba(52, 211, 153, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #34d399; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li>Toggle stays at top — always the hero regardless of settings expansion</li>
+            <li>Token shows masked with "Change" button (not editable inline)</li>
+            <li>Domain and passcode have clean, simple layouts</li>
+            <li>
+              <strong>This same settings panel appears when connected too</strong> — no more hidden
+              config
+            </li>
+            <li>
+              Labels are simpler: "Auth token", "Custom domain", "Passcode" — no uppercase tracking
+              headers
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 3: CONNECTING                         -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #fbbf24">State 3 — Connecting</span>
+    <h3 style="margin-top: 4px">In Transition</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      Real progress steps, not just "Establishing connection..." — the user sees what's actually
+      happening.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header -->
+          <div style="padding: 20px 20px 0">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span
+                  style="
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: #fbbf24;
+                    box-shadow: 0 0 6px rgba(251, 191, 36, 0.4);
+                  "
+                ></span>
+                <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+              </div>
+              <button
+                style="
+                  background: none;
+                  border: none;
+                  color: #525252;
+                  font-size: 16px;
+                  cursor: pointer;
+                "
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- Hero toggle card (disabled, on) -->
+          <div style="margin: 16px 20px">
+            <div
+              style="
+                background: #0f0f0f;
+                border: 1px solid #262626;
+                border-radius: 10px;
+                padding: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                opacity: 0.7;
+              "
+            >
+              <div>
+                <p style="font-size: 14px; font-weight: 500; margin: 0">Enable remote access</p>
+                <p style="font-size: 12px; color: #737373; margin: 4px 0 0">Connecting...</p>
+              </div>
+              <div
+                style="
+                  width: 44px;
+                  height: 24px;
+                  background: #fbbf24;
+                  border-radius: 12px;
+                  position: relative;
+                  opacity: 0.6;
+                "
+              >
+                <div
+                  style="
+                    width: 20px;
+                    height: 20px;
+                    background: white;
+                    border-radius: 50%;
+                    position: absolute;
+                    top: 2px;
+                    right: 2px;
+                  "
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Progress steps -->
+          <div style="padding: 0 20px 24px">
+            <div style="background: #0f0f0f; border-radius: 8px; padding: 16px">
+              <div style="display: flex; flex-direction: column; gap: 10px">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span style="color: #22c55e; font-size: 12px">✓</span>
+                  <span style="font-size: 13px; color: #737373">Authenticating with ngrok</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span style="color: #22c55e; font-size: 12px">✓</span>
+                  <span style="font-size: 13px; color: #737373">Opening tunnel on port 6242</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span
+                    style="
+                      width: 12px;
+                      height: 12px;
+                      border: 2px solid #fbbf24;
+                      border-right-color: transparent;
+                      border-radius: 50%;
+                      display: inline-block;
+                    "
+                  ></span>
+                  <span style="font-size: 13px; color: #e5e5e5"
+                    >Establishing secure connection...</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(251, 191, 36, 0.06);
+            border: 1px solid rgba(251, 191, 36, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #fbbf24; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li>Amber dot <strong>pulses</strong> — signals transient state</li>
+            <li>Toggle is disabled + amber while connecting</li>
+            <li>Real progress steps from ngrok SDK events — not fake</li>
+            <li>Each step checks off ✓ as it completes</li>
+            <li>Current step has spinner + emphasized text</li>
+            <li>This replaces the static "Establishing connection..." copy</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 4: CONNECTED                          -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #22c55e">State 4 — Connected</span>
+    <h3 style="margin-top: 4px">Live</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      URL + sharing is the hero. QR code is a popover (not always visible). Settings remain
+      accessible below.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header -->
+          <div style="padding: 20px 20px 0">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span
+                  style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e"
+                ></span>
+                <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+              </div>
+              <button
+                style="
+                  background: none;
+                  border: none;
+                  color: #525252;
+                  font-size: 16px;
+                  cursor: pointer;
+                "
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- Hero: URL card -->
+          <div style="margin: 16px 20px">
+            <div
+              style="
+                background: #0f0f0f;
+                border: 1px solid #1a3a1a;
+                border-radius: 10px;
+                padding: 16px;
+              "
+            >
+              <!-- URL + actions row -->
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px">
+                <span
+                  style="
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 50%;
+                    background: #22c55e;
+                    flex-shrink: 0;
+                  "
+                ></span>
+                <span
+                  style="
+                    font-size: 13px;
+                    font-family: monospace;
+                    color: #d4d4d4;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    flex: 1;
+                  "
+                  >abc123.ngrok-free.app</span
+                >
+                <span style="font-size: 11px; color: #22c55e">42ms</span>
+              </div>
+
+              <!-- Action buttons -->
+              <div style="display: flex; gap: 6px">
+                <button
+                  style="
+                    flex: 1;
+                    background: #1a1a1a;
+                    border: 1px solid #262626;
+                    border-radius: 6px;
+                    padding: 8px;
+                    font-size: 12px;
+                    color: #e5e5e5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 5px;
+                    cursor: pointer;
+                  "
+                >
+                  📋 Copy URL
+                </button>
+                <button
+                  style="
+                    flex: 1;
+                    background: #1a1a1a;
+                    border: 1px solid #262626;
+                    border-radius: 6px;
+                    padding: 8px;
+                    font-size: 12px;
+                    color: #e5e5e5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 5px;
+                    cursor: pointer;
+                  "
+                >
+                  🔗 Session link
+                </button>
+                <button
+                  style="
+                    background: #1a1a1a;
+                    border: 1px solid #262626;
+                    border-radius: 6px;
+                    padding: 8px 10px;
+                    font-size: 12px;
+                    color: #e5e5e5;
+                    cursor: pointer;
+                  "
+                  title="QR Code"
+                >
+                  ⊞
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Toggle (on, connected) -->
+          <div style="padding: 0 20px">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 12px 0;
+              "
+            >
+              <div>
+                <p style="font-size: 13px; margin: 0; color: #a3a3a3">Remote access is on</p>
+              </div>
+              <div
+                style="
+                  width: 44px;
+                  height: 24px;
+                  background: #22c55e;
+                  border-radius: 12px;
+                  position: relative;
+                  cursor: pointer;
+                "
+              >
+                <div
+                  style="
+                    width: 20px;
+                    height: 20px;
+                    background: white;
+                    border-radius: 50%;
+                    position: absolute;
+                    top: 2px;
+                    right: 2px;
+                  "
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings (collapsed) -->
+          <div style="padding: 0 20px 16px; border-top: 1px solid #1f1f1f; margin-top: 4px">
+            <button
+              style="
+                background: none;
+                border: none;
+                color: #737373;
+                font-size: 12px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 12px 0 0;
+              "
+            >
+              <span style="font-size: 10px">▸</span> Settings
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(34, 197, 94, 0.06);
+            border: 1px solid rgba(34, 197, 94, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #22c55e; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li><strong>URL is the hero</strong> — not the QR code (QR is behind a button)</li>
+            <li>Latency shown inline (42ms) — not hidden in a tooltip</li>
+            <li>Green border on the URL card reinforces "connected" state</li>
+            <li>Three action buttons in a row: Copy URL, Session Link, QR</li>
+            <li>Toggle demoted to simple text + switch (connected = less prominence needed)</li>
+            <li>
+              <strong>Settings still accessible!</strong> Expand to change domain, passcode, or
+              token while live
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- STATE 5: ERROR                              -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div>
+    <span class="label" style="color: #ef4444">State 5 — Error</span>
+    <h3 style="margin-top: 4px">Connection Failed</h3>
+    <p style="color: #a3a3a3; font-size: 14px; margin-bottom: 16px">
+      Error guides the exit — specific message + resolution path. Token stays editable.
+    </p>
+
+    <div style="display: flex; gap: 24px; align-items: flex-start">
+      <div style="flex: 1; max-width: 420px">
+        <div
+          style="
+            background: #171717;
+            border-radius: 12px;
+            border: 1px solid #262626;
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+            color: #e5e5e5;
+          "
+        >
+          <!-- Header -->
+          <div style="padding: 20px 20px 0">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span
+                  style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444"
+                ></span>
+                <span style="font-size: 14px; font-weight: 500">Remote Access</span>
+              </div>
+              <button
+                style="
+                  background: none;
+                  border: none;
+                  color: #525252;
+                  font-size: 16px;
+                  cursor: pointer;
+                "
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- Error card replaces toggle card -->
+          <div style="margin: 16px 20px">
+            <div
+              style="
+                background: rgba(239, 68, 68, 0.06);
+                border: 1px solid rgba(239, 68, 68, 0.2);
+                border-radius: 10px;
+                padding: 16px;
+              "
+            >
+              <p style="font-size: 14px; font-weight: 500; margin: 0 0 4px; color: #fca5a5">
+                Tunnel failed to start
+              </p>
+              <p style="font-size: 12px; color: #a3a3a3; margin: 0 0 12px; line-height: 1.5">
+                Your ngrok auth token may be expired or invalid.
+                <a
+                  href="#"
+                  style="color: #e5e5e5; text-decoration: underline; text-underline-offset: 2px"
+                  >Check token ↗</a
+                >
+              </p>
+              <div style="display: flex; gap: 8px">
+                <button
+                  style="
+                    background: #e5e5e5;
+                    color: #0a0a0a;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    cursor: pointer;
+                  "
+                >
+                  Try again
+                </button>
+                <button
+                  style="
+                    background: none;
+                    border: 1px solid #333;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 13px;
+                    color: #a3a3a3;
+                    cursor: pointer;
+                  "
+                >
+                  Change token
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Toggle (off after error) -->
+          <div style="padding: 0 20px">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 12px 0;
+              "
+            >
+              <p style="font-size: 13px; margin: 0; color: #a3a3a3">Enable remote access</p>
+              <div
+                style="
+                  width: 44px;
+                  height: 24px;
+                  background: #262626;
+                  border-radius: 12px;
+                  position: relative;
+                  cursor: pointer;
+                "
+              >
+                <div
+                  style="
+                    width: 20px;
+                    height: 20px;
+                    background: #525252;
+                    border-radius: 50%;
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                  "
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings (collapsed) -->
+          <div style="padding: 0 20px 16px; border-top: 1px solid #1f1f1f; margin-top: 4px">
+            <button
+              style="
+                background: none;
+                border: none;
+                color: #737373;
+                font-size: 12px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 12px 0 0;
+              "
+            >
+              <span style="font-size: 10px">▸</span> Settings
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; padding-top: 8px">
+        <div
+          style="
+            background: rgba(239, 68, 68, 0.06);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+          "
+        >
+          <p style="font-weight: 600; margin: 0 0 8px; color: #ef4444; font-size: 13px">
+            Design Rationale
+          </p>
+          <ul
+            style="font-size: 13px; margin: 0; padding-left: 16px; color: #a3a3a3; line-height: 1.8"
+          >
+            <li>Error message <strong>guides the exit</strong> — specific reason + link to fix</li>
+            <li>Two actions: "Try again" (primary) + "Change token" (escape hatch)</li>
+            <li>"Change token" opens the token input inline — no navigation</li>
+            <li>Red dot in header (no pulse — stable error state)</li>
+            <li>Toggle stays available so user can try again after fixing</li>
+            <li>Settings still accessible if user needs to adjust config</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Component Architecture -->
+<div class="section" style="margin-top: 40px">
+  <h3>Component Architecture</h3>
+  <p class="subtitle">
+    Clean decomposition for DX excellence — from 1 file × 570 lines to focused, testable components.
+  </p>
+
+  <div
+    style="
+      background: #111;
+      border: 1px solid #262626;
+      border-radius: 10px;
+      padding: 24px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      color: #a3a3a3;
+      line-height: 1.8;
+    "
+  >
+    <pre style="margin: 0; white-space: pre-wrap">
+<span style="color: #737373;">features/settings/ui/</span>
+├── <span style="color: #e5e5e5;">TunnelDialog.tsx</span>           <span style="color: #525252;">~120 lines — shell + state machine</span>
+├── <span style="color: #a78bfa;">TunnelLanding.tsx</span>          <span style="color: #525252;">~60 lines  — illustration + "Get started" CTA</span>
+├── <span style="color: #38bdf8;">TunnelSetup.tsx</span>            <span style="color: #525252;">~80 lines  — token input + format validation</span>
+├── <span style="color: #34d399;">TunnelConnected.tsx</span>        <span style="color: #525252;">~90 lines  — URL card + copy + QR + latency</span>
+├── <span style="color: #fbbf24;">TunnelConnecting.tsx</span>       <span style="color: #525252;">~50 lines  — progress steps animation</span>
+├── <span style="color: #ef4444;">TunnelError.tsx</span>            <span style="color: #525252;">~40 lines  — error card + resolution</span>
+├── <span style="color: #737373;">TunnelSettings.tsx</span>         <span style="color: #525252;">~100 lines — collapsible settings panel</span>
+└── <span style="color: #737373;">TunnelOnboarding.tsx</span>       <span style="color: #525252;">~112 lines — existing illustration (reused)</span>
+
+<span style="color: #525252;">Total: ~650 lines across 8 files (avg 80 lines each)</span>
+<span style="color: #525252;">Previously: 570 lines in 1 file with 14+ state variables</span>
+</pre>
+  </div>
+</div>

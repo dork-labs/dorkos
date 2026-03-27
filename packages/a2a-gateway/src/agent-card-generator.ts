@@ -26,9 +26,7 @@ const PROTOCOL_VERSION = '0.3.0';
  * @returns Human-readable name (e.g. "Code Review" or "Run Tests")
  */
 function capabilityToSkillName(capability: string): string {
-  return capability
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return capability.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
@@ -98,9 +96,8 @@ export function generateAgentCard(manifest: AgentManifest, config: CardGenerator
   return {
     protocolVersion: PROTOCOL_VERSION,
     name: manifest.name,
-    description: manifest.description.length > 0
-      ? manifest.description
-      : `DorkOS agent: ${manifest.name}`,
+    description:
+      manifest.description.length > 0 ? manifest.description : `DorkOS agent: ${manifest.name}`,
     url: `${config.baseUrl}/a2a`,
     preferredTransport: 'JSONRPC',
     version: config.version,
@@ -132,7 +129,10 @@ export function generateAgentCard(manifest: AgentManifest, config: CardGenerator
  * @param config - Base URL and version metadata for the card
  * @returns A valid A2A AgentCard representing the full fleet
  */
-export function generateFleetCard(manifests: AgentManifest[], config: CardGeneratorConfig): AgentCard {
+export function generateFleetCard(
+  manifests: AgentManifest[],
+  config: CardGeneratorConfig
+): AgentCard {
   const skills: AgentSkill[] = manifests.map((m) => ({
     id: m.id,
     name: m.name,

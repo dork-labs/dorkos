@@ -1,9 +1,23 @@
 ---
-title: "Prettier Formatting Strategy with AI Coding Agents (Claude Code, Cursor)"
+title: 'Prettier Formatting Strategy with AI Coding Agents (Claude Code, Cursor)'
 date: 2026-03-20
 type: external-best-practices
 status: active
-tags: [prettier, formatting, claude-code, cursor, lefthook, lint-staged, pre-commit, git-blame, CI, hooks, turborepo, pnpm]
+tags:
+  [
+    prettier,
+    formatting,
+    claude-code,
+    cursor,
+    lefthook,
+    lint-staged,
+    pre-commit,
+    git-blame,
+    CI,
+    hooks,
+    turborepo,
+    pnpm,
+  ]
 searches_performed: 14
 sources_count: 28
 ---
@@ -119,6 +133,7 @@ pre-commit:
 ```
 
 Key details:
+
 - `{staged_files}` is lefthook's interpolation for only the staged files matching the glob — equivalent to what lint-staged does, without requiring lint-staged as a dependency.
 - `stage_fixed: true` automatically runs `git add` on any files the command modifies, so the formatted version is what gets committed.
 - The `glob` prevents Prettier from being invoked on files it cannot parse (`.sh`, `.go`, `.py`, binary assets).
@@ -232,6 +247,7 @@ git config blame.ignoreRevsFile .git-blame-ignore-revs
 7. Document step 6 in `CONTRIBUTING.md` so every contributor runs it after cloning.
 
 **Editor support:**
+
 - VSCode with GitLens: add `"gitlens.advanced.blame.customArguments": ["--ignore-revs-file", ".git-blame-ignore-revs"]` to `.vscode/settings.json`.
 - GitHub's web `git blame` view: GitHub natively supports `.git-blame-ignore-revs` when the file is committed to the repository root. No additional configuration is needed for the GitHub UI.
 - Note: each developer must still run `git config blame.ignoreRevsFile .git-blame-ignore-revs` locally for CLI git blame to respect it.
@@ -275,14 +291,14 @@ The one case where lint-staged has an advantage is "partially staged files" (whe
 
 ## Comparison Table
 
-| Approach | Catches Agent Code | Catches Human Code | Bypass Risk | Overhead | Recommended |
-|---|---|---|---|---|---|
-| PostToolUse format hook | Yes (per-file, async) | No | None (not a gate) | Near-zero | Yes — primary layer |
-| Lefthook pre-commit `--write` | No (bypassed by `--no-verify`) | Yes | High for agents | Low (staged files only) | Yes — human layer |
-| block-no-verify PreToolUse | Prevents bypass | N/A | None | Low | Yes — close the gap |
-| CI `prettier --check` | Yes (post-commit) | Yes | None | Medium (PR latency) | Yes — final gate |
-| Editor format-on-save | Partial (not in Claude Code) | Yes (if configured) | High (opt-in) | None | Supplementary |
-| lint-staged | Redundant with lefthook | Yes | High for agents | Low | No — already have lefthook |
+| Approach                      | Catches Agent Code             | Catches Human Code  | Bypass Risk       | Overhead                | Recommended                |
+| ----------------------------- | ------------------------------ | ------------------- | ----------------- | ----------------------- | -------------------------- |
+| PostToolUse format hook       | Yes (per-file, async)          | No                  | None (not a gate) | Near-zero               | Yes — primary layer        |
+| Lefthook pre-commit `--write` | No (bypassed by `--no-verify`) | Yes                 | High for agents   | Low (staged files only) | Yes — human layer          |
+| block-no-verify PreToolUse    | Prevents bypass                | N/A                 | None              | Low                     | Yes — close the gap        |
+| CI `prettier --check`         | Yes (post-commit)              | Yes                 | None              | Medium (PR latency)     | Yes — final gate           |
+| Editor format-on-save         | Partial (not in Claude Code)   | Yes (if configured) | High (opt-in)     | None                    | Supplementary              |
+| lint-staged                   | Redundant with lefthook        | Yes                 | High for agents   | Low                     | No — already have lefthook |
 
 ---
 
@@ -410,7 +426,7 @@ Then create `.git-blame-ignore-revs` and add the hash. Add `git config blame.ign
 - Japanese implementation with reliability disclaimer added February 2026: [Automatically run Prettier with Claude Code hooks](https://zenn.dev/coji/articles/claude-code-hooks-prettier-auto-format?locale=en)
 - Community hook examples and event reference: [Claude Code Hooks: PreToolUse, PostToolUse & All 12 Events](https://www.pixelmojo.io/blogs/claude-code-hooks-production-quality-ci-cd-patterns)
 - Claude Code `--no-verify` bypass documented across major repos: [drizzle-orm issue](https://github.com/drizzle-team/drizzle-orm/issues/5247), [anthropics/claude-cookbooks](https://github.com/anthropics/claude-cookbooks/issues/346), [twentyhq/twenty](https://github.com/twentyhq/twenty/issues/17071), [vercel/next.js discussion](https://github.com/vercel/next.js/discussions/88370)
-- Architectural analysis of `git commit` danger with Claude Code: [Claude Code: Allow Bash(git commit:*) considered harmful](https://microservices.io/post/genaidevelopment/2025/09/10/allow-git-commit-considered-harmful.html)
+- Architectural analysis of `git commit` danger with Claude Code: [Claude Code: Allow Bash(git commit:\*) considered harmful](https://microservices.io/post/genaidevelopment/2025/09/10/allow-git-commit-considered-harmful.html)
 - `block-no-verify` tool and PreToolUse implementation: [How I Stopped My AI Coding Assistant from Cheating on Git Hooks](https://vibe.forem.com/tupe12334/how-i-stopped-my-ai-coding-assistant-from-cheating-on-git-hooks-10af)
 - `.git-blame-ignore-revs` setup and git config: [Ignoring mass reformatting commits with git blame](https://akrabat.com/ignoring-revisions-with-git-blame/)
 - Lefthook monorepo support, `stage_fixed`, parallel execution: [5 cool ways to configure Lefthook](https://evilmartians.com/chronicles/5-cool-and-surprising-ways-to-configure-lefthook-for-automation-joy)

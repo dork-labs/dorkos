@@ -351,7 +351,7 @@ export const features: Feature[] = [
     category: 'core',
     tagline: 'All DorkOS tools available to any MCP-compatible agent',
     description:
-      "DorkOS exposes its full tool suite via a Streamable HTTP MCP server. Any agent that speaks MCP — Claude Code, Cursor, Windsurf — can call Pulse, Relay, and Mesh tools directly.",
+      'DorkOS exposes its full tool suite via a Streamable HTTP MCP server. Any agent that speaks MCP — Claude Code, Cursor, Windsurf — can call Pulse, Relay, and Mesh tools directly.',
     status: 'ga',
     featured: true,
     benefits: [
@@ -405,6 +405,7 @@ export const features: Feature[] = [
 ```
 
 **Design notes:**
+
 - The `features` array is sorted by `category` then `sortOrder` for predictability
 - `featured: true` is set on exactly 6 features (chat-interface, pulse-scheduler, relay-message-bus, mesh-agent-discovery, mesh-topology, mcp-server) — the most representative cross-subsystem selection
 - All `tagline` fields are ≤80 chars and benefit-led
@@ -512,6 +513,7 @@ function CategoryTab({ href, active, label }: { href: string; active: boolean; l
 ```
 
 **Key constraints:**
+
 - `searchParams` is `Promise<SearchParams>` in Next.js 15+/16 (async params)
 - The `CategoryTab` uses `<Link>` not `<button>` — each tab is a navigable URL
 - Invalid `?category=` values silently fall back to "All"
@@ -890,6 +892,7 @@ export function FeatureCatalogSection() {
 #### 7.1 `apps/site/src/layers/features/marketing/index.ts`
 
 Add after existing data exports:
+
 ```typescript
 // Feature catalog
 export { features, CATEGORY_LABELS } from './lib/features';
@@ -903,6 +906,7 @@ export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
 #### 7.2 `apps/site/src/app/sitemap.ts`
 
 Add feature pages to the sitemap array:
+
 ```typescript
 import { features } from '@/layers/features/marketing';
 
@@ -935,19 +939,18 @@ import { features } from '@/layers/features/marketing/lib/features';
 
 // Add new section builder:
 function buildFeaturesSection(): string {
-  return features
-    .map((f) => `- **${f.name}** (${f.category}): ${f.tagline}`)
-    .join('\n');
+  return features.map((f) => `- **${f.name}** (${f.category}): ${f.tagline}`).join('\n');
 }
 
 // In the GET() template, add after ## Core Capabilities:
 `## Features
 
 ${buildFeaturesSection()}
-`
+`;
 ```
 
 The full template becomes:
+
 ```
 ## Core Capabilities
 ...
@@ -978,9 +981,10 @@ import {
 ```
 
 **Add "features" to nav links:**
+
 ```typescript
 const navLinks = [
-  { label: 'features', href: '/features' },  // <-- add first
+  { label: 'features', href: '/features' }, // <-- add first
   { label: 'about', href: '#about' },
   { label: 'blog', href: '/blog' },
   { label: 'docs', href: '/docs' },
@@ -1250,6 +1254,7 @@ describe('features catalog data integrity', () => {
 ## Implementation Phases
 
 ### Phase 1 — Data Layer & Routes (Core)
+
 1. Create `features.ts` with initial catalog (≥10 features, 5 categories)
 2. Export from `index.ts`
 3. Create `FeatureCard` component
@@ -1258,15 +1263,18 @@ describe('features catalog data integrity', () => {
 6. Create `/features/[slug]/opengraph-image.tsx`
 
 ### Phase 2 — SEO Integration
+
 7. Update `sitemap.ts` to include feature pages
 8. Update `llms.txt/route.ts` to add `## Features` section
 
 ### Phase 3 — Homepage & Nav
+
 9. Create `FeatureCatalogSection` component
 10. Add `FeatureCatalogSection` to `(marketing)/page.tsx` after `SubsystemsSection`
 11. Add "features" to `navLinks` in `(marketing)/page.tsx`
 
 ### Phase 4 — Tests
+
 12. Write data integrity tests (`features.test.ts`)
 13. Write component tests (`FeatureCard.test.tsx`, `FeatureCatalogSection.test.tsx`)
 14. Verify TypeScript compiles cleanly across all new files

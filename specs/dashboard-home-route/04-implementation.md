@@ -33,7 +33,8 @@ All P1 foundation tasks plus P2 widget tasks completed. Agent a8a3554 exceeded s
 ## Files Modified/Created
 
 **Source files:**
-- `apps/client/src/router.tsx` (NEW) — Route tree with root, _shell layout, /, /session routes
+
+- `apps/client/src/router.tsx` (NEW) — Route tree with root, \_shell layout, /, /session routes
 - `apps/client/src/AppShell.tsx` (NEW) — Extracted standalone shell with `<Outlet />`
 - `apps/client/src/layers/entities/session/model/use-session-search.ts` (NEW) — Safe route-aware search param hook
 - `apps/client/src/layers/widgets/dashboard/ui/DashboardPage.tsx` (NEW) — Minimal placeholder
@@ -47,6 +48,7 @@ All P1 foundation tasks plus P2 widget tasks completed. Agent a8a3554 exceeded s
 - `apps/client/package.json` (MODIFIED) — Added TanStack deps, removed nuqs
 
 **Test files:**
+
 - `apps/client/src/layers/entities/session/__tests__/use-directory-state.test.tsx` (MODIFIED) — TanStack Router mocks
 
 ## Known Issues
@@ -63,6 +65,7 @@ All P1 foundation tasks plus P2 widget tasks completed. Agent a8a3554 exceeded s
 - **#16** Update documentation (CLAUDE.md, architecture.md, project-structure.md, state-management.md)
 
 **Additional files modified:**
+
 - `apps/client/src/layers/features/session-list/ui/AgentSidebar.tsx` — Dashboard link
 - `apps/client/src/layers/features/command-palette/model/use-palette-actions.ts` — navigateDashboard action
 - `apps/client/src/layers/features/command-palette/model/use-palette-items.ts` — Dashboard quick action
