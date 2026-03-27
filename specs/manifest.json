@@ -1,7 +1,23 @@
 {
   "version": 1,
-  "nextNumber": 187,
+  "nextNumber": 189,
   "specs": [
+    {
+      "number": 188,
+      "slug": "sse-connection-optimization-02-fetch-transport",
+      "title": "SSE Connection Optimization Phase 2 — Fetch-Based SSE Transport",
+      "created": "2026-03-27",
+      "status": "brief",
+      "project": "sse-connection-optimization"
+    },
+    {
+      "number": 187,
+      "slug": "sse-connection-optimization-01-consolidate",
+      "title": "SSE Connection Optimization Phase 1 — Consolidate SSE Connections",
+      "created": "2026-03-27",
+      "status": "brief",
+      "project": "sse-connection-optimization"
+    },
     {
       "number": 186,
       "slug": "remote-dialog-ux-redesign",

@@ -319,11 +319,17 @@ export class HttpTransport implements Transport {
   }
 
   // --- Tool Approval ---
+  // Interaction requests use a longer timeout (10 min) to match the server-side
+  // INTERACTION_TIMEOUT_MS. The default 30s fetchJSON timeout is too aggressive
+  // because these requests can be queued by the browser when SSE connections
+  // consume the HTTP/1.1 per-origin connection limit (6 in Chrome).
+  private static readonly INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
   approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }> {
     return fetchJSON<{ ok: boolean }>(this.baseUrl, `/sessions/${sessionId}/approve`, {
       method: 'POST',
       body: JSON.stringify({ toolCallId }),
+      timeout: HttpTransport.INTERACTION_TIMEOUT_MS,
     });
   }
 
@@ -331,6 +337,7 @@ export class HttpTransport implements Transport {
     return fetchJSON<{ ok: boolean }>(this.baseUrl, `/sessions/${sessionId}/deny`, {
       method: 'POST',
       body: JSON.stringify({ toolCallId }),
+      timeout: HttpTransport.INTERACTION_TIMEOUT_MS,
     });
   }
 
@@ -342,6 +349,7 @@ export class HttpTransport implements Transport {
     return fetchJSON<{ ok: boolean }>(this.baseUrl, `/sessions/${sessionId}/submit-answers`, {
       method: 'POST',
       body: JSON.stringify({ toolCallId, answers }),
+      timeout: HttpTransport.INTERACTION_TIMEOUT_MS,
     });
   }
 

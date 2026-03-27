@@ -1,11 +1,11 @@
 import { Button } from '@/layers/shared/ui';
-import { X, Globe, FileText, Braces } from 'lucide-react';
+import { X, Globe, FileText, Braces, PanelRight } from 'lucide-react';
 
 interface CanvasHeaderProps {
   /** Optional title override — falls back to the content-type label. */
   title?: string;
-  /** Discriminant from the active canvas content. */
-  contentType: 'url' | 'markdown' | 'json';
+  /** Discriminant from the active canvas content. Omit for splash state. */
+  contentType?: 'url' | 'markdown' | 'json';
   /** Called when the user clicks the close button. */
   onClose: () => void;
 }
@@ -24,8 +24,8 @@ const CONTENT_TYPE_LABELS = {
 
 /** Canvas panel header with content-type icon, title, and close button. */
 export function CanvasHeader({ title, contentType, onClose }: CanvasHeaderProps) {
-  const Icon = CONTENT_TYPE_ICONS[contentType];
-  const label = title ?? CONTENT_TYPE_LABELS[contentType];
+  const Icon = contentType ? CONTENT_TYPE_ICONS[contentType] : PanelRight;
+  const label = title ?? (contentType ? CONTENT_TYPE_LABELS[contentType] : 'Canvas');
 
   return (
     <div className="flex items-center justify-between border-b px-4 py-2">

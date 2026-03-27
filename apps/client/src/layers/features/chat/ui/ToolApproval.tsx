@@ -74,6 +74,7 @@ export function ToolApproval({
   const label = getToolLabel(toolName, input);
   const [responding, setResponding] = useState(false);
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Countdown state
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
@@ -129,6 +130,7 @@ export function ToolApproval({
   const handleApprove = useCallback(async () => {
     if (responding || decided) return;
     setResponding(true);
+    setError(null);
     try {
       await transport.approveTool(sessionId, toolCallId);
       setDecided('approved');
@@ -140,6 +142,7 @@ export function ToolApproval({
         onDecided?.();
       } else {
         console.error('Approval failed:', err);
+        setError('Approval request failed — try again');
       }
     } finally {
       setResponding(false);
@@ -149,6 +152,7 @@ export function ToolApproval({
   const handleDeny = useCallback(async () => {
     if (responding || decided) return;
     setResponding(true);
+    setError(null);
     try {
       await transport.denyTool(sessionId, toolCallId);
       setDecided('denied');
@@ -160,6 +164,7 @@ export function ToolApproval({
         onDecided?.();
       } else {
         console.error('Deny failed:', err);
+        setError('Deny request failed — try again');
       }
     } finally {
       setResponding(false);
@@ -293,6 +298,7 @@ export function ToolApproval({
           <ToolArgumentsDisplay toolName={toolName} input={input} />
         </div>
       )}
+      {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
       <div className="flex gap-2">
         <Button
           size="sm"

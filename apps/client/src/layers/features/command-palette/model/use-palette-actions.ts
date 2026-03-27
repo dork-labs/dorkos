@@ -130,6 +130,11 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         useAgentCreationStore.getState().open();
         return;
       }
+      // openCanvas opens the canvas without content — shows the splash screen.
+      if (action === 'openCanvas') {
+        setCanvasOpen(true);
+        return;
+      }
       // toggleTheme requires the current theme value to compute the next state.
       if (action === 'toggleTheme') {
         executeUiCommand(

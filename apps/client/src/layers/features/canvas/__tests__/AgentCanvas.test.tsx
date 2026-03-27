@@ -40,7 +40,23 @@ vi.mock('streamdown', () => ({
 
 vi.mock('streamdown/styles.css', () => ({}));
 
+// Mock motion/react — render children without animation
+function PassThrough({ children, ...rest }: Record<string, unknown>) {
+  return (
+    <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
+  );
+}
+
+vi.mock('motion/react', () => ({
+  motion: new Proxy({} as Record<string, typeof PassThrough>, {
+    get: () => PassThrough,
+  }),
+  useReducedMotion: () => true,
+  AnimatePresence: PassThrough,
+}));
+
 const mockSetCanvasOpen = vi.fn();
+const mockSetCanvasContent = vi.fn();
 
 const mockState = {
   canvasOpen: false as boolean,
@@ -50,6 +66,7 @@ const mockState = {
     | { type: 'json'; data: unknown; title?: string }
     | { type: 'url'; url: string; title?: string },
   setCanvasOpen: mockSetCanvasOpen,
+  setCanvasContent: mockSetCanvasContent,
 };
 
 vi.mock('@/layers/shared/model', () => ({
@@ -72,11 +89,14 @@ describe('AgentCanvas', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('returns null when canvas is open but has no content', () => {
+  it('renders splash screen when canvas is open with no content', () => {
     mockState.canvasOpen = true;
     mockState.canvasContent = null;
-    const { container } = render(<AgentCanvas />);
-    expect(container.innerHTML).toBe('');
+    render(<AgentCanvas />);
+    expect(screen.getByText('A blank canvas')).toBeInTheDocument();
+    expect(screen.getByText('Markdown')).toBeInTheDocument();
+    expect(screen.getByText('JSON')).toBeInTheDocument();
+    expect(screen.getByText('Web Page')).toBeInTheDocument();
   });
 
   it('renders panel and resize handle when open with markdown content', () => {

@@ -1201,7 +1201,7 @@ export const UiCommandSchema = z
     // Canvas commands
     z.object({
       action: z.literal('open_canvas'),
-      content: UiCanvasContentSchema,
+      content: UiCanvasContentSchema.optional(),
       preferredWidth: z.number().min(20).max(80).optional(),
     }),
     z.object({

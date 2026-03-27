@@ -86,7 +86,9 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
     // --- Canvas ---
     case 'open_canvas':
       store.setCanvasOpen(true);
-      store.setCanvasContent(command.content);
+      if (command.content != null) {
+        store.setCanvasContent(command.content);
+      }
       if (command.preferredWidth != null) {
         store.setCanvasPreferredWidth(command.preferredWidth);
       }
