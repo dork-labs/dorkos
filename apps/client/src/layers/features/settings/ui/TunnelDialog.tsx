@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { ArrowUpRight, Check, Copy, Link } from 'lucide-react';
-import { REGEXP_ONLY_DIGITS } from 'input-otp';
+import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import QRCode from 'react-qr-code';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -12,68 +10,62 @@ import {
   ResponsiveDialogDescription,
   Separator,
   Switch,
-  Button,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
   Field,
   FieldLabel,
 } from '@/layers/shared/ui';
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/layers/shared/ui/input-otp';
-import { useTransport } from '@/layers/shared/model';
-import { cn, TIMING, getPlatform } from '@/layers/shared/lib';
+import { useTransport, useIsMobile } from '@/layers/shared/model';
+import { cn, getPlatform } from '@/layers/shared/lib';
 import { useSessionId } from '@/layers/entities/session';
 import { broadcastTunnelChange } from '@/layers/entities/tunnel';
-import { TunnelOnboarding } from './TunnelOnboarding';
+import { TunnelLanding } from './TunnelLanding';
+import { TunnelSetup } from './TunnelSetup';
+import { TunnelSettings } from './TunnelSettings';
+import { TunnelConnecting } from './TunnelConnecting';
+import { TunnelConnected } from './TunnelConnected';
+import { TunnelError } from './TunnelError';
+import { TunnelSecurity } from './TunnelSecurity';
 
 type TunnelState = 'off' | 'starting' | 'connected' | 'stopping' | 'error';
+type ViewState = 'landing' | 'setup' | 'ready' | 'connecting' | 'connected' | 'error';
 
 const START_TIMEOUT_MS = 15_000;
 const STUCK_STATE_TIMEOUT_MS = 30_000;
 const LATENCY_INTERVAL_MS = 30_000;
+
+/** Module-scope animation variants for view crossfades. */
+const viewVariants = {
+  initial: { opacity: 0, y: 4 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -4 },
+} as const;
+
+/** Transition config for view crossfades. */
+const viewTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
 
 interface TunnelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-/** Map common ngrok errors to actionable messages. */
-function friendlyErrorMessage(raw: string): string {
-  if (/auth|token|ERR_NGROK_105/i.test(raw)) {
-    return 'Check your auth token at dashboard.ngrok.com';
-  }
-  if (/timeout|ETIMEDOUT/i.test(raw)) {
-    return 'Connection timed out. Check your network.';
-  }
-  if (/limit|ERR_NGROK_108/i.test(raw)) {
-    return 'Tunnel limit reached. Free ngrok accounts allow one active tunnel.';
-  }
-  if (/DNS|NXDOMAIN|ERR_NGROK_332/i.test(raw)) {
-    return 'DNS resolution failed. Check your domain configuration.';
-  }
-  if (/gateway|502|ERR_NGROK_3200/i.test(raw)) {
-    return 'Gateway error. The tunnel endpoint is unreachable.';
-  }
-  if (/upgrade|ERR_NGROK_120/i.test(raw)) {
-    return 'Feature requires a paid ngrok plan.';
-  }
-  if (/ECONNREFUSED/i.test(raw)) {
-    return 'Connection refused. Ensure the server is running.';
-  }
-  return raw;
+/** Derive which view to show based on tunnel config, state, and user navigation. */
+function deriveViewState(
+  tokenConfigured: boolean,
+  showSetup: boolean,
+  tunnelState: TunnelState
+): ViewState {
+  if (!tokenConfigured && !showSetup) return 'landing';
+  if (!tokenConfigured && showSetup) return 'setup';
+  if (showSetup) return 'setup';
+  if (tunnelState === 'error') return 'error';
+  if (tunnelState === 'starting') return 'connecting';
+  if (tunnelState === 'connected' || tunnelState === 'stopping') return 'connected';
+  return 'ready';
 }
 
-/** Determine quality color from latency. */
-function latencyColor(ms: number | null): string {
-  if (ms === null) return 'bg-gray-400';
-  if (ms < 200) return 'bg-green-500';
-  if (ms < 500) return 'bg-amber-400';
-  return 'bg-red-500';
-}
-
-/** Dialog for managing remote access via ngrok tunnel with QR code sharing. */
+/** State machine shell for the Remote Access dialog. Delegates rendering to focused sub-components. */
 export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
   const transport = useTransport();
+  const isDesktop = !useIsMobile();
   const queryClient = useQueryClient();
   const [activeSessionId] = useSessionId();
   const { data: serverConfig } = useQuery({
@@ -87,17 +79,15 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
   const [state, setState] = useState<TunnelState>('off');
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
   const [authToken, setAuthToken] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [showTokenInput, setShowTokenInput] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copiedSession, setCopiedSession] = useState(false);
   const [domain, setDomain] = useState('');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [passcodeEnabled, setPasscodeEnabled] = useState(false);
   const [passcodeInput, setPasscodeInput] = useState('');
 
-  // Track previous connected state for disconnect/reconnect toasts
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
 
   // Sync state from server config
@@ -113,26 +103,28 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
   }, [tunnel?.connected, tunnel?.url, state]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Sync domain from server config
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local domain input from server config
     if (tunnel?.domain) setDomain(tunnel.domain);
   }, [tunnel?.domain]);
 
-  // Sync passcode enabled state from server config
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local passcode toggle from server config
     if (tunnel?.passcodeEnabled !== undefined) setPasscodeEnabled(tunnel.passcodeEnabled);
   }, [tunnel?.passcodeEnabled]);
+
+  // Reset showSetup when token gets configured
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset setup nav when token saves
+    if (tunnel?.tokenConfigured) setShowSetup(false);
+  }, [tunnel?.tokenConfigured]);
 
   // Disconnect/reconnect toast notifications
   useEffect(() => {
     const wasConnected = prevConnectedRef.current;
     const isConnected = tunnel?.connected ?? false;
     prevConnectedRef.current = isConnected;
-
     if (wasConnected === undefined) return;
-
     if (wasConnected && !isConnected) {
       toast.error('Remote access disconnected', {
         id: 'tunnel-status',
@@ -168,7 +160,6 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
       setLatencyMs(null);
       return;
     }
-
     const measure = async () => {
       try {
         const start = performance.now();
@@ -178,7 +169,6 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
         setLatencyMs(null);
       }
     };
-
     measure();
     const interval = setInterval(measure, LATENCY_INTERVAL_MS);
     return () => clearInterval(interval);
@@ -194,7 +184,6 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
           setState('error');
           setError('Connection timed out after 15 seconds');
         }, START_TIMEOUT_MS);
-
         try {
           const result = await transport.startTunnel();
           clearTimeout(timeout);
@@ -231,6 +220,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
       await transport.updateConfig({ tunnel: { authtoken: authToken } });
       setAuthToken('');
       setShowTokenInput(false);
+      setShowSetup(false);
       queryClient.invalidateQueries({ queryKey: ['config'] });
     } catch {
       setTokenError('Could not save token. Try again.');
@@ -271,31 +261,15 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
       setPasscodeInput('');
       queryClient.invalidateQueries({ queryKey: ['config'] });
       broadcastTunnelChange();
-      toast.success('Passcode saved');
     } catch {
       toast.error('Failed to save passcode');
     }
   }, [passcodeInput, transport, queryClient]);
 
-  const handleCopyUrl = useCallback(() => {
-    if (url) {
-      navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
-    }
-  }, [url]);
-
-  const handleCopySessionLink = useCallback(() => {
-    if (url && activeSessionId) {
-      navigator.clipboard.writeText(`${url}?session=${activeSessionId}`);
-      setCopiedSession(true);
-      setTimeout(() => setCopiedSession(false), TIMING.COPY_FEEDBACK_MS);
-    }
-  }, [url, activeSessionId]);
-
-  // Tunnel is not supported in embedded mode (Obsidian)
   if (getPlatform().isEmbedded) return null;
 
+  const tokenConfigured = !!tunnel?.tokenConfigured;
+  const viewState = deriveViewState(tokenConfigured, showSetup, state);
   const isTransitioning = state === 'starting' || state === 'stopping';
   const isChecked = state === 'connected' || state === 'starting' || state === 'stopping';
 
@@ -309,260 +283,206 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-h-[85vh] max-w-md">
+      <ResponsiveDialogContent className={cn('max-h-[85vh]', isDesktop && 'max-w-md')}>
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle className="flex items-center gap-2 text-sm font-medium">
             <span
               className={cn(
                 'inline-block size-2 rounded-full',
                 dotColor,
-                (state === 'starting' || state === 'stopping') && 'animate-pulse'
+                isTransitioning && 'animate-pulse'
               )}
             />
             Remote Access
           </ResponsiveDialogTitle>
-          {state === 'off' && (
+          {viewState === 'landing' && (
             <ResponsiveDialogDescription className="text-muted-foreground text-xs">
               Access DorkOS from any device, any browser.
             </ResponsiveDialogDescription>
           )}
-          {state === 'starting' && (
+          {viewState === 'connecting' && (
             <ResponsiveDialogDescription className="text-muted-foreground text-xs">
               Establishing connection...
             </ResponsiveDialogDescription>
           )}
-          {state === 'stopping' && (
-            <ResponsiveDialogDescription className="text-muted-foreground text-xs">
-              Disconnecting...
-            </ResponsiveDialogDescription>
-          )}
         </ResponsiveDialogHeader>
 
-        <div className="space-y-4 px-4 pb-4">
-          {/* Onboarding — shown when no token configured */}
-          {state === 'off' && tunnel && !tunnel.tokenConfigured && <TunnelOnboarding />}
+        <div className="space-y-4 overflow-y-auto px-4 pb-4">
+          {/* View router — AnimatePresence crossfades between states */}
+          <AnimatePresence mode="wait">
+            {viewState === 'landing' && (
+              <motion.div
+                key="landing"
+                variants={viewVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={viewTransition}
+              >
+                <TunnelLanding onGetStarted={() => setShowSetup(true)} />
+              </motion.div>
+            )}
 
-          {/* Auth token section — hidden when connected */}
-          {state !== 'connected' && tunnel && (
-            <>
-              {!tunnel.tokenConfigured || showTokenInput ? (
-                <div className="space-y-2">
-                  <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                    Auth Token
-                  </span>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      placeholder="Paste token here"
-                      value={authToken}
-                      onChange={(e) => setAuthToken(e.target.value)}
-                      className="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex-1 rounded-md border px-3 py-1.5 text-sm shadow-sm outline-none focus-visible:ring-1"
-                    />
-                    <button
-                      onClick={handleSaveToken}
-                      disabled={!authToken.trim()}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      Save
-                    </button>
-                  </div>
-                  {tokenError && <p className="text-destructive text-xs">{tokenError}</p>}
-                  {!tunnel.tokenConfigured && (
-                    <p className="text-muted-foreground text-xs">
-                      Need a token?{' '}
-                      <a
-                        href="https://dashboard.ngrok.com/signup"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-foreground inline-flex items-center gap-0.5 underline underline-offset-2"
-                      >
-                        Sign up at ngrok.com
-                        <ArrowUpRight className="size-3" />
-                      </a>
-                    </p>
+            {viewState === 'setup' && (
+              <motion.div
+                key="setup"
+                variants={viewVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={viewTransition}
+              >
+                <TunnelSetup
+                  authToken={authToken}
+                  tokenError={tokenError}
+                  onAuthTokenChange={setAuthToken}
+                  onSaveToken={handleSaveToken}
+                />
+              </motion.div>
+            )}
+
+            {viewState === 'ready' && (
+              <motion.div
+                key="ready"
+                variants={viewVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={viewTransition}
+              >
+                {/* Hero toggle card — the primary action, prominent at top */}
+                <div
+                  className={cn(
+                    'rounded-lg border p-4 transition-colors duration-300',
+                    'border-border bg-muted/30'
                   )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Enable remote access</p>
+                      <p className="text-muted-foreground text-xs">
+                        Open a secure tunnel via ngrok
+                      </p>
+                    </div>
+                    <Switch checked={false} onCheckedChange={handleToggle} />
+                  </div>
                 </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-sm">
-                    Auth token saved
-                    <Check className="ml-1 inline size-3.5 text-green-500" />
-                  </span>
-                  <button
-                    onClick={() => setShowTokenInput(true)}
-                    className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2 transition-colors"
-                  >
-                    Change
-                  </button>
+              </motion.div>
+            )}
+
+            {viewState === 'connecting' && (
+              <motion.div
+                key="connecting"
+                variants={viewVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={viewTransition}
+              >
+                <TunnelConnecting />
+              </motion.div>
+            )}
+
+            {viewState === 'connected' && url && (
+              <motion.div
+                key="connected"
+                variants={viewVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={viewTransition}
+              >
+                <TunnelConnected
+                  url={url}
+                  activeSessionId={activeSessionId}
+                  latencyMs={latencyMs}
+                />
+
+                {/* Inline toggle — demoted to simple text when connected */}
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-muted-foreground text-sm">Remote access is on</p>
+                  <Switch
+                    checked={isChecked}
+                    onCheckedChange={handleToggle}
+                    disabled={isTransitioning}
+                  />
                 </div>
-              )}
+              </motion.div>
+            )}
+
+            {viewState === 'error' && error && (
+              <motion.div
+                key="error"
+                variants={viewVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={viewTransition}
+              >
+                <TunnelError
+                  error={error}
+                  onRetry={() => {
+                    setState('off');
+                    setError(null);
+                  }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Security indicator — always visible when token configured, not in setup/landing */}
+          {tokenConfigured && viewState !== 'setup' && viewState !== 'landing' && (
+            <TunnelSecurity
+              passcodeEnabled={passcodeEnabled}
+              passcodeAlreadySet={tunnel?.passcodeEnabled ?? false}
+              passcodeInput={passcodeInput}
+              onPasscodeToggle={handlePasscodeToggle}
+              onPasscodeInputChange={setPasscodeInput}
+              onPasscodeSave={handleSavePasscode}
+            />
+          )}
+
+          {/* Collapsible settings — always accessible when token is configured */}
+          {tokenConfigured && viewState !== 'setup' && viewState !== 'landing' && (
+            <>
+              <Separator />
+              <TunnelSettings
+                authToken={authToken}
+                tokenError={tokenError}
+                showTokenInput={showTokenInput}
+                onAuthTokenChange={setAuthToken}
+                onSaveToken={handleSaveToken}
+                onShowTokenInput={() => setShowTokenInput(true)}
+                domain={domain}
+                onDomainChange={setDomain}
+                onDomainSave={handleSaveDomain}
+              />
             </>
           )}
 
-          {/* Custom domain field — visible when token is configured */}
-          {tunnel?.tokenConfigured && state !== 'connected' && state !== 'stopping' && (
-            <div className="space-y-2">
-              <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-                Custom Domain
-              </span>
-              <input
-                type="text"
-                placeholder="e.g. my-dorkos.ngrok-free.app"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                onBlur={handleSaveDomain}
-                onKeyDown={(e) => e.key === 'Enter' && handleSaveDomain()}
-                className="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-1.5 text-sm shadow-sm outline-none focus-visible:ring-1"
-              />
-              <p className="text-muted-foreground text-xs">
-                <a
-                  href="https://dashboard.ngrok.com/domains"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-foreground inline-flex items-center gap-0.5 underline underline-offset-2"
-                >
-                  Get a free static domain
-                  <ArrowUpRight className="size-3" />
-                </a>
-                {' — '}same URL every restart, reusable QR codes, persistent bookmarks.
-              </p>
-            </div>
-          )}
-
-          {/* Passcode section — visible when token configured and not connected */}
-          {tunnel?.tokenConfigured && state !== 'connected' && state !== 'stopping' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">Passcode</p>
-                  <p className="text-muted-foreground text-xs">
-                    Require a 6-digit PIN for remote access
-                  </p>
-                </div>
-                <Switch checked={passcodeEnabled} onCheckedChange={handlePasscodeToggle} />
-              </div>
-
-              {passcodeEnabled && (
-                <div className="space-y-2">
-                  <InputOTP
-                    maxLength={6}
-                    pattern={REGEXP_ONLY_DIGITS}
-                    inputMode="numeric"
-                    value={passcodeInput}
-                    onChange={setPasscodeInput}
-                  >
-                    <InputOTPGroup>
-                      {[0, 1, 2, 3, 4, 5].map((i) => (
-                        <InputOTPSlot key={i} index={i} />
-                      ))}
-                    </InputOTPGroup>
-                  </InputOTP>
-                  <Button
-                    size="sm"
-                    onClick={handleSavePasscode}
-                    disabled={passcodeInput.length !== 6}
-                  >
-                    {tunnel?.passcodeEnabled ? 'Update passcode' : 'Set passcode'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Connected/stopping state — QR hero */}
-          {(state === 'connected' || state === 'stopping') && url && (
-            <div className="space-y-3">
-              <div className="flex justify-center rounded-lg bg-white p-3">
-                <QRCode value={url} size={200} level="M" />
-              </div>
-              <div className="flex items-center gap-2">
-                {state === 'connected' && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        className={cn(
-                          'inline-block size-2 shrink-0 rounded-full',
-                          latencyColor(latencyMs)
-                        )}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      {latencyMs !== null ? `${latencyMs}ms` : 'Measuring...'}
-                    </TooltipContent>
-                  </Tooltip>
+          {/* Bottom toggle — only for states without an inline toggle */}
+          {viewState !== 'connected' && viewState !== 'landing' && viewState !== 'ready' && (
+            <>
+              <Separator />
+              <Field
+                orientation="horizontal"
+                className={cn(
+                  'items-center justify-between rounded-lg border px-3 py-2 transition-colors duration-300',
+                  state === 'starting' && 'border-amber-400/40',
+                  state === 'stopping' && 'border-amber-400/20',
+                  state === 'error' && 'border-destructive/40',
+                  state === 'off' && 'border-transparent'
                 )}
-                <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
-                  {url}
-                </span>
-                <button
-                  onClick={handleCopyUrl}
-                  className="border-input hover:bg-accent inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-sm transition-colors"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="size-3" />
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="size-3" />
-                      Copy
-                    </>
-                  )}
-                </button>
-              </div>
-              {/* Session sharing link */}
-              {state === 'connected' && activeSessionId && (
-                <button
-                  onClick={handleCopySessionLink}
-                  className="border-input hover:bg-accent inline-flex w-full items-center justify-center gap-1.5 rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-sm transition-colors"
-                >
-                  {copiedSession ? (
-                    <>
-                      <Check className="size-3" />
-                      Copied session link
-                    </>
-                  ) : (
-                    <>
-                      <Link className="size-3" />
-                      Copy session link
-                    </>
-                  )}
-                </button>
-              )}
-              <p className="text-muted-foreground text-center text-xs">
-                Scan or visit from any device
-              </p>
-            </div>
-          )}
-
-          {/* Error state — structured card */}
-          {state === 'error' && error && (
-            <div className="space-y-2 rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">
-                Connection failed
-              </p>
-              <p className="text-xs text-red-700 dark:text-red-300">
-                {friendlyErrorMessage(error)}
-              </p>
-              <button
-                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
-                onClick={() => {
-                  setState('off');
-                  setError(null);
-                }}
               >
-                Retry
-              </button>
-            </div>
+                <FieldLabel className="text-sm font-normal">Enable remote access</FieldLabel>
+                <Switch
+                  checked={isChecked}
+                  onCheckedChange={handleToggle}
+                  disabled={isTransitioning}
+                />
+              </Field>
+            </>
           )}
-
-          {/* Separator + toggle always at bottom */}
-          <Separator />
-          <Field orientation="horizontal" className="items-center justify-between">
-            <FieldLabel className="text-sm font-normal">Enable remote access</FieldLabel>
-            <Switch checked={isChecked} onCheckedChange={handleToggle} disabled={isTransitioning} />
-          </Field>
         </div>
       </ResponsiveDialogContent>
     </ResponsiveDialog>

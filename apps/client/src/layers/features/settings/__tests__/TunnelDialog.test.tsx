@@ -38,6 +38,39 @@ vi.mock('react-qr-code', () => ({
   default: ({ value }: { value: string }) => <div data-testid="qr-code">{value}</div>,
 }));
 
+// Mock motion/react so AnimatePresence mode="wait" renders immediately in jsdom
+vi.mock('motion/react', () => ({
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  motion: new Proxy(
+    {},
+    {
+      get: (_target, prop: string) => {
+        return ({ children, ...rest }: Record<string, unknown>) => {
+          const Tag = prop as keyof React.JSX.IntrinsicElements;
+          // Filter out motion-specific props
+          const htmlProps: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(rest)) {
+            if (
+              ![
+                'variants',
+                'initial',
+                'animate',
+                'exit',
+                'transition',
+                'onAnimationComplete',
+              ].includes(k)
+            ) {
+              htmlProps[k] = v;
+            }
+          }
+          // @ts-expect-error — dynamic tag rendering for test mock
+          return <Tag {...htmlProps}>{children}</Tag>;
+        };
+      },
+    }
+  ),
+}));
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -98,12 +131,14 @@ function createWrapper(transport?: Transport) {
 }
 
 describe('TunnelDialog', () => {
-  it('renders toggle switch when open', () => {
+  it('renders hero toggle card when token is configured', async () => {
     render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(),
     });
-    expect(screen.getByRole('switch')).toBeDefined();
-    expect(screen.getByText('Enable remote access')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.getByText('Enable remote access')).toBeDefined();
+      expect(screen.getByText('Open a secure tunnel via ngrok')).toBeDefined();
+    });
   });
 
   it('renders "Remote Access" title when open', () => {
@@ -113,32 +148,34 @@ describe('TunnelDialog', () => {
     expect(screen.getByText('Remote Access')).toBeDefined();
   });
 
-  it('shows auth token input when tokenConfigured is false', async () => {
+  it('shows landing view when tokenConfigured is false', async () => {
     const transport = createTunnelTransport({ tokenConfigured: false });
     render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Paste token here')).toBeDefined();
+      expect(screen.getByTestId('tunnel-landing')).toBeDefined();
     });
   });
 
-  it('shows Save button alongside auth token input', async () => {
-    const transport = createTunnelTransport({ tokenConfigured: false });
-    render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => {
-      expect(screen.getByText('Save')).toBeDefined();
-    });
-  });
-
-  it('does not show auth token input when tokenConfigured is true', () => {
+  it('shows settings view when tokenConfigured is true', async () => {
     const transport = createTunnelTransport({ tokenConfigured: true });
     render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
-    expect(screen.queryByPlaceholderText('Paste token here')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('tunnel-settings')).toBeDefined();
+    });
+  });
+
+  it('does not show setup view when tokenConfigured is true', async () => {
+    const transport = createTunnelTransport({ tokenConfigured: true });
+    render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('tunnel-setup')).toBeNull();
+    });
   });
 
   it('does not render content when closed', () => {

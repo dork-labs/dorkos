@@ -1,5 +1,3 @@
-import { ArrowUpRight } from 'lucide-react';
-
 /** Dark-mode-aware SVG illustration: laptop connected to phone/tablet via dotted lines. */
 function ConnectionIllustration() {
   return (
@@ -67,46 +65,14 @@ function ConnectionIllustration() {
   );
 }
 
-/** Onboarding card shown when no ngrok token is configured. */
+/** Illustration and heading shown in both the setup flow and the landing view. */
 export function TunnelOnboarding() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <ConnectionIllustration />
-
       <p className="text-foreground text-center text-sm font-medium">
         Access DorkOS from any device
       </p>
-
-      <ol className="text-muted-foreground space-y-2 text-xs">
-        <li className="flex gap-2">
-          <span className="bg-muted text-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
-            1
-          </span>
-          <span>
-            <a
-              href="https://dashboard.ngrok.com/signup"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground inline-flex items-center gap-0.5 underline underline-offset-2"
-            >
-              Create a free ngrok account
-              <ArrowUpRight className="size-3" />
-            </a>
-          </span>
-        </li>
-        <li className="flex gap-2">
-          <span className="bg-muted text-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
-            2
-          </span>
-          <span>Copy your auth token from the dashboard</span>
-        </li>
-        <li className="flex gap-2">
-          <span className="bg-muted text-foreground inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
-            3
-          </span>
-          <span>Paste it above and toggle on</span>
-        </li>
-      </ol>
     </div>
   );
 }
