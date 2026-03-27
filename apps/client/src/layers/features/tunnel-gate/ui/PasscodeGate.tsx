@@ -67,6 +67,7 @@ export function PasscodeGate({ onSuccess }: PasscodeGateProps) {
           onChange={setValue}
           onComplete={handleComplete}
           disabled={isVerifying}
+          // eslint-disable-next-line jsx-a11y/no-autofocus -- Passcode gate is a modal blocker; auto-focus is the expected UX
           autoFocus
         >
           <InputOTPGroup>

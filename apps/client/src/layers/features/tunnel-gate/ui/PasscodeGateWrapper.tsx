@@ -18,14 +18,13 @@ interface PasscodeGateWrapperProps {
  */
 export function PasscodeGateWrapper({ children }: PasscodeGateWrapperProps) {
   const transport = useTransport();
-  const [state, setState] = useState<GateState>('checking');
+  const isLocalhost =
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const [state, setState] = useState<GateState>(isLocalhost ? 'unlocked' : 'checking');
 
   useEffect(() => {
     // Only gate if we're on a tunnel URL (not localhost)
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      setState('unlocked');
-      return;
-    }
+    if (isLocalhost) return;
 
     transport
       .checkTunnelSession()
@@ -40,7 +39,7 @@ export function PasscodeGateWrapper({ children }: PasscodeGateWrapperProps) {
         // If session check fails, fail-open to avoid locking out users
         setState('unlocked');
       });
-  }, [transport]);
+  }, [transport, isLocalhost]);
 
   if (state === 'checking') {
     // Brief blank during session check

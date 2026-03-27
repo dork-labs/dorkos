@@ -14,6 +14,9 @@ const CwdChangedBodySchema = z.object({
   cwd: z.string().nullable(),
 });
 
+/** Validates extension IDs match the manifest schema pattern (kebab-case alphanumeric). */
+const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
+
 /**
  * Create the extensions router.
  *
@@ -43,6 +46,7 @@ export function createExtensionsRouter(
   router.post('/:id/enable', async (req, res) => {
     try {
       const { id } = req.params;
+      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
       const result = await extensionManager.enable(id);
       if (!result) {
         return res.status(404).json({ error: `Extension '${id}' not found or cannot be enabled` });
@@ -58,6 +62,7 @@ export function createExtensionsRouter(
   router.post('/:id/disable', async (req, res) => {
     try {
       const { id } = req.params;
+      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
       const result = await extensionManager.disable(id);
       if (!result) {
         return res.status(404).json({ error: `Extension '${id}' not found` });
@@ -111,6 +116,7 @@ export function createExtensionsRouter(
   router.get('/:id/bundle', async (req, res) => {
     try {
       const { id } = req.params;
+      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
       const bundle = await extensionManager.readBundle(id);
       if (!bundle) {
         return res.status(404).json({ error: `Bundle not available for '${id}'` });
@@ -128,6 +134,7 @@ export function createExtensionsRouter(
   router.get('/:id/data', async (req, res) => {
     try {
       const { id } = req.params;
+      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
       const dataPath = resolveDataPath(id, extensionManager, dorkHome, getCwd);
       if (!dataPath) {
         return res.status(404).json({ error: `Extension '${id}' not found` });
@@ -150,6 +157,7 @@ export function createExtensionsRouter(
   router.put('/:id/data', async (req, res) => {
     try {
       const { id } = req.params;
+      if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
       const dataPath = resolveDataPath(id, extensionManager, dorkHome, getCwd);
       if (!dataPath) {
         return res.status(404).json({ error: `Extension '${id}' not found` });

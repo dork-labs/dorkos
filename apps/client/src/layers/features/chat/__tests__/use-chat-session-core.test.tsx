@@ -1,13 +1,16 @@
+import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useChatSession } from '../model/use-chat-session';
 import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
+import type { Transport } from '@dorkos/shared/transport';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   MockEventSource,
   resetUuidCounter,
   createWrapper,
-  createWrapperWithClient,
   createSendMessageMock,
 } from './chat-session-test-helpers';
 
@@ -639,8 +642,21 @@ describe('useChatSession — core', () => {
       const sendMessage = createSendMessageMock([
         { type: 'done', data: { sessionId: 'spec-uuid' } } as StreamEvent,
       ]);
-      const transport = createMockTransport({ sendMessage });
-      const { wrapper, queryClient } = createWrapperWithClient(transport);
+      const mockTransport = createMockTransport({ sendMessage });
+
+      // Use Infinity gcTime so the optimistically inserted session data
+      // survives async test execution (gcTime: 0 causes immediate GC
+      // for queries with no active useQuery observer).
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={mockTransport as unknown as Transport}>
+            {children}
+          </TransportProvider>
+        </QueryClientProvider>
+      );
 
       const { result } = renderHook(() => useChatSession('spec-uuid'), {
         wrapper,
@@ -665,8 +681,21 @@ describe('useChatSession — core', () => {
       const sendMessage = createSendMessageMock([
         { type: 'done', data: { sessionId: 'existing-id' } } as StreamEvent,
       ]);
-      const transport = createMockTransport({ sendMessage });
-      const { wrapper, queryClient } = createWrapperWithClient(transport);
+      const mockTransport = createMockTransport({ sendMessage });
+
+      // Use Infinity gcTime so the pre-populated sessions data survives
+      // async test execution (the default gcTime: 0 causes immediate GC
+      // for queries with no active useQuery observer).
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      });
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={mockTransport as unknown as Transport}>
+            {children}
+          </TransportProvider>
+        </QueryClientProvider>
+      );
 
       // Pre-populate session cache
       queryClient.setQueryData(

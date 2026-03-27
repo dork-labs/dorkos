@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
   ScrollArea,
 } from '@/layers/shared/ui';
-import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { formatRelativeTime } from '@/layers/shared/lib';
 import type { ChipState } from '@/layers/entities/agent';
 import type { PulseRun, PulseSchedule } from '@dorkos/shared/types';
 

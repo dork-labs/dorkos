@@ -265,7 +265,9 @@ async function start() {
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
     };
-    claudeRuntime.setMcpServerFactory(() => ({ dorkos: createDorkOsToolServer(mcpToolDeps) }));
+    claudeRuntime.setMcpServerFactory((session) => ({
+      dorkos: createDorkOsToolServer(mcpToolDeps, session),
+    }));
 
     const mcpAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
     // Mount external MCP server at /mcp (protocol endpoint, not REST API)

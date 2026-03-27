@@ -2,7 +2,6 @@ import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-a
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
 import { configManager } from '../core/config-manager.js';
-import { logger } from '../../lib/logger.js';
 
 /** Strip server-internal fields from ExtensionRecord for client consumption. */
 function toPublic(record: ExtensionRecord): ExtensionRecordPublic {
@@ -100,15 +99,7 @@ export class ExtensionManager {
       return null;
     }
 
-    // Add to enabled list in config
-    const config = configManager.get('extensions');
-    if (!config.enabled.includes(id)) {
-      configManager.set('extensions', {
-        enabled: [...config.enabled, id],
-      });
-    }
-
-    // Update status and trigger compilation
+    // Trigger compilation before persisting to config — only persist on success
     record.status = 'enabled';
     const compileResult = await this.compiler.compile(record);
 
@@ -121,11 +112,20 @@ export class ExtensionManager {
       };
       record.sourceHash = compileResult.sourceHash;
       record.bundleReady = false;
+      // Do NOT persist to config — compilation failed
     } else {
       record.status = 'compiled';
       record.sourceHash = compileResult.sourceHash;
       record.bundleReady = true;
       record.error = undefined;
+
+      // Only persist to config on successful compilation
+      const config = configManager.get('extensions');
+      if (!config.enabled.includes(id)) {
+        configManager.set('extensions', {
+          enabled: [...config.enabled, id],
+        });
+      }
     }
 
     return { extension: toPublic(record), reloadRequired: true };

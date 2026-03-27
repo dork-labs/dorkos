@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { Session } from '@dorkos/shared/types';
 import type { PulseRun } from '@dorkos/shared/types';
@@ -63,9 +63,16 @@ function makeRun(overrides: Partial<PulseRun> = {}): PulseRun {
 
 describe('useActivityFeed', () => {
   beforeEach(() => {
+    // Pin time to noon to avoid midnight boundary issues with "Today" grouping
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-27T12:00:00'));
     vi.clearAllMocks();
     mockSessions.mockReturnValue({ sessions: undefined });
     mockUseRuns.mockReturnValue({ data: undefined });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns empty groups when no data exists', () => {

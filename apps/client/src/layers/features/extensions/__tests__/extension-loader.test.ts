@@ -36,6 +36,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
       'command-palette.items',
     ] as const) as ExtensionAPIDeps['availableSlots'],
     registerCommandHandler: vi.fn(),
+    unregisterCommandHandler: vi.fn(),
     ...overrides,
   };
 }

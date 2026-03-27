@@ -164,7 +164,7 @@ type AgentFilterDefs = typeof agentFilterSchema extends { definitions: infer D }
  * so the playground works outside TanStack Router.
  */
 function useMockFilterState(): UseFilterStateReturn<AgentFilterDefs> {
-  const { definitions, defaultValues } = agentFilterSchema;
+  const { defaultValues } = agentFilterSchema;
 
   const [values, setValues] = useState<FilterValues<AgentFilterDefs>>(
     () => defaultValues as FilterValues<AgentFilterDefs>

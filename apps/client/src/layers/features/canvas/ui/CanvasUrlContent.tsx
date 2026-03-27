@@ -4,6 +4,26 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 /** Protocols blocked from loading in the canvas iframe. */
 const BLOCKED_PROTOCOLS = ['javascript:', 'data:', 'file:', 'blob:'];
 
+/** Sandbox tokens allowed for canvas iframes. Prevents privilege escalation via agent-supplied values. */
+const ALLOWED_SANDBOX_TOKENS = new Set([
+  'allow-scripts',
+  'allow-same-origin',
+  'allow-popups',
+  'allow-forms',
+  'allow-downloads',
+  'allow-modals',
+]);
+
+const DEFAULT_SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-forms';
+
+/** Filter sandbox tokens to only permitted values. */
+function sanitizeSandbox(raw: string): string {
+  return raw
+    .split(' ')
+    .filter((token) => ALLOWED_SANDBOX_TOKENS.has(token))
+    .join(' ');
+}
+
 /**
  * Validate that a URL is safe to load in a sandboxed iframe.
  *
@@ -36,7 +56,7 @@ export function CanvasUrlContent({ content }: CanvasUrlContentProps) {
     );
   }
 
-  const sandbox = content.sandbox ?? 'allow-scripts allow-same-origin allow-popups allow-forms';
+  const sandbox = content.sandbox ? sanitizeSandbox(content.sandbox) : DEFAULT_SANDBOX;
 
   return (
     <iframe

@@ -49,7 +49,7 @@ export interface MessageSenderOpts {
   bindingRouter?: BindingRouter;
   bindingStore?: BindingStore;
   adapterManager?: AdapterManager;
-  mcpServerFactory?: (() => Record<string, McpServerConfig>) | null;
+  mcpServerFactory?: ((session: AgentSession) => Record<string, McpServerConfig>) | null;
   onModelsReceived?: (
     models: Array<{ value: string; displayName: string; description: string }>
   ) => void;
@@ -219,7 +219,7 @@ export async function* executeSdkQuery(
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
   if (opts.mcpServerFactory) {
-    sdkOptions.mcpServers = opts.mcpServerFactory();
+    sdkOptions.mcpServers = opts.mcpServerFactory(session);
   }
 
   // Apply per-agent MCP tool filtering (undefined = no filter = all tools available)

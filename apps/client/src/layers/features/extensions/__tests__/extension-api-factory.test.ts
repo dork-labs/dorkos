@@ -50,6 +50,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
       'session.canvas',
     ] as const),
     registerCommandHandler: vi.fn(),
+    unregisterCommandHandler: vi.fn(),
     ...overrides,
   };
 }
@@ -166,7 +167,11 @@ describe('createExtensionAPI', () => {
       const { api, cleanups } = createExtensionAPI('my-ext', deps);
 
       api.registerCommand('do-thing', 'Label', vi.fn());
-      expect(cleanups).toContain(unsub);
+      // Cleanup is a wrapper that calls both registry unsub and command handler removal
+      expect(cleanups).toHaveLength(1);
+      cleanups[0]();
+      expect(unsub).toHaveBeenCalled();
+      expect(deps.unregisterCommandHandler).toHaveBeenCalledWith('ext:my-ext:do-thing');
     });
   });
 
@@ -342,6 +347,7 @@ describe('createExtensionAPI', () => {
         'fetch',
         vi.fn().mockResolvedValue({
           status: 200,
+          ok: true,
           json: vi.fn().mockResolvedValue(payload),
         })
       );
@@ -374,7 +380,7 @@ describe('createExtensionAPI', () => {
 
   // 12. saveData
   it('saveData PUTs JSON to /api/extensions/{id}/data', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200 }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }));
     const { api } = createExtensionAPI('my-ext', deps);
     const data = { count: 42 };
 
@@ -450,7 +456,14 @@ describe('createExtensionAPI', () => {
       api.registerCommand('cmd', 'Label', vi.fn());
       api.registerSettingsTab('prefs', 'Prefs', () => null);
 
-      expect(cleanups).toEqual([unsub1, unsub2, unsub3]);
+      expect(cleanups).toHaveLength(3);
+      // registerComponent and registerSettingsTab push raw unsubs
+      expect(cleanups[0]).toBe(unsub1);
+      expect(cleanups[2]).toBe(unsub3);
+      // registerCommand pushes a wrapper that also unregisters the handler
+      cleanups[1]();
+      expect(unsub2).toHaveBeenCalled();
+      expect(deps.unregisterCommandHandler).toHaveBeenCalledWith('ext:my-ext:cmd');
     });
 
     it('starts with an empty cleanups array', () => {

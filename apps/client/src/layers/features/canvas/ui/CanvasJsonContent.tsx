@@ -23,9 +23,16 @@ interface JsonNodeProps {
   keyName?: string;
 }
 
+/** Hard depth limit to prevent stack overflow on deeply nested agent-supplied JSON. */
+const MAX_DEPTH = 20;
+
 function JsonNode({ value, depth, keyName }: JsonNodeProps) {
   const [collapsed, setCollapsed] = useState(depth > 2);
   const toggle = useCallback(() => setCollapsed((c) => !c), []);
+
+  if (depth >= MAX_DEPTH) {
+    return <JsonLeaf keyName={keyName} value="[max depth]" className="text-muted-foreground" />;
+  }
 
   if (value === null) {
     return <JsonLeaf keyName={keyName} value="null" className="text-muted-foreground" />;

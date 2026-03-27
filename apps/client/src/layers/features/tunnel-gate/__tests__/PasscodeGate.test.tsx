@@ -15,7 +15,7 @@ vi.mock('@dorkos/icons/logos', () => ({
 // are absent in jsdom — mocking the module sidesteps those browser APIs.
 let capturedOnComplete: ((value: string) => void) | undefined;
 let capturedDisabled = false;
-let capturedValue = '';
+let _capturedValue = '';
 
 vi.mock('@/layers/shared/ui/input-otp', () => ({
   InputOTP: ({
@@ -34,7 +34,7 @@ vi.mock('@/layers/shared/ui/input-otp', () => ({
   }) => {
     capturedOnComplete = onComplete;
     capturedDisabled = disabled ?? false;
-    capturedValue = value ?? '';
+    _capturedValue = value ?? '';
     return (
       <div data-testid="input-otp" data-disabled={disabled} data-value={value}>
         <input
@@ -77,7 +77,7 @@ afterEach(() => {
   vi.clearAllMocks();
   capturedOnComplete = undefined;
   capturedDisabled = false;
-  capturedValue = '';
+  _capturedValue = '';
 });
 
 function createWrapper(transport = createMockTransport()) {

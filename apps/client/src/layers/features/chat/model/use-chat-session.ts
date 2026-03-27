@@ -26,10 +26,12 @@ import { classifyTransportError } from './classify-transport-error';
 /** Snapshot the current Zustand UI state for agent awareness. */
 function snapshotUiState(activeCwd: string | null): UiState {
   const s = useAppStore.getState();
+  // Map store sidebar tab to UiState tab enum — only 'sessions' maps directly
+  const sidebarTab = s.sidebarActiveTab === 'sessions' ? 'sessions' : null;
   return {
     canvas: {
-      open: false, // Canvas fields not yet on store (task 5.1)
-      contentType: null,
+      open: s.canvasOpen,
+      contentType: s.canvasContent?.type ?? null,
     },
     panels: {
       settings: s.settingsOpen,
@@ -39,7 +41,7 @@ function snapshotUiState(activeCwd: string | null): UiState {
     },
     sidebar: {
       open: s.sidebarOpen,
-      activeTab: null, // Store tab type differs from UiState tab enum; null until aligned
+      activeTab: sidebarTab,
     },
     agent: {
       id: null, // Derived from session, not stored client-side

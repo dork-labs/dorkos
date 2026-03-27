@@ -162,7 +162,9 @@ function HighlightedTextVariants() {
       <ShowcaseDemo>
         <div className="space-y-2 text-sm">
           <HighlightedText text="Frontend App" indices={[[0, 4]]} />
-          <div className="text-muted-foreground text-xs">indices: [[0, 4]] — "Front" bolded</div>
+          <div className="text-muted-foreground text-xs">
+            indices: [[0, 4]] — &ldquo;Front&rdquo; bolded
+          </div>
         </div>
       </ShowcaseDemo>
 
@@ -280,6 +282,8 @@ function FooterStates() {
 // Edge cases showcase
 // ---------------------------------------------------------------------------
 
+const FIVE_MINUTES_AGO = new Date(Date.now() - 5 * 60_000).toISOString();
+
 function EdgeCases() {
   return (
     <div className="space-y-4">
@@ -341,7 +345,7 @@ function EdgeCases() {
                 {
                   id: 'sess-untitled',
                   title: null,
-                  lastActive: new Date(Date.now() - 5 * 60000).toISOString(),
+                  lastActive: FIVE_MINUTES_AGO,
                 },
               ]}
             />

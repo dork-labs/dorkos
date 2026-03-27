@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 
+/** Response shape from enable/disable endpoints. */
+interface ExtensionActionResponse {
+  extension: ExtensionRecordPublic;
+  reloadRequired: boolean;
+}
+
 /**
  * TanStack Query key factory for extension queries.
  *
@@ -42,11 +48,11 @@ export function useExtensions() {
 export function useEnableExtension() {
   const queryClient = useQueryClient();
 
-  return useMutation<ExtensionRecordPublic, Error, string>({
+  return useMutation<ExtensionActionResponse, Error, string>({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/extensions/${id}/enable`, { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to enable extension '${id}': ${res.status}`);
-      return res.json() as Promise<ExtensionRecordPublic>;
+      return res.json() as Promise<ExtensionActionResponse>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
@@ -63,11 +69,11 @@ export function useEnableExtension() {
 export function useDisableExtension() {
   const queryClient = useQueryClient();
 
-  return useMutation<ExtensionRecordPublic, Error, string>({
+  return useMutation<ExtensionActionResponse, Error, string>({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/extensions/${id}/disable`, { method: 'POST' });
       if (!res.ok) throw new Error(`Failed to disable extension '${id}': ${res.status}`);
-      return res.json() as Promise<ExtensionRecordPublic>;
+      return res.json() as Promise<ExtensionActionResponse>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });

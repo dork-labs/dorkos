@@ -60,9 +60,13 @@ export function createExtensionAPI(
         category: 'feature',
       };
       const unsub = deps.registry.register('command-palette.items', contribution);
-      cleanups.push(unsub);
       deps.registerCommandHandler(actionId, callback);
-      return unsub;
+      const fullCleanup = () => {
+        unsub();
+        deps.unregisterCommandHandler(actionId);
+      };
+      cleanups.push(fullCleanup);
+      return fullCleanup;
     },
 
     registerDialog(id: string, component: ComponentType): { open: () => void; close: () => void } {
@@ -145,15 +149,17 @@ export function createExtensionAPI(
     async loadData<T>(): Promise<T | null> {
       const res = await fetch(`/api/extensions/${extId}/data`);
       if (res.status === 204) return null;
+      if (!res.ok) throw new Error(`loadData failed: ${res.status}`);
       return res.json() as Promise<T>;
     },
 
     async saveData<T>(data: T): Promise<void> {
-      await fetch(`/api/extensions/${extId}/data`, {
+      const res = await fetch(`/api/extensions/${extId}/data`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      if (!res.ok) throw new Error(`saveData failed: ${res.status}`);
     },
 
     notify(message: string, options?: { type?: 'info' | 'success' | 'error' }): void {

@@ -38,4 +38,6 @@ export interface ExtensionAPIDeps {
   availableSlots: Set<ExtensionPointId>;
   /** Register a handler for a command palette action ID. */
   registerCommandHandler: (actionId: string, callback: () => void) => void;
+  /** Remove a previously registered command handler. */
+  unregisterCommandHandler: (actionId: string) => void;
 }

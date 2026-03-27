@@ -96,7 +96,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
   private readonly cwd: string;
   private readonly claudeCliPath: string | undefined;
-  private mcpServerFactory: (() => Record<string, McpServerConfig>) | null = null;
+  private mcpServerFactory:
+    | ((session: import('./agent-types.js').AgentSession) => Record<string, McpServerConfig>)
+    | null = null;
   private cachedModels: ModelOption[] | null = null;
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
   private cachedSdkCommands: SdkCommandEntry[] | null = null;
@@ -166,9 +168,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * the same instance across concurrent queries causes "Already connected to a
    * transport" errors.
    *
-   * @param factory - A function that returns a fresh McpServerConfig record
+   * @param factory - A function that accepts a session and returns a fresh McpServerConfig record
    */
-  setMcpServerFactory(factory: () => Record<string, McpServerConfig>): void {
+  setMcpServerFactory(
+    factory: (session: import('./agent-types.js').AgentSession) => Record<string, McpServerConfig>
+  ): void {
     this.mcpServerFactory = factory;
   }
 
@@ -641,9 +645,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // Tool server (optional interface methods)
   // ---------------------------------------------------------------------------
 
-  /** Return the MCP tool server config. */
+  /** Return the MCP tool server config (stub session — used for introspection only). */
   getToolServerConfig(): Record<string, unknown> {
-    return this.mcpServerFactory ? this.mcpServerFactory() : {};
+    if (!this.mcpServerFactory) return {};
+    // Introspection call — no real session, UI tools get stubs
+    const stubSession = {
+      eventQueue: [],
+      uiState: undefined,
+      pendingInteractions: new Map(),
+      permissionMode: 'default',
+      lastActivity: Date.now(),
+      hasStarted: false,
+    } as unknown as import('./agent-types.js').AgentSession;
+    return this.mcpServerFactory(stubSession);
   }
 
   // ---------------------------------------------------------------------------

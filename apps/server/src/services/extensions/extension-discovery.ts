@@ -93,7 +93,7 @@ export class ExtensionDiscovery {
     const records: ExtensionRecord[] = [];
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
 
       const extDir = path.join(dir, entry.name);
       const record = await this.readExtension(extDir, entry.name, scope);
@@ -125,7 +125,7 @@ export class ExtensionDiscovery {
       if (!result.success) {
         return {
           id: dirName,
-          manifest: parsed as ExtensionManifest,
+          manifest: { id: dirName, name: dirName, version: '0.0.0' },
           status: 'invalid',
           scope,
           path: extDir,

@@ -118,6 +118,9 @@ const extensionDeps: ExtensionAPIDeps = {
   registerCommandHandler: (actionId: string, callback: () => void) => {
     commandHandlers.set(actionId, callback);
   },
+  unregisterCommandHandler: (actionId: string) => {
+    commandHandlers.delete(actionId);
+  },
 };
 
 // Register all built-in features into the extension registry

@@ -66,14 +66,22 @@ export {
   createMeshInspectHandler,
   createMeshQueryTopologyHandler,
 } from './mesh-tools.js';
-export { createControlUiHandler, createGetUiStateHandler } from './ui-tools.js';
+export { createControlUiHandler, createGetUiStateHandler, type UiToolSession } from './ui-tools.js';
 
 /**
  * Create the DorkOS MCP tool server with all registered tools.
- * Called once at server startup. The returned server instance is injected
- * into AgentManager and passed to every SDK query() call.
+ *
+ * Called per SDK query (via `mcpServerFactory`) so each query gets a fresh
+ * MCP server instance. When `session` is provided, UI tools emit real SSE
+ * events and read actual state; without it, they use stubs (external MCP only).
+ *
+ * @param deps - Shared tool dependencies (relay, pulse, mesh, etc.)
+ * @param session - Per-query session for UI tool event emission and state access
  */
-export function createDorkOsToolServer(deps: McpToolDeps) {
+export function createDorkOsToolServer(
+  deps: McpToolDeps,
+  session?: import('./ui-tools.js').UiToolSession
+) {
   return createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
@@ -86,7 +94,7 @@ export function createDorkOsToolServer(deps: McpToolDeps) {
       ...getTraceTools(deps),
       ...getMeshTools(deps),
       ...getAgentTools(deps),
-      ...getUiTools(deps),
+      ...getUiTools(deps, session),
     ],
   });
 }

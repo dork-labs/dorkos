@@ -10,7 +10,7 @@ export const ExtensionManifestSchema = z.object({
   /** Human-readable display name. */
   name: z.string().min(1),
   /** Semver version string. */
-  version: z.string().regex(/^\d+\.\d+\.\d+/),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/),
   /** Short description shown in settings UI. */
   description: z.string().optional(),
   /** Author name or identifier. */

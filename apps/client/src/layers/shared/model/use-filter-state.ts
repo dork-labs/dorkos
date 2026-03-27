@@ -143,11 +143,14 @@ export function useFilterState<
   // Input values — may lead committed values during debounce window
   const [inputValues, setInputValues] = useState<FilterValues<TDefs>>(values);
 
-  // Sync inputValues when URL changes externally (e.g. browser back/forward)
+  // Sync inputValues when URL changes externally (e.g. browser back/forward).
+  // The synchronous setState is intentional — this effect runs only when URL
+  // search params change (external navigation), not on every render.
   const prevSearchRef = useRef(search);
   useEffect(() => {
     if (prevSearchRef.current !== search) {
       prevSearchRef.current = search;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncing with external URL state (browser back/forward)
       setInputValues(deserializeAll(definitions, search));
     }
   }, [search, definitions]);

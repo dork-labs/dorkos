@@ -72,16 +72,8 @@ export function createGetUiStateHandler(session: UiToolSession) {
   };
 }
 
-/** Returns the UI control tool definitions for registration with the MCP server. */
-export function getUiTools(_deps: McpToolDeps) {
-  // These tools need session context at call time, so they use a deferred
-  // session binding pattern. The actual handlers are created per-session in
-  // the interactive-handlers layer. Here we register stub tools that return
-  // helpful guidance — the real execution is wired through canUseTool.
-  return [
-    tool(
-      'control_ui',
-      `Control the DorkOS client UI. Actions:
+/** Tool description for control_ui (shared between stub and session-bound). */
+const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_panel / close_panel / toggle_panel: { panel: "settings"|"pulse"|"relay"|"mesh"|"picker" }
 - open_sidebar / close_sidebar
 - switch_sidebar_tab: { tab: "sessions"|"agents" }
@@ -92,41 +84,55 @@ export function getUiTools(_deps: McpToolDeps) {
 - set_theme: { theme: "light"|"dark" }
 - scroll_to_message: { messageId?: string } (omit for bottom)
 - switch_agent: { cwd: string }
-- open_command_palette`,
-      {
-        action: z.string().describe('The UI action to perform'),
-        panel: z.string().optional().describe('Panel ID for panel commands'),
-        tab: z.string().optional().describe('Tab name for switch_sidebar_tab'),
-        content: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe('Canvas content for open_canvas/update_canvas'),
-        preferredWidth: z
-          .number()
-          .optional()
-          .describe('Canvas width percentage (20-80) for open_canvas'),
-        message: z.string().optional().describe('Toast message for show_toast'),
-        level: z.string().optional().describe('Toast level for show_toast'),
-        description: z.string().optional().describe('Toast description for show_toast'),
-        theme: z.string().optional().describe('Theme for set_theme'),
-        messageId: z.string().optional().describe('Message ID for scroll_to_message'),
-        cwd: z.string().optional().describe('Working directory for switch_agent'),
-      },
-      async (input) => {
-        // This stub handler is the fallback — the real execution happens via
-        // the canUseTool hook which intercepts control_ui calls, validates
-        // through UiCommandSchema, and emits events to the session queue.
-        return jsonContent({ success: true, action: input.action });
-      }
+- open_command_palette`;
+
+/** Shared input schema for control_ui tool. */
+const CONTROL_UI_INPUT = {
+  action: z.string().describe('The UI action to perform'),
+  panel: z.string().optional().describe('Panel ID for panel commands'),
+  tab: z.string().optional().describe('Tab name for switch_sidebar_tab'),
+  content: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Canvas content for open_canvas/update_canvas'),
+  preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
+  message: z.string().optional().describe('Toast message for show_toast'),
+  level: z.string().optional().describe('Toast level for show_toast'),
+  description: z.string().optional().describe('Toast description for show_toast'),
+  theme: z.string().optional().describe('Theme for set_theme'),
+  messageId: z.string().optional().describe('Message ID for scroll_to_message'),
+  cwd: z.string().optional().describe('Working directory for switch_agent'),
+} as const;
+
+/**
+ * Returns the UI control tool definitions for registration with the MCP server.
+ *
+ * When `session` is provided (per-query), tool handlers emit real SSE events
+ * and read actual UI state. Without a session, stub handlers return defaults
+ * (used only for the external MCP server at `/mcp`).
+ *
+ * @param _deps - Shared tool dependencies (unused by UI tools)
+ * @param session - Per-query session for event emission and state access
+ */
+export function getUiTools(_deps: McpToolDeps, session?: UiToolSession) {
+  const controlUiHandler = session
+    ? createControlUiHandler(session)
+    : async (input: Record<string, unknown>) =>
+        jsonContent({ success: true, action: (input as { action: string }).action });
+
+  const getUiStateHandler = session
+    ? createGetUiStateHandler(session)
+    : async () => jsonContent(DEFAULT_UI_STATE);
+
+  return [
+    tool('control_ui', CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT, async (input) =>
+      controlUiHandler(input)
     ),
     tool(
       'get_ui_state',
       'Get the current DorkOS UI state — which panels are open, sidebar tab, canvas state, and active agent. Use after control_ui to verify the result, or to make UI decisions based on current state.',
       {},
-      async () => {
-        // Stub — real execution is wired through canUseTool with session access.
-        return jsonContent(DEFAULT_UI_STATE);
-      }
+      async () => getUiStateHandler()
     ),
   ];
 }

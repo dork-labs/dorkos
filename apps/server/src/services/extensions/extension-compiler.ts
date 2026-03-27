@@ -73,6 +73,9 @@ export class ExtensionCompiler {
    */
   async readBundle(extId: string, sourceHash: string): Promise<string | null> {
     const cachedPath = path.join(this.cacheDir, `${extId}.${sourceHash}.js`);
+    if (!cachedPath.startsWith(this.cacheDir + path.sep)) {
+      throw new Error('Attempted path escape in cache lookup');
+    }
     try {
       return await fs.readFile(cachedPath, 'utf-8');
     } catch {
