@@ -50,7 +50,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "draft",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -77,7 +77,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "draft",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -173,33 +173,6 @@
       "specSlug": "agent-creation-and-templates"
     },
     {
-      "number": 183,
-      "slug": "content-type-classified-tool-output-rendering",
-      "title": "Content-Type Classified Tool Output Rendering",
-      "status": "proposed",
-      "created": "2026-03-23",
-      "extractedFrom": "tool-call-display-overhaul",
-      "specSlug": "tool-call-display-overhaul"
-    },
-    {
-      "number": 182,
-      "slug": "shared-message-splitting-utility",
-      "title": "Shared Message Splitting Utility Across Relay Adapters",
-      "status": "proposed",
-      "created": "2026-03-22",
-      "extractedFrom": "slack-adapter-world-class",
-      "specSlug": "slack-adapter-world-class"
-    },
-    {
-      "number": 181,
-      "slug": "thread-aware-respond-mode-default",
-      "title": "Default Slack Adapter to Thread-Aware Respond Mode",
-      "status": "proposed",
-      "created": "2026-03-22",
-      "extractedFrom": "slack-adapter-world-class",
-      "specSlug": "slack-adapter-world-class"
-    },
-    {
       "number": 180,
       "slug": "adopt-tanstack-form",
       "title": "Adopt TanStack Form for Submit-Lifecycle Forms",
@@ -237,42 +210,6 @@
       "specSlug": "a2a-channels-interoperability"
     },
     {
-      "number": 176,
-      "slug": "use-a2a-js-sdk-for-a2a-protocol-implementation",
-      "title": "Use @a2a-js/sdk for A2A Protocol Implementation",
-      "status": "proposed",
-      "created": "2026-03-22",
-      "extractedFrom": "a2a-channels-interoperability",
-      "specSlug": "a2a-channels-interoperability"
-    },
-    {
-      "number": 175,
-      "slug": "use-a2a-protocol-as-external-gateway-only",
-      "title": "Use A2A Protocol as External Gateway Only",
-      "status": "proposed",
-      "created": "2026-03-22",
-      "extractedFrom": "a2a-channels-interoperability",
-      "specSlug": "a2a-channels-interoperability"
-    },
-    {
-      "number": 173,
-      "slug": "static-template-rendering-for-personality-traits",
-      "title": "Static Template Rendering for Personality Traits",
-      "status": "proposed",
-      "created": "2026-03-22",
-      "extractedFrom": "agent-personality-convention-files",
-      "specSlug": "agent-personality-convention-files"
-    },
-    {
-      "number": 172,
-      "slug": "adopt-soul-nope-agent-convention-files",
-      "title": "Adopt SOUL.md and NOPE.md as Agent Convention Files",
-      "status": "proposed",
-      "created": "2026-03-22",
-      "extractedFrom": "agent-personality-convention-files",
-      "specSlug": "agent-personality-convention-files"
-    },
-    {
       "number": 171,
       "slug": "enable-relay-and-pulse-by-default",
       "title": "Enable Relay and Pulse by Default",
@@ -289,24 +226,6 @@
       "created": "2026-03-21",
       "extractedFrom": "relay-subject-folder-names",
       "specSlug": "relay-subject-folder-names"
-    },
-    {
-      "number": 168,
-      "slug": "static-category-subfolder-to-avoid-nextjs-route-conflict",
-      "title": "Use Static category/ Subfolder Prefix to Avoid Next.js Dynamic Route Conflict",
-      "status": "proposed",
-      "created": "2026-03-21",
-      "extractedFrom": "site-feature-category-pages",
-      "specSlug": "site-feature-category-pages"
-    },
-    {
-      "number": 167,
-      "slug": "search-params-for-sheet-detail-state",
-      "title": "Use Search Params for Sheet Detail State",
-      "status": "proposed",
-      "created": "2026-03-20",
-      "extractedFrom": "attention-item-detail-navigation",
-      "specSlug": "attention-item-detail-navigation"
     },
     {
       "number": 166,
@@ -330,7 +249,7 @@
       "number": 164,
       "slug": "reuse-entity-caches-no-dashboard-polling",
       "title": "Reuse Entity Query Caches Without Dedicated Dashboard Polling",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-content",
       "specSlug": "dashboard-content"
@@ -339,7 +258,7 @@
       "number": 163,
       "slug": "zero-dom-conditional-attention-section",
       "title": "Zero-DOM Conditional Rendering for Needs Attention Section",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-content",
       "specSlug": "dashboard-content"
@@ -348,7 +267,7 @@
       "number": 162,
       "slug": "client-side-activity-feed-aggregation",
       "title": "Client-Side Activity Feed Aggregation Over Server-Side Event Stream",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-content",
       "specSlug": "dashboard-content"
@@ -393,7 +312,7 @@
       "number": 157,
       "slug": "pathless-layout-route-for-app-shell",
       "title": "Use Pathless Layout Route for Shared App Shell",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route"
@@ -402,7 +321,7 @@
       "number": 156,
       "slug": "code-based-routing-over-file-based",
       "title": "Use Code-Based Route Definitions Over File-Based Routing",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route"
@@ -411,7 +330,7 @@
       "number": 155,
       "slug": "replace-nuqs-with-tanstack-router-search-params",
       "title": "Replace nuqs with TanStack Router Search Params",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route"
@@ -420,7 +339,7 @@
       "number": 154,
       "slug": "adopt-tanstack-router-for-client-routing",
       "title": "Adopt TanStack Router for Client-Side Routing",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route"
@@ -508,33 +427,6 @@
       "specSlug": "form-field-standardization"
     },
     {
-      "number": 141,
-      "slug": "use-shadcn-field-for-form-layout",
-      "title": "Use Shadcn Field for Form Layout Foundation",
-      "status": "proposed",
-      "created": "2026-03-18",
-      "extractedFrom": "form-field-standardization",
-      "specSlug": "form-field-standardization"
-    },
-    {
-      "number": 140,
-      "slug": "telegram-callback-id-lookup-map",
-      "title": "Use Ephemeral Lookup Map for Telegram Callback Data",
-      "status": "proposed",
-      "created": "2026-03-18",
-      "extractedFrom": "slack-tool-approval",
-      "specSlug": "slack-tool-approval"
-    },
-    {
-      "number": 139,
-      "slug": "relay-bus-approval-routing",
-      "title": "Route Chat Adapter Approvals via Relay Message Bus",
-      "status": "proposed",
-      "created": "2026-03-18",
-      "extractedFrom": "slack-tool-approval",
-      "specSlug": "slack-tool-approval"
-    },
-    {
       "number": 138,
       "slug": "whitelist-relay-adapter-event-filtering",
       "title": "Whitelist Relay Adapter Event Filtering",
@@ -542,15 +434,6 @@
       "created": "2026-03-17",
       "extractedFrom": "relay-adapter-event-whitelist",
       "specSlug": "relay-adapter-event-whitelist"
-    },
-    {
-      "number": 137,
-      "slug": "unified-input-zone-for-interactive-cards",
-      "title": "Unified Input Zone for Interactive Cards",
-      "status": "proposed",
-      "created": "2026-03-17",
-      "extractedFrom": "interactive-card-focus-navigation",
-      "specSlug": "interactive-card-focus-navigation"
     },
     {
       "number": 136,
@@ -574,7 +457,7 @@
       "number": 133,
       "slug": "semantic-health-status-over-raw-metrics",
       "title": "Semantic Health Status Over Raw Metrics",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-15",
       "extractedFrom": "relay-panel-redesign",
       "specSlug": "relay-panel-redesign"
@@ -583,7 +466,7 @@
       "number": 132,
       "slug": "two-tab-information-architecture-for-relay-panel",
       "title": "Two-Tab Information Architecture for Relay Panel",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-15",
       "extractedFrom": "relay-panel-redesign",
       "specSlug": "relay-panel-redesign"
@@ -592,7 +475,7 @@
       "number": 131,
       "slug": "binding-level-permissions-over-adapter-level",
       "title": "Binding-Level Permissions Over Adapter-Level Permissions",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-15",
       "extractedFrom": "relay-panel-redesign",
       "specSlug": "relay-panel-redesign"
@@ -605,24 +488,6 @@
       "created": "2026-03-14",
       "extractedFrom": "remove-binding-projectpath",
       "specSlug": "remove-binding-projectpath"
-    },
-    {
-      "number": 122,
-      "slug": "layered-adapter-documentation-system",
-      "title": "Layered Documentation System for Adapter Setup",
-      "status": "proposed",
-      "created": "2026-03-14",
-      "extractedFrom": "adapter-setup-experience",
-      "specSlug": "adapter-setup-experience"
-    },
-    {
-      "number": 121,
-      "slug": "file-based-adapter-documentation",
-      "title": "File-Based Adapter Documentation Over Inline Template Literals",
-      "status": "proposed",
-      "created": "2026-03-14",
-      "extractedFrom": "adapter-setup-experience",
-      "specSlug": "adapter-setup-experience"
     },
     {
       "number": 120,
@@ -646,7 +511,7 @@
       "number": 117,
       "slug": "direct-sse-as-sole-web-client-transport",
       "title": "Use Direct SSE as Sole Web Client Transport",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-12",
       "extractedFrom": "client-direct-sse",
       "specSlug": "client-direct-sse"
@@ -661,28 +526,10 @@
       "specSlug": "pulse-schedule-templates"
     },
     {
-      "number": 115,
-      "slug": "pending-user-content-ephemeral-state-boundary",
-      "title": "Separate pendingUserContent Ephemeral State from JSONL-Sourced Messages Array",
-      "status": "proposed",
-      "created": "2026-03-11",
-      "extractedFrom": "fix-chat-ui-reliability-bugs",
-      "specSlug": "fix-chat-ui-reliability-bugs"
-    },
-    {
-      "number": 114,
-      "slug": "client-only-part-id-for-streaming-key-stability",
-      "title": "Client-Only _partId Field for Stable React Keys in Streaming Text Parts",
-      "status": "proposed",
-      "created": "2026-03-11",
-      "extractedFrom": "fix-chat-ui-reliability-bugs",
-      "specSlug": "fix-chat-ui-reliability-bugs"
-    },
-    {
       "number": 110,
       "slug": "warning-level-api-version-checking",
       "title": "Warning-Level API Version Checking for Adapter Plugins",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-11",
       "extractedFrom": "relay-adapter-dx",
       "specSlug": "relay-adapter-dx"
@@ -691,7 +538,7 @@
       "number": 109,
       "slug": "optional-base-relay-adapter-class",
       "title": "Optional BaseRelayAdapter Abstract Class for Adapter DX",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-11",
       "extractedFrom": "relay-adapter-dx",
       "specSlug": "relay-adapter-dx"
@@ -805,24 +652,6 @@
       "specSlug": "fix-chat-streaming-history-consistency"
     },
     {
-      "number": 91,
-      "slug": "callback-based-watchsession-for-session-sync",
-      "title": "Callback-Based watchSession for Session Sync",
-      "status": "proposed",
-      "created": "2026-03-06",
-      "extractedFrom": "agent-runtime-review-remediation",
-      "specSlug": "agent-runtime-review-remediation"
-    },
-    {
-      "number": 90,
-      "slug": "narrow-port-interfaces-for-cross-package-di",
-      "title": "Narrow Port Interfaces for Cross-Package DI",
-      "status": "proposed",
-      "created": "2026-03-06",
-      "extractedFrom": "agent-runtime-review-remediation",
-      "specSlug": "agent-runtime-review-remediation"
-    },
-    {
       "number": 89,
       "slug": "sdk-import-confinement-via-lint-rule",
       "title": "Confine SDK Imports to Runtime Implementation via Lint Rule",
@@ -839,15 +668,6 @@
       "created": "2026-03-06",
       "extractedFrom": "eslint-per-package-config",
       "specSlug": "eslint-per-package-config"
-    },
-    {
-      "number": 83,
-      "slug": "subscribe-first-sse-handshake",
-      "title": "Subscribe-First SSE Handshake for Relay Delivery",
-      "status": "proposed",
-      "created": "2026-03-06",
-      "extractedFrom": "fix-relay-sse-delivery-pipeline",
-      "specSlug": "fix-relay-sse-delivery-pipeline"
     },
     {
       "number": 82,
@@ -965,7 +785,7 @@
       "number": 11,
       "slug": "use-nats-style-subject-matching",
       "title": "Use NATS-Style Hierarchical Subject Matching",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-core-library",
       "specSlug": "relay-core-library"
@@ -974,7 +794,7 @@
       "number": 12,
       "slug": "use-ulid-for-relay-message-ids",
       "title": "Use ULID for Relay Message IDs",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-core-library",
       "specSlug": "relay-core-library"
@@ -983,7 +803,7 @@
       "number": 13,
       "slug": "hybrid-maildir-sqlite-storage",
       "title": "Use Hybrid Maildir + SQLite for Relay Storage",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-core-library",
       "specSlug": "relay-core-library"
@@ -1019,7 +839,7 @@
       "number": 17,
       "slug": "standardize-subsystem-integration-pattern",
       "title": "Standardize Subsystem Integration Pattern Following Pulse",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-server-client-integration",
       "specSlug": "relay-server-client-integration"
@@ -1028,7 +848,7 @@
       "number": 18,
       "slug": "server-side-sse-subject-filtering",
       "title": "Use Server-Side Subject Filtering for Relay SSE Streams",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-server-client-integration",
       "specSlug": "relay-server-client-integration"
@@ -1037,7 +857,7 @@
       "number": 19,
       "slug": "use-grammy-for-telegram-adapter",
       "title": "Use grammY for Telegram Bot Integration",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters"
@@ -1046,7 +866,7 @@
       "number": 20,
       "slug": "adapter-registry-with-promise-allsettled",
       "title": "Use Adapter Registry Pattern with Promise.allSettled for Error Isolation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters"
@@ -1064,7 +884,7 @@
       "number": 22,
       "slug": "stripe-style-hmac-webhook-security",
       "title": "Use Stripe-Style HMAC-SHA256 for Webhook Security",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters"
@@ -1073,7 +893,7 @@
       "number": 23,
       "slug": "custom-async-bfs-for-agent-discovery",
       "title": "Use Custom Async BFS for Agent Discovery",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "mesh-core-library",
       "specSlug": "mesh-core-library"
@@ -1082,7 +902,7 @@
       "number": 24,
       "slug": "dorkos-native-agent-manifest-format",
       "title": "Use DorkOS-Native Agent Manifest at .dork/agent.json",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "mesh-core-library",
       "specSlug": "mesh-core-library"
@@ -1091,34 +911,16 @@
       "number": 25,
       "slug": "simple-json-columns-for-agent-registry",
       "title": "Use Simple JSON Columns for Agent Registry SQLite Schema",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "mesh-core-library",
       "specSlug": "mesh-core-library"
-    },
-    {
-      "number": 26,
-      "slug": "receipt-plus-sse-console-protocol",
-      "title": "Use Receipt+SSE Protocol for Console-via-Relay",
-      "status": "proposed",
-      "created": "2026-02-25",
-      "extractedFrom": "relay-convergence",
-      "specSlug": "relay-convergence"
     },
     {
       "number": 27,
       "slug": "message-receiver-bridge-pattern",
       "title": "Use MessageReceiver as Relay-to-AgentManager Bridge",
       "status": "superseded",
-      "created": "2026-02-25",
-      "extractedFrom": "relay-convergence",
-      "specSlug": "relay-convergence"
-    },
-    {
-      "number": 28,
-      "slug": "sqlite-trace-storage-in-relay-index",
-      "title": "Store Message Traces in Existing Relay SQLite Index",
-      "status": "proposed",
       "created": "2026-02-25",
       "extractedFrom": "relay-convergence",
       "specSlug": "relay-convergence"
@@ -1135,8 +937,8 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
-      "status": "proposed",
+      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
       "specSlug": "relay-runtime-adapters"
@@ -1154,7 +956,7 @@
       "number": 32,
       "slug": "hybrid-filesystem-namespace-derivation",
       "title": "Use Hybrid Filesystem + Manifest Namespace Derivation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-network-topology",
       "specSlug": "mesh-network-topology"
@@ -1163,7 +965,7 @@
       "number": 33,
       "slug": "default-deny-cross-namespace-with-subject-pattern-acls",
       "title": "Use Default-Deny Cross-Namespace with Subject-Pattern ACLs",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-network-topology",
       "specSlug": "mesh-network-topology"
@@ -1172,7 +974,7 @@
       "number": 34,
       "slug": "open-acl-authorship-any-principal",
       "title": "Allow Any Principal to Author ACL Rules",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-network-topology",
       "specSlug": "mesh-network-topology"
@@ -1181,7 +983,7 @@
       "number": 35,
       "slug": "use-xyflow-react-for-mesh-topology",
       "title": "Use @xyflow/react (React Flow v12) for Mesh Topology Visualization",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-observability-lifecycle",
       "specSlug": "mesh-observability-lifecycle"
@@ -1190,7 +992,7 @@
       "number": 36,
       "slug": "computed-query-time-health-status",
       "title": "Compute Agent Health Status at Query Time via SQL",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-observability-lifecycle",
       "specSlug": "mesh-observability-lifecycle"
@@ -1199,7 +1001,7 @@
       "number": 37,
       "slug": "relay-signals-for-mesh-lifecycle-events",
       "title": "Use Relay Signals for Mesh Agent Lifecycle Events",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-observability-lifecycle",
       "specSlug": "mesh-observability-lifecycle"
@@ -1244,7 +1046,7 @@
       "number": 42,
       "slug": "manual-zod-env-validation-over-t3-env",
       "title": "Use Manual Zod Validation for Env Vars, Not T3 Env",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "env-var-discipline",
       "specSlug": "env-var-discipline"
@@ -1261,7 +1063,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "proposed",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -1286,85 +1088,22 @@
       "specSlug": "adapter-agent-routing"
     },
     {
-      "number": 47,
-      "slug": "most-specific-first-binding-resolution",
-      "title": "Use Most-Specific-First Binding Resolution Order",
-      "status": "proposed",
-      "created": "2026-02-28",
-      "extractedFrom": "adapter-agent-routing",
-      "specSlug": "adapter-agent-routing"
-    },
-    {
       "number": 48,
       "slug": "adopt-llms-txt-for-ai-readability",
       "title": "Adopt llms.txt for AI Agent Discoverability",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-28",
       "extractedFrom": "og-seo-ai-readability-overhaul",
       "specSlug": "og-seo-ai-readability-overhaul"
     },
     {
-      "number": 50,
-      "slug": "agent-identity-independent-of-mesh",
-      "title": "Agent Identity Independent of Mesh Feature Flag",
-      "status": "proposed",
-      "created": "2026-02-26",
-      "extractedFrom": "agents-first-class-entity",
-      "specSlug": "agents-first-class-entity"
-    },
-    {
-      "number": 51,
-      "slug": "persona-injection-via-context-builder",
-      "title": "Inject Agent Persona via Context Builder System Prompt",
-      "status": "proposed",
-      "created": "2026-02-26",
-      "extractedFrom": "agents-first-class-entity",
-      "specSlug": "agents-first-class-entity"
-    },
-    {
-      "number": 52,
-      "slug": "replace-dagre-with-elkjs-for-topology-layout",
-      "title": "Replace dagre with ELK.js for Topology Layout",
-      "status": "proposed",
-      "created": "2026-02-26",
-      "extractedFrom": "mesh-topology-elevation",
-      "specSlug": "mesh-topology-elevation"
-    },
-    {
-      "number": 53,
-      "slug": "server-side-topology-enrichment",
-      "title": "Server-Side Cross-Subsystem Topology Enrichment",
-      "status": "proposed",
-      "created": "2026-02-26",
-      "extractedFrom": "mesh-topology-elevation",
-      "specSlug": "mesh-topology-elevation"
-    },
-    {
       "number": 54,
       "slug": "invert-feature-flags-to-enabled-by-default",
       "title": "Invert Feature Flags to Enabled by Default",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-01",
       "extractedFrom": "first-time-user-experience",
       "specSlug": "first-time-user-experience"
-    },
-    {
-      "number": 57,
-      "slug": "use-broadcastchannel-plus-sse-for-tunnel-sync",
-      "title": "Use BroadcastChannel + SSE for Cross-Tab Tunnel Sync",
-      "status": "proposed",
-      "created": "2026-03-01",
-      "extractedFrom": "tunnel-remote-access-overhaul",
-      "specSlug": "tunnel-remote-access-overhaul"
-    },
-    {
-      "number": 60,
-      "slug": "hybrid-curl-script-wrapping-npm",
-      "title": "Use Hybrid Curl Script Wrapping npm for Primary Install",
-      "status": "proposed",
-      "created": "2026-03-01",
-      "extractedFrom": "installation-experience",
-      "specSlug": "installation-experience"
     },
     {
       "number": 61,
@@ -1378,7 +1117,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
       "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -1397,16 +1136,7 @@
       "number": 64,
       "slug": "shadcn-sidebar-for-standalone-layout",
       "title": "Use Shadcn Sidebar for Standalone Layout",
-      "status": "proposed",
-      "created": "2026-03-03",
-      "extractedFrom": "shadcn-sidebar-redesign",
-      "specSlug": "shadcn-sidebar-redesign"
-    },
-    {
-      "number": 65,
-      "slug": "lift-dialogs-to-root-dialog-host",
-      "title": "Lift Dialogs to Root-Level DialogHost",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "shadcn-sidebar-redesign",
       "specSlug": "shadcn-sidebar-redesign"

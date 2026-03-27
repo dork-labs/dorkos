@@ -74,12 +74,35 @@ When scanning specs for ADR candidates, look for:
 | `superseded` | Replaced by a newer ADR (link via `superseded-by`)                 |
 | `archived`   | Curation determined this is trivial; moved to `decisions/archive/` |
 
+### Full Lifecycle
+
+The ADR lifecycle has two automated gates:
+
+**Gate 1: Curation** (`/adr:curate`, triggered daily via SessionStart hook)
+
+Moves drafts to proposed or archive based on significance criteria:
+
+- **Promote** (draft → proposed): Meets 2+ "When to Write" criteria
+- **Archive** (draft → archived): Meets 0-1 criteria, moved to `decisions/archive/`
+
+**Gate 2: Review** (`/adr:review`, triggered when spec is implemented or backlog exceeds 50)
+
+Moves proposed ADRs to their terminal state:
+
+- **Accept** (proposed → accepted): Linked spec is implemented and decision is reflected in code
+- **Deprecate** (proposed → deprecated): Codebase diverged from this decision, or context changed
+- **Supersede** (proposed → superseded): A newer ADR replaced this one
+- **Archive** (proposed → archived): Decision is now obvious from reading the code
+
+**Acceptance criteria:** A proposed ADR is ready for acceptance when:
+
+1. The linked spec has been implemented (status `implemented` in spec manifest)
+2. The pattern/technology/convention described in the ADR is present in the codebase
+3. The decision is still actively guiding development (not just historical)
+
 ### Auto-Extraction
 
-Draft ADRs are created automatically by `/ideate-to-spec` (Step 7.0) when a spec is validated. Every decision signal is captured as a draft. The `/adr:curate` command (triggered daily via SessionStart hook) evaluates drafts against the criteria in "When to Write an ADR" above:
-
-- **Promote** (draft → proposed): Meets 2+ criteria
-- **Archive** (draft → archived): Meets 0-1 criteria, moved to `decisions/archive/`
+Draft ADRs are created automatically by `/ideate-to-spec` (Step 7.0) when a spec is validated. Every decision signal is captured as a draft.
 
 ## Common Pitfalls
 

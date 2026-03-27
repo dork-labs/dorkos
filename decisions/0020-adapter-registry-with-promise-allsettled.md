@@ -1,7 +1,7 @@
 ---
 number: 20
 title: Use Adapter Registry Pattern with Promise.allSettled for Error Isolation
-status: proposed
+status: accepted
 created: 2026-02-24
 spec: relay-external-adapters
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

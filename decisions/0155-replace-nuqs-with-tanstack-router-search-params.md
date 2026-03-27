@@ -1,7 +1,7 @@
 ---
 number: 155
 title: Replace nuqs with TanStack Router Search Params
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: dashboard-home-route
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

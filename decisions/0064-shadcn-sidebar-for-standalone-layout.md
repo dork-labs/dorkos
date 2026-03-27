@@ -1,7 +1,7 @@
 ---
 number: 64
 title: Use Shadcn Sidebar for Standalone Layout
-status: proposed
+status: accepted
 created: 2026-03-03
 spec: shadcn-sidebar-redesign
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

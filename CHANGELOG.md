@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add /adr:review command and complete first lifecycle review
 - Redesign Remote Access dialog with progressive disclosure
 - Implement Phase 4 — Agent-Built Extensions
 - Implement Phase 3 — Extension System Core

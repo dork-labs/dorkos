@@ -1,7 +1,7 @@
 ---
 number: 35
 title: Use @xyflow/react (React Flow v12) for Mesh Topology Visualization
-status: proposed
+status: accepted
 created: 2026-02-25
 spec: mesh-observability-lifecycle
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

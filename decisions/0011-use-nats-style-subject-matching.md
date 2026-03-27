@@ -1,7 +1,7 @@
 ---
 number: 11
 title: Use NATS-Style Hierarchical Subject Matching
-status: proposed
+status: accepted
 created: 2026-02-24
 spec: relay-core-library
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

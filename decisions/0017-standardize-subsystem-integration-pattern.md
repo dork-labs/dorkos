@@ -1,7 +1,7 @@
 ---
 number: 17
 title: Standardize Subsystem Integration Pattern Following Pulse
-status: proposed
+status: accepted
 created: 2026-02-24
 spec: relay-server-client-integration
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

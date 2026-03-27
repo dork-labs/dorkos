@@ -1,7 +1,7 @@
 ---
 number: 30
 title: Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern
-status: proposed
+status: accepted
 created: 2026-02-25
 spec: relay-runtime-adapters
 superseded-by: null
@@ -11,9 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
-
-Absorbs ADR-0031 (Use Default Export Factory Function for Adapter Plugins).
+Accepted
 
 ## Context
 

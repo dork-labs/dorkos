@@ -1,7 +1,7 @@
 ---
 number: 32
 title: Use Hybrid Filesystem + Manifest Namespace Derivation
-status: proposed
+status: accepted
 created: 2026-02-25
 spec: mesh-network-topology
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

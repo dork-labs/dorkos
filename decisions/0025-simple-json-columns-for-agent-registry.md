@@ -1,7 +1,7 @@
 ---
 number: 25
 title: Use Simple JSON Columns for Agent Registry SQLite Schema
-status: proposed
+status: accepted
 created: 2026-02-24
 spec: mesh-core-library
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

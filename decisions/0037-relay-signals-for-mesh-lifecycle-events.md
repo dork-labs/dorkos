@@ -1,7 +1,7 @@
 ---
 number: 37
 title: Use Relay Signals for Mesh Agent Lifecycle Events
-status: proposed
+status: accepted
 created: 2026-02-25
 spec: mesh-observability-lifecycle
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

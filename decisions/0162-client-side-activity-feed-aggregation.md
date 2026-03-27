@@ -1,7 +1,7 @@
 ---
 number: 162
 title: Client-Side Activity Feed Aggregation Over Server-Side Event Stream
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: dashboard-content
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

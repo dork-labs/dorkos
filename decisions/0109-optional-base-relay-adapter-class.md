@@ -1,7 +1,7 @@
 ---
 number: 109
 title: Optional BaseRelayAdapter Abstract Class for Adapter DX
-status: proposed
+status: accepted
 created: 2026-03-11
 spec: relay-adapter-dx
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

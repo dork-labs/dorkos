@@ -1,7 +1,7 @@
 ---
 number: 33
 title: Use Default-Deny Cross-Namespace with Subject-Pattern ACLs
-status: proposed
+status: accepted
 created: 2026-02-25
 spec: mesh-network-topology
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

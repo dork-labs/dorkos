@@ -1,7 +1,7 @@
 ---
 number: 12
 title: Use ULID for Relay Message IDs
-status: proposed
+status: accepted
 created: 2026-02-24
 spec: relay-core-library
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

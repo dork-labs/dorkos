@@ -1,7 +1,7 @@
 ---
 number: 131
 title: Binding-Level Permissions Over Adapter-Level Permissions
-status: proposed
+status: accepted
 created: 2026-03-15
 spec: relay-panel-redesign
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
