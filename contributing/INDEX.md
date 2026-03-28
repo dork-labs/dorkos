@@ -45,15 +45,15 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | Guide                            | Last Reviewed | Reviewer | Notes                                                                                      |
 | -------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `project-structure.md`           | 2026-03-26    | Claude   | Added canvas/ feature module, ui-action-dispatcher, init-extensions.ts, extension-registry |
-| `architecture.md`                | 2026-03-26    | Claude   | Added Agent UI Control section (uiState, ui_command events, controlUI MCP tool)            |
+| `architecture.md`                | 2026-03-28    | Claude   | Updated cross-client sync diagram: EventSource → fetch + ReadableStream SSE                |
 | `design-system.md`               | 2026-03-27    | Claude   | Added FilterBar compound component section, filter engine key files                        |
-| `api-reference.md`               | 2026-03-27    | Claude   | Added GET /api/events unified SSE, deprecated old SSE endpoints, fixed extension payload   |
+| `api-reference.md`               | 2026-03-28    | Claude   | Updated SSE section for fetch-based transport, added custom header support                 |
 | `configuration.md`               | 2026-03-27    | Claude   | Added agents and extensions config sections                                                |
 | `interactive-tools.md`           | 2026-03-26    | Claude   | Added Agent UI Control section (controlUI/get_ui_state MCP tools, ui_command events)       |
 | `keyboard-shortcuts.md`          | 2026-03-19    | Claude   | Reconciled — no matching changes                                                           |
 | `obsidian-plugin-development.md` | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                      |
-| `data-fetching.md`               | 2026-03-27    | Claude   | Added unified SSE stream pattern, useEventSubscription, migration from EventSource         |
-| `state-management.md`            | 2026-03-27    | Claude   | Added EventStreamProvider singleton pattern, module-scope singleton guidance               |
+| `data-fetching.md`               | 2026-03-28    | Claude   | Added fetch-based SSE transport, refetch-on-reconnect, queryClient extraction              |
+| `state-management.md`            | 2026-03-28    | Claude   | Added refetch-on-reconnect pattern, queryClient singleton, previousConnectionState         |
 | `animations.md`                  | 2026-03-19    | Claude   | Reconciled — no matching changes                                                           |
 | `styling-theming.md`             | 2026-03-27    | Claude   | Added FilterBar styling section and key file reference                                     |
 | `parallel-execution.md`          | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                      |

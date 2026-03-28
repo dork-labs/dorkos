@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reconcile architecture guide for fetch-based SSE transport
+
 ### Fixed
 
 - Update MCP server tool count for test_extension tool

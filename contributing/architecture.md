@@ -194,7 +194,7 @@ User input -> ChatPanel -> useChatSession.handleSubmit()
       -> onEvent(event) -> React state updates -> UI re-render
 
 Cross-client sync (when idle):
-  -> GET /api/sessions/:id/stream (persistent EventSource)
+  -> GET /api/sessions/:id/stream (persistent fetch + ReadableStream SSE)
     -> sync_update event -> queryClient.invalidateQueries()
 
 Agent UI commands (during streaming):
