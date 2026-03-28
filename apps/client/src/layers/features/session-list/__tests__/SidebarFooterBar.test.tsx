@@ -42,10 +42,14 @@ vi.mock('@/layers/shared/model/TransportContext', () => ({
 // Mock TanStack Query
 let mockConfigData: Record<string, unknown> | undefined;
 const mockInvalidateQueries = vi.fn();
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: mockConfigData }),
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
-}));
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-query')>();
+  return {
+    ...actual,
+    useQuery: () => ({ data: mockConfigData }),
+    useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+  };
+});
 
 // Mock extension registry — provide footer button contributions
 const MockIcon = () => null;

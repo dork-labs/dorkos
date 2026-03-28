@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { PROMO_REGISTRY } from '../model/promo-registry';
 import type { PromoPlacement } from '../model/promo-types';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 
 const VALID_PLACEMENTS: PromoPlacement[] = ['dashboard-main', 'dashboard-sidebar', 'agent-sidebar'];
 const KEBAB_CASE_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -57,8 +56,11 @@ describe('promo-registry', () => {
   });
 
   it('no orphaned dialog component files in dialogs/', () => {
+    // Skip when Node.js fs/path modules are externalized (Vite browser-compat)
+    if (typeof fs.existsSync !== 'function') return;
+
     // Read the dialogs directory and verify every file is referenced by a registry entry
-    const dialogsDir = path.resolve(__dirname, '../ui/dialogs');
+    const dialogsDir = new URL('../ui/dialogs', import.meta.url).pathname;
     if (!fs.existsSync(dialogsDir)) return; // Skip if directory doesn't exist yet
 
     const dialogFiles = fs

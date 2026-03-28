@@ -23,10 +23,14 @@ vi.mock('@/layers/entities/session/model/use-session-status', () => ({
   }),
 }));
 
-vi.mock('@tanstack/react-query', () => ({
-  useQuery: vi.fn(() => ({ data: undefined })),
-  useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
-}));
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-query')>();
+  return {
+    ...actual,
+    useQuery: vi.fn(() => ({ data: undefined })),
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+  };
+});
 
 vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: vi.fn(() => ({

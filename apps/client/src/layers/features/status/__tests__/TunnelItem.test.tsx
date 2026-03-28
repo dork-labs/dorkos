@@ -138,6 +138,6 @@ describe('TunnelItem', () => {
   it('opens dialog on click', () => {
     render(<TunnelItem tunnel={makeTunnel()} />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('Enable remote access')).toBeDefined();
+    expect(screen.getByText('Remote Access')).toBeDefined();
   });
 });

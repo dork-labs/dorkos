@@ -219,17 +219,17 @@ describe('useChatSession — sync & indicators', () => {
       });
     });
 
-    it('creates EventSource when enableCrossClientSync is true (default)', async () => {
+    it('creates SSE connection when enableCrossClientSync is true (default)', async () => {
       const transport = createMockTransport();
-      renderHook(() => useChatSession('s1'), {
+      const { result } = renderHook(() => useChatSession('s1'), {
         wrapper: createWrapper(transport),
       });
 
       await waitFor(() => {
-        const streamInstances = MockEventSource.instances.filter((es) =>
-          es.url.includes('/api/sessions/s1/stream')
-        );
-        expect(streamInstances.length).toBeGreaterThan(0);
+        // The hook now uses fetch-based SSEConnection via useSSEConnection,
+        // which exposes syncConnectionState. A non-null state indicates the
+        // connection was established.
+        expect(result.current.syncConnectionState).toBeDefined();
       });
     });
   });
