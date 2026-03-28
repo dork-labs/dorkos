@@ -1,11 +1,10 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   SessionStatusEvent,
   MessagePart,
   PresenceUpdateEvent,
   HookPart,
-  UiState,
 } from '@dorkos/shared/types';
 import {
   useTransport,
@@ -14,40 +13,18 @@ import {
   useSSEConnection,
   useTheme,
 } from '@/layers/shared/model';
-import { QUERY_TIMING, TIMING, SSE_RESILIENCE } from '@/layers/shared/lib';
-import { insertOptimisticSession } from '@/layers/entities/session';
+import { QUERY_TIMING, TIMING } from '@/layers/shared/lib';
+import {
+  insertOptimisticSession,
+  useSessionChatStore,
+  useSessionChatState,
+} from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
-import type { ChatMessage, ChatSessionOptions, TransportErrorInfo } from './chat-types';
+import type { ChatMessage, ChatSessionOptions, ChatStatus, TransportErrorInfo } from './chat-types';
 import { createStreamEventHandler } from './stream-event-handler';
 import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream-history-helpers';
-import { classifyTransportError } from './classify-transport-error';
-
-/** Snapshot the current Zustand UI state for agent awareness. */
-function snapshotUiState(activeCwd: string | null): UiState {
-  const s = useAppStore.getState();
-  const sidebarTab = s.sidebarActiveTab;
-  return {
-    canvas: {
-      open: s.canvasOpen,
-      contentType: s.canvasContent?.type ?? null,
-    },
-    panels: {
-      settings: s.settingsOpen,
-      pulse: s.pulseOpen,
-      relay: s.relayOpen,
-      mesh: s.meshOpen,
-    },
-    sidebar: {
-      open: s.sidebarOpen,
-      activeTab: sidebarTab,
-    },
-    agent: {
-      id: null, // Derived from session, not stored client-side
-      cwd: activeCwd,
-    },
-  };
-}
+import { streamManager } from './stream-manager';
 
 // Re-export types for backward compat
 export type {
@@ -71,51 +48,243 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const enableCrossClientSync = useAppStore((s) => s.enableCrossClientSync);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [status, setStatus] = useState<'idle' | 'streaming' | 'error'>('idle');
-  const [error, setError] = useState<TransportErrorInfo | null>(null);
-  const [sessionBusy, setSessionBusy] = useState(false);
+  // --- Store-backed fields: all per-session transient state ---
+  // Keyed per-session in the Zustand store so they survive session switches,
+  // can be read by concurrent streams without stale-closure issues, and
+  // preserve drafts/metadata when the user navigates away and returns.
+  const sid = sessionId ?? '';
+
+  // Single store subscription for all per-session fields.
+  // useSessionChatState returns DEFAULT_SESSION_STATE (a stable module-level constant)
+  // when the session doesn't exist yet — avoiding the new-object-per-render trap that
+  // per-field selectors with inline `?? []` / `?? {}` defaults would cause.
+  const {
+    messages,
+    input,
+    status,
+    error,
+    sessionBusy,
+    sessionStatus,
+    streamStartTime,
+    estimatedTokens,
+    isTextStreaming,
+    isRateLimited,
+    rateLimitRetryAfter,
+    systemStatus,
+    promptSuggestions,
+    presenceInfo,
+    presencePulse,
+  } = useSessionChatState(sid);
+
+  /**
+   * Write messages for the active session to the store.
+   *
+   * Accepts either a direct array or a function updater — mirrors the
+   * `React.Dispatch<React.SetStateAction<T>>` contract so all existing call
+   * sites remain unchanged after migration from local useState.
+   */
+  const setMessages = useCallback(
+    (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+      if (!sid || !isAliveRef.current) return;
+      const store = useSessionChatStore.getState();
+      // Guard against stale closures from a previous component instance that
+      // mounted for the same session ID. initSession increments mountGeneration
+      // each time a fresh session entry is created, so a callback captured before
+      // that reset will see a mismatched generation and drop the write.
+      const currentGen = store.getSession(sid).mountGeneration;
+      if (mountGenerationRef.current !== -1 && currentGen !== mountGenerationRef.current) return;
+      const next = typeof update === 'function' ? update(store.getSession(sid).messages) : update;
+      store.updateSession(sid, { messages: next });
+    },
+    [sid]
+  );
+
+  /** Write input draft for the active session to the store. */
+  const setInput = useCallback(
+    (value: string) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { input: value });
+    },
+    [sid]
+  );
+
+  /** Write status for the active session to the store. */
+  const setStatus = useCallback(
+    (nextStatus: ChatStatus) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { status: nextStatus });
+    },
+    [sid]
+  );
+
+  /** Write error for the active session to the store. */
+  const setError = useCallback(
+    (nextError: TransportErrorInfo | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { error: nextError });
+    },
+    [sid]
+  );
+
+  /** Write sessionBusy for the active session to the store. */
+  const setSessionBusy = useCallback(
+    (busy: boolean) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { sessionBusy: busy });
+    },
+    [sid]
+  );
+
+  /** Write sessionStatus for the active session to the store. */
+  const setSessionStatus = useCallback(
+    (s: SessionStatusEvent | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { sessionStatus: s });
+    },
+    [sid]
+  );
+
+  /** Write estimatedTokens for the active session to the store. */
+  const setEstimatedTokens = useCallback(
+    (tokens: number) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { estimatedTokens: tokens });
+    },
+    [sid]
+  );
+
+  /** Write streamStartTime for the active session to the store. */
+  const setStreamStartTime = useCallback(
+    (time: number | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { streamStartTime: time });
+    },
+    [sid]
+  );
+
+  /** Write isTextStreaming for the active session to the store. */
+  const setIsTextStreaming = useCallback(
+    (streaming: boolean) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { isTextStreaming: streaming });
+    },
+    [sid]
+  );
+
+  /** Write isRateLimited + rateLimitRetryAfter for the active session to the store. */
+  const setRateLimitRetryAfter = useCallback(
+    (retryAfter: number | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { rateLimitRetryAfter: retryAfter });
+    },
+    [sid]
+  );
+
+  /** Write isRateLimited for the active session to the store. */
+  const setIsRateLimited = useCallback(
+    (limited: boolean) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { isRateLimited: limited });
+    },
+    [sid]
+  );
+
+  /** Write systemStatus for the active session to the store. */
+  const setSystemStatus = useCallback(
+    (message: string | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { systemStatus: message });
+    },
+    [sid]
+  );
+
+  /** Write promptSuggestions for the active session to the store. */
+  const setPromptSuggestions = useCallback(
+    (suggestions: string[]) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { promptSuggestions: suggestions });
+    },
+    [sid]
+  );
+
+  /** Write presenceInfo for the active session to the store. */
+  const setPresenceInfo = useCallback(
+    (info: PresenceUpdateEvent | null) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { presenceInfo: info });
+    },
+    [sid]
+  );
+
+  /** Write presencePulse for the active session to the store. */
+  const setPresencePulse = useCallback(
+    (pulse: boolean) => {
+      if (!sid) return;
+      useSessionChatStore.getState().updateSession(sid, { presencePulse: pulse });
+    },
+    [sid]
+  );
+
+  // Initialize the store entry synchronously on first render so mountGeneration
+  // is available before any effects run. initSession is idempotent — it only
+  // creates a new entry (and claims a new mountGeneration) when one doesn't exist.
+  // Calling it during render is safe because it's a pure Zustand store mutation
+  // with no observable side effects on the component tree.
+  if (sid) useSessionChatStore.getState().initSession(sid);
+
+  // mountGenerationRef captures the mountGeneration counter at the time THIS
+  // component instance first rendered. Every initSession call for a new (or
+  // re-initialized) session claims the next global integer, so any setMessages
+  // closure from a previous component instance for the same session ID will hold
+  // a stale generation value and will be dropped — matching React's own setState
+  // no-op behavior for unmounted components, but without relying on the async
+  // effect-cleanup flush order (which can be delayed into a sibling component's
+  // act() block in tests).
+  const mountGenerationRef = useRef<number>(
+    sid ? useSessionChatStore.getState().getSession(sid).mountGeneration : -1
+  );
+
+  // isAliveRef provides a secondary unmount guard for in-flight callbacks that
+  // resolve after this component instance cleanly unmounts (e.g. network requests
+  // that finish just after navigation).
+  const isAliveRef = useRef(true);
+  useEffect(() => {
+    isAliveRef.current = true;
+    return () => {
+      isAliveRef.current = false;
+    };
+  }, []);
+
+  // Ref for session_status merging — session_status events are cumulative and
+  // must be merged with the previous value. The ref avoids stale-closure issues
+  // in the stream event handler.
   const sessionStatusRef = useRef<SessionStatusEvent | null>(null);
-  const [sessionStatus, setSessionStatus] = useState<SessionStatusEvent | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  // Per-stream scratch buffers — kept as refs because they are mutated synchronously
+  // on every stream event within a single streaming session.  They don't need to
+  // survive session switches (a new stream always resets them in executeSubmission).
   const currentPartsRef = useRef<MessagePart[]>([]);
   // Buffer for hook events that arrive before their owning tool_call_start
   const orphanHooksRef = useRef<Map<string, HookPart[]>>(new Map());
   const assistantIdRef = useRef<string>('');
   const assistantCreatedRef = useRef(false);
-  const historySeededRef = useRef(false);
   const streamStartTimeRef = useRef<number | null>(null);
   const estimatedTokensRef = useRef<number>(0);
-  const [streamStartTime, setStreamStartTime] = useState<number | null>(null);
-  const [estimatedTokens, setEstimatedTokens] = useState<number>(0);
   const textStreamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTextStreamingRef = useRef(false);
-  const [isTextStreaming, setIsTextStreaming] = useState(false);
   const thinkingStartRef = useRef<number | null>(null);
-  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
-  const [isRateLimited, setIsRateLimited] = useState(false);
+  // Tracks the clear-rate-limit callback — updated on every render to avoid stale closures
   const rateLimitClearRef = useRef<(() => void) | null>(null);
-  const [systemStatus, setSystemStatus] = useState<string | null>(null);
-  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
   const systemStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [presenceInfo, setPresenceInfo] = useState<PresenceUpdateEvent | null>(null);
-  const [presencePulse, setPresencePulse] = useState(false);
   const presenceInfoRef = useRef<PresenceUpdateEvent | null>(null);
   const presencePulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedCwdRef = useRef(selectedCwd);
   const isTabVisible = useTabVisibility();
-  const messagesRef = useRef<ChatMessage[]>(messages);
-  // Tracks the optimistic user message ID so it can be removed on error
-  const pendingUserIdRef = useRef<string | null>(null);
-  // Tracks auto-retry attempts for transient POST stream failures
-  const retryCountRef = useRef<number>(0);
 
-  // Signals that a sessionId change is a server remap (not user navigation).
-  // Set synchronously in the done handler BEFORE onSessionIdChange fires,
-  // so the session change effect can skip clearing messages.
-  const isRemappingRef = useRef(false);
+  // Called synchronously in the done handler when the server remaps the session.
+  // Lets StreamManager move its ActiveStream + timer entries to the new key
+  // before React re-renders with the new session ID.
+  const onRemapRef = useRef<((oldId: string, newId: string) => void) | undefined>(undefined);
 
   // Refs for ui_command dispatch — kept stable so the stream handler never stales.
   const themeRef = useRef<(theme: 'light' | 'dark') => void>(() => {});
@@ -124,9 +293,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
 
   // Keep refs in sync with state
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-  useEffect(() => {
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
   useEffect(() => {
@@ -134,38 +300,33 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   }, [presenceInfo]);
 
   const isStreaming = status === 'streaming';
-  // Keep status in a ref so the sync_update handler sees current status without a stale closure
-  const statusRef = useRef(status);
-  useEffect(() => {
-    statusRef.current = status;
-  });
 
   // Keep rateLimitClearRef in sync — avoids stale closures in the stream handler
-  // eslint-disable-next-line react-hooks/refs -- Intentional render-time ref sync to avoid stale closures
   rateLimitClearRef.current = () => {
     setIsRateLimited(false);
     setRateLimitRetryAfter(null);
   };
 
-  const setSystemStatusWithClear = useCallback((message: string | null) => {
-    if (systemStatusTimerRef.current) {
-      clearTimeout(systemStatusTimerRef.current);
-      systemStatusTimerRef.current = null;
-    }
-    setSystemStatus(message);
-    if (message) {
-      systemStatusTimerRef.current = setTimeout(() => {
-        setSystemStatus(null);
+  const setSystemStatusWithClear = useCallback(
+    (message: string | null) => {
+      if (systemStatusTimerRef.current) {
+        clearTimeout(systemStatusTimerRef.current);
         systemStatusTimerRef.current = null;
-      }, TIMING.SYSTEM_STATUS_DISMISS_MS);
-    }
-  }, []);
+      }
+      setSystemStatus(message);
+      if (message) {
+        systemStatusTimerRef.current = setTimeout(() => {
+          setSystemStatus(null);
+          systemStatusTimerRef.current = null;
+        }, TIMING.SYSTEM_STATUS_DISMISS_MS);
+      }
+    },
+    [setSystemStatus]
+  );
 
   // Wire theme setter into ref so ui_command/set_theme can call it without a React context.
   const { setTheme } = useTheme();
-  /* eslint-disable react-hooks/refs -- Intentional render-time ref sync to avoid stale closures */
   themeRef.current = setTheme;
-  /* eslint-enable react-hooks/refs */
 
   // Ref-stabilize callbacks to prevent streamEventHandler identity churn.
   // Synced on every render (refs are synchronous — no useEffect needed).
@@ -173,17 +334,14 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const onSessionIdChangeRef = useRef(options.onSessionIdChange);
   const onStreamingDoneRef = useRef(options.onStreamingDone);
   const transformContentRef = useRef(options.transformContent);
-  /* eslint-disable react-hooks/refs -- Intentional render-time ref sync to avoid stale closures in stream callbacks */
   onTaskEventRef.current = options.onTaskEvent;
   onSessionIdChangeRef.current = options.onSessionIdChange;
   onStreamingDoneRef.current = options.onStreamingDone;
   transformContentRef.current = options.transformContent;
-  /* eslint-enable react-hooks/refs */
 
   // Create stream event handler at hook level for the SSE streaming path
   const streamEventHandler = useMemo(
     () =>
-      // eslint-disable-next-line react-hooks/refs -- refs are captured by the factory and read inside callbacks, not during construction
       createStreamEventHandler({
         currentPartsRef,
         orphanHooksRef,
@@ -210,13 +368,26 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         onTaskEventRef,
         onSessionIdChangeRef,
         onStreamingDoneRef,
-        isRemappingRef,
+        onRemapRef,
         themeRef,
         scrollToMessageRef,
         switchAgentRef,
       }),
 
-    [sessionId, setSystemStatusWithClear]
+    [
+      sessionId,
+      setMessages,
+      setError,
+      setStatus,
+      setSessionStatus,
+      setEstimatedTokens,
+      setStreamStartTime,
+      setIsTextStreaming,
+      setRateLimitRetryAfter,
+      setIsRateLimited,
+      setSystemStatusWithClear,
+      setPromptSuggestions,
+    ]
   );
 
   // Load message history from SDK transcript via TanStack Query with adaptive polling
@@ -238,49 +409,83 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Reset history seed flag when session or cwd changes.
   // Don't clear messages during streaming — preserves state during
   // create-on-first-message (null → clientId).
-  // Don't clear messages during remap — the done handler sets isRemappingRef
-  // before changing sessionId (clientId → sdkId); we keep messages and force
-  // Branch 2 (incremental dedup) so tagged-dedup reconciles IDs correctly.
+  // Don't clear messages during remap — the done handler calls renameSession and
+  // sets isRemapping: true before firing onSessionIdChange (clientId → sdkId);
+  // we keep messages and force Branch 2 (incremental dedup) so tagged-dedup
+  // reconciles IDs correctly.
   useEffect(() => {
-    if (isRemappingRef.current) {
-      isRemappingRef.current = false;
-      // Force incremental dedup path (Branch 2) — messages are preserved,
-      // and the tagged-dedup logic will reconcile IDs when history loads.
-      historySeededRef.current = true;
+    const store = useSessionChatStore.getState();
+    if (sid && store.getSession(sid).isRemapping) {
+      // Clear the flag and force incremental dedup path (Branch 2) — messages are
+      // preserved and tagged-dedup will reconcile IDs when history loads.
+      store.updateSession(sid, { isRemapping: false, historySeeded: true });
       return;
     }
-    historySeededRef.current = false;
-    if (statusRef.current !== 'streaming') {
+    if (sid) store.updateSession(sid, { historySeeded: false });
+    // Read status directly from the store — no stale-closure risk since this
+    // effect runs after the previous session's store state is already settled.
+    if (store.getSession(sessionId ?? '').status !== 'streaming') {
       setMessages([]);
     }
-  }, [sessionId, selectedCwd]);
+  }, [sessionId, selectedCwd, sid, setMessages]);
 
-  // Clear presence state when the active session changes
+  // Initialize session in the store when the active session changes.
+  // This ensures the store entry exists before StreamManager writes to it.
+  // Also capture the mountGeneration from the freshly-initialized entry so
+  // setMessages can detect stale closures from previous component instances.
   useEffect(() => {
-    setPresenceInfo(null);
-    setPresencePulse(false);
+    if (sessionId) {
+      useSessionChatStore.getState().initSession(sessionId);
+      mountGenerationRef.current = useSessionChatStore
+        .getState()
+        .getSession(sessionId).mountGeneration;
+    }
   }, [sessionId]);
 
-  // Seed local messages state from history (initial load + post-stream replace)
+  // Presence state is per-session in the store — no clearing needed on switch.
+
+  // Clear background activity indicator when this session becomes active.
+  // StreamManager sets hasUnseenActivity on all completed streams; this effect
+  // ensures the indicator disappears as soon as the user navigates to the session.
+  useEffect(() => {
+    if (sessionId) {
+      useSessionChatStore.getState().updateSession(sessionId, { hasUnseenActivity: false });
+    }
+  }, [sessionId]);
+
+  // Per-session state (input, error, status, etc.) is now keyed by session ID
+  // in the Zustand store. Switching sessions changes `sid`, which selects a
+  // different store slot — no manual clearing needed. The old useEffect that
+  // cleared these fields was removed because it destroys per-session drafts.
+
+  // Seed messages from history (initial load + post-stream replace).
+  // historySeeded is stored in the Zustand store so it survives session switches
+  // and is visible to the remap effect without stale-closure risk.
   useEffect(() => {
     if (!historyQuery.data) return;
 
     const history = historyQuery.data.messages;
+    const historySeeded = useSessionChatStore.getState().getSession(sid).historySeeded;
 
-    if (!historySeededRef.current && history.length > 0) {
+    if (!historySeeded && history.length > 0) {
       // Don't seed during streaming — server history is incomplete and would
       // overwrite optimistic messages (e.g. create-on-first-message sessionId change).
       // Seeding defers until streaming completes and this effect re-runs.
       if (isStreaming) return;
-      historySeededRef.current = true;
+      if (sid) useSessionChatStore.getState().updateSession(sid, { historySeeded: true });
       setMessages(history.map(mapHistoryMessage));
       return;
     }
 
-    if (historySeededRef.current && !isStreaming) {
-      reconcileTaggedMessages(messagesRef.current, history, setMessages);
+    if (historySeeded && !isStreaming) {
+      // Pass current messages directly — no stale ref needed.
+      reconcileTaggedMessages(
+        useSessionChatStore.getState().getSession(sid).messages,
+        history,
+        setMessages
+      );
     }
-  }, [historyQuery.data, isStreaming]);
+  }, [historyQuery.data, isStreaming, sid, setMessages]);
 
   // Build sync URL (null when streaming or sync disabled)
   const syncUrl = useMemo(() => {
@@ -319,7 +524,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         }
       },
     }),
-    [sessionId, queryClient]
+    [sessionId, queryClient, setPresencePulse, setPresenceInfo]
   );
 
   const { connectionState: syncConnectionState, failedAttempts: syncFailedAttempts } =
@@ -341,7 +546,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     setIsTextStreaming(false);
     setIsRateLimited(false);
     setRateLimitRetryAfter(null);
-  }, []);
+  }, [setIsTextStreaming, setIsRateLimited, setRateLimitRetryAfter]);
 
   /**
    * Core submission logic shared by `handleSubmit` and `submitContent`.
@@ -369,57 +574,37 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         });
       }
 
-      // Add optimistic user message directly to the messages array so it appears
-      // in the virtualizer BEFORE the streaming assistant message. This fixes the
-      // ordering bug where the assistant appeared above the user message (the old
-      // pendingUserContent bubble was rendered outside the virtualizer).
-      const pendingUserId = `pending-user-${crypto.randomUUID()}`;
-      pendingUserIdRef.current = pendingUserId;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: pendingUserId,
-          role: 'user' as const,
-          content,
-          parts: [{ type: 'text', text: content }],
-          timestamp: new Date().toISOString(),
-          _streaming: true,
-        },
-      ]);
+      // StreamManager.start() owns the optimistic user message — it writes it to the
+      // store before calling transport.sendMessage, so we must not also add it here.
+      // Prepare UI state and per-stream scratch buffers, then hand off to StreamManager.
       if (clearInput) setInput('');
       setPromptSuggestions([]);
-      setStatus('streaming');
-      statusRef.current = 'streaming'; // Sync ref immediately — closes the timing window where sync_update could invalidate stale history
       setError(null);
-      retryCountRef.current = 0; // Reset auto-retry counter for each new submission
       currentPartsRef.current = [];
       const streamStart = Date.now();
       streamStartTimeRef.current = streamStart;
       estimatedTokensRef.current = 0;
-      setStreamStartTime(streamStart);
-      setEstimatedTokens(0);
 
       assistantIdRef.current = crypto.randomUUID();
       assistantCreatedRef.current = false;
 
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-
       try {
-        const finalContent = transformContentRef.current
-          ? await transformContentRef.current(content)
-          : content;
-
-        await transport.sendMessage(
-          targetSessionId,
-          finalContent,
-          (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
-          abortController.signal,
-          selectedCwdRef.current ?? undefined,
-          { clientMessageId: pendingUserId, uiState: snapshotUiState(selectedCwdRef.current) }
-        );
-        pendingUserIdRef.current = null;
-        setStatus('idle');
+        // Delegate transport call, optimistic message, and AbortController lifecycle
+        // to StreamManager. It writes directly to the session-chat-store and re-throws
+        // errors so this catch block can update UI-only state (input restore, busy timer).
+        // Phase 1 shim: onEvent forwards each stream event to this hook's local
+        // streamEventHandler for messages/status updates. Removed in Phase 2.
+        await streamManager.start({
+          transport,
+          sessionId: targetSessionId,
+          content,
+          cwd: selectedCwdRef.current,
+          transformContent: transformContentRef.current ?? undefined,
+          onEvent: (type, data) => streamEventHandler(type, data, assistantIdRef.current),
+          onSessionIdChange: onSessionIdChangeRef.current,
+          onStreamingDone: onStreamingDoneRef.current,
+        });
+        resetStreamingState();
       } catch (err) {
         // Abort is not an error — user cancelled intentionally
         if ((err as Error).name === 'AbortError') {
@@ -427,18 +612,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
           return;
         }
 
-        const errorInfo = classifyTransportError(err);
-
-        // Session locked — restore input and show auto-dismissing banner
+        // Session locked — StreamManager has already removed the optimistic message
+        // and set error/status in the store. Hook-layer extras: restore input text
+        // and start the auto-dismiss timer for the session-busy banner.
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
-          // Remove optimistic user message — delivery was rejected
-          if (pendingUserIdRef.current) {
-            const failedId = pendingUserIdRef.current;
-            setMessages((prev) => prev.filter((m) => m.id !== failedId));
-            pendingUserIdRef.current = null;
-          }
-          setSessionBusy(true);
-          setError(errorInfo);
           if (clearInput) setInput(restoreContentOnLock);
           if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
           sessionBusyTimerRef.current = setTimeout(() => {
@@ -446,103 +623,26 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
             setError(null);
             sessionBusyTimerRef.current = null;
           }, TIMING.SESSION_BUSY_CLEAR_MS);
-          setStatus('error');
           resetStreamingState();
           return;
         }
 
-        // Retryable transient error — auto-retry once before surfacing to user.
-        // Only auto-retry if no events were received yet (connection failed before
-        // streaming started). If events already arrived, the server-side session
-        // state has been modified — retrying would send a duplicate message. In that
-        // case, preserve the partial response and let the user decide via the Retry button.
-        const hasPartialResponse = assistantCreatedRef.current;
-        if (
-          errorInfo.retryable &&
-          !hasPartialResponse &&
-          retryCountRef.current < SSE_RESILIENCE.POST_MAX_RETRIES
-        ) {
-          retryCountRef.current += 1;
-          // Show transient "retrying" banner — keep any partial assistant response visible
-          setError({
-            heading: 'Connection interrupted',
-            message: 'Retrying…',
-            retryable: false,
-          });
-
-          // Wait before retry attempt
-          await new Promise((resolve) => setTimeout(resolve, SSE_RESILIENCE.POST_RETRY_DELAY_MS));
-
-          try {
-            // Re-attempt with same args — reuse the existing abort controller
-            const retryContent = transformContentRef.current
-              ? await transformContentRef.current(content)
-              : content;
-
-            await transport.sendMessage(
-              targetSessionId,
-              retryContent,
-              (event) => streamEventHandler(event.type, event.data, assistantIdRef.current),
-              abortController.signal,
-              selectedCwdRef.current ?? undefined,
-              {
-                clientMessageId: pendingUserIdRef.current ?? pendingUserId,
-                uiState: snapshotUiState(selectedCwdRef.current),
-              }
-            );
-
-            // Retry succeeded — clear error, reset counter, go idle
-            pendingUserIdRef.current = null;
-            retryCountRef.current = 0;
-            setError(null);
-            setStatus('idle');
-            resetStreamingState();
-            return;
-          } catch (retryErr) {
-            // Retry also failed — fall through to show error with retry button
-            if ((retryErr as Error).name === 'AbortError') {
-              resetStreamingState();
-              return;
-            }
-            // Remove optimistic user message only if it was never delivered
-            if (pendingUserIdRef.current) {
-              const failedId = pendingUserIdRef.current;
-              setMessages((prev) => prev.filter((m) => m.id !== failedId));
-              pendingUserIdRef.current = null;
-            }
-            setError(classifyTransportError(retryErr));
-            setStatus('error');
-            resetStreamingState();
-            return;
-          }
-        }
-
-        // Non-retryable error, retries exhausted, or mid-stream failure — show error banner.
-        // Remove optimistic user message only if it was never delivered
-        if (pendingUserIdRef.current) {
-          const failedId = pendingUserIdRef.current;
-          setMessages((prev) => prev.filter((m) => m.id !== failedId));
-          pendingUserIdRef.current = null;
-        }
-
-        // Mid-stream interruption: override the error message to explain that the
-        // partial response is preserved and the user can retry manually.
-        const displayError =
-          hasPartialResponse && errorInfo.retryable
-            ? {
-                heading: 'Response interrupted',
-                message:
-                  'The connection was lost mid-response. The partial response is preserved above.',
-                retryable: true,
-              }
-            : errorInfo;
-
-        setError(displayError);
-        setStatus('error');
+        // For all other errors StreamManager has already written error/status/messages
+        // to the store. Only reset transient streaming indicators here.
         resetStreamingState();
       }
     },
-    [sessionId, transport, streamEventHandler, queryClient, resetStreamingState]
+    [
+      sessionId,
+      transport,
+      queryClient,
+      resetStreamingState,
+      setInput,
+      setPromptSuggestions,
+      setError,
+      setSessionBusy,
+      streamEventHandler,
+    ]
   );
 
   const handleSubmit = useCallback(async () => {
@@ -565,19 +665,18 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   );
 
   const stop = useCallback(() => {
-    abortRef.current?.abort();
+    if (sessionId) streamManager.abort(sessionId);
     resetStreamingState();
     setStatus('idle');
-  }, [resetStreamingState]);
+  }, [sessionId, resetStreamingState, setStatus]);
 
   /** Retry a failed message submission, resetting the retry counter. */
   const retryMessage = useCallback(
     async (content: string) => {
       setError(null);
-      retryCountRef.current = 0;
       await executeSubmission(content, false, '');
     },
-    [executeSubmission]
+    [executeSubmission, setError]
   );
 
   /** Optimistically mark a tool call as responded (approved/denied/answered). */
@@ -604,7 +703,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
         );
       }
     },
-    [] // Refs are stable
+    [setMessages] // Refs are stable, setMessages from useCallback
   );
 
   // Only show loading when we have no local messages to display.

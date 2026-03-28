@@ -31,10 +31,15 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
-// Mock insertOptimisticSession to avoid entity layer side-effects
-vi.mock('@/layers/entities/session', () => ({
-  insertOptimisticSession: vi.fn(),
-}));
+// Mock insertOptimisticSession to avoid entity layer side-effects while
+// keeping useSessionChatStore functional (streamManager depends on it).
+vi.mock('@/layers/entities/session', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/session')>();
+  return {
+    ...actual,
+    insertOptimisticSession: vi.fn(),
+  };
+});
 
 // Import after mocks are registered
 import { useChatSession } from '../use-chat-session';

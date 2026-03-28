@@ -20,6 +20,7 @@ import type {
 } from '@dorkos/shared/types';
 import { TIMING, executeUiCommand } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
+import { useSessionChatStore } from '@/layers/entities/session';
 import type { StreamEventDeps, StreamingTextPart } from './stream-event-types';
 import { createStreamHelpers, deriveFromParts } from './stream-event-helpers';
 import {
@@ -293,9 +294,14 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
           }
           currentPartsRef.current = [];
           assistantCreatedRef.current = false;
-          // Signal that this sessionId change is a remap — the session change effect
-          // must NOT clear messages (ref is read synchronously before the next render).
-          deps.isRemappingRef.current = true;
+          // Atomically rename the store entry so data is at the new key before
+          // React re-renders. The isRemapping flag tells the session-change effect
+          // to skip clearing messages — we're keeping them for tagged-dedup.
+          useSessionChatStore.getState().renameSession(sessionId, doneData.sessionId);
+          useSessionChatStore.getState().updateSession(doneData.sessionId, { isRemapping: true });
+          // Let StreamManager move its ActiveStream + timer entries to the new key
+          // before React re-renders with the new session ID.
+          deps.onRemapRef.current?.(sessionId, doneData.sessionId);
           onSessionIdChangeRef.current?.(doneData.sessionId);
         }
 

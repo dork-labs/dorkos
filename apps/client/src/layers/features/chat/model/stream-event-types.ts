@@ -28,7 +28,14 @@ export interface StreamEventDeps {
   estimatedTokensRef: React.MutableRefObject<number>;
   textStreamingTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   isTextStreamingRef: React.MutableRefObject<boolean>;
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  /**
+   * Write messages for the active session.
+   *
+   * Accepts either a direct array or a function updater — mirrors the
+   * `React.Dispatch<React.SetStateAction<T>>` contract so call sites are
+   * unchanged after migration from local useState.
+   */
+  setMessages: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
   setError: (error: TransportErrorInfo | null) => void;
   setStatus: (status: 'idle' | 'streaming' | 'error') => void;
   setSessionStatus: (status: import('@dorkos/shared/types').SessionStatusEvent | null) => void;
@@ -47,8 +54,13 @@ export interface StreamEventDeps {
   >;
   onSessionIdChangeRef: React.MutableRefObject<((newSessionId: string) => void) | undefined>;
   onStreamingDoneRef: React.MutableRefObject<(() => void) | undefined>;
-  /** Set to true before `onSessionIdChange` in done handler to signal that the session change is a remap, not navigation. */
-  isRemappingRef: React.MutableRefObject<boolean>;
+  /**
+   * Called synchronously when the server remaps the session to a new ID.
+   * Fired AFTER the store rename and BEFORE `onSessionIdChange`, so callers
+   * (e.g. StreamManager) can move their internal per-session state to the new key
+   * before React re-renders with the new session ID.
+   */
+  onRemapRef: React.MutableRefObject<((oldId: string, newId: string) => void) | undefined>;
 
   // UI command dispatch dependencies
   /** Theme setter ref — wired from useTheme() so ui_command/set_theme works without a React context. */

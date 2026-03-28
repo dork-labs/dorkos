@@ -13,6 +13,7 @@ import {
   createWrapper,
   createSendMessageMock,
 } from './chat-session-test-helpers';
+import { useSessionChatStore } from '@/layers/entities/session';
 
 // Mock app store (selectedCwd + debug toggles)
 let mockAppState: Record<string, unknown> = {
@@ -45,6 +46,10 @@ describe('useChatSession — core', () => {
     vi.clearAllMocks();
     resetUuidCounter();
     MockEventSource.instances = [];
+    // Reset store so status/error/sessionBusy don't leak between tests.
+    // These fields are now per-session in the Zustand store (not local useState),
+    // so they persist across renders unless explicitly cleared.
+    useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     mockAppState = {
       selectedCwd: '/test/cwd',
       enableCrossClientSync: true,

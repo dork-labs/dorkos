@@ -1,10 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createStreamEventHandler } from '../stream-event-handler';
+import { useSessionChatStore } from '@/layers/entities/session';
 import type { MessagePart } from '@dorkos/shared/types';
 
 function createMinimalDeps(overrides?: {
   sessionId?: string;
   onSessionIdChange?: ReturnType<typeof vi.fn>;
+  onRemap?: ReturnType<typeof vi.fn>;
 }) {
   const currentPartsRef = { current: [] as MessagePart[] };
   const assistantCreatedRef = { current: false };
@@ -32,7 +34,10 @@ function createMinimalDeps(overrides?: {
   };
   const onStreamingDoneRef = { current: undefined };
   const thinkingStartRef = { current: null };
-  const isRemappingRef = { current: false };
+  const onRemapFn = overrides?.onRemap ?? vi.fn();
+  const onRemapRef = {
+    current: onRemapFn as ((oldId: string, newId: string) => void) | undefined,
+  };
 
   const handler = createStreamEventHandler({
     currentPartsRef,
@@ -60,7 +65,7 @@ function createMinimalDeps(overrides?: {
     onTaskEventRef,
     onSessionIdChangeRef,
     onStreamingDoneRef,
-    isRemappingRef,
+    onRemapRef,
     themeRef: { current: vi.fn() },
     scrollToMessageRef: { current: undefined },
     switchAgentRef: { current: undefined },
@@ -74,20 +79,29 @@ function createMinimalDeps(overrides?: {
     setMessages,
     onSessionIdChangeFn,
     onSessionIdChangeRef,
-    isRemappingRef,
+    onRemapFn,
+    onRemapRef,
   };
 }
 
 describe('stream-event-handler — session remap on done event', () => {
+  beforeEach(() => {
+    useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  });
+
   it('preserves messages and resets refs when done event carries a new sessionId', () => {
     // Purpose: Tagged-dedup handles ID reconciliation, so messages must stay on screen
     // during session remap. The old setMessages([]) caused a blank flash.
     const onSessionIdChangeFn = vi.fn();
-    const { handler, currentPartsRef, assistantCreatedRef, setMessages, isRemappingRef } =
-      createMinimalDeps({
-        sessionId: 'client-uuid',
-        onSessionIdChange: onSessionIdChangeFn,
-      });
+    const onRemapFn = vi.fn();
+    const { handler, currentPartsRef, assistantCreatedRef, setMessages } = createMinimalDeps({
+      sessionId: 'client-uuid',
+      onSessionIdChange: onSessionIdChangeFn,
+      onRemap: onRemapFn,
+    });
+
+    // Seed the old session in the store so renameSession has something to move.
+    useSessionChatStore.getState().initSession('client-uuid');
 
     currentPartsRef.current = [{ type: 'text', text: 'hello' } as MessagePart];
     assistantCreatedRef.current = true;
@@ -100,8 +114,12 @@ describe('stream-event-handler — session remap on done event', () => {
     );
     expect(emptyArrayCalls).toHaveLength(0);
 
-    // isRemappingRef must be true so the session change effect skips clearing
-    expect(isRemappingRef.current).toBe(true);
+    // Store must have isRemapping: true on the new session key so the
+    // session-change effect skips clearing messages.
+    expect(useSessionChatStore.getState().getSession('sdk-uuid').isRemapping).toBe(true);
+
+    // onRemap must fire so StreamManager can move its internal entries.
+    expect(onRemapFn).toHaveBeenCalledWith('client-uuid', 'sdk-uuid');
 
     // Refs are still reset
     expect(currentPartsRef.current).toEqual([]);
@@ -111,15 +129,18 @@ describe('stream-event-handler — session remap on done event', () => {
     expect(onSessionIdChangeFn).toHaveBeenCalledWith('sdk-uuid');
   });
 
-  it('does not clear messages on done event when sessionId is unchanged', () => {
-    // Purpose: Ensure the remap clear only triggers when sessionId actually changes.
-    // Normal stream completion (no remap) must not wipe the message buffer.
+  it('does not set isRemapping on done event when sessionId is unchanged', () => {
+    // Purpose: Ensure the remap path only triggers when sessionId actually changes.
+    // Normal stream completion (no remap) must not set isRemapping or wipe messages.
     const onSessionIdChangeFn = vi.fn();
-    const { handler, currentPartsRef, assistantCreatedRef, setMessages, isRemappingRef } =
-      createMinimalDeps({
-        sessionId: 'same-uuid',
-        onSessionIdChange: onSessionIdChangeFn,
-      });
+    const onRemapFn = vi.fn();
+    const { handler, currentPartsRef, assistantCreatedRef, setMessages } = createMinimalDeps({
+      sessionId: 'same-uuid',
+      onSessionIdChange: onSessionIdChangeFn,
+      onRemap: onRemapFn,
+    });
+
+    useSessionChatStore.getState().initSession('same-uuid');
 
     currentPartsRef.current = [{ type: 'text', text: 'hello' } as MessagePart];
     assistantCreatedRef.current = true;
@@ -131,8 +152,10 @@ describe('stream-event-handler — session remap on done event', () => {
     );
     expect(emptyArrayCalls).toHaveLength(0);
     expect(onSessionIdChangeFn).not.toHaveBeenCalled();
-    // isRemappingRef should remain false — no remap occurred
-    expect(isRemappingRef.current).toBe(false);
+    // onRemap should not fire — no remap occurred
+    expect(onRemapFn).not.toHaveBeenCalled();
+    // isRemapping should remain false on the session
+    expect(useSessionChatStore.getState().getSession('same-uuid').isRemapping).toBe(false);
   });
 });
 

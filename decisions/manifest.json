@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 208,
+  "nextNumber": 210,
   "decisions": [
+    {
+      "number": 209,
+      "slug": "stream-manager-singleton",
+      "title": "Module-Level StreamManager Singleton for Decoupled Stream Lifecycle",
+      "created": "2026-03-28",
+      "status": "draft",
+      "extractedFrom": "session-state-manager",
+      "specSlug": "session-state-manager"
+    },
+    {
+      "number": 208,
+      "slug": "session-keyed-zustand-store",
+      "title": "Session-Keyed Zustand Store for Chat State",
+      "created": "2026-03-28",
+      "status": "draft",
+      "extractedFrom": "session-state-manager",
+      "specSlug": "session-state-manager"
+    },
     {
       "number": 207,
       "slug": "refetch-on-reconnect-cache-invalidation",

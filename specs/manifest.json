@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 190,
+  "nextNumber": 191,
   "specs": [
+    {
+      "number": 190,
+      "slug": "session-state-manager",
+      "title": "Session State Manager",
+      "created": "2026-03-28",
+      "status": "implemented"
+    },
     {
       "number": 189,
       "slug": "canvas-persistence-and-toggle",

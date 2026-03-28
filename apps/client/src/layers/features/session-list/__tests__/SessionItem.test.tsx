@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vite
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SessionItem } from '../ui/SessionItem';
 import type { Session } from '@dorkos/shared/types';
+import { useSessionChatStore } from '@/layers/entities/session';
 
 // Mock window.matchMedia for useIsMobile hook
 beforeAll(() => {
@@ -199,5 +200,148 @@ describe('SessionItem', () => {
     render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.getByLabelText('Copy Session ID')).toBeDefined();
+  });
+});
+
+describe('SessionActivityIndicator', () => {
+  const SESSION_ID = 'abc12345-def6-7890-abcd-ef1234567890';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    // Reset store so state doesn't leak between tests
+    useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('shows no indicator when session is idle with no unseen activity', () => {
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    // No colored dot should be present
+    expect(container.querySelector('[aria-label="Streaming"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Error"]')).toBeNull();
+    expect(container.querySelector('[aria-label="New activity"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Waiting for approval"]')).toBeNull();
+  });
+
+  it('shows green pulsing dot when session is streaming', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'streaming' });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const dot = container.querySelector('[aria-label="Streaming"]');
+    expect(dot).not.toBeNull();
+    expect(dot!.className).toContain('bg-green-500');
+    expect(dot!.className).toContain('animate-pulse');
+  });
+
+  it('shows red dot when session has an error', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'error' });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const dot = container.querySelector('[aria-label="Error"]');
+    expect(dot).not.toBeNull();
+    expect(dot!.className).toContain('bg-destructive');
+  });
+
+  it('shows blue dot when session has unseen activity', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, {
+      status: 'idle',
+      hasUnseenActivity: true,
+    });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const dot = container.querySelector('[aria-label="New activity"]');
+    expect(dot).not.toBeNull();
+    expect(dot!.className).toContain('bg-blue-500');
+  });
+
+  it('shows amber pulsing dot when session has a pending tool approval', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, {
+      status: 'streaming',
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'assistant',
+          content: '',
+          parts: [],
+          timestamp: new Date().toISOString(),
+          toolCalls: [
+            {
+              toolCallId: 'tc-1',
+              toolName: 'Bash',
+              input: 'rm -rf /',
+              status: 'pending',
+              interactiveType: 'approval',
+            },
+          ],
+        },
+      ],
+    });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    const dot = container.querySelector('[aria-label="Waiting for approval"]');
+    expect(dot).not.toBeNull();
+    expect(dot!.className).toContain('bg-amber-500');
+    expect(dot!.className).toContain('animate-pulse');
+  });
+
+  it('pending approval dot takes priority over streaming dot', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, {
+      status: 'streaming',
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'assistant',
+          content: '',
+          parts: [],
+          timestamp: new Date().toISOString(),
+          toolCalls: [
+            {
+              toolCallId: 'tc-1',
+              toolName: 'Bash',
+              input: 'ls',
+              status: 'pending',
+              interactiveType: 'approval',
+            },
+          ],
+        },
+      ],
+    });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    expect(container.querySelector('[aria-label="Waiting for approval"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Streaming"]')).toBeNull();
+  });
+
+  it('shows no indicator for the active session even when streaming', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'streaming' });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
+    );
+    expect(container.querySelector('[aria-label="Streaming"]')).toBeNull();
+  });
+
+  it('shows no indicator for the active session even with unseen activity', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, { hasUnseenActivity: true });
+
+    const { container } = render(
+      <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
+    );
+    expect(container.querySelector('[aria-label="New activity"]')).toBeNull();
   });
 });

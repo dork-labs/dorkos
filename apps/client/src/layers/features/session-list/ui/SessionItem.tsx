@@ -3,12 +3,77 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Copy, Check, ShieldOff } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime, TIMING } from '@/layers/shared/lib';
+import { useSessionChatStore } from '@/layers/entities/session';
 
 interface SessionItemProps {
   session: Session;
   isActive: boolean;
   onClick: () => void;
   isNew?: boolean;
+}
+
+/** Tailwind classes for each non-idle session status dot. */
+const STATUS_DOT_CLASSES: Record<string, string> = {
+  streaming: 'bg-green-500 animate-pulse',
+  error: 'bg-destructive',
+};
+
+interface SessionActivityIndicatorProps {
+  sessionId: string;
+}
+
+/**
+ * Ambient status dot shown for background (non-active) sessions.
+ *
+ * Renders a colored dot conveying streaming, error, pending tool approval,
+ * or unseen activity state. Returns null when the session is idle and clean.
+ */
+function SessionActivityIndicator({ sessionId }: SessionActivityIndicatorProps) {
+  const status = useSessionChatStore(
+    useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
+  );
+  const hasUnseenActivity = useSessionChatStore(
+    useCallback((s) => s.sessions[sessionId]?.hasUnseenActivity ?? false, [sessionId])
+  );
+  const hasPendingApproval = useSessionChatStore(
+    useCallback(
+      (s) =>
+        s.sessions[sessionId]?.messages.some((m) =>
+          m.toolCalls?.some((tc) => tc.interactiveType && tc.status === 'pending')
+        ) ?? false,
+      [sessionId]
+    )
+  );
+
+  if (hasPendingApproval) {
+    return (
+      <span
+        className="size-1.5 flex-shrink-0 animate-pulse rounded-full bg-amber-500"
+        aria-label="Waiting for approval"
+      />
+    );
+  }
+
+  if (status !== 'idle') {
+    const dotClasses = STATUS_DOT_CLASSES[status];
+    if (dotClasses) {
+      const label = status === 'streaming' ? 'Streaming' : 'Error';
+      return (
+        <span
+          className={cn('size-1.5 flex-shrink-0 rounded-full', dotClasses)}
+          aria-label={label}
+        />
+      );
+    }
+  }
+
+  if (hasUnseenActivity) {
+    return (
+      <span className="size-1.5 flex-shrink-0 rounded-full bg-blue-500" aria-label="New activity" />
+    );
+  }
+
+  return null;
 }
 
 function formatTimestamp(iso: string): string {
@@ -108,9 +173,10 @@ export function SessionItem({ session, isActive, onClick, isNew = false }: Sessi
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         className="relative z-10 cursor-pointer px-3 py-2"
       >
-        {/* Line 1: relative time + permission icon + expand */}
+        {/* Line 1: relative time + activity indicator + permission icon + expand */}
         <div className="text-muted-foreground flex items-center gap-1 text-xs">
           <span className="min-w-0 flex-1">{formatRelativeTime(session.updatedAt)}</span>
+          {!isActive && <SessionActivityIndicator sessionId={session.id} />}
           <span className="flex flex-shrink-0 items-center gap-1">
             {isSkipMode && (
               <ShieldOff
