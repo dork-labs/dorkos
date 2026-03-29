@@ -104,7 +104,11 @@ async function gql(apiKey: string, query: string, variables?: Record<string, unk
     body: JSON.stringify({ query, variables }),
   });
   if (!res.ok) throw new Error(`Linear API error: ${res.status}`);
-  return res.json();
+  const json = (await res.json()) as { data?: unknown; errors?: Array<{ message: string }> };
+  if (json.errors?.length) {
+    throw new Error(`Linear GraphQL: ${json.errors.map((e) => e.message).join('; ')}`);
+  }
+  return json;
 }
 
 function hasLabel(issue: LinearIssue, label: string): boolean {
@@ -187,10 +191,8 @@ interface StoredData {
 }
 
 const register: ServerExtensionRegister = async (router, ctx) => {
-  // Read settings once at init (reload extension to pick up changes)
+  // refreshInterval is read once — changing it requires extension reload
   const refreshInterval = (await ctx.settings.get<number>('refresh_interval')) ?? 60;
-  const teamKey = (await ctx.settings.get<string>('team_key')) ?? 'DOR';
-  const maxPerSection = (await ctx.settings.get<number>('max_issues')) ?? 25;
 
   // Legacy on-demand endpoint — viewer's assigned issues, fresh from Linear
   router.get('/issues', async (_req, res) => {
@@ -217,16 +219,19 @@ const register: ServerExtensionRegister = async (router, ctx) => {
   });
 
   // Background polling — fetches Loop data at configurable interval
+  // teamKey and maxPerSection are re-read each tick so changes take effect without reload
   ctx.schedule(refreshInterval, async () => {
     const apiKey = await ctx.secrets.get('linear_api_key');
     if (!apiKey) return;
+    const currentTeamKey = (await ctx.settings.get<string>('team_key')) ?? 'DOR';
+    const currentMax = (await ctx.settings.get<number>('max_issues')) ?? 25;
     try {
-      const json = (await gql(apiKey, LOOP_QUERY, { teamKey })) as {
+      const json = (await gql(apiKey, LOOP_QUERY, { teamKey: currentTeamKey })) as {
         data?: { active?: { nodes: LinearIssue[] }; completed?: { nodes: LinearIssue[] } };
       };
       const active = json.data?.active?.nodes ?? [];
       const completed = json.data?.completed?.nodes ?? [];
-      const loop = categorizeIssues(active, completed, maxPerSection);
+      const loop = categorizeIssues(active, completed, currentMax);
 
       // Only persist + emit if health changed
       const prev = await ctx.storage.loadData<StoredData>();

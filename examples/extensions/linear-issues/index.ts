@@ -105,13 +105,13 @@ function useLoopData(): { data: LoopData | null; settings: Settings; loading: bo
           fetch(`/api/extensions/${EXT_ID}/settings`),
         ]);
         if (disposed) return;
-        if (loopRes.ok) {
-          const d = await loopRes.json();
-          if (d) setData(d);
-        }
-        if (settingsRes.ok) {
-          setSettings(parseSettings(await settingsRes.json()));
-        }
+        const [loopJson, settingsJson] = await Promise.all([
+          loopRes.ok ? loopRes.json() : Promise.resolve(null),
+          settingsRes.ok ? settingsRes.json() : Promise.resolve(null),
+        ]);
+        if (disposed) return;
+        if (loopJson) setData(loopJson);
+        if (settingsJson) setSettings(parseSettings(settingsJson));
       } catch {
         // Non-blocking
       } finally {
@@ -145,7 +145,7 @@ export function activate(api: ExtensionAPI): () => void {
 
   cleanups.push(
     api.registerComponent('sidebar.tabs', 'linear-loop-sidebar', LoopSidebar, {
-      label: 'Loop',
+      priority: 5,
     }),
   );
 
@@ -212,7 +212,7 @@ function LoopSidebar() {
 function LoopView({ data, settings }: { data: LoopData; settings: Settings }) {
   return h(React.Fragment, null,
     ...LOOP_SECTIONS
-      .filter((sec) => sec.keys[0] !== 'completed' || settings.showCompleted)
+      .filter((sec) => !sec.keys.includes('completed') || settings.showCompleted)
       .map((sec) => {
         const issues = sec.keys.flatMap((k) => data.categories[k]);
         if (!issues.length) return null;
@@ -243,8 +243,9 @@ function ProjectView({ data }: { data: LoopData }) {
 }
 
 function AllView({ data }: { data: LoopData }) {
+  // Linear priority: 1=Urgent, 2=High, 3=Medium, 4=Low, 0=None — sort 0 last
   const allIssues = Object.values(data.categories).flat()
-    .sort((a, b) => a.priority - b.priority);
+    .sort((a, b) => (a.priority || 5) - (b.priority || 5));
   if (!allIssues.length) return h('div', { style: s.empty }, 'No active issues');
   return h('div', { style: s.list }, allIssues.map((i) => h(IssueRow, { key: i.id, issue: i })));
 }
