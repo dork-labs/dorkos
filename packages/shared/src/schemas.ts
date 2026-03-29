@@ -131,8 +131,8 @@ export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;
 
 export const ForkSessionRequestSchema = z
   .object({
-    /** Slice transcript up to this message UUID (inclusive). If omitted, full copy. */
-    upToMessageId: z.string().uuid().optional(),
+    /** Slice transcript up to this message ID (inclusive). If omitted, full copy. */
+    upToMessageId: z.string().optional(),
     /** Custom title for the fork. If omitted, SDK derives from original title. */
     title: z.string().optional(),
   })

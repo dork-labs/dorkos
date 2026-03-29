@@ -12,6 +12,7 @@ import type {
   DoneEvent,
   ErrorEvent,
   ApiRetryEvent,
+  ContextUsage,
   SessionStatusEvent,
   SessionStateChangedEvent,
   TaskUpdateEvent,
@@ -250,6 +251,11 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       case 'prompt_suggestion': {
         const { suggestions } = data as PromptSuggestionEvent;
         setPromptSuggestions(suggestions);
+        break;
+      }
+      case 'context_usage': {
+        const usage = data as ContextUsage;
+        useSessionChatStore.getState().updateSession(sessionId, { contextUsage: usage });
         break;
       }
       case 'session_state_changed': {

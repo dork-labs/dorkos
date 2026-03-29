@@ -156,9 +156,13 @@ router.post('/:id/fork', async (req, res) => {
 
   const runtime = runtimeRegistry.getDefault();
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  const forked = await runtime.forkSession(cwd, internalSessionId, parsed.data);
-  if (!forked) return sendError(res, 404, 'Session not found or fork failed', 'FORK_FAILED');
-  res.status(201).json(forked);
+  try {
+    const forked = await runtime.forkSession(cwd, internalSessionId, parsed.data);
+    if (!forked) return sendError(res, 404, 'Session not found or fork failed', 'FORK_FAILED');
+    res.status(201).json(forked);
+  } catch {
+    sendError(res, 500, 'Fork failed', 'FORK_ERROR');
+  }
 });
 
 // POST /api/sessions/:id/messages - Send message (SSE stream)

@@ -386,6 +386,29 @@ export async function* executeSdkQuery(
         opts.sdkSessionIndex.set(session.sdkSessionId, opts.sessionMapKey);
       }
     }
+
+    // Fetch context usage breakdown after stream completes (before finally clears activeQuery)
+    if (session.activeQuery) {
+      try {
+        const usage = await session.activeQuery.getContextUsage();
+        yield {
+          type: 'context_usage',
+          data: {
+            totalTokens: usage.totalTokens,
+            maxTokens: usage.maxTokens,
+            percentage: usage.percentage,
+            model: usage.model,
+            categories: usage.categories.map((c) => ({
+              name: c.name,
+              tokens: c.tokens,
+              color: c.color,
+            })),
+          },
+        };
+      } catch (err) {
+        logger.debug('[sendMessage] failed to fetch context usage', { err });
+      }
+    }
   } catch (err) {
     if (session.hasStarted && isResumeFailure(err) && retryDepth < MAX_RESUME_RETRIES) {
       logger.warn('[sendMessage] resume failed for stale session, retrying as new', {

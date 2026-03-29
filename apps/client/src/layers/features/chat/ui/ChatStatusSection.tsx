@@ -10,7 +10,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useIsMobile, useAppStore, useTransport } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
-import { useSessionStatus } from '@/layers/entities/session';
+import { useSessionStatus, useSessionChatStore } from '@/layers/entities/session';
 import { ShortcutChips } from './ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -143,6 +143,9 @@ export function ChatStatusSection({
     enableMessagePolling,
     setEnableMessagePolling,
   } = useAppStore();
+  const contextUsage = useSessionChatStore(
+    useCallback((s) => s.sessions[sessionId]?.contextUsage ?? null, [sessionId])
+  );
   const { data: gitStatus } = useGitStatus(status.cwd);
   const transport = useTransport();
   const { data: serverConfig } = useQuery({
@@ -278,7 +281,9 @@ export function ChatStatusSection({
                 onHide={() => setShowStatusBarContext(false)}
                 onConfigure={() => setConfigureOpen(true)}
               >
-                {status.contextPercent !== null && <ContextItem percent={status.contextPercent} />}
+                {status.contextPercent !== null && (
+                  <ContextItem percent={status.contextPercent} contextUsage={contextUsage} />
+                )}
               </ItemContextMenu>
             </StatusLine.Item>
             <StatusLine.Item itemKey="sound" visible={showStatusBarSound}>
