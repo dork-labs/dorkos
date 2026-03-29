@@ -32,6 +32,7 @@ Transport
   getConfig()                -> ServerConfig
   updateConfig(patch)        -> void
   getModels()                -> ModelOption[]
+  getSubagents()             -> SubagentInfo[]
   getCapabilities()          -> { capabilities: Record<string, RuntimeCapabilities>, defaultRuntime: string }
   startTunnel()              -> { url: string }
   stopTunnel()               -> void

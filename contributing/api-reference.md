@@ -1018,6 +1018,28 @@ No feature flag required — always mounted.
 }
 ```
 
+### GET /api/subagents
+
+Returns available subagents reported by the SDK. Delegates to `runtimeRegistry.getDefault().getSupportedSubagents()`. Values are cached by `RuntimeCache` and refreshed on `reloadPlugins()`.
+
+No feature flag required — always mounted.
+
+**Responses:**
+
+- `200` - `{ subagents: SubagentInfo[] }`:
+
+```json
+{
+  "subagents": [
+    {
+      "name": "Explore",
+      "description": "Fast agent specialized for exploring codebases",
+      "model": "claude-haiku-4-5"
+    }
+  ]
+}
+```
+
 ## Capabilities Endpoint
 
 ### GET /api/capabilities

@@ -508,6 +508,24 @@ export function useModels() {
 
 The server delegates to `runtimeRegistry.getDefault().getSupportedModels()` via `GET /api/models`.
 
+## Session Entity: useSubagents
+
+Available subagents are fetched via `useSubagents()` in `entities/session/`. Same non-blocking pattern as `useModels()` — long `staleTime` (30 minutes) since subagent sets rarely change between sessions:
+
+```typescript
+// apps/client/src/layers/entities/session/model/use-subagents.ts
+export function useSubagents() {
+  const transport = useTransport();
+  return useQuery<SubagentInfo[]>({
+    queryKey: ['subagents'],
+    queryFn: () => transport.getSubagents(),
+    staleTime: 30 * 60 * 1000,
+  });
+}
+```
+
+The server delegates to `runtimeRegistry.getDefault().getSupportedSubagents()` via `GET /api/subagents`. Values are cached by `RuntimeCache` and refreshed on `reloadPlugins()`.
+
 ## Runtime Entity Hooks
 
 The runtime entity layer (`entities/runtime/`) provides hooks for querying runtime capabilities. These are static for the server's lifetime, so `staleTime: Infinity` prevents unnecessary refetches.

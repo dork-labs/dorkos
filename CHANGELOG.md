@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Document getSubagents() across architecture, API, and data-fetching guides
 - Extract setting field renderers to separate file
 - Extract SessionStore, RuntimeCache, and constants from ClaudeCodeRuntime
 - Update docs and templates for auto-generated settings tabs
