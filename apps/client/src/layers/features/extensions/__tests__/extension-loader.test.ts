@@ -319,7 +319,23 @@ describe('ExtensionLoader', () => {
     expect(loader.getLoaded().size).toBe(0);
   });
 
-  // 13. Multiple extensions loaded — deactivateAll clears all
+  // 13. deactivateAll sets disposed flag preventing further activations
+  it('deactivateAll prevents subsequent initialize activations (StrictMode safety)', () => {
+    const loader = new ExtensionLoader(makeDeps());
+
+    // Call deactivateAll before any load — simulates StrictMode unmount
+    // happening before the async initialize() completes.
+    loader.deactivateAll();
+
+    // Access the disposed flag via the private field
+    const disposed = (loader as unknown as { disposed: boolean }).disposed;
+    expect(disposed).toBe(true);
+
+    // getLoaded should be empty
+    expect(loader.getLoaded().size).toBe(0);
+  });
+
+  // 14. Multiple extensions loaded — deactivateAll clears all
   it('deactivateAll clears all extensions from the loaded map', () => {
     const loader = new ExtensionLoader(makeDeps());
     const loaded = (loader as unknown as { loaded: Map<string, unknown> }).loaded;

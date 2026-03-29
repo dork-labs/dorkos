@@ -9,6 +9,8 @@ Extensions add UI components, commands, and behavior to DorkOS. This guide cover
 3. Enable "Hello World" and reload the page
 4. The dashboard shows a new section; the command palette has a "Hello World: Show Greeting" command
 
+> **No server restart required.** The extension system discovers new directories on page reload. For extensions with `server.ts`, the server side initializes automatically when the client activates the extension.
+
 ## Directory Structure
 
 An extension is a directory with at least two files:
@@ -164,9 +166,23 @@ If both `index.js` and `index.ts` exist, the pre-compiled JS takes priority.
 
 ## React Components
 
-React is provided by the host. Do not bundle your own copy.
+React is provided by the host on the global scope (`globalThis.React`). **Do not import React yourself** — the extension is compiled as ESM with `react` externalized, so a bare `import React from 'react'` produces a module specifier the browser cannot resolve and causes a runtime error.
 
-In TypeScript extensions, JSX works out of the box:
+```typescript
+// WRONG — causes "Failed to resolve module specifier 'react'" at runtime
+import React from 'react';
+
+// CORRECT — type-only imports are erased at compile time (safe)
+import type { ExtensionAPI } from '@dorkos/extension-api';
+
+// CORRECT — use React from the global scope
+function MySection() {
+  const [count, setCount] = React.useState(0);
+  return React.createElement('div', null, `Count: ${count}`);
+}
+```
+
+In TypeScript extensions, JSX works out of the box (the compiler uses the global `React`):
 
 ```typescript
 function MySection() {
@@ -657,6 +673,7 @@ Agents can diagnose and fix errors autonomously using structured error feedback:
 
 ### What Agents Should Not Do
 
+- **Do not `import React from 'react'`.** React is on the global scope. Bare imports produce unresolvable module specifiers at runtime. Use `import type` for type-only imports (erased at compile time).
 - **Do not create `node_modules` or install npm packages.** Extensions cannot have external dependencies beyond `react`, `react-dom`, and `@dorkos/extension-api` (provided by the host).
 - **Do not modify `extension.json` after creation** unless changing metadata. The `id` field must remain stable.
 - **Do not write to extension directories owned by other extensions.** Each extension has an isolated directory.

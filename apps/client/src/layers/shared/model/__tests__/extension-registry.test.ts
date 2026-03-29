@@ -85,4 +85,26 @@ describe('extension-registry', () => {
     const sorted = [...raw].sort((a, b) => (a.priority ?? 50) - (b.priority ?? 50));
     expect(sorted.map((c) => c.id)).toEqual(['first', 'second', 'third']);
   });
+
+  it('is idempotent — re-registering the same ID replaces instead of duplicating', () => {
+    const { register, getContributions } = useExtensionRegistry.getState();
+    register('sidebar.footer', makeSidebarFooter({ id: 'dup', label: 'First' }));
+    register('sidebar.footer', makeSidebarFooter({ id: 'dup', label: 'Second' }));
+
+    const items = getContributions('sidebar.footer');
+    expect(items).toHaveLength(1);
+    expect(items[0].label).toBe('Second');
+  });
+
+  it('idempotent register does not affect other contributions in the same slot', () => {
+    const { register, getContributions } = useExtensionRegistry.getState();
+    register('sidebar.footer', makeSidebarFooter({ id: 'keep-me', label: 'Keeper' }));
+    register('sidebar.footer', makeSidebarFooter({ id: 'replace-me', label: 'V1' }));
+    register('sidebar.footer', makeSidebarFooter({ id: 'replace-me', label: 'V2' }));
+
+    const items = getContributions('sidebar.footer');
+    expect(items).toHaveLength(2);
+    expect(items.map((c) => c.id)).toEqual(['keep-me', 'replace-me']);
+    expect(items.find((c) => c.id === 'replace-me')!.label).toBe('V2');
+  });
 });

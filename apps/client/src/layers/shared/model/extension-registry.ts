@@ -140,7 +140,13 @@ export const useExtensionRegistry = create<ExtensionRegistryState>()(
           (state) => ({
             slots: {
               ...state.slots,
-              [slotId]: [...state.slots[slotId], withDefaults],
+              // Idempotent: replace any existing entry with the same ID to
+              // prevent duplicates from React StrictMode double-mounts or
+              // hot-reload races.
+              [slotId]: [
+                ...state.slots[slotId].filter((c) => c.id !== contribution.id),
+                withDefaults,
+              ],
             },
           }),
           undefined,

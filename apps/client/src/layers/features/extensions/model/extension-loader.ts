@@ -1,6 +1,12 @@
-import type { ExtensionRecordPublic, ExtensionModule } from '@dorkos/extension-api';
+import type {
+  ExtensionRecordPublic,
+  ExtensionModule,
+  SecretDeclaration,
+} from '@dorkos/extension-api';
 import { createExtensionAPI } from './extension-api-factory';
 import type { ExtensionAPIDeps, LoadedExtension } from './types';
+import { createElement } from 'react';
+import { ManifestSecretsPanel, ManifestSecretsIcon } from '../ui/ManifestSecretsPanel';
 
 /**
  * Fetch the extension list from the server.
@@ -74,6 +80,11 @@ interface BundleResult {
 export class ExtensionLoader {
   private loaded: Map<string, LoadedExtension> = new Map();
   private readonly deps: ExtensionAPIDeps;
+  /**
+   * Set by {@link deactivateAll} to prevent a stale loader from completing
+   * async work after React StrictMode unmounts the owning component.
+   */
+  private disposed = false;
 
   constructor(deps: ExtensionAPIDeps) {
     this.deps = deps;
@@ -113,6 +124,10 @@ export class ExtensionLoader {
     const serverInits: Promise<void>[] = [];
 
     for (const { rec, module } of bundleResults) {
+      // If deactivateAll() was called (e.g. React StrictMode unmount) while
+      // the async initialize was in flight, stop activating further extensions.
+      if (this.disposed) break;
+
       if (!module) {
         // importBundle already logged the error; nothing more to do here.
         continue;
@@ -121,6 +136,11 @@ export class ExtensionLoader {
       try {
         const { api, cleanups } = createExtensionAPI(rec.id, this.deps);
         const deactivateFn = module.activate(api);
+
+        // Auto-register a secrets settings tab from the manifest if the
+        // extension didn't register one itself. This gives extension authors
+        // a polished settings UI for free — zero code required.
+        this.autoRegisterSecretsTab(rec, cleanups);
 
         const loaded: LoadedExtension = {
           id: rec.id,
@@ -159,6 +179,8 @@ export class ExtensionLoader {
    * and logged so they cannot prevent the remaining extensions from being torn down.
    */
   deactivateAll(): void {
+    this.disposed = true;
+
     for (const [id, ext] of this.loaded) {
       try {
         ext.deactivate?.();
@@ -236,6 +258,8 @@ export class ExtensionLoader {
         const { api, cleanups } = createExtensionAPI(id, this.deps);
         const deactivateFn = module.activate(api);
 
+        this.autoRegisterSecretsTab(rec, cleanups);
+
         this.loaded.set(id, {
           id,
           manifest: rec.manifest,
@@ -260,5 +284,37 @@ export class ExtensionLoader {
   /** Return the map of all currently loaded extensions. */
   getLoaded(): Map<string, LoadedExtension> {
     return this.loaded;
+  }
+
+  /**
+   * Auto-register a host-generated settings tab for extensions that declare
+   * secrets in their manifest. This gives extension authors a polished UI
+   * using the design system — zero settings code required.
+   *
+   * Called after `module.activate(api)` so the extension can override by
+   * registering its own tab with the same ID (idempotent registry replaces).
+   */
+  private autoRegisterSecretsTab(rec: ExtensionRecordPublic, cleanups: Array<() => void>): void {
+    const secrets = rec.manifest.serverCapabilities?.secrets;
+    if (!secrets?.length) return;
+
+    const extensionId = rec.id;
+    const tabId = `${extensionId}:settings`;
+    const frozenSecrets: SecretDeclaration[] = secrets;
+
+    const unsub = this.deps.registry.register('settings.tabs', {
+      id: tabId,
+      label: rec.manifest.name,
+      icon: ManifestSecretsIcon,
+      component: function AutoSecretsTab() {
+        return createElement(ManifestSecretsPanel, {
+          extensionId,
+          secrets: frozenSecrets,
+        });
+      },
+      priority: 90,
+    });
+
+    cleanups.push(unsub);
   }
 }
