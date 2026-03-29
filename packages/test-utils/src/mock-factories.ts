@@ -120,6 +120,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       updatedAt: new Date().toISOString(),
       permissionMode: 'default',
     }),
+    reloadPlugins: vi.fn().mockResolvedValue({
+      commandCount: 0,
+      pluginCount: 0,
+      errorCount: 0,
+    }),
     browseDirectory: vi.fn().mockResolvedValue({ path: '/test', entries: [], parent: null }),
     getDefaultCwd: vi.fn().mockResolvedValue({ path: '/test/cwd' }),
     listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false, total: 0 }),

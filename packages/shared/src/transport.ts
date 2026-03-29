@@ -464,6 +464,9 @@ export interface Transport {
   /** Read MCP server entries from `.mcp.json` in the given project directory. */
   getMcpConfig(projectPath: string): Promise<McpConfigResponse>;
 
+  /** Reload plugins for a session and return refreshed status. */
+  reloadPlugins(sessionId: string, cwd?: string): Promise<import('./types.js').ReloadPluginsResult>;
+
   /** Initiate a factory reset: delete all DorkOS data and restart the server. */
   resetAllData(confirm: string): Promise<{ message: string }>;
   /** Initiate a graceful server restart. */

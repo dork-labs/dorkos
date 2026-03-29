@@ -12,6 +12,7 @@ export type {
   CreateSessionRequest,
   UpdateSessionRequest,
   ForkSessionRequest,
+  ReloadPluginsResult,
   EffortLevel,
   SendMessageRequest,
   StreamEventType,

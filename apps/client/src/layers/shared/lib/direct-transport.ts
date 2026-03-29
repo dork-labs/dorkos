@@ -102,6 +102,10 @@ export class DirectTransport implements Transport {
     throw new Error('Session forking is not supported in DirectTransport');
   }
 
+  async reloadPlugins(): Promise<never> {
+    throw new Error('Plugin reload is not supported in DirectTransport');
+  }
+
   async getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }> {
     const messages = await this.services.transcriptReader.readTranscript(
       cwd || this.services.vaultRoot,

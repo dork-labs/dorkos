@@ -113,7 +113,11 @@ export function SessionSidebar() {
           aria-labelledby="sidebar-tab-connections"
           className={cn('h-full', sidebarActiveTab !== 'connections' && 'hidden')}
         >
-          <ConnectionsView toolStatus={toolStatus} agentId={currentAgent?.id} />
+          <ConnectionsView
+            toolStatus={toolStatus}
+            agentId={currentAgent?.id}
+            activeSessionId={activeSessionId}
+          />
         </div>
       </SidebarContent>
     </>

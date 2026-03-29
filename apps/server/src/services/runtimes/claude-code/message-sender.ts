@@ -440,6 +440,8 @@ export async function* executeSdkQuery(
     };
     emittedError = true;
   } finally {
+    // Preserve the query reference for post-stream control methods (e.g. reloadPlugins)
+    session.lastQuery = session.activeQuery;
     session.activeQuery = undefined;
   }
 

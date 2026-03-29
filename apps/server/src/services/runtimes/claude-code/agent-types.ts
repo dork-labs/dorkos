@@ -16,6 +16,8 @@ export interface AgentSession {
   needsTranscriptCheck?: boolean;
   /** Active SDK query object — used for mid-stream control (setPermissionMode, setModel) */
   activeQuery?: Query;
+  /** Last completed SDK query — persisted after streaming for post-stream control (reloadPlugins). */
+  lastQuery?: Query;
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;

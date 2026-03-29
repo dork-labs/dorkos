@@ -43,6 +43,10 @@ export class TestModeRuntime implements AgentRuntime {
     return null;
   }
 
+  async reloadPlugins(): Promise<null> {
+    return null;
+  }
+
   updateSession(
     sessionId: string,
     opts: { permissionMode?: PermissionMode; model?: string }

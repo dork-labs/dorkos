@@ -14,6 +14,7 @@ import type {
   ModelOption,
   CommandRegistry,
   PermissionMode,
+  ReloadPluginsResult,
   UiState,
 } from './types.js';
 
@@ -319,6 +320,16 @@ export interface AgentRuntime {
    * @param cwd - Absolute project directory path
    */
   getMcpStatus?(cwd: string): import('./transport.js').McpServerEntry[] | null;
+
+  /**
+   * Reload plugins from disk for a given session and return refreshed status.
+   *
+   * Requires a Query object from a prior SDK session. Returns null if no query is available
+   * (e.g. no message has been sent yet in this session).
+   *
+   * @param sessionId - Session with an existing SDK query
+   */
+  reloadPlugins?(sessionId: string): Promise<ReloadPluginsResult | null>;
 
   // --- Dependency injection (optional) ---
 

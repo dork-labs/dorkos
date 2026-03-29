@@ -25,6 +25,7 @@ import type {
   UpdateScheduleRequest,
   ListRunsQuery,
   PulsePreset,
+  ReloadPluginsResult,
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
@@ -247,6 +248,12 @@ export class HttpTransport implements Transport {
     return fetchJSON<Session>(this.baseUrl, `/sessions/${id}/fork${qs}`, {
       method: 'POST',
       body: JSON.stringify(opts ?? {}),
+    });
+  }
+
+  reloadPlugins(sessionId: string): Promise<ReloadPluginsResult> {
+    return fetchJSON<ReloadPluginsResult>(this.baseUrl, `/sessions/${sessionId}/reload-plugins`, {
+      method: 'POST',
     });
   }
 

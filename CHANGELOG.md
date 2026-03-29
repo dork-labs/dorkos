@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add plugin hot-reload via reloadPlugins()
 - Add server-side extension hooks with encrypted secrets and Linear reference extension
 - Add session forking via SDK forkSession()
 - Fix prompt suggestions, add api_retry events, and effort level controls

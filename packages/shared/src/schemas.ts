@@ -140,6 +140,19 @@ export const ForkSessionRequestSchema = z
 
 export type ForkSessionRequest = z.infer<typeof ForkSessionRequestSchema>;
 
+export const ReloadPluginsResultSchema = z
+  .object({
+    /** Number of commands available after reload. */
+    commandCount: z.number().int(),
+    /** Number of plugins loaded after reload. */
+    pluginCount: z.number().int(),
+    /** Number of errors encountered during reload. */
+    errorCount: z.number().int(),
+  })
+  .openapi('ReloadPluginsResult');
+
+export type ReloadPluginsResult = z.infer<typeof ReloadPluginsResultSchema>;
+
 export const SendMessageRequestSchema = z
   .object({
     content: z.string().min(1, 'content is required'),

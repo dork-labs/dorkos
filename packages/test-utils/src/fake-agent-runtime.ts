@@ -78,6 +78,7 @@ export class FakeAgentRuntime implements AgentRuntime {
       ) => Promise<Session | null>
     >()
     .mockResolvedValue(null);
+  reloadPlugins = vi.fn<(sessionId: string) => Promise<null>>().mockResolvedValue(null);
   listSessions = vi.fn<(projectDir: string) => Promise<Session[]>>().mockResolvedValue([]);
   getSession = vi
     .fn<(projectDir: string, sessionId: string) => Promise<Session | null>>()

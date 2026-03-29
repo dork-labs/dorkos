@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents, useAgentAccess } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
 import { useMcpConfig } from '@/layers/entities/agent';
 import {
@@ -15,12 +17,16 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   ScrollArea,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 interface ConnectionsViewProps {
   toolStatus: AgentToolStatus;
   agentId: string | null | undefined;
+  activeSessionId: string | null;
 }
 
 const ADAPTER_STATE_COLORS: Record<string, string> = {
@@ -83,7 +89,7 @@ const emptyStateVariants = {
 const emptyStateTransition = { duration: 0.15, ease: EASE_OUT } as const;
 
 /** Read-only adapter and agent summary for the sidebar Connections tab. */
-export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
+export function ConnectionsView({ toolStatus, agentId, activeSessionId }: ConnectionsViewProps) {
   const { setRelayOpen, setMeshOpen, setAgentDialogOpen, selectedCwd } = useAppStore();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';
@@ -132,6 +138,30 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
 
   const [agentsExpanded, setAgentsExpanded] = useState(false);
   const [mcpExpanded, setMcpExpanded] = useState(false);
+  const [reloading, setReloading] = useState(false);
+
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  const handleReloadPlugins = useCallback(async () => {
+    if (!activeSessionId || reloading) return;
+    setReloading(true);
+    try {
+      const result = await transport.reloadPlugins(activeSessionId);
+      await queryClient.invalidateQueries({ queryKey: ['mcp-config'] });
+      if (result.errorCount > 0) {
+        toast.warning(`Plugins reloaded with ${result.errorCount} error(s)`);
+      } else {
+        toast.success(
+          `Reloaded ${result.pluginCount} plugin(s), ${result.commandCount} command(s)`
+        );
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reload plugins');
+    } finally {
+      setReloading(false);
+    }
+  }, [activeSessionId, reloading, transport, queryClient]);
 
   const showRelaySection = relayEnabled;
   const showMeshSection = meshEnabled;
@@ -408,6 +438,28 @@ export function ConnectionsView({ toolStatus, agentId }: ConnectionsViewProps) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
+
+            {/* Reload plugins action */}
+            {activeSessionId && (
+              <SidebarMenuItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarMenuButton
+                      className="text-muted-foreground hover:text-foreground text-xs"
+                      onClick={handleReloadPlugins}
+                      disabled={reloading}
+                      aria-label="Reload plugins"
+                    >
+                      <RefreshCw className={cn('size-3 shrink-0', reloading && 'animate-spin')} />
+                      <span>Reload plugins</span>
+                    </SidebarMenuButton>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    Reload MCP servers and commands from disk
+                  </TooltipContent>
+                </Tooltip>
+              </SidebarMenuItem>
+            )}
           </SidebarMenu>
 
           {/* Block 3: Overflow MCP servers — height-collapse on expand/collapse */}

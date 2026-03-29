@@ -165,6 +165,32 @@ router.post('/:id/fork', async (req, res) => {
   }
 });
 
+// POST /api/sessions/:id/reload-plugins - Reload plugins from disk
+router.post('/:id/reload-plugins', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const runtime = runtimeRegistry.getDefault();
+  if (!runtime.reloadPlugins) {
+    return sendError(res, 501, 'Plugin reload not supported by this runtime', 'NOT_SUPPORTED');
+  }
+
+  try {
+    const result = await runtime.reloadPlugins(sessionId);
+    if (!result) {
+      return sendError(
+        res,
+        409,
+        'No active query — send a message first to establish a session',
+        'NO_ACTIVE_QUERY'
+      );
+    }
+    res.json(result);
+  } catch {
+    sendError(res, 500, 'Plugin reload failed', 'RELOAD_ERROR');
+  }
+});
+
 // POST /api/sessions/:id/messages - Send message (SSE stream)
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);

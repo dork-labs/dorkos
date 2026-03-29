@@ -29,6 +29,7 @@ import type {
   AgentRegistryPort,
   RelayPort,
 } from '@dorkos/shared/agent-runtime';
+import type { ReloadPluginsResult } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../config/constants.js';
 import { SessionLockManager } from './session-lock.js';
 import type { AgentSession } from './agent-types.js';
@@ -681,6 +682,70 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   getMcpStatus(cwd: string): McpServerEntry[] | null {
     return this.cachedMcpStatus.get(cwd) ?? null;
+  }
+
+  /**
+   * Reload plugins from disk for a given session and return refreshed status.
+   *
+   * Uses the session's active or last query object to call the SDK's `reloadPlugins()`.
+   * Updates internal MCP status and command caches with the refreshed data.
+   */
+  async reloadPlugins(sessionId: string): Promise<ReloadPluginsResult | null> {
+    const session = this.findSession(sessionId);
+    const queryObj = session?.activeQuery ?? session?.lastQuery;
+    if (!queryObj) {
+      logger.warn('[reloadPlugins] no query available', { sessionId });
+      return null;
+    }
+
+    try {
+      const result = await queryObj.reloadPlugins();
+
+      // Update command cache
+      this.cachedSdkCommands = result.commands.map((c) => ({
+        name: c.name,
+        description: c.description,
+        argumentHint: c.argumentHint,
+      }));
+
+      // Update MCP status cache — apply same transform as message-sender
+      const cwd = session!.cwd ?? this.cwd;
+      this.cachedMcpStatus.set(
+        cwd,
+        result.mcpServers
+          .filter((s) => s.name !== 'dorkos')
+          .map((s) => ({
+            name: s.name,
+            type:
+              s.config?.type === 'sse' || s.config?.type === 'http'
+                ? s.config.type
+                : ('stdio' as const),
+            status: s.status,
+            error: s.error,
+            scope: s.scope,
+          }))
+      );
+
+      logger.info('[reloadPlugins] plugins reloaded', {
+        sessionId,
+        commands: result.commands.length,
+        plugins: result.plugins.length,
+        mcpServers: result.mcpServers.length,
+        errorCount: result.error_count,
+      });
+
+      return {
+        commandCount: result.commands.length,
+        pluginCount: result.plugins.length,
+        errorCount: result.error_count,
+      };
+    } catch (err) {
+      logger.error('[reloadPlugins] reload failed', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
