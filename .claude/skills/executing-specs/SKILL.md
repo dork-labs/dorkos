@@ -275,6 +275,16 @@ After all batches complete:
 4. Add any final implementation notes under the current session
 5. Write the updated file
 
+### 4.1b Update Manifest Status
+
+Update the spec manifest to reflect completed implementation:
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/spec-manifest-ops.ts update-status <SLUG> implemented --quiet
+```
+
+This ensures the manifest stays in sync even when the PostToolUse hook doesn't fire (e.g., when agents write files).
+
 ### 4.2 Display Completion Summary
 
 ```
@@ -295,6 +305,7 @@ Documentation Review:
    Run /docs:reconcile to check for drift
 
 Next steps:
+   - Manifest status updated to "implemented"
    - Run /git:commit to commit changes
    - Run /spec:feedback if you have feedback to incorporate
 

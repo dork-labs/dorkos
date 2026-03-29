@@ -210,6 +210,22 @@ Follow these guidelines:
 
 Write the specification to the OUTPUT_PATH determined in the "Detect Output Path" section above.
 
+## Ensure Manifest Entry
+
+After writing the specification file, ensure the spec has a manifest entry:
+
+1. Read `specs/manifest.json` and check if an entry exists for this slug
+2. If no entry exists, add one:
+   ```bash
+   node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/spec-manifest-ops.ts add <slug> "<title>" --status=specified
+   ```
+3. If an entry exists but its status is `ideation`, update it:
+   ```bash
+   node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/spec-manifest-ops.ts update-status <slug> specified --quiet
+   ```
+
+This ensures the manifest stays in sync regardless of whether `/ideate` ran first.
+
 ## PROGRESSIVE VALIDATION CHECKPOINTS
 
 After completing each major section:
