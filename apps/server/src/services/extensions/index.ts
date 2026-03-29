@@ -11,6 +11,6 @@ export type {
   ReloadExtensionResult,
   TestExtensionResult,
 } from './extension-manager.js';
-export { MockExtensionAPI } from './extension-manager.js';
+export { MockExtensionAPI } from './extension-test-harness.js';
 export { createProxyRouter } from './extension-proxy.js';
 export { createDataProviderContext } from './extension-server-api-factory.js';

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionManager } from '../extension-manager.js';
-import { MockExtensionAPI } from '../extension-manager.js';
+import { MockExtensionAPI } from '../extension-test-harness.js';
 
 // --- Mocks ---
 

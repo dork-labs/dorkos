@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extract extension-manager into focused collaborators
+
 ### Fixed
 
 - Clean up lint warnings and fix site build frontmatter
