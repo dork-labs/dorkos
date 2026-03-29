@@ -40,7 +40,9 @@ export function ContextItem({ percent, contextUsage }: ContextItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex cursor-default">{trigger}</span>
+        <span className="inline-flex cursor-default" aria-label="Context window usage">
+          {trigger}
+        </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">
         <div className="space-y-1.5">

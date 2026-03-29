@@ -561,4 +561,80 @@ describe('Sessions Routes', () => {
       expect(res.body.code).toBe('NULL_BYTE');
     });
   });
+
+  // ---- POST /api/sessions/:id/fork ----
+
+  describe('POST /api/sessions/:id/fork', () => {
+    it('returns 400 for invalid session ID', async () => {
+      const res = await request(app).post('/api/sessions/not-a-uuid/fork').send({});
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_SESSION_ID');
+    });
+
+    it('forks a session and returns 201 with new session', async () => {
+      const forkedSession = {
+        id: '00000000-0000-4000-8000-000000000099',
+        title: 'Test conversation (fork)',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default' as const,
+      };
+      fakeRuntime.forkSession.mockResolvedValue(forkedSession);
+
+      const res = await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual(forkedSession);
+      expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), S1, {});
+    });
+
+    it('passes upToMessageId and title to runtime', async () => {
+      fakeRuntime.forkSession.mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000099',
+        title: 'Custom fork',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default' as const,
+      });
+
+      await request(app)
+        .post(`/api/sessions/${S1}/fork`)
+        .send({ upToMessageId: 'msg-123', title: 'Custom fork' });
+
+      expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), S1, {
+        upToMessageId: 'msg-123',
+        title: 'Custom fork',
+      });
+    });
+
+    it('returns 404 when fork fails (session not found)', async () => {
+      fakeRuntime.forkSession.mockResolvedValue(null);
+
+      const res = await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('FORK_FAILED');
+    });
+
+    it('returns 500 when runtime throws', async () => {
+      fakeRuntime.forkSession.mockRejectedValue(new Error('SDK crash'));
+
+      const res = await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe('FORK_ERROR');
+    });
+
+    it('translates session ID via getInternalSessionId', async () => {
+      const internalId = '00000000-0000-4000-8000-internal00001';
+      fakeRuntime.getInternalSessionId.mockReturnValue(internalId);
+      fakeRuntime.forkSession.mockResolvedValue({
+        id: '00000000-0000-4000-8000-forked0000001',
+        title: 'Forked',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default' as const,
+      });
+
+      await request(app).post(`/api/sessions/${S1}/fork`).send({});
+      expect(fakeRuntime.forkSession).toHaveBeenCalledWith(expect.any(String), internalId, {});
+    });
+  });
 });

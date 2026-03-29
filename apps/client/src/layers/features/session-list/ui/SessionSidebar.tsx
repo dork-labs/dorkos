@@ -1,4 +1,5 @@
 import { useMemo, useCallback } from 'react';
+import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { cn, groupSessionsByTime } from '@/layers/shared/lib';
@@ -42,7 +43,7 @@ export function SessionSidebar() {
         await queryClient.invalidateQueries({ queryKey: ['sessions'] });
         handleSessionClick(forked.id);
       } catch (err) {
-        console.error('[SessionSidebar] fork failed', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to fork session');
       }
     },
     [transport, selectedCwd, queryClient, handleSessionClick]

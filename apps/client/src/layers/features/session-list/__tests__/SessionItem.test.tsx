@@ -201,6 +201,40 @@ describe('SessionItem', () => {
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.getByLabelText('Copy Session ID')).toBeDefined();
   });
+
+  // Fork button tests
+  it('renders fork button when onFork is provided', () => {
+    render(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} onFork={vi.fn()} />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.getByLabelText('Fork session')).toBeDefined();
+  });
+
+  it('does not render fork button when onFork is omitted', () => {
+    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.queryByLabelText('Fork session')).toBeNull();
+  });
+
+  it('calls onFork with session ID when fork button is clicked', () => {
+    const onFork = vi.fn();
+    const session = makeSession();
+    render(<SessionItem session={session} isActive={false} onClick={() => {}} onFork={onFork} />);
+    fireEvent.click(screen.getByLabelText('Session details'));
+    fireEvent.click(screen.getByLabelText('Fork session'));
+    expect(onFork).toHaveBeenCalledWith(session.id);
+  });
+
+  it('does not trigger onClick when fork button is clicked', () => {
+    const onClick = vi.fn();
+    render(
+      <SessionItem session={makeSession()} isActive={false} onClick={onClick} onFork={vi.fn()} />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    fireEvent.click(screen.getByLabelText('Fork session'));
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });
 
 describe('SessionActivityIndicator', () => {

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fork UX feedback, tests, and tooltip accessibility
 - Address code review findings
 - Spread process.env in SDK env option to prevent code 127
 - Load local settings so project-level plugin MCP servers are discovered
