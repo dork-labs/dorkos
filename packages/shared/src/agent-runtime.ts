@@ -12,6 +12,7 @@ import type {
   HistoryMessage,
   TaskItem,
   ModelOption,
+  SubagentInfo,
   CommandRegistry,
   PermissionMode,
   ReloadPluginsResult,
@@ -277,6 +278,9 @@ export interface AgentRuntime {
 
   /** Return available models for this runtime. */
   getSupportedModels(): Promise<ModelOption[]>;
+
+  /** Return available subagents reported by the SDK. */
+  getSupportedSubagents(): Promise<SubagentInfo[]>;
 
   /** Return static capability flags for this runtime. */
   getCapabilities(): RuntimeCapabilities;

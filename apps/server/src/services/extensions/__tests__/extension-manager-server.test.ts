@@ -3,30 +3,27 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 
 // --- Hoisted mocks (available before module-level code runs) ---
 
-const { mockRequireFn, mockRequireResolve, mockRequireCache, lastWrittenCodeRef } = vi.hoisted(
-  () => {
-    const codeRef = { value: '' };
-    const resolveImpl = Object.assign((p: string) => p, { resolve: (p: string) => p });
-    const cacheObj: Record<string, unknown> = {};
-    const requireImpl = Object.assign(
-      (_path: string) => {
-        // Evaluate the CJS code that was "written" to the temp file
-        const mod = { exports: {} as Record<string, unknown> };
-        // eslint-disable-next-line no-new-func
-        const fn = new Function('module', 'exports', 'require', codeRef.value);
-        fn(mod, mod.exports, requireImpl);
-        return mod.exports;
-      },
-      { resolve: resolveImpl, cache: cacheObj }
-    );
-    return {
-      mockRequireFn: requireImpl,
-      mockRequireResolve: resolveImpl,
-      mockRequireCache: cacheObj,
-      lastWrittenCodeRef: codeRef,
-    };
-  }
-);
+const { mockRequireFn, lastWrittenCodeRef } = vi.hoisted(() => {
+  const codeRef = { value: '' };
+  const resolveImpl = Object.assign((p: string) => p, { resolve: (p: string) => p });
+  const cacheObj: Record<string, unknown> = {};
+  const requireImpl = Object.assign(
+    (_path: string) => {
+      // Evaluate the CJS code that was "written" to the temp file
+      const mod = { exports: {} as Record<string, unknown> };
+      const fn = new Function('module', 'exports', 'require', codeRef.value);
+      fn(mod, mod.exports, requireImpl);
+      return mod.exports;
+    },
+    { resolve: resolveImpl, cache: cacheObj }
+  );
+  return {
+    mockRequireFn: requireImpl,
+    mockRequireResolve: resolveImpl,
+    mockRequireCache: cacheObj,
+    lastWrittenCodeRef: codeRef,
+  };
+});
 
 vi.mock('node:module', () => ({
   createRequire: () => mockRequireFn,

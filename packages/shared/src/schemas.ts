@@ -1040,6 +1040,21 @@ export const ModelOptionSchema = z
 
 export type ModelOption = z.infer<typeof ModelOptionSchema>;
 
+// === Subagent Info ===
+
+export const SubagentInfoSchema = z
+  .object({
+    name: z.string().openapi({ description: 'Agent type identifier (e.g. "Explore")' }),
+    description: z.string().openapi({ description: 'Description of when to use this agent' }),
+    model: z
+      .string()
+      .optional()
+      .openapi({ description: 'Model alias this agent uses, or undefined to inherit parent' }),
+  })
+  .openapi('SubagentInfo');
+
+export type SubagentInfo = z.infer<typeof SubagentInfoSchema>;
+
 // === Git Status ===
 
 export const GitStatusResponseSchema = z

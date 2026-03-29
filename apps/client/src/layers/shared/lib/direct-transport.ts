@@ -309,6 +309,10 @@ export class DirectTransport implements Transport {
     ];
   }
 
+  async getSubagents(): Promise<import('@dorkos/shared/types').SubagentInfo[]> {
+    return [];
+  }
+
   // --- Agent Identity ---
 
   async getAgentByPath(agentPath: string): Promise<AgentManifest | null> {

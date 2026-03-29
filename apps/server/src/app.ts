@@ -15,6 +15,7 @@ import fileRoutes from './routes/files.js';
 import gitRoutes from './routes/git.js';
 import tunnelRoutes from './routes/tunnel.js';
 import modelRoutes from './routes/models.js';
+import subagentRoutes from './routes/subagents.js';
 import capabilitiesRoutes from './routes/capabilities.js';
 import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
@@ -119,6 +120,7 @@ export function createApp() {
   app.use('/api/git', gitRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/models', modelRoutes);
+  app.use('/api/subagents', subagentRoutes);
   app.use('/api/capabilities', capabilitiesRoutes);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);

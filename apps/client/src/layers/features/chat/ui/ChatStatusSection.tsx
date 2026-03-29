@@ -10,7 +10,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useIsMobile, useAppStore, useTransport } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
-import { useSessionStatus, useSessionChatStore } from '@/layers/entities/session';
+import { useSessionStatus, useSessionChatStore, useSubagents } from '@/layers/entities/session';
 import { ShortcutChips } from './ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -27,6 +27,7 @@ import {
   TunnelItem,
   ClientsItem,
   ConnectionItem,
+  SubagentsItem,
   useGitStatus,
   StatusBarConfigurePopover,
   STATUS_BAR_REGISTRY,
@@ -147,6 +148,7 @@ export function ChatStatusSection({
     useCallback((s) => s.sessions[sessionId]?.contextUsage ?? null, [sessionId])
   );
   const { data: gitStatus } = useGitStatus(status.cwd);
+  const { data: subagents } = useSubagents();
   const transport = useTransport();
   const { data: serverConfig } = useQuery({
     queryKey: ['config'],
@@ -360,6 +362,9 @@ export function ChatStatusSection({
                   pulse={presencePulse}
                 />
               )}
+            </StatusLine.Item>
+            <StatusLine.Item itemKey="subagents" visible={!!subagents && subagents.length > 0}>
+              {subagents && subagents.length > 0 && <SubagentsItem subagents={subagents} />}
             </StatusLine.Item>
           </StatusLine>
         </ContextMenuTrigger>

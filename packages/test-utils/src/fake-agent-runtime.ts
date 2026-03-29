@@ -127,6 +127,9 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsQuestionPrompt: true,
   }));
   getSupportedModels = vi.fn<() => Promise<ModelOption[]>>().mockResolvedValue([]);
+  getSupportedSubagents = vi
+    .fn<() => Promise<import('@dorkos/shared/types').SubagentInfo[]>>()
+    .mockResolvedValue([]);
   getInternalSessionId = vi.fn<(sessionId: string) => string | undefined>();
   getCommands = vi
     .fn<(forceRefresh?: boolean, cwd?: string) => Promise<CommandRegistry>>()

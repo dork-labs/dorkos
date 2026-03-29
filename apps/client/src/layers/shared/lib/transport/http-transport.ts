@@ -16,6 +16,7 @@ import type {
   TaskItem,
   ServerConfig,
   ModelOption,
+  SubagentInfo,
   GitStatusResponse,
   GitStatusError,
   SessionLockedError,
@@ -462,6 +463,12 @@ export class HttpTransport implements Transport {
 
   getModels(): Promise<ModelOption[]> {
     return fetchJSON<{ models: ModelOption[] }>(this.baseUrl, '/models').then((r) => r.models);
+  }
+
+  getSubagents(): Promise<SubagentInfo[]> {
+    return fetchJSON<{ subagents: SubagentInfo[] }>(this.baseUrl, '/subagents').then(
+      (r) => r.subagents
+    );
   }
 
   getCapabilities(): Promise<{

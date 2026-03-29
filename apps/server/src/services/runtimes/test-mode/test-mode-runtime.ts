@@ -154,6 +154,10 @@ export class TestModeRuntime implements AgentRuntime {
     return [];
   }
 
+  async getSupportedSubagents(): Promise<import('@dorkos/shared/types').SubagentInfo[]> {
+    return [];
+  }
+
   getInternalSessionId(_id: string): string | undefined {
     return undefined;
   }

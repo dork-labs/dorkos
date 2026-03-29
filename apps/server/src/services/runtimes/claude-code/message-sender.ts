@@ -61,6 +61,9 @@ export interface MessageSenderOpts {
   ) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   onCommandsReceived?: (commands: SdkCommandEntry[]) => void;
+  onSubagentsReceived?: (
+    agents: Array<{ name: string; description: string; model?: string }>
+  ) => void;
   sdkSessionIndex: Map<string, string>;
   sessionMapKey: string;
 }
@@ -318,6 +321,24 @@ export async function* executeSdkQuery(
       })
       .catch((err) => {
         logger.debug('[sendMessage] failed to fetch supported commands', { err });
+      });
+  }
+
+  // Non-blocking subagent discovery — fires on first query, caches on runtime
+  if (opts.onSubagentsReceived) {
+    agentQuery
+      .supportedAgents?.()
+      ?.then((agents) => {
+        opts.onSubagentsReceived!(
+          agents.map((a) => ({
+            name: a.name,
+            description: a.description,
+            model: a.model,
+          }))
+        );
+      })
+      .catch((err) => {
+        logger.debug('[sendMessage] failed to fetch supported agents', { err });
       });
   }
 

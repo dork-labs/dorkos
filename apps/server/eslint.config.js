@@ -3,7 +3,7 @@ import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
 
 export default defineConfig([
-  { ignores: ['dist/**', 'dist-server/**', '.turbo/**'] },
+  { ignores: ['dist/**', 'dist-server/**', '.turbo/**', '.temp/**'] },
   ...nodeConfig,
 
   // Generated OpenAPI registry — exempt from max-lines

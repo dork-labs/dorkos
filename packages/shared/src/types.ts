@@ -67,6 +67,7 @@ export type {
   MessageDeliveredEvent,
   RelayMessageEvent,
   ModelOption,
+  SubagentInfo,
   UploadResult,
   UploadProgress,
   BackgroundTaskStartedEvent,

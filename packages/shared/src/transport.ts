@@ -18,6 +18,7 @@ import type {
   TaskItem,
   ServerConfig,
   ModelOption,
+  SubagentInfo,
   FileListResponse,
   GitStatusResponse,
   GitStatusError,
@@ -204,6 +205,8 @@ export interface Transport {
   updateConfig(patch: Record<string, unknown>): Promise<void>;
   /** List available Claude models (dynamic from SDK, with defaults). */
   getModels(): Promise<ModelOption[]>;
+  /** List available subagents reported by the SDK. */
+  getSubagents(): Promise<SubagentInfo[]>;
   /**
    * Get capabilities for all registered runtimes.
    *

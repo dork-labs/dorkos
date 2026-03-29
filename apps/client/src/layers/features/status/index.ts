@@ -16,6 +16,7 @@ export { PollingItem } from './ui/PollingItem';
 export { TunnelItem } from './ui/TunnelItem';
 export { ClientsItem } from './ui/ClientsItem';
 export { ConnectionItem } from './ui/ConnectionItem';
+export { SubagentsItem } from './ui/SubagentsItem';
 export { StatusBarConfigureContent } from './ui/StatusBarConfigureContent';
 export { StatusBarConfigurePopover } from './ui/StatusBarConfigurePopover';
 export type { StatusBarConfigurePopoverProps } from './ui/StatusBarConfigurePopover';

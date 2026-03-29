@@ -14,6 +14,7 @@ import type {
   StreamEvent,
   PermissionMode,
   ModelOption,
+  SubagentInfo,
   Session,
   HistoryMessage,
   TaskItem,
@@ -108,6 +109,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     | ((session: import('./agent-types.js').AgentSession) => Record<string, McpServerConfig>)
     | null = null;
   private cachedModels: ModelOption[] | null = null;
+  private cachedSubagents: SubagentInfo[] | null = null;
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
   private cachedSdkCommands: SdkCommandEntry[] | null = null;
   private meshCore: AgentRegistryPort | null = null;
@@ -403,6 +405,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
               });
             }
           : undefined,
+        onSubagentsReceived: !this.cachedSubagents
+          ? (agents) => {
+              this.cachedSubagents = agents;
+              logger.debug('[sendMessage] cached supported subagents', {
+                count: agents.length,
+              });
+            }
+          : undefined,
         sdkSessionIndex: this.sdkSessionIndex,
         sessionMapKey: sessionId,
       },
@@ -583,6 +593,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.cachedModels ?? DEFAULT_MODELS;
   }
 
+  /** Get available subagents — returns SDK-reported agents if cached, otherwise empty. */
+  async getSupportedSubagents(): Promise<SubagentInfo[]> {
+    return this.cachedSubagents ?? [];
+  }
+
   // ---------------------------------------------------------------------------
   // Commands — SDK primary, filesystem enrichment
   // ---------------------------------------------------------------------------
@@ -740,11 +755,21 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           }))
       );
 
+      // Update subagent cache
+      if (result.agents) {
+        this.cachedSubagents = result.agents.map((a) => ({
+          name: a.name,
+          description: a.description,
+          model: a.model,
+        }));
+      }
+
       logger.info('[reloadPlugins] plugins reloaded', {
         sessionId,
         commands: result.commands.length,
         plugins: result.plugins.length,
         mcpServers: result.mcpServers.length,
+        agents: result.agents?.length ?? 0,
         errorCount: result.error_count,
       });
 
