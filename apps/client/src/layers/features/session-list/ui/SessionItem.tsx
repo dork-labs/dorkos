@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Copy, Check, ShieldOff, GitFork } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
@@ -10,6 +10,7 @@ interface SessionItemProps {
   isActive: boolean;
   onClick: () => void;
   onFork?: (sessionId: string) => void;
+  onRename?: (sessionId: string, title: string) => void;
   isNew?: boolean;
 }
 
@@ -141,10 +142,34 @@ export function SessionItem({
   isActive,
   onClick,
   onFork,
+  onRename,
   isNew = false,
 }: SessionItemProps) {
   const [expanded, setExpanded] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const isSkipMode = session.permissionMode === 'bypassPermissions';
+
+  useEffect(() => {
+    if (isRenaming) renameInputRef.current?.focus();
+  }, [isRenaming]);
+
+  const startRename = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setRenameValue(session.title);
+      setIsRenaming(true);
+    },
+    [session.title]
+  );
+
+  const commitRename = useCallback(() => {
+    const trimmed = renameValue.trim();
+    setIsRenaming(false);
+    if (!trimmed || trimmed === session.title) return;
+    onRename?.(session.id, trimmed);
+  }, [renameValue, session.id, session.title, onRename]);
 
   const Wrapper = isNew ? motion.div : 'div';
   const animationProps = isNew
@@ -223,8 +248,28 @@ export function SessionItem({
           </span>
         </div>
 
-        {/* Line 2: title */}
-        <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">{session.title}</div>
+        {/* Line 2: title (double-click to rename) */}
+        {isRenaming ? (
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') setIsRenaming(false);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-background text-foreground mt-0.5 w-full rounded border px-1 text-xs outline-none"
+          />
+        ) : (
+          <div
+            className="text-muted-foreground/70 mt-0.5 truncate text-xs"
+            onDoubleClick={onRename ? startRename : undefined}
+          >
+            {session.title}
+          </div>
+        )}
       </motion.div>
 
       <AnimatePresence initial={false}>

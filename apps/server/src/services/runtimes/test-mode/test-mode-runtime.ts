@@ -158,6 +158,10 @@ export class TestModeRuntime implements AgentRuntime {
     return [];
   }
 
+  async renameSession(): Promise<void> {
+    // No-op in test mode
+  }
+
   getInternalSessionId(_id: string): string | undefined {
     return undefined;
   }

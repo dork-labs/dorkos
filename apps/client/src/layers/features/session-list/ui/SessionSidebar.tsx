@@ -49,6 +49,18 @@ export function SessionSidebar() {
     [transport, selectedCwd, queryClient, handleSessionClick]
   );
 
+  const handleRenameSession = useCallback(
+    async (sessionId: string, title: string) => {
+      try {
+        await transport.updateSession(sessionId, { title }, selectedCwd ?? undefined);
+        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      } catch {
+        toast.error('Failed to rename session');
+      }
+    },
+    [transport, selectedCwd, queryClient]
+  );
+
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
   const recentSessions = useMemo(
     () => [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3),
@@ -93,6 +105,7 @@ export function SessionSidebar() {
             groupedSessions={groupedSessions}
             onSessionClick={handleSessionClick}
             onForkSession={handleForkSession}
+            onRenameSession={handleRenameSession}
           />
         </div>
 

@@ -130,6 +130,9 @@ export class FakeAgentRuntime implements AgentRuntime {
   getSupportedSubagents = vi
     .fn<() => Promise<import('@dorkos/shared/types').SubagentInfo[]>>()
     .mockResolvedValue([]);
+  renameSession = vi
+    .fn<(sessionId: string, title: string, projectDir: string) => Promise<void>>()
+    .mockResolvedValue(undefined);
   getInternalSessionId = vi.fn<(sessionId: string) => string | undefined>();
   getCommands = vi
     .fn<(forceRefresh?: boolean, cwd?: string) => Promise<CommandRegistry>>()

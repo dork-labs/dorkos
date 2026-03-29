@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add session rename via SDK renameSession()
 - Add manifest-driven settings forms, placeholder hints, and grouped sections
 - Show available subagents via supportedAgents()
 - Auto-generate settings UI from manifest and fix StrictMode double-activation

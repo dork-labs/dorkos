@@ -126,6 +126,7 @@ export const UpdateSessionRequestSchema = z
     permissionMode: PermissionModeSchema.optional(),
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
+    title: z.string().min(1).max(200).optional(),
   })
   .openapi('UpdateSessionRequest');
 

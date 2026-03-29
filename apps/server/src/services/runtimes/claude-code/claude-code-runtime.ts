@@ -6,6 +6,7 @@
  *
  * @module services/runtimes/claude-code/claude-code-runtime
  */
+import { renameSession as sdkRenameSession } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -209,6 +210,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       },
       opts
     );
+  }
+
+  /** @inheritdoc */
+  async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
+    await sdkRenameSession(sessionId, title, { dir: projectDir });
+    this.transcriptReader.setCustomTitle(sessionId, title);
   }
 
   // ---------------------------------------------------------------------------

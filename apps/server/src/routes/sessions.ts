@@ -122,7 +122,7 @@ router.patch('/:id', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { permissionMode, model, effort } = parsed.data;
+  const { permissionMode, model, effort, title } = parsed.data;
   const runtime = runtimeRegistry.getDefault();
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
@@ -133,11 +133,18 @@ router.patch('/:id', async (req, res) => {
 
   const cwd = (req.query.cwd as string) || vaultRoot;
   if (!(await assertBoundary(cwd, res))) return;
+
+  // Persist custom title to JSONL via SDK's renameSession()
+  if (title) {
+    await runtime.renameSession(internalSessionId, title, cwd);
+  }
+
   const session = await runtime.getSession(cwd, internalSessionId);
   if (session) {
     session.permissionMode = permissionMode ?? session.permissionMode;
     session.model = model ?? session.model;
     if (effort) session.effort = effort;
+    if (title) session.title = title;
   }
   res.json(session ?? { id: sessionId, permissionMode, model, effort });
 });

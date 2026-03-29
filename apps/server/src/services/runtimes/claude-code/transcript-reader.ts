@@ -27,6 +27,19 @@ export type { HistoryMessage, HistoryToolCall };
  */
 export class TranscriptReader {
   private metaCache = new Map<string, { session: Session; mtimeMs: number }>();
+  private customTitles = new Map<string, string>();
+
+  /** Cache a custom title for a session, overlaying the derived title on next read. */
+  setCustomTitle(sessionId: string, title: string): void {
+    this.customTitles.set(sessionId, title);
+    // Invalidate the metadata cache so the next listSessions/getSession picks up the title
+    for (const [key, entry] of this.metaCache) {
+      if (entry.session.id === sessionId) {
+        this.metaCache.delete(key);
+        break;
+      }
+    }
+  }
 
   /** Convert a working directory path to an SDK project slug (filesystem-safe). */
   getProjectSlug(cwd: string): string {
@@ -282,10 +295,12 @@ export class TranscriptReader {
       if (firstUserMessage && firstTimestamp && model && cwd) break;
     }
 
-    const title = firstUserMessage
+    const derivedTitle = firstUserMessage
       ? firstUserMessage.slice(0, TRANSCRIPT.TITLE_MAX_LENGTH) +
         (firstUserMessage.length > TRANSCRIPT.TITLE_MAX_LENGTH ? '...' : '')
       : `Session ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
+    // Custom title (from SDK renameSession) takes priority over derived title
+    const title = this.customTitles.get(sessionId) ?? derivedTitle;
 
     return {
       id: sessionId,

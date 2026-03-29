@@ -132,6 +132,16 @@ export interface AgentRuntime {
     }
   ): boolean;
 
+  /**
+   * Rename a session by setting a custom title.
+   * Persists to the SDK's JSONL via `renameSession()`.
+   *
+   * @param sessionId - Session to rename
+   * @param title - New display title
+   * @param projectDir - Project directory for JSONL resolution
+   */
+  renameSession(sessionId: string, title: string, projectDir: string): Promise<void>;
+
   // --- Messaging ---
 
   /**
