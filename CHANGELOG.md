@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add commands for product management and issue handling
 - Add 5-level error handling hierarchy with Dev Playground showcase
 - Decouple chat state from React lifecycle into session-keyed Zustand store
 
