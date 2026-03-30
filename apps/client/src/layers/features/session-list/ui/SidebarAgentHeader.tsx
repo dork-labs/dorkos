@@ -27,7 +27,7 @@ export function SidebarAgentHeader({
   return (
     <SidebarHeader className="border-b p-3">
       {/* Dashboard back + agent identity */}
-      <div className="flex items-center gap-2 px-2.5 py-1">
+      <div className="flex items-center gap-2 py-1">
         <SidebarMenuButton
           data-slot="dashboard-link"
           type="button"
