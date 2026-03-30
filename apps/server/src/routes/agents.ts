@@ -245,6 +245,17 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         return res.status(404).json({ error: 'No agent registered at this path' });
       }
 
+      // Guard: system agents cannot have identity fields changed
+      const SYSTEM_PROTECTED_FIELDS = ['name', 'description', 'namespace', 'isSystem'] as const;
+      if (existing.isSystem) {
+        const blockedFields = SYSTEM_PROTECTED_FIELDS.filter((f) => f in req.body);
+        if (blockedFields.length > 0) {
+          return res.status(403).json({
+            error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
+          });
+        }
+      }
+
       // Write convention files if provided alongside manifest fields
       const conventionsResult = UpdateAgentConventionsSchema.safeParse(req.body);
       const conventionUpdates = conventionsResult.success ? conventionsResult.data : {};

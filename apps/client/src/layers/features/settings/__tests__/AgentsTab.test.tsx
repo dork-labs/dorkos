@@ -9,9 +9,9 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 
-// Mock RecreateDorkBotDialog to isolate AgentsTab
-vi.mock('../ui/RecreateDorkBotDialog', () => ({
-  RecreateDorkBotDialog: () => null,
+// Mock ResetDorkBotDialog to isolate AgentsTab
+vi.mock('../ui/ResetDorkBotDialog', () => ({
+  ResetDorkBotDialog: () => null,
 }));
 
 beforeAll(() => {
@@ -94,24 +94,7 @@ describe('AgentsTab', () => {
     expect(screen.queryByText('Default agent')).not.toBeInTheDocument();
   });
 
-  it('shows recreate dorkbot card when dorkbot is absent', async () => {
-    const transport = createMockTransport({
-      listMeshAgents: vi.fn().mockResolvedValue({
-        agents: [{ id: '1', name: 'other-agent', runtime: 'claude-code' }],
-      }),
-      getConfig: vi.fn().mockResolvedValue({
-        agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      }),
-    });
-
-    render(<AgentsTab />, { wrapper: createWrapper(transport) });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('recreate-dorkbot-card')).toBeInTheDocument();
-    });
-  });
-
-  it('hides recreate dorkbot card when dorkbot exists', async () => {
+  it('always shows reset dorkbot personality card', async () => {
     const transport = createMockTransport({
       listMeshAgents: vi.fn().mockResolvedValue({
         agents: [{ id: '1', name: 'dorkbot', runtime: 'claude-code' }],
@@ -124,8 +107,25 @@ describe('AgentsTab', () => {
     render(<AgentsTab />, { wrapper: createWrapper(transport) });
 
     await waitFor(() => {
-      expect(screen.getByText('Default agent')).toBeInTheDocument();
+      expect(screen.getByTestId('reset-dorkbot-card')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('recreate-dorkbot-card')).not.toBeInTheDocument();
+    expect(screen.getByText('Reset DorkBot Personality')).toBeInTheDocument();
+  });
+
+  it('shows reset card even when dorkbot is absent', async () => {
+    const transport = createMockTransport({
+      listMeshAgents: vi.fn().mockResolvedValue({
+        agents: [{ id: '1', name: 'other-agent', runtime: 'claude-code' }],
+      }),
+      getConfig: vi.fn().mockResolvedValue({
+        agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      }),
+    });
+
+    render(<AgentsTab />, { wrapper: createWrapper(transport) });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('reset-dorkbot-card')).toBeInTheDocument();
+    });
   });
 });

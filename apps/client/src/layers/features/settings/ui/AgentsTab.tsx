@@ -12,13 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/layers/shared/ui';
-import { RecreateDorkBotDialog } from './RecreateDorkBotDialog';
+import { ResetDorkBotDialog } from './ResetDorkBotDialog';
 
-/** Agents section within Settings — default agent dropdown and DorkBot recreation. */
+/** Agents section within Settings — default agent dropdown and DorkBot personality reset. */
 export function AgentsTab() {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const [showRecreation, setShowRecreation] = useState(false);
+  const [showReset, setShowReset] = useState(false);
 
   const { data: agentsData } = useQuery({
     queryKey: ['mesh', 'agents'],
@@ -34,7 +34,7 @@ export function AgentsTab() {
 
   const agents = agentsData?.agents ?? [];
   const currentDefault = config?.agents?.defaultAgent ?? 'dorkbot';
-  const dorkbotExists = agents.some((a) => a.name === 'dorkbot');
+  const dorkbot = agents.find((a) => a.name === 'dorkbot');
 
   async function handleSetDefaultAgent(agentName: string) {
     await transport.setDefaultAgent(agentName);
@@ -67,27 +67,25 @@ export function AgentsTab() {
         </FieldCard>
       )}
 
-      {!dorkbotExists && (
-        <>
-          <FieldCard className="border-dashed" data-testid="recreate-dorkbot-card">
-            <FieldCardContent>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">DorkBot</p>
-                  <p className="text-muted-foreground text-sm">
-                    DorkBot is the default DorkOS agent. It was deleted or not created during
-                    onboarding.
-                  </p>
-                </div>
-                <Button variant="outline" onClick={() => setShowRecreation(true)}>
-                  Recreate DorkBot
-                </Button>
-              </div>
-            </FieldCardContent>
-          </FieldCard>
+      <FieldCard data-testid="reset-dorkbot-card">
+        <FieldCardContent>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">DorkBot Personality</p>
+              <p className="text-muted-foreground text-sm">
+                Reset DorkBot&apos;s personality traits (tone, autonomy, caution, communication,
+                creativity) back to their default values.
+              </p>
+            </div>
+            <Button variant="outline" onClick={() => setShowReset(true)}>
+              Reset DorkBot Personality
+            </Button>
+          </div>
+        </FieldCardContent>
+      </FieldCard>
 
-          <RecreateDorkBotDialog open={showRecreation} onOpenChange={setShowRecreation} />
-        </>
+      {dorkbot && (
+        <ResetDorkBotDialog open={showReset} onOpenChange={setShowReset} dorkbotId={dorkbot.id} />
       )}
     </>
   );

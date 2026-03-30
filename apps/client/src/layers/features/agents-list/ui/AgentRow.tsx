@@ -43,6 +43,7 @@ const expandTransition = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const;
  * Line 1: health dot, name, runtime badge, relative last-active time, chevron.
  * Line 2: truncated path, session count badge, session launch action.
  * Expanded: full description, all capabilities, behavior/budget config, and management actions.
+ * System agents do not show the Unregister button.
  */
 export function AgentRow({
   agent,
@@ -65,6 +66,7 @@ export function AgentRow({
   });
 
   const isDefault = config?.agents?.defaultAgent === agent.name;
+  const isSystem = agent.isSystem === true;
 
   async function handleSetAsDefault() {
     await transport.setDefaultAgent(agent.name);
@@ -199,14 +201,16 @@ export function AgentRow({
                   <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
                     Edit
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive"
-                    onClick={() => setUnregisterOpen(true)}
-                  >
-                    Unregister
-                  </Button>
+                  {!isSystem && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => setUnregisterOpen(true)}
+                    >
+                      Unregister
+                    </Button>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -216,12 +220,14 @@ export function AgentRow({
 
       <AgentDialog projectPath={projectPath} open={settingsOpen} onOpenChange={setSettingsOpen} />
 
-      <UnregisterAgentDialog
-        agentName={agent.name}
-        agentId={agent.id}
-        open={unregisterOpen}
-        onOpenChange={setUnregisterOpen}
-      />
+      {!isSystem && (
+        <UnregisterAgentDialog
+          agentName={agent.name}
+          agentId={agent.id}
+          open={unregisterOpen}
+          onOpenChange={setUnregisterOpen}
+        />
+      )}
     </>
   );
 }

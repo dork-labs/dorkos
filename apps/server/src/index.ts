@@ -24,7 +24,7 @@ import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshEnabled, setMeshInitError } from './services/mesh/mesh-state.js';
-import { ensureDamon } from './services/mesh/ensure-damon.js';
+import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
@@ -215,11 +215,11 @@ async function start() {
       logger.error('[Mesh] Startup reconciliation failed', logError(err));
     }
 
-    // Ensure the Damon system agent is registered (non-fatal)
+    // Ensure DorkBot system agent exists (non-fatal)
     try {
-      await ensureDamon(meshCore, dorkHome);
+      await ensureDorkBot(meshCore, dorkHome);
     } catch (err) {
-      logger.warn('[Mesh] Failed to register Damon system agent', logError(err));
+      logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
 
     // Start periodic reconciliation (every 5 minutes)

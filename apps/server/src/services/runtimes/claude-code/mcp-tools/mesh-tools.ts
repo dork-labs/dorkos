@@ -1,5 +1,6 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { readManifest } from '@dorkos/shared/manifest';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -55,6 +56,14 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
     const err = requireMesh(deps);
     if (err) return err;
     try {
+      // Prevent overwriting a system agent's manifest
+      const existing = await readManifest(args.path);
+      if (existing?.isSystem) {
+        return jsonContent(
+          { error: 'Cannot re-register over a system agent', code: 'SYSTEM_AGENT' },
+          true
+        );
+      }
       const agent = await deps.meshCore!.registerByPath(
         args.path,
         {
@@ -116,6 +125,12 @@ export function createMeshUnregisterHandler(deps: McpToolDeps) {
       const agent = deps.meshCore!.get(args.agentId);
       if (!agent) {
         return jsonContent({ error: `Agent ${args.agentId} not found` }, true);
+      }
+      if (agent.isSystem) {
+        return jsonContent(
+          { error: 'System agents cannot be unregistered', code: 'SYSTEM_AGENT' },
+          true
+        );
       }
       await deps.meshCore!.unregister(args.agentId);
       return jsonContent({ success: true, agentId: args.agentId });

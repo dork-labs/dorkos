@@ -1,7 +1,0 @@
-{
-  "subject": "[tasks-system-redesign] [P2] Run verification gate for Phase 2",
-  "description": "Run the full verification suite to confirm Phase 2 (DB schema changes and Damon) is complete.\n\n## Commands\n\n```bash\npnpm typecheck && pnpm build && pnpm test -- --run\n```\n\nAll three must pass.\n\n## Manual verification\n\n1. Start the dev server (`pnpm dev`) and confirm:\n   - Damon appears in the agent list\n   - Damon has the \"system\" namespace\n   - Damon cannot be deleted from the UI or API\n2. Confirm no existing schedules remain (alpha clean slate)\n3. Confirm the `pulse_schedules` table schema includes `file_path` and `tags_json` columns\n\n## Acceptance Criteria\n- `pnpm typecheck` passes\n- `pnpm build` succeeds\n- `pnpm test -- --run` passes\n- Damon is registered on startup\n- DB schema has the new columns",
-  "activeForm": "Running verification gate for Phase 2",
-  "dependencies": ["2.1", "2.2", "2.3"],
-  "id": "2.4"
-}

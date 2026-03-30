@@ -381,6 +381,19 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
     if (!result.success) {
       return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
     }
+
+    // Guard: system agents cannot have identity fields changed
+    const SYSTEM_PROTECTED_FIELDS = ['name', 'description', 'namespace', 'isSystem'] as const;
+    const agent = meshCore.get(req.params.id);
+    if (agent?.isSystem) {
+      const blockedFields = SYSTEM_PROTECTED_FIELDS.filter((f) => f in req.body);
+      if (blockedFields.length > 0) {
+        return res.status(403).json({
+          error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
+        });
+      }
+    }
+
     // Strip keys that were absent from the request body (defaults filled in by Zod).
     // PATCH semantics: only update fields explicitly provided by the caller.
     const explicitFields = Object.fromEntries(

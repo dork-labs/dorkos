@@ -1,7 +1,0 @@
-{
-  "subject": "[tasks-system-redesign] [P3] Run verification gate for Phase 3",
-  "description": "Run the full verification suite to confirm Phase 3 (file infrastructure) is complete and working.\n\n## Commands\n\n```bash\npnpm typecheck && pnpm build && pnpm test -- --run\n```\n\nAll three must pass.\n\n## Manual verification\n\n1. Start the dev server and confirm:\n   - Default templates are seeded at `{dorkHome}/tasks/templates/` (4 `.md` files)\n   - Global watcher is running (check logs for \"Watching\" message)\n   - Creating a task via API writes a `.md` file to the expected directory\n   - Editing the `.md` file on disk updates the task in the API response within seconds\n   - Deleting the `.md` file pauses the task\n   - `GET /api/tasks/templates` returns the 4 default templates\n2. Test the round-trip:\n   - `POST /api/tasks` -> check file exists on disk -> modify file -> `GET /api/tasks` shows update\n3. Check that the reconciler is running (log output every 5 minutes or trigger manually)\n\n## Acceptance Criteria\n- `pnpm typecheck` passes\n- `pnpm build` succeeds\n- `pnpm test -- --run` passes\n- File-first CRUD works end-to-end\n- Watcher detects changes within seconds\n- Templates are seeded correctly",
-  "activeForm": "Running verification gate for Phase 3",
-  "dependencies": ["3.8"],
-  "id": "3.9"
-}

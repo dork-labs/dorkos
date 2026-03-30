@@ -384,6 +384,64 @@ describe('Mesh routes', () => {
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
     });
+
+    it('returns 403 when modifying protected fields on a system agent', async () => {
+      meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ name: 'Hacked Name', description: 'Hacked Desc' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('name');
+      expect(res.body.error).toContain('description');
+      expect(res.body.error).toContain('system agents');
+      expect(meshCore.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when modifying namespace on a system agent', async () => {
+      meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ namespace: 'evil-ns' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('namespace');
+    });
+
+    it('returns 403 when modifying isSystem on a system agent', async () => {
+      meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
+
+      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ isSystem: false });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('isSystem');
+    });
+
+    it('allows non-protected fields on a system agent', async () => {
+      const systemAgent = { ...MOCK_MANIFEST, isSystem: true };
+      meshCore.get.mockReturnValue(systemAgent);
+      meshCore.update.mockReturnValue({ ...systemAgent, capabilities: ['code', 'review'] });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ capabilities: ['code', 'review'] });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { capabilities: ['code', 'review'] });
+    });
+
+    it('allows protected fields on a non-system agent', async () => {
+      meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: false });
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, name: 'New Name' });
+
+      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ name: 'New Name' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe('New Name');
+      expect(meshCore.update).toHaveBeenCalled();
+    });
   });
 
   // --- DELETE /agents/:id ---

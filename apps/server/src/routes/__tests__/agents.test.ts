@@ -337,6 +337,72 @@ describe('Agents Routes', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
+
+    it('returns 403 when modifying protected fields on a system agent', async () => {
+      mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: true });
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ name: 'Hacked Name', description: 'Hacked Desc' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('name');
+      expect(res.body.error).toContain('description');
+      expect(res.body.error).toContain('system agents');
+      expect(mockWriteManifest).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when modifying namespace on a system agent', async () => {
+      mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: true });
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ namespace: 'evil-ns' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('namespace');
+    });
+
+    it('returns 403 when modifying isSystem on a system agent', async () => {
+      mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: true });
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ isSystem: false });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('isSystem');
+    });
+
+    it('allows non-protected fields on a system agent', async () => {
+      const systemManifest = { ...mockManifest, isSystem: true };
+      mockReadManifest.mockResolvedValue(systemManifest);
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ persona: 'You are helpful', personaEnabled: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.persona).toBe('You are helpful');
+      expect(mockWriteManifest).toHaveBeenCalled();
+    });
+
+    it('allows protected fields on a non-system agent', async () => {
+      mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: false });
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ name: 'New Name' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe('New Name');
+      expect(mockWriteManifest).toHaveBeenCalled();
+    });
   });
 });
 

@@ -10,21 +10,11 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentsTab } from '../ui/AgentsTab';
-import { RecreateDorkBotDialog } from '../ui/RecreateDorkBotDialog';
+import { ResetDorkBotDialog } from '../ui/ResetDorkBotDialog';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
-
-const mockPlaySliderTick = vi.fn();
-
-vi.mock('@/layers/shared/lib', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
-  return {
-    ...actual,
-    playSliderTick: (...args: unknown[]) => mockPlaySliderTick(...args),
-  };
-});
 
 vi.mock('sonner', () => {
   const successFn = vi.fn();
@@ -52,13 +42,6 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
-
-  // Radix Slider uses ResizeObserver internally
-  globalThis.ResizeObserver = class ResizeObserver {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
 });
 
 // ---------------------------------------------------------------------------
@@ -106,7 +89,7 @@ function mockTransportWithAgents(agents: Array<{ name: string; id: string }>) {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: AgentsTab
+// Tests: AgentsTab — Reset DorkBot card
 // ---------------------------------------------------------------------------
 
 describe('AgentsTab', () => {
@@ -116,114 +99,97 @@ describe('AgentsTab', () => {
 
   afterEach(cleanup);
 
-  it('shows Recreate DorkBot card when no agent named dorkbot exists', async () => {
-    const transport = mockTransportWithAgents([{ name: 'other-agent', id: '1' }]);
-    const { Wrapper } = createWrapper(transport);
-
-    render(<AgentsTab />, { wrapper: Wrapper });
-
-    expect(await screen.findByTestId('recreate-dorkbot-card')).toBeInTheDocument();
-    expect(screen.getByText('Recreate DorkBot')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'DorkBot is the default DorkOS agent. It was deleted or not created during onboarding.'
-      )
-    ).toBeInTheDocument();
-  });
-
-  it('hides recreation card when dorkbot exists', async () => {
+  it('shows Reset DorkBot Personality card always', async () => {
     const transport = mockTransportWithAgents([{ name: 'dorkbot', id: '1' }]);
     const { Wrapper } = createWrapper(transport);
 
     render(<AgentsTab />, { wrapper: Wrapper });
 
-    // Wait for query to resolve and component to re-render with null
-    await waitFor(() => {
-      expect(screen.queryByTestId('recreate-dorkbot-card')).not.toBeInTheDocument();
-    });
+    expect(await screen.findByTestId('reset-dorkbot-card')).toBeInTheDocument();
+    expect(screen.getByText('Reset DorkBot Personality')).toBeInTheDocument();
   });
 
-  it('shows recreation card when agent list is empty', async () => {
-    const transport = mockTransportWithAgents([]);
+  it('shows Reset DorkBot Personality card even when dorkbot is absent', async () => {
+    const transport = mockTransportWithAgents([{ name: 'other-agent', id: '1' }]);
     const { Wrapper } = createWrapper(transport);
 
     render(<AgentsTab />, { wrapper: Wrapper });
 
-    expect(await screen.findByTestId('recreate-dorkbot-card')).toBeInTheDocument();
+    expect(await screen.findByTestId('reset-dorkbot-card')).toBeInTheDocument();
   });
 
-  it('clicking Recreate DorkBot opens dialog', async () => {
+  it('clicking Reset DorkBot Personality opens dialog when dorkbot exists', async () => {
     const user = userEvent.setup();
-    const transport = mockTransportWithAgents([]);
+    const transport = mockTransportWithAgents([{ name: 'dorkbot', id: 'db-1' }]);
     const { Wrapper } = createWrapper(transport);
 
     render(<AgentsTab />, { wrapper: Wrapper });
 
-    const button = await screen.findByText('Recreate DorkBot');
+    const button = await screen.findByText('Reset DorkBot Personality');
     await user.click(button);
 
-    expect(await screen.findByTestId('recreate-dorkbot-dialog')).toBeInTheDocument();
+    expect(await screen.findByTestId('reset-dorkbot-dialog')).toBeInTheDocument();
     expect(
-      screen.getByText("Configure DorkBot's personality. All settings can be changed later.")
+      screen.getByText("Reset DorkBot's personality traits to their default values.")
     ).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Tests: RecreateDorkBotDialog
+// Tests: ResetDorkBotDialog
 // ---------------------------------------------------------------------------
 
-describe('RecreateDorkBotDialog', () => {
+describe('ResetDorkBotDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   afterEach(cleanup);
 
-  it('renders personality sliders defaulting to level 3', () => {
+  it('renders confirmation dialog with title and description', () => {
     const transport = createMockTransport();
     const { Wrapper } = createWrapper(transport);
 
-    render(<RecreateDorkBotDialog open={true} onOpenChange={vi.fn()} />, { wrapper: Wrapper });
+    render(<ResetDorkBotDialog open={true} onOpenChange={vi.fn()} dorkbotId="db-1" />, {
+      wrapper: Wrapper,
+    });
 
-    expect(screen.getByLabelText('tone trait level')).toBeInTheDocument();
-    expect(screen.getByLabelText('autonomy trait level')).toBeInTheDocument();
-    expect(screen.getByLabelText('caution trait level')).toBeInTheDocument();
-    expect(screen.getByLabelText('communication trait level')).toBeInTheDocument();
-    expect(screen.getByLabelText('creativity trait level')).toBeInTheDocument();
-
-    // All should show "3/5" in their labels
-    const levelLabels = screen.getAllByText(/3\/5/);
-    expect(levelLabels.length).toBe(5);
+    expect(screen.getByText('Reset DorkBot Personality')).toBeInTheDocument();
+    expect(
+      screen.getByText("Reset DorkBot's personality traits to their default values.")
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
-  it('calls transport.createAgent with name dorkbot and selected traits on Recreate', async () => {
+  it('calls transport.updateMeshAgent with default traits on Reset', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.createAgent).mockResolvedValue({ id: 'new-id', name: 'dorkbot' } as never);
+    vi.mocked(transport.updateMeshAgent).mockResolvedValue({
+      id: 'db-1',
+      name: 'dorkbot',
+    } as never);
     const onOpenChange = vi.fn();
 
     const { queryClient, Wrapper } = createWrapper(transport);
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
-    render(<RecreateDorkBotDialog open={true} onOpenChange={onOpenChange} />, { wrapper: Wrapper });
+    render(<ResetDorkBotDialog open={true} onOpenChange={onOpenChange} dorkbotId="db-1" />, {
+      wrapper: Wrapper,
+    });
 
-    await user.click(screen.getByRole('button', { name: 'Recreate' }));
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
 
     await waitFor(() => {
-      expect(transport.createAgent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'dorkbot',
-          traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
-          conventions: { soul: true, nope: true, dorkosKnowledge: true },
-        })
-      );
+      expect(transport.updateMeshAgent).toHaveBeenCalledWith('db-1', {
+        traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+      });
     });
 
     // Should show success toast
     const { toast } = await import('sonner');
     await waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith('DorkBot recreated');
+      expect(toast.success).toHaveBeenCalledWith('DorkBot personality reset to defaults');
     });
 
     // Should close dialog
@@ -237,21 +203,23 @@ describe('RecreateDorkBotDialog', () => {
     });
   });
 
-  it('shows error toast on failed recreation and keeps dialog open', async () => {
+  it('shows error toast on failed reset and keeps dialog open', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.createAgent).mockRejectedValue(new Error('Directory already exists'));
+    vi.mocked(transport.updateMeshAgent).mockRejectedValue(new Error('Agent not found'));
     const onOpenChange = vi.fn();
 
     const { Wrapper } = createWrapper(transport);
 
-    render(<RecreateDorkBotDialog open={true} onOpenChange={onOpenChange} />, { wrapper: Wrapper });
+    render(<ResetDorkBotDialog open={true} onOpenChange={onOpenChange} dorkbotId="db-1" />, {
+      wrapper: Wrapper,
+    });
 
-    await user.click(screen.getByRole('button', { name: 'Recreate' }));
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
 
     const { toast } = await import('sonner');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Directory already exists');
+      expect(toast.error).toHaveBeenCalledWith('Agent not found');
     });
 
     // Dialog should stay open (onOpenChange not called with false)
@@ -265,28 +233,32 @@ describe('RecreateDorkBotDialog', () => {
 
     const { Wrapper } = createWrapper(transport);
 
-    render(<RecreateDorkBotDialog open={true} onOpenChange={onOpenChange} />, { wrapper: Wrapper });
+    render(<ResetDorkBotDialog open={true} onOpenChange={onOpenChange} dorkbotId="db-1" />, {
+      wrapper: Wrapper,
+    });
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('shows Recreating... text while mutation is pending', async () => {
+  it('shows Resetting... text while mutation is pending', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
 
     // Never-resolving promise to keep mutation in pending state
-    vi.mocked(transport.createAgent).mockReturnValue(new Promise(() => {}));
+    vi.mocked(transport.updateMeshAgent).mockReturnValue(new Promise(() => {}));
 
     const { Wrapper } = createWrapper(transport);
 
-    render(<RecreateDorkBotDialog open={true} onOpenChange={vi.fn()} />, { wrapper: Wrapper });
+    render(<ResetDorkBotDialog open={true} onOpenChange={vi.fn()} dorkbotId="db-1" />, {
+      wrapper: Wrapper,
+    });
 
-    await user.click(screen.getByRole('button', { name: 'Recreate' }));
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Recreating...')).toBeInTheDocument();
+      expect(screen.getByText('Resetting...')).toBeInTheDocument();
     });
   });
 });

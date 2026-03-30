@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 // Radix UI's @radix-ui/react-use-size calls ResizeObserver which jsdom doesn't provide.
 beforeAll(() => {
@@ -28,10 +27,21 @@ vi.mock('@/layers/shared/lib', async (importOriginal) => {
 
 const mockMutate = vi.fn();
 let mockIsPending = false;
-vi.mock('@/layers/features/agent-creation', () => ({
-  useCreateAgent: () => ({
+vi.mock('@/layers/entities/agent', () => ({
+  useUpdateAgent: () => ({
     mutate: mockMutate,
     isPending: mockIsPending,
+  }),
+}));
+
+vi.mock('../../model/use-onboarding', () => ({
+  useOnboarding: () => ({
+    config: {
+      agents: {
+        defaultDirectory: '~/.dork/agents',
+        defaultAgent: 'dorkbot',
+      },
+    },
   }),
 }));
 
@@ -49,92 +59,29 @@ describe('MeetDorkBotStep', () => {
     cleanup();
   });
 
-  // --- Phase 1: Setup ---
+  // --- Copy ---
 
-  it('renders Phase 1 with name input defaulting to dorkbot', () => {
+  it('renders heading and description copy', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
     expect(screen.getByText('Meet DorkBot')).toBeInTheDocument();
-    const input = screen.getByLabelText('Name') as HTMLInputElement;
-    expect(input.value).toBe('dorkbot');
+    expect(screen.getByText(/DorkBot is your guide to DorkOS/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Shape DorkBot\u2019s personality to match your style/)
+    ).toBeInTheDocument();
   });
 
-  it('shows directory path with current name', () => {
+  // --- Personality sliders ---
+
+  it('renders 5 trait sliders', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    expect(screen.getByTestId('directory-path')).toHaveTextContent('~/.dork/agents/dorkbot/');
-  });
-
-  it('updates directory path when name changes', async () => {
-    const user = userEvent.setup();
-    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    const input = screen.getByLabelText('Name');
-    await user.clear(input);
-    await user.type(input, 'my-agent');
-
-    expect(screen.getByTestId('directory-path')).toHaveTextContent('~/.dork/agents/my-agent/');
-  });
-
-  it('validates name in real-time and shows error for invalid names', async () => {
-    const user = userEvent.setup();
-    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    const input = screen.getByLabelText('Name');
-    await user.clear(input);
-    await user.type(input, 'INVALID');
-
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-  });
-
-  it('shows error when name is cleared', async () => {
-    const user = userEvent.setup();
-    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    const input = screen.getByLabelText('Name');
-    await user.clear(input);
-
-    expect(screen.getByRole('alert')).toHaveTextContent('Name is required');
-  });
-
-  it('disables Next button when name is invalid', async () => {
-    const user = userEvent.setup();
-    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    const input = screen.getByLabelText('Name');
-    await user.clear(input);
-
-    expect(screen.getByText('Next: Personality')).toBeDisabled();
-  });
-
-  it('advances to Phase 2 when Next: Personality is clicked', async () => {
-    const user = userEvent.setup();
-    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    await user.click(screen.getByText('Next: Personality'));
-
-    // Phase 2 should be visible
-    expect(screen.getByTestId('personality-sliders')).toBeInTheDocument();
-    expect(screen.getByTestId('personality-preview')).toBeInTheDocument();
-  });
-
-  // --- Phase 2: Personality ---
-
-  function renderAtPhase2() {
-    const result = render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-    fireEvent.click(screen.getByText('Next: Personality'));
-    return result;
-  }
-
-  it('renders 5 trait sliders in Phase 2', () => {
-    renderAtPhase2();
 
     const sliders = screen.getAllByRole('slider');
     expect(sliders).toHaveLength(5);
   });
 
   it('renders trait labels for each slider', () => {
-    renderAtPhase2();
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
     // Check endpoint labels exist
     expect(screen.getByText('Serious')).toBeInTheDocument();
@@ -149,8 +96,8 @@ describe('MeetDorkBotStep', () => {
     expect(screen.getByText('Inventive')).toBeInTheDocument();
   });
 
-  it('displays preview text in Phase 2', () => {
-    renderAtPhase2();
+  it('displays preview text', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
     const preview = screen.getByTestId('personality-preview');
     // Default traits at level 3 should produce preview containing 'Balanced'
@@ -158,30 +105,42 @@ describe('MeetDorkBotStep', () => {
   });
 
   it('avatar has breathe animation class', () => {
-    renderAtPhase2();
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
     const avatar = screen.getByTestId('dorkbot-avatar');
     expect(avatar.className).toContain('dorkbot-avatar');
   });
 
-  it('calls createAgent with correct defaults when Create button clicked', () => {
-    renderAtPhase2();
+  it('calls updateAgent with correct path and default traits when Continue is clicked', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
-    fireEvent.click(screen.getByTestId('create-dorkbot'));
+    fireEvent.click(screen.getByTestId('continue-dorkbot'));
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
     const [opts] = mockMutate.mock.calls[0];
     expect(opts).toEqual({
-      name: 'dorkbot',
-      traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
-      conventions: { soul: true, nope: true, dorkosKnowledge: true },
+      path: '~/.dork/agents/dorkbot',
+      updates: { traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 } },
     });
   });
 
-  it('calls onStepComplete and playCelebration on creation success', () => {
-    renderAtPhase2();
+  it('shows Continue button text', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
-    fireEvent.click(screen.getByTestId('create-dorkbot'));
+    expect(screen.getByTestId('continue-dorkbot')).toHaveTextContent('Continue');
+  });
+
+  it('shows Saving... when mutation is pending', () => {
+    mockIsPending = true;
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
+
+    expect(screen.getByTestId('continue-dorkbot')).toHaveTextContent('Saving...');
+  });
+
+  it('calls onStepComplete and playCelebration on update success', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
+
+    fireEvent.click(screen.getByTestId('continue-dorkbot'));
 
     // Extract the onSuccess callback and invoke it
     const [, callbacks] = mockMutate.mock.calls[0];
@@ -191,10 +150,10 @@ describe('MeetDorkBotStep', () => {
     expect(onStepComplete).toHaveBeenCalledTimes(1);
   });
 
-  it('shows error message on creation failure and allows retry', () => {
-    renderAtPhase2();
+  it('shows error message on update failure and allows retry', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
-    fireEvent.click(screen.getByTestId('create-dorkbot'));
+    fireEvent.click(screen.getByTestId('continue-dorkbot'));
 
     // Simulate error — wrap in act because onError triggers setState
     const [, callbacks] = mockMutate.mock.calls[0];
@@ -202,23 +161,23 @@ describe('MeetDorkBotStep', () => {
       callbacks.onError(new Error('Network error'));
     });
 
-    expect(screen.getByTestId('create-error')).toHaveTextContent('Network error');
+    expect(screen.getByTestId('update-error')).toHaveTextContent('Network error');
 
     // Button should still be clickable for retry
-    fireEvent.click(screen.getByTestId('create-dorkbot'));
+    fireEvent.click(screen.getByTestId('continue-dorkbot'));
     expect(mockMutate).toHaveBeenCalledTimes(2);
   });
 
   it('shows generic error message for non-Error failures', () => {
-    renderAtPhase2();
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
-    fireEvent.click(screen.getByTestId('create-dorkbot'));
+    fireEvent.click(screen.getByTestId('continue-dorkbot'));
 
     const [, callbacks] = mockMutate.mock.calls[0];
     act(() => {
       callbacks.onError('some string error');
     });
 
-    expect(screen.getByTestId('create-error')).toHaveTextContent('Failed to create agent');
+    expect(screen.getByTestId('update-error')).toHaveTextContent('Failed to update personality');
   });
 });

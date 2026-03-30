@@ -47,10 +47,21 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 const mockMutate = vi.fn();
 let mockIsPending = false;
-vi.mock('@/layers/features/agent-creation', () => ({
-  useCreateAgent: () => ({
+vi.mock('@/layers/entities/agent', () => ({
+  useUpdateAgent: () => ({
     mutate: mockMutate,
     isPending: mockIsPending,
+  }),
+}));
+
+vi.mock('../model/use-onboarding', () => ({
+  useOnboarding: () => ({
+    config: {
+      agents: {
+        defaultDirectory: '~/.dork/agents',
+        defaultAgent: 'dorkbot',
+      },
+    },
   }),
 }));
 
@@ -71,7 +82,6 @@ describe('Magic transition: onboarding to chat', () => {
 
   it('preview bubble in MeetDorkBotStep has layoutId="dorkbot-first-message"', () => {
     render(<MeetDorkBotStep onStepComplete={vi.fn()} />);
-    fireEvent.click(screen.getByText('Next: Personality'));
 
     const preview = screen.getByTestId('personality-preview');
     // In the test environment, motion.div is rendered as a plain div.
@@ -83,10 +93,9 @@ describe('Magic transition: onboarding to chat', () => {
 
   // ── generateFirstMessage integration ──
 
-  it('stores first message via setDorkbotFirstMessage on creation success', () => {
+  it('stores first message via setDorkbotFirstMessage on update success', () => {
     render(<MeetDorkBotStep onStepComplete={vi.fn()} />);
-    fireEvent.click(screen.getByText('Next: Personality'));
-    fireEvent.click(screen.getByTestId('create-dorkbot'));
+    fireEvent.click(screen.getByTestId('continue-dorkbot'));
 
     // Extract and invoke the onSuccess callback
     const [, callbacks] = mockMutate.mock.calls[0];
