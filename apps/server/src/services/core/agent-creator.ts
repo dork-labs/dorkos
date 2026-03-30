@@ -21,7 +21,6 @@ import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { validateBoundary, expandTilde, BoundaryError } from '../../lib/boundary.js';
 import { configManager } from './config-manager.js';
 import { logger } from '../../lib/logger.js';
-import { env } from '../../env.js';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
