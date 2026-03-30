@@ -10,7 +10,13 @@ import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
 import { SessionSidebar, SidebarFooterBar } from '@/layers/features/session-list';
 import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
 import { useOnboarding, OnboardingFlow, ProgressCard } from '@/layers/features/onboarding';
-import { SessionHeader, DashboardHeader, AgentsHeader } from '@/layers/features/top-nav';
+import {
+  SessionHeader,
+  DashboardHeader,
+  AgentsHeader,
+  ActivityHeader,
+  TasksHeader,
+} from '@/layers/features/top-nav';
 import {
   Toaster,
   TooltipProvider,
@@ -50,22 +56,24 @@ interface HeaderSlot {
 /**
  * Returns the sidebar body component keyed to the current route.
  * The key change triggers an AnimatePresence cross-fade.
+ *
+ * Only `/session` uses the agent-scoped SessionSidebar.
+ * All other routes use the DashboardSidebar with top-level navigation.
  */
 function useSidebarSlot(): SidebarSlot {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  switch (pathname) {
-    case '/':
-      return { key: 'dashboard', body: <DashboardSidebar /> };
-    case '/agents':
-      return { key: 'agents', body: <DashboardSidebar /> };
-    default:
-      return { key: 'session', body: <SessionSidebar /> };
+  if (pathname === '/session') {
+    return { key: 'session', body: <SessionSidebar /> };
   }
+  return { key: 'dashboard', body: <DashboardSidebar /> };
 }
 
 /**
  * Returns the header content component keyed to the current route.
  * On the session route, includes the agent-colored border style.
+ *
+ * Only `/session` uses the agent-scoped SessionHeader.
+ * All other routes use a page-specific header with consistent `PageHeader` layout.
  */
 function useHeaderSlot({
   currentAgent,
@@ -81,11 +89,7 @@ function useHeaderSlot({
   });
   switch (pathname) {
     case '/':
-      return {
-        key: 'dashboard',
-        content: <DashboardHeader />,
-        borderStyle: undefined,
-      };
+      return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
     case '/agents': {
       const viewParam = new URLSearchParams(searchStr).get('view');
       const viewMode = viewParam === 'topology' ? 'topology' : 'list';
@@ -95,7 +99,11 @@ function useHeaderSlot({
         borderStyle: undefined,
       };
     }
-    default:
+    case '/tasks':
+      return { key: 'tasks', content: <TasksHeader />, borderStyle: undefined };
+    case '/activity':
+      return { key: 'activity', content: <ActivityHeader />, borderStyle: undefined };
+    case '/session':
       return {
         key: 'session',
         content: (
@@ -105,6 +113,8 @@ function useHeaderSlot({
           ? { borderBottomColor: `color-mix(in srgb, ${agentVisual.color} 25%, var(--border))` }
           : undefined,
       };
+    default:
+      return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
   }
 }
 

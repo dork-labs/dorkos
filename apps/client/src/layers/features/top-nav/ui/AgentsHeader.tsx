@@ -14,7 +14,7 @@ import { DiscoveryView } from '@/layers/features/mesh';
 import { useAgentCreationStore } from '@/layers/shared/model';
 import { useIsMobile } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import { CommandPaletteTrigger } from './CommandPaletteTrigger';
+import { PageHeader } from './PageHeader';
 
 type ViewMode = 'list' | 'topology';
 
@@ -41,46 +41,41 @@ export function AgentsHeader({ viewMode }: AgentsHeaderProps) {
 
   return (
     <>
-      <span className="text-sm font-medium">Agents</span>
-      {!isMobile && (
-        <div className="bg-muted ml-4 flex items-center rounded-md p-0.5">
-          {VIEW_TABS.map(({ mode, label }) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => handleViewChange(mode)}
-              className={cn(
-                'text-xs font-medium transition-colors',
-                viewMode === mode
-                  ? 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground px-3 py-1'
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="ml-auto flex items-center gap-2">
-        <Button
-          size="sm"
-          className="h-7 min-h-[44px] gap-1.5 text-xs sm:min-h-0"
-          onClick={openCreateDialog}
-        >
-          <Plus className="size-3.5" />
-          New Agent
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 min-h-[44px] gap-1.5 text-xs sm:min-h-0"
-          onClick={() => setDiscoveryOpen(true)}
-        >
-          <ScanSearch className="size-3.5" />
-          Scan for Agents
-        </Button>
-        <CommandPaletteTrigger />
-      </div>
+      <PageHeader
+        title="Agents"
+        actions={
+          <>
+            <Button variant="outline" size="xs" onClick={openCreateDialog}>
+              <Plus />
+              New Agent
+            </Button>
+            <Button variant="outline" size="xs" onClick={() => setDiscoveryOpen(true)}>
+              <ScanSearch />
+              Scan for Agents
+            </Button>
+          </>
+        }
+      >
+        {!isMobile && (
+          <div className="bg-muted flex items-center rounded-md p-0.5">
+            {VIEW_TABS.map(({ mode, label }) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => handleViewChange(mode)}
+                className={cn(
+                  'text-xs font-medium transition-colors',
+                  viewMode === mode
+                    ? 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground px-3 py-1'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </PageHeader>
       <ResponsiveDialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
         <ResponsiveDialogContent className="max-h-[85vh] max-w-2xl gap-0 p-0">
           <ResponsiveDialogHeader className="px-6 pt-6 pb-4">

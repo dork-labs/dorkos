@@ -1,5 +1,5 @@
-import { CommandPaletteTrigger } from './CommandPaletteTrigger';
 import { ActivityFilterBar } from '@/layers/features/activity-feed-page';
+import { PageHeader } from './PageHeader';
 
 /**
  * Activity route header — page title and category filter bar.
@@ -7,12 +7,8 @@ import { ActivityFilterBar } from '@/layers/features/activity-feed-page';
  */
 export function ActivityHeader() {
   return (
-    <>
-      <span className="text-sm font-medium">Activity</span>
-      <div className="ml-4 flex-1">
-        <ActivityFilterBar />
-      </div>
-      <CommandPaletteTrigger />
-    </>
+    <PageHeader title="Activity">
+      <ActivityFilterBar />
+    </PageHeader>
   );
 }
