@@ -96,11 +96,13 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   } = useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
 
   // ---------------------------------------------------------------------------
-  // Session initialisation — synchronous + effect
+  // Session initialisation
   // ---------------------------------------------------------------------------
 
-  // Initialize the store entry synchronously on first render so mountGeneration
-  // is available before any effects run. initSession is idempotent.
+  // Eagerly call initSession during render — it's a no-op (no set()) when the
+  // session already exists. For brand-new sessions this is still safe because
+  // the store is external to the React tree (Zustand), so the setState doesn't
+  // trigger re-render of a *different* component.
   if (sid) useSessionChatStore.getState().initSession(sid);
   if (sid) {
     const gen = useSessionChatStore.getState().getSession(sid).mountGeneration;
@@ -109,11 +111,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     }
   }
 
-  // Re-init and capture mountGeneration when the active session changes.
-  // Ensures the store entry exists before StreamManager writes to it.
+  // Re-init, capture mountGeneration, and touch access order when the active
+  // session changes. initSession is idempotent; touchSession updates LRU order.
   useEffect(() => {
     if (sessionId) {
       useSessionChatStore.getState().initSession(sessionId);
+      useSessionChatStore.getState().touchSession(sessionId);
       mountGenerationMapRef.current.set(
         sessionId,
         useSessionChatStore.getState().getSession(sessionId).mountGeneration

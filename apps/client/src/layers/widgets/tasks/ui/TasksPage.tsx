@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui/button';
@@ -32,12 +32,15 @@ export function TasksPage() {
   }, [meshAgentsData]);
 
   // Wire external trigger from useTaskTemplateDialog
-  const { externalTrigger } = useTaskTemplateDialog();
+  const { externalTrigger, clear: clearTrigger } = useTaskTemplateDialog();
 
-  if (externalTrigger && !dialogOpen) {
-    setEditTask(undefined);
-    setDialogOpen(true);
-  }
+  useEffect(() => {
+    if (externalTrigger && !dialogOpen) {
+      setEditTask(undefined);
+      setDialogOpen(true);
+      clearTrigger();
+    }
+  }, [externalTrigger, dialogOpen, clearTrigger]);
 
   const handleCreateWithPreset = (preset: TaskTemplate) => {
     setAppliedPreset(preset);

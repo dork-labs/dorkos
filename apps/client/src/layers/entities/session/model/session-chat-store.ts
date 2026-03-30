@@ -159,20 +159,23 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       sessions: {},
       sessionAccessOrder: [],
 
-      initSession: (sessionId) =>
+      initSession: (sessionId) => {
+        // Skip store mutation if session already exists — prevents setState-during-render
+        // warnings when called synchronously during the render phase.
+        if (get().sessions[sessionId]) return;
         set(
           (state) => {
-            if (!state.sessions[sessionId]) {
-              // Increment mountGeneration so stale closures (e.g. a setMessages callback
-              // captured by a previous component instance for the same session ID) can
-              // detect they are stale and drop their writes rather than corrupting the
-              // newly-initialized session state.
-              state.sessions[sessionId] = {
-                ...DEFAULT_SESSION_STATE,
-                orphanHooks: new Map(),
-                mountGeneration: ++globalMountGenerationCounter,
-              };
-            }
+            // Double-check inside set() for concurrent call safety
+            if (state.sessions[sessionId]) return;
+            // Increment mountGeneration so stale closures (e.g. a setMessages callback
+            // captured by a previous component instance for the same session ID) can
+            // detect they are stale and drop their writes rather than corrupting the
+            // newly-initialized session state.
+            state.sessions[sessionId] = {
+              ...DEFAULT_SESSION_STATE,
+              orphanHooks: new Map(),
+              mountGeneration: ++globalMountGenerationCounter,
+            };
             // Inline touchSession to avoid double-dispatch
             const order = [
               sessionId,
@@ -188,7 +191,8 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
           },
           false,
           'session-chat/initSession'
-        ),
+        );
+      },
 
       destroySession: (sessionId) =>
         set(
