@@ -27,7 +27,7 @@ function CategoryChip({ category, isActive, onToggle }: CategoryChipProps) {
       aria-pressed={isActive}
       transition={{ duration: 0.15 }}
       className={cn(
-        'inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors',
+        'inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium transition-colors',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none',
         isActive
           ? cn(config.bg, config.text)
@@ -54,7 +54,7 @@ function AllChip({ isActive, onClick }: AllChipProps) {
       aria-pressed={isActive}
       transition={{ duration: 0.15 }}
       className={cn(
-        'inline-flex h-7 items-center rounded-full px-3 text-xs font-medium transition-colors',
+        'inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium transition-colors',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none',
         isActive
           ? 'bg-foreground text-background'
@@ -92,10 +92,7 @@ export function ActivityFilterBar({ className }: ActivityFilterBarProps) {
   };
 
   return (
-    <div
-      data-slot="activity-filter-bar"
-      className={cn('flex flex-wrap items-center gap-1.5', className)}
-    >
+    <div data-slot="activity-filter-bar" className={cn('flex items-center gap-1', className)}>
       <AllChip isActive={!isFiltered} onClick={handleAllClick} />
 
       {CATEGORIES.map((category) => (
@@ -116,13 +113,8 @@ export function ActivityFilterBar({ className }: ActivityFilterBarProps) {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.15 }}
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-2 h-7 gap-1.5 px-2 text-xs"
-              onClick={clearAll}
-            >
-              <X className="size-3" aria-hidden />
+            <Button variant="ghost" size="xs" className="ml-1" onClick={clearAll}>
+              <X aria-hidden />
               Clear
             </Button>
           </motion.div>
