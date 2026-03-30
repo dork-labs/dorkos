@@ -9,35 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add openBlank() to task template dialog store
-- Replace Damon with DorkBot as sole system agent
-- Replace Damon with DorkBot as sole system agent
-- Tasks System Redesign — rename Pulse→Tasks, file-based definitions, Damon agent, UI
-- Make scheduling optional — tasks can now be on-demand
-- Evolve linear-issues into Loop-aware dashboard
-- Add session rename via SDK renameSession()
-- Add manifest-driven settings forms, placeholder hints, and grouped sections
-- Show available subagents via supportedAgents()
-- Auto-generate settings UI from manifest and fix StrictMode double-activation
-- Add spec manifest management system
+### Changed
+
+### Fixed
+
+---
+
+## [0.28.0] - 2026-03-30
+
+> Tasks redesign, DorkBot system agent, and the extensibility platform matures — file-based task definitions, manifest-driven settings, extension hooks, session forking, and MCP elicitation bring DorkOS closer to a fully autonomous coordination layer.
+
+### Added
+
+- Redesign Tasks system — rename Pulse→Tasks, add file-based definitions, and make scheduling optional for on-demand tasks
+- Replace Damon with DorkBot as the sole system agent
 - Add MCP elicitation UI for auth flows and form inputs
-- Add plugin hot-reload via reloadPlugins()
+- Add session forking via SDK forkSession() and session rename via renameSession()
 - Add server-side extension hooks with encrypted secrets and Linear reference extension
-- Add session forking via SDK forkSession()
-- Fix prompt suggestions, add api_retry events, and effort level controls
+- Add manifest-driven settings forms with placeholder hints and grouped sections
+- Auto-generate settings UI from extension manifests
+- Add plugin hot-reload via reloadPlugins()
+- Show available subagents via supportedAgents()
+- Evolve linear-issues into Loop-aware dashboard
 - Add commands for product management and issue handling
 - Add 5-level error handling hierarchy with Dev Playground showcase
 - Display context usage meter with category breakdown tooltip for token visibility
 - Decouple chat state from React lifecycle into session-keyed Zustand store
+- Add openBlank() to task template dialog store
+- Fix prompt suggestions, add api_retry events, and effort level controls
+- Add spec manifest management system
 
 ### Changed
 
 - Extract PageHeader for consistent top-level route headers
-- Document getSubagents() across architecture, API, and data-fetching guides
-- Extract setting field renderers to separate file
 - Extract SessionStore, RuntimeCache, and constants from ClaudeCodeRuntime
-- Update docs and templates for auto-generated settings tabs
 - Extract extension-manager into focused collaborators
+- Extract setting field renderers to separate file
+- Document getSubagents() across architecture, API, and data-fetching guides
+- Update docs and templates for auto-generated settings tabs
 
 ### Fixed
 
@@ -47,12 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tighten activity filter bar chip sizing and spacing
 - Exclude archived issues and fix query complexity in Linear queries
 - Unify dashboard section styling for visual consistency
-- Address code review findings
 - Add padding to collapsible settings groups and vertical layout for wide controls
 - Expose React globally for extension runtime and fix Linear example import
 - Clean up lint warnings and fix site build frontmatter
 - Fork UX feedback, tests, and tooltip accessibility
-- Address code review findings
 - Spread process.env in SDK env option to prevent code 127
 - Load local settings so project-level plugin MCP servers are discovered
 

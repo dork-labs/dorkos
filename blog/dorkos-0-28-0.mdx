@@ -1,0 +1,72 @@
+---
+title: DorkOS 0.28.0
+description: Tasks redesign, DorkBot system agent, and the extensibility platform matures with manifest-driven settings, extension hooks, and MCP elicitation.
+date: 2026-03-30
+author: DorkOS Team
+category: release
+tags: [release, tasks, dorkbot, extensions, session-forking, mcp]
+---
+
+DorkOS 0.28.0 redesigns the task system from the ground up, introduces DorkBot as the sole system agent, and pushes the extensibility platform forward with manifest-driven settings, server-side extension hooks, and MCP elicitation for auth flows.
+
+## Highlights
+
+**Tasks Redesign** — The old Pulse system is now Tasks, rebuilt with file-based definitions and optional scheduling. Tasks can be on-demand or scheduled, giving you full control over when and how work gets done.
+
+**DorkBot System Agent** — DorkBot replaces Damon as the system agent, serving as your guide to DorkOS and handling background jobs like summaries and task execution. System agents are protected from accidental deletion or renaming.
+
+**Extension Hooks and Settings** — Extensions now support server-side hooks with encrypted secrets, manifest-driven settings forms with grouped sections, and auto-generated settings UI. The Linear reference extension showcases the full pattern.
+
+**Session Forking and MCP Elicitation** — Fork any session to explore alternative approaches without losing context. MCP elicitation enables auth flows and form inputs directly in the agent conversation.
+
+## All Changes
+
+### Added
+
+- Redesign Tasks system — rename Pulse to Tasks, add file-based definitions, and make scheduling optional for on-demand tasks
+- Replace Damon with DorkBot as the sole system agent
+- Add MCP elicitation UI for auth flows and form inputs
+- Add session forking via SDK forkSession() and session rename via renameSession()
+- Add server-side extension hooks with encrypted secrets and Linear reference extension
+- Add manifest-driven settings forms with placeholder hints and grouped sections
+- Auto-generate settings UI from extension manifests
+- Add plugin hot-reload via reloadPlugins()
+- Show available subagents via supportedAgents()
+- Evolve linear-issues into Loop-aware dashboard
+- Add commands for product management and issue handling
+- Add 5-level error handling hierarchy with Dev Playground showcase
+- Display context usage meter with category breakdown tooltip for token visibility
+- Decouple chat state from React lifecycle into session-keyed Zustand store
+- Add openBlank() to task template dialog store
+- Fix prompt suggestions, add api_retry events, and effort level controls
+- Add spec manifest management system
+
+### Changed
+
+- Extract PageHeader for consistent top-level route headers
+- Extract SessionStore, RuntimeCache, and constants from ClaudeCodeRuntime
+- Extract extension-manager into focused collaborators
+- Extract setting field renderers to separate file
+- Document getSubagents() across architecture, API, and data-fetching guides
+- Update docs and templates for auto-generated settings tabs
+
+### Fixed
+
+- Eliminate setState-during-render errors on session and tasks pages
+- Resolve all 15 client lint warnings
+- Update stale test mocks after Tasks rename (Pulse to Tasks)
+- Tighten activity filter bar chip sizing and spacing
+- Exclude archived issues and fix query complexity in Linear queries
+- Unify dashboard section styling for visual consistency
+- Add padding to collapsible settings groups and vertical layout for wide controls
+- Expose React globally for extension runtime and fix Linear example import
+- Clean up lint warnings and fix site build frontmatter
+- Fork UX feedback, tests, and tooltip accessibility
+- Spread process.env in SDK env option to prevent code 127
+- Load local settings so project-level plugin MCP servers are discovered
+
+## Install / Update
+
+```
+npm install -g dorkos@0.28.0
+```
