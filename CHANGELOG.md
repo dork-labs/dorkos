@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add openBlank() to task template dialog store
 - Replace Damon with DorkBot as sole system agent
 - Replace Damon with DorkBot as sole system agent
 - Tasks System Redesign — rename Pulse→Tasks, file-based definitions, Damon agent, UI
