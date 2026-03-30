@@ -5,9 +5,9 @@
  * Returned refs are consumed by `useSessionSubmit` for submission setup and
  * `markToolCallResponded`.
  */
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { MessagePart, HookPart } from '@dorkos/shared/types';
-import { useTheme, useTransport } from '@/layers/shared/model';
+import { useTheme } from '@/layers/shared/model';
 import { createStreamEventHandler } from './stream-event-handler';
 import { streamManager } from './stream-manager';
 import type { SessionStoreActions } from './use-session-store-actions';
@@ -85,7 +85,6 @@ export function useStreamHandler({
   // UI command dispatch refs — stable so the stream handler never goes stale
   const { setTheme } = useTheme();
   const themeRef = useRef<(theme: 'light' | 'dark') => void>(setTheme);
-  themeRef.current = setTheme;
   const scrollToMessageRef = useRef<((messageId?: string) => void) | undefined>(undefined);
   const switchAgentRef = useRef<((cwd: string) => void) | undefined>(undefined);
 
@@ -93,18 +92,22 @@ export function useStreamHandler({
   const onTaskEventRef = useRef(onTaskEvent);
   const onSessionIdChangeRef = useRef(onSessionIdChange);
   const onStreamingDoneRef = useRef(onStreamingDone);
-  onTaskEventRef.current = onTaskEvent;
-  onSessionIdChangeRef.current = onSessionIdChange;
-  onStreamingDoneRef.current = onStreamingDone;
 
-  // Updated each render so the stream handler always calls the latest version
-  rateLimitClearRef.current = () => {
-    setIsRateLimited(false);
-    setRateLimitRetryAfter(null);
-  };
+  // Sync callback refs after commit so the stream handler always calls the latest version
+  useEffect(() => {
+    themeRef.current = setTheme;
+    onTaskEventRef.current = onTaskEvent;
+    onSessionIdChangeRef.current = onSessionIdChange;
+    onStreamingDoneRef.current = onStreamingDone;
+    rateLimitClearRef.current = () => {
+      setIsRateLimited(false);
+      setRateLimitRetryAfter(null);
+    };
+  });
 
   const streamEventHandler = useMemo(
     () =>
+      // eslint-disable-next-line react-hooks/refs -- refs captured in closure, .current only read during event handling
       createStreamEventHandler({
         currentPartsRef,
         orphanHooksRef,

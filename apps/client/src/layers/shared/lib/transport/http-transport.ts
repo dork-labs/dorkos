@@ -24,7 +24,7 @@ import { createSystemMethods } from './system-methods';
 // missing or mismatched methods surface as errors in the factory file — not here.
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type, @typescript-eslint/no-unsafe-declaration-merging
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface HttpTransport
   extends
     ReturnType<typeof createTasksMethods>,

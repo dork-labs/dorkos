@@ -20,14 +20,7 @@ import {
   STORAGE_KEYS,
   MAX_RECENT_CWDS,
 } from '@/layers/shared/lib';
-import {
-  readBool,
-  writeBool,
-  BOOL_KEYS,
-  BOOL_DEFAULTS,
-  type ContextFile,
-  type RecentCwd,
-} from './app-store-helpers';
+import { readBool, writeBool, BOOL_KEYS, BOOL_DEFAULTS, type RecentCwd } from './app-store-helpers';
 import { createPanelsSlice } from './app-store-panels';
 import { createPreferencesSlice } from './app-store-preferences';
 import { createCanvasSlice } from './app-store-canvas';

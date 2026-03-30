@@ -34,7 +34,6 @@ export function TasksPage() {
   // Wire external trigger from useTaskTemplateDialog
   const { externalTrigger } = useTaskTemplateDialog();
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- open dialog in response to external preset trigger
   if (externalTrigger && !dialogOpen) {
     setEditTask(undefined);
     setDialogOpen(true);

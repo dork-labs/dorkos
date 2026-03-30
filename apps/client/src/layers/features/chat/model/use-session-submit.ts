@@ -14,7 +14,7 @@ import { deriveFromParts } from './stream-event-helpers';
 import { streamManager } from './stream-manager';
 import { useStreamHandler } from './use-stream-handler';
 import type { SessionStoreActions } from './use-session-store-actions';
-import type { ChatMessage, ChatSessionOptions, ChatStatus } from './chat-types';
+import type { ChatSessionOptions, ChatStatus } from './chat-types';
 
 // ---------------------------------------------------------------------------
 // Interface
@@ -124,7 +124,9 @@ export function useSessionSubmit({
 
   // transformContent ref — option callback kept current each render
   const transformContentRef = useRef(transformContent);
-  transformContentRef.current = transformContent;
+  useEffect(() => {
+    transformContentRef.current = transformContent;
+  });
 
   const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -146,7 +148,13 @@ export function useSessionSubmit({
     setIsTextStreaming(false);
     setIsRateLimited(false);
     setRateLimitRetryAfter(null);
-  }, [setIsTextStreaming, setIsRateLimited, setRateLimitRetryAfter]);
+  }, [
+    setIsTextStreaming,
+    setIsRateLimited,
+    setRateLimitRetryAfter,
+    isTextStreamingRef,
+    textStreamingTimerRef,
+  ]);
 
   /**
    * Core submission logic shared by `handleSubmit` and `submitContent`.
@@ -224,6 +232,13 @@ export function useSessionSubmit({
       setError,
       setSessionBusy,
       streamEventHandler,
+      assistantCreatedRef,
+      assistantIdRef,
+      currentPartsRef,
+      estimatedTokensRef,
+      onSessionIdChangeRef,
+      onStreamingDoneRef,
+      streamStartTimeRef,
     ]
   );
 
@@ -284,7 +299,7 @@ export function useSessionSubmit({
         );
       }
     },
-    [setMessages]
+    [setMessages, assistantIdRef, currentPartsRef]
   );
 
   return { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded };
