@@ -1,9 +1,16 @@
 import { motion } from 'motion/react';
 import { Terminal, FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { AgentIdentity } from '@/layers/entities/agent';
 
 interface ShortcutChipsProps {
   onChipClick: (trigger: string) => void;
+  /** Agent display name (omit to hide identity). */
+  agentName?: string;
+  /** Agent color (HSL or hex). */
+  agentColor?: string;
+  /** Agent emoji character. */
+  agentEmoji?: string;
 }
 
 interface ChipDef {
@@ -18,8 +25,13 @@ const chips: ChipDef[] = [
   { trigger: '@', label: 'Files', icon: FileText, ariaLabel: 'Insert file mention trigger' },
 ];
 
-/** Renders trigger chips for slash commands and file mentions below the chat input. */
-export function ShortcutChips({ onChipClick }: ShortcutChipsProps) {
+/** Renders agent identity and trigger chips for slash commands and file mentions below the chat input. */
+export function ShortcutChips({
+  onChipClick,
+  agentName,
+  agentColor,
+  agentEmoji,
+}: ShortcutChipsProps) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -28,6 +40,9 @@ export function ShortcutChips({ onChipClick }: ShortcutChipsProps) {
       transition={{ duration: 0.2 }}
       className="mt-1.5 flex items-center justify-center gap-2 sm:justify-start"
     >
+      {agentName && agentColor && agentEmoji && (
+        <AgentIdentity size="xs" name={agentName} color={agentColor} emoji={agentEmoji} />
+      )}
       {chips.map((chip) => (
         <button
           key={chip.trigger}

@@ -351,6 +351,9 @@ export function ChatInputContainer({
               presenceTasks={presenceTasks}
               syncConnectionState={syncConnectionState}
               syncFailedAttempts={syncFailedAttempts}
+              agentName={agentName}
+              agentColor={agentVisual.color}
+              agentEmoji={agentVisual.emoji}
             />
           </motion.div>
         )}

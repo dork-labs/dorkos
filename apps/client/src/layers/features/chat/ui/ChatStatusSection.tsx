@@ -7,8 +7,7 @@ import type {
   ConnectionState,
 } from '@dorkos/shared/types';
 import { SlidersHorizontal } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { useIsMobile, useAppStore, useTransport } from '@/layers/shared/model';
+import { useIsMobile, useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
 import { useSessionStatus, useSessionChatStore, useSubagents } from '@/layers/entities/session';
 import { ShortcutChips } from './ShortcutChips';
@@ -24,7 +23,6 @@ import {
   NotificationSoundItem,
   SyncItem,
   PollingItem,
-  TunnelItem,
   ClientsItem,
   ConnectionItem,
   SubagentsItem,
@@ -56,6 +54,12 @@ interface ChatStatusSectionProps {
   syncConnectionState: ConnectionState;
   /** Number of failed reconnection attempts. */
   syncFailedAttempts: number;
+  /** Agent display name for the shortcut chips row. */
+  agentName?: string;
+  /** Agent color (HSL or hex) for the shortcut chips row. */
+  agentColor?: string;
+  /** Agent emoji for the shortcut chips row. */
+  agentEmoji?: string;
 }
 
 interface ItemContextMenuProps {
@@ -110,6 +114,9 @@ export function ChatStatusSection({
   presenceTasks,
   syncConnectionState,
   syncFailedAttempts,
+  agentName,
+  agentColor,
+  agentEmoji,
 }: ChatStatusSectionProps) {
   const isMobile = useIsMobile();
 
@@ -135,8 +142,6 @@ export function ChatStatusSection({
     setShowStatusBarSync,
     showStatusBarPolling,
     setShowStatusBarPolling,
-    showStatusBarTunnel,
-    setShowStatusBarTunnel,
     enableNotificationSound,
     setEnableNotificationSound,
     enableCrossClientSync,
@@ -149,12 +154,6 @@ export function ChatStatusSection({
   );
   const { data: gitStatus } = useGitStatus(status.cwd);
   const { data: subagents } = useSubagents();
-  const transport = useTransport();
-  const { data: serverConfig } = useQuery({
-    queryKey: ['config'],
-    queryFn: () => transport.getConfig(),
-    staleTime: 5 * 60 * 1000,
-  });
 
   // Configure popover state — opened by icon click or from context menus
   const [configureOpen, setConfigureOpen] = useState(false);
@@ -324,23 +323,6 @@ export function ChatStatusSection({
                 />
               </ItemContextMenu>
             </StatusLine.Item>
-            <StatusLine.Item
-              itemKey="tunnel"
-              visible={showStatusBarTunnel && !!serverConfig?.tunnel}
-            >
-              {/*
-               * serverConfig?.tunnel is safe here: visible guard ensures this only renders
-               * when tunnel exists, but JSX children are evaluated eagerly so we use optional
-               * chaining to avoid crashes when serverConfig is undefined during loading.
-               */}
-              <ItemContextMenu
-                itemLabel={getItemLabel('tunnel')}
-                onHide={() => setShowStatusBarTunnel(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                {serverConfig?.tunnel && <TunnelItem tunnel={serverConfig.tunnel} />}
-              </ItemContextMenu>
-            </StatusLine.Item>
             {/*
              * System-managed items: connection and clients are not user-toggleable.
              * They are not wrapped with ItemContextMenu — they will fall through to
@@ -417,7 +399,14 @@ export function ChatStatusSection({
               onDragEnd={handleDragEnd}
               style={{ touchAction: 'pan-y' }}
             >
-              {showShortcutChips && <ShortcutChips onChipClick={onChipClick} />}
+              {showShortcutChips && (
+                <ShortcutChips
+                  onChipClick={onChipClick}
+                  agentName={agentName}
+                  agentColor={agentColor}
+                  agentEmoji={agentEmoji}
+                />
+              )}
               {statusLineContent}
             </motion.div>
           )}
@@ -429,7 +418,14 @@ export function ChatStatusSection({
   return (
     <>
       <AnimatePresence>
-        {showShortcutChips && <ShortcutChips onChipClick={onChipClick} />}
+        {showShortcutChips && (
+          <ShortcutChips
+            onChipClick={onChipClick}
+            agentName={agentName}
+            agentColor={agentColor}
+            agentEmoji={agentEmoji}
+          />
+        )}
       </AnimatePresence>
       {statusLineContent}
     </>
