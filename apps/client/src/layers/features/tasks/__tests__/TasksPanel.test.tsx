@@ -17,19 +17,19 @@ vi.mock('cronstrue', () => ({
 
 // Mock CreateTaskDialog
 vi.mock('../ui/CreateTaskDialog', () => ({
-  CreateTaskDialog: (props: { open: boolean; editSchedule?: unknown }) => {
+  CreateTaskDialog: (props: { open: boolean; editTask?: unknown }) => {
     if (!props.open) return null;
     return (
       <div data-testid="create-schedule-dialog">
-        {props.editSchedule ? 'Edit Schedule' : 'New Schedule'}
+        {props.editTask ? 'Edit Schedule' : 'New Schedule'}
       </div>
     );
   },
 }));
 
-// Mock TaskTaskRunHistoryPanel
-vi.mock('../ui/TaskTaskRunHistoryPanel', () => ({
-  TaskTaskRunHistoryPanel: ({ scheduleId }: { scheduleId: string }) => (
+// Mock TaskRunHistoryPanel
+vi.mock('../ui/TaskRunHistoryPanel', () => ({
+  TaskRunHistoryPanel: ({ scheduleId }: { scheduleId: string }) => (
     <div data-testid={`run-history-${scheduleId}`}>Run History for {scheduleId}</div>
   ),
 }));
@@ -76,25 +76,23 @@ vi.mock('../ui/TasksEmptyState', () => ({
 // Exposes onEdit and onToggleExpand as buttons so tests can invoke them directly.
 vi.mock('../ui/TaskRow', () => ({
   TaskRow: ({
-    schedule,
+    task,
     expanded,
     onToggleExpand,
     onEdit,
   }: {
-    schedule: { id: string; name: string };
+    task: { id: string; name: string };
     expanded: boolean;
     onToggleExpand: () => void;
     onEdit: () => void;
   }) => (
-    <div data-testid={`schedule-row-${schedule.id}`}>
-      <span>{schedule.name}</span>
-      <button onClick={onToggleExpand}>Toggle {schedule.name}</button>
-      <button onClick={onEdit} aria-label={`Edit ${schedule.name}`}>
+    <div data-testid={`schedule-row-${task.id}`}>
+      <span>{task.name}</span>
+      <button onClick={onToggleExpand}>Toggle {task.name}</button>
+      <button onClick={onEdit} aria-label={`Edit ${task.name}`}>
         Edit
       </button>
-      {expanded && (
-        <div data-testid={`run-history-${schedule.id}`}>Run History for {schedule.id}</div>
-      )}
+      {expanded && <div data-testid={`run-history-${task.id}`}>Run History for {task.id}</div>}
     </div>
   ),
 }));

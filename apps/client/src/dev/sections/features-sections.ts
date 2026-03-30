@@ -124,7 +124,7 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
   },
   // TasksShowcases
   {
-    id: 'presetcard',
+    id: 'tasktemplatecard',
     title: 'TaskTemplateCard',
     page: 'features',
     category: 'Tasks',

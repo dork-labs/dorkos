@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Update stale test mocks after Tasks rename (Pulse→Tasks)
 - Tighten activity filter bar chip sizing and spacing
 - Exclude archived issues and fix query complexity in Linear queries
 - Unify dashboard section styling for visual consistency

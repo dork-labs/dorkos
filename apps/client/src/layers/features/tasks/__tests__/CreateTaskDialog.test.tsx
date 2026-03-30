@@ -55,7 +55,7 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => {
 // Mock PresetGallery to render a simple selectable list — avoids needing full TanStack Query setup
 // and lets tests click preset names directly or use "Start from scratch"
 vi.mock('../ui/TaskTemplateGallery', () => ({
-  PresetGallery: ({ onSelect }: { onSelect?: (preset: TaskTemplate) => void }) => (
+  TaskTemplateGallery: ({ onSelect }: { onSelect?: (preset: TaskTemplate) => void }) => (
     <div data-testid="preset-gallery">
       {MOCK_PRESETS.map((p) => (
         <button key={p.id} onClick={() => onSelect?.(p)}>
