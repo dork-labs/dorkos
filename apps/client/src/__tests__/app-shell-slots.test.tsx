@@ -31,7 +31,7 @@ vi.mock('@/layers/features/session-list', () => ({
 }));
 
 vi.mock('@/layers/features/top-nav', () => ({
-  SessionHeader: () => <div data-testid="session-header">AgentIdentityChip</div>,
+  SessionHeader: () => <div data-testid="session-header">Session</div>,
   DashboardHeader: () => <div data-testid="dashboard-header">Dashboard</div>,
 }));
 

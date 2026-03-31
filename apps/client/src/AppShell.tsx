@@ -4,7 +4,6 @@ import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model
 import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import type { AgentVisual } from '@/layers/entities/agent';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
 import { SessionSidebar, SidebarFooterBar } from '@/layers/features/session-list';
@@ -70,20 +69,11 @@ function useSidebarSlot(): SidebarSlot {
 
 /**
  * Returns the header content component keyed to the current route.
- * On the session route, includes the agent-colored border style.
  *
- * Only `/session` uses the agent-scoped SessionHeader.
- * All other routes use a page-specific header with consistent `PageHeader` layout.
+ * All routes use a page-specific header with consistent `PageHeader` layout.
+ * The session route includes a breadcrumb with the agent name.
  */
-function useHeaderSlot({
-  currentAgent,
-  agentVisual,
-  isStreaming,
-}: {
-  currentAgent: AgentManifest | null | undefined;
-  agentVisual: AgentVisual;
-  isStreaming: boolean;
-}): HeaderSlot {
+function useHeaderSlot({ agentName }: { agentName: string | undefined }): HeaderSlot {
   const { pathname, searchStr } = useRouterState({
     select: (s) => ({ pathname: s.location.pathname, searchStr: s.location.searchStr }),
   });
@@ -106,12 +96,8 @@ function useHeaderSlot({
     case '/session':
       return {
         key: 'session',
-        content: (
-          <SessionHeader agent={currentAgent} visual={agentVisual} isStreaming={isStreaming} />
-        ),
-        borderStyle: currentAgent
-          ? { borderBottomColor: `color-mix(in srgb, ${agentVisual.color} 25%, var(--border))` }
-          : undefined,
+        content: <SessionHeader agentName={agentName} />,
+        borderStyle: undefined,
       };
     default:
       return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
@@ -185,7 +171,7 @@ export function AppShell() {
 
   // Route-aware sidebar and header slots — cross-fade on route change
   const sidebarSlot = useSidebarSlot();
-  const headerSlot = useHeaderSlot({ currentAgent, agentVisual, isStreaming });
+  const headerSlot = useHeaderSlot({ agentName: currentAgent?.name });
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before
   // onboarding appears on first run.

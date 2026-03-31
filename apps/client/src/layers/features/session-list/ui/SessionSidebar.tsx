@@ -5,7 +5,7 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { cn, groupSessionsByTime } from '@/layers/shared/lib';
 import { SidebarContent } from '@/layers/shared/ui';
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
-import { useAgentToolStatus, useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
+import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
 import { useSessions } from '@/layers/entities/session';
 import { SidebarTabRow } from './SidebarTabRow';
 import { SessionsView } from './SessionsView';
@@ -26,7 +26,6 @@ export function SessionSidebar() {
   const toolStatus = useAgentToolStatus(selectedCwd);
   const tasksToolEnabled = toolStatus.tasks !== 'disabled-by-server';
   const { data: activeRunCount = 0 } = useActiveTaskRunCount(tasksToolEnabled);
-  const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
   const connectionsStatus = useConnectionsStatus(selectedCwd);
 
   // Side-effect hooks
@@ -70,7 +69,6 @@ export function SessionSidebar() {
   return (
     <>
       <SidebarAgentHeader
-        agentVisual={agentVisual}
         agentName={currentAgent?.name}
         onDashboard={handleDashboard}
         onNewSession={handleNewSession}

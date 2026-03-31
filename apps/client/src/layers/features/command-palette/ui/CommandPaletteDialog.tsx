@@ -21,6 +21,7 @@ import { PaletteFooter } from './PaletteFooter';
 import { PaletteRootPage } from './PaletteRootPage';
 import { usePreviewData } from '../model/use-preview-data';
 import { dialogVariants } from './palette-constants';
+import { useAgentDialog } from '@/layers/features/agent-settings';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { FuseResultMatch } from 'fuse.js';
 
@@ -129,6 +130,8 @@ export function CommandPaletteDialog() {
 
   // Preview data for the sub-menu (agent-actions page); always call hook but use subMenuAgent
   const previewData = usePreviewData(subMenuAgent?.id ?? '', subMenuAgent?.projectPath ?? '');
+  const openAgentDialog = useAgentDialog((s) => s.openDialog);
+  const setAgentDialogOpen = useAppStore((s) => s.setAgentDialogOpen);
 
   // Navigate back one page in the pages stack
   const goBack = useCallback(() => {
@@ -147,12 +150,12 @@ export function CommandPaletteDialog() {
     setStaggerKey((k) => k + 1);
   }, []);
 
-  // Consume initial search text when palette opens (e.g. "@" from AgentIdentityChip click).
+  // Consume initial search text when palette opens (e.g. "@" from an external trigger).
   // Uses useEffect because globalPaletteInitialSearch and globalPaletteOpen are set
   // simultaneously in the store, so the value isn't available in handleOpenChange's closure.
   useEffect(() => {
     if (globalPaletteOpen && globalPaletteInitialSearch != null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- consuming initial search text injected by external trigger (e.g. "@" from AgentIdentityChip)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- consuming initial search text injected by external trigger
       setSearch(globalPaletteInitialSearch);
       clearGlobalPaletteInitialSearch();
       // Place cursor after the prefix so typing appends instead of replacing.
@@ -365,6 +368,11 @@ export function CommandPaletteDialog() {
                         onNewSession={() => {
                           setDir(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);
+                          closePalette();
+                        }}
+                        onEditSettings={() => {
+                          openAgentDialog(subMenuAgent.projectPath);
+                          setAgentDialogOpen(true);
                           closePalette();
                         }}
                         recentSessions={previewData.recentSessions}

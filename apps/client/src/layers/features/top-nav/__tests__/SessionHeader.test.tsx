@@ -1,16 +1,13 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import { SessionHeader } from '../ui/SessionHeader';
 import { TooltipProvider } from '@/layers/shared/ui';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { AgentVisual } from '@/layers/entities/agent';
 
-// Mock app store (used by AgentIdentityChip, CommandPaletteTrigger, and CanvasToggle)
+// Mock app store (used by CommandPaletteTrigger and CanvasToggle)
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
-      openGlobalPaletteWithSearch: vi.fn(),
       setGlobalPaletteOpen: vi.fn(),
       canvasOpen: false,
       canvasContent: null,
@@ -20,7 +17,20 @@ vi.mock('@/layers/shared/model', () => ({
   },
 }));
 
-// Mock motion/react — CanvasToggle uses motion.button, AgentIdentityChip uses AnimatePresence
+// Mock TanStack Router Link to a plain anchor
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    children,
+    to,
+    ...rest
+  }: { children: React.ReactNode; to: string } & Record<string, unknown>) => (
+    <a href={to} {...(rest as React.AnchorHTMLAttributes<HTMLAnchorElement>)}>
+      {children}
+    </a>
+  ),
+}));
+
+// Mock motion/react — CanvasToggle uses motion.button
 function PassThrough({ children, ...rest }: Record<string, unknown>) {
   return (
     <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children as React.ReactNode}</div>
@@ -51,50 +61,48 @@ beforeAll(() => {
   });
 });
 
-const mockAgent: AgentManifest = {
-  id: '01HZ0000000000000000000001',
-  name: 'TestAgent',
-  description: 'A test agent',
-  runtime: 'claude-code',
-  capabilities: [],
-  behavior: { responseMode: 'always' },
-  budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
-  registeredAt: '2026-01-01T00:00:00Z',
-  registeredBy: 'dorkos-ui',
-  personaEnabled: false,
-  enabledToolGroups: {},
-};
-
-const mockVisual: AgentVisual = {
-  color: 'hsl(200, 70%, 55%)',
-  emoji: '🤖',
-};
-
 function renderWithTooltip(ui: React.ReactElement) {
   return render(<TooltipProvider>{ui}</TooltipProvider>);
 }
 
 describe('SessionHeader', () => {
-  it('renders AgentIdentityChip with agent name', () => {
-    renderWithTooltip(<SessionHeader agent={mockAgent} visual={mockVisual} isStreaming={false} />);
-    expect(screen.getByText('TestAgent')).toBeInTheDocument();
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders agent name in breadcrumb', () => {
+    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    expect(screen.getByText('dorkbot')).toBeInTheDocument();
+  });
+
+  it('renders Agents link pointing to /agents', () => {
+    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    const link = screen.getByRole('link', { name: 'Agents' });
+    expect(link).toHaveAttribute('href', '/agents');
+  });
+
+  it('renders Session breadcrumb segment', () => {
+    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
+    const nav = screen.getByLabelText('Breadcrumb');
+    expect(nav).toHaveTextContent('Session');
   });
 
   it('renders CommandPaletteTrigger', () => {
-    renderWithTooltip(<SessionHeader agent={mockAgent} visual={mockVisual} isStreaming={false} />);
-    // getAllByLabelText handles the case where TooltipProvider renders multiple trigger elements
+    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
     const triggers = screen.getAllByLabelText('Open command palette');
     expect(triggers.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows "No agent" when agent is null', () => {
-    renderWithTooltip(<SessionHeader agent={null} visual={mockVisual} isStreaming={false} />);
-    expect(screen.getByText('No agent')).toBeInTheDocument();
-  });
-
   it('renders CanvasToggle button', () => {
-    renderWithTooltip(<SessionHeader agent={mockAgent} visual={mockVisual} isStreaming={false} />);
+    renderWithTooltip(<SessionHeader agentName="dorkbot" />);
     const toggles = screen.getAllByLabelText('Open canvas');
     expect(toggles.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('omits agent name when no agent', () => {
+    renderWithTooltip(<SessionHeader agentName={undefined} />);
+    expect(screen.queryByText('dorkbot')).not.toBeInTheDocument();
+    const nav = screen.getByLabelText('Breadcrumb');
+    expect(nav).toHaveTextContent('Session');
   });
 });

@@ -3,7 +3,6 @@
  *
  * @module features/top-nav
  */
-export { AgentIdentityChip } from './ui/AgentIdentityChip';
 export { CommandPaletteTrigger } from './ui/CommandPaletteTrigger';
 export { PageHeader } from './ui/PageHeader';
 export { SessionHeader } from './ui/SessionHeader';

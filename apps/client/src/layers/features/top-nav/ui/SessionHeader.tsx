@@ -1,26 +1,38 @@
-import { AgentIdentityChip } from './AgentIdentityChip';
-import { CommandPaletteTrigger } from './CommandPaletteTrigger';
+import { ChevronRight } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { CanvasToggle } from '@/layers/features/canvas';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { AgentVisual } from '@/layers/entities/agent';
+import { CommandPaletteTrigger } from './CommandPaletteTrigger';
 
 interface SessionHeaderProps {
-  /** Current agent manifest, null when no agent is registered */
-  agent: AgentManifest | null | undefined;
-  /** Derived visual identity (color + emoji) */
-  visual: AgentVisual;
-  /** Whether the agent is currently streaming a response */
-  isStreaming: boolean;
+  /** Agent name to display in the breadcrumb, omitted when no agent is active. */
+  agentName: string | undefined;
 }
 
-/** Session route header — agent identity chip, canvas toggle, and command palette trigger. */
-export function SessionHeader({ agent, visual, isStreaming }: SessionHeaderProps) {
+/** Session route header — breadcrumb navigation, canvas toggle, and command palette trigger. */
+export function SessionHeader({ agentName }: SessionHeaderProps) {
   return (
     <>
-      <AgentIdentityChip agent={agent} visual={visual} isStreaming={isStreaming} />
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm">
+        <Link
+          to="/agents"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Agents
+        </Link>
+        {agentName && (
+          <>
+            <ChevronRight className="text-muted-foreground/50 size-3" aria-hidden />
+            <span className="font-medium">{agentName}</span>
+          </>
+        )}
+        <ChevronRight className="text-muted-foreground/50 size-3" aria-hidden />
+        <span className="text-muted-foreground">Session</span>
+      </nav>
       <div className="flex-1" />
-      <CanvasToggle />
-      <CommandPaletteTrigger />
+      <div className="flex shrink-0 items-center gap-2">
+        <CanvasToggle />
+        <CommandPaletteTrigger />
+      </div>
     </>
   );
 }

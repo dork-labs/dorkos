@@ -1,14 +1,5 @@
 import type { ComponentType } from 'react';
-import {
-  Pencil,
-  Settings,
-  Sun,
-  Bug,
-  LayoutDashboard,
-  MessageSquare,
-  Clock,
-  Radio,
-} from 'lucide-react';
+import { Settings, Sun, Bug, LayoutDashboard, MessageSquare, Clock, Radio } from 'lucide-react';
 import type { SidebarFooterContribution, SidebarTabContribution } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
 
@@ -29,13 +20,6 @@ import { ConnectionsView } from '../ui/ConnectionsView';
  * based on the current theme by checking the contribution `id`.
  */
 export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
-  {
-    id: 'edit-agent',
-    icon: Pencil,
-    label: 'Edit Agent',
-    onClick: () => useAppStore.getState().setAgentDialogOpen(true),
-    priority: 1,
-  },
   {
     id: 'settings',
     icon: Settings,

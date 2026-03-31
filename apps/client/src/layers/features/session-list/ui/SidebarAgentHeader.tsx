@@ -7,26 +7,23 @@ import {
   SidebarMenuButton,
   Kbd,
 } from '@/layers/shared/ui';
-import { AgentIdentity } from '@/layers/entities/agent';
-import type { AgentVisual } from '@/layers/entities/agent';
 
 interface SidebarAgentHeaderProps {
-  agentVisual: AgentVisual;
+  /** Agent display name, shown as the sidebar heading. */
   agentName: string | undefined;
   onDashboard: () => void;
   onNewSession: () => void;
 }
 
-/** Sidebar header with dashboard back-link, agent identity, and new-session button. */
+/** Sidebar header with dashboard back-link, agent name, and new-session button. */
 export function SidebarAgentHeader({
-  agentVisual,
   agentName,
   onDashboard,
   onNewSession,
 }: SidebarAgentHeaderProps) {
   return (
     <SidebarHeader className="border-b p-3">
-      {/* Dashboard back + agent identity */}
+      {/* Dashboard back + agent name */}
       <div className="flex items-center gap-2 py-1">
         <SidebarMenuButton
           data-slot="dashboard-link"
@@ -39,12 +36,7 @@ export function SidebarAgentHeader({
         >
           <ChevronLeft className="size-(--size-icon-sm)" />
         </SidebarMenuButton>
-        <AgentIdentity
-          {...agentVisual}
-          name={agentName ?? 'No agent'}
-          size="sm"
-          className="min-w-0 flex-1"
-        />
+        <span className="min-w-0 truncate text-sm font-medium">{agentName ?? 'Agent'}</span>
       </div>
 
       <SidebarMenu>

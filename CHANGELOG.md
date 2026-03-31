@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidate agent identity to chat input, add breadcrumb nav
 - Reorganize Dev Playground sidebar into domain-oriented groups
 - Relocate Remote indicator from status bar to sidebar footer
 - Streamline dashboard — remove Active Sessions, fix status alignment, unify activity feed
