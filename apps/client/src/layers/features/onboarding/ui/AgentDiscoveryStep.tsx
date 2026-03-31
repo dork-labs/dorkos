@@ -3,7 +3,13 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Search, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { useRegisterAgent } from '@/layers/entities/mesh';
-import { useDiscoveryScan, useDiscoveryStore, CandidateCard } from '@/layers/entities/discovery';
+import {
+  useDiscoveryScan,
+  useDiscoveryStore,
+  useActedPaths,
+  buildRegistrationOverrides,
+  CandidateCard,
+} from '@/layers/entities/discovery';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { NoAgentsFound } from './NoAgentsFound';
 
@@ -40,7 +46,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
   const { candidates, existingAgents, isScanning, progress, error } = useDiscoveryStore();
   const registerAgent = useRegisterAgent();
   // Tracks paths the user has explicitly approved or skipped
-  const [actedPaths, setActedPaths] = useState<Set<string>>(new Set());
+  const { actedPaths, markActed, resetActed } = useActedPaths();
   const [hasStarted, setHasStarted] = useState(false);
   const reducedMotion = useReducedMotion();
   const autoStarted = useRef(false);
@@ -61,24 +67,13 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
     [candidates, isScanning]
   );
 
-  const markActed = useCallback((path: string) => {
-    setActedPaths((prev) => new Set(prev).add(path));
-  }, []);
-
   const handleApprove = useCallback(
     (candidate: DiscoveryCandidate) => {
       // Mark acted immediately so the card exits; registration continues in background
       markActed(candidate.path);
       registerAgent.mutate({
         path: candidate.path,
-        overrides: {
-          name: candidate.hints.suggestedName,
-          runtime: candidate.hints.detectedRuntime,
-          ...(candidate.hints.inferredCapabilities
-            ? { capabilities: candidate.hints.inferredCapabilities }
-            : {}),
-          ...(candidate.hints.description ? { description: candidate.hints.description } : {}),
-        },
+        overrides: buildRegistrationOverrides(candidate),
       });
     },
     [registerAgent, markActed]
@@ -92,7 +87,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
   );
 
   const handleRescan = useCallback(() => {
-    setActedPaths(new Set());
+    resetActed();
     setHasStarted(true);
     startScan();
   }, [startScan]);

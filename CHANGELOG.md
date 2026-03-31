@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Unify scan UI — fix DiscoveryView parity, extract shared utilities
 - Complete Pulse→Tasks terminology migration and improve docs infrastructure
 - Update CLI README and config guide for Tasks rename and new features
 

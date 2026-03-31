@@ -1,14 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronDown, Loader2, Search, FolderSearch } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Loader2, Search, FolderSearch } from 'lucide-react';
 import {
   useMeshScanRoots,
   useRegisteredAgents,
   useRegisterAgent,
   useDenyAgent,
 } from '@/layers/entities/mesh';
-import { useDiscoveryScan, useDiscoveryStore, CandidateCard } from '@/layers/entities/discovery';
-import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import {
+  useDiscoveryScan,
+  useDiscoveryStore,
+  useActedPaths,
+  buildRegistrationOverrides,
+  CandidateCard,
+} from '@/layers/entities/discovery';
+import type { DiscoveryCandidate, ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import { Button } from '@/layers/shared/ui';
 import { ScanRootInput } from './ScanRootInput';
 
@@ -18,6 +24,19 @@ const DETECTION_STRATEGIES = [
   { name: 'codex', signal: '.codex/', label: 'Codex project' },
   { name: 'dork', signal: '.dork/agent.json', label: 'DorkOS agent (auto-imported)' },
 ] as const;
+
+/**
+ * Sort candidates by relevance: dork-manifest first, then alphabetically by path.
+ * Only applied after scan completes to avoid cards jumping during progressive results.
+ */
+function sortCandidates(candidates: DiscoveryCandidate[]): DiscoveryCandidate[] {
+  return [...candidates].sort((a, b) => {
+    const aIsDork = a.strategy === 'dork-manifest';
+    const bIsDork = b.strategy === 'dork-manifest';
+    if (aIsDork !== bIsDork) return aIsDork ? -1 : 1;
+    return a.path.localeCompare(b.path);
+  });
+}
 
 interface DiscoveryViewProps {
   /** When true, renders as full-bleed Mode A with contextual headline. */
@@ -31,10 +50,18 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [depth, setDepth] = useState(3);
   const { startScan } = useDiscoveryScan();
-  const { candidates, isScanning: isPending } = useDiscoveryStore();
+  const {
+    candidates,
+    existingAgents,
+    isScanning: isPending,
+    progress,
+    error,
+    lastScanAt,
+  } = useDiscoveryStore();
   const { mutate: registerAgent } = useRegisterAgent();
   const { mutate: denyAgent } = useDenyAgent();
   const { data: agentsResult } = useRegisteredAgents();
+  const { actedPaths, markActed } = useActedPaths();
 
   // Use local edits if user has modified, otherwise use persisted roots
   const displayRoots = localRoots ?? roots;
@@ -50,13 +77,18 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
     }
   }
 
-  const [actedPaths, setActedPaths] = useState<Set<string>>(new Set());
-  const visibleCandidates = candidates.filter((c) => !actedPaths.has(c.path));
-  const hasRegistered = (agentsResult?.agents?.length ?? 0) > 0;
+  // Sort candidates after scan completes for stable display
+  const displayCandidates = useMemo(
+    () => (isPending ? candidates : sortCandidates(candidates)),
+    [candidates, isPending]
+  );
 
-  function markActed(path: string) {
-    setActedPaths((prev) => new Set([...prev, path]));
-  }
+  const visibleCandidates = displayCandidates.filter((c) => !actedPaths.has(c.path));
+  const hasRegistered = (agentsResult?.agents?.length ?? 0) > 0;
+  const hasExisting = existingAgents.length > 0;
+  const hasCandidates = candidates.length > 0;
+  const hasResults = hasExisting || hasCandidates;
+  const scanComplete = !isPending && lastScanAt !== null;
 
   return (
     <div className={fullBleed ? 'flex h-full flex-col p-6' : 'space-y-4 p-4'}>
@@ -127,12 +159,56 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
       {/* Results */}
       <div className={fullBleed ? 'mt-4 flex-1 overflow-y-auto' : ''}>
         {isPending && (
-          <div className="flex items-center justify-center p-8">
+          <div className="flex flex-col items-center justify-center gap-2 p-8">
             <Loader2 className="text-muted-foreground size-5 animate-spin" />
+            {progress && (
+              <div className="text-muted-foreground space-y-0.5 text-center text-xs">
+                <p>Scanned {progress.scannedDirs} directories</p>
+                <p>
+                  Found {progress.foundAgents} agent{progress.foundAgents === 1 ? '' : 's'}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {!isPending && visibleCandidates.length === 0 && (
+        {/* Error banner */}
+        {error && (
+          <div className="border-destructive/30 bg-destructive/5 text-destructive mb-3 rounded-lg border px-4 py-3 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Existing agents — already registered, display-only */}
+        {scanComplete && hasExisting && (
+          <div className="mb-3 space-y-2">
+            {existingAgents.map((agent: ExistingAgent) => (
+              <div
+                key={agent.path}
+                className="bg-muted/50 flex items-center gap-3 rounded-lg border px-4 py-3"
+              >
+                <CheckCircle2 className="text-muted-foreground size-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{agent.name}</p>
+                  <p className="text-muted-foreground truncate text-xs">{agent.path}</p>
+                </div>
+                <span className="text-muted-foreground shrink-0 text-xs">Registered</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* No-results messaging — only after a scan has completed */}
+        {scanComplete && !hasCandidates && hasExisting && (
+          <div className="rounded-xl border border-dashed p-8 text-center">
+            <p className="text-sm font-medium">All agents already registered</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              All discovered agents are already configured. Check the Agents tab to see them.
+            </p>
+          </div>
+        )}
+
+        {scanComplete && !hasResults && (
           <div className="rounded-xl border border-dashed p-8 text-center">
             <p className="text-sm font-medium">
               {hasRegistered ? 'No new agents found' : 'No agents found'}
@@ -145,7 +221,8 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
           </div>
         )}
 
-        {!isPending && visibleCandidates && visibleCandidates.length > 0 && (
+        {/* New candidates — require user action */}
+        {scanComplete && visibleCandidates.length > 0 && (
           <AnimatePresence mode="popLayout">
             {visibleCandidates.map((c: DiscoveryCandidate) => (
               <CandidateCard
@@ -156,14 +233,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
                   registerAgent(
                     {
                       path: cand.path,
-                      overrides: {
-                        name: cand.hints.suggestedName,
-                        runtime: cand.hints.detectedRuntime,
-                        ...(cand.hints.inferredCapabilities
-                          ? { capabilities: cand.hints.inferredCapabilities }
-                          : {}),
-                        ...(cand.hints.description ? { description: cand.hints.description } : {}),
-                      },
+                      overrides: buildRegistrationOverrides(cand),
                     },
                     { onSuccess: () => markActed(cand.path) }
                   )
