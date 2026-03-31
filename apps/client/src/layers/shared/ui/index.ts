@@ -162,6 +162,18 @@ export { Separator } from './separator';
 export { Slider } from './slider';
 export { Switch } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from './table';
+export { DataTable } from './data-table';
+export type { DataTableProps } from './data-table';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';

@@ -39,6 +39,7 @@ import { TopologyPage } from './pages/TopologyPage';
 import { ErrorStatesPage } from './pages/ErrorStatesPage';
 import { FilterBarPage } from './pages/FilterBarPage';
 import { OnboardingPage } from './pages/OnboardingPage';
+import { TablesPage } from './pages/TablesPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import {
   DESIGN_SYSTEM_NAV,
@@ -90,6 +91,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   'filter-bar': FilterBarPage,
   'error-states': ErrorStatesPage,
   onboarding: OnboardingPage,
+  tables: TablesPage,
 };
 
 /**

@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Button } from '@/layers/shared/ui';
+import { Button, TableRow, TableCell } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { ActorBadge } from '@/layers/entities/activity';
 import type { ActivityItem } from '@/layers/entities/activity';
@@ -61,20 +61,19 @@ export interface ActivityRowProps {
 }
 
 /**
- * Single compact activity row.
+ * Single compact activity row rendered as a table row.
  *
  * Layout: [time] [ActorBadge] [summary] [link button]
  *
- * Time format follows the spec: today=h:mm a, yesterday=Yesterday h:mm a,
- * this week=Weekday h:mm a, older=Mon DD.
+ * Must be rendered inside a `<Table><TableBody>` context. Supports keyboard
+ * navigation via `data-activity-row` and roving tabindex.
  */
 export function ActivityRow({ item, className }: ActivityRowProps) {
   const navigate = useNavigate();
   const time = formatActivityTime(item.occurredAt);
 
   return (
-    <div
-      role="button"
+    <TableRow
       data-slot="activity-row"
       data-activity-row
       tabIndex={0}
@@ -84,33 +83,38 @@ export function ActivityRow({ item, className }: ActivityRowProps) {
         }
       }}
       className={cn(
-        'flex min-w-0 items-center gap-3 rounded-md px-2 py-1.5 transition-colors',
-        'hover:bg-accent/50 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+        'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
         className
       )}
     >
       {/* Time */}
-      <span className="text-muted-foreground w-28 shrink-0 text-xs tabular-nums">{time}</span>
+      <TableCell className="w-28 py-1.5 pr-0 pl-2">
+        <span className="text-muted-foreground text-xs tabular-nums">{time}</span>
+      </TableCell>
 
       {/* Actor badge */}
-      <span className="w-24 shrink-0">
+      <TableCell className="w-24 py-1.5 pr-0">
         <ActorBadge actorType={item.actorType} actorLabel={item.actorLabel} />
-      </span>
+      </TableCell>
 
       {/* Summary */}
-      <span className="text-foreground/80 min-w-0 flex-1 truncate text-sm">{item.summary}</span>
+      <TableCell className="max-w-0 py-1.5">
+        <span className="text-foreground/80 block truncate text-sm">{item.summary}</span>
+      </TableCell>
 
       {/* Link button */}
-      {item.linkPath && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 shrink-0 px-2 text-xs"
-          onClick={() => navigate({ to: item.linkPath as '/', replace: false })}
-        >
-          Open →
-        </Button>
-      )}
-    </div>
+      <TableCell className="w-16 py-1.5 pr-2 text-right">
+        {item.linkPath && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => navigate({ to: item.linkPath as '/', replace: false })}
+          >
+            Open →
+          </Button>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }

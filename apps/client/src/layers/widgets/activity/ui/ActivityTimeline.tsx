@@ -1,6 +1,6 @@
 import { useId, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Skeleton } from '@/layers/shared/ui';
+import { Skeleton, Table, TableBody, TableRow, TableCell } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
   ActivityRow,
@@ -12,17 +12,13 @@ import {
 import type { ActivityItem } from '@/layers/entities/activity';
 
 // ---------------------------------------------------------------------------
-// Stagger animation variants (module-scope to avoid recreation)
+// Per-group fade animation (replaces per-row stagger since motion.div
+// cannot wrap <tr> elements inside <tbody>)
 // ---------------------------------------------------------------------------
 
-const staggerContainer = {
-  initial: {},
-  animate: { transition: { staggerChildren: 0.03 } },
-} as const;
-
-const staggerItem = {
+const groupFade = {
   initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.15, ease: 'easeOut' } },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -47,14 +43,22 @@ function ActivityRowSkeleton() {
   }, [id]);
 
   return (
-    <div className="flex items-center gap-3 py-1.5">
+    <TableRow>
       {/* Time column — matches the w-28 fixed-width time slot in ActivityRow */}
-      <Skeleton className="h-3 w-28 shrink-0" />
+      <TableCell className="w-28 py-1.5 pr-0 pl-2">
+        <Skeleton className="h-3 w-20" />
+      </TableCell>
       {/* Actor badge — matches the w-24 actor badge slot */}
-      <Skeleton className="h-5 w-24 shrink-0 rounded-full" />
+      <TableCell className="w-24 py-1.5 pr-0">
+        <Skeleton className="h-5 w-20 rounded-full" />
+      </TableCell>
       {/* Summary — variable width for visual variety */}
-      <Skeleton className="h-3 rounded" style={{ width: summaryWidth }} />
-    </div>
+      <TableCell className="py-1.5">
+        <Skeleton className="h-3 rounded" style={{ width: summaryWidth }} />
+      </TableCell>
+      {/* Link column placeholder */}
+      <TableCell className="w-16 py-1.5" />
+    </TableRow>
   );
 }
 
@@ -67,11 +71,15 @@ function ActivityTimelineSkeleton() {
         <Skeleton className="h-3 w-16 rounded" />
       </div>
       {/* Skeleton rows */}
-      {Array.from({ length: 5 }).map((_, i) => (
-        // Static index key is safe — skeleton rows are purely decorative
-        // and never reorder. eslint-disable-next-line react/no-array-index-key
-        <ActivityRowSkeleton key={i} />
-      ))}
+      <Table>
+        <TableBody>
+          {Array.from({ length: 5 }).map((_, i) => (
+            // Static index key is safe — skeleton rows are purely decorative
+            // and never reorder. eslint-disable-next-line react/no-array-index-key
+            <ActivityRowSkeleton key={i} />
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -135,21 +143,14 @@ export function ActivityTimeline({
           <ActivityGroupHeader
             label={group.label as 'Today' | 'Yesterday' | 'This Week' | 'Earlier'}
           />
-          <motion.div
-            className="divide-y divide-transparent"
-            variants={staggerContainer}
-            initial="initial"
-            animate="animate"
-          >
-            {group.items.map((item, index) => (
-              <motion.div
-                key={item.id}
-                // Limit stagger to first 8 items per group for performance
-                variants={index < 8 ? staggerItem : undefined}
-              >
-                <ActivityRow item={item} />
-              </motion.div>
-            ))}
+          <motion.div variants={groupFade} initial="initial" animate="animate">
+            <Table>
+              <TableBody>
+                {group.items.map((item) => (
+                  <ActivityRow key={item.id} item={item} />
+                ))}
+              </TableBody>
+            </Table>
           </motion.div>
         </section>
       ))}

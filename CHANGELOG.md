@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add Table primitives, DataTable, and Dev Playground showcase
 - Add AgentIdentity to shortcut chips row
 - Add dedicated Onboarding page to dev playground
 

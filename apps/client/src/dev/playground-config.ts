@@ -11,6 +11,7 @@ import {
   Filter,
   AlertTriangle,
   Sparkles,
+  Table2,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -26,6 +27,7 @@ import {
   FILTER_BAR_SECTIONS,
   ERROR_STATES_SECTIONS,
   ONBOARDING_SECTIONS,
+  TABLES_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -174,6 +176,17 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'app-shell',
     sections: PROMOS_SECTIONS,
     path: 'promos',
+  },
+  // ── Design System (continued) ──
+  {
+    id: 'tables',
+    label: 'Tables',
+    description:
+      'Table primitives and data tables — sorting, selection, empty states, and domain-specific examples.',
+    icon: Table2,
+    group: 'design-system',
+    sections: TABLES_SECTIONS,
+    path: 'tables',
   },
 ];
 

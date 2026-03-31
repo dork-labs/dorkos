@@ -1,14 +1,14 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Button } from '@/layers/shared/ui';
+import { Button, Table, TableBody } from '@/layers/shared/ui';
 import { motion } from 'motion/react';
 import { ActivityRow } from '@/layers/features/activity-feed-page';
 import { useDashboardActivity } from '../model/use-activity-feed';
 
 const staggerContainer = {
-  animate: { transition: { staggerChildren: 0.03 } },
+  animate: { transition: { staggerChildren: 0.05 } },
 } as const;
 
-const staggerItem = {
+const groupFade = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.2 } },
 } as const;
@@ -54,18 +54,20 @@ export function RecentActivityFeed() {
       </div>
       <motion.div variants={staggerContainer} initial="initial" animate="animate">
         {groups.map((group, idx) => (
-          <motion.div key={group.label} variants={staggerItem}>
+          <motion.div key={group.label} variants={groupFade}>
             <h3
               className="text-muted-foreground/70 mb-1.5 text-[11px] font-medium"
               style={idx > 0 ? { marginTop: '1rem' } : undefined}
             >
               {group.label}
             </h3>
-            <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <ActivityRow key={item.id} item={item} />
-              ))}
-            </div>
+            <Table>
+              <TableBody>
+                {group.items.map((item) => (
+                  <ActivityRow key={item.id} item={item} />
+                ))}
+              </TableBody>
+            </Table>
           </motion.div>
         ))}
       </motion.div>

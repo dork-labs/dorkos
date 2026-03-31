@@ -327,6 +327,76 @@ Follow the Calm Tech design language (see `contributing/design-system.md`):
 'focus-ring'; // Consistent focus state
 ```
 
+## Data Tables
+
+### When to Use Tables
+
+Use `<Table>` primitives for any structured, columnar data display. **Do not use flex-based row layouts for tabular data** — use semantic `<table>` markup via the shared Table components.
+
+| Data Shape                                  | Use                               | Why                                       |
+| ------------------------------------------- | --------------------------------- | ----------------------------------------- |
+| Columnar data (rows × columns)              | `Table` primitives or `DataTable` | Semantic HTML, accessible, consistent     |
+| Sortable/filterable data                    | `DataTable` + TanStack Table      | Built-in interaction support              |
+| Card-based items (expandable, rich content) | Cards/custom layout               | Not tabular — each item is self-contained |
+| Sidebar lists (sessions, navigation)        | `SidebarMenu`                     | Navigation pattern, not data display      |
+
+### Table Primitives (`shared/ui/table.tsx`)
+
+Static tables with no interaction logic. Import from `@/layers/shared/ui`:
+
+```typescript
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from '@/layers/shared/ui';
+```
+
+### DataTable (`shared/ui/data-table.tsx`)
+
+Generic wrapper around TanStack Table (`@tanstack/react-table`). Takes columns and data, handles the rendering loop:
+
+```typescript
+import { DataTable } from '@/layers/shared/ui';
+import type { ColumnDef } from '@tanstack/react-table';
+
+const columns: ColumnDef<Agent>[] = [
+  { accessorKey: 'name', header: 'Name' },
+  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.getValue('status')} /> },
+];
+
+<DataTable columns={columns} data={agents} />
+```
+
+For sorting, selection, or pagination, pass `tableOptions`:
+
+```typescript
+<DataTable
+  columns={columns}
+  data={agents}
+  tableOptions={{
+    state: { sorting },
+    onSortingChange: setSorting,
+    getSortedRowModel: getSortedRowModel(),
+  }}
+/>
+```
+
+### FSD Placement
+
+- **Table primitives + DataTable** → `shared/ui` (presentation)
+- **Column definitions** → feature module that uses them (e.g., `features/activity-feed-page/`)
+- **Data fetching** → feature module hooks (e.g., `useFullActivityFeed`)
+
+### Playground
+
+Table showcase at `/dev/tables` — basic tables, sorting, activity log, task history, row selection, empty/loading states, compact/striped variants.
+
 ## Anti-Patterns (Never Do)
 
 ```typescript
