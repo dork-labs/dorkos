@@ -1,6 +1,6 @@
 import { Globe, MessageSquare, Moon, MessagesSquare } from 'lucide-react';
 import type { PromoDefinition } from './promo-types';
-import { RemoteAccessDialog } from '../ui/dialogs/RemoteAccessDialog';
+import { TunnelDialog } from '@/layers/features/settings';
 import { RelayAdaptersDialog } from '../ui/dialogs/RelayAdaptersDialog';
 import { SchedulesDialog } from '../ui/dialogs/SchedulesDialog';
 import { AgentChatDialog } from '../ui/dialogs/AgentChatDialog';
@@ -27,7 +27,7 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
       shortDescription: 'Access your agents from anywhere',
       ctaLabel: 'Learn more',
     },
-    action: { type: 'dialog', component: RemoteAccessDialog },
+    action: { type: 'open-dialog', component: TunnelDialog },
   },
   {
     id: 'relay-adapters',

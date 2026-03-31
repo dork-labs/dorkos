@@ -12,6 +12,7 @@ export type {
   PromoPlacement,
   PromoAction,
   PromoDialogProps,
+  PromoOpenDialogProps,
   PromoContent,
   PromoContext,
 } from './model/promo-types';

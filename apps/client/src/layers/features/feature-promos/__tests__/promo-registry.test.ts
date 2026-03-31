@@ -39,7 +39,7 @@ describe('promo-registry', () => {
 
   it('all dialog actions have a component defined', () => {
     for (const promo of PROMO_REGISTRY) {
-      if (promo.action.type === 'dialog') {
+      if (promo.action.type === 'dialog' || promo.action.type === 'open-dialog') {
         expect(promo.action.component).toBeDefined();
         expect(typeof promo.action.component).toBe('function');
       }

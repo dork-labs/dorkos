@@ -80,4 +80,25 @@ describe('PromoCard', () => {
     render(<PromoCard promo={makePromo()} placement="agent-sidebar" />);
     expect(screen.getByRole('button')).toHaveAttribute('data-slot', 'promo-card-compact');
   });
+
+  it('renders open-dialog component with open=true after click', () => {
+    const MockDialog: React.FC<{ open: boolean; onOpenChange: (v: boolean) => void }> = vi.fn(
+      () => null
+    );
+    const promo = makePromo({
+      action: { type: 'open-dialog', component: MockDialog },
+    });
+    render(<PromoCard promo={promo} placement="dashboard-main" />);
+
+    // Initially mounted with open=false (standard dialog contract)
+    const calls = vi.mocked(MockDialog).mock.calls;
+    expect(calls[calls.length - 1][0]).toMatchObject({ open: false });
+
+    vi.mocked(MockDialog).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Test Title/i }));
+
+    // After click, re-rendered with open=true
+    const callsAfter = vi.mocked(MockDialog).mock.calls;
+    expect(callsAfter[callsAfter.length - 1][0]).toMatchObject({ open: true });
+  });
 });

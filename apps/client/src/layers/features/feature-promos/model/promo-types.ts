@@ -3,14 +3,21 @@ import type { LucideIcon } from 'lucide-react';
 /** Placement slots where promos can render */
 export type PromoPlacement = 'dashboard-main' | 'dashboard-sidebar' | 'agent-sidebar';
 
-/** Props passed to dialog content components */
+/** Props passed to dialog content components rendered inside the PromoDialog shell. */
 export interface PromoDialogProps {
   onClose: () => void;
+}
+
+/** Props for standalone dialog components opened directly by promos. */
+export interface PromoOpenDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 /** Action types when user clicks the CTA */
 export type PromoAction =
   | { type: 'dialog'; component: React.ComponentType<PromoDialogProps> }
+  | { type: 'open-dialog'; component: React.ComponentType<PromoOpenDialogProps> }
   | { type: 'navigate'; to: string }
   | { type: 'action'; handler: () => void };
 

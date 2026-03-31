@@ -33,7 +33,7 @@ export function PromoCard({ promo, placement }: PromoCardProps) {
   const Icon = promo.content.icon;
 
   const handleClick = () => {
-    if (promo.action.type === 'dialog') {
+    if (promo.action.type === 'dialog' || promo.action.type === 'open-dialog') {
       setDialogOpen(true);
     } else if (promo.action.type === 'navigate') {
       window.location.href = promo.action.to;
@@ -63,6 +63,9 @@ export function PromoCard({ promo, placement }: PromoCardProps) {
         </button>
         {promo.action.type === 'dialog' && (
           <PromoDialog promo={promo} open={dialogOpen} onOpenChange={setDialogOpen} />
+        )}
+        {promo.action.type === 'open-dialog' && (
+          <promo.action.component open={dialogOpen} onOpenChange={setDialogOpen} />
         )}
       </motion.div>
     );
@@ -113,6 +116,9 @@ export function PromoCard({ promo, placement }: PromoCardProps) {
       </div>
       {promo.action.type === 'dialog' && (
         <PromoDialog promo={promo} open={dialogOpen} onOpenChange={setDialogOpen} />
+      )}
+      {promo.action.type === 'open-dialog' && (
+        <promo.action.component open={dialogOpen} onOpenChange={setDialogOpen} />
       )}
     </motion.div>
   );

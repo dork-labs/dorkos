@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remote-access promo opens TunnelDialog directly
 - Align sidebar back chevron with content below
 - Use dynamic agent name in chat input placeholder
 - Improve dev playground overview card layout
