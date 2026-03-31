@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { Search, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { useRegisterAgent, useDenyAgent, useMeshScanRoots } from '@/layers/entities/mesh';
 import {
@@ -8,29 +8,16 @@ import {
   useDiscoveryStore,
   useActedPaths,
   buildRegistrationOverrides,
+  sortCandidates,
   CandidateCard,
+  ExistingAgentCard,
+  ScanRootInput,
 } from '@/layers/entities/discovery';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
-import { ScanRootInput } from '@/layers/features/mesh';
 import { NoAgentsFound } from './NoAgentsFound';
 
 interface AgentDiscoveryStepProps {
   onStepComplete: () => void;
-}
-
-/**
- * Sort candidates by relevance: dork-manifest first, then alphabetically by path.
- * Only applied after scan completes to avoid cards jumping during progressive results.
- */
-function sortCandidates(candidates: DiscoveryCandidate[]): DiscoveryCandidate[] {
-  return [...candidates].sort((a, b) => {
-    // Dork-manifest agents first (already have a .dork/agent.json)
-    const aIsDork = a.strategy === 'dork-manifest';
-    const bIsDork = b.strategy === 'dork-manifest';
-    if (aIsDork !== bIsDork) return aIsDork ? -1 : 1;
-    // Then alphabetically by path for stable ordering
-    return a.path.localeCompare(b.path);
-  });
 }
 
 /**
@@ -205,17 +192,7 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
             {hasExisting && (
               <div className="space-y-2">
                 {existingAgents.map((agent) => (
-                  <div
-                    key={agent.path}
-                    className="bg-muted/50 flex items-center gap-3 rounded-lg border px-4 py-3"
-                  >
-                    <CheckCircle2 className="text-muted-foreground size-4 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{agent.name}</p>
-                      <p className="text-muted-foreground truncate text-xs">{agent.path}</p>
-                    </div>
-                    <span className="text-muted-foreground shrink-0 text-xs">Registered</span>
-                  </div>
+                  <ExistingAgentCard key={agent.path} agent={agent} />
                 ))}
               </div>
             )}

@@ -13,4 +13,7 @@ export type { DiscoveryState, DiscoveryActions } from './model/discovery-store';
 export { useDiscoveryScan } from './model/use-discovery-scan';
 export { useActedPaths } from './model/use-acted-paths';
 export { buildRegistrationOverrides } from './lib/build-registration-overrides';
+export { sortCandidates } from './lib/sort-candidates';
 export { CandidateCard } from './ui/CandidateCard';
+export { ExistingAgentCard } from './ui/ExistingAgentCard';
+export { ScanRootInput } from './ui/ScanRootInput';

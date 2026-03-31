@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { CheckCircle2, ChevronDown, Loader2, Search, FolderSearch } from 'lucide-react';
+import { ChevronDown, Loader2, Search, FolderSearch } from 'lucide-react';
 import {
   useMeshScanRoots,
   useRegisteredAgents,
@@ -12,11 +12,13 @@ import {
   useDiscoveryStore,
   useActedPaths,
   buildRegistrationOverrides,
+  sortCandidates,
   CandidateCard,
+  ExistingAgentCard,
+  ScanRootInput,
 } from '@/layers/entities/discovery';
 import type { DiscoveryCandidate, ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import { Button } from '@/layers/shared/ui';
-import { ScanRootInput } from './ScanRootInput';
 
 const DETECTION_STRATEGIES = [
   { name: 'claude-code', signal: 'CLAUDE.md', label: 'Claude Code project' },
@@ -24,19 +26,6 @@ const DETECTION_STRATEGIES = [
   { name: 'codex', signal: '.codex/', label: 'Codex project' },
   { name: 'dork', signal: '.dork/agent.json', label: 'DorkOS agent (auto-imported)' },
 ] as const;
-
-/**
- * Sort candidates by relevance: dork-manifest first, then alphabetically by path.
- * Only applied after scan completes to avoid cards jumping during progressive results.
- */
-function sortCandidates(candidates: DiscoveryCandidate[]): DiscoveryCandidate[] {
-  return [...candidates].sort((a, b) => {
-    const aIsDork = a.strategy === 'dork-manifest';
-    const bIsDork = b.strategy === 'dork-manifest';
-    if (aIsDork !== bIsDork) return aIsDork ? -1 : 1;
-    return a.path.localeCompare(b.path);
-  });
-}
 
 interface DiscoveryViewProps {
   /** When true, renders as full-bleed Mode A with contextual headline. */
@@ -61,7 +50,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
   const { mutate: registerAgent } = useRegisterAgent();
   const { mutate: denyAgent } = useDenyAgent();
   const { data: agentsResult } = useRegisteredAgents();
-  const { actedPaths, markActed } = useActedPaths();
+  const { actedPaths, markActed, resetActed } = useActedPaths();
 
   // Use local edits if user has modified, otherwise use persisted roots
   const displayRoots = localRoots ?? roots;
@@ -73,6 +62,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
 
   function handleScan() {
     if (displayRoots.length > 0) {
+      resetActed();
       startScan({ roots: displayRoots, maxDepth: depth });
     }
   }
@@ -183,17 +173,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
         {scanComplete && hasExisting && (
           <div className="mb-3 space-y-2">
             {existingAgents.map((agent: ExistingAgent) => (
-              <div
-                key={agent.path}
-                className="bg-muted/50 flex items-center gap-3 rounded-lg border px-4 py-3"
-              >
-                <CheckCircle2 className="text-muted-foreground size-4 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{agent.name}</p>
-                  <p className="text-muted-foreground truncate text-xs">{agent.path}</p>
-                </div>
-                <span className="text-muted-foreground shrink-0 text-xs">Registered</span>
-              </div>
+              <ExistingAgentCard key={agent.path} agent={agent} />
             ))}
           </div>
         )}

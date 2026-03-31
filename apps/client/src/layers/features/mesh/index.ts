@@ -9,4 +9,4 @@
  */
 export { MeshPanel } from './ui/MeshPanel';
 export { DiscoveryView } from './ui/DiscoveryView';
-export { ScanRootInput } from './ui/ScanRootInput';
+export { ScanRootInput } from '@/layers/entities/discovery';
