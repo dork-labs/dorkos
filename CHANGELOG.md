@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Surface existing agents during onboarding scan
 - Update SettingsDialog tests after Remote indicator relocation
 ---
 

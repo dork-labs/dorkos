@@ -457,11 +457,28 @@ export const ScanProgressSchema = z
 export type ScanProgress = z.infer<typeof ScanProgressSchema>;
 
 /**
+ * Lightweight representation of an agent that was auto-imported from an
+ * existing `.dork/agent.json` during a discovery scan. Sent to the client
+ * so the onboarding flow can show already-configured agents.
+ */
+export interface ExistingAgent {
+  /** Absolute path to the agent's project directory. */
+  path: string;
+  /** Agent name from the manifest. */
+  name: string;
+  /** Agent runtime from the manifest. */
+  runtime: AgentRuntime;
+  /** Agent description from the manifest (may be empty). */
+  description: string;
+}
+
+/**
  * Transport-level discovery scan event — discriminated union of all event types
- * surfaced to the client. Intentionally omits `auto-import` (server-internal concern).
+ * surfaced to the client.
  */
 export type TransportScanEvent =
   | { type: 'candidate'; data: DiscoveryCandidate }
+  | { type: 'existing-agent'; data: ExistingAgent }
   | { type: 'progress'; data: ScanProgress }
   | { type: 'complete'; data: ScanProgress & { timedOut: boolean } }
   | { type: 'error'; data: { error: string } };

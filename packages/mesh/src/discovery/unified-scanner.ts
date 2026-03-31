@@ -57,6 +57,14 @@ export async function* unifiedScan(
   const extraExcludes = new Set(options.extraExcludes ?? []);
   const { logger } = options;
 
+  logger?.info('[mesh] unified-scanner: starting', {
+    root: options.root,
+    maxDepth,
+    timeoutMs,
+    followSymlinks,
+    strategyCount: strategies.length,
+  });
+
   const progress: ScanProgress = { scannedDirs: 0, foundAgents: 0 };
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -70,6 +78,7 @@ export async function* unifiedScan(
   try {
     while (queue.length > 0) {
       if (timedOut) {
+        logger?.info('[mesh] unified-scanner: timed out', progress);
         yield { type: 'complete', data: { ...progress, timedOut: true } };
         return;
       }
@@ -169,6 +178,7 @@ export async function* unifiedScan(
       }
     }
 
+    logger?.info('[mesh] unified-scanner: finished', progress);
     yield { type: 'complete', data: { ...progress, timedOut: false } };
   } finally {
     clearTimeout(timer);

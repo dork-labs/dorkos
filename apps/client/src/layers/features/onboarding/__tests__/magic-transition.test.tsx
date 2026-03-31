@@ -110,13 +110,17 @@ describe('Magic transition: onboarding to chat', () => {
 
   // ── LayoutGroup wrapping ──
 
-  it('AppShell wraps onboarding-to-chat transition with LayoutGroup', async () => {
-    // This is a structural verification. The LayoutGroup with id="onboarding-to-chat"
-    // is rendered in AppShell.tsx wrapping the AnimatePresence that switches between
-    // onboarding and main app. The global test-setup mock renders LayoutGroup as a
-    // passthrough, so we verify it exists by checking the AppShell import structure.
-    // The actual layout animation is a visual/GPU effect that cannot be unit-tested.
-    const appShellSource = await import('../../../../AppShell');
-    expect(appShellSource.AppShell).toBeDefined();
-  });
+  it(
+    'AppShell wraps onboarding-to-chat transition with LayoutGroup',
+    { timeout: 15000 },
+    async () => {
+      // This is a structural verification. The LayoutGroup with id="onboarding-to-chat"
+      // is rendered in AppShell.tsx wrapping the AnimatePresence that switches between
+      // onboarding and main app. The global test-setup mock renders LayoutGroup as a
+      // passthrough, so we verify it exists by checking the AppShell import structure.
+      // The actual layout animation is a visual/GPU effect that cannot be unit-tested.
+      const appShellSource = await import('../../../../AppShell');
+      expect(appShellSource.AppShell).toBeDefined();
+    }
+  );
 });

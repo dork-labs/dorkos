@@ -238,9 +238,15 @@ describe('Discovery Route', () => {
       expect(parsed[2].type).toBe('complete');
     });
 
-    it('filters auto-import events from SSE output', async () => {
+    it('surfaces auto-import events as existing-agent events', async () => {
       mockDiscover.mockImplementation(async function* () {
-        yield { type: 'auto-import', data: { manifest: {}, path: '/home/user/proj' } };
+        yield {
+          type: 'auto-import',
+          data: {
+            manifest: { name: 'MyAgent', runtime: 'claude-code', description: 'A test agent' },
+            path: '/home/user/proj',
+          },
+        };
         yield {
           type: 'candidate',
           data: { path: '/home/user/proj', strategy: 'claude-code', hints: {}, discoveredAt: '' },
@@ -265,8 +271,16 @@ describe('Discovery Route', () => {
         });
 
       const parsed = parseSSEResponse(res.body as string);
-      expect(parsed).toHaveLength(2);
+      expect(parsed).toHaveLength(3);
       expect(parsed.find((e) => e.type === 'auto-import')).toBeUndefined();
+      const existing = parsed.find((e) => e.type === 'existing-agent');
+      expect(existing).toBeDefined();
+      expect(existing!.data).toEqual({
+        path: '/home/user/proj',
+        name: 'MyAgent',
+        runtime: 'claude-code',
+        description: 'A test agent',
+      });
     });
 
     it('passes undefined for omitted optional fields', async () => {

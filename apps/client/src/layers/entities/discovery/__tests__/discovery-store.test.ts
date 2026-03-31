@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { DiscoveryCandidate, ScanProgress } from '@dorkos/shared/mesh-schemas';
+import type { DiscoveryCandidate, ExistingAgent, ScanProgress } from '@dorkos/shared/mesh-schemas';
 import { useDiscoveryStore } from '../model/discovery-store';
 
 // ---------------------------------------------------------------------------
@@ -17,6 +17,13 @@ const makeCandidate = (path: string): DiscoveryCandidate => ({
     suggestedName: 'test-project',
     detectedRuntime: 'claude-code',
   },
+});
+
+const makeExistingAgent = (path: string): ExistingAgent => ({
+  path,
+  name: 'existing-agent',
+  runtime: 'claude-code',
+  description: 'An existing agent',
 });
 
 const makeProgress = (scannedDirs: number, foundAgents: number): ScanProgress => ({
@@ -36,6 +43,7 @@ describe('useDiscoveryStore', () => {
   it('starts with empty initial state', () => {
     const state = useDiscoveryStore.getState();
     expect(state.candidates).toEqual([]);
+    expect(state.existingAgents).toEqual([]);
     expect(state.progress).toBeNull();
     expect(state.isScanning).toBe(false);
     expect(state.error).toBeNull();
@@ -46,6 +54,7 @@ describe('useDiscoveryStore', () => {
     const store = useDiscoveryStore.getState();
     // Pre-seed some state
     store.addCandidate(makeCandidate('/some/path'));
+    store.addExistingAgent(makeExistingAgent('/existing'));
     store.setProgress(makeProgress(10, 1));
     store.setError('previous error');
 
@@ -54,6 +63,7 @@ describe('useDiscoveryStore', () => {
     const state = useDiscoveryStore.getState();
     expect(state.isScanning).toBe(true);
     expect(state.candidates).toEqual([]);
+    expect(state.existingAgents).toEqual([]);
     expect(state.progress).toBeNull();
     expect(state.error).toBeNull();
   });
@@ -67,6 +77,17 @@ describe('useDiscoveryStore', () => {
     store.addCandidate(c2);
 
     expect(useDiscoveryStore.getState().candidates).toEqual([c1, c2]);
+  });
+
+  it('addExistingAgent appends to existingAgents array', () => {
+    const store = useDiscoveryStore.getState();
+    const a1 = makeExistingAgent('/existing/a');
+    const a2 = makeExistingAgent('/existing/b');
+
+    store.addExistingAgent(a1);
+    store.addExistingAgent(a2);
+
+    expect(useDiscoveryStore.getState().existingAgents).toEqual([a1, a2]);
   });
 
   it('completeScan sets lastScanAt, stops scanning, and records final progress', () => {

@@ -19,6 +19,7 @@ export function useDiscoveryScan() {
   const {
     startScan: storeStartScan,
     addCandidate,
+    addExistingAgent,
     setProgress,
     completeScan,
     setError,
@@ -42,6 +43,9 @@ export function useDiscoveryScan() {
               case 'candidate':
                 addCandidate(event.data);
                 break;
+              case 'existing-agent':
+                addExistingAgent(event.data);
+                break;
               case 'progress':
                 setProgress(event.data);
                 break;
@@ -61,7 +65,7 @@ export function useDiscoveryScan() {
           }
         });
     },
-    [transport, storeStartScan, addCandidate, setProgress, completeScan, setError]
+    [transport, storeStartScan, addCandidate, addExistingAgent, setProgress, completeScan, setError]
   );
 
   const stopScan = useCallback(() => {

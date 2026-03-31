@@ -303,12 +303,15 @@ describe('Discovery SSE Integration', () => {
   // Auto-import filtering
   // -------------------------------------------------------------------------
 
-  describe('auto-import filtering', () => {
-    it('filters auto-import events from SSE output', async () => {
+  describe('auto-import to existing-agent transformation', () => {
+    it('surfaces auto-import events as existing-agent events', async () => {
       mockDiscover.mockImplementation(async function* () {
         yield {
           type: 'auto-import',
-          data: { manifest: { name: 'test' }, path: '/home/user/proj' },
+          data: {
+            manifest: { name: 'test', runtime: 'claude-code', description: 'A test agent' },
+            path: '/home/user/proj',
+          },
         };
         yield {
           type: 'candidate',
@@ -321,10 +324,18 @@ describe('Discovery SSE Integration', () => {
       const res = await postScan(app);
       const parsed = parseSSEResponse(res.body as string);
 
-      expect(parsed).toHaveLength(2);
+      expect(parsed).toHaveLength(3);
       expect(parsed.find((e) => e.type === 'auto-import')).toBeUndefined();
-      expect(parsed[0].type).toBe('candidate');
-      expect(parsed[1].type).toBe('complete');
+      const existing = parsed.find((e) => e.type === 'existing-agent');
+      expect(existing).toBeDefined();
+      expect(existing!.data).toEqual({
+        path: '/home/user/proj',
+        name: 'test',
+        runtime: 'claude-code',
+        description: 'A test agent',
+      });
+      expect(parsed[1].type).toBe('candidate');
+      expect(parsed[2].type).toBe('complete');
     });
   });
 
