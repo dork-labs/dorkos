@@ -59,9 +59,13 @@ export function TunnelSecurity({
   };
 
   return (
-    <div data-testid="tunnel-security">
-      {/* Status row — always one line */}
-      <div className="flex items-center justify-between py-1">
+    <div data-testid="tunnel-security" className="rounded-lg border p-3">
+      <p className="text-muted-foreground mb-2 text-[11px] font-medium tracking-wider uppercase">
+        Security
+      </p>
+
+      {/* Status row */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isProtected ? (
             <ShieldCheck className="size-4 shrink-0 text-green-500" />
@@ -80,18 +84,27 @@ export function TunnelSecurity({
           </span>
         </div>
 
-        {/* Action link */}
+        {/* Action links */}
         {isProtected && !editing && (
-          <button
-            type="button"
-            onClick={() => {
-              onPasscodeInputChange('');
-              setEditing(true);
-            }}
-            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-          >
-            Change
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                onPasscodeInputChange('');
+                setEditing(true);
+              }}
+              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDisable()}
+              className="text-muted-foreground hover:text-destructive text-xs transition-colors"
+            >
+              Disable
+            </button>
+          </div>
         )}
         {!passcodeEnabled && (
           <button
