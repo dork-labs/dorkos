@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update CLI README and config guide for Tasks rename and new features
+
 ### Fixed
 
 - Update SettingsDialog tests after Remote indicator relocation

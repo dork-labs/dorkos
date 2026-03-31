@@ -32,14 +32,14 @@ It's 7am. CI has been red since 2:47am. A dependency update cascaded across thre
 
 DorkOS gives your agents what they're missing: scheduling, communication, and coordination. The intelligence comes from the agents. Everything else comes from DorkOS.
 
-### Pulse - Scheduling
+### Tasks - Scheduling
 
-Cron-based agent execution, independent of your IDE or terminal. Your agents ship code, triage issues, and run audits on schedule. You wake up to completed pull requests.
+Cron-based and on-demand agent execution, independent of your IDE or terminal. Your agents ship code, triage issues, and run audits on schedule. You wake up to completed pull requests.
 
+- File-based task definitions alongside your code
 - Overrun protection prevents duplicate runs
 - Isolated sessions per run with full history
 - Configurable concurrency limits
-- Approval gates for agent-created schedules
 
 ### Relay - Communication
 
@@ -70,6 +70,18 @@ Start a session from the browser. Check on it from your phone. Resume it from in
 - Real-time sync across multiple clients
 - Available in any browser or embedded in Obsidian
 
+### Extensions
+
+Agents can build and install extensions that add new capabilities. Extensions define their own settings, secrets, and entry points — all managed through the UI.
+
+### MCP Server
+
+DorkOS exposes an MCP server at `/mcp` (Streamable HTTP transport) so external AI agents — Claude Code, Cursor, Windsurf — can use DorkOS tools directly. Optional API key auth via `MCP_API_KEY`.
+
+```bash
+claude mcp add dorkos --transport http http://localhost:4242/mcp
+```
+
 ## CLI Reference
 
 ```bash
@@ -77,6 +89,8 @@ dorkos                        # Start the server
 dorkos --port 8080            # Custom port
 dorkos --dir ~/projects       # Custom working directory
 dorkos --tunnel               # Enable remote access via ngrok
+dorkos --tasks                # Enable Tasks scheduler
+dorkos --no-open              # Don't open browser on startup
 dorkos config                 # Show all settings
 dorkos config set <key> <val> # Update a setting
 dorkos init                   # Interactive setup wizard
@@ -92,7 +106,12 @@ dorkos cleanup                # Remove all DorkOS data
 | `-d, --dir <path>`        | Working directory                                              |
 | `-b, --boundary <path>`   | Directory boundary (default: home directory)                   |
 | `-t, --tunnel`            | Enable ngrok tunnel for remote access                          |
+| `--tasks` / `--no-tasks`  | Enable or disable the Tasks scheduler                          |
+| `--no-open`               | Don't open browser on startup                                  |
 | `-l, --log-level <level>` | Log level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
+| `--post-install-check`    | Verify installation and exit                                   |
+| `-h, --help`              | Show help message                                              |
+| `-v, --version`           | Show version number                                            |
 
 ### Config Subcommands
 
@@ -117,13 +136,19 @@ dorkos cleanup                # Remove all DorkOS data
 
 ### Optional
 
-| Variable             | Default           | Description                            |
-| -------------------- | ----------------- | -------------------------------------- |
-| `DORKOS_PORT`        | `4242`            | Server port                            |
-| `DORKOS_HOST`        | `localhost`       | Server host (use `0.0.0.0` for Docker) |
-| `DORKOS_DEFAULT_CWD` | Current directory | Default working directory for sessions |
-| `DORKOS_BOUNDARY`    | Home directory    | Directory boundary root                |
-| `LOG_LEVEL`          | `info`            | Log verbosity                          |
+| Variable               | Default           | Description                            |
+| ---------------------- | ----------------- | -------------------------------------- |
+| `DORKOS_PORT`          | `4242`            | Server port                            |
+| `DORKOS_HOST`          | `localhost`       | Server host (use `0.0.0.0` for Docker) |
+| `DORKOS_DEFAULT_CWD`   | Current directory | Default working directory for sessions |
+| `DORKOS_BOUNDARY`      | Home directory    | Directory boundary root                |
+| `DORK_HOME`            | `~/.dork`         | Override data directory location       |
+| `LOG_LEVEL`            | `info`            | Log verbosity                          |
+| `DORKOS_TASKS_ENABLED` | `true`            | Enable or disable the Tasks scheduler  |
+| `DORKOS_OPEN`          | `true`            | Open browser on startup                |
+| `DORKOS_RELAY_ENABLED` | `true`            | Enable the Relay message bus           |
+| `DORKOS_CORS_ORIGIN`   | `localhost`       | CORS allowed origin(s)                 |
+| `MCP_API_KEY`          | (none)            | API key for MCP server authentication  |
 
 ### Remote Access
 

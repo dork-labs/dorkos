@@ -48,8 +48,8 @@ DorkOS writes several runtime data files under `~/.dork/` in addition to `config
 | Path                          | Purpose                                                        |
 | ----------------------------- | -------------------------------------------------------------- |
 | `~/.dork/config.json`         | Persistent user config (this document)                         |
-| `~/.dork/pulse.db`            | SQLite database for Pulse scheduler state (WAL mode)           |
-| `~/.dork/schedules.json`      | JSON snapshot of Pulse schedules (alongside pulse.db)          |
+| `~/.dork/dork.db`             | SQLite database (Tasks, Mesh, Relay state; WAL mode)           |
+| `~/.dork/schedules.json`      | JSON snapshot of Tasks schedules                               |
 | `~/.dork/logs/dorkos.log`     | NDJSON server log with daily rotation                          |
 | `~/.dork/relay/adapters.json` | Relay adapter config — hot-reloaded by AdapterManager          |
 | `~/.dork/relay/index.db`      | SQLite index for Relay message delivery and trace data         |
@@ -83,7 +83,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `ui.theme`                    | `"light"` \| `"dark"` \| `"system"`                                      | `"system"`         | UI color theme                                                                     |
 | `relay.enabled`               | boolean                                                                  | `true`             | Enable Relay subsystem (config-level toggle, distinct from `DORKOS_RELAY_ENABLED`) |
 | `relay.dataDir`               | string \| null                                                           | `null`             | Override Relay data directory (`null` = default under `DORK_HOME`)                 |
-| `scheduler.enabled`           | boolean                                                                  | `true`             | Enable Pulse scheduler subsystem (config-level toggle)                             |
+| `scheduler.enabled`           | boolean                                                                  | `true`             | Enable Tasks scheduler subsystem (config-level toggle)                             |
 | `scheduler.maxConcurrentRuns` | integer (1--10)                                                          | `1`                | Maximum concurrently executing Pulse runs                                          |
 | `scheduler.timezone`          | string \| null                                                           | `null`             | Default timezone for cron expressions (`null` = system timezone)                   |
 | `scheduler.retentionCount`    | integer                                                                  | `100`              | Number of completed run records to retain in the database                          |
@@ -94,7 +94,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `agentContext.relayTools`     | boolean                                                                  | `true`             | Include Relay messaging tool documentation in agent context                        |
 | `agentContext.meshTools`      | boolean                                                                  | `true`             | Include Mesh discovery tool documentation in agent context                         |
 | `agentContext.adapterTools`   | boolean                                                                  | `true`             | Include adapter tool documentation in agent context                                |
-| `agentContext.pulseTools`     | boolean                                                                  | `true`             | Include Pulse scheduler tool documentation in agent context                        |
+| `agentContext.tasksTools`     | boolean                                                                  | `true`             | Include Tasks scheduler tool documentation in agent context                        |
 
 The `agents` section configures agent storage defaults:
 
@@ -307,13 +307,13 @@ Controls which tool domain blocks are injected into agent system prompts. Each t
 | `agentContext.relayTools`   | `boolean` | `true`  | Include Relay messaging tool documentation |
 | `agentContext.meshTools`    | `boolean` | `true`  | Include Mesh discovery tool documentation  |
 | `agentContext.adapterTools` | `boolean` | `true`  | Include adapter tool documentation         |
-| `agentContext.pulseTools`   | `boolean` | `true`  | Include Pulse scheduler tool documentation |
+| `agentContext.tasksTools`   | `boolean` | `true`  | Include Tasks scheduler tool documentation |
 
 These can be configured globally in Settings > Tools tab, or per-agent via the agent manifest's `enabledToolGroups` field (which overrides global defaults).
 
 ```bash
 dorkos config set agentContext.relayTools false
-dorkos config set agentContext.pulseTools false
+dorkos config set agentContext.tasksTools false
 ```
 
 ### DORKOS_RELAY_ENABLED
@@ -442,7 +442,7 @@ DorkOS Configuration (~/.dork/config.json)
   agentContext.relayTools   true       (default)
   agentContext.meshTools    true       (default)
   agentContext.adapterTools true       (default)
-  agentContext.pulseTools   true       (default)
+  agentContext.tasksTools   true       (default)
 
 Config file: /Users/you/.dork/config.json
 ```
@@ -489,7 +489,7 @@ $ dorkos config list
   "scheduler": { "enabled": true, "maxConcurrentRuns": 1, "timezone": null, "retentionCount": 100 },
   "mesh": { "scanRoots": [] },
   "uploads": { "maxFileSize": 10485760, "maxFiles": 10, "allowedTypes": ["*/*"] },
-  "agentContext": { "relayTools": true, "meshTools": true, "adapterTools": true, "pulseTools": true }
+  "agentContext": { "relayTools": true, "meshTools": true, "adapterTools": true, "tasksTools": true }
 }
 ```
 
@@ -636,7 +636,7 @@ Content-Type: application/json
       "relayTools": true,
       "meshTools": true,
       "adapterTools": true,
-      "pulseTools": true
+      "tasksTools": true
     }
   }
 }
