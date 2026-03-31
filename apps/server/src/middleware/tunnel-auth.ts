@@ -2,22 +2,12 @@ import type { Request, Response, NextFunction } from 'express';
 import { configManager } from '../services/core/config-manager.js';
 import { logger } from '../lib/logger.js';
 
-const EXEMPT_PATHS = [
+/** API paths that bypass passcode auth (passcode entry + health check). */
+const EXEMPT_API_PATHS = [
   '/api/tunnel/passcode/verify',
   '/api/tunnel/passcode/session',
   '/api/health',
-  '/favicon.ico',
 ];
-
-const EXEMPT_PREFIXES = ['/assets/'];
-
-/** Check if a route is exempt from passcode authentication. */
-function isExempt(path: string): boolean {
-  return (
-    EXEMPT_PATHS.some((p) => path === p) ||
-    EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))
-  );
-}
 
 /** Check if the request is coming through the ngrok tunnel (not localhost). */
 function isTunnelRequest(req: Request): boolean {
@@ -26,14 +16,21 @@ function isTunnelRequest(req: Request): boolean {
 }
 
 /**
- * Express middleware that gates tunnel requests behind passcode authentication.
+ * Express middleware that gates tunnel API requests behind passcode authentication.
  *
- * Local requests (localhost/127.0.0.1) always pass through. Tunnel requests
- * require a valid session cookie when passcode is enabled.
+ * Only `/api/` paths are gated — non-API paths (SPA HTML, JS, CSS, assets) always
+ * pass through so the client-side PasscodeGate UI can load and handle authentication.
+ * Local requests (localhost/127.0.0.1) are always unrestricted.
  */
 export function tunnelPasscodeAuth(req: Request, res: Response, next: NextFunction): void {
   // Local access is always unrestricted
   if (!isTunnelRequest(req)) {
+    next();
+    return;
+  }
+
+  // Non-API paths pass through — the SPA must load so PasscodeGate can render
+  if (!req.path.startsWith('/api/')) {
     next();
     return;
   }
@@ -45,8 +42,8 @@ export function tunnelPasscodeAuth(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  // Exempt routes (passcode entry endpoints, health, static assets)
-  if (isExempt(req.path)) {
+  // Exempt API routes (passcode entry endpoints, health check)
+  if (EXEMPT_API_PATHS.some((p) => req.path === p)) {
     next();
     return;
   }
@@ -58,6 +55,9 @@ export function tunnelPasscodeAuth(req: Request, res: Response, next: NextFuncti
   }
 
   // Not authenticated — return 401
-  logger.debug('[Tunnel Auth] Blocked unauthenticated tunnel request', { path: req.path });
+  logger.warn('[Tunnel Auth] Blocked unauthenticated tunnel request', {
+    path: req.path,
+    hostname: req.hostname,
+  });
   res.status(401).json({ error: 'Passcode required' });
 }

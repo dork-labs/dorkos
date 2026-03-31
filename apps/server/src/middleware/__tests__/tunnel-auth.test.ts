@@ -135,11 +135,27 @@ describe('tunnelPasscodeAuth', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('passes through for /assets/ paths', () => {
+  // Non-API paths pass through so the SPA can load and show PasscodeGate UI
+  it('passes through for root path (SPA entry point)', () => {
+    mockConfigManager.get.mockReturnValue({ passcodeEnabled: true, passcodeHash: 'hash' });
+    const req = createMockReq({
+      hostname: 'my-tunnel.ngrok-free.app',
+      path: '/',
+      session: null,
+    });
+    const res = createMockRes();
+
+    tunnelPasscodeAuth(req as Request, res as Response, next);
+
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('passes through for /assets/ paths (SPA static assets)', () => {
     mockConfigManager.get.mockReturnValue({ passcodeEnabled: true, passcodeHash: 'hash' });
     const req = createMockReq({
       hostname: 'my-tunnel.ngrok-free.app',
       path: '/assets/index-abc123.js',
+      session: null,
     });
     const res = createMockRes();
 
@@ -153,6 +169,7 @@ describe('tunnelPasscodeAuth', () => {
     const req = createMockReq({
       hostname: 'my-tunnel.ngrok-free.app',
       path: '/favicon.ico',
+      session: null,
     });
     const res = createMockRes();
 
@@ -161,7 +178,21 @@ describe('tunnelPasscodeAuth', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('returns 401 for tunnel requests without valid session', () => {
+  it('passes through for SPA client-side routes', () => {
+    mockConfigManager.get.mockReturnValue({ passcodeEnabled: true, passcodeHash: 'hash' });
+    const req = createMockReq({
+      hostname: 'my-tunnel.ngrok-free.app',
+      path: '/session',
+      session: null,
+    });
+    const res = createMockRes();
+
+    tunnelPasscodeAuth(req as Request, res as Response, next);
+
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('returns 401 for tunnel API requests without valid session', () => {
     mockConfigManager.get.mockReturnValue({ passcodeEnabled: true, passcodeHash: 'hash' });
     const req = createMockReq({
       hostname: 'my-tunnel.ngrok-free.app',
@@ -177,7 +208,7 @@ describe('tunnelPasscodeAuth', () => {
     expect(res.body).toEqual({ error: 'Passcode required' });
   });
 
-  it('returns 401 for tunnel requests with unauthenticated session', () => {
+  it('returns 401 for tunnel API requests with unauthenticated session', () => {
     mockConfigManager.get.mockReturnValue({ passcodeEnabled: true, passcodeHash: 'hash' });
     const req = createMockReq({
       hostname: 'my-tunnel.ngrok-free.app',
@@ -193,7 +224,7 @@ describe('tunnelPasscodeAuth', () => {
     expect(res.body).toEqual({ error: 'Passcode required' });
   });
 
-  it('passes through for tunnel requests with authenticated session', () => {
+  it('passes through for tunnel API requests with authenticated session', () => {
     mockConfigManager.get.mockReturnValue({ passcodeEnabled: true, passcodeHash: 'hash' });
     const req = createMockReq({
       hostname: 'my-tunnel.ngrok-free.app',
