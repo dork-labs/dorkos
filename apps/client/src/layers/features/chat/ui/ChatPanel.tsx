@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback } from 'react';
+import { useRef, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -165,6 +165,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   );
 
   useChatStatusSync(status, isWaitingForUser, taskState.activeForm, isTextStreaming);
+
+  // Focus the prompt textarea whenever the session changes (new session, switch, page mount).
+  // Every navigation scenario — sidebar click, new session, agent switch, page load —
+  // results in sessionId changing, so this single effect covers all of them.
+  useEffect(() => {
+    chatInputRef.current?.focus();
+  }, [sessionId]);
 
   const { data: registry } = useCommands(cwd);
   const allCommands = useMemo(() => registry?.commands ?? [], [registry]);
