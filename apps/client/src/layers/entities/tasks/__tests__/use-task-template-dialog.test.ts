@@ -10,7 +10,6 @@ const MOCK_TEMPLATE: TaskTemplate = {
   prompt: 'Run the project health checks: lint, test, and typecheck.',
   cron: '0 8 * * 1',
   timezone: 'UTC',
-  category: 'maintenance',
 };
 
 describe('useTaskTemplateDialog', () => {

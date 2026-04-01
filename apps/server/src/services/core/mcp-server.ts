@@ -124,9 +124,9 @@ export function createExternalMcpServer(deps: McpToolDeps): McpServer {
       name: z.string().describe('Name for the scheduled job'),
       prompt: z.string().describe('The prompt to send to the agent on each run'),
       cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
-      cwd: z.string().optional().describe('Working directory for the agent'),
+      description: z.string().optional().describe('Description of what this task does'),
       timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
-      maxRuntime: z.number().optional().describe('Maximum run time in milliseconds'),
+      maxRuntime: z.string().optional().describe('Maximum run time (e.g., "5m", "1h")'),
       permissionMode: z
         .string()
         .optional()
@@ -144,7 +144,7 @@ export function createExternalMcpServer(deps: McpToolDeps): McpServer {
       cron: z.string().optional().describe('New cron expression'),
       enabled: z.boolean().optional().describe('Enable or disable the schedule'),
       timezone: z.string().optional().describe('New timezone'),
-      maxRuntime: z.number().optional().describe('New max runtime in ms'),
+      maxRuntime: z.string().optional().describe('New max runtime (e.g., "5m", "1h")'),
       permissionMode: z.string().optional().describe('New permission mode'),
     },
     createUpdateScheduleHandler(deps)

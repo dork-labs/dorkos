@@ -14,7 +14,6 @@ const PRESETS: TaskTemplate[] = [
     prompt: 'Prompt',
     cron: '0 8 * * 1',
     timezone: 'UTC',
-    category: 'maintenance',
   },
 ];
 

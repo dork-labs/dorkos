@@ -1,20 +1,21 @@
 /**
  * Default task templates seeded on first server run.
  *
- * Templates are .md files in `{dorkHome}/tasks/templates/`.
- * Users can edit, add, or delete template files.
+ * Templates are SKILL.md files in `{dorkHome}/tasks/templates/{name}/SKILL.md`.
+ * Users can edit, add, or delete template directories.
  *
  * @module services/tasks/task-templates
  */
-import fs from 'node:fs/promises';
 import path from 'node:path';
-import { writeTaskFile } from './task-file-writer.js';
-import type { TaskFrontmatter } from './task-file-parser.js';
+import { writeSkillFile } from '@dorkos/skills/writer';
+import { scanSkillDirectory } from '@dorkos/skills/scanner';
+import { TaskFrontmatterSchema, type TaskFrontmatter } from '@dorkos/skills/task-schema';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { logger } from '../../lib/logger.js';
 
 interface TemplateDefinition {
   slug: string;
-  frontmatter: TaskFrontmatter;
+  frontmatter: Record<string, unknown>;
   prompt: string;
 }
 
@@ -23,13 +24,13 @@ const DEFAULT_TEMPLATES: TemplateDefinition[] = [
   {
     slug: 'daily-health-check',
     frontmatter: {
-      name: 'Daily Health Check',
+      name: 'daily-health-check',
+      'display-name': 'Daily Health Check',
       description: 'Run lint, test, and typecheck across the project',
       cron: '0 9 * * 1-5',
       timezone: 'UTC',
       enabled: true,
       permissions: 'acceptEdits',
-      tags: ['ci', 'health'],
     },
     prompt: `Run the following checks and report results:
 
@@ -42,13 +43,13 @@ Summarize the results concisely. If everything passes, say so. If anything fails
   {
     slug: 'weekly-dependency-audit',
     frontmatter: {
-      name: 'Weekly Dependency Audit',
+      name: 'weekly-dependency-audit',
+      'display-name': 'Weekly Dependency Audit',
       description: 'Check for outdated or vulnerable dependencies',
       cron: '0 10 * * 1',
       timezone: 'UTC',
       enabled: true,
       permissions: 'acceptEdits',
-      tags: ['dependencies', 'security'],
     },
     prompt: `Audit project dependencies:
 
@@ -61,13 +62,13 @@ Provide a prioritized list of recommended updates with risk assessment (safe, mo
   {
     slug: 'activity-summary',
     frontmatter: {
-      name: 'Activity Summary',
+      name: 'activity-summary',
+      'display-name': 'Activity Summary',
       description: 'Summarize recent agent activity across all sessions',
       cron: '0 18 * * 1-5',
       timezone: 'UTC',
       enabled: true,
       permissions: 'acceptEdits',
-      tags: ['summary', 'reporting'],
     },
     prompt: `Summarize today's agent activity:
 
@@ -81,13 +82,13 @@ Keep the summary concise — aim for a quick daily digest.`,
   {
     slug: 'code-review-digest',
     frontmatter: {
-      name: 'Code Review Digest',
+      name: 'code-review-digest',
+      'display-name': 'Code Review Digest',
       description: 'Review recent commits for quality and patterns',
       cron: '0 11 * * 5',
       timezone: 'UTC',
       enabled: true,
       permissions: 'acceptEdits',
-      tags: ['review', 'quality'],
     },
     prompt: `Review commits from the past week:
 
@@ -107,17 +108,16 @@ Provide a brief weekly code quality report.`,
  */
 export async function ensureDefaultTemplates(dorkHome: string): Promise<void> {
   const templatesDir = path.join(dorkHome, 'tasks', 'templates');
-  await fs.mkdir(templatesDir, { recursive: true });
 
   try {
-    const existing = await fs.readdir(templatesDir);
-    if (existing.some((f) => f.endsWith('.md'))) return; // Already seeded
+    const results = await scanSkillDirectory(templatesDir, TaskFrontmatterSchema);
+    if (results.length > 0) return; // Already seeded
   } catch {
-    // Directory didn't exist, that's fine — we just created it
+    // Directory didn't exist, that's fine
   }
 
   for (const template of DEFAULT_TEMPLATES) {
-    await writeTaskFile(templatesDir, template.slug, template.frontmatter, template.prompt);
+    await writeSkillFile(templatesDir, template.slug, template.frontmatter, template.prompt);
   }
 
   logger.info(`[Tasks] Seeded ${DEFAULT_TEMPLATES.length} default templates`);
@@ -129,29 +129,32 @@ export async function ensureDefaultTemplates(dorkHome: string): Promise<void> {
  * @param dorkHome - Resolved data directory path
  * @returns Array of parsed templates
  */
-export async function loadTemplates(
-  dorkHome: string
-): Promise<Array<{ id: string; name: string; description: string; prompt: string; cron: string }>> {
+export async function loadTemplates(dorkHome: string): Promise<
+  Array<{
+    id: string;
+    name: string;
+    displayName?: string;
+    description: string;
+    prompt: string;
+    cron: string;
+  }>
+> {
   const templatesDir = path.join(dorkHome, 'tasks', 'templates');
 
   try {
-    const { parseTaskFile } = await import('./task-file-parser.js');
-    const entries = await fs.readdir(templatesDir, { withFileTypes: true });
+    const results = await scanSkillDirectory(templatesDir, TaskFrontmatterSchema);
     const templates = [];
 
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-      const filePath = path.join(templatesDir, entry.name);
-      const content = await fs.readFile(filePath, 'utf-8');
-      const result = parseTaskFile(filePath, content, 'global');
-      if ('error' in result) continue;
-
+    for (const result of results) {
+      if (!result.ok) continue;
+      const def = result.definition;
       templates.push({
-        id: result.id,
-        name: result.meta.name,
-        description: result.meta.description ?? '',
-        prompt: result.prompt,
-        cron: result.meta.cron ?? '',
+        id: def.name,
+        name: def.name,
+        displayName: def.meta['display-name'],
+        description: def.meta.description ?? '',
+        prompt: def.body,
+        cron: def.meta.cron ?? '',
       });
     }
 

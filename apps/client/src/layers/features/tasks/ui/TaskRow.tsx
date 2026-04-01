@@ -1,15 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
-import {
-  MoreHorizontal,
-  Pencil,
-  Play,
-  Trash2,
-  AlertCircle,
-  FolderOpen,
-  Shield,
-} from 'lucide-react';
+import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUpdateTask, useTriggerTask, useDeleteTask } from '@/layers/entities/tasks';
 import {
@@ -98,7 +90,6 @@ export function TaskRow({
   const isDefault = size === 'default';
   const shouldShowAgent = showAgent && !isMinimal;
   const shouldShowCron = !isMinimal;
-  const shouldShowTags = isDefault && task.tags.length > 0;
   const shouldShowHistory = isDefault;
   const isSystem = agent?.isSystem === true;
 
@@ -170,38 +161,21 @@ export function TaskRow({
                   <span className="text-destructive text-xs">Agent not found</span>
                   <span className="text-muted-foreground text-xs">&middot;</span>
                 </>
-              ) : shouldShowAgent && task.cwd ? (
-                <>
-                  <FolderOpen className="text-muted-foreground size-3.5 shrink-0" />
-                  <span className="text-muted-foreground font-mono text-xs">
-                    {shortenHomePath(task.cwd)}
-                  </span>
-                  <span className="text-muted-foreground text-xs">&middot;</span>
-                </>
               ) : null}
               <span
                 className={
-                  shouldShowAgent && (agent || task.agentId || task.cwd)
+                  shouldShowAgent && (agent || task.agentId)
                     ? 'text-muted-foreground text-xs'
                     : 'text-sm font-medium'
                 }
               >
-                {task.name}
+                {task.displayName ?? task.name}
               </span>
             </div>
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">
                 {task.cron ? formatCron(task.cron) : 'On-demand'}
                 {task.nextRun && <> &middot; Next: {new Date(task.nextRun).toLocaleString()}</>}
-              </div>
-            )}
-            {shouldShowTags && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                {task.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                    {tag}
-                  </Badge>
-                ))}
               </div>
             )}
           </div>
@@ -304,7 +278,7 @@ export function TaskRow({
                     {shortenHomePath(task.filePath)}
                   </p>
                 )}
-                <TaskRunHistoryPanel scheduleId={task.id} scheduleCwd={task.cwd} />
+                <TaskRunHistoryPanel scheduleId={task.id} scheduleCwd={null} />
               </div>
             </motion.div>
           )}

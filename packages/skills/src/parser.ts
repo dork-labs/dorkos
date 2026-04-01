@@ -34,7 +34,7 @@ export interface ParsedSkill<T> {
 export function parseSkillFile<T>(
   filePath: string,
   content: string,
-  schema: z.ZodSchema<T>
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>
 ): ParseResult<ParsedSkill<T>> {
   // Validate filename
   const filename = path.basename(filePath);

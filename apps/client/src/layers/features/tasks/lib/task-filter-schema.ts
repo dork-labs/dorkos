@@ -12,7 +12,7 @@ import { createFilterSchema, textFilter, enumFilter, createSortOptions } from '@
 /** Filter schema for the tasks list. */
 export const taskFilterSchema = createFilterSchema<Task>({
   search: textFilter({
-    fields: [(t) => t.name, (t) => t.description, (t) => t.prompt, (t) => t.tags.join(' ')],
+    fields: [(t) => t.name, (t) => t.description ?? '', (t) => t.prompt],
   }),
   agent: enumFilter({
     field: (t) => t.agentId,

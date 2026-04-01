@@ -1129,18 +1129,17 @@ export const TaskSchema = z
   .object({
     id: z.string(),
     name: z.string(),
+    displayName: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
     prompt: z.string(),
     cron: z.string().nullable(),
     timezone: z.string().nullable(),
-    cwd: z.string().nullable(),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     status: TaskStatusSchema,
     filePath: z.string(),
-    tags: z.array(z.string()).default([]),
     createdAt: z.string(),
     updatedAt: z.string(),
     nextRun: z.string().nullable().optional(),
@@ -1171,11 +1170,11 @@ export const TaskTemplateSchema = z
   .object({
     id: z.string(),
     name: z.string(),
+    displayName: z.string().optional(),
     description: z.string(),
     prompt: z.string(),
     cron: z.string(),
     timezone: z.string().optional(),
-    category: z.string().optional(),
   })
   .openapi('TaskTemplate');
 
@@ -1184,15 +1183,15 @@ export type TaskTemplate = z.infer<typeof TaskTemplateSchema>;
 export const CreateTaskRequestSchema = z
   .object({
     name: z.string().min(1),
+    displayName: z.string().optional(),
+    description: z.string().min(1),
     prompt: z.string().min(1),
     cron: z.string().min(1).nullable().optional(),
     timezone: z.string().nullable().optional(),
-    cwd: z.string().nullable().optional(),
-    agentId: z.string().optional(),
+    target: z.string().min(1),
     enabled: z.boolean().optional().default(true),
-    maxRuntime: z.number().int().positive().nullable().optional(),
+    maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
-    tags: z.array(z.string()).optional().default([]),
   })
   .openapi('CreateTaskRequest');
 
@@ -1204,16 +1203,15 @@ export type CreateTaskInput = z.input<typeof CreateTaskRequestSchema>;
 export const UpdateTaskRequestSchema = z
   .object({
     name: z.string().min(1).optional(),
+    displayName: z.string().nullable().optional(),
+    description: z.string().min(1).optional(),
     prompt: z.string().min(1).optional(),
     cron: z.string().min(1).nullable().optional(),
     timezone: z.string().nullable().optional(),
-    cwd: z.string().nullable().optional(),
-    agentId: z.string().nullable().optional(),
     enabled: z.boolean().optional(),
-    maxRuntime: z.number().int().positive().nullable().optional(),
+    maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: TaskStatusSchema.optional(),
-    tags: z.array(z.string()).optional(),
   })
   .openapi('UpdateTaskRequest');
 

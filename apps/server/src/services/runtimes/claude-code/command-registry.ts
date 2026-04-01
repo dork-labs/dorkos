@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
 import type { CommandEntry, CommandRegistry } from '@dorkos/shared/types';
+import { CommandFrontmatterSchema } from '@dorkos/skills/command-schema';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -27,8 +28,9 @@ function parseFrontmatterFallback(content: string): Record<string, string> {
 /**
  * Scans `.claude/commands/` for slash command definitions.
  *
- * Parses YAML frontmatter (description, allowed-tools, argument-hint) via gray-matter
- * with a fallback parser for malformed YAML. Results are cached until `invalidateCache()`.
+ * Parses YAML frontmatter via gray-matter with a fallback for malformed YAML,
+ * then validates against the shared CommandFrontmatterSchema. Results are cached
+ * until `invalidateCache()`.
  */
 class CommandRegistryService {
   private cache: CommandRegistry | null = null;
@@ -104,7 +106,10 @@ class CommandRegistryService {
   }
 
   /**
-   * Parse a command `.md` file, extracting frontmatter metadata.
+   * Parse a command `.md` file using gray-matter + CommandFrontmatterSchema validation.
+   *
+   * Falls back to a simple key:value parser when gray-matter's YAML parser fails
+   * on unquoted special characters.
    *
    * @returns Partial command fields, or `null` if the file could not be read.
    */
@@ -125,10 +130,14 @@ class CommandRegistryService {
         frontmatter = parseFrontmatterFallback(content);
       }
 
-      const allowedToolsRaw = frontmatter['allowed-tools'];
+      // Validate with shared schema (partial — commands may not have all required fields)
+      const validated = CommandFrontmatterSchema.partial().safeParse(frontmatter);
+      const meta = validated.success ? validated.data : frontmatter;
+
+      const allowedToolsRaw = meta['allowed-tools'];
       return {
-        description: (frontmatter.description as string) || '',
-        argumentHint: frontmatter['argument-hint'] as string | undefined,
+        description: (meta.description as string) || '',
+        argumentHint: meta['argument-hint'] as string | undefined,
         allowedTools:
           typeof allowedToolsRaw === 'string'
             ? allowedToolsRaw.split(',').map((t: string) => t.trim())

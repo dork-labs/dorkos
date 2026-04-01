@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTasksRouter } from '../tasks.js';
-import { TaskStore } from '../../services/tasks/task-store.js';
+import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -10,6 +10,39 @@ import type { Db } from '@dorkos/db';
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
+
+vi.mock('@dorkos/skills/writer', () => ({
+  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  deleteSkillDir: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@dorkos/skills/parser', () => ({
+  parseSkillFile: vi.fn().mockReturnValue({ ok: false, errors: ['mocked'] }),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    default: {
+      ...(actual.default as Record<string, unknown>),
+      access: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      readFile: vi.fn().mockResolvedValue(''),
+    },
+  };
+});
+
+/** Build a minimal CreateTaskStoreInput with defaults for required fields. */
+function taskInput(
+  overrides: Partial<CreateTaskStoreInput> & { name: string }
+): CreateTaskStoreInput {
+  return {
+    description: overrides.prompt ?? 'test',
+    prompt: 'test',
+    filePath: `/tmp/tasks/${overrides.name.toLowerCase().replace(/\s+/g, '-')}/SKILL.md`,
+    ...overrides,
+  };
+}
 
 function createMockScheduler(): TaskSchedulerService {
   return {
@@ -56,7 +89,7 @@ describe('Tasks routes', () => {
     });
 
     it('returns schedules with nextRun', async () => {
-      store.createTask({ name: 'Test', prompt: 'p', cron: '0 * * * *' });
+      store.createTask(taskInput({ name: 'Test', prompt: 'p', cron: '0 * * * *' }));
 
       const res = await request(app).get('/api/tasks');
       expect(res.status).toBe(200);
@@ -68,12 +101,16 @@ describe('Tasks routes', () => {
 
   describe('POST /api/tasks', () => {
     it('creates a schedule', async () => {
-      const res = await request(app)
-        .post('/api/tasks')
-        .send({ name: 'New', prompt: 'do stuff', cron: '0 2 * * *' });
+      const res = await request(app).post('/api/tasks').send({
+        name: 'New',
+        description: 'do stuff',
+        prompt: 'do stuff',
+        cron: '0 2 * * *',
+        target: 'global',
+      });
 
       expect(res.status).toBe(201);
-      expect(res.body.name).toBe('New');
+      expect(res.body.name).toBe('new');
       expect(res.body.id).toBeDefined();
     });
 
@@ -84,9 +121,13 @@ describe('Tasks routes', () => {
     });
 
     it('registers cron job for enabled active schedule', async () => {
-      await request(app)
-        .post('/api/tasks')
-        .send({ name: 'Active', prompt: 'p', cron: '0 * * * *' });
+      await request(app).post('/api/tasks').send({
+        name: 'Active',
+        description: 'p',
+        prompt: 'p',
+        cron: '0 * * * *',
+        target: 'global',
+      });
 
       expect(scheduler.registerTask).toHaveBeenCalled();
     });
@@ -94,7 +135,7 @@ describe('Tasks routes', () => {
 
   describe('PATCH /api/tasks/:id', () => {
     it('updates a schedule', async () => {
-      const sched = store.createTask({ name: 'Old', prompt: 'p', cron: '0 * * * *' });
+      const sched = store.createTask(taskInput({ name: 'Old', prompt: 'p', cron: '0 * * * *' }));
 
       const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ name: 'Updated' });
 
@@ -109,7 +150,7 @@ describe('Tasks routes', () => {
     });
 
     it('unregisters cron when disabling', async () => {
-      const sched = store.createTask({ name: 'Dis', prompt: 'p', cron: '0 * * * *' });
+      const sched = store.createTask(taskInput({ name: 'Dis', prompt: 'p', cron: '0 * * * *' }));
 
       await request(app).patch(`/api/tasks/${sched.id}`).send({ enabled: false });
 
@@ -119,7 +160,7 @@ describe('Tasks routes', () => {
 
   describe('DELETE /api/tasks/:id', () => {
     it('deletes a schedule', async () => {
-      const sched = store.createTask({ name: 'Del', prompt: 'p', cron: '0 * * * *' });
+      const sched = store.createTask(taskInput({ name: 'Del', prompt: 'p', cron: '0 * * * *' }));
 
       const res = await request(app).delete(`/api/tasks/${sched.id}`);
       expect(res.status).toBe(200);
@@ -168,7 +209,7 @@ describe('Tasks routes', () => {
     });
 
     it('returns runs with pagination', async () => {
-      const sched = store.createTask({ name: 'S1', prompt: 'p', cron: '0 * * * *' });
+      const sched = store.createTask(taskInput({ name: 'S1', prompt: 'p', cron: '0 * * * *' }));
       store.createRun(sched.id, 'scheduled');
       store.createRun(sched.id, 'scheduled');
       store.createRun(sched.id, 'scheduled');
@@ -179,8 +220,8 @@ describe('Tasks routes', () => {
     });
 
     it('filters by scheduleId', async () => {
-      const s1 = store.createTask({ name: 'S1', prompt: 'p', cron: '0 * * * *' });
-      const s2 = store.createTask({ name: 'S2', prompt: 'p', cron: '0 * * * *' });
+      const s1 = store.createTask(taskInput({ name: 'S1', prompt: 'p', cron: '0 * * * *' }));
+      const s2 = store.createTask(taskInput({ name: 'S2', prompt: 'p', cron: '0 * * * *' }));
       store.createRun(s1.id, 'scheduled');
       store.createRun(s2.id, 'scheduled');
 
@@ -193,7 +234,7 @@ describe('Tasks routes', () => {
 
   describe('GET /api/tasks/runs/:id', () => {
     it('returns a run', async () => {
-      const sched = store.createTask({ name: 'S1', prompt: 'p', cron: '0 * * * *' });
+      const sched = store.createTask(taskInput({ name: 'S1', prompt: 'p', cron: '0 * * * *' }));
       const run = store.createRun(sched.id, 'scheduled');
       const res = await request(app).get(`/api/tasks/runs/${run.id}`);
       expect(res.status).toBe(200);

@@ -5,6 +5,7 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   id: text('id').primaryKey(), // ULID
   name: text('name').notNull(),
   description: text('description'),
+  displayName: text('display_name'),
   cron: text('cron').notNull(),
   timezone: text('timezone').notNull().default('UTC'),
   prompt: text('prompt').notNull(),

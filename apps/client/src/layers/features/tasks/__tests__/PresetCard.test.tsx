@@ -18,7 +18,6 @@ const PRESET: TaskTemplate = {
   prompt: 'Run the project health checks.',
   cron: '0 8 * * 1',
   timezone: 'UTC',
-  category: 'maintenance',
 };
 
 describe('TaskTemplateCard', () => {

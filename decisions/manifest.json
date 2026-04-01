@@ -1,7 +1,15 @@
 {
   "version": 1,
-  "nextNumber": 220,
+  "nextNumber": 221,
   "decisions": [
+    {
+      "number": 220,
+      "slug": "adopt-skill-md-open-standard",
+      "title": "Adopt SKILL.md Open Standard for Task and Command Definitions",
+      "created": "2026-04-01",
+      "status": "accepted",
+      "specSlug": "skills-package"
+    },
     {
       "number": 219,
       "slug": "cursor-based-activity-pagination",

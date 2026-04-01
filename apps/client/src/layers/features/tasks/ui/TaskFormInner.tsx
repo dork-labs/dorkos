@@ -1,8 +1,7 @@
-import { ChevronLeft, ChevronRight, FolderOpen, Trash2 } from 'lucide-react';
+import { ChevronRight, Trash2 } from 'lucide-react';
 import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import { ResponsiveDialogFooter, DirectoryPicker, Label, Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { ResponsiveDialogFooter, Label, Button } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import type { Task } from '@dorkos/shared/types';
 import { ScheduleBuilder } from './TaskBuilder';
@@ -10,25 +9,29 @@ import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
 
 export type PermissionMode = 'acceptEdits' | 'bypassPermissions';
-export type ScheduleTarget = 'agent' | 'directory';
 export type DialogStep = 'preset-picker' | 'form';
 
-export const DEFAULT_MAX_RUNTIME_MIN = 10;
+export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
-const MAX_RUNTIME_MIN = 720;
 
 /** All fields managed by TanStack Form. */
 export type ScheduleFormValues = {
   name: string;
+  description: string;
   prompt: string;
   cron: string;
-  cwd: string;
   /** Empty string means "no agent selected" — sentinel avoids string | undefined type mismatch. */
   agentId: string;
   timezone: string;
   permissionMode: PermissionMode;
-  maxRuntimeMin: number;
+  maxRuntime: string;
 };
+
+/** Convert milliseconds to a human-friendly duration string (e.g. "10m"). */
+function msToRuntimeStr(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  return `${minutes}m`;
+}
 
 /** Build form default values from an edit task, a preset, or blank defaults. */
 export function buildFormValues(
@@ -39,37 +42,37 @@ export function buildFormValues(
   if (editTask) {
     return {
       name: editTask.name,
+      description: editTask.description ?? '',
       prompt: editTask.prompt,
       cron: editTask.cron ?? '',
-      cwd: editTask.cwd ?? '',
       agentId: editTask.agentId ?? '',
       timezone: editTask.timezone ?? '',
       permissionMode:
         editTask.permissionMode === 'bypassPermissions' ? 'bypassPermissions' : 'acceptEdits',
-      maxRuntimeMin: editTask.maxRuntime ? editTask.maxRuntime / 60_000 : DEFAULT_MAX_RUNTIME_MIN,
+      maxRuntime: editTask.maxRuntime ? msToRuntimeStr(editTask.maxRuntime) : DEFAULT_MAX_RUNTIME,
     };
   }
   if (preset) {
     return {
       name: preset.name,
+      description: preset.description,
       prompt: preset.prompt,
       cron: preset.cron,
-      cwd: '',
       agentId: initialAgentId ?? '',
       timezone: preset.timezone ?? '',
       permissionMode: 'acceptEdits',
-      maxRuntimeMin: DEFAULT_MAX_RUNTIME_MIN,
+      maxRuntime: DEFAULT_MAX_RUNTIME,
     };
   }
   return {
     name: '',
+    description: '',
     prompt: '',
     cron: '',
-    cwd: '',
     agentId: initialAgentId ?? '',
     timezone: '',
     permissionMode: 'acceptEdits',
-    maxRuntimeMin: DEFAULT_MAX_RUNTIME_MIN,
+    maxRuntime: DEFAULT_MAX_RUNTIME,
   };
 }
 
@@ -82,14 +85,10 @@ export interface ScheduleFormProps {
   defaultValues: ScheduleFormValues;
   agents: Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }>;
   editTask?: Task;
-  scheduleTarget: ScheduleTarget;
-  onScheduleTargetChange: (target: ScheduleTarget) => void;
   onSubmitSuccess: () => void;
   onCancel: () => void;
   onDeleteClick: () => void;
   isPending: boolean;
-  cwdPickerOpen: boolean;
-  onCwdPickerOpenChange: (open: boolean) => void;
 }
 
 /** Inner form component. Remounted via `key` when defaultValues change. */
@@ -97,14 +96,10 @@ export function ScheduleForm({
   defaultValues,
   agents,
   editTask,
-  scheduleTarget,
-  onScheduleTargetChange,
   onSubmitSuccess,
   onCancel,
   onDeleteClick,
   isPending,
-  cwdPickerOpen,
-  onCwdPickerOpenChange,
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -114,21 +109,30 @@ export function ScheduleForm({
     onSubmit: ({ value }) => {
       const resolvedAgentId = value.agentId.trim() || undefined;
       const cronTrimmed = value.cron.trim();
-      const input = {
-        name: value.name.trim(),
-        prompt: value.prompt.trim(),
-        // Empty cron → null for edits (explicitly remove schedule), undefined for creates (omit field)
-        cron: cronTrimmed || (editTask ? null : undefined),
-        ...(scheduleTarget === 'agent' && resolvedAgentId ? { agentId: resolvedAgentId } : {}),
-        ...(scheduleTarget === 'directory' && value.cwd.trim() ? { cwd: value.cwd.trim() } : {}),
-        ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
-        permissionMode: value.permissionMode,
-        maxRuntime: value.maxRuntimeMin * 60_000,
-      };
 
       if (editTask) {
+        const input = {
+          name: value.name.trim(),
+          description: value.description.trim(),
+          prompt: value.prompt.trim(),
+          cron: cronTrimmed || null,
+          ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
+          permissionMode: value.permissionMode,
+          maxRuntime: value.maxRuntime.trim() || undefined,
+        };
         updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
       } else {
+        const target = resolvedAgentId ?? 'global';
+        const input = {
+          name: value.name.trim(),
+          description: value.description.trim() || value.name.trim(),
+          prompt: value.prompt.trim(),
+          target,
+          cron: cronTrimmed || undefined,
+          ...(cronTrimmed && value.timezone ? { timezone: value.timezone } : {}),
+          permissionMode: value.permissionMode,
+          maxRuntime: value.maxRuntime.trim() || undefined,
+        };
         createTask.mutate(input, { onSuccess: onSubmitSuccess });
       }
     },
@@ -145,66 +149,19 @@ export function ScheduleForm({
         className="min-h-0 flex-1 overflow-y-auto"
       >
         <div className="space-y-5 px-4 py-5">
-          {/* ── Agent / Directory ── */}
-          {scheduleTarget === 'agent' ? (
-            <div className="space-y-2">
-              <Label>Agent</Label>
-              <form.AppField name="agentId">
-                {(field) => (
-                  <AgentPicker
-                    agents={agents}
-                    value={field.state.value || undefined}
-                    onValueChange={(id) => field.handleChange(id ?? '')}
-                  />
-                )}
-              </form.AppField>
-              <button
-                type="button"
-                onClick={() => {
-                  onScheduleTargetChange('directory');
-                  form.setFieldValue('agentId', '');
-                }}
-                className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
-              >
-                Run in a specific directory instead...
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => onScheduleTargetChange('agent')}
-                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs underline-offset-4 hover:underline"
-              >
-                <ChevronLeft className="size-3" />
-                Back to agent selection
-              </button>
-              <Label htmlFor="schedule-cwd">Working Directory</Label>
-              <form.AppField name="cwd">
-                {(field) => (
-                  <div className="flex gap-2">
-                    <div
-                      className={cn(
-                        'flex-1 truncate rounded-md border px-3 py-2 font-mono text-sm',
-                        field.state.value ? 'text-foreground' : 'text-muted-foreground'
-                      )}
-                    >
-                      {field.state.value || 'Default (server working directory)'}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      onClick={() => onCwdPickerOpenChange(true)}
-                      aria-label="Browse directories"
-                    >
-                      <FolderOpen className="size-4" />
-                    </Button>
-                  </div>
-                )}
-              </form.AppField>
-            </div>
-          )}
+          {/* ── Agent (target) ── */}
+          <div className="space-y-2">
+            <Label>Agent</Label>
+            <form.AppField name="agentId">
+              {(field) => (
+                <AgentPicker
+                  agents={agents}
+                  value={field.state.value || undefined}
+                  onValueChange={(id) => field.handleChange(id ?? '')}
+                />
+              )}
+            </form.AppField>
+          </div>
 
           {/* ── Essential fields ── */}
           <form.AppField name="name">
@@ -219,6 +176,25 @@ export function ScheduleForm({
                   onBlur={field.handleBlur}
                   maxLength={MAX_NAME_LENGTH}
                   placeholder="Daily code review"
+                />
+                {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+                  <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
+                )}
+              </div>
+            )}
+          </form.AppField>
+
+          <form.AppField name="description">
+            {(field) => (
+              <div className="space-y-1.5">
+                <Label htmlFor="schedule-description">Description *</Label>
+                <input
+                  id="schedule-description"
+                  className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="A short description of this schedule"
                 />
                 {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
                   <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
@@ -319,19 +295,17 @@ export function ScheduleForm({
                 )}
               </form.AppField>
 
-              <form.AppField name="maxRuntimeMin">
+              <form.AppField name="maxRuntime">
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor="schedule-max-runtime">Max Runtime (minutes)</Label>
+                    <Label htmlFor="schedule-max-runtime">Max Runtime</Label>
                     <input
                       id="schedule-max-runtime"
-                      type="number"
                       className="border-input focus-visible:ring-ring w-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
                       value={field.state.value}
-                      onChange={(e) => field.handleChange(Number(e.target.value))}
+                      onChange={(e) => field.handleChange(e.target.value)}
                       onBlur={field.handleBlur}
-                      min={1}
-                      max={MAX_RUNTIME_MIN}
+                      placeholder="10m"
                     />
                   </div>
                 )}
@@ -373,17 +347,6 @@ export function ScheduleForm({
           )}
         </form.Subscribe>
       </ResponsiveDialogFooter>
-
-      {/* DirectoryPicker lives here so it shares form context for cwd field updates. */}
-      <form.AppField name="cwd">
-        {(field) => (
-          <DirectoryPicker
-            open={cwdPickerOpen}
-            onOpenChange={onCwdPickerOpenChange}
-            onSelect={(path) => field.handleChange(path)}
-          />
-        )}
-      </form.AppField>
     </form.AppForm>
   );
 }

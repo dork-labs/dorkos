@@ -87,12 +87,10 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     prompt: 'test',
     cron: '* * * * *',
     timezone: null,
-    cwd: null,
     agentId: null,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     filePath: '/tmp/tasks/test.md',
-    tags: [],
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -130,7 +128,6 @@ describe('TasksView', () => {
           prompt: 'Prompt',
           cron: '0 8 * * 1',
           timezone: 'UTC',
-          category: 'maintenance',
         },
         {
           id: 'dependency-audit',
@@ -139,7 +136,6 @@ describe('TasksView', () => {
           prompt: 'Prompt',
           cron: '0 9 * * 1',
           timezone: 'UTC',
-          category: 'security',
         },
         {
           id: 'docs-sync',
@@ -148,7 +144,6 @@ describe('TasksView', () => {
           prompt: 'Prompt',
           cron: '0 10 * * *',
           timezone: 'UTC',
-          category: 'documentation',
         },
       ],
     });

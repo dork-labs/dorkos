@@ -73,9 +73,10 @@ export function TaskTemplatesStep({ onStepComplete, agents }: TaskTemplatesStepP
       selected.map((preset) =>
         createSchedule.mutateAsync({
           name: preset.name,
+          description: preset.description,
           prompt: preset.prompt,
           cron: preset.cron,
-          cwd: resolvedAgent.projectPath,
+          target: resolvedAgent.id,
         })
       )
     );

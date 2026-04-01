@@ -6,7 +6,6 @@ import { useAppStore } from '@/layers/shared/model';
 import { icons } from '@dorkos/icons/registry';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import { useResolvedAgents } from '@/layers/entities/agent';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -33,12 +32,8 @@ export function TasksPanel() {
     ? allSchedules.filter((s) => s.agentId === tasksAgentFilter)
     : allSchedules;
 
-  // Batch-resolve agents for all schedule CWDs
-  const uniquePaths = [...new Set(allSchedules.map((s) => s.cwd).filter(Boolean) as string[])];
-  const { data: resolvedAgents } = useResolvedAgents(uniquePaths);
-
-  // Also fetch registered mesh agents for agentId-based schedules
-  const hasAgentIdSchedules = allSchedules.some((s) => s.agentId && !s.cwd);
+  // Fetch registered mesh agents for agentId-based schedules
+  const hasAgentIdSchedules = allSchedules.some((s) => s.agentId);
   const { data: meshAgentsData } = useRegisteredAgents(undefined, hasAgentIdSchedules);
   const meshAgentsById = useMemo(() => {
     const map = new Map<string, AgentManifest>();
@@ -189,11 +184,7 @@ export function TasksPanel() {
             >
               <TaskRow
                 task={task}
-                agent={
-                  resolvedAgents?.[task.cwd ?? ''] ??
-                  (task.agentId ? meshAgentsById.get(task.agentId) : null) ??
-                  null
-                }
+                agent={task.agentId ? (meshAgentsById.get(task.agentId) ?? null) : null}
                 expanded={expandedId === task.id}
                 onToggleExpand={() => setExpandedId(expandedId === task.id ? null : task.id)}
                 onEdit={() => {

@@ -16,7 +16,6 @@ const PRESETS: TaskTemplate[] = [
     prompt: 'Run checks',
     cron: '0 8 * * 1',
     timezone: 'UTC',
-    category: 'maintenance',
   },
   {
     id: 'docs-sync',
@@ -25,7 +24,6 @@ const PRESETS: TaskTemplate[] = [
     prompt: 'Review docs',
     cron: '0 10 * * *',
     timezone: 'UTC',
-    category: 'documentation',
   },
 ];
 

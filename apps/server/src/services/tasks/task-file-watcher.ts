@@ -1,5 +1,5 @@
 /**
- * Watches task directories for .md file changes and syncs to the DB cache.
+ * Watches task directories for SKILL.md file changes and syncs to the DB cache.
  *
  * @module services/tasks/task-file-watcher
  */
@@ -7,11 +7,13 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import type { TaskStore } from './task-store.js';
-import { parseTaskFile } from './task-file-parser.js';
+import { parseSkillFile } from '@dorkos/skills/parser';
+import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { logger } from '../../lib/logger.js';
 
 /** Callback invoked when a task file changes or is removed. */
-type TaskChangeCallback = (taskId: string) => void;
+type TaskChangeCallback = (taskSlug: string) => void;
 
 /**
  * Watches task directories for file changes and syncs to the DB cache.
@@ -29,19 +31,25 @@ export class TaskFileWatcher {
   ) {}
 
   /**
-   * Watch a task directory for .md file changes.
+   * Watch a task directory for SKILL.md file changes.
    *
    * @param tasksDir - Absolute path to the tasks directory
    * @param scope - 'project' or 'global'
    * @param projectPath - Project root (for project-scoped tasks)
+   * @param agentId - Agent ID for project-scoped tasks
    */
-  watch(tasksDir: string, scope: 'project' | 'global', projectPath?: string): void {
+  watch(
+    tasksDir: string,
+    scope: 'project' | 'global',
+    projectPath?: string,
+    agentId?: string
+  ): void {
     if (this.watchers.has(tasksDir)) {
       logger.warn(`[TaskFileWatcher] Already watching ${tasksDir} — skipping duplicate`);
       return;
     }
 
-    const watcher = chokidar.watch(path.join(tasksDir, '*.md'), {
+    const watcher = chokidar.watch(path.join(tasksDir, '*', SKILL_FILENAME), {
       persistent: true,
       ignoreInitial: false,
       awaitWriteFinish: {
@@ -50,8 +58,10 @@ export class TaskFileWatcher {
       },
     });
 
-    watcher.on('add', (filePath) => this.handleFileChange(filePath, scope, projectPath));
-    watcher.on('change', (filePath) => this.handleFileChange(filePath, scope, projectPath));
+    watcher.on('add', (filePath) => this.handleFileChange(filePath, scope, projectPath, agentId));
+    watcher.on('change', (filePath) =>
+      this.handleFileChange(filePath, scope, projectPath, agentId)
+    );
     watcher.on('unlink', (filePath) => this.handleFileRemove(filePath));
 
     this.watchers.set(tasksDir, watcher);
@@ -79,28 +89,31 @@ export class TaskFileWatcher {
   private async handleFileChange(
     filePath: string,
     scope: 'project' | 'global',
-    projectPath?: string
+    projectPath?: string,
+    agentId?: string
   ): Promise<void> {
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const result = parseTaskFile(filePath, content, scope, projectPath);
+      const result = parseSkillFile(filePath, content, TaskFrontmatterSchema);
 
-      if ('error' in result) {
+      if (!result.ok) {
         logger.warn(`[TaskFileWatcher] Invalid task file ${filePath}: ${result.error}`);
         return;
       }
 
-      this.store.upsertFromFile(result);
-      this.onTaskChange(result.id);
+      const def = { ...result.definition, scope, projectPath };
+      this.store.upsertFromFile(def, agentId);
+      this.onTaskChange(def.name);
     } catch (err) {
       logger.error(`[TaskFileWatcher] Failed to process ${filePath}`, err);
     }
   }
 
   private handleFileRemove(filePath: string): void {
-    const slug = path.basename(filePath, '.md');
-    this.store.markRemovedBySlug(slug);
-    this.onTaskChange(slug);
-    logger.info(`[TaskFileWatcher] Task file removed: ${slug}`);
+    // Derive slug from the parent directory name (e.g., /tasks/daily-check/SKILL.md → "daily-check")
+    const dirName = path.basename(path.dirname(filePath));
+    this.store.markRemovedBySlug(dirName);
+    this.onTaskChange(dirName);
+    logger.info(`[TaskFileWatcher] Task file removed: ${dirName}`);
   }
 }

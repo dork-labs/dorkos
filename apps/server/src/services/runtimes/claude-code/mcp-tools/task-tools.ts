@@ -30,20 +30,21 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     name: string;
     prompt: string;
     cron: string;
-    cwd?: string;
+    description?: string;
     timezone?: string;
-    maxRuntime?: number;
+    maxRuntime?: string;
     permissionMode?: string;
   }) => {
     const err = requireTasks(deps);
     if (err) return err;
     const schedule = deps.taskStore!.createTask({
       name: args.name,
+      description: args.description ?? args.name,
       prompt: args.prompt,
       cron: args.cron,
-      cwd: args.cwd ?? null,
       timezone: args.timezone ?? null,
-      maxRuntime: args.maxRuntime ?? null,
+      maxRuntime: null,
+      filePath: '',
     });
     // Agent-created schedules always require user approval
     deps.taskStore!.updateTask(schedule.id, { status: 'pending_approval' });
@@ -64,14 +65,15 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     cron?: string;
     enabled?: boolean;
     timezone?: string;
-    maxRuntime?: number;
+    maxRuntime?: string;
     permissionMode?: string;
   }) => {
     const err = requireTasks(deps);
     if (err) return err;
-    const { id, permissionMode, ...rest } = args;
+    const { id, permissionMode, maxRuntime, ...rest } = args;
     const updated = deps.taskStore!.updateTask(id, {
       ...rest,
+      ...(maxRuntime !== undefined && { maxRuntime }),
       ...(permissionMode !== undefined && {
         permissionMode: permissionMode as 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions',
       }),
@@ -116,14 +118,14 @@ export function getTasksTools(deps: McpToolDeps) {
     ),
     tool(
       'tasks_create',
-      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it can run.',
+      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it runs.',
       {
         name: z.string().describe('Name for the scheduled job'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
         cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
-        cwd: z.string().optional().describe('Working directory for the agent'),
+        description: z.string().optional().describe('Description of what this task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
-        maxRuntime: z.number().optional().describe('Maximum run time in milliseconds'),
+        maxRuntime: z.string().optional().describe('Maximum run time (e.g., "5m", "1h")'),
         permissionMode: z
           .string()
           .optional()
@@ -141,7 +143,7 @@ export function getTasksTools(deps: McpToolDeps) {
         cron: z.string().optional().describe('New cron expression'),
         enabled: z.boolean().optional().describe('Enable or disable the schedule'),
         timezone: z.string().optional().describe('New timezone'),
-        maxRuntime: z.number().optional().describe('New max runtime in ms'),
+        maxRuntime: z.string().optional().describe('New max runtime (e.g., "5m", "1h")'),
         permissionMode: z.string().optional().describe('New permission mode'),
       },
       createUpdateScheduleHandler(deps)

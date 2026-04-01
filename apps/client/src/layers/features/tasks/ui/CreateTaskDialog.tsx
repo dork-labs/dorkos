@@ -28,7 +28,6 @@ import {
   ScheduleForm,
   buildFormValues,
   type ScheduleFormValues,
-  type ScheduleTarget,
   type DialogStep,
 } from './TaskFormInner';
 
@@ -59,18 +58,12 @@ export function CreateTaskDialog({
   const agents = agentsData?.agents ?? [];
 
   // ── UI-only state ──
-  const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
   const [step, setStep] = useState<DialogStep>(() => (editTask ? 'form' : 'preset-picker'));
   const [appliedPreset, setAppliedPreset] = useState<TaskTemplate | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   // Local shadow of enabled state — allows the Switch to respond immediately
   // while the mutation + refetch catches up.
   const [localEnabled, setLocalEnabled] = useState(editTask?.enabled ?? true);
-  const [scheduleTarget, setScheduleTarget] = useState<ScheduleTarget>(() => {
-    if (editTask?.agentId) return 'agent';
-    if (editTask && !editTask.agentId && editTask.cwd) return 'directory';
-    return 'agent';
-  });
 
   // formValues drives ScheduleForm defaultValues. Changing this + incrementing
   // formKey causes ScheduleForm to remount with fresh form state.
@@ -97,7 +90,6 @@ export function CreateTaskDialog({
     }
     if (editTask) {
       applyFormValues(buildFormValues(editTask));
-      setScheduleTarget(editTask.agentId ? 'agent' : editTask.cwd ? 'directory' : 'agent');
       setLocalEnabled(editTask.enabled);
       setStep('form');
     } else if (initialPreset) {
@@ -106,7 +98,6 @@ export function CreateTaskDialog({
       setStep('form');
     } else {
       applyFormValues(buildFormValues(undefined, undefined, initialAgentId));
-      setScheduleTarget('agent');
       setStep('preset-picker');
     }
   }, [editTask, open, initialPreset, initialAgentId]);
@@ -208,14 +199,10 @@ export function CreateTaskDialog({
             defaultValues={formValues}
             agents={agents}
             editTask={editTask}
-            scheduleTarget={scheduleTarget}
-            onScheduleTargetChange={setScheduleTarget}
             onSubmitSuccess={() => onOpenChange(false)}
             onCancel={() => onOpenChange(false)}
             onDeleteClick={() => setDeleteConfirmOpen(true)}
             isPending={isPending}
-            cwdPickerOpen={cwdPickerOpen}
-            onCwdPickerOpenChange={setCwdPickerOpen}
           />
         )}
       </ResponsiveDialogContent>

@@ -55,7 +55,7 @@ export function buildTaskAppend(task: Task, run: TaskRun): string {
     '=== TASK SCHEDULER CONTEXT ===',
     `Job: ${task.name}`,
     `Schedule: ${task.cron ?? 'on-demand'}`,
-    `CWD: ${task.cwd ?? '(server default)'}`,
+    `Agent: ${task.agentId ?? '(global)'}`,
     `Run ID: ${run.id}`,
     `Trigger: ${run.trigger}`,
     '',
@@ -228,7 +228,7 @@ export class TaskSchedulerService {
    * Resolve the effective working directory for a task.
    *
    * When the task is linked to an agent (via agentId), resolves the agent's
-   * projectPath from MeshCore. Falls back to task.cwd, then the server default.
+   * projectPath from MeshCore. Falls back to the server default CWD.
    *
    * @param task - The task to resolve CWD for
    * @returns The absolute path to use as CWD for this run
@@ -245,7 +245,7 @@ export class TaskSchedulerService {
       }
       return projectPath;
     }
-    return task.cwd ?? process.cwd();
+    return process.cwd();
   }
 
   /** Dispatch a scheduled run — checks concurrency and task state. */

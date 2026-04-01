@@ -4,7 +4,7 @@ import {
   buildTaskAppend,
   type SchedulerAgentManager,
 } from '../task-scheduler-service.js';
-import { TaskStore } from '../task-store.js';
+import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task, TaskRun } from '@dorkos/shared/types';
@@ -27,6 +27,18 @@ function createMockAgentManager(): SchedulerAgentManager {
   } as SchedulerAgentManager;
 }
 
+/** Build a minimal CreateTaskStoreInput with defaults for required fields. */
+function taskInput(
+  overrides: Partial<CreateTaskStoreInput> & { name: string }
+): CreateTaskStoreInput {
+  return {
+    description: overrides.prompt ?? 'test',
+    prompt: 'test',
+    filePath: `/tmp/tasks/${overrides.name.toLowerCase().replace(/\s+/g, '-')}/SKILL.md`,
+    ...overrides,
+  };
+}
+
 const DEFAULT_CONFIG = {
   maxConcurrentRuns: 1,
   retentionCount: 100,
@@ -47,7 +59,9 @@ describe('TaskSchedulerService', () => {
   describe('start()', () => {
     it('marks interrupted running runs as failed on startup', async () => {
       // Create a task + "running" run that simulates a crash
-      const task = store.createTask({ name: 'Crash', prompt: 'test', cron: '0 * * * *' });
+      const task = store.createTask(
+        taskInput({ name: 'Crash', prompt: 'test', cron: '0 * * * *' })
+      );
       store.createRun(task.id, 'scheduled');
 
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
@@ -61,8 +75,10 @@ describe('TaskSchedulerService', () => {
     });
 
     it('registers cron jobs for enabled active tasks', async () => {
-      store.createTask({ name: 'Active', prompt: 'test', cron: '0 * * * *' });
-      store.createTask({ name: 'Disabled', prompt: 'test', cron: '0 * * * *', enabled: false });
+      store.createTask(taskInput({ name: 'Active', prompt: 'test', cron: '0 * * * *' }));
+      store.createTask(
+        taskInput({ name: 'Disabled', prompt: 'test', cron: '0 * * * *', enabled: false })
+      );
 
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       await service.start();
@@ -75,7 +91,9 @@ describe('TaskSchedulerService', () => {
     });
 
     it('skips tasks with pending_approval status', async () => {
-      const task = store.createTask({ name: 'Pending', prompt: 'test', cron: '0 * * * *' });
+      const task = store.createTask(
+        taskInput({ name: 'Pending', prompt: 'test', cron: '0 * * * *' })
+      );
       store.updateTask(task.id, { status: 'pending_approval' });
 
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
@@ -89,7 +107,9 @@ describe('TaskSchedulerService', () => {
 
   describe('triggerManualRun()', () => {
     it('creates a run with manual trigger', async () => {
-      const task = store.createTask({ name: 'Manual', prompt: 'do stuff', cron: '0 * * * *' });
+      const task = store.createTask(
+        taskInput({ name: 'Manual', prompt: 'do stuff', cron: '0 * * * *' })
+      );
 
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
         yield { type: 'text_delta', data: { text: 'Done!' } };
@@ -109,11 +129,13 @@ describe('TaskSchedulerService', () => {
     });
 
     it('passes systemPromptAppend with task context to sendMessage', async () => {
-      const task = store.createTask({
-        name: 'Context Test',
-        prompt: 'do stuff',
-        cron: '0 * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Context Test',
+          prompt: 'do stuff',
+          cron: '0 * * * *',
+        })
+      );
 
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
         // no events
@@ -163,7 +185,7 @@ describe('TaskSchedulerService', () => {
     });
 
     it('returns a date for registered task', async () => {
-      const task = store.createTask({ name: 'Next', prompt: 'test', cron: '0 * * * *' });
+      const task = store.createTask(taskInput({ name: 'Next', prompt: 'test', cron: '0 * * * *' }));
 
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       await service.start();
@@ -177,7 +199,7 @@ describe('TaskSchedulerService', () => {
 
   describe('registerTask / unregisterTask', () => {
     it('can register and unregister a task', () => {
-      const task = store.createTask({ name: 'Reg', prompt: 'test', cron: '0 * * * *' });
+      const task = store.createTask(taskInput({ name: 'Reg', prompt: 'test', cron: '0 * * * *' }));
 
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       service.registerTask(task);
@@ -188,7 +210,9 @@ describe('TaskSchedulerService', () => {
     });
 
     it('replaces existing cron job on re-register', () => {
-      const task = store.createTask({ name: 'Re-reg', prompt: 'test', cron: '0 * * * *' });
+      const task = store.createTask(
+        taskInput({ name: 'Re-reg', prompt: 'test', cron: '0 * * * *' })
+      );
 
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       service.registerTask(task);
@@ -212,11 +236,13 @@ describe('TaskSchedulerService', () => {
     });
 
     it('publishes envelope with correct subject relay.system.tasks.{taskId}', async () => {
-      const task = store.createTask({
-        name: 'Relay Test',
-        prompt: 'do relay stuff',
-        cron: '0 * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Relay Test',
+          prompt: 'do relay stuff',
+          cron: '0 * * * *',
+        })
+      );
 
       const service = new TaskSchedulerService({
         store,
@@ -236,13 +262,14 @@ describe('TaskSchedulerService', () => {
     });
 
     it('publishes TaskDispatchPayload with all expected fields', async () => {
-      const task = store.createTask({
-        name: 'Payload Test',
-        prompt: 'run this task',
-        cron: '30 2 * * *',
-        cwd: '/tmp/test-cwd',
-        permissionMode: 'acceptEdits',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Payload Test',
+          prompt: 'run this task',
+          cron: '30 2 * * *',
+          permissionMode: 'acceptEdits',
+        })
+      );
 
       const service = new TaskSchedulerService({
         store,
@@ -261,7 +288,7 @@ describe('TaskSchedulerService', () => {
       expect(dispatch.taskId).toBe(task.id);
       expect(dispatch.runId).toEqual(expect.any(String));
       expect(dispatch.prompt).toBe('run this task');
-      expect(dispatch.cwd).toBe('/tmp/test-cwd');
+      expect(dispatch.cwd).toEqual(expect.any(String));
       expect(dispatch.permissionMode).toBe('acceptEdits');
       expect(dispatch.taskName).toBe('Payload Test');
       expect(dispatch.cron).toBe('30 2 * * *');
@@ -279,11 +306,13 @@ describe('TaskSchedulerService', () => {
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 
-      const task = store.createTask({
-        name: 'No Receiver',
-        prompt: 'orphan task',
-        cron: '0 * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'No Receiver',
+          prompt: 'orphan task',
+          cron: '0 * * * *',
+        })
+      );
 
       const service = new TaskSchedulerService({
         store,
@@ -305,11 +334,13 @@ describe('TaskSchedulerService', () => {
     it('marks run as running on successful delivery', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-3', deliveredTo: 2 });
 
-      const task = store.createTask({
-        name: 'Success Delivery',
-        prompt: 'delivered task',
-        cron: '0 * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Success Delivery',
+          prompt: 'delivered task',
+          cron: '0 * * * *',
+        })
+      );
 
       const service = new TaskSchedulerService({
         store,
@@ -328,12 +359,14 @@ describe('TaskSchedulerService', () => {
     });
 
     it('sets budget TTL based on task.maxRuntime', async () => {
-      const task = store.createTask({
-        name: 'TTL Test',
-        prompt: 'timed task',
-        cron: '0 * * * *',
-        maxRuntime: 600_000, // 10 minutes
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'TTL Test',
+          prompt: 'timed task',
+          cron: '0 * * * *',
+          maxRuntime: 600_000, // 10 minutes
+        })
+      );
 
       const now = Date.now();
       const service = new TaskSchedulerService({
@@ -355,11 +388,13 @@ describe('TaskSchedulerService', () => {
     });
 
     it('uses default TTL of 1 hour when maxRuntime is null', async () => {
-      const task = store.createTask({
-        name: 'Default TTL',
-        prompt: 'no timeout task',
-        cron: '0 * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Default TTL',
+          prompt: 'no timeout task',
+          cron: '0 * * * *',
+        })
+      );
 
       const now = Date.now();
       const service = new TaskSchedulerService({
@@ -389,6 +424,18 @@ function createMockMeshCore(pathMap: Record<string, string | undefined> = {}): M
   } as unknown as MeshCore;
 }
 
+/** Build a minimal CreateTaskStoreInput for the CWD resolution tests. */
+function cwdTaskInput(
+  overrides: Partial<import('../task-store.js').CreateTaskStoreInput> & { name: string }
+): import('../task-store.js').CreateTaskStoreInput {
+  return {
+    description: overrides.prompt ?? 'test',
+    prompt: 'test',
+    filePath: `/tmp/tasks/${overrides.name.toLowerCase().replace(/\s+/g, '-')}/SKILL.md`,
+    ...overrides,
+  };
+}
+
 describe('agent CWD resolution (via triggerManualRun)', () => {
   let store: TaskStore;
   let db: Db;
@@ -404,12 +451,14 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
   });
 
   it('records failed run when agent not found in registry', async () => {
-    const task = store.createTask({
-      name: 'Agent CWD Test',
-      prompt: 'test',
-      cron: '0 * * * *',
-      agentId: 'missing-agent',
-    });
+    const task = store.createTask(
+      cwdTaskInput({
+        name: 'Agent CWD Test',
+        prompt: 'test',
+        cron: '0 * * * *',
+        agentId: 'missing-agent',
+      })
+    );
 
     const mockMesh = createMockMeshCore({});
     const service = new TaskSchedulerService({
@@ -430,12 +479,14 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
   });
 
   it('uses agent projectPath as CWD when agentId is set', async () => {
-    const task = store.createTask({
-      name: 'Agent CWD Resolve',
-      prompt: 'test',
-      cron: '0 * * * *',
-      agentId: 'agent-123',
-    });
+    const task = store.createTask(
+      cwdTaskInput({
+        name: 'Agent CWD Resolve',
+        prompt: 'test',
+        cron: '0 * * * *',
+        agentId: 'agent-123',
+      })
+    );
 
     const mockMesh = createMockMeshCore({ 'agent-123': '/projects/agent-dir' });
     const service = new TaskSchedulerService({
@@ -461,14 +512,16 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     await service.stop();
   });
 
-  it('falls back to task.cwd when no agentId', async () => {
-    const task = store.createTask({
-      name: 'CWD Fallback',
-      prompt: 'test',
-      cron: '0 * * * *',
-      cwd: '/custom/path',
-    });
+  it('falls back to process.cwd() when no agentId', async () => {
+    store.createTask(
+      cwdTaskInput({
+        name: 'CWD Fallback',
+        prompt: 'test',
+        cron: '0 * * * *',
+      })
+    );
 
+    const tasks = store.getTasks();
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
@@ -476,26 +529,28 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       meshCore: null,
     });
 
-    await service.triggerManualRun(task.id);
+    await service.triggerManualRun(tasks[0].id);
     await new Promise((r) => setTimeout(r, 100));
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/custom/path' })
+      expect.objectContaining({ cwd: process.cwd() })
     );
 
     await service.stop();
   });
 
-  it('ignores agentId when meshCore is null and falls back to cwd', async () => {
-    const task = store.createTask({
-      name: 'No Mesh',
-      prompt: 'test',
-      cron: '0 * * * *',
-      agentId: 'some-agent',
-      cwd: '/fallback',
-    });
+  it('falls back to process.cwd() when meshCore is null even with agentId', async () => {
+    store.createTask(
+      cwdTaskInput({
+        name: 'No Mesh',
+        prompt: 'test',
+        cron: '0 * * * *',
+        agentId: 'some-agent',
+      })
+    );
 
+    const tasks = store.getTasks();
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
@@ -503,12 +558,12 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
       meshCore: null,
     });
 
-    await service.triggerManualRun(task.id);
+    await service.triggerManualRun(tasks[0].id);
     await new Promise((r) => setTimeout(r, 100));
 
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ cwd: '/fallback' })
+      expect.objectContaining({ cwd: process.cwd() })
     );
 
     await service.stop();
@@ -520,16 +575,20 @@ describe('buildTaskAppend', () => {
     const task: Task = {
       id: 'task-1',
       name: 'Daily Cleanup',
+      displayName: null,
+      description: 'Clean temp files',
       prompt: 'Clean temp files',
       cron: '0 2 * * *',
       timezone: null,
-      cwd: '/home/user/project',
+      agentId: null,
       enabled: true,
       maxRuntime: null,
       permissionMode: 'acceptEdits',
       status: 'active',
+      filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
+      nextRun: null,
     };
 
     const run: TaskRun = {
@@ -550,7 +609,6 @@ describe('buildTaskAppend', () => {
     expect(result).toContain('TASK SCHEDULER CONTEXT');
     expect(result).toContain('Daily Cleanup');
     expect(result).toContain('0 2 * * *');
-    expect(result).toContain('/home/user/project');
     expect(result).toContain('run-1');
     expect(result).toContain('scheduled');
     expect(result).toContain('unattended');

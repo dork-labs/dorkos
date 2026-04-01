@@ -12,7 +12,6 @@ const HEALTH_CHECK: TaskTemplate = {
   prompt: 'Check the status of all agents and report any issues.',
   cron: '0 8 * * 1',
   timezone: 'UTC',
-  category: 'maintenance',
 };
 
 const DAILY_SUMMARY: TaskTemplate = {
@@ -22,7 +21,6 @@ const DAILY_SUMMARY: TaskTemplate = {
   prompt: 'Summarize agent activity, completed tasks, and any errors from the last 24 hours.',
   cron: '0 18 * * *',
   timezone: 'America/New_York',
-  category: 'reporting',
 };
 
 /** Tasks feature component showcases: TaskTemplateCard in toggle and selectable variants. */

@@ -1,8 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TaskStore } from '../task-store.js';
+import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { pulseSchedules } from '@dorkos/db';
+
+/** Build a minimal CreateTaskStoreInput with defaults for required fields. */
+function taskInput(
+  overrides: Partial<CreateTaskStoreInput> & { name: string }
+): CreateTaskStoreInput {
+  return {
+    description: overrides.prompt ?? 'test',
+    prompt: 'test',
+    filePath: `/tmp/tasks/${overrides.name.toLowerCase().replace(/\s+/g, '-')}/SKILL.md`,
+    ...overrides,
+  };
+}
 
 describe('TaskStore', () => {
   let store: TaskStore;
@@ -21,11 +33,14 @@ describe('TaskStore', () => {
     });
 
     it('creates a task', () => {
-      const task = store.createTask({
-        name: 'Daily cleanup',
-        prompt: 'Clean up temp files',
-        cron: '0 2 * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Daily cleanup',
+          description: 'Clean up temp files',
+          prompt: 'Clean up temp files',
+          cron: '0 2 * * *',
+        })
+      );
 
       expect(task.id).toBeDefined();
       expect(task.name).toBe('Daily cleanup');
@@ -35,17 +50,19 @@ describe('TaskStore', () => {
       expect(task.status).toBe('active');
       expect(task.permissionMode).toBe('acceptEdits');
       expect(task.timezone).toBe('UTC');
-      expect(task.cwd).toBeNull();
       expect(task.maxRuntime).toBeNull();
       expect(task.nextRun).toBeNull();
     });
 
     it('persists tasks in the database', () => {
-      store.createTask({
-        name: 'Test',
-        prompt: 'Run tests',
-        cron: '*/5 * * * *',
-      });
+      store.createTask(
+        taskInput({
+          name: 'Test',
+          description: 'Run tests',
+          prompt: 'Run tests',
+          cron: '*/5 * * * *',
+        })
+      );
 
       // Verify directly via Drizzle query
       const rows = db.select().from(pulseSchedules).all();
@@ -54,8 +71,8 @@ describe('TaskStore', () => {
     });
 
     it('reads created tasks back', () => {
-      store.createTask({ name: 'A', prompt: 'a', cron: '* * * * *' });
-      store.createTask({ name: 'B', prompt: 'b', cron: '* * * * *' });
+      store.createTask(taskInput({ name: 'A', prompt: 'a', cron: '* * * * *' }));
+      store.createTask(taskInput({ name: 'B', prompt: 'b', cron: '* * * * *' }));
 
       const all = store.getTasks();
       expect(all).toHaveLength(2);
@@ -63,7 +80,7 @@ describe('TaskStore', () => {
     });
 
     it('gets a single task by ID', () => {
-      const created = store.createTask({ name: 'One', prompt: 'p', cron: '* * * * *' });
+      const created = store.createTask(taskInput({ name: 'One', prompt: 'p', cron: '* * * * *' }));
       const found = store.getTask(created.id);
       expect(found).not.toBeNull();
       expect(found!.name).toBe('One');
@@ -74,7 +91,7 @@ describe('TaskStore', () => {
     });
 
     it('updates a task', () => {
-      const created = store.createTask({ name: 'Old', prompt: 'p', cron: '* * * * *' });
+      const created = store.createTask(taskInput({ name: 'Old', prompt: 'p', cron: '* * * * *' }));
       const updated = store.updateTask(created.id, { name: 'New', enabled: false });
 
       expect(updated).not.toBeNull();
@@ -88,7 +105,7 @@ describe('TaskStore', () => {
     });
 
     it('deletes a task', () => {
-      const created = store.createTask({ name: 'Del', prompt: 'p', cron: '* * * * *' });
+      const created = store.createTask(taskInput({ name: 'Del', prompt: 'p', cron: '* * * * *' }));
       expect(store.deleteTask(created.id)).toBe(true);
       expect(store.getTasks()).toHaveLength(0);
     });
@@ -103,11 +120,13 @@ describe('TaskStore', () => {
   describe('run CRUD', () => {
     // Helper: create a task so FK constraint is satisfied
     function createTestTask(id?: string) {
-      const task = store.createTask({
-        name: `Task ${id ?? 'test'}`,
-        prompt: 'test prompt',
-        cron: '* * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: `Task ${id ?? 'test'}`,
+          prompt: 'test prompt',
+          cron: '* * * * *',
+        })
+      );
       return task.id;
     }
 
@@ -213,11 +232,8 @@ describe('TaskStore', () => {
 
   describe('pruneRuns', () => {
     function createTestTask() {
-      return store.createTask({
-        name: 'Prune Test',
-        prompt: 'test',
-        cron: '* * * * *',
-      }).id;
+      return store.createTask(taskInput({ name: 'Prune Test', prompt: 'test', cron: '* * * * *' }))
+        .id;
     }
 
     it('prunes old runs keeping only retentionCount', () => {
@@ -233,11 +249,9 @@ describe('TaskStore', () => {
 
     it('does not prune other tasks', () => {
       const taskId1 = createTestTask();
-      const taskId2 = store.createTask({
-        name: 'Other',
-        prompt: 'test',
-        cron: '* * * * *',
-      }).id;
+      const taskId2 = store.createTask(
+        taskInput({ name: 'Other', prompt: 'test', cron: '* * * * *' })
+      ).id;
 
       for (let i = 0; i < 3; i++) {
         store.createRun(taskId1, 'scheduled');
@@ -260,11 +274,9 @@ describe('TaskStore', () => {
 
   describe('markRunningAsFailed', () => {
     function createTestTask() {
-      return store.createTask({
-        name: 'Recovery Test',
-        prompt: 'test',
-        cron: '* * * * *',
-      }).id;
+      return store.createTask(
+        taskInput({ name: 'Recovery Test', prompt: 'test', cron: '* * * * *' })
+      ).id;
     }
 
     it('marks running runs as failed', () => {
@@ -301,7 +313,7 @@ describe('TaskStore', () => {
   describe('shared database', () => {
     it('works with a second TaskStore sharing the same db', () => {
       const store2 = new TaskStore(db);
-      store.createTask({ name: 'From store 1', prompt: 'p', cron: '* * * * *' });
+      store.createTask(taskInput({ name: 'From store 1', prompt: 'p', cron: '* * * * *' }));
       const tasks = store2.getTasks();
       expect(tasks).toHaveLength(1);
       expect(tasks[0].name).toBe('From store 1');
@@ -312,7 +324,9 @@ describe('TaskStore', () => {
 
   describe('ID generation', () => {
     it('generates ULID IDs (no UUID hyphens)', () => {
-      const task = store.createTask({ name: 'ULID test', prompt: 'p', cron: '* * * * *' });
+      const task = store.createTask(
+        taskInput({ name: 'ULID test', prompt: 'p', cron: '* * * * *' })
+      );
       expect(task.id).toMatch(/^[0-9A-Z]{26}$/i);
       expect(task.id).not.toContain('-');
 
@@ -326,64 +340,51 @@ describe('TaskStore', () => {
 
   describe('agentId field', () => {
     it('creates task with agentId', () => {
-      const task = store.createTask({
-        name: 'Agent test',
-        prompt: 'test prompt',
-        cron: '* * * * *',
-        agentId: 'agent-123',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Agent test',
+          prompt: 'test prompt',
+          cron: '* * * * *',
+          agentId: 'agent-123',
+        })
+      );
       expect(task.agentId).toBe('agent-123');
     });
 
     it('defaults agentId to null when not provided', () => {
-      const task = store.createTask({
-        name: 'No agent',
-        prompt: 'test prompt',
-        cron: '* * * * *',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'No agent',
+          prompt: 'test prompt',
+          cron: '* * * * *',
+        })
+      );
       expect(task.agentId).toBeNull();
     });
 
-    it('updates task agentId', () => {
-      const task = store.createTask({
-        name: 'Update agent',
-        prompt: 'test prompt',
-        cron: '* * * * *',
-      });
-      const updated = store.updateTask(task.id, { agentId: 'agent-456' });
-      expect(updated!.agentId).toBe('agent-456');
-    });
-
-    it('unlinks agent by setting agentId to null', () => {
-      const task = store.createTask({
-        name: 'Unlink agent',
-        prompt: 'test prompt',
-        cron: '* * * * *',
-        agentId: 'agent-123',
-      });
-      const updated = store.updateTask(task.id, { agentId: null });
-      expect(updated!.agentId).toBeNull();
-    });
-
     it('preserves agentId on unrelated updates', () => {
-      const task = store.createTask({
-        name: 'Preserve agent',
-        prompt: 'test prompt',
-        cron: '* * * * *',
-        agentId: 'agent-789',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Preserve agent',
+          prompt: 'test prompt',
+          cron: '* * * * *',
+          agentId: 'agent-789',
+        })
+      );
       const updated = store.updateTask(task.id, { name: 'Renamed' });
       expect(updated!.agentId).toBe('agent-789');
       expect(updated!.name).toBe('Renamed');
     });
 
     it('includes agentId in getTasks list', () => {
-      store.createTask({
-        name: 'Listed',
-        prompt: 'test prompt',
-        cron: '* * * * *',
-        agentId: 'agent-list',
-      });
+      store.createTask(
+        taskInput({
+          name: 'Listed',
+          prompt: 'test prompt',
+          cron: '* * * * *',
+          agentId: 'agent-list',
+        })
+      );
       const tasks = store.getTasks();
       expect(tasks[0].agentId).toBe('agent-list');
     });
@@ -393,12 +394,14 @@ describe('TaskStore', () => {
 
   describe('disableTasksByAgentId', () => {
     it('disables matching enabled tasks', () => {
-      const task = store.createTask({
-        name: 'Agent task',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-1',
-      });
+      const task = store.createTask(
+        taskInput({
+          name: 'Agent task',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-1',
+        })
+      );
       const count = store.disableTasksByAgentId('agent-1');
       expect(count).toBe(1);
       const updated = store.getTask(task.id);
@@ -407,65 +410,79 @@ describe('TaskStore', () => {
     });
 
     it('returns 0 when no matching tasks', () => {
-      store.createTask({
-        name: 'Other agent',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-2',
-      });
+      store.createTask(
+        taskInput({
+          name: 'Other agent',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-2',
+        })
+      );
       const count = store.disableTasksByAgentId('nonexistent');
       expect(count).toBe(0);
     });
 
     it('does not re-disable already disabled tasks', () => {
-      store.createTask({
-        name: 'Already disabled',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-3',
-        enabled: false,
-      });
+      store.createTask(
+        taskInput({
+          name: 'Already disabled',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-3',
+          enabled: false,
+        })
+      );
       const count = store.disableTasksByAgentId('agent-3');
       expect(count).toBe(0);
     });
 
     it('only disables tasks for the specified agent', () => {
-      const s1 = store.createTask({
-        name: 'Agent A',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-a',
-      });
-      const s2 = store.createTask({
-        name: 'Agent B',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-b',
-      });
+      const s1 = store.createTask(
+        taskInput({
+          name: 'Agent A',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-a',
+        })
+      );
+      const s2 = store.createTask(
+        taskInput({
+          name: 'Agent B',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-b',
+        })
+      );
       store.disableTasksByAgentId('agent-a');
       expect(store.getTask(s1.id)!.enabled).toBe(false);
       expect(store.getTask(s2.id)!.enabled).toBe(true);
     });
 
     it('disables multiple tasks for the same agent', () => {
-      store.createTask({
-        name: 'S1',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-multi',
-      });
-      store.createTask({
-        name: 'S2',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-multi',
-      });
-      store.createTask({
-        name: 'S3',
-        prompt: 'test',
-        cron: '* * * * *',
-        agentId: 'agent-multi',
-      });
+      store.createTask(
+        taskInput({
+          name: 'S1',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-multi',
+        })
+      );
+      store.createTask(
+        taskInput({
+          name: 'S2',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-multi',
+        })
+      );
+      store.createTask(
+        taskInput({
+          name: 'S3',
+          prompt: 'test',
+          cron: '* * * * *',
+          agentId: 'agent-multi',
+        })
+      );
       const count = store.disableTasksByAgentId('agent-multi');
       expect(count).toBe(3);
     });
@@ -475,7 +492,7 @@ describe('TaskStore', () => {
 
   describe('timestamps', () => {
     it('stores ISO 8601 timestamps', () => {
-      const task = store.createTask({ name: 'TS test', prompt: 'p', cron: '* * * * *' });
+      const task = store.createTask(taskInput({ name: 'TS test', prompt: 'p', cron: '* * * * *' }));
       expect(task.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
       expect(task.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
 

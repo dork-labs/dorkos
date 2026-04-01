@@ -6,12 +6,12 @@ import type {
   TaskRun,
   TaskRunStatus,
   TaskRunTrigger,
-  CreateTaskInput,
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
+import type { TaskDefinition } from '@dorkos/skills/types';
+import { parseDuration } from '@dorkos/skills/duration';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { logger } from '../../lib/logger.js';
-import type { TaskDefinition } from './task-file-parser.js';
-import { parseDuration } from './task-file-parser.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -21,12 +21,19 @@ interface ListRunsOptions {
   offset?: number;
 }
 
-/** Extended create input with server-side fields not in the shared API type. */
-interface CreateTaskStoreInput extends CreateTaskInput {
-  /** Absolute path to the .md task file on disk. */
-  filePath?: string;
-  /** Freeform tags for filtering. */
-  tags?: string[];
+/** Server-side input for creating a task from the API route. */
+export interface CreateTaskStoreInput {
+  name: string;
+  displayName?: string;
+  description: string;
+  prompt: string;
+  cron?: string | null;
+  timezone?: string | null;
+  agentId?: string | null;
+  enabled?: boolean;
+  maxRuntime?: number | null;
+  permissionMode?: string;
+  filePath: string;
 }
 
 /** Fields that can be updated on a run. */
@@ -42,8 +49,9 @@ interface RunUpdate {
 /**
  * Persistence layer for Task scheduler data.
  *
- * Uses the shared Drizzle database for both task definitions and run history.
- * Replaces the former dual-backend approach (SQLite + JSON file).
+ * The DB is a derived cache — files on disk are the source of truth.
+ * API routes write files first, then call `upsertFromFile()` or `createTask()`
+ * for immediate consistency. The reconciler periodically re-syncs.
  */
 export class TaskStore {
   private db: Db;
@@ -76,17 +84,18 @@ export class TaskStore {
       .values({
         id,
         name: input.name,
+        displayName: input.displayName ?? null,
+        description: input.description,
         prompt: input.prompt,
         cron: input.cron ?? '',
         timezone: input.timezone ?? 'UTC',
-        cwd: input.cwd ?? null,
         agentId: input.agentId ?? null,
         enabled: input.enabled ?? true,
         maxRuntime: input.maxRuntime ?? null,
         permissionMode: input.permissionMode ?? 'acceptEdits',
         status: 'active',
-        filePath: input.filePath ?? '',
-        tags: JSON.stringify(input.tags ?? []),
+        filePath: input.filePath,
+        tags: '[]',
         createdAt: now,
         updatedAt: now,
       })
@@ -105,16 +114,18 @@ export class TaskStore {
     };
 
     if (input.name !== undefined) updates.name = input.name;
+    if (input.displayName !== undefined) updates.displayName = input.displayName ?? null;
+    if (input.description !== undefined) updates.description = input.description;
     if (input.prompt !== undefined) updates.prompt = input.prompt;
     if (input.cron !== undefined) updates.cron = input.cron;
     if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
-    if (input.cwd !== undefined) updates.cwd = input.cwd ?? null;
-    if (input.agentId !== undefined) updates.agentId = input.agentId ?? null;
     if (input.enabled !== undefined) updates.enabled = input.enabled;
-    if (input.maxRuntime !== undefined) updates.maxRuntime = input.maxRuntime ?? null;
+    if (input.maxRuntime !== undefined) {
+      updates.maxRuntime =
+        typeof input.maxRuntime === 'string' ? parseDuration(input.maxRuntime) : null;
+    }
     if (input.permissionMode !== undefined) updates.permissionMode = input.permissionMode;
     if (input.status !== undefined) updates.status = input.status;
-    if (input.tags !== undefined) updates.tags = JSON.stringify(input.tags);
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();
 
@@ -228,7 +239,6 @@ export class TaskStore {
 
   /** Prune old runs, keeping only the most recent `retentionCount` per task. */
   pruneRuns(taskId: string, retentionCount: number): number {
-    // Get the IDs to keep (most recent N runs for this task)
     const keepers = this.db
       .select({ id: pulseRuns.id })
       .from(pulseRuns)
@@ -240,12 +250,10 @@ export class TaskStore {
     const keeperIds = keepers.map((r) => r.id);
 
     if (keeperIds.length === 0) {
-      // Delete all runs for this task
       const result = this.db.delete(pulseRuns).where(eq(pulseRuns.scheduleId, taskId)).run();
       return result.changes;
     }
 
-    // Delete runs not in the keeper list
     const result = this.db
       .delete(pulseRuns)
       .where(and(eq(pulseRuns.scheduleId, taskId), notInArray(pulseRuns.id, keeperIds)))
@@ -271,9 +279,6 @@ export class TaskStore {
   /**
    * Disable all tasks linked to a specific agent ID.
    *
-   * Sets enabled=0 and status='paused' for matching tasks that are currently enabled.
-   * Used by the cascade-disable flow when an agent is unregistered from Mesh.
-   *
    * @param agentId - The agent ULID whose linked tasks should be disabled
    * @returns The number of tasks that were disabled
    */
@@ -290,19 +295,19 @@ export class TaskStore {
   // === File-based task sync ===
 
   /**
-   * Upsert a task from a parsed file definition.
+   * Upsert a task from a parsed SKILL.md file definition.
    *
    * Looks up existing tasks by `filePath`. If found, updates in place.
    * If not found, inserts a new row with a fresh ULID.
    *
-   * @param def - Parsed task definition from a `.md` file
+   * @param def - Parsed task definition from a SKILL.md file
+   * @param agentId - Agent ID derived from directory location (optional)
    * @returns The upserted Task
    */
-  upsertFromFile(def: TaskDefinition): Task {
+  upsertFromFile(def: TaskDefinition, agentId?: string): Task {
     const now = new Date().toISOString();
-    const maxRuntimeMs = def.meta.maxRuntime ? parseDuration(def.meta.maxRuntime) : null;
+    const maxRuntimeMs = def.meta['max-runtime'] ? parseDuration(def.meta['max-runtime']) : null;
 
-    // Check for existing task by filePath
     const existing = this.db
       .select()
       .from(pulseSchedules)
@@ -313,17 +318,17 @@ export class TaskStore {
       this.db
         .update(pulseSchedules)
         .set({
-          name: def.meta.name,
+          name: def.name,
+          displayName: def.meta['display-name'] ?? null,
           description: def.meta.description ?? null,
-          prompt: def.prompt,
+          prompt: def.body,
           cron: def.meta.cron ?? '',
           timezone: def.meta.timezone,
-          cwd: def.meta.cwd ?? null,
-          agentId: def.meta.agent ?? null,
+          agentId: agentId ?? null,
           enabled: def.meta.enabled,
           maxRuntime: maxRuntimeMs,
           permissionMode: def.meta.permissions,
-          tags: JSON.stringify(def.meta.tags),
+          tags: '[]',
           updatedAt: now,
         })
         .where(eq(pulseSchedules.id, existing.id))
@@ -331,25 +336,24 @@ export class TaskStore {
       return this.getTask(existing.id)!;
     }
 
-    // Insert new task
     const id = ulid();
     this.db
       .insert(pulseSchedules)
       .values({
         id,
-        name: def.meta.name,
+        name: def.name,
+        displayName: def.meta['display-name'] ?? null,
         description: def.meta.description ?? null,
-        prompt: def.prompt,
+        prompt: def.body,
         cron: def.meta.cron ?? '',
         timezone: def.meta.timezone,
-        cwd: def.meta.cwd ?? null,
-        agentId: def.meta.agent ?? null,
+        agentId: agentId ?? null,
         enabled: def.meta.enabled,
         maxRuntime: maxRuntimeMs,
         permissionMode: def.meta.permissions,
         status: 'active',
         filePath: def.filePath,
-        tags: JSON.stringify(def.meta.tags),
+        tags: '[]',
         createdAt: now,
         updatedAt: now,
       })
@@ -359,12 +363,12 @@ export class TaskStore {
   }
 
   /**
-   * Mark a task as paused by its filename slug.
+   * Mark a task as paused by its directory slug.
    *
-   * Matches tasks whose `filePath` ends with `/{slug}.md`.
-   * Used when a task file is removed from disk.
+   * Matches tasks whose `filePath` ends with `/{slug}/SKILL.md`.
+   * Used when a task directory is removed from disk.
    *
-   * @param slug - Kebab-case filename without extension
+   * @param slug - Kebab-case directory name
    * @returns The number of tasks marked as paused
    */
   markRemovedBySlug(slug: string): number {
@@ -372,24 +376,24 @@ export class TaskStore {
     const result = this.db
       .update(pulseSchedules)
       .set({ enabled: false, status: 'paused', updatedAt: now })
-      .where(like(pulseSchedules.filePath, `%/${slug}.md`))
+      .where(like(pulseSchedules.filePath, `%/${slug}/${SKILL_FILENAME}`))
       .run();
     return result.changes;
   }
 
   /**
-   * Find a task by its filename slug.
+   * Find a task by its directory slug.
    *
-   * Matches tasks whose `filePath` ends with `/{slug}.md`.
+   * Matches tasks whose `filePath` ends with `/{slug}/SKILL.md`.
    *
-   * @param slug - Kebab-case filename without extension
+   * @param slug - Kebab-case directory name
    * @returns The matching Task or null
    */
   getBySlug(slug: string): Task | null {
     const row = this.db
       .select()
       .from(pulseSchedules)
-      .where(like(pulseSchedules.filePath, `%/${slug}.md`))
+      .where(like(pulseSchedules.filePath, `%/${slug}/${SKILL_FILENAME}`))
       .get();
     return row ? mapTaskRow(row) : null;
   }
@@ -405,17 +409,17 @@ function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
   return {
     id: row.id,
     name: row.name,
+    displayName: row.displayName ?? null,
+    description: row.description ?? null,
     prompt: row.prompt,
     cron: row.cron,
     timezone: row.timezone,
-    cwd: row.cwd,
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     maxRuntime: row.maxRuntime,
     permissionMode: row.permissionMode,
     status: row.status as Task['status'],
     filePath: row.filePath,
-    tags: JSON.parse(row.tags) as string[],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     nextRun: null,

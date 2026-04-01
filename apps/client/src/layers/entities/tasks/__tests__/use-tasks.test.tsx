@@ -109,7 +109,8 @@ describe('useCreateTask', () => {
       name: 'New job',
       prompt: 'Do something',
       cron: '0 9 * * 1-5',
-      cwd: '/test',
+      target: 'global',
+      description: 'Do something',
     });
 
     await waitFor(() => {
@@ -120,7 +121,8 @@ describe('useCreateTask', () => {
       name: 'New job',
       prompt: 'Do something',
       cron: '0 9 * * 1-5',
-      cwd: '/test',
+      target: 'global',
+      description: 'Do something',
     });
 
     // Cache should be invalidated (listTasks called again)

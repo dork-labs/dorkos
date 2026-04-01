@@ -6,10 +6,11 @@
  *
  * @module services/tasks/task-reconciler
  */
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { TaskStore } from './task-store.js';
-import { parseTaskFile } from './task-file-parser.js';
+import { scanSkillDirectory } from '@dorkos/skills/scanner';
+import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { logger } from '../../lib/logger.js';
 
 /** 5-minute reconciliation interval. */
@@ -22,6 +23,7 @@ interface TaskDirectory {
   tasksDir: string;
   scope: 'project' | 'global';
   projectPath?: string;
+  agentId?: string;
 }
 
 /**
@@ -36,8 +38,13 @@ export class TaskReconciler {
   constructor(private store: TaskStore) {}
 
   /** Register a directory to reconcile. */
-  addDirectory(tasksDir: string, scope: 'project' | 'global', projectPath?: string): void {
-    this.directories.push({ tasksDir, scope, projectPath });
+  addDirectory(
+    tasksDir: string,
+    scope: 'project' | 'global',
+    projectPath?: string,
+    agentId?: string
+  ): void {
+    this.directories.push({ tasksDir, scope, projectPath, agentId });
   }
 
   /** Remove a directory from reconciliation (e.g., on agent unregister). */
@@ -73,21 +80,20 @@ export class TaskReconciler {
 
     for (const dir of this.directories) {
       try {
-        const files = await this.listTaskFiles(dir.tasksDir);
-        for (const filePath of files) {
-          seenFilePaths.add(filePath);
-          try {
-            const content = await fs.readFile(filePath, 'utf-8');
-            const result = parseTaskFile(filePath, content, dir.scope, dir.projectPath);
-            if ('error' in result) {
-              logger.warn(`[TaskReconciler] Invalid file ${filePath}: ${result.error}`);
-              continue;
-            }
-            this.store.upsertFromFile(result);
-            upserted++;
-          } catch (err) {
-            logger.warn(`[TaskReconciler] Failed to read ${filePath}`, err);
+        const results = await scanSkillDirectory(dir.tasksDir, TaskFrontmatterSchema);
+        for (const result of results) {
+          if (!result.ok) {
+            logger.warn(`[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
+            continue;
           }
+          seenFilePaths.add(result.definition.filePath);
+          const def = {
+            ...result.definition,
+            scope: dir.scope as 'project' | 'global',
+            projectPath: dir.projectPath,
+          };
+          this.store.upsertFromFile(def, dir.agentId);
+          upserted++;
         }
       } catch {
         // Directory may not exist yet — that's fine
@@ -104,7 +110,9 @@ export class TaskReconciler {
           this.store.deleteTask(task.id);
           orphaned++;
         } else if (task.status !== 'paused') {
-          this.store.markRemovedBySlug(path.basename(task.filePath, '.md'));
+          // Derive slug from filePath: /path/to/{slug}/SKILL.md → slug
+          const dirName = path.basename(path.dirname(task.filePath));
+          this.store.markRemovedBySlug(dirName);
         }
       }
     }
@@ -116,12 +124,5 @@ export class TaskReconciler {
     }
 
     return { upserted, orphaned };
-  }
-
-  private async listTaskFiles(dir: string): Promise<string[]> {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isFile() && e.name.endsWith('.md') && !e.name.startsWith('.'))
-      .map((e) => path.join(dir, e.name));
   }
 }

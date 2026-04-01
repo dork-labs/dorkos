@@ -2,7 +2,7 @@
 slug: skills-package
 number: 212
 created: 2026-03-31
-status: specified
+status: implemented
 ---
 
 # Skills Package — Technical Specification

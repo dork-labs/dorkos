@@ -39,23 +39,14 @@ const activeSchedule: Task = {
   cron: '0 9 * * *',
   enabled: true,
   status: 'active',
-  cwd: null,
   agentId: null,
   timezone: null,
   maxRuntime: null,
   permissionMode: 'acceptEdits',
   filePath: '/home/user/.dork/tasks/sched-1.json',
-  tags: [],
   nextRun: new Date(Date.now() + 3600000).toISOString(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
-};
-
-const scheduleWithCwd: Task = {
-  ...activeSchedule,
-  id: 'sched-4',
-  name: 'Dir Review',
-  cwd: '/projects/api',
 };
 
 const scheduleWithOrphanedAgent: Task = {
@@ -304,16 +295,7 @@ describe('ScheduleRow', () => {
       expect(screen.getByText('Agent not found')).toBeTruthy();
     });
 
-    it('shows folder icon and shortened CWD when schedule has cwd but no agentId', () => {
-      renderScheduleRow(scheduleWithCwd);
-
-      // The schedule name is still visible
-      expect(screen.getByText('Dir Review')).toBeTruthy();
-      // CWD path is displayed (shortened — /projects/api stays as-is, no ~ prefix)
-      expect(screen.getByText('/projects/api')).toBeTruthy();
-    });
-
-    it('shows schedule name without any target prefix when no cwd and no agentId', () => {
+    it('shows schedule name without any target prefix when no agentId', () => {
       renderScheduleRow(activeSchedule);
 
       // Name shows as primary text, no agent/cwd prefix

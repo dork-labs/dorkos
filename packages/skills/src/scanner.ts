@@ -24,7 +24,7 @@ import type { ParseResult } from './types.js';
  */
 export async function scanSkillDirectory<T>(
   dir: string,
-  schema: z.ZodSchema<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   options?: { includeMissing?: boolean }
 ): Promise<ParseResult<ParsedSkill<T>>[]> {
   const includeMissing = options?.includeMissing ?? true;

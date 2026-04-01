@@ -26,6 +26,7 @@
     "@dorkos/mesh": "workspace:*",
     "@dorkos/relay": "workspace:*",
     "@dorkos/shared": "workspace:*",
+    "@dorkos/skills": "workspace:*",
     "@modelcontextprotocol/sdk": "latest",
     "@ngrok/ngrok": "^1.7.0",
     "@scalar/express-api-reference": "^0.8.40",

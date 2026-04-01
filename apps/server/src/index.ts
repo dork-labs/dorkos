@@ -9,6 +9,9 @@ import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
 import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
+import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
+import { TaskReconciler } from './services/tasks/task-reconciler.js';
+import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
 import {
@@ -56,6 +59,8 @@ let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
 let meshCore: MeshCore | undefined;
 let extensionManager: ExtensionManager | undefined;
+let taskFileWatcher: TaskFileWatcher | undefined;
+let taskReconciler: TaskReconciler | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 
 async function start() {
@@ -336,8 +341,49 @@ async function start() {
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
+        // Stop watching the agent's task directory
+        if (taskFileWatcher) {
+          const projectPath = meshCore!.getProjectPath(agentId);
+          if (projectPath) {
+            const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
+            taskFileWatcher.stopWatching(agentTasksDir).catch(() => {});
+          }
+        }
+        taskReconciler?.removeDirectory(
+          meshCore!.getProjectPath(agentId)
+            ? path.join(meshCore!.getProjectPath(agentId)!, '.dork', 'tasks')
+            : ''
+        );
       });
     }
+
+    // Wire file watcher and reconciler for file-first task sync
+    const globalTasksDir = path.join(dorkHome, 'tasks');
+    taskFileWatcher = new TaskFileWatcher(taskStore, () => {}, dorkHome);
+    taskFileWatcher.watch(globalTasksDir, 'global');
+
+    taskReconciler = new TaskReconciler(taskStore);
+    taskReconciler.addDirectory(globalTasksDir, 'global');
+
+    // Watch each registered agent's task directory
+    if (meshCore) {
+      for (const agent of meshCore.list()) {
+        const projectPath = meshCore.getProjectPath(agent.id);
+        if (projectPath) {
+          const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
+          taskFileWatcher.watch(agentTasksDir, 'project', projectPath, agent.id);
+          taskReconciler.addDirectory(agentTasksDir, 'project', projectPath, agent.id);
+        }
+      }
+    }
+
+    taskReconciler.start();
+    logger.info('[Tasks] File watcher and reconciler started');
+
+    // Ensure default templates exist
+    ensureDefaultTemplates(dorkHome).catch((err) => {
+      logger.warn('[Tasks] Failed to seed default templates', logError(err));
+    });
   }
 
   // Mount Relay routes if enabled
@@ -548,6 +594,12 @@ async function shutdownServices() {
   // Close trace store after RelayCore — ensures final spans are flushed
   if (traceStore) {
     traceStore.close();
+  }
+  if (taskFileWatcher) {
+    await taskFileWatcher.stopAll();
+  }
+  if (taskReconciler) {
+    taskReconciler.stop();
   }
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();

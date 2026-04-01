@@ -24,7 +24,6 @@ const MOCK_PRESETS: TaskTemplate[] = [
     prompt: 'Prompt health',
     cron: '0 8 * * 1',
     timezone: 'UTC',
-    category: 'maintenance',
   },
   {
     id: 'docs-sync',
@@ -33,7 +32,6 @@ const MOCK_PRESETS: TaskTemplate[] = [
     prompt: 'Prompt docs',
     cron: '0 10 * * *',
     timezone: 'UTC',
-    category: 'documentation',
   },
 ];
 
@@ -164,7 +162,6 @@ describe('CreateTaskDialog', () => {
       name: 'Daily review',
       prompt: 'Review open PRs',
       cron: '0 9 * * 1-5',
-      cwd: '/projects/app',
       permissionMode: 'bypassPermissions',
       maxRuntime: 300_000,
     });
@@ -182,9 +179,6 @@ describe('CreateTaskDialog', () => {
     expect(screen.getByDisplayValue('Review open PRs')).toBeTruthy();
     // ScheduleBuilder parses the cron and shows weekly preview
     expect(screen.getByText(/every weekday/i)).toBeTruthy();
-    expect(screen.getByText('/projects/app')).toBeTruthy();
-    // maxRuntime: 300_000ms = 5 minutes
-    expect(screen.getByDisplayValue('5')).toBeTruthy();
   });
 
   it('submits create with correct payload', async () => {
@@ -311,8 +305,8 @@ describe('CreateTaskDialog', () => {
     ).toBeTruthy();
   });
 
-  describe('agent picker and directory escape hatch', () => {
-    it('shows agent combobox when agents exist (no radio buttons)', async () => {
+  describe('agent picker', () => {
+    it('shows agent combobox when agents exist', async () => {
       const transport = createMockTransport({
         listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
       });
@@ -328,189 +322,6 @@ describe('CreateTaskDialog', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Select an agent...')).toBeTruthy();
-      });
-      // No radio buttons
-      expect(screen.queryByLabelText('Run for agent')).toBeNull();
-      expect(screen.queryByLabelText('Run in directory')).toBeNull();
-    });
-
-    it('shows directory escape hatch link', async () => {
-      const transport = createMockTransport({
-        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
-      });
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByText('Start from scratch'));
-
-      await waitFor(() => {
-        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
-      });
-    });
-
-    it('switches to directory picker when escape hatch is clicked', async () => {
-      const transport = createMockTransport({
-        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
-      });
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByText('Start from scratch'));
-
-      await waitFor(() => {
-        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
-      });
-
-      fireEvent.click(screen.getByText(/Run in a specific directory instead/));
-
-      expect(screen.getByText('Working Directory')).toBeTruthy();
-      expect(screen.getByText(/Back to agent selection/)).toBeTruthy();
-      expect(screen.queryByText('api-bot')).toBeNull();
-    });
-
-    it('switches back to agent combobox from directory mode', async () => {
-      const transport = createMockTransport({
-        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
-      });
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByText('Start from scratch'));
-
-      await waitFor(() => {
-        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
-      });
-
-      fireEvent.click(screen.getByText(/Run in a specific directory instead/));
-      fireEvent.click(screen.getByText(/Back to agent selection/));
-
-      await waitFor(() => {
-        expect(screen.getByText('Select an agent...')).toBeTruthy();
-      });
-    });
-
-    it('shows empty state when no agents exist', async () => {
-      const transport = createMockTransport({
-        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [] }),
-      });
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByText('Start from scratch'));
-
-      await waitFor(() => {
-        expect(screen.getByText(/No agents registered yet/)).toBeTruthy();
-      });
-      expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
-    });
-
-    it('submits with agentId when agent is selected', async () => {
-      const newSchedule = createMockSchedule({ id: 'sched-new', agentId: 'agent-1' });
-      const transport = createMockTransport({
-        createTask: vi.fn().mockResolvedValue(newSchedule),
-        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
-      });
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByText('Start from scratch'));
-
-      // Open combobox dropdown and select agent
-      await waitFor(() => {
-        expect(screen.getByText('Select an agent...')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByText('Select an agent...'));
-      fireEvent.click(screen.getByText('api-bot'));
-
-      fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
-        target: { value: 'Agent run' },
-      });
-      fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
-        { target: { value: 'Do something' } }
-      );
-
-      // Use cron escape hatch to set a specific cron
-      fireEvent.click(screen.getByText('Use a cron expression'));
-      fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
-        target: { value: '0 0 * * *' },
-      });
-
-      fireEvent.click(screen.getByText('Create'));
-
-      await waitFor(() => {
-        expect(transport.createTask).toHaveBeenCalledWith(
-          expect.objectContaining({ agentId: 'agent-1' })
-        );
-      });
-    });
-
-    it('submits without agentId in directory mode', async () => {
-      const newSchedule = createMockSchedule({ id: 'sched-new' });
-      const transport = createMockTransport({
-        createTask: vi.fn().mockResolvedValue(newSchedule),
-        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [] }),
-      });
-      const Wrapper = createWrapper(transport);
-
-      render(
-        <Wrapper>
-          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-        </Wrapper>
-      );
-
-      fireEvent.click(screen.getByText('Start from scratch'));
-
-      await waitFor(() => {
-        expect(screen.getByText(/Run in a specific directory instead/)).toBeTruthy();
-      });
-      fireEvent.click(screen.getByText(/Run in a specific directory instead/));
-
-      fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
-        target: { value: 'Dir run' },
-      });
-      fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
-        { target: { value: 'Do something' } }
-      );
-
-      // Use cron escape hatch to set a specific cron
-      fireEvent.click(screen.getByText('Use a cron expression'));
-      fireEvent.change(screen.getByPlaceholderText('0 9 * * 1-5'), {
-        target: { value: '0 0 * * *' },
-      });
-
-      fireEvent.click(screen.getByText('Create'));
-
-      await waitFor(() => {
-        expect(transport.createTask).toHaveBeenCalledWith(
-          expect.not.objectContaining({ agentId: expect.anything() })
-        );
       });
     });
 
