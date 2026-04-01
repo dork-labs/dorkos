@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add @dorkos/skills package implementing SKILL.md open standard
 - Introduce maintaining-dev-playground skill documentation
 
 ### Changed

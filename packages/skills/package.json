@@ -1,0 +1,72 @@
+{
+  "name": "@dorkos/skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "lint": "eslint src/"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./src/schema.ts",
+      "default": "./dist/schema.js"
+    },
+    "./task-schema": {
+      "types": "./src/task-schema.ts",
+      "default": "./dist/task-schema.js"
+    },
+    "./command-schema": {
+      "types": "./src/command-schema.ts",
+      "default": "./dist/command-schema.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./dist/types.js"
+    },
+    "./constants": {
+      "types": "./src/constants.ts",
+      "default": "./dist/constants.js"
+    },
+    "./slug": {
+      "types": "./src/slug.ts",
+      "default": "./dist/slug.js"
+    },
+    "./duration": {
+      "types": "./src/duration.ts",
+      "default": "./dist/duration.js"
+    },
+    "./parser": {
+      "types": "./src/parser.ts",
+      "default": "./dist/parser.js"
+    },
+    "./writer": {
+      "types": "./src/writer.ts",
+      "default": "./dist/writer.js"
+    },
+    "./scanner": {
+      "types": "./src/scanner.ts",
+      "default": "./dist/scanner.js"
+    },
+    "./validator": {
+      "types": "./src/validator.ts",
+      "default": "./dist/validator.js"
+    }
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^25.3.2",
+    "vitest": "^3.1.1"
+  }
+}

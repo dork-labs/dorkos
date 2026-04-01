@@ -70,6 +70,7 @@ dorkos/
 │   ├── eslint-config/    # @dorkos/eslint-config - Shared ESLint presets
 │   ├── typescript-config/ # @dorkos/typescript-config
 │   ├── icons/            # @dorkos/icons - SVG icon & logo registry
+│   ├── skills/            # @dorkos/skills - SKILL.md file format schemas, parser, writer, scanner
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
 ├── meta/                 # Brand foundation, personas, value architecture, litepaper
 ├── decisions/            # Architecture Decision Records (ADRs)

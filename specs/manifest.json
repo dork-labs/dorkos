@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 212,
+  "nextNumber": 213,
   "specs": [
+    {
+      "number": 212,
+      "slug": "skills-package",
+      "title": "Skills Package — SKILL.md Format Foundation",
+      "created": "2026-04-01",
+      "status": "implemented"
+    },
     {
       "number": 211,
       "slug": "tasks-system-redesign",
