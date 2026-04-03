@@ -55,6 +55,7 @@ export function ThinkingBlock({ text, isStreaming, elapsedMs }: ThinkingBlockPro
       expanded={expanded}
       onToggle={() => setExpanded(!expanded)}
       variant="thinking"
+      dimmed={!isStreaming}
       disabled={isStreaming}
       ariaLabel={durationLabel}
       data-testid="thinking-block"

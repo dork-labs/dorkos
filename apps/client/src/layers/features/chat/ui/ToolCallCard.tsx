@@ -149,6 +149,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
     <CollapsibleCard
       expanded={expanded}
       onToggle={() => setExpanded(!expanded)}
+      dimmed={toolCall.status === 'complete'}
       extraContent={hooksSection}
       data-testid="tool-call-card"
       data-tool-name={toolCall.toolName}

@@ -54,27 +54,26 @@ Save `screen_dir` and `state_dir` from the response. Tell the user to open the U
 
 **Note:** Pass the project root as `--project-dir` so content persists in `.dork/visual-companion/` and survives server restarts. Without it, files go to `/tmp` and get cleaned up. Remind the user to add `.dork/` to `.gitignore` if it is not already there.
 
-### Launching by Platform
+### Launching (all platforms)
 
-**Claude Code (macOS / Linux):**
-
-```bash
-# Default mode works -- the script backgrounds the server itself
-scripts/start-server.sh --project-dir /path/to/project
-```
-
-**Claude Code (Windows):**
+The server must outlive the Bash tool call that starts it. Use `--foreground` combined with `run_in_background: true` on the Bash tool so the process persists across conversation turns.
 
 ```bash
-# Windows auto-detects and uses foreground mode, which blocks the tool call.
-# Use run_in_background: true on the Bash tool call so the server survives
-# across conversation turns.
-scripts/start-server.sh --project-dir /path/to/project
+# CORRECT — server survives across turns
+scripts/start-server.sh --project-dir /path/to/project --foreground
+# Set run_in_background: true on the Bash tool call
 ```
 
-When calling this via the Bash tool, set `run_in_background: true`. Then read `$STATE_DIR/server-info` on the next turn to get the URL and port.
+Then on the next turn, find the newest session directory and read `$STATE_DIR/server-info` to get the URL and port:
 
-**Other environments:** The server must keep running in the background across conversation turns. If your environment reaps detached processes, use `--foreground` and launch the command with your platform's background execution mechanism.
+```bash
+# Find newest session
+ls <project>/.dork/visual-companion/ | sort -t'-' -k2 -n | tail -1
+# Read connection info
+cat <project>/.dork/visual-companion/<session>/state/server-info
+```
+
+**Why not the default background mode?** The default mode (`start-server.sh` without `--foreground`) backgrounds the server as a child of the Bash process. When the Bash tool call completes, the parent shell exits and the server self-terminates with `"reason":"owner process exited"`. This happens on all platforms — macOS, Linux, and Windows.
 
 If the URL is unreachable from your browser (common in remote/containerized setups), bind a non-loopback host:
 

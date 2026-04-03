@@ -191,8 +191,8 @@
   /* === Spacing tokens (density-aware) === */
   --msg-padding-x: 1rem;
   --msg-padding-y-start: 1rem;
-  --msg-padding-y-mid: 0.125rem;
-  --msg-padding-y-end: 0.75rem;
+  --msg-padding-y-mid: 0.375rem;
+  --msg-padding-y-end: 2rem;
   --msg-gap: 0.75rem;
   --msg-content-max-width: 100ch;
   --msg-user-max-width: 85%;
@@ -238,19 +238,19 @@
 
 .dark {
   --background: 0 0% 4%;
-  --foreground: 0 0% 93%;
+  --foreground: 0 0% 87%;
   --card: 0 0% 4%;
-  --card-foreground: 0 0% 93%;
+  --card-foreground: 0 0% 87%;
   --popover: 0 0% 4%;
-  --popover-foreground: 0 0% 93%;
-  --primary: 0 0% 93%;
+  --popover-foreground: 0 0% 87%;
+  --primary: 0 0% 87%;
   --primary-foreground: 0 0% 9%;
   --secondary: 0 0% 14%;
-  --secondary-foreground: 0 0% 93%;
+  --secondary-foreground: 0 0% 87%;
   --muted: 0 0% 9%;
   --muted-foreground: 0 0% 64%;
   --accent: 0 0% 12%;
-  --accent-foreground: 0 0% 93%;
+  --accent-foreground: 0 0% 87%;
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 25%;

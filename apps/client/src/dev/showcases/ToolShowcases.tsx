@@ -4,6 +4,7 @@ import { ToolApproval } from '@/layers/features/chat/ui/ToolApproval';
 import { SubagentBlock } from '@/layers/features/chat/ui/SubagentBlock';
 import { ErrorMessageBlock } from '@/layers/features/chat/ui/ErrorMessageBlock';
 import { ThinkingBlock } from '@/layers/features/chat/ui/ThinkingBlock';
+import { CollapsibleRun } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { BackgroundTaskBar } from '@/layers/features/chat/ui/BackgroundTaskBar';
 import { TaskDotSection } from '@/layers/features/chat/ui/TaskDotSection';
 import { TaskDetailPanel } from '@/layers/features/chat/ui/TaskDetailPanel';
@@ -264,6 +265,82 @@ export function ToolShowcases() {
             isStreaming={false}
             elapsedMs={500}
           />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="CollapsibleRun"
+        description="Collapses dense runs of tool/thinking blocks. Shows first 2, then 'and N more steps...' for runs of 4+. Completed cards are dimmed."
+      >
+        <ShowcaseLabel>Short run (3 items — no collapse, dimmed when complete)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CollapsibleRun>
+            {[
+              <ToolCallCard key="cr-1" toolCall={TOOL_CALLS.complete} />,
+              <ThinkingBlock key="cr-2" text="Quick check." isStreaming={false} elapsedMs={800} />,
+              <ToolCallCard key="cr-3" toolCall={TOOL_CALLS.complete} />,
+            ]}
+          </CollapsibleRun>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Long run (8 items — collapses to 2 + &quot;and 6 more&quot;)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CollapsibleRun>
+            {[
+              <ThinkingBlock
+                key="lr-1"
+                text="Analyzing the codebase..."
+                isStreaming={false}
+                elapsedMs={2000}
+              />,
+              <ToolCallCard key="lr-2" toolCall={TOOL_CALLS.complete} />,
+              <ToolCallCard
+                key="lr-3"
+                toolCall={{ ...TOOL_CALLS.complete, toolCallId: 'lr-3', toolName: 'Edit' }}
+              />,
+              <ThinkingBlock
+                key="lr-4"
+                text="Found the issue."
+                isStreaming={false}
+                elapsedMs={1200}
+              />,
+              <ToolCallCard
+                key="lr-5"
+                toolCall={{ ...TOOL_CALLS.complete, toolCallId: 'lr-5', toolName: 'Bash' }}
+              />,
+              <ThinkingBlock
+                key="lr-6"
+                text="Verifying fix."
+                isStreaming={false}
+                elapsedMs={900}
+              />,
+              <ToolCallCard
+                key="lr-7"
+                toolCall={{ ...TOOL_CALLS.complete, toolCallId: 'lr-7', toolName: 'Read' }}
+              />,
+              <ToolCallCard
+                key="lr-8"
+                toolCall={{ ...TOOL_CALLS.complete, toolCallId: 'lr-8', toolName: 'Grep' }}
+              />,
+            ]}
+          </CollapsibleRun>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Mixed states (running items stay bright, completed dim)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <CollapsibleRun>
+            {[
+              <ToolCallCard key="mx-1" toolCall={TOOL_CALLS.complete} />,
+              <ThinkingBlock
+                key="mx-2"
+                text="Still thinking..."
+                isStreaming
+                elapsedMs={undefined}
+              />,
+              <ToolCallCard key="mx-3" toolCall={TOOL_CALLS.running} />,
+              <ToolCallCard key="mx-4" toolCall={{ ...TOOL_CALLS.complete, toolCallId: 'mx-4' }} />,
+            ]}
+          </CollapsibleRun>
         </ShowcaseDemo>
       </PlaygroundSection>
 

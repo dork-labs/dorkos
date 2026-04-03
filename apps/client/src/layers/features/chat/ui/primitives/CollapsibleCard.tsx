@@ -11,8 +11,10 @@ interface CollapsibleCardProps {
   header: React.ReactNode;
   /** Body content inside the accordion. */
   children: React.ReactNode;
-  /** Visual variant: default has border+shadow, thinking has left-border-only. */
+  /** Visual variant: default for tool calls, thinking for reasoning blocks. */
   variant?: 'default' | 'thinking';
+  /** When true and collapsed, dims the card. Hover restores full brightness. */
+  dimmed?: boolean;
   /** Disable toggle interaction and hide chevron (e.g. during streaming). */
   disabled?: boolean;
   /** Hide the chevron entirely (e.g. non-expandable SubagentBlock). */
@@ -26,13 +28,14 @@ interface CollapsibleCardProps {
   [key: `data-${string}`]: string | undefined;
 }
 
-/** Animated accordion card shared by ToolCallCard, SubagentBlock, and ThinkingBlock. */
+/** Animated accordion card shared by ToolCallCard, SubagentBlock, ThinkingBlock, and CollapsibleRun. */
 export function CollapsibleCard({
   expanded,
   onToggle,
   header,
   children,
   variant = 'default',
+  dimmed = false,
   disabled = false,
   hideChevron = false,
   extraContent,
@@ -46,10 +49,10 @@ export function CollapsibleCard({
   return (
     <div
       className={cn(
-        'bg-muted/50 mt-px text-sm first:mt-1',
-        variant === 'default' &&
-          'hover:border-border rounded-msg-tool shadow-msg-tool hover:shadow-msg-tool-hover border transition-all duration-150',
-        variant === 'thinking' && 'rounded-msg-tool border-muted-foreground/20 border-l-2',
+        'bg-muted/40 mt-px rounded-md border-l-2 text-sm transition-all duration-200 first:mt-1',
+        variant === 'default' && 'border-l-muted-foreground/30',
+        variant === 'thinking' && 'border-l-muted-foreground/20',
+        dimmed && !expanded && 'opacity-50 hover:opacity-100',
         className
       )}
       {...dataProps}
@@ -68,12 +71,7 @@ export function CollapsibleCard({
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
             className="ml-auto"
           >
-            <ChevronDown
-              className={cn(
-                'size-(--size-icon-xs)',
-                variant === 'thinking' && 'text-muted-foreground'
-              )}
-            />
+            <ChevronDown className="text-muted-foreground size-(--size-icon-xs)" />
           </motion.div>
         )}
       </button>
@@ -87,7 +85,7 @@ export function CollapsibleCard({
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
             className="overflow-hidden"
           >
-            <div className="border-t px-3 pt-1 pb-3">{children}</div>
+            <div className="border-border/50 border-t px-3 pt-1 pb-3">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>

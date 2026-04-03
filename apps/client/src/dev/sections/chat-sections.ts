@@ -113,6 +113,13 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     keywords: ['thinking', 'reasoning', 'extended', 'streaming', 'collapsed', 'chain of thought'],
   },
   {
+    id: 'collapsiblerun',
+    title: 'CollapsibleRun',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['collapse', 'run', 'n more', 'steps', 'dense', 'tool', 'thinking', 'group'],
+  },
+  {
     id: 'toolapproval',
     title: 'ToolApproval',
     page: 'chat',

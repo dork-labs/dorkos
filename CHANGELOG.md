@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Redesign tool/thinking blocks for clarity and visual cohesion
 - Redesign onboarding copy and project discovery UX
 - Adopt SKILL.md file-first architecture for task system
 - Add @dorkos/skills package implementing SKILL.md open standard

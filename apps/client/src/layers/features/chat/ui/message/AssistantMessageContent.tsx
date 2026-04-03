@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, Fragment } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { ChevronRight } from 'lucide-react';
 import type { ChatMessage, HookState } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 import { TIMING } from '@/layers/shared/lib';
@@ -14,7 +15,7 @@ import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from '../SubagentBlock';
 import { ThinkingBlock } from '../ThinkingBlock';
 import { ErrorMessageBlock } from '../ErrorMessageBlock';
-import { CompactPendingRow } from '../primitives';
+import { CompactPendingRow, CollapsibleCard } from '../primitives';
 
 /**
  * Determines whether a tool call should be visible based on auto-hide settings.
@@ -100,6 +101,84 @@ function AutoHideToolCall({
 }
 
 /**
+ * Wraps a ThinkingBlock with auto-hide animation behavior.
+ * Reuses useToolCallVisibility by mapping isStreaming to a status string.
+ */
+function AutoHideThinking({
+  part,
+  autoHide,
+  index,
+}: {
+  part: { text: string; isStreaming?: boolean; elapsedMs?: number };
+  autoHide: boolean;
+  index: number;
+}) {
+  const status = part.isStreaming ? 'running' : 'complete';
+  const visible = useToolCallVisibility(status, autoHide, false);
+
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key={`thinking-${index}`}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          className="overflow-hidden"
+        >
+          <ThinkingBlock
+            text={part.text}
+            isStreaming={part.isStreaming ?? false}
+            elapsedMs={part.elapsedMs}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Minimum run length before the "N more" collapse kicks in. */
+const COLLAPSE_THRESHOLD = 4;
+/** Number of items shown before the collapse button. */
+const VISIBLE_COUNT = 2;
+
+/**
+ * Wraps a run of consecutive tool/thinking elements with a "show N more" collapse.
+ * Runs shorter than COLLAPSE_THRESHOLD render all children directly.
+ * Uses CollapsibleCard as the visual base to stay in the same family as tool calls and thinking.
+ */
+export function CollapsibleRun({ children }: { children: React.ReactNode[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (children.length <= COLLAPSE_THRESHOLD || expanded) {
+    return <>{children}</>;
+  }
+
+  const hiddenCount = children.length - VISIBLE_COUNT;
+
+  return (
+    <>
+      {children.slice(0, VISIBLE_COUNT)}
+      <CollapsibleCard
+        expanded={false}
+        onToggle={() => setExpanded(true)}
+        hideChevron
+        className="border-l-muted-foreground/15"
+        header={
+          <>
+            <ChevronRight className="text-muted-foreground size-(--size-icon-xs)" />
+            <span className="text-3xs text-muted-foreground font-mono">
+              and {hiddenCount} more steps&hellip;
+            </span>
+          </>
+        }
+      >
+        <></>
+      </CollapsibleCard>
+    </>
+  );
+}
+
+/**
  * Renders assistant message content by mapping over message parts.
  * Handles text parts (via StreamingText), tool call parts (via AutoHideToolCall),
  * approval parts (via ToolApproval), and question parts (via QuestionPrompt).
@@ -143,111 +222,161 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     }
   }
 
+  /** Render a single part by index. */
+  function renderPart(part: (typeof parts)[number], i: number): React.ReactNode {
+    if (part.type === 'text') {
+      return (
+        <div key={(part as { _partId?: string })._partId ?? `text-${i}`} className="msg-assistant">
+          <StreamingText
+            content={part.text}
+            isStreaming={isStreaming && i === lastTextPartIndex}
+            textEffect={textEffect}
+          />
+        </div>
+      );
+    }
+    if (part.type === 'background_task') {
+      return <SubagentBlock key={part.taskId} part={part} />;
+    }
+    if (part.type === 'error') {
+      return (
+        <ErrorMessageBlock
+          key={`error-${i}`}
+          message={part.message}
+          category={part.category}
+          details={part.details}
+          onRetry={onRetry}
+        />
+      );
+    }
+    if (part.type === 'thinking') {
+      return (
+        <AutoHideThinking
+          key={`thinking-${i}`}
+          part={part}
+          autoHide={autoHideToolCalls}
+          index={i}
+        />
+      );
+    }
+    if (part.type === 'elicitation') {
+      return (
+        <ElicitationPrompt
+          key={`elicitation-${part.interactionId}`}
+          sessionId={sessionId}
+          interactionId={part.interactionId}
+          serverName={part.serverName}
+          message={part.message}
+          mode={part.mode}
+          url={part.url}
+          requestedSchema={part.requestedSchema}
+          status={part.status}
+          action={part.action}
+        />
+      );
+    }
+    // At this point part.type === 'tool_call' — all other variants have been handled above.
+    const toolPart = part;
+    if (toolPart.interactiveType === 'approval') {
+      if (toolPart.toolCallId === inputZoneToolCallId) {
+        return <CompactPendingRow key={toolPart.toolCallId} type="approval" />;
+      }
+      const isActive = toolPart.toolCallId === activeToolCallId;
+      return (
+        <ToolApproval
+          key={toolPart.toolCallId}
+          ref={isActive ? approvalRefCallback : undefined}
+          sessionId={sessionId}
+          toolCallId={toolPart.toolCallId}
+          toolName={toolPart.toolName}
+          input={toolPart.input || ''}
+          timeoutMs={toolPart.timeoutMs}
+          isActive={isActive}
+          onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
+        />
+      );
+    }
+    if (toolPart.interactiveType === 'question' && toolPart.questions) {
+      if (toolPart.toolCallId === inputZoneToolCallId) {
+        return <CompactPendingRow key={toolPart.toolCallId} type="question" />;
+      }
+      const isActive = toolPart.toolCallId === activeToolCallId;
+      return (
+        <QuestionPrompt
+          key={toolPart.toolCallId}
+          ref={isActive ? questionRefCallback : undefined}
+          sessionId={sessionId}
+          toolCallId={toolPart.toolCallId}
+          questions={toolPart.questions}
+          answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
+          isActive={isActive}
+          focusedOptionIndex={isActive ? focusedOptionIndex : -1}
+        />
+      );
+    }
+    return (
+      <AutoHideToolCall
+        key={toolPart.toolCallId}
+        part={toolPart}
+        autoHide={autoHideToolCalls}
+        expandToolCalls={expandToolCalls}
+      />
+    );
+  }
+
+  // Group consecutive collapsible parts (thinking + non-interactive tool calls) into runs.
+  // Runs exceeding COLLAPSE_THRESHOLD get wrapped in CollapsibleRun.
+  type Segment = { type: 'single'; index: number } | { type: 'run'; indices: number[] };
+  const segments: Segment[] = [];
+  let currentRun: number[] = [];
+
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    const isCollapsible = p.type === 'thinking' || (p.type === 'tool_call' && !p.interactiveType);
+    if (isCollapsible) {
+      currentRun.push(i);
+    } else {
+      if (currentRun.length > 0) {
+        segments.push(
+          currentRun.length === 1
+            ? { type: 'single', index: currentRun[0] }
+            : { type: 'run', indices: [...currentRun] }
+        );
+        currentRun = [];
+      }
+      segments.push({ type: 'single', index: i });
+    }
+  }
+  if (currentRun.length > 0) {
+    segments.push(
+      currentRun.length === 1
+        ? { type: 'single', index: currentRun[0] }
+        : { type: 'run', indices: [...currentRun] }
+    );
+  }
+
   return (
     <>
-      {parts.map((part, i) => {
-        if (part.type === 'text') {
-          return (
-            <div
-              key={(part as { _partId?: string })._partId ?? `text-${i}`}
-              className="msg-assistant"
-            >
-              <StreamingText
-                content={part.text}
-                isStreaming={isStreaming && i === lastTextPartIndex}
-                textEffect={textEffect}
-              />
-            </div>
-          );
-        }
-        if (part.type === 'background_task') {
-          return <SubagentBlock key={part.taskId} part={part} />;
-        }
-        if (part.type === 'error') {
-          return (
-            <ErrorMessageBlock
-              key={`error-${i}`}
-              message={part.message}
-              category={part.category}
-              details={part.details}
-              onRetry={onRetry}
-            />
-          );
-        }
-        if (part.type === 'thinking') {
-          return (
-            <ThinkingBlock
-              key={`thinking-${i}`}
-              text={part.text}
-              isStreaming={part.isStreaming ?? false}
-              elapsedMs={part.elapsedMs}
-            />
-          );
-        }
-        if (part.type === 'elicitation') {
-          return (
-            <ElicitationPrompt
-              key={`elicitation-${part.interactionId}`}
-              sessionId={sessionId}
-              interactionId={part.interactionId}
-              serverName={part.serverName}
-              message={part.message}
-              mode={part.mode}
-              url={part.url}
-              requestedSchema={part.requestedSchema}
-              status={part.status}
-              action={part.action}
-            />
-          );
-        }
-        // At this point part.type === 'tool_call' — all other variants have been handled above.
-        const toolPart = part;
-        if (toolPart.interactiveType === 'approval') {
-          // When this tool call is being handled in the input zone, show a compact placeholder
-          if (toolPart.toolCallId === inputZoneToolCallId) {
-            return <CompactPendingRow key={toolPart.toolCallId} type="approval" />;
+      {segments.map((seg) => {
+        if (seg.type === 'single') {
+          const part = parts[seg.index];
+          const isCollapsible =
+            part.type === 'thinking' || (part.type === 'tool_call' && !part.interactiveType);
+          if (isCollapsible) {
+            // Single collapsible item still gets vertical breathing room from text
+            return (
+              <div key={`spacer-${seg.index}`} className="my-3">
+                {renderPart(part, seg.index)}
+              </div>
+            );
           }
-          const isActive = toolPart.toolCallId === activeToolCallId;
-          return (
-            <ToolApproval
-              key={toolPart.toolCallId}
-              ref={isActive ? approvalRefCallback : undefined}
-              sessionId={sessionId}
-              toolCallId={toolPart.toolCallId}
-              toolName={toolPart.toolName}
-              input={toolPart.input || ''}
-              timeoutMs={toolPart.timeoutMs}
-              isActive={isActive}
-              onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
-            />
-          );
+          return renderPart(part, seg.index);
         }
-        if (toolPart.interactiveType === 'question' && toolPart.questions) {
-          // When this tool call is being handled in the input zone, show a compact placeholder
-          if (toolPart.toolCallId === inputZoneToolCallId) {
-            return <CompactPendingRow key={toolPart.toolCallId} type="question" />;
-          }
-          const isActive = toolPart.toolCallId === activeToolCallId;
-          return (
-            <QuestionPrompt
-              key={toolPart.toolCallId}
-              ref={isActive ? questionRefCallback : undefined}
-              sessionId={sessionId}
-              toolCallId={toolPart.toolCallId}
-              questions={toolPart.questions}
-              answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
-              isActive={isActive}
-              focusedOptionIndex={isActive ? focusedOptionIndex : -1}
-            />
-          );
-        }
+        const elements = seg.indices.map((i) => renderPart(parts[i], i));
         return (
-          <AutoHideToolCall
-            key={toolPart.toolCallId}
-            part={toolPart}
-            autoHide={autoHideToolCalls}
-            expandToolCalls={expandToolCalls}
-          />
+          <div key={`run-${seg.indices[0]}`} className="my-3">
+            <CollapsibleRun>{elements}</CollapsibleRun>
+          </div>
         );
       })}
     </>
