@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Include legacy .claude/commands/ in command list after SDK session starts
 - Make SDK command and subagent caches per-cwd instead of global
 - Resolve all lint warnings across server, client, and CLI
 - Serve SPA on tunnel requests so PasscodeGate renders instead of raw JSON

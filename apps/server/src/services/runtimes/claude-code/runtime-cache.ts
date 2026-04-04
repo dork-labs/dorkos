@@ -93,7 +93,11 @@ export class RuntimeCache {
     const fsCommands = await registry.getCommands(forceRefresh);
     const fsLookup = new Map(fsCommands.commands.map((c) => [c.fullCommand, c]));
 
-    const merged = sdkEntries.map((entry) => {
+    // SDK returns skills (.claude/skills/) but not legacy commands (.claude/commands/).
+    // Build the union: enriched SDK entries + filesystem-only entries (legacy commands).
+    const sdkCommandNames = new Set(sdkEntries.map((e) => e.fullCommand));
+
+    const enrichedSdkEntries = sdkEntries.map((entry) => {
       const fsMatch = fsLookup.get(entry.fullCommand);
       if (fsMatch) {
         return {
@@ -106,6 +110,13 @@ export class RuntimeCache {
       }
       return entry;
     });
+
+    // Include filesystem commands not returned by the SDK (e.g. legacy .claude/commands/ entries)
+    const filesystemOnlyEntries = fsCommands.commands.filter(
+      (c) => !sdkCommandNames.has(c.fullCommand)
+    );
+
+    const merged = [...enrichedSdkEntries, ...filesystemOnlyEntries];
     merged.sort((a, b) => a.fullCommand.localeCompare(b.fullCommand));
     return { commands: merged, lastScanned: new Date().toISOString() };
   }

@@ -76,6 +76,13 @@ vi.mock('../../../../lib/boundary.js', () => ({
     }
   },
 }));
+// Mock the filesystem command scanner so tests don't read real .claude/commands/ on disk
+vi.mock('../command-registry.js', () => ({
+  CommandRegistryService: vi.fn().mockImplementation(() => ({
+    getCommands: vi.fn().mockResolvedValue({ commands: [], lastScanned: new Date().toISOString() }),
+    invalidateCache: vi.fn(),
+  })),
+}));
 
 describe('ClaudeCodeRuntime', () => {
   let agentManager: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>;
