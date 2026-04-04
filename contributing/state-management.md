@@ -8,7 +8,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 
 | Concept              | Location                                                          |
 | -------------------- | ----------------------------------------------------------------- |
-| App store (Zustand)  | `apps/client/src/layers/shared/model/app-store.ts`                |
+| App store (Zustand)  | `apps/client/src/layers/shared/model/app-store/app-store.ts`      |
 | TransportContext     | `apps/client/src/layers/shared/model/TransportContext.tsx`        |
 | Session entity hooks | `apps/client/src/layers/entities/session/`                        |
 | Command entity hooks | `apps/client/src/layers/entities/command/`                        |

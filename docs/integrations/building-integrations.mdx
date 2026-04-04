@@ -27,6 +27,7 @@ interface Transport {
   denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
   submitAnswers(sessionId, toolCallId, answers): Promise<{ ok: boolean }>;
   stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
+  interruptSession(sessionId: string): Promise<{ ok: boolean }>;
   getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }>;
 
   // Filesystem & git

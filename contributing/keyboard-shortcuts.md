@@ -118,6 +118,12 @@ The command palette displays a `PaletteFooter` bar showing context-appropriate k
 | Root level, agent selected | `↑↓` Navigate, `Enter` Open, `⌘+Enter` / `Ctrl+Enter` New Tab, `esc` Close |
 | Sub-menu active            | `↑↓` Navigate, `Backspace` Back, `esc` Close                               |
 
+### Streaming
+
+| Key      | Action                                                                      |
+| -------- | --------------------------------------------------------------------------- |
+| `Escape` | Stop streaming — interrupts the active query server-side (highest priority) |
+
 ### Approval Mode (`WAITING_FOR_APPROVAL`)
 
 | Key      | Action                |

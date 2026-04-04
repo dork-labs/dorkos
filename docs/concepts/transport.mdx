@@ -34,6 +34,7 @@ Transport defines methods for every operation the client needs, organized by dom
 | `getMessages`       | Load message history for a session                                                         |
 | `sendMessage`       | Send a message and stream the response (accepts optional `uiState` for agent UI awareness) |
 | `stopTask`          | Stop a running background task by ID                                                       |
+| `interruptSession`  | Interrupt the active query for a session (best-effort, graceful then forceful)             |
 | `approveTool`       | Approve a pending tool call                                                                |
 | `denyTool`          | Deny a pending tool call                                                                   |
 | `submitAnswers`     | Respond to an interactive question prompt                                                  |

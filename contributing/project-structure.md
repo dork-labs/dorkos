@@ -45,7 +45,8 @@ src/
 ├── layers/              # FSD architecture layers
 │   ├── shared/          # Reusable utilities, UI primitives, hooks & stores
 │   │   ├── ui/          # Shadcn components (button, card, dialog, etc.)
-│   │   ├── model/       # TransportContext, app-store, extension-registry, hooks (useTheme, useIsMobile, etc.)
+│   │   ├── model/       # TransportContext, extension-registry, hooks (useTheme, useIsMobile, etc.)
+│   │   │   └── app-store/   # Zustand app store — panels, canvas, preferences, types
 │   │   └── lib/         # cn(), Transports, font-config, favicon-utils, celebrations, ui-action-dispatcher
 │   ├── entities/        # Business domain objects
 │   │   ├── session/     # Session types, hooks, transport calls
@@ -68,7 +69,13 @@ src/
 │   ├── features/        # Complete user-facing functionality
 │   │   ├── chat/        # ChatPanel, MessageList, streaming, useChatSession
 │   │   │   ├── ui/
+│   │   │   │   ├── input/    # ChatInput, ChatInputContainer, FileChipBar, ShortcutChips, QueuePanel
+│   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
+│   │   │   │   ├── status/   # ChatStatusSection, ChatStatusStrip, DragHandle, inference themes
+│   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
+│   │   │   │   └── tools/    # ToolCallCard, ToolApproval, QuestionPrompt, ElicitationPrompt
 │   │   │   ├── model/
+│   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
 │   │   │   ├── api/
 │   │   │   └── index.ts
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
@@ -83,6 +90,7 @@ src/
 │   │   ├── files/       # FileBrowser
 │   │   ├── tasks/        # TasksPanel, ScheduleRow, CronVisualBuilder, AgentCombobox
 │   │   ├── relay/       # RelayPanel, ActivityFeed, AdapterCard, AdapterSetupWizard
+│   │   │   └── ui/adapter/  # AdapterCard, AdapterCardHeader, AdapterCardBindings, AdapterIcon
 │   │   ├── mesh/        # MeshPanel, TopologyGraph, AgentNode, BindingDialog
 │   │   ├── onboarding/  # OnboardingFlow, AgentDiscoveryStep, TaskPresetsStep
 │   │   ├── canvas/      # AgentCanvas split-view panel (JSON, Markdown, URL content renderers)

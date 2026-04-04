@@ -44,16 +44,16 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 | Guide                            | Last Reviewed | Reviewer | Notes                                                                                     |
 | -------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `project-structure.md`           | 2026-03-31    | Claude   | Removed stale dashboard-sessions/ feature module (deleted in commit a3ba80d3)             |
-| `architecture.md`                | 2026-03-31    | Claude   | Added session-store.ts, runtime-cache.ts, runtime-constants.ts to ClaudeCodeRuntime table |
+| `project-structure.md`           | 2026-04-04    | Claude   | Expanded chat ui/ subdirs, relay adapter/, shared app-store/ subdirs                      |
+| `architecture.md`                | 2026-04-04    | Claude   | Added interruptQuery to AgentRuntime, interruptSession + stopTask to Transport            |
 | `design-system.md`               | 2026-03-31    | Claude   | Added Data Tables section (Table/DataTable) and Error Boundaries section                  |
-| `api-reference.md`               | 2026-03-29    | Claude   | Added GET /api/subagents endpoint                                                         |
+| `api-reference.md`               | 2026-04-04    | Claude   | Added POST /sessions/:id/interrupt endpoint                                               |
 | `configuration.md`               | 2026-03-27    | Claude   | Added agents and extensions config sections                                               |
-| `interactive-tools.md`           | 2026-03-31    | Claude   | Added MCP Elicitation section (elicitation_prompt, submit-elicitation, ElicitationPrompt) |
-| `keyboard-shortcuts.md`          | 2026-03-19    | Claude   | Reconciled — no matching changes                                                          |
+| `interactive-tools.md`           | 2026-04-04    | Claude   | Reconciled — chat ui/ paths already correct after subdirectory reorg                      |
+| `keyboard-shortcuts.md`          | 2026-04-04    | Claude   | Added Streaming section with STOP_STREAMING (Escape) shortcut                             |
 | `obsidian-plugin-development.md` | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                     |
-| `data-fetching.md`               | 2026-03-31    | Claude   | Renamed Pulse→Tasks entity hooks section; added session-keyed Zustand store section       |
-| `state-management.md`            | 2026-03-28    | Claude   | Added refetch-on-reconnect pattern, queryClient singleton, previousConnectionState        |
+| `data-fetching.md`               | 2026-04-04    | Claude   | Reconciled — chat paths correct, interrupt is API-level not data-fetching                 |
+| `state-management.md`            | 2026-04-04    | Claude   | Updated app-store path to app-store/app-store.ts after subdirectory reorg                 |
 | `animations.md`                  | 2026-03-19    | Claude   | Reconciled — no matching changes                                                          |
 | `styling-theming.md`             | 2026-03-27    | Claude   | Added FilterBar styling section and key file reference                                    |
 | `parallel-execution.md`          | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                     |
@@ -125,11 +125,11 @@ Cross-cutting renames that affect many docs at once. The Stop hook and `/docs:re
 | `docs/getting-started/configuration.mdx`      | 2026-03-21    | Claude   | Updated DORKOS_RELAY_ENABLED and DORKOS_PULSE_ENABLED defaults false → true                                |
 | `docs/concepts/architecture.mdx`              | 2026-03-27    | Claude   | Added extensions service domain, canvas feature, agent UI control section                                  |
 | `docs/concepts/sessions.mdx`                  | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
-| `docs/concepts/transport.mdx`                 | 2026-03-31    | Claude   | Added forkSession, renameSession, submitElicitation, reloadPlugins methods                                 |
+| `docs/concepts/transport.mdx`                 | 2026-04-04    | Claude   | Added interruptSession method to Sessions table                                                            |
 | `docs/concepts/relay.mdx`                     | 2026-03-22    | Claude   | Updated adapter count from 3 to 5, added Slack and Telegram Chat SDK adapter descriptions                  |
 | `docs/concepts/mesh.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
 | `docs/integrations/sse-protocol.mdx`          | 2026-03-31    | Claude   | Added elicitation events, unified /api/events system stream, removed stale /api/relay/stream reference     |
-| `docs/integrations/building-integrations.mdx` | 2026-03-27    | Claude   | Added uiState/stopTask/createDirectory/templates/setDefaultAgent, ui_command StreamEvent                   |
+| `docs/integrations/building-integrations.mdx` | 2026-04-04    | Claude   | Added interruptSession to Transport interface code sample                                                  |
 | `docs/self-hosting/deployment.mdx`            | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                       |
 | `docs/self-hosting/reverse-proxy.mdx`         | 2026-02-17    | Claude   | Written from scratch                                                                                       |
 | `docs/contributing/architecture.mdx`          | 2026-03-27    | Claude   | Added extensions route, extension services, MCP tools (ui/extension), canvas FSD layer, ui_command event   |

@@ -168,6 +168,20 @@ Stop a running background task (subagent or bash command). Delegates to the acti
 - `404` - Session or task not found
 - `500` - Runtime error stopping task
 
+### POST /api/sessions/:id/interrupt
+
+Interrupt the active query for a session. Attempts a graceful SDK interrupt, falling back to a forceful close. Best-effort — `ok: false` when the query already finished is expected (race between natural completion and the interrupt arriving), not an error.
+
+**Path params:**
+
+- `id` - Session ID
+
+**Responses:**
+
+- `200` - `{ ok: true }` — query interrupted, or `{ ok: false }` — no active query (race)
+- `400` - Invalid session ID
+- `500` - Runtime error interrupting query
+
 ### GET /api/config
 
 Returns server runtime information (version, port, uptime, working directory, tunnel status, Claude CLI path).

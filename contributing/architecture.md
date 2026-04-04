@@ -24,6 +24,8 @@ Transport
   approveTool(sessionId, toolCallId)  -> { ok: boolean }
   denyTool(sessionId, toolCallId)     -> { ok: boolean }
   submitAnswers(sessionId, toolCallId, answers) -> { ok: boolean }
+  stopTask(sessionId, taskId)         -> { success: boolean, taskId: string }
+  interruptSession(sessionId)         -> { ok: boolean }
   getTasks(sessionId, cwd?)           -> { tasks: TaskItem[] }
   getLastMessageIds(sessionId)        -> { user: string, assistant: string } | null
 
@@ -268,7 +270,7 @@ The `AgentRuntime` interface defines all operations that an agent backend must s
 
 - **Session lifecycle**: `ensureSession`, `hasSession`, `updateSession`
 - **Messaging**: `sendMessage` (returns `AsyncGenerator<StreamEvent>`)
-- **Interactive flows**: `approveTool`, `submitAnswers`
+- **Interactive flows**: `approveTool`, `submitAnswers`, `interruptQuery`
 - **Session queries**: `listSessions`, `getSession`, `getMessageHistory`, `getSessionTasks`, `getSessionETag`, `getLastMessageIds`, `readFromOffset`
 - **Session sync**: `watchSession`
 - **Session locking**: `acquireLock`, `releaseLock`, `isLocked`, `getLockInfo`
