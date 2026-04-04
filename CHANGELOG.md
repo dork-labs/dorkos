@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add guidelines for capturing design decisions in visual companion sessions
 - Reconcile guides with v0.32.0 changes
 
 ### Fixed

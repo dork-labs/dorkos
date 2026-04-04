@@ -248,6 +248,60 @@ If `$STATE_DIR/events` does not exist, the user did not interact with the browse
 - For iterations: append version suffix like `layout-v2.html`, `layout-v3.html`
 - Server serves newest file by modification time
 
+## Capturing Design Decisions for Specs
+
+When using the visual companion alongside a feature spec (`specs/<slug>/`), capture the design work so implementing agents can consume it without reading raw HTML mockups.
+
+### During the session
+
+- Name screens to match the design question (e.g., `agent-channels-tab.html`, `settings-layout.html`)
+- After each round of feedback, note the user's selections and verbal reasoning
+
+### At session end
+
+Write a `04-design-decisions.md` file into the spec directory that captures:
+
+1. **Each design question explored** — what was asked, which screen file showed it
+2. **Options presented** — brief description of each option (A, B, C)
+3. **What was chosen and why** — the user's selection plus their reasoning
+4. **Final design direction** — prose descriptions of the agreed-upon designs, detailed enough that an implementing agent can build from them without seeing the mockups
+
+Example structure:
+
+```markdown
+# Design Decisions
+
+Visual companion session: `.dork/visual-companion/<session-id>/`
+
+## 1. [Design Question]
+
+**Screen:** `<filename>.html`
+**Options:** A) ... B) ... C) ...
+**Chosen:** B — [reasoning from user]
+
+## 2. [Next Design Question]
+
+...
+
+## Final Design Summary
+
+[Prose description of the complete agreed design, suitable for implementation]
+```
+
+### Spec frontmatter
+
+Add the session reference to the spec's ideation or specification frontmatter:
+
+```yaml
+design-session: .dork/visual-companion/<session-id>
+```
+
+This lets implementing agents find the raw HTML mockups if they need visual reference.
+
+### When to skip
+
+If the visual companion was used for a quick one-off question (not part of a spec), skip the design decisions file. This process only applies when the session is part of a spec workflow.
+
 ## Shutting Down
 
 ```bash
