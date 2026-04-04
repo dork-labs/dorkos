@@ -5,6 +5,30 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] - 2026-04-03
+
+> Refining agent UX through redesigns and standards adoption — clearer palettes, transparent context usage, and portable skill definitions bring polish and portability to the operator platform.
+
+### Added
+
+- Redesign CommandPalette and FilePalette for clarity and reusability
+- Add cache hit rate and usage status bar items, refactor context to per-message
+- Redesign tool/thinking blocks for clarity and visual cohesion
+- Redesign onboarding copy and project discovery UX
+- Adopt SKILL.md file-first architecture for task system
+- Add @dorkos/skills package implementing SKILL.md open standard
+- Introduce maintaining-dev-playground skill documentation
+- Allow disabling tunnel passcode for open or trusted environments
+
+### Fixed
+
+- Include legacy .claude/commands/ in command list after SDK session starts
+- Make SDK command and subagent caches per-cwd instead of global
+- Resolve all lint warnings across server, client, and CLI
+- Serve SPA on tunnel requests so PasscodeGate renders instead of raw JSON
+
+---
+
 ## [0.30.0] - 2026-03-31
 
 > Discovery and documentation refinement — unified scan actions, onboarding polish, and a full contributing guide refresh bring consistency to both the agent discovery experience and developer documentation.

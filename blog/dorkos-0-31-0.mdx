@@ -1,0 +1,44 @@
+---
+title: DorkOS 0.31.0
+description: Refining agent UX through redesigns and standards adoption — clearer palettes, transparent context usage, and portable skill definitions bring polish and portability to the operator platform.
+date: 2026-04-03
+author: DorkOS Team
+category: release
+tags: [release, skills, ui, chat]
+---
+
+Refining agent UX through redesigns and standards adoption — clearer palettes, transparent context usage, and portable skill definitions bring polish and portability to the operator platform.
+
+## Highlights
+
+🎨 **Chat UI refinements** — Completely redesigned command/file palettes, tool/thinking blocks, and onboarding UX for clearer agent interaction patterns
+
+📊 **Token transparency** — New cache hit rate and per-message usage metrics help operators see exactly how they're consuming resources
+
+🏗️ **Portable skill system** — SKILL.md file-first architecture with new @dorkos/skills package enables reusable task definitions across projects
+
+## All Changes
+
+### Added
+
+- Redesign CommandPalette and FilePalette for clarity and reusability
+- Add cache hit rate and usage status bar items, refactor context to per-message
+- Redesign tool/thinking blocks for clarity and visual cohesion
+- Redesign onboarding copy and project discovery UX
+- Adopt SKILL.md file-first architecture for task system
+- Add @dorkos/skills package implementing SKILL.md open standard
+- Introduce maintaining-dev-playground skill documentation
+- Allow disabling tunnel passcode for open or trusted environments
+
+### Fixed
+
+- Include legacy .claude/commands/ in command list after SDK session starts
+- Make SDK command and subagent caches per-cwd instead of global
+- Resolve all lint warnings across server, client, and CLI
+- Serve SPA on tunnel requests so PasscodeGate renders instead of raw JSON
+
+## Install / Update
+
+```
+npm install -g dorkos@0.31.0
+```

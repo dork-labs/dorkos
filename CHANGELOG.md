@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.31.0] - 2026-04-03
+
+> Refining agent UX through redesigns and standards adoption — clearer palettes, transparent context usage, and portable skill definitions bring polish and portability to the operator platform.
+
+### Added
+
 - Redesign CommandPalette and FilePalette for clarity and reusability
 - Add cache hit rate and usage status bar items, refactor context to per-message
 - Redesign tool/thinking blocks for clarity and visual cohesion
@@ -16,8 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adopt SKILL.md file-first architecture for task system
 - Add @dorkos/skills package implementing SKILL.md open standard
 - Introduce maintaining-dev-playground skill documentation
-
-### Changed
+- Allow disabling tunnel passcode for open or trusted environments
 
 ### Fixed
 
@@ -25,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make SDK command and subagent caches per-cwd instead of global
 - Resolve all lint warnings across server, client, and CLI
 - Serve SPA on tunnel requests so PasscodeGate renders instead of raw JSON
+
 ---
 
 ## [0.30.0] - 2026-03-31
