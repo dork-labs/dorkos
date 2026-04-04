@@ -1,0 +1,41 @@
+---
+title: DorkOS 0.32.0
+description: Chat refinement and architectural cleanup — interrupt queries, see activity at a glance, and benefit from a cleaner codebase.
+date: 2026-04-04
+author: DorkOS Team
+category: release
+tags: [release, chat, ux, refactor]
+---
+
+Chat refinement and architectural cleanup — interrupt running queries with Escape, see agent activity at a glance with colored borders, and benefit from a cleaner, better-organized codebase under the hood.
+
+## Highlights
+
+- **Escape to stop** — Press Escape to interrupt a running query server-side. No more waiting for a runaway response to finish.
+- **Colored border indicator** — The activity dot is replaced with a colored border that makes agent status visible at a glance.
+- **Codebase cleanup** — Chat internals reorganized into domain subdirectories, ChatPanel decomposed for clarity, and a pre-commit size check keeps things tidy going forward.
+
+## All Changes
+
+### Added
+
+- Add server-side query interrupt and Escape-to-stop
+- Replace activity dot with colored border indicator
+
+### Changed
+
+- Add pre-commit directory size check for codebase hygiene
+- Organize oversized directories and expand dir-size allowlist
+- Organize ui/ into domain subdirectories
+- Decompose ChatPanel and reduce ChatInputContainer prop surface
+- Remove unused Transport import and add onStop prop to ChatInput
+
+### Fixed
+
+- Add horizontal padding to chat scroll area for improved layout
+
+## Install / Update
+
+```
+npm install -g dorkos@0.32.0
+```

@@ -9,11 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.32.0] - 2026-04-04
+
+> Chat refinement and architectural cleanup — interrupt running queries with Escape, see agent activity at a glance with colored borders, and benefit from a cleaner, better-organized codebase under the hood.
+
+### Added
+
 - Add server-side query interrupt and Escape-to-stop
 - Replace activity dot with colored border indicator
 
 ### Changed
 
+- Add pre-commit directory size check for codebase hygiene
 - Organize oversized directories and expand dir-size allowlist
 - Organize ui/ into domain subdirectories
 - Decompose ChatPanel and reduce ChatInputContainer prop surface
@@ -22,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Add horizontal padding to chat scroll area for improved layout
+
 ---
 
 ## [0.31.0] - 2026-04-03
