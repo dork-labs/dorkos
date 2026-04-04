@@ -1,57 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useSessionChatStore } from '@/layers/entities/session';
-import { StreamManager } from '../model/stream-manager';
+import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-
-/** Minimal mock transport — only sendMessage is exercised by StreamManager. */
-function createMockTransport(overrides?: Partial<Transport>): Transport {
-  return {
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    // Stubs for the rest of the interface — never called by StreamManager
-    listSessions: vi.fn(),
-    getSession: vi.fn(),
-    updateSession: vi.fn(),
-    getMessages: vi.fn(),
-    approveTool: vi.fn(),
-    denyTool: vi.fn(),
-    submitAnswers: vi.fn(),
-    getConfig: vi.fn(),
-    updateConfig: vi.fn(),
-    getHealth: vi.fn(),
-    deleteSession: vi.fn(),
-    getModels: vi.fn(),
-    getDefaultCwd: vi.fn(),
-    getCommands: vi.fn(),
-    getGitStatus: vi.fn(),
-    listFiles: vi.fn(),
-    getMcpStatus: vi.fn(),
-    listSchedules: vi.fn(),
-    createSchedule: vi.fn(),
-    updateSchedule: vi.fn(),
-    deleteSchedule: vi.fn(),
-    listRelayAdapters: vi.fn(),
-    getRelayAdapter: vi.fn(),
-    createRelayAdapter: vi.fn(),
-    updateRelayAdapter: vi.fn(),
-    deleteRelayAdapter: vi.fn(),
-    getRelayHealth: vi.fn(),
-    testRelayAdapter: vi.fn(),
-    listRelayConversations: vi.fn(),
-    sendMessageRelay: vi.fn(),
-    getMessageTrace: vi.fn(),
-    listMeshPeers: vi.fn(),
-    getMeshMetrics: vi.fn(),
-    listAgents: vi.fn(),
-    getAgent: vi.fn(),
-    scanAgents: vi.fn(),
-    registerAgent: vi.fn(),
-    updateAgent: vi.fn(),
-    deleteAgent: vi.fn(),
-    getAgentHealth: vi.fn(),
-    triggerScheduleNow: vi.fn(),
-    ...overrides,
-  } as unknown as Transport;
-}
+import { StreamManager } from '../model/stream-manager';
 
 /**
  * Helper: create a transport whose sendMessage blocks until the returned

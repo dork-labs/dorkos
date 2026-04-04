@@ -400,6 +400,22 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
   }
 });
 
+// POST /api/sessions/:id/interrupt - Interrupt the active query
+router.post('/:id/interrupt', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const runtime = runtimeRegistry.getDefault();
+  try {
+    const interrupted = await runtime.interruptQuery(sessionId);
+    // Best-effort: ok:false when the query already finished is expected (race
+    // between natural completion and the interrupt arriving). Not an error.
+    res.json({ ok: interrupted });
+  } catch (_err) {
+    return sendError(res, 500, 'Failed to interrupt query', 'INTERRUPT_ERROR');
+  }
+});
+
 // GET /api/sessions/:id/stream - Persistent SSE connection for session sync
 router.get('/:id/stream', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);

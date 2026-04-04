@@ -204,6 +204,14 @@ export function createSessionMethods(
       );
     },
 
+    /** Interrupt the active query for a session (best-effort, short timeout). */
+    interruptSession(sessionId: string): Promise<{ ok: boolean }> {
+      return fetchJSON<{ ok: boolean }>(baseUrl, `/sessions/${sessionId}/interrupt`, {
+        method: 'POST',
+        timeout: 5_000,
+      });
+    },
+
     async getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }> {
       try {
         const qs = buildQueryString({ cwd });

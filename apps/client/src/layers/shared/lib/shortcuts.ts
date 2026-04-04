@@ -81,6 +81,12 @@ export const SHORTCUTS = {
   },
 
   // Chat (interactive tool shortcuts)
+  STOP_STREAMING: {
+    id: 'stop-streaming',
+    key: 'esc',
+    label: 'Stop generating',
+    group: 'chat',
+  },
   APPROVE_TOOL: { id: 'approve-tool', key: 'enter', label: 'Approve tool', group: 'chat' },
   DENY_TOOL: { id: 'deny-tool', key: 'esc', label: 'Deny tool', group: 'chat' },
   TOGGLE_OPTION: { id: 'toggle-option', key: '1-9', label: 'Toggle option', group: 'chat' },

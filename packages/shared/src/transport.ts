@@ -186,6 +186,15 @@ export interface Transport {
    * @returns Result indicating success or failure
    */
   stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
+  /**
+   * Interrupt the active query for a session.
+   *
+   * Best-effort — callers should not block on the result. The server attempts
+   * a graceful SDK interrupt, falling back to a forceful close if needed.
+   *
+   * @param sessionId - The session whose query should be interrupted
+   */
+  interruptSession(sessionId: string): Promise<{ ok: boolean }>;
   /** Get the current task list for a session. */
   getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }>;
   /** Browse server filesystem directories for working directory selection. */

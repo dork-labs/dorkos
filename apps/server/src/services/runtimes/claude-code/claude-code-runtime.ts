@@ -247,6 +247,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.sessionStore.stopTask(sessionId, taskId);
   }
 
+  /** @inheritdoc */
+  async interruptQuery(sessionId: string): Promise<boolean> {
+    return this.sessionStore.interruptQuery(sessionId);
+  }
+
   // ---------------------------------------------------------------------------
   // Session queries (delegated to TranscriptReader)
   // ---------------------------------------------------------------------------

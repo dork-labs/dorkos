@@ -24,6 +24,8 @@ import type { ChatMessage, TransportErrorInfo } from './chat-types';
 interface ActiveStream {
   /** AbortController for the transport.sendMessage call. */
   abortController: AbortController;
+  /** Transport instance for server-side interrupt calls. */
+  transport: Transport;
   /** Client-generated assistant message ID for the current turn. */
   assistantId: string;
   /** Whether the assistant message has been created in the store. */
@@ -125,6 +127,13 @@ export class StreamManager {
     const stream = this.streams.get(sessionId);
     if (!stream) return;
 
+    // Fire-and-forget server-side interrupt so the SDK query actually stops.
+    // Without this, aborting the fetch only drops the HTTP connection — the
+    // agent subprocess continues running in the background.
+    stream.transport.interruptSession(stream.currentSessionId).catch(() => {
+      // Best-effort — swallow errors (session may already be idle)
+    });
+
     stream.abortController.abort();
     this.clearTimers(sessionId);
     this.streams.delete(sessionId);
@@ -217,6 +226,7 @@ export class StreamManager {
     const abortController = new AbortController();
     const activeStream: ActiveStream = {
       abortController,
+      transport,
       assistantId,
       assistantCreated: false,
       pendingUserId,

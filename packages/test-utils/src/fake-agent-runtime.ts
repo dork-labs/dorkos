@@ -161,4 +161,5 @@ export class FakeAgentRuntime implements AgentRuntime {
   stopTask = vi
     .fn<(sessionId: string, taskId: string) => Promise<boolean>>()
     .mockResolvedValue(false);
+  interruptQuery = vi.fn<(sessionId: string) => Promise<boolean>>().mockResolvedValue(false);
 }

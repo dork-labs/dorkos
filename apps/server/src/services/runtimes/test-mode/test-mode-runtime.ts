@@ -197,4 +197,8 @@ export class TestModeRuntime implements AgentRuntime {
   async stopTask(_sessionId: string, _taskId: string): Promise<boolean> {
     return false;
   }
+
+  async interruptQuery(_sessionId: string): Promise<boolean> {
+    return false;
+  }
 }

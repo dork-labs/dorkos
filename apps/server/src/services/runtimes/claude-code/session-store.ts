@@ -237,6 +237,29 @@ export class SessionStore {
     }
   }
 
+  /**
+   * Interrupt the active query for a session.
+   *
+   * Tries `query.interrupt()` first (graceful). If that throws,
+   * falls back to `query.close()` (forceful subprocess termination).
+   */
+  async interruptQuery(sessionId: string): Promise<boolean> {
+    const session = this.findSession(sessionId);
+    if (!session?.activeQuery) return false;
+    try {
+      await session.activeQuery.interrupt();
+      return true;
+    } catch {
+      // Interrupt failed — escalate to forceful close
+      try {
+        session.activeQuery.close();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------

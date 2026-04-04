@@ -193,6 +193,22 @@ export class DirectTransport implements Transport {
     }
   }
 
+  /** Interrupt the active query. DirectTransport delegates to the in-process runtime if supported. */
+  async interruptSession(sessionId: string): Promise<{ ok: boolean }> {
+    try {
+      const runtime = this.services.runtime as {
+        interruptQuery?: (s: string) => Promise<boolean>;
+      };
+      if (typeof runtime.interruptQuery !== 'function') {
+        return { ok: false };
+      }
+      const ok = await runtime.interruptQuery(sessionId);
+      return { ok };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   async getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }> {
     const tasks = await this.services.transcriptReader.readTasks(
       cwd || this.services.vaultRoot,

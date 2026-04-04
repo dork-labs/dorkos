@@ -102,6 +102,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Escape while streaming stops generation (highest priority — matches Claude Code CLI behavior)
+      if (e.key === 'Escape' && isStreaming) {
+        onStop?.();
+        return;
+      }
+
       // Escape while editing a queue item cancels the edit (priority over normal Escape)
       if (e.key === 'Escape' && editingQueueItem) {
         onCancelEdit?.();
@@ -402,6 +408,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         >
           <X className="size-(--size-icon-sm)" />
         </motion.button>
+        {/* Dedicated stop button — visible when streaming + text (queue state) so the
+            user can always stop without clearing input. Hidden when the main button is
+            already the stop button (no text) to avoid redundancy. */}
+        {isStreaming && hasText && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.15 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={onStop}
+            type="button"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2"
+            aria-label="Stop generating"
+          >
+            <Square className="size-(--size-icon-sm)" />
+          </motion.button>
+        )}
         <div className="relative">
           <motion.button
             animate={{ opacity: showButton ? 1 : 0, scale: showButton ? 1 : 0.8 }}

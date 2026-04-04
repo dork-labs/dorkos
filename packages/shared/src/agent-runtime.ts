@@ -200,6 +200,17 @@ export interface AgentRuntime {
    */
   stopTask(sessionId: string, taskId: string): Promise<boolean>;
 
+  /**
+   * Interrupt the active query for a session.
+   *
+   * Attempts a graceful interrupt first (SDK `query.interrupt()`). If that fails,
+   * escalates to a forceful close (SDK `query.close()`).
+   *
+   * @param sessionId - Target session
+   * @returns true if the query was interrupted, false if no active query
+   */
+  interruptQuery(sessionId: string): Promise<boolean>;
+
   // --- Session queries (storage) ---
 
   /** List all sessions for a project directory. */
