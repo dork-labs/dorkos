@@ -136,7 +136,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     <div data-testid="message-list" className="relative h-full">
       <div
         ref={scrollRef}
-        className="chat-scroll-area hide-scrollbar h-full overflow-y-auto pt-12"
+        className="chat-scroll-area hide-scrollbar h-full overflow-y-auto px-3 pt-12"
         style={{ overflowAnchor: 'none' }}
       >
         <div

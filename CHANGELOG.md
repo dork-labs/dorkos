@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add horizontal padding to chat scroll area for improved layout
 ---
 
 ## [0.31.0] - 2026-04-03
