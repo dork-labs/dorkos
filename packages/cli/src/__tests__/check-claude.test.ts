@@ -11,37 +11,35 @@ const mockExecSync = vi.mocked(execSync);
 const { checkClaude } = await import('../check-claude.js');
 
 describe('checkClaude', () => {
-  let mockExit: ReturnType<typeof vi.spyOn>;
-  let mockConsoleError: ReturnType<typeof vi.spyOn>;
+  let mockConsoleWarn: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
-    mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockConsoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    mockExit.mockRestore();
-    mockConsoleError.mockRestore();
+    mockConsoleWarn.mockRestore();
   });
 
-  it('does nothing when claude CLI is available', () => {
+  it('returns true when claude CLI is available', () => {
     mockExecSync.mockReturnValue(Buffer.from('1.0.0'));
 
-    checkClaude();
+    const result = checkClaude();
 
+    expect(result).toBe(true);
     expect(mockExecSync).toHaveBeenCalledWith('claude --version', { stdio: 'pipe' });
-    expect(mockExit).not.toHaveBeenCalled();
+    expect(mockConsoleWarn).not.toHaveBeenCalled();
   });
 
-  it('exits with code 1 when claude CLI is not found', () => {
+  it('returns false when claude CLI is not found', () => {
     mockExecSync.mockImplementation(() => {
       throw new Error('command not found');
     });
 
-    checkClaude();
+    const result = checkClaude();
 
-    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(result).toBe(false);
   });
 
   it('prints install instructions when claude CLI is not found', () => {
@@ -51,8 +49,8 @@ describe('checkClaude', () => {
 
     checkClaude();
 
-    const output = mockConsoleError.mock.calls.map((c) => c[0]).join('\n');
+    const output = mockConsoleWarn.mock.calls.map((c) => c[0]).join('\n');
     expect(output).toContain('Claude Code CLI not found');
-    expect(output).toContain('npm install -g @anthropic-ai/claude-code');
+    expect(output).toContain('Install it with');
   });
 });

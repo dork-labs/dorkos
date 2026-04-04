@@ -8,6 +8,7 @@ export { useTaskTemplates } from '@/layers/entities/tasks';
 export type { TaskTemplate } from '@/layers/entities/tasks';
 export { TaskTemplateCard } from '@/layers/features/tasks';
 export { OnboardingFlow } from './ui/OnboardingFlow';
+export { SystemRequirementsStep } from './ui/SystemRequirementsStep';
 export { WelcomeStep } from './ui/WelcomeStep';
 export { MeetDorkBotStep } from './ui/MeetDorkBotStep';
 export { AgentDiscoveryStep } from './ui/AgentDiscoveryStep';

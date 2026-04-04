@@ -69,6 +69,14 @@ vi.mock('@/layers/entities/mesh', () => ({
 }));
 
 // Mock step components to isolate OnboardingFlow navigation logic
+vi.mock('../ui/SystemRequirementsStep', () => ({
+  SystemRequirementsStep: ({ onContinue }: { onContinue: () => void }) => (
+    <div data-testid="requirements-step">
+      <button onClick={onContinue}>Continue</button>
+    </div>
+  ),
+}));
+
 vi.mock('../ui/WelcomeStep', () => ({
   WelcomeStep: ({ onGetStarted, onSkip }: { onGetStarted: () => void; onSkip: () => void }) => (
     <div data-testid="welcome-step">
@@ -132,7 +140,9 @@ describe('OnboardingFlow', () => {
     cleanup();
   });
 
-  it('renders Welcome step initially', () => {
+  // --- Flow: Welcome -> Requirements -> MeetDorkBot -> Discovery -> Tasks -> Complete ---
+
+  it('renders welcome step initially', () => {
     render(<OnboardingFlow onComplete={vi.fn()} />);
 
     expect(screen.getByTestId('welcome-step')).toBeTruthy();
@@ -144,15 +154,33 @@ describe('OnboardingFlow', () => {
     expect(mockStartOnboarding).toHaveBeenCalled();
   });
 
-  it('clicking Get Started advances to meet-dorkbot step', () => {
+  it('Get Started advances to requirements step', () => {
     render(<OnboardingFlow onComplete={vi.fn()} />);
 
     fireEvent.click(screen.getByText('Get Started'));
 
+    expect(screen.getByTestId('requirements-step')).toBeTruthy();
+  });
+
+  it('requirements Continue advances to meet-dorkbot step', () => {
+    render(<OnboardingFlow onComplete={vi.fn()} initialStep={-1} />);
+
+    fireEvent.click(screen.getByText('Continue'));
+
     expect(screen.getByTestId('meet-dorkbot-step')).toBeTruthy();
   });
 
-  it('meet-dorkbot is step 0 (first step after welcome)', () => {
+  it('full flow: Welcome -> Requirements -> MeetDorkBot', () => {
+    render(<OnboardingFlow onComplete={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Get Started'));
+    expect(screen.getByTestId('requirements-step')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Continue'));
+    expect(screen.getByTestId('meet-dorkbot-step')).toBeTruthy();
+  });
+
+  it('meet-dorkbot is step 0 (first numbered step)', () => {
     render(<OnboardingFlow onComplete={vi.fn()} initialStep={0} />);
 
     expect(screen.getByTestId('meet-dorkbot-step')).toBeTruthy();

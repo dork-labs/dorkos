@@ -56,7 +56,7 @@ import type {
   TransportScanEvent,
   TransportScanOptions,
 } from './mesh-schemas.js';
-import type { RuntimeCapabilities } from './agent-runtime.js';
+import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { UiState } from './types.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
@@ -226,6 +226,8 @@ export interface Transport {
     capabilities: Record<string, RuntimeCapabilities>;
     defaultRuntime: string;
   }>;
+  /** Check system requirements (external dependencies) for all registered runtimes. */
+  checkRequirements(): Promise<SystemRequirements>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */

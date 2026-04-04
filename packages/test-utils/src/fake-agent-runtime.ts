@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type {
   AgentRuntime,
+  DependencyCheck,
   SseResponse,
   SessionOpts,
   MessageOpts,
@@ -162,4 +163,9 @@ export class FakeAgentRuntime implements AgentRuntime {
     .fn<(sessionId: string, taskId: string) => Promise<boolean>>()
     .mockResolvedValue(false);
   interruptQuery = vi.fn<(sessionId: string) => Promise<boolean>>().mockResolvedValue(false);
+  checkDependencies = vi
+    .fn<() => Promise<DependencyCheck[]>>()
+    .mockResolvedValue([
+      { name: 'Fake Runtime', description: 'No deps required.', status: 'satisfied' as const },
+    ]);
 }

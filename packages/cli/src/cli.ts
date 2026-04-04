@@ -113,9 +113,14 @@ if (values.version) {
 }
 
 if (values['post-install-check']) {
-  checkClaude();
+  const claudeFound = checkClaude();
   console.log(`dorkos ${__CLI_VERSION__}`);
-  console.log('Installation verified.');
+  if (claudeFound) {
+    console.log('Installation verified.');
+  } else {
+    console.log('Installation incomplete — Claude Code CLI is missing.');
+    process.exit(1);
+  }
   process.exit(0);
 }
 

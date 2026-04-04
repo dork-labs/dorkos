@@ -1,5 +1,6 @@
 import type {
   AgentRuntime,
+  DependencyCheck,
   RuntimeCapabilities,
   SessionOpts,
   MessageOpts,
@@ -173,6 +174,16 @@ export class TestModeRuntime implements AgentRuntime {
 
   async getCommands(_forceRefresh?: boolean, _cwd?: string): Promise<CommandRegistry> {
     return { commands: [], lastScanned: '' };
+  }
+
+  async checkDependencies(): Promise<DependencyCheck[]> {
+    return [
+      {
+        name: 'Test Mode Runtime',
+        description: 'No external dependencies required.',
+        status: 'satisfied',
+      },
+    ];
   }
 
   checkSessionHealth(): void {}

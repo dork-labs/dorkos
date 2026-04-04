@@ -1,6 +1,6 @@
 import type { Transport, UploadFile } from '@dorkos/shared/transport';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
@@ -398,6 +398,23 @@ export class DirectTransport implements Transport {
       capabilities: { [caps.type]: caps },
       defaultRuntime: caps.type,
     };
+  }
+
+  async checkRequirements(): Promise<SystemRequirements> {
+    const runtime = this.services.runtime;
+    const deps =
+      'checkDependencies' in runtime
+        ? await (runtime as { checkDependencies(): Promise<unknown[]> }).checkDependencies()
+        : [];
+    const runtimes = {
+      [runtime.getCapabilities().type]: {
+        dependencies: deps as SystemRequirements['runtimes'][string]['dependencies'],
+      },
+    };
+    const allSatisfied = Object.values(runtimes).every((r) =>
+      r.dependencies.every((d) => d.status === 'satisfied')
+    );
+    return { runtimes, allSatisfied };
   }
 
   // --- Directory Operations ---

@@ -48,6 +48,32 @@ export interface RelayPort {
   publish(subject: string, payload: unknown, options: unknown): Promise<unknown>;
 }
 
+/** Result of a single dependency check performed by a runtime adapter. */
+export interface DependencyCheck {
+  /** Human-readable dependency name (e.g. "Claude Code CLI"). */
+  name: string;
+  /** What this dependency is for. */
+  description: string;
+  /** Current status. */
+  status: 'satisfied' | 'missing' | 'outdated';
+  /** Installed version, if detected. */
+  version?: string;
+  /** Minimum required version, if applicable. */
+  requiredVersion?: string;
+  /** Shell command or instructions to install. */
+  installHint?: string;
+  /** URL for more information. */
+  infoUrl?: string;
+}
+
+/** Aggregated system requirements report for all registered runtimes. */
+export interface SystemRequirements {
+  /** Per-runtime dependency results, keyed by runtime type. */
+  runtimes: Record<string, { dependencies: DependencyCheck[] }>;
+  /** True when every dependency across all runtimes is satisfied. */
+  allSatisfied: boolean;
+}
+
 /** Runtime capability flags — describes what a given backend supports. */
 export interface RuntimeCapabilities {
   /** Runtime identifier, e.g. 'claude-code' | 'opencode' | 'aider' */
@@ -305,6 +331,9 @@ export interface AgentRuntime {
 
   /** Return static capability flags for this runtime. */
   getCapabilities(): RuntimeCapabilities;
+
+  /** Check whether this runtime's external dependencies are satisfied. */
+  checkDependencies(): Promise<DependencyCheck[]>;
 
   // --- Commands ---
 

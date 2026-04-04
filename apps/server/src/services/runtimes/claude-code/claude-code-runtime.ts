@@ -91,6 +91,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return CLAUDE_CODE_CAPABILITIES;
   }
 
+  /** Check whether the Claude Code CLI binary is available. */
+  async checkDependencies(): Promise<import('@dorkos/shared/agent-runtime').DependencyCheck[]> {
+    const { checkClaudeDependency } = await import('./check-dependency.js');
+    return [checkClaudeDependency()];
+  }
+
   // ---------------------------------------------------------------------------
   // Dependency injection
   // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { Button } from '@/layers/shared/ui';
 import {
   OnboardingFlow,
+  SystemRequirementsStep,
   WelcomeStep,
   MeetDorkBotStep,
   AgentDiscoveryStep,
@@ -21,6 +22,7 @@ import type {
   ExistingAgent,
   AgentPathEntry,
 } from '@dorkos/shared/mesh-schemas';
+import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 // ── Mock data ────────────────────────────────────────────────
 
@@ -90,6 +92,39 @@ const MOCK_AGENTS: AgentPathEntry[] = [
 
 const noop = () => {};
 
+const MOCK_REQUIREMENTS_SATISFIED: SystemRequirements = {
+  runtimes: {
+    'claude-code': {
+      dependencies: [
+        {
+          name: 'Claude Code CLI',
+          description: 'The Claude Code CLI powers agent sessions in DorkOS.',
+          status: 'satisfied',
+          version: '1.0.31',
+        },
+      ],
+    },
+  },
+  allSatisfied: true,
+};
+
+const MOCK_REQUIREMENTS_MISSING: SystemRequirements = {
+  runtimes: {
+    'claude-code': {
+      dependencies: [
+        {
+          name: 'Claude Code CLI',
+          description: 'The Claude Code CLI powers agent sessions in DorkOS.',
+          status: 'missing',
+          installHint: 'curl -fsSL https://claude.ai/install.sh | bash',
+          infoUrl: 'https://docs.anthropic.com/en/docs/claude-code',
+        },
+      ],
+    },
+  },
+  allSatisfied: false,
+};
+
 // ── Showcases ────────────────────────────────────────────────
 
 /** Comprehensive onboarding showcases — full flow, individual steps, and supporting components. */
@@ -97,6 +132,7 @@ export function OnboardingFlowShowcases() {
   return (
     <>
       <InteractiveFlowShowcase />
+      <SystemRequirementsStepShowcase />
       <WelcomeStepShowcase />
       <MeetDorkBotStepShowcase />
       <AgentDiscoveryStepShowcase />
@@ -118,7 +154,7 @@ function InteractiveFlowShowcase() {
   return (
     <PlaygroundSection
       title="OnboardingFlow"
-      description="Full interactive onboarding flow. Click through each step — Welcome, Meet DorkBot, Project Import, Tasks, and Complete. Rendered in a contained viewport."
+      description="Full interactive onboarding flow. Click through each step — Welcome, System Requirements (3s scan), Meet DorkBot, Project Import, Tasks, and Complete. Rendered in a contained viewport."
     >
       <div className="mb-3 flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => setFlowKey((k) => k + 1)}>
@@ -138,6 +174,50 @@ function InteractiveFlowShowcase() {
 }
 
 // ── Individual steps ─────────────────────────────────────────
+
+function SystemRequirementsStepShowcase() {
+  const [happyKey, setHappyKey] = useState(0);
+  const [sadKey, setSadKey] = useState(0);
+
+  return (
+    <PlaygroundSection
+      title="SystemRequirementsStep"
+      description="System requirements check — three-phase experience: scanning animation (3s), progressive row-by-row reveal with scan-to-result transitions, then celebration (confetti) or install guidance. Click Replay to restart the full animation."
+    >
+      <ShowcaseLabel>Happy path — all requirements satisfied</ShowcaseLabel>
+      <div className="mb-3">
+        <Button variant="outline" size="sm" onClick={() => setHappyKey((k) => k + 1)}>
+          Replay
+        </Button>
+      </div>
+      <ShowcaseDemo responsive>
+        <div className="flex min-h-[450px] items-center justify-center">
+          <SystemRequirementsStep
+            key={`happy-${happyKey}`}
+            onContinue={noop}
+            simulatedResult={MOCK_REQUIREMENTS_SATISFIED}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Unhappy path — missing dependency</ShowcaseLabel>
+      <div className="mb-3">
+        <Button variant="outline" size="sm" onClick={() => setSadKey((k) => k + 1)}>
+          Replay
+        </Button>
+      </div>
+      <ShowcaseDemo responsive>
+        <div className="flex min-h-[550px] items-center justify-center">
+          <SystemRequirementsStep
+            key={`sad-${sadKey}`}
+            onContinue={noop}
+            simulatedResult={MOCK_REQUIREMENTS_MISSING}
+          />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
 
 function WelcomeStepShowcase() {
   return (

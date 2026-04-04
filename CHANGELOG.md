@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add system requirements check to onboarding with adapter dependency checking
 - Add Remote Access shortcut to settings sidebar
 
 ### Changed

@@ -166,6 +166,21 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
       defaultRuntime: 'claude-code',
     }),
+    checkRequirements: vi.fn().mockResolvedValue({
+      runtimes: {
+        'claude-code': {
+          dependencies: [
+            {
+              name: 'Claude Code CLI',
+              description: 'The Claude Code CLI powers agent sessions in DorkOS.',
+              status: 'satisfied',
+              version: '1.0.0',
+            },
+          ],
+        },
+      },
+      allSatisfied: true,
+    }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
     verifyTunnelPasscode: vi.fn().mockResolvedValue({ ok: false }),

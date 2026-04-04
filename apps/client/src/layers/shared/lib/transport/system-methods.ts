@@ -20,7 +20,7 @@ import type {
 import type { UploadFile, McpConfigResponse } from '@dorkos/shared/transport';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
@@ -101,6 +101,10 @@ export function createSystemMethods(baseUrl: string) {
       defaultRuntime: string;
     }> {
       return fetchJSON(baseUrl, '/capabilities');
+    },
+
+    checkRequirements(): Promise<SystemRequirements> {
+      return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────

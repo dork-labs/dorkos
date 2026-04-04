@@ -5,6 +5,7 @@ import { useIsMobile } from '@/layers/shared/model';
 import { OnboardingNavBar } from './OnboardingNavBar';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useOnboarding } from '../model/use-onboarding';
+import { SystemRequirementsStep } from './SystemRequirementsStep';
 import { WelcomeStep } from './WelcomeStep';
 import { MeetDorkBotStep } from './MeetDorkBotStep';
 import { AgentDiscoveryStep } from './AgentDiscoveryStep';
@@ -16,6 +17,11 @@ const STEPS = ['meet-dorkbot', 'discovery', 'tasks'] as const;
 /** Index of the Tasks step within STEPS — used for auto-skip logic. */
 const TASKS_STEP_INDEX = STEPS.indexOf('tasks');
 
+/** Step index for the welcome screen (first thing the user sees). */
+const WELCOME_STEP = -2;
+/** Step index for the system requirements check (after welcome, before numbered steps). */
+const REQUIREMENTS_STEP = -1;
+
 interface OnboardingFlowProps {
   onComplete: () => void;
   initialStep?: number;
@@ -25,12 +31,12 @@ interface OnboardingFlowProps {
  * Full-screen onboarding container managing step navigation, skip controls,
  * and animated transitions between onboarding steps.
  *
- * Flow: Welcome -> Meet DorkBot -> Discovery -> Tasks -> Complete
+ * Flow: Welcome -> Requirements -> Meet DorkBot -> Discovery -> Tasks -> Complete
  *
  * @param onComplete - Called when onboarding finishes (last step or skip all)
- * @param initialStep - Zero-based index of the starting step (default: -1 for welcome)
+ * @param initialStep - Step index to start at (default: -2 for welcome)
  */
-export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowProps) {
+export function OnboardingFlow({ onComplete, initialStep = WELCOME_STEP }: OnboardingFlowProps) {
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [direction, setDirection] = useState(1);
   const [showComplete, setShowComplete] = useState(false);
@@ -64,7 +70,7 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
     } else if (currentStep === 0) {
       // Go back to welcome
       setDirection(-1);
-      setCurrentStep(-1);
+      setCurrentStep(WELCOME_STEP);
     }
   }, [currentStep]);
 
@@ -84,6 +90,11 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
   }, [dismiss, onComplete]);
 
   const handleWelcomeStart = useCallback(() => {
+    setDirection(1);
+    setCurrentStep(REQUIREMENTS_STEP);
+  }, []);
+
+  const handleRequirementsContinue = useCallback(() => {
     setDirection(1);
     setCurrentStep(0);
   }, []);
@@ -118,11 +129,20 @@ export function OnboardingFlow({ onComplete, initialStep = -1 }: OnboardingFlowP
     );
   }
 
-  // Welcome screen (step -1)
-  if (currentStep === -1) {
+  // Welcome screen (step -2) — greet the user first
+  if (currentStep === WELCOME_STEP) {
     return (
       <div className="bg-background flex h-full w-full items-center justify-center">
         <WelcomeStep onGetStarted={handleWelcomeStart} onSkip={handleSkipAll} />
+      </div>
+    );
+  }
+
+  // System requirements check (step -1) — after welcome, before numbered steps
+  if (currentStep === REQUIREMENTS_STEP) {
+    return (
+      <div className="bg-background flex h-full w-full items-center justify-center">
+        <SystemRequirementsStep onContinue={handleRequirementsContinue} />
       </div>
     );
   }

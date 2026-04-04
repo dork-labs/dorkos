@@ -12,6 +12,13 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     keywords: ['onboarding', 'flow', 'interactive', 'full', 'walkthrough', 'ftue'],
   },
   {
+    id: 'systemrequirementsstep',
+    title: 'SystemRequirementsStep',
+    page: 'onboarding',
+    category: 'Steps',
+    keywords: ['system', 'requirements', 'check', 'dependencies', 'install', 'claude', 'cli'],
+  },
+  {
     id: 'welcomestep',
     title: 'WelcomeStep',
     page: 'onboarding',
