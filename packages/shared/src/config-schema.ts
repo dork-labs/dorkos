@@ -6,6 +6,7 @@ export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.auth',
   'tunnel.passcodeHash',
   'tunnel.passcodeSalt',
+  'mcp.apiKey',
 ] as const;
 
 /** The guided onboarding steps a first-time user walks through. */
@@ -137,6 +138,23 @@ export const UserConfigSchema = z.object({
       enabled: z.array(z.string()).default(() => []),
     })
     .default(() => ({ enabled: [] })),
+  mcp: z
+    .object({
+      enabled: z.boolean().default(true),
+      apiKey: z.string().nullable().default(null),
+      rateLimit: z
+        .object({
+          enabled: z.boolean().default(true),
+          maxPerWindow: z.number().int().min(1).max(1000).default(60),
+          windowSecs: z.number().int().min(1).max(3600).default(60),
+        })
+        .default(() => ({ enabled: true, maxPerWindow: 60, windowSecs: 60 })),
+    })
+    .default(() => ({
+      enabled: true,
+      apiKey: null,
+      rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+    })),
   sessionSecret: z.string().nullable().default(null),
 });
 

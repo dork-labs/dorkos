@@ -508,4 +508,12 @@ export interface Transport {
 
   /** Set the default agent by name. Updates config.agents.defaultAgent. */
   setDefaultAgent(agentName: string): Promise<void>;
+
+  // --- External MCP Access ---
+
+  /** Generate a new MCP API key and persist it to config. Returns the key in plaintext (one-time reveal). */
+  generateMcpApiKey(): Promise<{ apiKey: string }>;
+
+  /** Remove the config-stored MCP API key. Does not affect the MCP_API_KEY environment variable. */
+  deleteMcpApiKey(): Promise<{ success: boolean }>;
 }

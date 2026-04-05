@@ -399,4 +399,12 @@ export const serverOnlyStubs = {
   async setDefaultAgent(_agentName: string): Promise<void> {
     // No-op in embedded mode — config is not persisted via DirectTransport.
   },
+
+  async generateMcpApiKey(): Promise<{ apiKey: string }> {
+    throw new Error('MCP external access is not available in embedded mode.');
+  },
+
+  async deleteMcpApiKey(): Promise<{ success: boolean }> {
+    throw new Error('MCP external access is not available in embedded mode.');
+  },
 };

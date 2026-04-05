@@ -1091,6 +1091,28 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Agent creation and defaults configuration' }),
+    mcp: z
+      .object({
+        enabled: z.boolean().openapi({
+          description: 'Whether the external MCP server accepts requests',
+        }),
+        authConfigured: z.boolean().openapi({
+          description: 'True when an API key is active (from config.json or MCP_API_KEY env var)',
+        }),
+        authSource: z.enum(['config', 'env', 'none']).openapi({
+          description: "Source of the active API key: 'config', 'env', or 'none'",
+        }),
+        endpoint: z.string().openapi({
+          description: 'Full URL of the external MCP endpoint',
+        }),
+        rateLimit: z.object({
+          enabled: z.boolean(),
+          maxPerWindow: z.number().int(),
+          windowSecs: z.number().int(),
+        }),
+      })
+      .optional()
+      .openapi({ description: 'External MCP server access control status' }),
   })
   .openapi('ServerConfig');
 

@@ -33,6 +33,11 @@ describe('UserConfigSchema', () => {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       extensions: { enabled: [] },
+      mcp: {
+        enabled: true,
+        apiKey: null,
+        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      },
       sessionSecret: null,
     });
   });
@@ -188,10 +193,11 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeHash');
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeSalt');
+    expect(SENSITIVE_CONFIG_KEYS).toContain('mcp.apiKey');
   });
 
-  it('has exactly 4 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
+  it('has exactly 5 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(5);
   });
 
   it('is readonly array', () => {
@@ -225,6 +231,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
       extensions: { enabled: [] },
+      mcp: {
+        enabled: true,
+        apiKey: null,
+        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      },
       sessionSecret: null,
     });
   });

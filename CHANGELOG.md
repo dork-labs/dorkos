@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
 - Use official brand logos for agent runtimes
 - Redesign Tools tab with tool inventories, init errors, and override counts
 

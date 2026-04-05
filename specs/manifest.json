@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 215,
+  "nextNumber": 216,
   "specs": [
+    {
+      "number": 215,
+      "slug": "external-mcp-access",
+      "title": "External MCP Access Controls",
+      "created": "2026-04-05",
+      "status": "specified"
+    },
     {
       "number": 214,
       "slug": "channels-and-agent-adapters",

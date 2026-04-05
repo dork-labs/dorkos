@@ -8,8 +8,15 @@ vi.mock('../../env.js', () => ({
   },
 }));
 
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: vi.fn(),
+  },
+}));
+
 import { mcpApiKeyAuth } from '../mcp-auth.js';
 import { env } from '../../env.js';
+import { configManager } from '../../services/core/config-manager.js';
 
 function createMockReq(authHeader?: string): Partial<Request> {
   return {
@@ -37,6 +44,7 @@ describe('mcpApiKeyAuth', () => {
     next = vi.fn();
     // Reset to no key by default
     (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = undefined;
+    vi.mocked(configManager.get).mockReturnValue(undefined);
   });
 
   it('calls next() when MCP_API_KEY is not set', () => {
@@ -100,5 +108,57 @@ describe('mcpApiKeyAuth', () => {
     mcpApiKeyAuth(req as Request, res as Response, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
+  });
+
+  describe('config key fallback', () => {
+    it('reads API key from config when env var is unset', () => {
+      vi.mocked(configManager.get).mockReturnValue({
+        enabled: true,
+        apiKey: 'dork_config_secret_key',
+        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      });
+      const req = createMockReq('Bearer dork_config_secret_key');
+      const res = createMockRes();
+      mcpApiKeyAuth(req as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('env var overrides config key', () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
+      vi.mocked(configManager.get).mockReturnValue({
+        enabled: true,
+        apiKey: 'config-key',
+        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      });
+      const req = createMockReq('Bearer env-key');
+      const res = createMockRes();
+      mcpApiKeyAuth(req as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('rejects invalid Bearer token against config key', () => {
+      vi.mocked(configManager.get).mockReturnValue({
+        enabled: true,
+        apiKey: 'dork_config_secret_key',
+        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      });
+      const req = createMockReq('Bearer wrong-key');
+      const res = createMockRes();
+      mcpApiKeyAuth(req as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('passes when no auth configured (config null + env unset)', () => {
+      vi.mocked(configManager.get).mockReturnValue({
+        enabled: true,
+        apiKey: null,
+        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      });
+      const req = createMockReq();
+      const res = createMockRes();
+      mcpApiKeyAuth(req as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+    });
   });
 });

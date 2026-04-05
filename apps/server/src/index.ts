@@ -42,6 +42,8 @@ import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { mcpApiKeyAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
+import { requireMcpEnabled } from './middleware/mcp-enabled.js';
+import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
@@ -281,10 +283,10 @@ async function start() {
 
   const app = createApp();
 
-  // Register MCP tool server factory — only available with ClaudeCodeRuntime.
-  // In test mode claudeRuntime is null so the MCP server and /mcp route are skipped.
+  // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
+  let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
   if (claudeRuntime) {
-    const mcpToolDeps = {
+    mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
       ...(taskStore && { taskStore }),
@@ -296,20 +298,31 @@ async function start() {
       ...(meshCore && { meshCore }),
     };
     claudeRuntime.setMcpServerFactory((session) => ({
-      dorkos: createDorkOsToolServer(mcpToolDeps, session),
+      dorkos: createDorkOsToolServer(mcpToolDeps!, session),
     }));
-
-    const mcpAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
-    // Mount external MCP server at /mcp (protocol endpoint, not REST API)
-    // Stateless mode: each POST creates a fresh McpServer + transport (per SDK docs).
-    app.use(
-      '/mcp',
-      validateMcpOrigin,
-      mcpApiKeyAuth,
-      createMcpRouter(() => createExternalMcpServer(mcpToolDeps))
-    );
-    logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
   }
+
+  // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
+  const mcpRateLimiter = buildMcpRateLimiter();
+  const mcpAuthMode =
+    (env.MCP_API_KEY ?? configManager.get('mcp')?.apiKey) ? 'auth: API key' : 'auth: none';
+
+  app.use(
+    '/mcp',
+    validateMcpOrigin,
+    requireMcpEnabled,
+    mcpApiKeyAuth,
+    mcpRateLimiter,
+    createMcpRouter(() => {
+      if (!claudeRuntime || !mcpToolDeps) {
+        throw new Error(
+          'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
+        );
+      }
+      return createExternalMcpServer(mcpToolDeps);
+    })
+  );
+  logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
 
   // Mount Tasks routes if enabled — Tasks requires ClaudeCodeRuntime as SchedulerAgentManager.
   if (tasksEnabled && taskStore && claudeRuntime) {

@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 226,
+  "nextNumber": 228,
   "decisions": [
+    {
+      "number": 227,
+      "slug": "middleware-gated-mcp-toggle",
+      "title": "Hot-Toggle External MCP Access via Middleware Gate",
+      "created": "2026-04-05",
+      "status": "draft",
+      "extractedFrom": "external-mcp-access",
+      "specSlug": "external-mcp-access"
+    },
+    {
+      "number": 226,
+      "slug": "config-stored-mcp-api-key",
+      "title": "Store MCP API Key in Config.json with Env Var Override",
+      "created": "2026-04-05",
+      "status": "draft",
+      "extractedFrom": "external-mcp-access",
+      "specSlug": "external-mcp-access"
+    },
     {
       "number": 225,
       "slug": "agent-first-binding-via-inline-picker",

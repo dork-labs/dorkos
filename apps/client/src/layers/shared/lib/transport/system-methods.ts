@@ -270,5 +270,19 @@ export function createSystemMethods(baseUrl: string) {
         body: JSON.stringify({ value: agentName }),
       });
     },
+
+    // ── External MCP Access ──────────────────────────────────────────────
+
+    async generateMcpApiKey(): Promise<{ apiKey: string }> {
+      return fetchJSON<{ apiKey: string }>(baseUrl, '/config/mcp/generate-key', {
+        method: 'POST',
+      });
+    },
+
+    async deleteMcpApiKey(): Promise<{ success: boolean }> {
+      return fetchJSON<{ success: boolean }>(baseUrl, '/config/mcp/api-key', {
+        method: 'DELETE',
+      });
+    },
   };
 }

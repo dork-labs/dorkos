@@ -142,6 +142,19 @@ router.get('/', async (_req, res) => {
       defaultDirectory: '~/.dork/agents',
       defaultAgent: 'dorkbot',
     },
+    mcp: (() => {
+      const mcpConfig = configManager.get('mcp');
+      const mcpApiKeyFromEnv = env.MCP_API_KEY ?? null;
+      const mcpApiKeyFromConfig = mcpConfig?.apiKey ?? null;
+      const effectiveApiKey = mcpApiKeyFromEnv ?? mcpApiKeyFromConfig;
+      return {
+        enabled: mcpConfig?.enabled ?? true,
+        authConfigured: !!effectiveApiKey,
+        authSource: mcpApiKeyFromEnv ? 'env' : mcpApiKeyFromConfig ? 'config' : ('none' as const),
+        endpoint: `http://localhost:${env.DORKOS_PORT}/mcp`,
+        rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+      };
+    })(),
   });
 });
 
@@ -214,6 +227,51 @@ router.put('/agents/defaultAgent', (req, res) => {
     return res.json({ success: true, defaultAgent: value.trim() });
   } catch (err) {
     logger.error('[Config] PUT agents/defaultAgent failed', logError(err));
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Generate a new MCP API key, persist it to config, and return it in plaintext.
+ * This is the only endpoint that returns the raw key — all subsequent reads
+ * return authConfigured: true but never expose the key value.
+ */
+router.post('/mcp/generate-key', (_req, res) => {
+  try {
+    const raw = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString('hex');
+    const newKey = `dork_${raw}`;
+
+    const current = configManager.get('mcp') ?? {
+      enabled: true,
+      apiKey: null,
+      rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+    };
+    configManager.set('mcp', { ...current, apiKey: newKey });
+    logger.info('[Config] MCP API key generated');
+
+    return res.status(201).json({ apiKey: newKey });
+  } catch (err) {
+    logger.error('[Config] Failed to generate MCP API key', logError(err));
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Remove the config-stored MCP API key.
+ * Does not affect the MCP_API_KEY environment variable override.
+ */
+router.delete('/mcp/api-key', (_req, res) => {
+  try {
+    const current = configManager.get('mcp') ?? {
+      enabled: true,
+      apiKey: null,
+      rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
+    };
+    configManager.set('mcp', { ...current, apiKey: null });
+    logger.info('[Config] MCP API key removed');
+    return res.json({ success: true });
+  } catch (err) {
+    logger.error('[Config] Failed to remove MCP API key', logError(err));
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

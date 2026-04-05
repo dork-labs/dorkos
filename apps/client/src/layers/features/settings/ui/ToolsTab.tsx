@@ -26,6 +26,7 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
+import { ExternalMcpCard } from './ExternalMcpCard';
 
 // ---------------------------------------------------------------------------
 // Tool inventories — display names without the mcp__dorkos__ prefix.
@@ -428,6 +429,8 @@ export function ToolsTab() {
           ))}
         </FieldCardContent>
       </FieldCard>
+
+      {serverConfig?.mcp && <ExternalMcpCard mcp={serverConfig.mcp} />}
     </div>
   );
 }

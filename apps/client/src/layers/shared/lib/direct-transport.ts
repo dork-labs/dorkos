@@ -507,6 +507,8 @@ export class DirectTransport implements Transport {
   scan = serverOnlyStubs.scan;
   createAgent = serverOnlyStubs.createAgent;
   setDefaultAgent = serverOnlyStubs.setDefaultAgent;
+  generateMcpApiKey = serverOnlyStubs.generateMcpApiKey;
+  deleteMcpApiKey = serverOnlyStubs.deleteMcpApiKey;
 
   listTasks = tasksStubs.listTasks;
   createTask = tasksStubs.createTask;
