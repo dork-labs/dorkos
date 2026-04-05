@@ -239,7 +239,7 @@ router.put('/agents/defaultAgent', (req, res) => {
 router.post('/mcp/generate-key', (_req, res) => {
   try {
     const raw = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString('hex');
-    const newKey = `dork_${raw}`;
+    const newKey = `dork_mcp_${raw}`;
 
     const current = configManager.get('mcp') ?? {
       enabled: true,

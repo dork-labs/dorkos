@@ -274,7 +274,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Default Agent
     setDefaultAgent: vi.fn().mockResolvedValue(undefined),
     // External MCP Access
-    generateMcpApiKey: vi.fn().mockResolvedValue({ apiKey: 'dork_mock_key_123' }),
+    generateMcpApiKey: vi.fn().mockResolvedValue({ apiKey: 'dork_mcp_mock_key_123' }),
     deleteMcpApiKey: vi.fn().mockResolvedValue({ success: true }),
     // Relay Bindings
     getBindings: vi.fn().mockResolvedValue([]),

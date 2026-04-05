@@ -547,14 +547,14 @@ A tabbed interface showing config snippets per client. Each tab has a copy-to-cl
       "type": "http",
       "url": "http://localhost:6242/mcp",
       "headers": {
-        "Authorization": "Bearer dork_YOUR_API_KEY"
+        "Authorization": "Bearer dork_mcp_YOUR_API_KEY"
       }
     }
   }
 }
 ```
 
-Plus CLI command: `claude mcp add-json dorkos-external '{"type":"http","url":"http://localhost:6242/mcp","headers":{"Authorization":"Bearer dork_YOUR_API_KEY"}}'`
+Plus CLI command: `claude mcp add-json dorkos-external '{"type":"http","url":"http://localhost:6242/mcp","headers":{"Authorization":"Bearer dork_mcp_YOUR_API_KEY"}}'`
 
 **Tab: Cursor**
 
@@ -564,7 +564,7 @@ Plus CLI command: `claude mcp add-json dorkos-external '{"type":"http","url":"ht
     "dorkos-external": {
       "url": "http://localhost:6242/mcp",
       "headers": {
-        "Authorization": "Bearer dork_YOUR_API_KEY"
+        "Authorization": "Bearer dork_mcp_YOUR_API_KEY"
       }
     }
   }
@@ -579,7 +579,7 @@ Plus CLI command: `claude mcp add-json dorkos-external '{"type":"http","url":"ht
     "dorkos-external": {
       "serverUrl": "http://localhost:6242/mcp",
       "headers": {
-        "Authorization": "Bearer dork_YOUR_API_KEY"
+        "Authorization": "Bearer dork_mcp_YOUR_API_KEY"
       }
     }
   }

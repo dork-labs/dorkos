@@ -139,10 +139,10 @@ describe('Config MCP endpoints', () => {
   });
 
   describe('POST /api/config/mcp/generate-key', () => {
-    it('returns 201 with key having dork_ prefix and 48 hex chars', async () => {
+    it('returns 201 with key having dork_mcp_ prefix and 48 hex chars', async () => {
       const res = await request(app).post('/api/config/mcp/generate-key').expect(201);
       expect(res.body.apiKey).toBeDefined();
-      expect(res.body.apiKey).toMatch(/^dork_[0-9a-f]{48}$/);
+      expect(res.body.apiKey).toMatch(/^dork_mcp_[0-9a-f]{48}$/);
     });
 
     it('persists the generated key via configManager.set', async () => {
@@ -150,7 +150,7 @@ describe('Config MCP endpoints', () => {
       expect(configManager.set).toHaveBeenCalledWith(
         'mcp',
         expect.objectContaining({
-          apiKey: expect.stringMatching(/^dork_[0-9a-f]{48}$/),
+          apiKey: expect.stringMatching(/^dork_mcp_[0-9a-f]{48}$/),
         })
       );
     });

@@ -53,7 +53,7 @@ function CopyButton({ value, className }: { value: string; className?: string })
 // ---------------------------------------------------------------------------
 
 function buildSnippets(endpoint: string, apiKey: string | null) {
-  const authHeader = apiKey ? `Bearer ${apiKey}` : 'Bearer dork_YOUR_API_KEY';
+  const authHeader = apiKey ? `Bearer ${apiKey}` : 'Bearer dork_mcp_YOUR_API_KEY';
 
   return {
     claudeCode: JSON.stringify(
@@ -236,13 +236,36 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
         {/* Expanded content — sectioned with auto-dividers */}
         <CollapsibleContent>
           <FieldCardContent className="border-t">
+            {/* ── Duplicate tool warning (first thing users see) ── */}
+            <div className="flex gap-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+              <div className="space-y-1">
+                <p className="text-xs font-medium">
+                  Do not configure this for agents running inside DorkOS.
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  DorkOS already provides tools to its managed agents internally. Adding DorkOS as
+                  an external MCP server to those same agents causes duplicate tool names — the
+                  Anthropic API will return HTTP 400 &ldquo;Tool names must be unique&rdquo; and all
+                  tool calls will fail. External MCP access is for agents running{' '}
+                  <strong>outside</strong> of DorkOS (standalone Claude Code, Cursor, Windsurf).
+                </p>
+              </div>
+            </div>
+
             {/* ── Endpoint ── */}
-            <SettingRow label="Endpoint" description="MCP server URL for external agents">
+            <div className="space-y-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Endpoint</p>
+                <p className="text-muted-foreground text-xs">MCP server URL for external agents</p>
+              </div>
               <div className="flex items-center gap-1.5">
-                <code className="bg-muted rounded px-2 py-1 text-xs">{mcp.endpoint}</code>
+                <code className="bg-muted min-w-0 flex-1 truncate rounded-md px-3 py-2 font-mono text-xs">
+                  {mcp.endpoint}
+                </code>
                 <CopyButton value={mcp.endpoint} />
               </div>
-            </SettingRow>
+            </div>
 
             {/* ── API Key ── */}
             <ApiKeySection
@@ -377,23 +400,6 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-
-            {/* ── Duplicate tool warning ── */}
-            <div className="flex gap-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
-              <div className="space-y-1">
-                <p className="text-xs font-medium">
-                  Do not configure this for agents running inside DorkOS.
-                </p>
-                <p className="text-muted-foreground text-xs">
-                  DorkOS already provides tools to its managed agents internally. Adding DorkOS as
-                  an external MCP server to those same agents causes duplicate tool names — the
-                  Anthropic API will return HTTP 400 &ldquo;Tool names must be unique&rdquo; and all
-                  tool calls will fail. External MCP access is for agents running{' '}
-                  <strong>outside</strong> of DorkOS (standalone Claude Code, Cursor, Windsurf).
-                </p>
-              </div>
-            </div>
           </FieldCardContent>
         </CollapsibleContent>
       </Collapsible>
@@ -487,6 +493,9 @@ function ApiKeySection({
           <Button variant="outline" size="sm" onClick={onRotate}>
             Rotate
           </Button>
+          <Button variant="ghost" size="sm" onClick={onRemove}>
+            Remove
+          </Button>
         </div>
         {keyError && (
           <p className="text-xs text-red-500" role="alert">
@@ -505,7 +514,7 @@ function ApiKeySection({
         <p className="text-muted-foreground text-xs">Bearer token for MCP authentication</p>
       </div>
       <div className="flex items-center gap-2">
-        <code className="bg-muted rounded-md px-3 py-2 font-mono text-xs">dork_••••••••</code>
+        <code className="bg-muted rounded-md px-3 py-2 font-mono text-xs">dork_mcp_••••••••</code>
       </div>
       <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={onRotate}>
