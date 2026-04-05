@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, BrainCircuit, Cpu, Plug, Sparkles, Terminal } from 'lucide-react';
+import { Cpu, Plug, Terminal } from 'lucide-react';
+import { AnthropicLogo, OpenAILogo, GeminiLogo } from '@dorkos/icons/adapter-logos';
 import { useTransport } from '@/layers/shared/model';
 import {
   FieldCard,
@@ -118,7 +119,7 @@ export function AgentsTab() {
         </p>
         <AdapterRuntimeCard
           name="Claude Code"
-          icon={Bot}
+          icon={AnthropicLogo}
           description="Anthropic's agentic coding runtime — powers all DorkOS sessions"
           status="active"
           enabled={claudeCodeInstance?.enabled ?? true}
@@ -177,7 +178,7 @@ export function AgentsTab() {
 
         <AdapterRuntimeCard
           name="Codex"
-          icon={BrainCircuit}
+          icon={OpenAILogo}
           description="OpenAI's agentic coding runtime powered by o-series reasoning models"
           status="coming-soon"
           enabled={false}
@@ -201,7 +202,7 @@ export function AgentsTab() {
 
         <AdapterRuntimeCard
           name="Gemini CLI"
-          icon={Sparkles}
+          icon={GeminiLogo}
           description="Google's agentic coding runtime powered by Gemini 2.5 models"
           status="coming-soon"
           enabled={false}

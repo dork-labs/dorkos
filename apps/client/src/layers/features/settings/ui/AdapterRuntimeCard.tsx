@@ -3,8 +3,6 @@ import { ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Badge, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import type { LucideIcon } from 'lucide-react';
-
 const EASE_OUT = [0, 0, 0.2, 1] as const;
 
 const expandVariants = {
@@ -18,8 +16,8 @@ const expandTransition = { duration: 0.2, ease: EASE_OUT } as const;
 interface AdapterRuntimeCardProps {
   /** Runtime adapter name. */
   name: string;
-  /** Icon component for the adapter. */
-  icon: LucideIcon;
+  /** Icon component for the adapter — accepts Lucide icons and adapter logo components. */
+  icon: React.ComponentType<{ className?: string }>;
   /** Short description of the adapter. */
   description: string;
   /** Current status. */
