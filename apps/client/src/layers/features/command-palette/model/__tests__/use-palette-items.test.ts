@@ -48,7 +48,7 @@ vi.mock('@/layers/shared/model', () => ({
     },
     {
       id: 'relay',
-      label: 'Relay Messaging',
+      label: 'Channels',
       icon: 'Radio',
       action: 'openRelay',
       category: 'feature',

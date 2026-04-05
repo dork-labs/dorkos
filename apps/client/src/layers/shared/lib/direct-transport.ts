@@ -303,6 +303,17 @@ export class DirectTransport implements Transport {
         passcodeEnabled: false,
       },
       boundary: this.services.vaultRoot,
+      dorkHome: this.services.vaultRoot,
+      scheduler: {
+        maxConcurrentRuns: 1,
+        timezone: null,
+        retentionCount: 100,
+      },
+      logging: {
+        level: 'info',
+        maxLogSizeKb: 500,
+        maxLogFiles: 14,
+      },
     };
   }
 

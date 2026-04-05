@@ -93,6 +93,8 @@ router.get('/', async (_req, res) => {
     uptime: process.uptime(),
     workingDirectory: process.cwd(),
     boundary: getBoundary(),
+    // Set by index.ts at startup before routes are registered — always present at request time
+    dorkHome: process.env.DORK_HOME!,
     nodeVersion: process.version,
     claudeCliPath,
     tunnel: {
@@ -108,6 +110,16 @@ router.get('/', async (_req, res) => {
     relay: {
       enabled: isRelayEnabled(),
       ...(getRelayInitError() && { initError: getRelayInitError() }),
+    },
+    scheduler: configManager.get('scheduler') ?? {
+      maxConcurrentRuns: 1,
+      timezone: null,
+      retentionCount: 100,
+    },
+    logging: configManager.get('logging') ?? {
+      level: 'info',
+      maxLogSizeKb: 500,
+      maxLogFiles: 14,
     },
     mesh: {
       enabled: true,

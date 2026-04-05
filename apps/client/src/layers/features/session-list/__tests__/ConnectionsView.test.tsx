@@ -188,7 +188,7 @@ describe('ConnectionsView', () => {
     cleanup();
   });
 
-  it('renders Adapters section with adapter names and status for bound adapters', () => {
+  it('renders Channels section with channel names and status for bound channels', () => {
     mockRelayAdapters.mockReturnValue({
       data: [
         makeAdapter('a1', 'Telegram', 'connected'),
@@ -204,7 +204,7 @@ describe('ConnectionsView', () => {
         wrapper: Wrapper,
       }
     );
-    expect(screen.getByText('Adapters')).toBeInTheDocument();
+    expect(screen.getByText('Channels')).toBeInTheDocument();
     expect(screen.getByText('Telegram')).toBeInTheDocument();
     expect(screen.getByText('Slack')).toBeInTheDocument();
   });
@@ -242,12 +242,12 @@ describe('ConnectionsView', () => {
     expect(screen.getByText('Deployer')).toBeInTheDocument();
   });
 
-  it('hides Adapters section when Relay is disabled-by-server', () => {
+  it('hides Channels section when Relay is disabled-by-server', () => {
     const toolStatus: AgentToolStatus = { ...enabledToolStatus, relay: 'disabled-by-server' };
     render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} activeSessionId={null} />, {
       wrapper: Wrapper,
     });
-    expect(screen.queryByText('Adapters')).not.toBeInTheDocument();
+    expect(screen.queryByText('Channels')).not.toBeInTheDocument();
   });
 
   it('shows disabled state when Relay is disabled-by-agent', () => {
@@ -255,7 +255,7 @@ describe('ConnectionsView', () => {
     render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} activeSessionId={null} />, {
       wrapper: Wrapper,
     });
-    expect(screen.getByText('Relay disabled for this agent')).toBeInTheDocument();
+    expect(screen.getByText('Channels disabled for this agent')).toBeInTheDocument();
   });
 
   it('shows disabled state when Mesh is disabled-by-agent', () => {
@@ -266,7 +266,7 @@ describe('ConnectionsView', () => {
     expect(screen.getByText('Mesh disabled for this agent')).toBeInTheDocument();
   });
 
-  it('hides Adapters and Agents sections when both disabled-by-server, but still shows Tools', () => {
+  it('hides Channels and Agents sections when both disabled-by-server, but still shows Tools', () => {
     const toolStatus: AgentToolStatus = {
       ...enabledToolStatus,
       relay: 'disabled-by-server',
@@ -275,7 +275,7 @@ describe('ConnectionsView', () => {
     render(<ConnectionsView toolStatus={toolStatus} agentId={AGENT_ID} activeSessionId={null} />, {
       wrapper: Wrapper,
     });
-    expect(screen.queryByText('Adapters')).not.toBeInTheDocument();
+    expect(screen.queryByText('Channels')).not.toBeInTheDocument();
     expect(screen.queryByText('Agents')).not.toBeInTheDocument();
     expect(screen.getByText('Tools')).toBeInTheDocument();
   });
@@ -316,14 +316,14 @@ describe('ConnectionsView', () => {
     expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
   });
 
-  it('renders empty adapter state when no adapters configured', () => {
+  it('renders empty channel state when no channels configured', () => {
     render(
       <ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} activeSessionId={null} />,
       {
         wrapper: Wrapper,
       }
     );
-    expect(screen.getByText('No adapters configured')).toBeInTheDocument();
+    expect(screen.getByText('No channels configured')).toBeInTheDocument();
   });
 
   it('renders empty agents state when no agents registered', () => {

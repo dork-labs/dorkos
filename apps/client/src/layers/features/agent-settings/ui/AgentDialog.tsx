@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { FolderOpen, User, Sparkles, Zap, Plug2 } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { FolderOpen, User, Sparkles, Zap, Radio } from 'lucide-react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import {
   ResponsiveDialog,
@@ -18,26 +18,36 @@ import {
   NavigationLayoutPanel,
   NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
+import type { AgentDialogTab } from '@/layers/shared/model';
 import type { AgentManifest, Traits, Conventions } from '@dorkos/shared/mesh-schemas';
 import { IdentityTab } from './IdentityTab';
 import { PersonalityTab } from './PersonalityTab';
 import { CapabilitiesTab } from './CapabilitiesTab';
-import { ConnectionsTab } from './ConnectionsTab';
+import { ChannelsTab } from './ChannelsTab';
 
 interface AgentDialogProps {
   projectPath: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Pre-navigate to a specific tab when the dialog opens. Defaults to 'identity'. */
+  initialTab?: AgentDialogTab;
 }
 
 /**
  * Dialog shell for agent configuration with sidebar navigation.
- * Four sections: Identity, Personality, Capabilities, and Connections.
+ * Four sections: Identity, Personality, Capabilities, and Channels.
  */
-export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProps) {
-  const [activeTab, setActiveTab] = useState('identity');
+export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: AgentDialogProps) {
+  const [activeTab, setActiveTab] = useState<AgentDialogTab>(initialTab ?? 'identity');
   const { data: agent } = useCurrentAgent(projectPath);
   const updateAgent = useUpdateAgent();
+
+  // Sync active tab when dialog opens with a pre-targeted tab
+  useEffect(() => {
+    if (open && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [open, initialTab]);
 
   const handleUpdate = useCallback(
     (updates: Partial<AgentManifest>) => {
@@ -91,7 +101,10 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
         data-testid="agent-dialog"
         className="max-h-[85vh] max-w-2xl gap-0 p-0"
       >
-        <NavigationLayout value={activeTab} onValueChange={setActiveTab}>
+        <NavigationLayout
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as AgentDialogTab)}
+        >
           <ResponsiveDialogFullscreenToggle />
           <NavigationLayoutDialogHeader>
             <ResponsiveDialogTitle className="text-sm font-medium">
@@ -117,8 +130,8 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
               <NavigationLayoutItem value="capabilities" icon={Zap}>
                 Capabilities
               </NavigationLayoutItem>
-              <NavigationLayoutItem value="connections" icon={Plug2}>
-                Connections
+              <NavigationLayoutItem value="channels" icon={Radio}>
+                Channels
               </NavigationLayoutItem>
             </NavigationLayoutSidebar>
 
@@ -153,10 +166,10 @@ export function AgentDialog({ projectPath, open, onOpenChange }: AgentDialogProp
                 </div>
               </NavigationLayoutPanel>
 
-              <NavigationLayoutPanel value="connections">
+              <NavigationLayoutPanel value="channels">
                 <div className="space-y-4">
-                  <NavigationLayoutPanelHeader>Connections</NavigationLayoutPanelHeader>
-                  <ConnectionsTab agent={agent} />
+                  <NavigationLayoutPanelHeader>Channels</NavigationLayoutPanelHeader>
+                  <ChannelsTab agent={agent} />
                 </div>
               </NavigationLayoutPanel>
             </NavigationLayoutContent>

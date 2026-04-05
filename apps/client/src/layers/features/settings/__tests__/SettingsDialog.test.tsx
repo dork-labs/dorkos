@@ -65,6 +65,8 @@ const mockConfig = {
   workingDirectory: '/home/user/project',
   nodeVersion: 'v20.11.0',
   claudeCliPath: '/usr/local/bin/claude',
+  boundary: '/home/user',
+  dorkHome: '/home/user/.dork',
   tunnel: {
     enabled: true,
     connected: true,
@@ -135,15 +137,16 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('/home/user/project')).toBeDefined();
   });
 
-  // Verifies tunnel section shows Manage button instead of raw config data
-  it('shows Manage button for tunnel section', async () => {
+  // Verifies server tab shows endpoint and directory info
+  it('shows API URL, MCP Endpoint, and Data Directory in server tab', async () => {
     const transport = createSettingsTransport();
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
     });
     navigateTo(/server/i);
-    const manageBtn = await screen.findByText('Manage');
-    expect(manageBtn).toBeDefined();
+    expect(await screen.findByText('http://localhost:4242')).toBeDefined();
+    expect(screen.getByText('http://localhost:4242/mcp')).toBeDefined();
+    expect(screen.getByText('/home/user/.dork')).toBeDefined();
   });
 
   // Verifies the dialog content is not rendered when closed
@@ -165,13 +168,14 @@ describe('SettingsDialog', () => {
   });
 
   // Verifies sidebar navigation items render correctly
-  it('renders seven sidebar items: Appearance, Preferences, Status Bar, Server, Tools, Agents, Advanced', () => {
+  it('renders eight sidebar items: Appearance, Preferences, Status Bar, Server, Tools, Channels, Agents, Advanced', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /status bar/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /channels/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /agents/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
   });

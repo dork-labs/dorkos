@@ -6,11 +6,10 @@ import { isNewer } from '@/layers/features/status';
 interface ServerTabProps {
   config: ServerConfig | undefined;
   isLoading: boolean;
-  onOpenTunnelDialog?: () => void;
 }
 
-/** Settings panel tab displaying server status, version, and tunnel controls. */
-export function ServerTab({ config, isLoading, onOpenTunnelDialog }: ServerTabProps) {
+/** Settings panel tab displaying server status, environment, and endpoints. */
+export function ServerTab({ config, isLoading }: ServerTabProps) {
   return (
     <div className="space-y-3">
       {isLoading ? (
@@ -59,25 +58,12 @@ export function ServerTab({ config, isLoading, onOpenTunnelDialog }: ServerTabPr
 
           <ConfigRow label="Port" value={String(config.port)} />
           <ConfigRow label="Uptime" value={formatUptime(config.uptime)} />
+          <ConfigRow label="API URL" value={`http://localhost:${config.port}`} mono />
+          <ConfigRow label="MCP Endpoint" value={`http://localhost:${config.port}/mcp`} mono />
           <ConfigRow label="Working Directory" value={config.workingDirectory} mono truncate />
+          <ConfigRow label="Data Directory" value={config.dorkHome} mono truncate />
+          <ConfigRow label="Boundary" value={config.boundary} mono truncate />
           <ConfigRow label="Node.js" value={config.nodeVersion} />
-          <ConfigRow
-            label="Claude CLI"
-            value={config.claudeCliPath || 'Not found'}
-            mono
-            truncate
-            muted={!config.claudeCliPath}
-          />
-
-          <div className="hover:bg-muted/50 -mx-1 flex items-center justify-between rounded px-1 py-1">
-            <span className="text-muted-foreground text-sm">Tunnel</span>
-            <button
-              onClick={onOpenTunnelDialog}
-              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-sm transition-colors"
-            >
-              Manage
-            </button>
-          </div>
         </div>
       ) : null}
     </div>

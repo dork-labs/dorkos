@@ -1,7 +1,21 @@
 import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
-import { Badge, FieldCard, FieldCardContent, SettingRow, Switch } from '@/layers/shared/ui';
+import {
+  Badge,
+  FieldCard,
+  FieldCardContent,
+  Input,
+  SettingRow,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from '@/layers/shared/ui';
+import { useTransport } from '@/layers/shared/model';
 import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 
 const TASKS_PREVIEW = `DorkOS Tasks lets you create and manage scheduled agent runs.
@@ -126,6 +140,25 @@ export function ToolsTab() {
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const { config, updateConfig } = useAgentContextConfig();
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  const { data: serverConfig } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => transport.getConfig(),
+    staleTime: 30_000,
+  });
+
+  const scheduler = serverConfig?.scheduler;
+
+  const updateScheduler = useCallback(
+    async (patch: Record<string, unknown>) => {
+      const current = scheduler ?? { maxConcurrentRuns: 1, timezone: null, retentionCount: 100 };
+      await transport.updateConfig({ scheduler: { ...current, ...patch } });
+      await queryClient.invalidateQueries({ queryKey: ['config'] });
+    },
+    [transport, queryClient, scheduler]
+  );
 
   const handleToggle = useCallback(
     (key: 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools', value: boolean) => {
@@ -183,6 +216,78 @@ export function ToolsTab() {
           />
         </FieldCardContent>
       </FieldCard>
+
+      {scheduler && (
+        <>
+          <h3 className="text-sm font-semibold">Tasks Configuration</h3>
+          <FieldCard>
+            <FieldCardContent>
+              <SettingRow
+                label="Concurrent runs"
+                description="Maximum task runs that can execute in parallel"
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={scheduler.maxConcurrentRuns}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (v >= 1 && v <= 10) updateScheduler({ maxConcurrentRuns: v });
+                  }}
+                  className="w-20"
+                />
+              </SettingRow>
+
+              <SettingRow
+                label="Timezone"
+                description="IANA timezone for interpreting cron schedules"
+              >
+                <Select
+                  value={scheduler.timezone ?? 'system'}
+                  onValueChange={(v) => updateScheduler({ timezone: v === 'system' ? null : v })}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="system">System default</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="America/New_York">America/New_York</SelectItem>
+                    <SelectItem value="America/Chicago">America/Chicago</SelectItem>
+                    <SelectItem value="America/Denver">America/Denver</SelectItem>
+                    <SelectItem value="America/Los_Angeles">America/Los_Angeles</SelectItem>
+                    <SelectItem value="Europe/London">Europe/London</SelectItem>
+                    <SelectItem value="Europe/Berlin">Europe/Berlin</SelectItem>
+                    <SelectItem value="Europe/Paris">Europe/Paris</SelectItem>
+                    <SelectItem value="Asia/Tokyo">Asia/Tokyo</SelectItem>
+                    <SelectItem value="Asia/Shanghai">Asia/Shanghai</SelectItem>
+                    <SelectItem value="Asia/Kolkata">Asia/Kolkata</SelectItem>
+                    <SelectItem value="Australia/Sydney">Australia/Sydney</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+
+              <SettingRow
+                label="Run history retention"
+                description="Number of completed task runs to keep in history"
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={scheduler.retentionCount}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (v >= 1) updateScheduler({ retentionCount: v });
+                  }}
+                  className="w-24"
+                />
+              </SettingRow>
+            </FieldCardContent>
+          </FieldCard>
+        </>
+      )}
     </div>
   );
 }

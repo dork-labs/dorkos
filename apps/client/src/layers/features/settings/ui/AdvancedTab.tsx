@@ -1,9 +1,25 @@
-import { useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { Button, FieldCard, FieldCardContent, SettingRow, Switch } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
+import { useState, useCallback } from 'react';
+import { Copy, TriangleAlert } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { TIMING } from '@/layers/shared/lib';
+import {
+  Button,
+  FieldCard,
+  FieldCardContent,
+  Input,
+  SettingRow,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from '@/layers/shared/ui';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { ResetDialog } from './ResetDialog';
 import { RestartDialog } from './RestartDialog';
+
+const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
 interface AdvancedTabProps {
   onResetComplete: () => void;
@@ -18,6 +34,26 @@ export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabP
   const setEnableCrossClientSync = useAppStore((s) => s.setEnableCrossClientSync);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
+
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => transport.getConfig(),
+    staleTime: 30_000,
+  });
+
+  const logging = config?.logging;
+
+  const updateLogging = useCallback(
+    async (patch: Record<string, unknown>) => {
+      const current = logging ?? { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 };
+      await transport.updateConfig({ logging: { ...current, ...patch } });
+      await queryClient.invalidateQueries({ queryKey: ['config'] });
+    },
+    [transport, queryClient, logging]
+  );
 
   return (
     <div className="space-y-6">
@@ -43,6 +79,73 @@ export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabP
           </SettingRow>
         </FieldCardContent>
       </FieldCard>
+
+      {logging && (
+        <>
+          <h3 className="text-sm font-semibold">Logging</h3>
+          <p className="text-muted-foreground text-xs">
+            Server log verbosity and rotation. Changes take effect immediately for log level;
+            rotation settings apply on next file rotation.
+          </p>
+          <FieldCard>
+            <FieldCardContent>
+              <SettingRow label="Log level" description="Server log verbosity">
+                <Select value={logging.level} onValueChange={(v) => updateLogging({ level: v })}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOG_LEVELS.map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingRow>
+
+              <SettingRow
+                label="Max log file size"
+                description="Size in KB before a log file is rotated"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={100}
+                    max={10240}
+                    value={logging.maxLogSizeKb}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (v >= 100 && v <= 10240) updateLogging({ maxLogSizeKb: v });
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-muted-foreground text-xs">KB</span>
+                </div>
+              </SettingRow>
+
+              <SettingRow
+                label="Rotated files kept"
+                description="Number of old log files to retain (1-30)"
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={logging.maxLogFiles}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (v >= 1 && v <= 30) updateLogging({ maxLogFiles: v });
+                  }}
+                  className="w-20"
+                />
+              </SettingRow>
+
+              {config?.dorkHome && <LogLocationRow dorkHome={config.dorkHome} />}
+            </FieldCardContent>
+          </FieldCard>
+        </>
+      )}
 
       <div className="flex items-center gap-2">
         <TriangleAlert className="text-destructive size-4" />
@@ -87,5 +190,39 @@ export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabP
         onRestartComplete={onRestartComplete}
       />
     </div>
+  );
+}
+
+/** Read-only row showing the log file location with click-to-copy. */
+function LogLocationRow({ dorkHome }: { dorkHome: string }) {
+  const [copied, setCopied] = useState(false);
+  const logPath = `${dorkHome}/logs`;
+
+  function handleCopy() {
+    navigator.clipboard.writeText(logPath).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
+    });
+  }
+
+  return (
+    <SettingRow label="Log location" description="Directory where server log files are stored">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+      >
+        {copied ? (
+          <span className="text-xs">Copied</span>
+        ) : (
+          <>
+            <span className="max-w-40 truncate font-mono text-xs" dir="rtl" title={logPath}>
+              {logPath}
+            </span>
+            <Copy className="size-3 shrink-0" />
+          </>
+        )}
+      </button>
+    </SettingRow>
   );
 }

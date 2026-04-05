@@ -984,9 +984,44 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Relay message bus feature state' }),
+    scheduler: z
+      .object({
+        maxConcurrentRuns: z
+          .number()
+          .int()
+          .openapi({ description: 'Maximum concurrent task runs (1-10)' }),
+        timezone: z.string().nullable().openapi({
+          description: 'IANA timezone for cron expressions, or null for system default',
+        }),
+        retentionCount: z
+          .number()
+          .int()
+          .openapi({ description: 'Number of task run history records to retain' }),
+      })
+      .optional()
+      .openapi({ description: 'Task scheduler configuration' }),
+    logging: z
+      .object({
+        level: z
+          .string()
+          .openapi({ description: 'Log verbosity level (fatal, error, warn, info, debug, trace)' }),
+        maxLogSizeKb: z
+          .number()
+          .int()
+          .openapi({ description: 'Maximum log file size in KB before rotation' }),
+        maxLogFiles: z
+          .number()
+          .int()
+          .openapi({ description: 'Number of rotated log files to retain' }),
+      })
+      .optional()
+      .openapi({ description: 'Logging configuration' }),
     boundary: z
       .string()
       .openapi({ description: 'Server boundary path (home directory or configured boundary)' }),
+    dorkHome: z
+      .string()
+      .openapi({ description: 'Data directory path (~/.dork or configured DORK_HOME)' }),
     mesh: z
       .object({
         enabled: z
@@ -1027,6 +1062,9 @@ export const ServerConfigSchema = z
         adapterTools: z
           .boolean()
           .openapi({ description: 'Whether adapter tool context is injected into agent prompts' }),
+        tasksTools: z
+          .boolean()
+          .openapi({ description: 'Whether tasks tool context is injected into agent prompts' }),
       })
       .optional()
       .openapi({ description: 'Agent tool context injection toggles' }),

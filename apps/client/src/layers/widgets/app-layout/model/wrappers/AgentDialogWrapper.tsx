@@ -1,5 +1,6 @@
 import { useDirectoryState } from '@/layers/entities/session';
 import { AgentDialog, useAgentDialog } from '@/layers/features/agent-settings';
+import { useAppStore } from '@/layers/shared/model';
 
 interface DialogWrapperProps {
   open: boolean;
@@ -16,6 +17,7 @@ export function AgentDialogWrapper({ open, onOpenChange }: DialogWrapperProps) {
   const [selectedCwd] = useDirectoryState();
   const dialogPath = useAgentDialog((s) => s.projectPath);
   const closeDialog = useAgentDialog((s) => s.closeDialog);
+  const agentDialogInitialTab = useAppStore((s) => s.agentDialogInitialTab);
 
   const projectPath = dialogPath ?? selectedCwd;
 
@@ -29,6 +31,7 @@ export function AgentDialogWrapper({ open, onOpenChange }: DialogWrapperProps) {
         if (!o) closeDialog();
         onOpenChange(o);
       }}
+      initialTab={agentDialogInitialTab ?? undefined}
     />
   );
 }

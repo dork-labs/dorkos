@@ -99,7 +99,7 @@ vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => {
     const features = [
       { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
-      { id: 'relay', label: 'Relay Messaging', icon: 'Radio', action: 'openRelay' },
+      { id: 'relay', label: 'Channels', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
     ];
@@ -343,9 +343,9 @@ describe('Command Palette Integration', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('selecting Relay Messaging opens relay dialog and closes palette', () => {
+  it('selecting Channels opens relay dialog and closes palette', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Relay Messaging').closest('[data-slot="command-item"]');
+    const item = screen.getByText('Channels').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     expect(mockSetRelayOpen).toHaveBeenCalledWith(true);

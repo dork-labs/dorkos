@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 214,
+  "nextNumber": 215,
   "specs": [
+    {
+      "number": 214,
+      "slug": "channels-and-agent-adapters",
+      "title": "Channels & Agent Adapters — Connectivity UX Redesign",
+      "created": "2026-04-04",
+      "status": "implemented"
+    },
     {
       "number": 212,
       "slug": "skills-package",

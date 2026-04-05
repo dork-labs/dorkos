@@ -34,7 +34,7 @@ interface ConnectionsTabProps {
   enabled: boolean;
 }
 
-/** Renders configured adapter instances and available adapter types from the catalog. */
+/** Renders active channel instances and available channel types from the catalog. */
 export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
   const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
   const { mutate: toggleAdapter } = useToggleAdapter();
@@ -154,18 +154,18 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
 
   return (
     <div className="space-y-6 p-4">
-      {/* Configured Adapters */}
+      {/* Active Channels */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-            Configured Adapters
+            Active Channels
           </h3>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleRefresh}
             className="size-7 p-0"
-            aria-label="Refresh adapter catalog"
+            aria-label="Refresh channel catalog"
           >
             <RefreshCw className="size-3.5" />
           </Button>
@@ -174,9 +174,9 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-8">
             <Plug2 className="text-muted-foreground/40 size-8" />
             <div className="text-center">
-              <p className="text-muted-foreground text-sm">No adapters configured</p>
+              <p className="text-muted-foreground text-sm">No channels active</p>
               <p className="text-muted-foreground/60 text-xs">
-                Add an adapter below to connect agents to external services
+                Add a channel below to connect agents to external services
               </p>
             </div>
           </div>
@@ -199,15 +199,15 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
         )}
       </section>
 
-      {/* Available Adapters */}
+      {/* Add Channel */}
       <section>
         <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-          Available Adapters
+          Add Channel
         </h3>
         {availableEntries.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            All adapter types are configured. Multi-instance adapters like Webhook can be added
-            again from the configured list.
+            All channel types are active. Multi-instance channels like Webhook can be added again
+            from the active list.
           </p>
         ) : (
           <div

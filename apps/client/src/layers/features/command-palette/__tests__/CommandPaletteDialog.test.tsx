@@ -138,7 +138,7 @@ vi.mock('../model/use-palette-items', () => ({
     allAgents: mockAgents,
     features: [
       { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
-      { id: 'relay', label: 'Relay Messaging', icon: 'Radio', action: 'openRelay' },
+      { id: 'relay', label: 'Channels', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
     ],
@@ -161,7 +161,7 @@ vi.mock('../model/use-palette-items', () => ({
         data: a,
       })),
       { id: 'tasks', name: 'Tasks Scheduler', type: 'feature', data: {} },
-      { id: 'relay', name: 'Relay Messaging', type: 'feature', data: {} },
+      { id: 'relay', name: 'Channels', type: 'feature', data: {} },
       { id: 'mesh', name: 'Mesh Network', type: 'feature', data: {} },
       { id: 'settings', name: 'Settings', type: 'feature', data: {} },
       { id: 'cmd-/hello', name: '/hello', type: 'command', data: {} },
@@ -237,7 +237,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     expect(screen.getByText('Features')).toBeInTheDocument();
     expect(screen.getByText('Tasks Scheduler')).toBeInTheDocument();
-    expect(screen.getByText('Relay Messaging')).toBeInTheDocument();
+    expect(screen.getByText('Channels')).toBeInTheDocument();
     expect(screen.getByText('Mesh Network')).toBeInTheDocument();
     expect(screen.getByText('Settings')).toBeInTheDocument();
   });
@@ -343,9 +343,9 @@ describe('CommandPaletteDialog', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('opens Relay dialog when Relay Messaging is selected', () => {
+  it('opens Relay dialog when Channels is selected', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Relay Messaging').closest('[data-slot="command-item"]');
+    const item = screen.getByText('Channels').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetRelayOpen).toHaveBeenCalledWith(true);
   });

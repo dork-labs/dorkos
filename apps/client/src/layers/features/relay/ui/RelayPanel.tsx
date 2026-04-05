@@ -86,7 +86,7 @@ export function RelayPanel() {
                   <ActivityFeed
                     enabled={relayEnabled}
                     deadLetterRef={deadLetterRef}
-                    onSwitchToAdapters={() => setActiveTab('connections')}
+                    onSwitchToChannels={() => setActiveTab('connections')}
                     autoShowFailures={autoShowFailures}
                   />
                 </TabsContent>
@@ -108,7 +108,7 @@ export function RelayPanel() {
               <ConnectionsTab enabled={relayEnabled} />
             </div>
           ) : (
-            <RelayEmptyState onAddAdapter={() => setShowCatalog(true)} />
+            <RelayEmptyState onAddChannel={() => setShowCatalog(true)} />
           )}
         </motion.div>
       )}

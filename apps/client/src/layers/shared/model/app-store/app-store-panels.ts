@@ -9,12 +9,34 @@ import type { StateCreator } from 'zustand';
 import type { AppState } from './app-store-types';
 
 // ---------------------------------------------------------------------------
+// Tab identifier types
+// ---------------------------------------------------------------------------
+
+/** Valid tab identifiers for the Settings dialog. Extension tabs are allowed as arbitrary strings. */
+export type SettingsTab =
+  | 'appearance'
+  | 'preferences'
+  | 'statusBar'
+  | 'server'
+  | 'tools'
+  | 'channels'
+  | 'agents'
+  | 'advanced'
+  | (string & {});
+
+/** Valid tab identifiers for the Agent dialog. */
+export type AgentDialogTab = 'identity' | 'personality' | 'capabilities' | 'channels';
+
+// ---------------------------------------------------------------------------
 // Slice interface
 // ---------------------------------------------------------------------------
 
 export interface PanelsSlice {
   settingsOpen: boolean;
+  settingsInitialTab: SettingsTab | null;
   setSettingsOpen: (open: boolean) => void;
+  /** Open the Settings dialog pre-navigated to a specific tab. */
+  openSettingsToTab: (tab: SettingsTab) => void;
 
   tasksOpen: boolean;
   setTasksOpen: (open: boolean) => void;
@@ -34,7 +56,10 @@ export interface PanelsSlice {
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
   agentDialogOpen: boolean;
+  agentDialogInitialTab: AgentDialogTab | null;
   setAgentDialogOpen: (open: boolean) => void;
+  /** Open the Agent dialog pre-navigated to a specific tab. */
+  openAgentDialogToTab: (tab: AgentDialogTab) => void;
 
   onboardingStep: number | null;
   setOnboardingStep: (step: number | null) => void;
@@ -66,7 +91,10 @@ export const createPanelsSlice: StateCreator<
   PanelsSlice
 > = (set) => ({
   settingsOpen: false,
-  setSettingsOpen: (open) => set({ settingsOpen: open }),
+  settingsInitialTab: null,
+  setSettingsOpen: (open) =>
+    set(open ? { settingsOpen: true } : { settingsOpen: false, settingsInitialTab: null }),
+  openSettingsToTab: (tab) => set({ settingsOpen: true, settingsInitialTab: tab }),
 
   tasksOpen: false,
   setTasksOpen: (open) =>
@@ -91,7 +119,10 @@ export const createPanelsSlice: StateCreator<
   pickerOpen: false,
   setPickerOpen: (open) => set({ pickerOpen: open }),
   agentDialogOpen: false,
-  setAgentDialogOpen: (open) => set({ agentDialogOpen: open }),
+  agentDialogInitialTab: null,
+  setAgentDialogOpen: (open) =>
+    set(open ? { agentDialogOpen: true } : { agentDialogOpen: false, agentDialogInitialTab: null }),
+  openAgentDialogToTab: (tab) => set({ agentDialogOpen: true, agentDialogInitialTab: tab }),
 
   onboardingStep: null,
   setOnboardingStep: (step) => set({ onboardingStep: step }),

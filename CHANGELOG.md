@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rename relay adapters to channels, add adapter runtime cards and agent-first channel binding
 - Add system requirements check to onboarding with adapter dependency checking
 - Add Remote Access shortcut to settings sidebar
 

@@ -1,4 +1,4 @@
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import {
   Palette,
   Settings2,
@@ -8,6 +8,7 @@ import {
   Cog,
   Bot,
   Globe,
+  Radio,
   ChevronRight,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -55,6 +56,7 @@ import { TunnelDialog } from './TunnelDialog';
 import { AdvancedTab } from './AdvancedTab';
 import { ServerRestartOverlay } from './ServerRestartOverlay';
 import { ToolsTab } from './ToolsTab';
+import { ChannelsTab } from './ChannelsTab';
 import { AgentsTab } from './AgentsTab';
 
 /** Toggle row for a single status bar registry item. */
@@ -110,8 +112,16 @@ interface SettingsDialogProps {
 /** Tabbed settings dialog for appearance, behavior, and advanced options. */
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { theme, setTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState('appearance');
+  const settingsInitialTab = useAppStore((s) => s.settingsInitialTab);
+  const [activeTab, setActiveTab] = useState(settingsInitialTab ?? 'appearance');
   const extensionTabs = useSlotContributions('settings.tabs');
+
+  // Sync active tab when dialog opens with a pre-targeted tab
+  useEffect(() => {
+    if (open && settingsInitialTab) {
+      setActiveTab(settingsInitialTab);
+    }
+  }, [open, settingsInitialTab]);
   const [tunnelDialogOpen, setTunnelDialogOpen] = useState(false);
   const [restartOverlayOpen, setRestartOverlayOpen] = useState(false);
   const {
@@ -180,6 +190,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <RemoteAccessAction onClick={() => setTunnelDialogOpen(true)} />
               <NavigationLayoutItem value="tools" icon={Wrench}>
                 Tools
+              </NavigationLayoutItem>
+              <NavigationLayoutItem value="channels" icon={Radio}>
+                Channels
               </NavigationLayoutItem>
               <NavigationLayoutItem value="agents" icon={Bot}>
                 Agents
@@ -389,11 +402,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               <NavigationLayoutPanel value="server">
                 <div className="space-y-3">
                   <NavigationLayoutPanelHeader>Server</NavigationLayoutPanelHeader>
-                  <ServerTab
-                    config={config}
-                    isLoading={isLoading}
-                    onOpenTunnelDialog={() => setTunnelDialogOpen(true)}
-                  />
+                  <ServerTab config={config} isLoading={isLoading} />
                 </div>
               </NavigationLayoutPanel>
 
@@ -401,6 +410,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <div className="space-y-4">
                   <NavigationLayoutPanelHeader>Tools</NavigationLayoutPanelHeader>
                   <ToolsTab />
+                </div>
+              </NavigationLayoutPanel>
+
+              <NavigationLayoutPanel value="channels">
+                <div className="space-y-4">
+                  <NavigationLayoutPanelHeader>Channels</NavigationLayoutPanelHeader>
+                  <ChannelsTab />
                 </div>
               </NavigationLayoutPanel>
 

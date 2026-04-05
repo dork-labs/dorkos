@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 224,
+  "nextNumber": 226,
   "decisions": [
+    {
+      "number": 225,
+      "slug": "agent-first-binding-via-inline-picker",
+      "title": "Agent-First Binding Management via Inline Channel Picker",
+      "created": "2026-04-04",
+      "status": "draft",
+      "extractedFrom": "channels-and-agent-adapters",
+      "specSlug": "channels-and-agent-adapters"
+    },
+    {
+      "number": 224,
+      "slug": "channels-vocabulary-over-relay-adapters",
+      "title": "User-Facing \"Channels\" Vocabulary Over \"Relay Adapters\"",
+      "created": "2026-04-04",
+      "status": "draft",
+      "extractedFrom": "channels-and-agent-adapters",
+      "specSlug": "channels-and-agent-adapters"
+    },
     {
       "number": 223,
       "slug": "defer-electron-rebuild-v4-upgrade",

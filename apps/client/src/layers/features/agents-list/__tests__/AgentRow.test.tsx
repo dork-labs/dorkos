@@ -31,6 +31,17 @@ vi.mock('@/layers/features/agent-settings', () => ({
   AgentDialog: () => null,
 }));
 
+// Mock binding and catalog hooks for channel badge tests
+const mockUseBindings = vi.fn(() => ({ data: [] as unknown[] }));
+vi.mock('@/layers/entities/binding', () => ({
+  useBindings: () => mockUseBindings(),
+}));
+
+const mockUseAdapterCatalog = vi.fn(() => ({ data: [] as unknown[] }));
+vi.mock('@/layers/entities/relay', () => ({
+  useAdapterCatalog: () => mockUseAdapterCatalog(),
+}));
+
 // Mock SessionLaunchPopover to isolate AgentRow
 vi.mock('../ui/SessionLaunchPopover', () => ({
   SessionLaunchPopover: ({ projectPath }: { projectPath: string }) => (
@@ -479,5 +490,211 @@ describe('AgentRow', () => {
     fireEvent.click(trigger);
 
     expect(screen.queryByTestId('set-default-btn')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Channel badge tests
+  // ---------------------------------------------------------------------------
+
+  it('renders channel badges for agent with bindings', () => {
+    mockUseBindings.mockReturnValue({
+      data: [{ id: 'b-1', adapterId: 'telegram-1', agentId: 'agent-1' }],
+    });
+    mockUseAdapterCatalog.mockReturnValue({
+      data: [
+        {
+          manifest: { displayName: 'Telegram' },
+          instances: [{ id: 'telegram-1', label: null, status: { state: 'connected' } }],
+        },
+      ],
+    });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const badges = screen.getAllByTestId('channel-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('Telegram');
+  });
+
+  it('renders no channel badges when agent has no bindings', () => {
+    mockUseBindings.mockReturnValue({ data: [] });
+    mockUseAdapterCatalog.mockReturnValue({ data: [] });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.queryByTestId('channel-badge')).not.toBeInTheDocument();
+  });
+
+  it('renders multiple channel badges for agent with multiple bindings', () => {
+    mockUseBindings.mockReturnValue({
+      data: [
+        { id: 'b-1', adapterId: 'telegram-1', agentId: 'agent-1' },
+        { id: 'b-2', adapterId: 'slack-1', agentId: 'agent-1' },
+        { id: 'b-3', adapterId: 'discord-1', agentId: 'agent-1' },
+      ],
+    });
+    mockUseAdapterCatalog.mockReturnValue({
+      data: [
+        {
+          manifest: { displayName: 'Telegram' },
+          instances: [{ id: 'telegram-1', label: null, status: { state: 'connected' } }],
+        },
+        {
+          manifest: { displayName: 'Slack' },
+          instances: [{ id: 'slack-1', label: null, status: { state: 'connected' } }],
+        },
+        {
+          manifest: { displayName: 'Discord' },
+          instances: [{ id: 'discord-1', label: null, status: { state: 'connected' } }],
+        },
+      ],
+    });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const badges = screen.getAllByTestId('channel-badge');
+    expect(badges).toHaveLength(3);
+    expect(badges[0]).toHaveTextContent('Telegram');
+    expect(badges[1]).toHaveTextContent('Slack');
+    expect(badges[2]).toHaveTextContent('Discord');
+  });
+
+  it('does not show channel badges for bindings belonging to other agents', () => {
+    mockUseBindings.mockReturnValue({
+      data: [{ id: 'b-1', adapterId: 'telegram-1', agentId: 'other-agent' }],
+    });
+    mockUseAdapterCatalog.mockReturnValue({
+      data: [
+        {
+          manifest: { displayName: 'Telegram' },
+          instances: [{ id: 'telegram-1', label: null, status: { state: 'connected' } }],
+        },
+      ],
+    });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    expect(screen.queryByTestId('channel-badge')).not.toBeInTheDocument();
+  });
+
+  it('uses instance label over adapter displayName when available', () => {
+    mockUseBindings.mockReturnValue({
+      data: [{ id: 'b-1', adapterId: 'telegram-1', agentId: 'agent-1' }],
+    });
+    mockUseAdapterCatalog.mockReturnValue({
+      data: [
+        {
+          manifest: { displayName: 'Telegram' },
+          instances: [{ id: 'telegram-1', label: 'My TG Bot', status: { state: 'connected' } }],
+        },
+      ],
+    });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const badge = screen.getByTestId('channel-badge');
+    expect(badge).toHaveTextContent('My TG Bot');
+  });
+
+  it('deduplicates channel badges with the same display label', () => {
+    mockUseBindings.mockReturnValue({
+      data: [
+        { id: 'b-1', adapterId: 'telegram-1', agentId: 'agent-1' },
+        { id: 'b-2', adapterId: 'telegram-2', agentId: 'agent-1' },
+      ],
+    });
+    mockUseAdapterCatalog.mockReturnValue({
+      data: [
+        {
+          manifest: { displayName: 'Telegram' },
+          instances: [
+            { id: 'telegram-1', label: null, status: { state: 'connected' } },
+            { id: 'telegram-2', label: null, status: { state: 'connected' } },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    // Both instances share the same displayName "Telegram" so they should be deduplicated
+    const badges = screen.getAllByTestId('channel-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('Telegram');
+  });
+
+  it('falls back to adapterId when catalog has no matching entry', () => {
+    mockUseBindings.mockReturnValue({
+      data: [{ id: 'b-1', adapterId: 'unknown-adapter', agentId: 'agent-1' }],
+    });
+    mockUseAdapterCatalog.mockReturnValue({ data: [] });
+
+    render(
+      <AgentRow
+        agent={agentFixture}
+        projectPath="/projects/frontend"
+        sessionCount={0}
+        healthStatus="active"
+        lastActive={null}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    const badge = screen.getByTestId('channel-badge');
+    expect(badge).toHaveTextContent('unknown-adapter');
   });
 });

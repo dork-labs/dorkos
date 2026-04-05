@@ -12,7 +12,7 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   },
   {
     id: 'relay',
-    label: 'Relay Messaging',
+    label: 'Channels',
     icon: 'Radio',
     action: 'openRelay',
     category: 'feature',

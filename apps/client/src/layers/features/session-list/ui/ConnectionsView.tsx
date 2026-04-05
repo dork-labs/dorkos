@@ -88,7 +88,7 @@ const emptyStateVariants = {
 } as const;
 const emptyStateTransition = { duration: 0.15, ease: EASE_OUT } as const;
 
-/** Read-only adapter and agent summary for the sidebar Connections tab. */
+/** Read-only channel and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId, activeSessionId }: ConnectionsViewProps) {
   const { setRelayOpen, setMeshOpen, setAgentDialogOpen, selectedCwd } = useAppStore();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
@@ -182,7 +182,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
             >
               <SidebarGroup>
                 <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
-                  Adapters
+                  Channels
                 </SidebarGroupLabel>
                 <SidebarGroupAction
                   aria-label="Open Relay panel"
@@ -203,7 +203,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                       className="px-3 py-2"
                     >
                       <p className="text-muted-foreground/60 text-sm">
-                        Relay disabled for this agent
+                        Channels disabled for this agent
                       </p>
                     </motion.div>
                   ) : visibleAdapters.length === 0 ? (
@@ -216,7 +216,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                       transition={emptyStateTransition}
                       className="px-3 py-2"
                     >
-                      <p className="text-muted-foreground/60 text-sm">No adapters configured</p>
+                      <p className="text-muted-foreground/60 text-sm">No channels configured</p>
                     </motion.div>
                   ) : (
                     <motion.div

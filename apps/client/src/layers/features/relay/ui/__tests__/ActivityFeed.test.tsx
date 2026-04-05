@@ -108,10 +108,10 @@ describe('ActivityFeed', () => {
       ).toBeInTheDocument();
     });
 
-    it('never shows "Set up an adapter" button', () => {
+    it('never shows "Set up a channel" button', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
-      render(<ActivityFeed enabled={true} onSwitchToAdapters={vi.fn()} />);
-      expect(screen.queryByText('Set up an adapter')).not.toBeInTheDocument();
+      render(<ActivityFeed enabled={true} onSwitchToChannels={vi.fn()} />);
+      expect(screen.queryByText('Set up a channel')).not.toBeInTheDocument();
     });
 
     it('shows the "no messages match filters" state when filters are active and nothing matches', () => {

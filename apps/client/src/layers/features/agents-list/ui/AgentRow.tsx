@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ChevronDown, Star } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, Radio, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest, AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
@@ -8,7 +8,10 @@ import { Button } from '@/layers/shared/ui/button';
 import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
+import { useBindings } from '@/layers/entities/binding';
+import { useAdapterCatalog } from '@/layers/entities/relay';
 import { AgentDialog } from '@/layers/features/agent-settings';
+import type { AgentDialogTab } from '@/layers/shared/model';
 import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
 import { SessionLaunchPopover } from './SessionLaunchPopover';
 import { UnregisterAgentDialog } from './UnregisterAgentDialog';
@@ -56,6 +59,7 @@ export function AgentRow({
   const [open, setOpen] = useState(false);
   const [unregisterOpen, setUnregisterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<AgentDialogTab>('identity');
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -67,6 +71,35 @@ export function AgentRow({
 
   const isDefault = config?.agents?.defaultAgent === agent.name;
   const isSystem = agent.isSystem === true;
+
+  const { data: allBindings = [] } = useBindings();
+  const { data: catalog = [] } = useAdapterCatalog();
+
+  /** Map adapterId → display label (instance label if set, otherwise adapter displayName). */
+  const adapterDisplayNames = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of catalog) {
+      for (const instance of entry.instances) {
+        map.set(instance.id, instance.label ?? entry.manifest.displayName);
+      }
+    }
+    return map;
+  }, [catalog]);
+
+  /** Deduplicated channel labels for the adapters this agent is bound to. */
+  const channelLabels = useMemo(() => {
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const binding of allBindings) {
+      if (binding.agentId !== agent.id) continue;
+      const label = adapterDisplayNames.get(binding.adapterId) ?? binding.adapterId;
+      if (!seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
+    }
+    return labels;
+  }, [allBindings, agent.id, adapterDisplayNames]);
 
   async function handleSetAsDefault() {
     await transport.setDefaultAgent(agent.name);
@@ -106,7 +139,7 @@ export function AgentRow({
             />
           </div>
 
-          {/* Line 2: truncated path + session count + session launch */}
+          {/* Line 2: truncated path + session count + channel badges + session launch */}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-muted-foreground max-w-[240px] truncate font-mono text-xs">
               {truncatePath(projectPath)}
@@ -117,6 +150,17 @@ export function AgentRow({
                 {sessionCount} active
               </Badge>
             )}
+
+            {channelLabels.map((label) => (
+              <Badge
+                key={label}
+                variant="outline"
+                className="text-muted-foreground text-xs"
+                data-testid="channel-badge"
+              >
+                {label}
+              </Badge>
+            ))}
 
             {/* Stop propagation so clicking the popover doesn't toggle the card */}
             {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Event boundary only */}
@@ -198,8 +242,27 @@ export function AgentRow({
                       Set as Default
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSettingsInitialTab('identity');
+                      setSettingsOpen(true);
+                    }}
+                  >
                     Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSettingsInitialTab('channels');
+                      setSettingsOpen(true);
+                    }}
+                    data-testid="channels-btn"
+                  >
+                    <Radio className="mr-1 size-3" />
+                    Channels
                   </Button>
                   {!isSystem && (
                     <Button
@@ -218,7 +281,12 @@ export function AgentRow({
         </AnimatePresence>
       </div>
 
-      <AgentDialog projectPath={projectPath} open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <AgentDialog
+        projectPath={projectPath}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialTab={settingsInitialTab}
+      />
 
       {!isSystem && (
         <UnregisterAgentDialog
