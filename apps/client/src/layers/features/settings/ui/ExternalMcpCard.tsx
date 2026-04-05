@@ -118,6 +118,7 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState<string | null>(null);
   const [copied, copy] = useCopyFeedback();
 
   const invalidateConfig = useCallback(
@@ -139,22 +140,38 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
   );
 
   const handleGenerateKey = useCallback(async () => {
-    const { apiKey } = await transport.generateMcpApiKey();
-    setGeneratedKey(apiKey);
-    await invalidateConfig();
+    try {
+      setKeyError(null);
+      const { apiKey } = await transport.generateMcpApiKey();
+      setGeneratedKey(apiKey);
+      await invalidateConfig();
+    } catch {
+      setKeyError('Failed to generate API key.');
+    }
   }, [transport, invalidateConfig]);
 
   const handleRotateKey = useCallback(async () => {
-    await transport.deleteMcpApiKey();
-    const { apiKey } = await transport.generateMcpApiKey();
-    setGeneratedKey(apiKey);
-    await invalidateConfig();
+    try {
+      setKeyError(null);
+      await transport.deleteMcpApiKey();
+      const { apiKey } = await transport.generateMcpApiKey();
+      setGeneratedKey(apiKey);
+      await invalidateConfig();
+    } catch {
+      setKeyError('Failed to rotate API key. The previous key may have been removed.');
+      await invalidateConfig();
+    }
   }, [transport, invalidateConfig]);
 
   const handleRemoveKey = useCallback(async () => {
-    await transport.deleteMcpApiKey();
-    setGeneratedKey(null);
-    await invalidateConfig();
+    try {
+      setKeyError(null);
+      await transport.deleteMcpApiKey();
+      setGeneratedKey(null);
+      await invalidateConfig();
+    } catch {
+      setKeyError('Failed to remove API key.');
+    }
   }, [transport, invalidateConfig]);
 
   const handleUpdateRateLimit = useCallback(
@@ -241,6 +258,11 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
                 onRotate={handleRotateKey}
                 onRemove={handleRemoveKey}
               />
+              {keyError && (
+                <p className="text-xs text-red-500" role="alert">
+                  {keyError}
+                </p>
+              )}
 
               {/* Rate limiting */}
               <SettingRow
@@ -281,6 +303,9 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
                       className="w-20"
                     />
                   </SettingRow>
+                  <p className="text-muted-foreground text-xs">
+                    Rate limit changes take effect after server restart.
+                  </p>
                 </>
               )}
 

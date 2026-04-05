@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add error handling for API key lifecycle and restart hint for rate limits
 ---
 
 ## [0.33.0] - 2026-04-05

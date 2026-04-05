@@ -150,7 +150,7 @@ router.get('/', async (_req, res) => {
       return {
         enabled: mcpConfig?.enabled ?? true,
         authConfigured: !!effectiveApiKey,
-        authSource: mcpApiKeyFromEnv ? 'env' : mcpApiKeyFromConfig ? 'config' : ('none' as const),
+        authSource: mcpApiKeyFromEnv ? 'env' : mcpApiKeyFromConfig ? 'config' : 'none',
         endpoint: `http://localhost:${env.DORKOS_PORT}/mcp`,
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
