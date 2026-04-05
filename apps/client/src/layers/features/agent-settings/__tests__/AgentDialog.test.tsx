@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // Mock child tab components to isolate AgentDialog shell tests.
@@ -64,7 +65,9 @@ function createWrapper(transport: Transport) {
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>{children}</TransportProvider>
+      <TransportProvider transport={transport}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
     </QueryClientProvider>
   );
 }
@@ -98,7 +101,9 @@ describe('AgentDialog', () => {
     );
 
     const dialog = await findDialog();
-    expect(within(dialog).getByText('test-agent')).toBeInTheDocument();
+    // Agent name appears in both dialog header and hero preview
+    const names = within(dialog).getAllByText('test-agent');
+    expect(names.length).toBeGreaterThanOrEqual(1);
     expect(within(dialog).getByText('Agent configuration')).toBeInTheDocument();
   });
 
@@ -161,7 +166,7 @@ describe('AgentDialog', () => {
     expect(nameInput).toHaveValue('test-agent');
   });
 
-  it('shows color preset buttons', async () => {
+  it('shows color and icon picker triggers', async () => {
     const transport = createMockTransport({
       getAgentByPath: vi.fn().mockResolvedValue(mockAgent),
     });
@@ -174,8 +179,8 @@ describe('AgentDialog', () => {
     );
 
     const dialog = await findDialog();
-    const colorButtons = within(dialog).getAllByLabelText(/Select color #/);
-    expect(colorButtons).toHaveLength(10);
+    expect(within(dialog).getByLabelText('Choose color')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Choose icon')).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------

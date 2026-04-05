@@ -139,7 +139,7 @@ export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: Age
               <NavigationLayoutPanel value="identity">
                 <div className="space-y-4">
                   <NavigationLayoutPanelHeader>Identity</NavigationLayoutPanelHeader>
-                  <IdentityTab agent={agent} projectPath={projectPath} onUpdate={handleUpdate} />
+                  <IdentityTab agent={agent} onUpdate={handleUpdate} />
                 </div>
               </NavigationLayoutPanel>
 

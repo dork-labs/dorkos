@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from 'react';
+import { useState, useCallback, type KeyboardEvent } from 'react';
 import { X, RotateCcw } from 'lucide-react';
+import { useDebouncedInput } from '@/layers/shared/model';
 import {
   Badge,
   Button,
@@ -116,10 +117,8 @@ function ToolGroupRow({
 const INPUT_CLASSES =
   'border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
 
-const DEBOUNCE_MS = 500;
-
 /**
- * Capabilities tab for agent configuration: tag-based capabilities,
+ * Capabilities tab for agent configuration: runtime, tag-based capabilities,
  * namespace, response mode, budget fields, and per-agent tool group toggles.
  */
 export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
@@ -128,40 +127,10 @@ export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
   const tasksEnabled = useTasksEnabled();
   const { config: globalConfig } = useAgentContextConfig();
 
-  // Debounced namespace input (same pattern as IdentityTab)
-  const [nsValue, setNsValue] = useState(agent.namespace ?? '');
-  const nsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Sync local state only when a different agent is loaded (not on every server confirmation)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting local input state when a different agent is loaded
-    setNsValue(agent.namespace ?? '');
-  }, [agent.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleNsChange = useCallback(
-    (value: string) => {
-      setNsValue(value);
-      if (nsTimerRef.current) clearTimeout(nsTimerRef.current);
-      nsTimerRef.current = setTimeout(() => {
-        onUpdate({ namespace: value || undefined });
-      }, DEBOUNCE_MS);
-    },
-    [onUpdate]
-  );
-
-  const handleNsBlur = useCallback(() => {
-    if (nsTimerRef.current) clearTimeout(nsTimerRef.current);
-    const current = nsValue || undefined;
-    if (current !== agent.namespace) {
-      onUpdate({ namespace: current });
-    }
-  }, [nsValue, agent.namespace, onUpdate]);
-
-  useEffect(() => {
-    return () => {
-      if (nsTimerRef.current) clearTimeout(nsTimerRef.current);
-    };
-  }, []);
+  // Debounced namespace input
+  const ns = useDebouncedInput(agent.namespace ?? '', agent.id, (v) => {
+    onUpdate({ namespace: v || undefined });
+  });
 
   const addCapability = useCallback(
     (raw: string) => {
@@ -245,9 +214,28 @@ export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Identity card */}
+      {/* Configuration card */}
       <FieldCard>
         <FieldCardContent>
+          {/* Runtime */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Runtime</Label>
+            <Select
+              value={agent.runtime}
+              onValueChange={(v) => onUpdate({ runtime: v as AgentManifest['runtime'] })}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="claude-code">Claude Code</SelectItem>
+                <SelectItem value="cursor">Cursor</SelectItem>
+                <SelectItem value="codex">Codex</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Capabilities tags */}
           <div className="space-y-2">
             <Label htmlFor="cap-input" className="text-sm font-medium">
@@ -286,9 +274,9 @@ export function CapabilitiesTab({ agent, onUpdate }: CapabilitiesTabProps) {
             <input
               id="agent-namespace"
               type="text"
-              value={nsValue}
-              onChange={(e) => handleNsChange(e.target.value)}
-              onBlur={handleNsBlur}
+              value={ns.value}
+              onChange={(e) => ns.onChange(e.target.value)}
+              onBlur={ns.onBlur}
               className={INPUT_CLASSES}
               placeholder="Optional grouping namespace"
             />

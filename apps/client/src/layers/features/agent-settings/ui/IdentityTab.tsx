@@ -1,148 +1,146 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { cn, EMOJI_SET } from '@/layers/shared/lib';
+import { useState, useCallback, useMemo } from 'react';
+import {
+  cn,
+  EMOJI_SET,
+  hashToHslColor,
+  hashToEmoji,
+  formatRelativeTime,
+} from '@/layers/shared/lib';
+import { useDebouncedInput } from '@/layers/shared/model';
+import { AgentIdentity, resolveAgentVisual } from '@/layers/entities/agent';
 import {
   FieldCard,
   FieldCardContent,
+  Input,
   Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  ResponsivePopover,
+  ResponsivePopoverTrigger,
+  ResponsivePopoverContent,
+  ResponsivePopoverTitle,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
-const COLOR_PRESETS = [
-  '#ef4444',
-  '#f97316',
-  '#eab308',
-  '#22c55e',
-  '#06b6d4',
-  '#3b82f6',
-  '#6366f1',
-  '#a855f7',
-  '#ec4899',
-  '#78716c',
+/** Maps each color preset to a human-readable name for accessibility. */
+const COLOR_PRESETS: { hex: string; name: string }[] = [
+  { hex: '#ef4444', name: 'Red' },
+  { hex: '#f97316', name: 'Orange' },
+  { hex: '#eab308', name: 'Yellow' },
+  { hex: '#22c55e', name: 'Green' },
+  { hex: '#06b6d4', name: 'Cyan' },
+  { hex: '#3b82f6', name: 'Blue' },
+  { hex: '#6366f1', name: 'Indigo' },
+  { hex: '#a855f7', name: 'Purple' },
+  { hex: '#ec4899', name: 'Pink' },
+  { hex: '#78716c', name: 'Stone' },
 ];
-
-const DEBOUNCE_MS = 500;
 
 interface IdentityTabProps {
   agent: AgentManifest;
-  projectPath: string;
   onUpdate: (updates: Partial<AgentManifest>) => void;
 }
 
 /**
- * Identity form with name, description, color picker, emoji picker, and runtime dropdown.
- * System agents have their name and description fields disabled.
+ * Identity profile with hero preview, name/description fields, color picker,
+ * and emoji icon popover. System agents have name and description disabled.
  */
-export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: IdentityTabProps) {
+export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   const isSystem = agent.isSystem === true;
+  const visual = resolveAgentVisual(agent);
 
-  // Debounced name input
-  const [nameValue, setNameValue] = useState(agent.name);
-  const nameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Compute the deterministic defaults from the agent's ID
+  const autoColor = useMemo(() => hashToHslColor(agent.id), [agent.id]);
+  const autoEmoji = useMemo(() => hashToEmoji(agent.id), [agent.id]);
 
-  // Sync local state only when a different agent is loaded (not on every server confirmation)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting local input state when a different agent is loaded
-    setNameValue(agent.name);
-  }, [agent.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hasColorOverride = agent.color != null;
+  const hasIconOverride = agent.icon != null;
+  const hasAnyOverride = hasColorOverride || hasIconOverride;
 
-  const handleNameChange = useCallback(
-    (value: string) => {
-      setNameValue(value);
-      if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
-      nameTimerRef.current = setTimeout(() => {
-        if (value.trim()) {
-          onUpdate({ name: value.trim() });
-        }
-      }, DEBOUNCE_MS);
+  // Popover open states — close on selection
+  const [colorOpen, setColorOpen] = useState(false);
+  const [iconOpen, setIconOpen] = useState(false);
+
+  // Debounced name with trim + non-empty validation
+  const name = useDebouncedInput(agent.name, agent.id, (v) => {
+    const trimmed = v.trim();
+    if (trimmed) onUpdate({ name: trimmed });
+  });
+  const nameEmpty = name.value.trim().length === 0;
+
+  // Debounced description
+  const desc = useDebouncedInput(agent.description, agent.id, (v) => {
+    onUpdate({ description: v });
+  });
+
+  const handleColorSelect = useCallback(
+    (hex: string | undefined) => {
+      onUpdate({ color: hex });
+      setColorOpen(false);
     },
     [onUpdate]
   );
 
-  const handleNameBlur = useCallback(() => {
-    if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
-    const trimmed = nameValue.trim();
-    if (trimmed && trimmed !== agent.name) {
-      onUpdate({ name: trimmed });
-    }
-  }, [nameValue, agent.name, onUpdate]);
-
-  // Debounced description input
-  const [descValue, setDescValue] = useState(agent.description);
-  const descTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting local input state when a different agent is loaded
-    setDescValue(agent.description);
-  }, [agent.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleDescChange = useCallback(
-    (value: string) => {
-      setDescValue(value);
-      if (descTimerRef.current) clearTimeout(descTimerRef.current);
-      descTimerRef.current = setTimeout(() => {
-        onUpdate({ description: value });
-      }, DEBOUNCE_MS);
+  const handleIconSelect = useCallback(
+    (emoji: string) => {
+      // Selecting the auto-derived emoji clears the override
+      onUpdate({ icon: emoji === autoEmoji ? undefined : emoji });
+      setIconOpen(false);
     },
-    [onUpdate]
+    [onUpdate, autoEmoji]
   );
 
-  const handleDescBlur = useCallback(() => {
-    if (descTimerRef.current) clearTimeout(descTimerRef.current);
-    if (descValue !== agent.description) {
-      onUpdate({ description: descValue });
-    }
-  }, [descValue, agent.description, onUpdate]);
+  const handleResetAppearance = useCallback(() => {
+    onUpdate({ color: undefined, icon: undefined });
+  }, [onUpdate]);
 
-  // Cleanup timers on unmount
-  useEffect(() => {
-    return () => {
-      if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
-      if (descTimerRef.current) clearTimeout(descTimerRef.current);
-    };
-  }, []);
+  // --- Render helpers for system agent tooltip wrapping ---
 
   const nameInput = (
-    <input
+    <Input
       id="agent-name"
-      type="text"
-      value={nameValue}
-      onChange={(e) => handleNameChange(e.target.value)}
-      onBlur={handleNameBlur}
+      value={name.value}
+      onChange={(e) => name.onChange(e.target.value)}
+      onBlur={name.onBlur}
       disabled={isSystem}
-      className={cn(
-        'border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-        isSystem && 'cursor-not-allowed opacity-50'
-      )}
+      aria-invalid={nameEmpty || undefined}
       placeholder="Agent name"
     />
   );
 
-  const descriptionInput = (
+  const descriptionTextarea = (
     <textarea
       id="agent-description"
-      value={descValue}
-      onChange={(e) => handleDescChange(e.target.value)}
-      onBlur={handleDescBlur}
+      value={desc.value}
+      onChange={(e) => desc.onChange(e.target.value)}
+      onBlur={desc.onBlur}
       disabled={isSystem}
       rows={3}
       className={cn(
-        'border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-        isSystem && 'cursor-not-allowed opacity-50'
+        'border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 w-full resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50'
       )}
       placeholder="What does this agent do?"
     />
   );
 
+  // The emoji that should show as "active" in the picker — either the override or the auto-derived
+  const activeEmoji = agent.icon ?? autoEmoji;
+
   return (
     <div className="space-y-6">
+      {/* Hero preview */}
+      <div className="flex justify-center py-2">
+        <AgentIdentity
+          color={visual.color}
+          emoji={visual.emoji}
+          name={name.value || agent.name}
+          detail={`Registered ${formatRelativeTime(agent.registeredAt)}`}
+          size="lg"
+        />
+      </div>
+
+      {/* Details */}
       <FieldCard>
         <FieldCardContent>
           {/* Name */}
@@ -160,6 +158,7 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
             ) : (
               nameInput
             )}
+            {nameEmpty && !isSystem && <p className="text-destructive text-xs">Name is required</p>}
           </div>
 
           {/* Description */}
@@ -170,94 +169,140 @@ export function IdentityTab({ agent, projectPath: _projectPath, onUpdate }: Iden
             {isSystem ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div>{descriptionInput}</div>
+                  <div>{descriptionTextarea}</div>
                 </TooltipTrigger>
                 <TooltipContent>System agent description cannot be modified</TooltipContent>
               </Tooltip>
             ) : (
-              descriptionInput
+              descriptionTextarea
             )}
-          </div>
-
-          {/* Runtime */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Runtime</Label>
-            <Select
-              value={agent.runtime}
-              onValueChange={(v) => onUpdate({ runtime: v as AgentManifest['runtime'] })}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="claude-code">Claude Code</SelectItem>
-                <SelectItem value="cursor">Cursor</SelectItem>
-                <SelectItem value="codex">Codex</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+            {!isSystem && (
+              <p className="text-muted-foreground text-xs">
+                Helps other agents and humans understand what this agent does
+              </p>
+            )}
           </div>
         </FieldCardContent>
       </FieldCard>
 
-      {/* Color */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Color</Label>
-          {agent.color && (
-            <button
-              onClick={() => onUpdate({ color: undefined })}
-              className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {COLOR_PRESETS.map((c) => (
-            <button
-              key={c}
-              onClick={() => onUpdate({ color: c })}
-              className={cn(
-                'size-7 rounded-full transition-all duration-150',
-                agent.color === c ? 'ring-foreground ring-2 ring-offset-2' : 'hover:scale-110'
+      {/* Appearance */}
+      <FieldCard>
+        <FieldCardContent>
+          {/* Color */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Color</Label>
+              {hasAnyOverride && (
+                <button
+                  onClick={handleResetAppearance}
+                  className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
+                >
+                  Reset to defaults
+                </button>
               )}
-              style={{ backgroundColor: c }}
-              aria-label={`Select color ${c}`}
-            />
-          ))}
-        </div>
-      </div>
+            </div>
+            <ResponsivePopover open={colorOpen} onOpenChange={setColorOpen}>
+              <ResponsivePopoverTrigger asChild>
+                <button
+                  className="border-input hover:bg-accent/50 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
+                  aria-label="Choose color"
+                >
+                  <span
+                    className="size-4 shrink-0 rounded-full"
+                    style={{ backgroundColor: visual.color }}
+                  />
+                  <span className="text-muted-foreground">
+                    {hasColorOverride ? 'Custom' : 'Default'}
+                  </span>
+                </button>
+              </ResponsivePopoverTrigger>
+              <ResponsivePopoverContent className="w-auto p-3" align="start">
+                <ResponsivePopoverTitle>Choose Color</ResponsivePopoverTitle>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Auto-derived color */}
+                  <button
+                    onClick={() => handleColorSelect(undefined)}
+                    className={cn(
+                      'relative size-7 rounded-full transition-all duration-150',
+                      !hasColorOverride
+                        ? 'ring-muted-foreground/50 ring-dashed ring-2 ring-offset-2'
+                        : 'hover:scale-110'
+                    )}
+                    style={{ backgroundColor: autoColor }}
+                    aria-label="Select default color"
+                  >
+                    <span className="bg-background/80 text-foreground absolute inset-0 flex items-center justify-center rounded-full text-[9px] leading-none font-bold">
+                      A
+                    </span>
+                  </button>
 
-      {/* Emoji */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Icon</Label>
-          {agent.icon && (
-            <button
-              onClick={() => onUpdate({ icon: undefined })}
-              className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {EMOJI_SET.map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => onUpdate({ icon: emoji })}
-              className={cn(
-                'flex size-8 items-center justify-center rounded-md text-base transition-all duration-150',
-                agent.icon === emoji ? 'bg-accent ring-foreground ring-1' : 'hover:bg-accent/50'
-              )}
-              aria-label={`Select icon ${emoji}`}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      </div>
+                  <div className="bg-border mx-0.5 h-5 w-px" />
+
+                  {/* Presets */}
+                  {COLOR_PRESETS.map((c) => (
+                    <button
+                      key={c.hex}
+                      onClick={() => handleColorSelect(c.hex)}
+                      className={cn(
+                        'size-7 rounded-full transition-all duration-150',
+                        agent.color === c.hex
+                          ? 'ring-foreground ring-2 ring-offset-2'
+                          : 'hover:scale-110'
+                      )}
+                      style={{ backgroundColor: c.hex }}
+                      aria-label={`Select ${c.name}`}
+                    />
+                  ))}
+                </div>
+              </ResponsivePopoverContent>
+            </ResponsivePopover>
+          </div>
+
+          {/* Icon */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Icon</Label>
+            <ResponsivePopover open={iconOpen} onOpenChange={setIconOpen}>
+              <ResponsivePopoverTrigger asChild>
+                <button
+                  className="border-input hover:bg-accent/50 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
+                  aria-label="Choose icon"
+                >
+                  <span className="text-base leading-none">{visual.emoji}</span>
+                  <span className="text-muted-foreground">
+                    {hasIconOverride ? 'Custom' : 'Default'}
+                  </span>
+                </button>
+              </ResponsivePopoverTrigger>
+              <ResponsivePopoverContent className="w-64 p-3" align="start">
+                <ResponsivePopoverTitle>Choose Icon</ResponsivePopoverTitle>
+                <div className="grid grid-cols-6 gap-1">
+                  {EMOJI_SET.map((emoji) => {
+                    const isActive = emoji === activeEmoji;
+                    const isAutoDefault = emoji === autoEmoji && !hasIconOverride;
+                    return (
+                      <button
+                        key={emoji}
+                        onClick={() => handleIconSelect(emoji)}
+                        className={cn(
+                          'flex size-8 items-center justify-center rounded-md text-base transition-all duration-150',
+                          isActive
+                            ? isAutoDefault
+                              ? 'bg-accent ring-muted-foreground/50 ring-dashed ring-1'
+                              : 'bg-accent ring-foreground ring-1'
+                            : 'hover:bg-accent/50'
+                        )}
+                        aria-label={`Select icon ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    );
+                  })}
+                </div>
+              </ResponsivePopoverContent>
+            </ResponsivePopover>
+          </div>
+        </FieldCardContent>
+      </FieldCard>
     </div>
   );
 }
