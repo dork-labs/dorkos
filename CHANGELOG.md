@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Redesign ExternalMcpCard with sectioned layout and better visual hierarchy
 - Nest scheduler config inside Tasks tool group expansion
 
 ### Fixed

@@ -33,6 +33,12 @@ function createWrapper() {
   };
 }
 
+/** Click the chevron to expand the card content. */
+async function expandCard(user: ReturnType<typeof userEvent.setup>) {
+  const btn = screen.getByRole('button', { name: /expand external mcp server settings/i });
+  await user.click(btn);
+}
+
 describe('ExternalMcpCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,10 +48,10 @@ describe('ExternalMcpCard', () => {
     cleanup();
   });
 
-  it('renders External Access label', () => {
+  it('renders External MCP Server label', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-    expect(screen.getByText('External Access')).toBeInTheDocument();
+    expect(screen.getByText('External MCP Server')).toBeInTheDocument();
   });
 
   it('shows Enabled badge when enabled and auth configured', () => {
@@ -68,18 +74,12 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText('Disabled')).toBeInTheDocument();
   });
 
-  it('shows Generate API Key button when no key configured and expanded', async () => {
+  it('shows Generate Key button when no key configured and expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-
-    // Expand the card
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-
-    expect(screen.getByText('Generate API Key')).toBeInTheDocument();
+    await expandCard(user);
+    expect(screen.getByText('Generate Key')).toBeInTheDocument();
   });
 
   it('shows Environment variable badge when auth source is env', async () => {
@@ -87,12 +87,7 @@ describe('ExternalMcpCard', () => {
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'env' };
     render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-
+    await expandCard(user);
     expect(screen.getByText('Environment variable')).toBeInTheDocument();
   });
 
@@ -101,41 +96,24 @@ describe('ExternalMcpCard', () => {
     const { Wrapper } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
     render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-
+    await expandCard(user);
     expect(screen.getByText('Rotate')).toBeInTheDocument();
     expect(screen.getByText('Remove')).toBeInTheDocument();
   });
 
-  it('renders setup instruction tabs when expanded', async () => {
+  it('renders Setup Instructions as a collapsible section when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-
-    expect(screen.getByText('Claude Code')).toBeInTheDocument();
-    expect(screen.getByText('Cursor')).toBeInTheDocument();
-    expect(screen.getByText('Windsurf')).toBeInTheDocument();
+    await expandCard(user);
+    expect(screen.getByText('Setup Instructions')).toBeInTheDocument();
   });
 
   it('renders duplicate tool warning when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-
+    await expandCard(user);
     expect(
       screen.getByText('Do not configure this for agents running inside DorkOS.')
     ).toBeInTheDocument();
@@ -160,26 +138,16 @@ describe('ExternalMcpCard', () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-
+    await expandCard(user);
     expect(screen.getByText('http://localhost:6242/mcp')).toBeInTheDocument();
   });
 
-  it('calls generateMcpApiKey when Generate API Key is clicked', async () => {
+  it('calls generateMcpApiKey when Generate Key is clicked', async () => {
     const user = userEvent.setup();
     const { Wrapper, transport } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
-    await user.click(screen.getByText('Generate API Key'));
-
+    await expandCard(user);
+    await user.click(screen.getByText('Generate Key'));
     expect(transport.generateMcpApiKey).toHaveBeenCalled();
   });
 
@@ -188,13 +156,8 @@ describe('ExternalMcpCard', () => {
     const { Wrapper, transport } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
     render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
+    await expandCard(user);
     await user.click(screen.getByText('Rotate'));
-
     expect(transport.deleteMcpApiKey).toHaveBeenCalled();
     expect(transport.generateMcpApiKey).toHaveBeenCalled();
   });
@@ -204,13 +167,8 @@ describe('ExternalMcpCard', () => {
     const { Wrapper, transport } = createWrapper();
     const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
     render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-
-    const expandButton = screen.getByRole('button', {
-      name: /expand external access settings/i,
-    });
-    await user.click(expandButton);
+    await expandCard(user);
     await user.click(screen.getByText('Remove'));
-
     expect(transport.deleteMcpApiKey).toHaveBeenCalled();
     expect(transport.generateMcpApiKey).not.toHaveBeenCalled();
   });
