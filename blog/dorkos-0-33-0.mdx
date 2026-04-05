@@ -1,0 +1,39 @@
+---
+title: DorkOS 0.33.0
+description: Intelligent channel binding and dependency awareness — adapters become channels, runtime requirements surface during onboarding, and system configuration becomes discoverable.
+date: 2026-04-05
+author: DorkOS Team
+category: release
+tags: [release, channels, onboarding, settings, runtime-research]
+---
+
+DorkOS 0.33.0 renames relay adapters to channels with agent-first binding, validates system requirements during onboarding, and makes subsystem configuration directly accessible from settings.
+
+## Highlights
+
+**Channel System** — Relay adapters are now "channels" with visual runtime cards and inline agent-first binding. Clearer vocabulary, faster setup, and a direct path from agent to communication channel.
+
+**Dependency Checking** — Onboarding now validates system requirements and surfaces missing adapter dependencies before you start configuring agents. No more silent failures from missing prerequisites.
+
+**Settings Discovery** — ServerTab exposes subsystem configuration directly, and a new Remote Access shortcut in the sidebar gets you to tunnel settings in one click.
+
+## All Changes
+
+### Added
+
+- Rename relay adapters to channels, add adapter runtime cards and agent-first channel binding
+- Enhance ServerTab with subsystem configuration and relocated adapter settings
+- Add system requirements check to onboarding with adapter dependency checking
+- Add Remote Access shortcut to settings sidebar
+
+### Changed
+
+- Add agent runtime landscape research covering Codex, ACP, Pi Agent, Gemini CLI, and Aider
+- Add guidelines for capturing design decisions in visual companion sessions
+- Reconcile guides with v0.32.0 changes
+
+## Install / Update
+
+```
+npm install -g dorkos@0.33.0
+```

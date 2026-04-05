@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "description": "The operating system for autonomous AI agents — scheduling, messaging, and agent coordination so one person can ship like a team.",
   "license": "MIT",
   "author": "Dorian Collier",

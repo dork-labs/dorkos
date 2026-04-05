@@ -9,16 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.33.0] - 2026-04-05
+
+> Intelligent channel binding and dependency awareness — adapters become channels, runtime requirements surface during onboarding, and system configuration becomes discoverable.
+
+### Added
+
 - Rename relay adapters to channels, add adapter runtime cards and agent-first channel binding
+- Enhance ServerTab with subsystem configuration and relocated adapter settings
 - Add system requirements check to onboarding with adapter dependency checking
 - Add Remote Access shortcut to settings sidebar
 
 ### Changed
 
+- Add agent runtime landscape research covering Codex, ACP, Pi Agent, Gemini CLI, and Aider
 - Add guidelines for capturing design decisions in visual companion sessions
 - Reconcile guides with v0.32.0 changes
-
-### Fixed
 
 ---
 
