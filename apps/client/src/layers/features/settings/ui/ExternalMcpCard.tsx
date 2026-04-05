@@ -450,7 +450,7 @@ function ApiKeySection({
           <div className="min-w-0">
             <p className="text-sm font-medium">API Key</p>
             <p className="text-muted-foreground text-xs">
-              Protect the MCP endpoint with bearer token authentication
+              Protect the MCP endpoint with bearer token auth
             </p>
           </div>
           <Button size="sm" onClick={onGenerate}>
