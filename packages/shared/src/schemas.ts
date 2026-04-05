@@ -975,12 +975,20 @@ export const ServerConfigSchema = z
     tasks: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Tasks scheduler is enabled' }),
+        initError: z
+          .string()
+          .optional()
+          .openapi({ description: 'Initialization error message, if scheduler failed to start' }),
       })
       .optional()
       .openapi({ description: 'Tasks scheduler feature state' }),
     relay: z
       .object({
         enabled: z.boolean().openapi({ description: 'Whether the Relay message bus is enabled' }),
+        initError: z
+          .string()
+          .optional()
+          .openapi({ description: 'Initialization error message, if relay failed to start' }),
       })
       .optional()
       .openapi({ description: 'Relay message bus feature state' }),
@@ -1031,6 +1039,10 @@ export const ServerConfigSchema = z
           .array(z.string())
           .optional()
           .openapi({ description: 'User-configured scan roots for agent discovery' }),
+        initError: z
+          .string()
+          .optional()
+          .openapi({ description: 'Initialization error message, if mesh failed to start' }),
       })
       .optional()
       .openapi({ description: 'Mesh agent discovery feature state' }),

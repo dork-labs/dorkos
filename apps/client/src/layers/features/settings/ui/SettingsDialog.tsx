@@ -11,7 +11,7 @@ import {
   Radio,
   ChevronRight,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
   useTransport,
@@ -151,6 +151,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   } = useAppStore();
 
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const { data: config, isLoading } = useQuery({
     queryKey: ['config'],
     queryFn: () => transport.getConfig(),
@@ -408,7 +409,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
               <NavigationLayoutPanel value="tools">
                 <div className="space-y-4">
-                  <NavigationLayoutPanelHeader>Tools</NavigationLayoutPanelHeader>
+                  <NavigationLayoutPanelHeader
+                    actions={
+                      <button
+                        onClick={async () => {
+                          await transport.updateConfig({
+                            agentContext: {
+                              relayTools: true,
+                              meshTools: true,
+                              adapterTools: true,
+                              tasksTools: true,
+                            },
+                          });
+                          queryClient.invalidateQueries({ queryKey: ['config'] });
+                        }}
+                        className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
+                      >
+                        Reset to defaults
+                      </button>
+                    }
+                  >
+                    Tools
+                  </NavigationLayoutPanelHeader>
                   <ToolsTab />
                 </div>
               </NavigationLayoutPanel>

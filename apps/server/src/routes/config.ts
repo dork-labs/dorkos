@@ -136,6 +136,7 @@ router.get('/', async (_req, res) => {
       relayTools: true,
       meshTools: true,
       adapterTools: true,
+      tasksTools: true,
     },
     agents: configManager.get('agents') ?? {
       defaultDirectory: '~/.dork/agents',

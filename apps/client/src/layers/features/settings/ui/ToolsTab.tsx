@@ -1,7 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle } from 'lucide-react';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
+import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
   Badge,
   FieldCard,
@@ -14,127 +16,209 @@ import {
   SelectTrigger,
   SelectValue,
   Switch,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 
-const TASKS_PREVIEW = `DorkOS Tasks lets you create and manage scheduled agent runs.
+// ---------------------------------------------------------------------------
+// Tool inventories — display names without the mcp__dorkos__ prefix.
+// Source of truth: services/runtimes/claude-code/tool-filter.ts
+// ---------------------------------------------------------------------------
 
-Available tools:
-  list_schedules() -- list all configured schedules
-  create_schedule(name, cron, prompt, ...) -- create a new schedule
-  update_schedule(id, ...) -- modify schedule settings
-  delete_schedule(id) -- remove a schedule
-  get_run_history(scheduleId) -- view past run results
+const TOOL_INVENTORY = {
+  core: ['ping', 'get_server_info', 'get_session_count', 'get_agent', 'control_ui', 'get_ui_state'],
+  tasks: ['tasks_list', 'tasks_create', 'tasks_update', 'tasks_delete', 'tasks_get_run_history'],
+  relay: [
+    'relay_send',
+    'relay_inbox',
+    'relay_list_endpoints',
+    'relay_register_endpoint',
+    'relay_send_and_wait',
+    'relay_send_async',
+    'relay_unregister_endpoint',
+    'relay_get_trace',
+    'relay_get_metrics',
+  ],
+  mesh: [
+    'mesh_discover',
+    'mesh_register',
+    'mesh_list',
+    'mesh_deny',
+    'mesh_unregister',
+    'mesh_status',
+    'mesh_inspect',
+    'mesh_query_topology',
+  ],
+  adapter: [
+    'relay_list_adapters',
+    'relay_enable_adapter',
+    'relay_disable_adapter',
+    'relay_reload_adapters',
+    'binding_list',
+    'binding_create',
+    'binding_delete',
+    'binding_list_sessions',
+    'relay_notify_user',
+  ],
+} as const;
 
-Schedules can target a specific agent (by agentId) or a directory (by cwd).`;
+type ToolDomainKey = 'tasks' | 'relay' | 'mesh' | 'adapter';
+type GlobalConfigKey = 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools';
 
-const RELAY_PREVIEW = `DorkOS Relay is a pub/sub message bus for inter-agent communication.
+const CONFIG_KEY_MAP: Record<ToolDomainKey, GlobalConfigKey> = {
+  tasks: 'tasksTools',
+  relay: 'relayTools',
+  mesh: 'meshTools',
+  adapter: 'adapterTools',
+};
 
-Subject hierarchy:
-  relay.agent.{sessionId}          — address a specific agent session
-  relay.human.console.{clientId}   — reach a human in the DorkOS UI
-  relay.system.console             — system broadcast channel
-  relay.system.tasks.{scheduleId}  — Tasks scheduler events
-
-Workflows:
-- Register a reply address first: relay_register_endpoint(subject="relay.agent.{your-sessionId}")
-- Message another agent: relay_send(subject="relay.agent.{their-sessionId}", payload={...}, from="relay.agent.{your-sessionId}")
-- Check for replies: relay_inbox(endpoint_subject="relay.agent.{your-sessionId}")
-- See who is listening: relay_list_endpoints()
-
-Error codes: RELAY_DISABLED (feature off), ACCESS_DENIED (subject blocked), INVALID_SUBJECT (malformed), ENDPOINT_NOT_FOUND (inbox miss).`;
-
-const MESH_PREVIEW = `DorkOS Mesh is a local agent registry for discovering and communicating with AI agents on this machine.
-
-Agent lifecycle:
-1. mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for CLAUDE.md, .dork/agent.json)
-2. mesh_register(path, name, runtime, capabilities) — register a candidate as a known agent
-3. mesh_inspect(agentId) — get full manifest, health status, and relay endpoint
-4. mesh_status() — aggregate overview: total, active, stale agent counts
-5. mesh_list(runtime?, capability?) — filter agents by runtime or capability
-6. mesh_deny(path, reason) — exclude a path from future discovery
-7. mesh_unregister(agentId) — remove an agent from the registry
-8. mesh_query_topology(namespace?) — view agent network from a namespace perspective
-
-Workflows:
-- Find agents: mesh_list() then mesh_inspect(agentId) for details
-- Contact another agent: mesh_inspect(agentId) to get their relay endpoint, then relay_send
-- Register this project: mesh_register(path=cwd, name="project-name", runtime="claude-code")
-
-Runtimes: claude-code | cursor | codex | other`;
-
-const ADAPTER_PREVIEW = `Relay adapters bridge external platforms (Telegram, webhooks) to the agent message bus.
-
-Subject conventions for external messages:
-  relay.human.telegram.{chatId}    — send to / receive from Telegram
-  relay.human.webhook.{webhookId}  — send to / receive from webhooks
-
-Adapter management:
-- relay_list_adapters() — see all adapters and their status (connected, disconnected, error)
-- relay_enable_adapter(id) / relay_disable_adapter(id) — toggle an adapter on/off
-- relay_reload_adapters() — hot-reload config from disk
-
-Bindings route adapter messages to agent projects:
-- binding_list() — see current adapter-to-agent bindings
-- binding_create(adapterId, agentId) — route an adapter to an agent
-- binding_delete(id) — remove a binding
-
-Session strategies: per-chat (default, one session per conversation), per-user (shared across chats), stateless (new session each message).`;
-
-interface ToolBlockSectionProps {
+interface ToolGroupDef {
+  key: ToolDomainKey;
   label: string;
   description: string;
+  tools: readonly string[];
+  implicitNote?: string;
+}
+
+const TOOL_GROUPS: ToolGroupDef[] = [
+  {
+    key: 'tasks',
+    label: 'Tasks (Scheduling)',
+    description: 'Create and manage scheduled agent runs',
+    tools: TOOL_INVENTORY.tasks,
+  },
+  {
+    key: 'relay',
+    label: 'Relay (Messaging)',
+    description: 'Send messages, check inbox, register endpoints',
+    tools: TOOL_INVENTORY.relay,
+    implicitNote: 'Includes trace tools (relay_get_trace, relay_get_metrics)',
+  },
+  {
+    key: 'mesh',
+    label: 'Mesh (Discovery)',
+    description: 'Discover, register, and query agents',
+    tools: TOOL_INVENTORY.mesh,
+  },
+  {
+    key: 'adapter',
+    label: 'Relay Adapters',
+    description: 'Manage Telegram, Slack, webhooks, and bindings',
+    tools: TOOL_INVENTORY.adapter,
+    implicitNote: 'Includes binding tools (binding_list, binding_create, binding_delete)',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// ToolGroupRow — single tool domain with switch, status, and tool inventory
+// ---------------------------------------------------------------------------
+
+interface ToolGroupRowProps {
+  group: ToolGroupDef;
   enabled: boolean;
   available: boolean;
-  unavailableReason?: string;
-  onToggle: (value: boolean) => void;
-  preview: string;
+  initError?: string;
+  overrideCount: number;
+  onToggle: (key: ToolDomainKey, value: boolean) => void;
 }
 
-function ToolBlockSection({
-  label,
-  description,
+/** A single tool group row with switch, init error, override count, and tool inventory tooltip. */
+function ToolGroupRow({
+  group,
   enabled,
   available,
-  unavailableReason,
+  initError,
+  overrideCount,
   onToggle,
-  preview,
-}: ToolBlockSectionProps) {
-  const effective = available && enabled;
-
+}: ToolGroupRowProps) {
   return (
-    <section className="space-y-2">
-      <SettingRow label={label} description={description}>
-        <div className="flex items-center gap-2">
-          {!available && (
-            <Badge variant="secondary" className="text-xs">
-              {unavailableReason}
-            </Badge>
-          )}
-          <Switch
-            checked={enabled}
-            onCheckedChange={onToggle}
-            disabled={!available}
-            aria-label={`Toggle ${label} context`}
-          />
-        </div>
-      </SettingRow>
-      {effective && (
-        <pre className="bg-muted max-h-40 overflow-y-auto rounded-md p-3 text-xs leading-relaxed">
-          {preview}
-        </pre>
-      )}
-    </section>
+    <SettingRow label={group.label} description={group.description}>
+      <div className="flex items-center gap-2">
+        {initError && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-xs">
+              <p className="text-xs">{initError}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {!available && !initError && (
+          <Badge variant="secondary" className="text-xs">
+            Disabled
+          </Badge>
+        )}
+        {overrideCount > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-muted-foreground shrink-0 text-xs">
+                {overrideCount} {overrideCount === 1 ? 'override' : 'overrides'}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p className="text-xs">
+                {overrideCount} {overrideCount === 1 ? 'agent has' : 'agents have'} a per-agent
+                override for this group
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        <ToolCountBadge tools={group.tools} implicitNote={group.implicitNote} />
+        <Switch
+          checked={enabled}
+          onCheckedChange={(v) => onToggle(group.key, v)}
+          disabled={!available}
+          aria-label={`Toggle ${group.label}`}
+        />
+      </div>
+    </SettingRow>
   );
 }
+
+// ---------------------------------------------------------------------------
+// ToolCountBadge — shows tool count with tooltip listing all tool names
+// ---------------------------------------------------------------------------
+
+interface ToolCountBadgeProps {
+  tools: readonly string[];
+  implicitNote?: string;
+}
+
+/** Badge showing tool count that reveals the full tool list on hover. */
+function ToolCountBadge({ tools, implicitNote }: ToolCountBadgeProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant="outline"
+          className="text-muted-foreground shrink-0 cursor-default text-xs font-normal"
+        >
+          {tools.length}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <p className="font-mono text-xs">{tools.join(', ')}</p>
+        {implicitNote && <p className="text-muted-foreground mt-1 text-xs">{implicitNote}</p>}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ToolsTab — main component
+// ---------------------------------------------------------------------------
 
 /**
  * Tools tab for the Settings dialog.
  *
- * Displays global toggle switches for each tool context block (tasks, relay, mesh, adapter)
- * with read-only previews of the content injected into agent system prompts.
- * These are global defaults; per-agent overrides are set in the Agent dialog Capabilities tab.
+ * Displays global toggle switches for each MCP tool group with tool inventories,
+ * init error warnings, and per-agent override counts. Also configures the
+ * Tasks scheduler settings. These are global defaults; per-agent overrides
+ * are set in the Agent dialog Capabilities tab.
  */
 export function ToolsTab() {
   const relayEnabled = useRelayEnabled();
@@ -149,7 +233,44 @@ export function ToolsTab() {
     staleTime: 30_000,
   });
 
+  const { data: agentsData } = useRegisteredAgents();
   const scheduler = serverConfig?.scheduler;
+
+  // Count per-agent tool group overrides
+  const overrideCounts = useMemo(() => {
+    const agents = agentsData?.agents ?? [];
+    const counts: Record<ToolDomainKey, number> = { tasks: 0, relay: 0, mesh: 0, adapter: 0 };
+    for (const agent of agents) {
+      const groups = agent.enabledToolGroups;
+      if (!groups) continue;
+      if (groups.tasks !== undefined) counts.tasks++;
+      if (groups.relay !== undefined) counts.relay++;
+      if (groups.mesh !== undefined) counts.mesh++;
+      if (groups.adapter !== undefined) counts.adapter++;
+    }
+    return counts;
+  }, [agentsData]);
+
+  const availabilityMap: Record<ToolDomainKey, boolean> = {
+    tasks: tasksEnabled,
+    relay: relayEnabled,
+    mesh: true,
+    adapter: relayEnabled,
+  };
+
+  const initErrorMap: Record<ToolDomainKey, string | undefined> = {
+    tasks: serverConfig?.tasks?.initError,
+    relay: serverConfig?.relay?.initError,
+    mesh: serverConfig?.mesh?.initError,
+    adapter: serverConfig?.relay?.initError,
+  };
+
+  const handleToggle = useCallback(
+    (key: ToolDomainKey, value: boolean) => {
+      updateConfig({ [CONFIG_KEY_MAP[key]]: value });
+    },
+    [updateConfig]
+  );
 
   const updateScheduler = useCallback(
     async (patch: Record<string, unknown>) => {
@@ -160,66 +281,42 @@ export function ToolsTab() {
     [transport, queryClient, scheduler]
   );
 
-  const handleToggle = useCallback(
-    (key: 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools', value: boolean) => {
-      updateConfig({ [key]: value });
-    },
-    [updateConfig]
-  );
-
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        Control which tool usage instructions are injected into agent system prompts by default.
-        These are global defaults — individual agents can override them in their Capabilities tab.
+        Control which MCP tool groups are available to agents. These are global defaults —
+        individual agents can override them in their Capabilities tab.
       </p>
 
       <FieldCard>
         <FieldCardContent>
-          <ToolBlockSection
-            label="Tasks Tools"
-            description="Scheduling tools for creating and managing scheduled agent runs."
-            enabled={config.tasksTools}
-            available={tasksEnabled}
-            unavailableReason="Tasks is disabled"
-            onToggle={(v) => handleToggle('tasksTools', v)}
-            preview={TASKS_PREVIEW}
-          />
+          {/* Core tools — always enabled, informational */}
+          <SettingRow label="Core Tools" description="Server info, agent identity, UI control">
+            <div className="flex items-center gap-2">
+              <ToolCountBadge tools={TOOL_INVENTORY.core} />
+              <span className="text-muted-foreground text-xs">Always enabled</span>
+            </div>
+          </SettingRow>
 
-          <ToolBlockSection
-            label="Relay Tools"
-            description="Subject hierarchy, messaging workflows, and error codes for the Relay message bus."
-            enabled={config.relayTools}
-            available={relayEnabled}
-            unavailableReason="Relay is disabled"
-            onToggle={(v) => handleToggle('relayTools', v)}
-            preview={RELAY_PREVIEW}
-          />
-
-          <ToolBlockSection
-            label="Mesh Tools"
-            description="Agent lifecycle, discovery workflow, and cross-tool orchestration with Relay."
-            enabled={config.meshTools}
-            available={true}
-            onToggle={(v) => handleToggle('meshTools', v)}
-            preview={MESH_PREVIEW}
-          />
-
-          <ToolBlockSection
-            label="Adapter Tools"
-            description="External platform subjects, adapter management, and binding routing conventions."
-            enabled={config.adapterTools}
-            available={relayEnabled}
-            unavailableReason="Relay is disabled"
-            onToggle={(v) => handleToggle('adapterTools', v)}
-            preview={ADAPTER_PREVIEW}
-          />
+          {/* Toggleable tool groups */}
+          {TOOL_GROUPS.map((group) => (
+            <ToolGroupRow
+              key={group.key}
+              group={group}
+              enabled={config[CONFIG_KEY_MAP[group.key]]}
+              available={availabilityMap[group.key]}
+              initError={initErrorMap[group.key]}
+              overrideCount={overrideCounts[group.key]}
+              onToggle={handleToggle}
+            />
+          ))}
         </FieldCardContent>
       </FieldCard>
 
+      {/* Scheduler configuration */}
       {scheduler && (
         <>
-          <h3 className="text-sm font-semibold">Tasks Configuration</h3>
+          <h3 className="text-sm font-semibold">Scheduler</h3>
           <FieldCard>
             <FieldCardContent>
               <SettingRow
