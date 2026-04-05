@@ -1,11 +1,14 @@
-import { useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ChevronDown } from 'lucide-react';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
   Badge,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   FieldCard,
   FieldCardContent,
   Input,
@@ -20,6 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 
@@ -113,7 +117,8 @@ const TOOL_GROUPS: ToolGroupDef[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// ToolGroupRow — single tool domain with switch, status, and tool inventory
+// ToolGroupRow — single tool domain with switch, status, and tool inventory.
+// Supports an optional expandable section for nested configuration.
 // ---------------------------------------------------------------------------
 
 interface ToolGroupRowProps {
@@ -123,6 +128,8 @@ interface ToolGroupRowProps {
   initError?: string;
   overrideCount: number;
   onToggle: (key: ToolDomainKey, value: boolean) => void;
+  /** Optional content shown when the row is expanded (e.g., scheduler settings). */
+  expandContent?: React.ReactNode;
 }
 
 /** A single tool group row with switch, init error, override count, and tool inventory tooltip. */
@@ -133,49 +140,83 @@ function ToolGroupRow({
   initError,
   overrideCount,
   onToggle,
+  expandContent,
 }: ToolGroupRowProps) {
-  return (
+  const [expanded, setExpanded] = useState(false);
+  const hasExpand = !!expandContent;
+
+  const controls = (
+    <div className="flex items-center gap-2">
+      {initError && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs">
+            <p className="text-xs">{initError}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {!available && !initError && (
+        <Badge variant="secondary" className="text-xs">
+          Disabled
+        </Badge>
+      )}
+      {overrideCount > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-muted-foreground shrink-0 text-xs">
+              {overrideCount} {overrideCount === 1 ? 'override' : 'overrides'}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">
+              {overrideCount} {overrideCount === 1 ? 'agent has' : 'agents have'} a per-agent
+              override for this group
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      )}
+      <ToolCountBadge tools={group.tools} implicitNote={group.implicitNote} />
+      <Switch
+        checked={enabled}
+        onCheckedChange={(v) => onToggle(group.key, v)}
+        disabled={!available}
+        aria-label={`Toggle ${group.label}`}
+      />
+      {hasExpand && (
+        <CollapsibleTrigger asChild>
+          <button
+            className="text-muted-foreground hover:text-foreground rounded-sm p-0.5 transition-colors duration-150"
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${group.label} settings`}
+          >
+            <ChevronDown
+              className={cn(
+                'size-3.5 transition-transform duration-150',
+                !expanded && '-rotate-90'
+              )}
+            />
+          </button>
+        </CollapsibleTrigger>
+      )}
+    </div>
+  );
+
+  const row = (
     <SettingRow label={group.label} description={group.description}>
-      <div className="flex items-center gap-2">
-        {initError && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs">
-              <p className="text-xs">{initError}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {!available && !initError && (
-          <Badge variant="secondary" className="text-xs">
-            Disabled
-          </Badge>
-        )}
-        {overrideCount > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {overrideCount} {overrideCount === 1 ? 'override' : 'overrides'}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p className="text-xs">
-                {overrideCount} {overrideCount === 1 ? 'agent has' : 'agents have'} a per-agent
-                override for this group
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        <ToolCountBadge tools={group.tools} implicitNote={group.implicitNote} />
-        <Switch
-          checked={enabled}
-          onCheckedChange={(v) => onToggle(group.key, v)}
-          disabled={!available}
-          aria-label={`Toggle ${group.label}`}
-        />
-      </div>
+      {controls}
     </SettingRow>
+  );
+
+  if (!hasExpand) return row;
+
+  return (
+    <Collapsible open={expanded} onOpenChange={setExpanded}>
+      {row}
+      <CollapsibleContent>
+        <div className="border-border mt-2 space-y-2 border-t pt-2">{expandContent}</div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -209,6 +250,76 @@ function ToolCountBadge({ tools, implicitNote }: ToolCountBadgeProps) {
 }
 
 // ---------------------------------------------------------------------------
+// SchedulerSettings — nested configuration for the Tasks scheduler
+// ---------------------------------------------------------------------------
+
+interface SchedulerSettingsProps {
+  scheduler: { maxConcurrentRuns: number; timezone: string | null; retentionCount: number };
+  onUpdate: (patch: Record<string, unknown>) => void;
+}
+
+/** Scheduler configuration rows rendered inside the Tasks tool group expansion. */
+function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProps) {
+  return (
+    <>
+      <SettingRow label="Concurrent runs" description="Maximum parallel task runs">
+        <Input
+          type="number"
+          min={1}
+          max={10}
+          value={scheduler.maxConcurrentRuns}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10);
+            if (v >= 1 && v <= 10) onUpdate({ maxConcurrentRuns: v });
+          }}
+          className="w-20"
+        />
+      </SettingRow>
+
+      <SettingRow label="Timezone" description="IANA timezone for cron schedules">
+        <Select
+          value={scheduler.timezone ?? 'system'}
+          onValueChange={(v) => onUpdate({ timezone: v === 'system' ? null : v })}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="system">System default</SelectItem>
+            <SelectItem value="UTC">UTC</SelectItem>
+            <SelectItem value="America/New_York">America/New_York</SelectItem>
+            <SelectItem value="America/Chicago">America/Chicago</SelectItem>
+            <SelectItem value="America/Denver">America/Denver</SelectItem>
+            <SelectItem value="America/Los_Angeles">America/Los_Angeles</SelectItem>
+            <SelectItem value="Europe/London">Europe/London</SelectItem>
+            <SelectItem value="Europe/Berlin">Europe/Berlin</SelectItem>
+            <SelectItem value="Europe/Paris">Europe/Paris</SelectItem>
+            <SelectItem value="Asia/Tokyo">Asia/Tokyo</SelectItem>
+            <SelectItem value="Asia/Shanghai">Asia/Shanghai</SelectItem>
+            <SelectItem value="Asia/Kolkata">Asia/Kolkata</SelectItem>
+            <SelectItem value="Australia/Sydney">Australia/Sydney</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+
+      <SettingRow label="Run history" description="Completed runs to keep">
+        <Input
+          type="number"
+          min={1}
+          max={10000}
+          value={scheduler.retentionCount}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10);
+            if (v >= 1) onUpdate({ retentionCount: v });
+          }}
+          className="w-24"
+        />
+      </SettingRow>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ToolsTab — main component
 // ---------------------------------------------------------------------------
 
@@ -216,9 +327,9 @@ function ToolCountBadge({ tools, implicitNote }: ToolCountBadgeProps) {
  * Tools tab for the Settings dialog.
  *
  * Displays global toggle switches for each MCP tool group with tool inventories,
- * init error warnings, and per-agent override counts. Also configures the
- * Tasks scheduler settings. These are global defaults; per-agent overrides
- * are set in the Agent dialog Capabilities tab.
+ * init error warnings, and per-agent override counts. The Tasks group includes
+ * an expandable scheduler configuration section. These are global defaults;
+ * per-agent overrides are set in the Agent dialog Capabilities tab.
  */
 export function ToolsTab() {
   const relayEnabled = useRelayEnabled();
@@ -308,83 +419,15 @@ export function ToolsTab() {
               initError={initErrorMap[group.key]}
               overrideCount={overrideCounts[group.key]}
               onToggle={handleToggle}
+              expandContent={
+                group.key === 'tasks' && scheduler ? (
+                  <SchedulerSettings scheduler={scheduler} onUpdate={updateScheduler} />
+                ) : undefined
+              }
             />
           ))}
         </FieldCardContent>
       </FieldCard>
-
-      {/* Scheduler configuration */}
-      {scheduler && (
-        <>
-          <h3 className="text-sm font-semibold">Scheduler</h3>
-          <FieldCard>
-            <FieldCardContent>
-              <SettingRow
-                label="Concurrent runs"
-                description="Maximum task runs that can execute in parallel"
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={scheduler.maxConcurrentRuns}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    if (v >= 1 && v <= 10) updateScheduler({ maxConcurrentRuns: v });
-                  }}
-                  className="w-20"
-                />
-              </SettingRow>
-
-              <SettingRow
-                label="Timezone"
-                description="IANA timezone for interpreting cron schedules"
-              >
-                <Select
-                  value={scheduler.timezone ?? 'system'}
-                  onValueChange={(v) => updateScheduler({ timezone: v === 'system' ? null : v })}
-                >
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="system">System default</SelectItem>
-                    <SelectItem value="UTC">UTC</SelectItem>
-                    <SelectItem value="America/New_York">America/New_York</SelectItem>
-                    <SelectItem value="America/Chicago">America/Chicago</SelectItem>
-                    <SelectItem value="America/Denver">America/Denver</SelectItem>
-                    <SelectItem value="America/Los_Angeles">America/Los_Angeles</SelectItem>
-                    <SelectItem value="Europe/London">Europe/London</SelectItem>
-                    <SelectItem value="Europe/Berlin">Europe/Berlin</SelectItem>
-                    <SelectItem value="Europe/Paris">Europe/Paris</SelectItem>
-                    <SelectItem value="Asia/Tokyo">Asia/Tokyo</SelectItem>
-                    <SelectItem value="Asia/Shanghai">Asia/Shanghai</SelectItem>
-                    <SelectItem value="Asia/Kolkata">Asia/Kolkata</SelectItem>
-                    <SelectItem value="Australia/Sydney">Australia/Sydney</SelectItem>
-                  </SelectContent>
-                </Select>
-              </SettingRow>
-
-              <SettingRow
-                label="Run history retention"
-                description="Number of completed task runs to keep in history"
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={scheduler.retentionCount}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    if (v >= 1) updateScheduler({ retentionCount: v });
-                  }}
-                  className="w-24"
-                />
-              </SettingRow>
-            </FieldCardContent>
-          </FieldCard>
-        </>
-      )}
     </div>
   );
 }
