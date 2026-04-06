@@ -1,6 +1,5 @@
-import { useState, useCallback } from 'react';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { cn, TIMING } from '@/layers/shared/lib';
+import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { isNewer } from '@/layers/features/status';
 
 interface ServerTabProps {
@@ -70,17 +69,6 @@ export function ServerTab({ config, isLoading }: ServerTabProps) {
   );
 }
 
-function useCopy() {
-  const [copied, setCopied] = useState(false);
-  const copy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
-    });
-  }, []);
-  return { copied, copy };
-}
-
 function ConfigRow({
   label,
   value,
@@ -94,7 +82,7 @@ function ConfigRow({
   truncate?: boolean;
   muted?: boolean;
 }) {
-  const { copied, copy } = useCopy();
+  const [copied, copy] = useCopyFeedback();
   return (
     <button
       type="button"

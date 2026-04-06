@@ -3,8 +3,7 @@ import QRCode from 'react-qr-code';
 import { Check, Copy, Link, QrCode } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
-import { useCopyFeedback } from '../lib/use-copy-feedback';
+import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { latencyColor } from '../lib/tunnel-utils';
 
 /** Props for the connected view showing URL sharing and QR code. */

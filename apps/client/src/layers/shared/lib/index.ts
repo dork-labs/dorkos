@@ -83,6 +83,7 @@ export { queryClient } from './query-client';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
+export { useCopyFeedback } from './use-copy-feedback';
 export {
   executeUiCommand,
   type DispatcherContext,

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ExternalMcpCard } from '../ui/ExternalMcpCard';
+import { ExternalMcpCard } from '../ui/external-mcp/ExternalMcpCard';
 import type { ServerConfig } from '@dorkos/shared/types';
 
 type McpConfig = NonNullable<ServerConfig['mcp']>;

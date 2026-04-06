@@ -33,6 +33,7 @@ export {
   CommandShortcut,
   CommandSeparator,
 } from './command';
+export { CopyButton } from './copy-button';
 export {
   Dialog,
   DialogPortal,

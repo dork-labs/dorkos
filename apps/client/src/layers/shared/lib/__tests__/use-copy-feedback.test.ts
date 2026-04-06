@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useCopyFeedback } from '../lib/use-copy-feedback';
+import { useCopyFeedback } from '../use-copy-feedback';
 
 beforeEach(() => {
   vi.useFakeTimers();

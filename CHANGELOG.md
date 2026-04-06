@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split four oversized dialog files under 300 lines
 - Restructure dialog tabs — replace Capabilities with Tools
 - Restructure dialog tabs — replace Capabilities with Tools
 - Redesign PersonalityTab with extracted TraitSliders and response mode
