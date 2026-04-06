@@ -66,9 +66,9 @@ git gtr new <branch-name> --from-current --yes
 This will:
 
 1. Create a sibling directory `../<repo>-<branch-name>/`
-2. Copy `.env.example` (from `.gtrconfig`)
-3. Run `npm install` (from `.gtrconfig` postCreate hook)
-4. Run `.claude/scripts/worktree-setup.sh` (assigns unique port)
+2. Copy gitignored files from the main repo (`.env`, `.mcp.json`, `.vercel/`) per `.gtrconfig`
+3. Run `pnpm install` (from `.gtrconfig` postCreate hook)
+4. Run `.claude/scripts/worktree-setup.sh` (patches `.env` with unique `DORKOS_PORT` + `VITE_PORT`)
 
 ### Step 3: Report Results
 

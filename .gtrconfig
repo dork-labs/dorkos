@@ -1,10 +1,32 @@
-[gtr "copy"]
-    include = .env.example
+# .gtrconfig — team-shared git-worktree-runner settings (gitconfig syntax).
+# Docs: https://github.com/coderabbitai/git-worktree-runner/blob/main/docs/configuration.md
+#
+# Precedence: .git/config (local) > .gtrconfig (this file) > ~/.gitconfig (global)
+#
+# NOTE: Section names here are UNPREFIXED (`[copy]`, not `[gtr "copy"]`).
+# gtr maps these to `gtr.*` git config keys internally via lib/config.sh.
+# Using `[gtr "..."]` sections silently fails for `defaults.editor` etc.
 
-[gtr "hook"]
+[copy]
+    # Gitignored files copied from the main repo into each new worktree.
+    # .env.example and .mcp.json.example are tracked by git, so they don't
+    # need to be listed — they appear in every worktree automatically.
+    include = .env
+    include = .mcp.json
+
+    # Copy the entire .vercel/ directory (project.json + README.txt) so
+    # `vercel` CLI commands work in worktrees without re-linking.
+    includeDirs = .vercel
+
+[hooks]
+    # Run after worktree creation, in order.
+    # 1. pnpm install — fast because pnpm reuses its global content-addressable
+    #    store; do NOT add `node_modules` to includeDirs (would corrupt links).
+    # 2. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT +
+    #    VITE_PORT so parallel `pnpm dev` instances don't collide.
     postCreate = pnpm install
     postCreate = .claude/scripts/worktree-setup.sh
 
-[gtr "defaults"]
+[defaults]
     editor = cursor
     ai = claude
