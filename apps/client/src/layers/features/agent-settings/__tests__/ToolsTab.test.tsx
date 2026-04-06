@@ -15,6 +15,9 @@ vi.mock('../model/use-agent-context-config', () => ({
     updateConfig: vi.fn(),
   })),
 }));
+vi.mock('@/layers/entities/agent', () => ({
+  useMcpConfig: vi.fn(() => ({ data: null })),
+}));
 
 import { ToolsTab } from '../ui/ToolsTab';
 import { useRelayEnabled } from '@/layers/entities/relay';
@@ -44,7 +47,7 @@ const baseAgent: AgentManifest = {
 function renderTab(agent: AgentManifest, onUpdate: ReturnType<typeof vi.fn>) {
   const { container } = render(
     <TooltipProvider>
-      <ToolsTab agent={agent} onUpdate={onUpdate} />
+      <ToolsTab agent={agent} projectPath="/projects/test" onUpdate={onUpdate} />
     </TooltipProvider>
   );
   return within(container);

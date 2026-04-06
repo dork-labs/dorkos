@@ -14,8 +14,10 @@ import {
   TooltipTrigger,
 } from '@/layers/shared/ui';
 import type { AgentManifest, EnabledToolGroups } from '@dorkos/shared/mesh-schemas';
+import { cn } from '@/layers/shared/lib';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
+import { useMcpConfig } from '@/layers/entities/agent';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
 
 // ---------------------------------------------------------------------------
@@ -184,20 +186,34 @@ function ToolGroupRow({
 // ToolsTab — per-agent tool access and safety limits.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// MCP status indicator colors — matches ConnectionsView in session sidebar.
+// ---------------------------------------------------------------------------
+
+const MCP_STATUS_COLORS: Partial<Record<string, string>> = {
+  connected: 'bg-green-500',
+  failed: 'bg-red-500',
+  'needs-auth': 'bg-amber-500',
+  pending: 'bg-amber-500',
+  disabled: 'bg-muted-foreground/20',
+};
+
 interface ToolsTabProps {
   agent: AgentManifest;
+  projectPath: string;
   onUpdate: (updates: Partial<AgentManifest>) => void;
 }
 
 /**
- * Tools tab for agent configuration: per-agent tool group overrides
- * and collapsible safety limits (budget).
+ * Tools tab for agent configuration: per-agent tool group overrides,
+ * MCP server overview, and collapsible safety limits (budget).
  */
-export function ToolsTab({ agent, onUpdate }: ToolsTabProps) {
+export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const [limitsOpen, setLimitsOpen] = useState(false);
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const { config: globalConfig } = useAgentContextConfig();
+  const { data: mcpConfig } = useMcpConfig(projectPath);
 
   const handleToolGroupChange = useCallback(
     (key: ToolDomainKey, value: boolean) => {
@@ -283,6 +299,31 @@ export function ToolsTab({ agent, onUpdate }: ToolsTabProps) {
       <p className="text-muted-foreground text-xs">
         Core tools (ping, server info, agent identity) are always available.
       </p>
+
+      {/* MCP Servers */}
+      {mcpConfig && mcpConfig.servers.length > 0 && (
+        <>
+          <h3 className="text-sm font-semibold">MCP Servers</h3>
+          <FieldCard>
+            <FieldCardContent>
+              {mcpConfig.servers.map((server) => (
+                <div key={server.name} className="flex items-center gap-2 py-0.5">
+                  <span
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40'
+                    )}
+                  />
+                  <span className="min-w-0 truncate text-sm">{server.name}</span>
+                  <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs">
+                    {server.type}
+                  </span>
+                </div>
+              ))}
+            </FieldCardContent>
+          </FieldCard>
+        </>
+      )}
 
       <CollapsibleFieldCard
         open={limitsOpen}
