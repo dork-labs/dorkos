@@ -70,7 +70,18 @@ async function buildCLI() {
     target: 'node18',
     format: 'esm',
     outfile: path.join(OUT, 'bin/cli.js'),
-    external: ['dotenv', '../server/index.js', 'conf', '@inquirer/prompts', '@ngrok/ngrok'],
+    external: [
+      'dotenv',
+      '../server/index.js',
+      'conf',
+      '@inquirer/prompts',
+      '@ngrok/ngrok',
+      // gray-matter uses CommonJS `require('fs')` which esbuild's ESM output
+      // cannot inline — keep it external so it resolves at runtime via the
+      // CLI's node_modules. Pulled in transitively by `@dorkos/skills/parser`
+      // → `@dorkos/marketplace/package-validator` → `dorkos package validate`.
+      'gray-matter',
+    ],
     plugins: [
       {
         name: 'resolve-monorepo-imports',

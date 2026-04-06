@@ -23,6 +23,29 @@ declare const __CLI_VERSION__: string;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// `package` subcommand has its own flag namespace (`--type`, `--parent-dir`, etc.).
+// Intercept before the top-level parseArgs call so those flags aren't rejected as
+// unknown options by the strict top-level parser. Package commands don't need the
+// ~/.dork directory or the server runtime, so they exit before any further setup.
+if (process.argv[2] === 'package') {
+  const packageSubcommand = process.argv[3];
+  const subArgs = process.argv.slice(4);
+  if (packageSubcommand === 'init') {
+    const { runPackageInit, parsePackageInitArgs } = await import('./package-init-command.js');
+    await runPackageInit(parsePackageInitArgs(subArgs));
+    process.exit(0);
+  }
+  if (packageSubcommand === 'validate') {
+    const { runPackageValidate } = await import('./package-validate-command.js');
+    const packagePath = subArgs[0];
+    const exitCode = await runPackageValidate({ packagePath });
+    process.exit(exitCode);
+  }
+  console.error(`Unknown package subcommand: ${packageSubcommand ?? '<none>'}`);
+  console.error('Usage: dorkos package <init|validate> [args]');
+  process.exit(1);
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -75,6 +98,8 @@ Commands:
   config validate      Check config validity
   init                 Interactive setup wizard
   init --yes           Accept all defaults
+  package init <name>  Scaffold a new marketplace package
+  package validate [p] Validate a marketplace package
   cleanup              Remove all DorkOS data
 
 Options:

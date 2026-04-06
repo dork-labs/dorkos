@@ -701,6 +701,9 @@ importers:
       '@asteasolutions/zod-to-openapi':
         specifier: ^8.5.0
         version: 8.5.0(zod@4.3.6)
+      '@dorkos/marketplace':
+        specifier: workspace:*
+        version: link:../marketplace
       '@inquirer/prompts':
         specifier: ^8.3.2
         version: 8.3.2(@types/node@25.5.0)
@@ -858,6 +861,28 @@ importers:
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
+
+  packages/marketplace:
+    dependencies:
+      '@dorkos/skills':
+        specifier: workspace:*
+        version: link:../skills
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@dorkos/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@dorkos/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(jiti@2.6.1)(jsdom@28.1.0(@noble/hashes@1.8.0))(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
 
   packages/mesh:
     dependencies:

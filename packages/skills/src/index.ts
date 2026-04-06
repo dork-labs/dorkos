@@ -12,8 +12,8 @@
  */
 
 // Schemas
-export { SkillFrontmatterSchema, SkillNameSchema } from './schema.js';
-export type { SkillFrontmatter } from './schema.js';
+export { SkillFrontmatterSchema, SkillKindSchema, SkillNameSchema } from './schema.js';
+export type { SkillFrontmatter, SkillKind } from './schema.js';
 
 export { TaskFrontmatterSchema } from './task-schema.js';
 export type { TaskFrontmatter } from './task-schema.js';

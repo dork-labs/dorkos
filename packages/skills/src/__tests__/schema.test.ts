@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SkillFrontmatterSchema, SkillNameSchema } from '../schema.js';
+import { SkillFrontmatterSchema, SkillKindSchema, SkillNameSchema } from '../schema.js';
+import type { SkillKind } from '../schema.js';
 
 describe('SkillNameSchema', () => {
   it('accepts a valid kebab-case name', () => {
@@ -102,5 +103,71 @@ describe('SkillFrontmatterSchema', () => {
       metadata: { key: 123 },
     });
     expect(result.success).toBe(false);
+  });
+
+  it('accepts frontmatter with kind: "skill"', () => {
+    const result = SkillFrontmatterSchema.safeParse({ ...minimal, kind: 'skill' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBe('skill');
+    }
+  });
+
+  it('accepts frontmatter with kind: "task"', () => {
+    const result = SkillFrontmatterSchema.safeParse({ ...minimal, kind: 'task' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBe('task');
+    }
+  });
+
+  it('accepts frontmatter with kind: "command"', () => {
+    const result = SkillFrontmatterSchema.safeParse({ ...minimal, kind: 'command' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBe('command');
+    }
+  });
+
+  it('rejects frontmatter with kind: "extension" (invalid value)', () => {
+    const result = SkillFrontmatterSchema.safeParse({ ...minimal, kind: 'extension' });
+    expect(result.success).toBe(false);
+  });
+
+  it('preserves backwards compatibility — frontmatter without kind still validates', () => {
+    const result = SkillFrontmatterSchema.safeParse(minimal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.kind).toBeUndefined();
+    }
+  });
+});
+
+describe('SkillKindSchema', () => {
+  it('parses "skill" successfully', () => {
+    expect(SkillKindSchema.parse('skill')).toBe('skill');
+  });
+
+  it('parses "task" successfully', () => {
+    expect(SkillKindSchema.parse('task')).toBe('task');
+  });
+
+  it('parses "command" successfully', () => {
+    expect(SkillKindSchema.parse('command')).toBe('command');
+  });
+
+  it('rejects an unknown kind', () => {
+    expect(SkillKindSchema.safeParse('extension').success).toBe(false);
+  });
+
+  it('rejects an empty string', () => {
+    expect(SkillKindSchema.safeParse('').success).toBe(false);
+  });
+
+  it('SkillKind type alias is assignable from each enum value', () => {
+    const skillKind: SkillKind = 'skill';
+    const taskKind: SkillKind = 'task';
+    const commandKind: SkillKind = 'command';
+    expect([skillKind, taskKind, commandKind]).toEqual(['skill', 'task', 'command']);
   });
 });

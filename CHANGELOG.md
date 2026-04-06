@@ -9,10 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Implement foundation package, CLI commands, and kind field addendum
 - Show MCP servers in Tools tab
 - Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
 - Use official brand logos for agent runtimes
 - Redesign Tools tab with tool inventories, init errors, and override counts
+- Add `@dorkos/marketplace` package with schemas, parser, validator, scanner, and scaffolder (spec 1 of 5)
+- Add `dorkos package init <name>` CLI command for scaffolding new marketplace packages
+- Add `dorkos package validate [path]` CLI command for validating package manifests
+- Add optional `kind` field to `SkillFrontmatterSchema` (addendum to ADR-0220)
 
 ### Changed
 
@@ -20,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restructure dialog tabs — replace Capabilities with Tools
 - Redesign PersonalityTab with extracted TraitSliders and response mode
 - Redesign IdentityTab with hero preview and extract useDebouncedInput
-- Move warning to top, multi-line endpoint, Remove on generated key, dork_mcp_ prefix
+- Move warning to top, multi-line endpoint, Remove on generated key, dork*mcp* prefix
 - Redesign ExternalMcpCard with sectioned layout and better visual hierarchy
 - Nest scheduler config inside Tasks tool group expansion
 
@@ -28,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Repair .gtrconfig format and assign unique dev ports
 - Add error handling for API key lifecycle and restart hint for rate limits
+
 ---
 
 ## [0.33.0] - 2026-04-05
