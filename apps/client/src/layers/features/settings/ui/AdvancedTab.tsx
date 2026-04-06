@@ -13,7 +13,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Switch,
+  SwitchSettingRow,
 } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { ResetDialog } from './ResetDialog';
@@ -21,19 +21,15 @@ import { RestartDialog } from './RestartDialog';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
-interface AdvancedTabProps {
-  onResetComplete: () => void;
-  onRestartComplete: () => void;
-}
-
 /** Settings danger zone with reset and restart actions. */
-export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabProps) {
+export function AdvancedTab() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const enableCrossClientSync = useAppStore((s) => s.enableCrossClientSync);
   const setEnableCrossClientSync = useAppStore((s) => s.setEnableCrossClientSync);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
+  const setRestartOverlayOpen = useAppStore((s) => s.setRestartOverlayOpen);
 
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -64,19 +60,19 @@ export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabP
       </p>
       <FieldCard>
         <FieldCardContent>
-          <SettingRow
+          <SwitchSettingRow
             label="Multi-window sync"
             description="Keep multiple DorkOS windows and the Obsidian plugin in sync"
-          >
-            <Switch checked={enableCrossClientSync} onCheckedChange={setEnableCrossClientSync} />
-          </SettingRow>
+            checked={enableCrossClientSync}
+            onCheckedChange={setEnableCrossClientSync}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Background refresh"
             description="Check for new messages periodically, even when no one is responding"
-          >
-            <Switch checked={enableMessagePolling} onCheckedChange={setEnableMessagePolling} />
-          </SettingRow>
+            checked={enableMessagePolling}
+            onCheckedChange={setEnableMessagePolling}
+          />
         </FieldCardContent>
       </FieldCard>
 
@@ -182,12 +178,12 @@ export function AdvancedTab({ onResetComplete, onRestartComplete }: AdvancedTabP
       <ResetDialog
         open={resetDialogOpen}
         onOpenChange={setResetDialogOpen}
-        onResetComplete={onResetComplete}
+        onResetComplete={() => setRestartOverlayOpen(true)}
       />
       <RestartDialog
         open={restartDialogOpen}
         onOpenChange={setRestartDialogOpen}
-        onRestartComplete={onRestartComplete}
+        onRestartComplete={() => setRestartOverlayOpen(true)}
       />
     </div>
   );

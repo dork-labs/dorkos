@@ -217,6 +217,26 @@ User input -> ChatPanel -> useChatSession.handleSubmit()
         -> onEvent(event) -> React state updates -> UI re-render
 ```
 
+## Tabbed Dialog Primitive (`TabbedDialog`)
+
+`apps/client/src/layers/shared/ui/tabbed-dialog.tsx` is the high-level primitive for any sidebar-tabbed dialog in DorkOS. It owns the responsive sidebar, mobile drill-in behavior, animated active-tab pill, deep-link sync via `useDialogTabState`, and extension-slot merging. Both `SettingsDialog` and `AgentDialog` consume it as thin declarative wrappers around a `tabs[]` array.
+
+**Reach for `TabbedDialog` when you need:**
+
+- A sidebar-navigated dialog with multiple tabs
+- Deep-link entry points ("open dialog X to tab Y")
+- Responsive mobile drill-in behavior
+
+**Reach for `NavigationLayout` directly when you need:**
+
+- A bare layout primitive without a `ResponsiveDialog` wrapper (e.g., embedded in a non-modal page)
+- Tab content that needs to live outside the parameterless `component: ComponentType` shape
+- Custom dialog chrome that doesn't fit the `TabbedDialog` API
+
+Keyboard navigation inside the dialog is handled by `NavigationLayout`'s built-in `role="tablist"` — `Tab` into the sidebar, then `Up/Down/Home/End` to navigate between tabs. `TabbedDialog` does **not** register numeric modifier shortcuts (`⌘1-⌘9`) — those conflict with Chrome's browser-level tab-switching on macOS and with the existing session sidebar shortcuts registered in `shared/lib/shortcuts.ts`.
+
+For the underlying state-sync hook, see `useDialogTabState` in `shared/model/` (documented in `contributing/state-management.md`).
+
 ## Agent UI Control
 
 Agents can observe and control the DorkOS client UI through a bidirectional pattern:

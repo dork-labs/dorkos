@@ -2,8 +2,7 @@ import {
   FieldCard,
   FieldCardContent,
   NavigationLayoutPanelHeader,
-  SettingRow,
-  Switch,
+  SwitchSettingRow,
 } from '@/layers/shared/ui';
 import {
   STATUS_BAR_REGISTRY,
@@ -16,9 +15,12 @@ import {
 function StatusBarSettingRow({ item }: { item: StatusBarItemConfig }) {
   const [visible, setVisible] = useStatusBarVisibility(item.key);
   return (
-    <SettingRow label={item.label} description={item.description}>
-      <Switch checked={visible} onCheckedChange={setVisible} />
-    </SettingRow>
+    <SwitchSettingRow
+      label={item.label}
+      description={item.description}
+      checked={visible}
+      onCheckedChange={setVisible}
+    />
   );
 }
 

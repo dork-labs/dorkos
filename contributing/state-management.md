@@ -282,6 +282,24 @@ useEffect(() => {
 
 **When to use**: A sibling feature needs to trigger a UI action (open a dialog, navigate to a view) in another feature, and lifting the state higher would add unnecessary coupling. Keep these stores small — just the signal payload and a `clear()` method.
 
+### Dialog Deep-Link Sync (`useDialogTabState`)
+
+For any tabbed dialog that needs to be opened to a pre-targeted tab (deep linking), use `useDialogTabState` from `shared/model/`. It implements the React-recommended "adjust state during render" pattern (NOT `useEffect`) and handles re-syncing when the dialog re-opens with a new initial tab.
+
+```typescript
+import { useDialogTabState } from '@/layers/shared/model';
+
+const [activeTab, setActiveTab] = useDialogTabState({
+  open,
+  initialTab: store.dialogInitialTab,
+  defaultTab: 'first-tab',
+});
+```
+
+This hook is the single convergence point for tab state across `SettingsDialog`, `AgentDialog`, and any future tabbed dialogs. Do **not** use `useState(initialTab)` plus a separate `useEffect` — that pattern triggers an unnecessary re-render and is what the React 19 docs warn against in [You might not need an effect](https://react.dev/learn/you-might-not-need-an-effect).
+
+`TabbedDialog` from `shared/ui/` already uses `useDialogTabState` internally — most consumers don't need to import the hook directly.
+
 ### Extension Registry (Slot-Based UI Contributions)
 
 The extension registry (`useExtensionRegistry`) is a Zustand store that decouples UI composition from hardcoded imports. Features register typed contributions into named slots, and consumers subscribe to those slots via `useSlotContributions`. This eliminates cross-feature imports for shared surfaces like the command palette, sidebar, and dialogs.

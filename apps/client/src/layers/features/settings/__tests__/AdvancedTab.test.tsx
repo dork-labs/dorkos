@@ -34,11 +34,6 @@ function createWrapper() {
 }
 
 describe('AdvancedTab', () => {
-  const defaultProps = {
-    onResetComplete: vi.fn(),
-    onRestartComplete: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -48,24 +43,24 @@ describe('AdvancedTab', () => {
   });
 
   it('renders the Danger Zone heading', () => {
-    render(<AdvancedTab {...defaultProps} />, { wrapper: createWrapper() });
+    render(<AdvancedTab />, { wrapper: createWrapper() });
     expect(screen.getByText('Danger Zone')).toBeInTheDocument();
   });
 
   it('renders Reset All Data and Restart Server rows', () => {
-    render(<AdvancedTab {...defaultProps} />, { wrapper: createWrapper() });
+    render(<AdvancedTab />, { wrapper: createWrapper() });
     expect(screen.getByText('Reset All Data')).toBeInTheDocument();
     expect(screen.getByText('Restart Server')).toBeInTheDocument();
   });
 
   it('opens ResetDialog when Reset button is clicked', () => {
-    render(<AdvancedTab {...defaultProps} />, { wrapper: createWrapper() });
+    render(<AdvancedTab />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /reset/i }));
     expect(screen.getByTestId('reset-dialog')).toBeInTheDocument();
   });
 
   it('opens RestartDialog when Restart button is clicked', () => {
-    render(<AdvancedTab {...defaultProps} />, { wrapper: createWrapper() });
+    render(<AdvancedTab />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /restart/i }));
     expect(screen.getByTestId('restart-dialog')).toBeInTheDocument();
   });

@@ -1,7 +1,6 @@
 import { useAppStore } from '@/layers/shared/model';
 import {
-  Switch,
-  SettingRow,
+  SwitchSettingRow,
   FieldCard,
   FieldCardContent,
   NavigationLayoutPanelHeader,
@@ -42,65 +41,68 @@ export function PreferencesTab() {
 
       <FieldCard>
         <FieldCardContent>
-          <SettingRow label="Show timestamps" description="Display message timestamps in chat">
-            <Switch checked={showTimestamps} onCheckedChange={setShowTimestamps} />
-          </SettingRow>
+          <SwitchSettingRow
+            label="Show timestamps"
+            description="Display message timestamps in chat"
+            checked={showTimestamps}
+            onCheckedChange={setShowTimestamps}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Expand tool calls"
             description="Auto-expand tool call details in messages"
-          >
-            <Switch checked={expandToolCalls} onCheckedChange={setExpandToolCalls} />
-          </SettingRow>
+            checked={expandToolCalls}
+            onCheckedChange={setExpandToolCalls}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Auto-hide tool calls"
             description="Fade out completed tool calls after a few seconds"
-          >
-            <Switch checked={autoHideToolCalls} onCheckedChange={setAutoHideToolCalls} />
-          </SettingRow>
+            checked={autoHideToolCalls}
+            onCheckedChange={setAutoHideToolCalls}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Show shortcut chips"
             description="Display shortcut hints below the message input"
-          >
-            <Switch checked={showShortcutChips} onCheckedChange={setShowShortcutChips} />
-          </SettingRow>
+            checked={showShortcutChips}
+            onCheckedChange={setShowShortcutChips}
+          />
 
-          <SettingRow label="Task celebrations" description="Show animations when tasks complete">
-            <Switch checked={showTaskCelebrations} onCheckedChange={setShowTaskCelebrations} />
-          </SettingRow>
+          <SwitchSettingRow
+            label="Task celebrations"
+            description="Show animations when tasks complete"
+            checked={showTaskCelebrations}
+            onCheckedChange={setShowTaskCelebrations}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Notification sound"
             description="Play a sound when AI finishes responding (3s+ responses)"
-          >
-            <Switch
-              checked={enableNotificationSound}
-              onCheckedChange={setEnableNotificationSound}
-            />
-          </SettingRow>
+            checked={enableNotificationSound}
+            onCheckedChange={setEnableNotificationSound}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Tasks run notifications"
             description="Show a toast when a scheduled Tasks run completes"
-          >
-            <Switch
-              checked={enableTasksNotifications}
-              onCheckedChange={setEnableTasksNotifications}
-            />
-          </SettingRow>
+            checked={enableTasksNotifications}
+            onCheckedChange={setEnableTasksNotifications}
+          />
 
-          <SettingRow
+          <SwitchSettingRow
             label="Feature suggestions"
             description="Show feature discovery cards on the dashboard and sidebar"
-          >
-            <Switch checked={promoEnabled} onCheckedChange={setPromoEnabled} />
-          </SettingRow>
+            checked={promoEnabled}
+            onCheckedChange={setPromoEnabled}
+          />
 
-          <SettingRow label="Show dev tools" description="Enable developer tools panel">
-            <Switch checked={devtoolsOpen} onCheckedChange={() => toggleDevtools()} />
-          </SettingRow>
+          <SwitchSettingRow
+            label="Show dev tools"
+            description="Enable developer tools panel"
+            checked={devtoolsOpen}
+            onCheckedChange={() => toggleDevtools()}
+          />
         </FieldCardContent>
       </FieldCard>
     </div>

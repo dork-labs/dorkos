@@ -16,12 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extract TabbedDialog primitive
+- Extract `TabbedDialog` widget primitive — `SettingsDialog` and `AgentDialog` now consume it as thin declarative wrappers (491 → 54 lines and 177 → 75 lines respectively)
 - Split four oversized dialog files under 300 lines
 - Restructure dialog tabs — replace Capabilities with Tools
 - Restructure dialog tabs — replace Capabilities with Tools
 - Redesign PersonalityTab with extracted TraitSliders and response mode
 - Redesign IdentityTab with hero preview and extract useDebouncedInput
-- Move warning to top, multi-line endpoint, Remove on generated key, dork_mcp_ prefix
+- Move warning to top, multi-line endpoint, Remove on generated key, dork*mcp* prefix
 - Redesign ExternalMcpCard with sectioned layout and better visual hierarchy
 - Nest scheduler config inside Tasks tool group expansion
 
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Repair .gtrconfig format and assign unique dev ports
 - Add error handling for API key lifecycle and restart hint for rate limits
+
 ---
 
 ## [0.33.0] - 2026-04-05

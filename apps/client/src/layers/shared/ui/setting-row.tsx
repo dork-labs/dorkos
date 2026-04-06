@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Field, FieldContent, FieldDescription, FieldLabel } from './field';
 import { cn } from '@/layers/shared/lib';
+import { Switch } from './switch';
 
 interface SettingRowProps {
   /** Label content displayed on the left. Accepts strings or React nodes (e.g., icon + text). */
@@ -53,5 +54,49 @@ function SettingRow({
   );
 }
 
-export { SettingRow };
-export type { SettingRowProps };
+interface SwitchSettingRowProps {
+  /** Label text. */
+  label: string;
+  /** Description text below the label. */
+  description: string;
+  /** Switch checked state. */
+  checked: boolean;
+  /** Switch onCheckedChange handler. */
+  onCheckedChange: (checked: boolean) => void;
+  /** Optional aria-label override. Defaults to the label. */
+  ariaLabel?: string;
+  /** Optional className for the row. */
+  className?: string;
+  /** Optional disabled state. */
+  disabled?: boolean;
+}
+
+/**
+ * Switch + label row shorthand — the most common settings pattern.
+ *
+ * Wraps a `Switch` inside a `SettingRow` with consistent `aria-label`
+ * defaulting and disabled state forwarding.
+ */
+function SwitchSettingRow({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  ariaLabel,
+  className,
+  disabled,
+}: SwitchSettingRowProps) {
+  return (
+    <SettingRow label={label} description={description} className={className}>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        aria-label={ariaLabel ?? label}
+        disabled={disabled}
+      />
+    </SettingRow>
+  );
+}
+
+export { SettingRow, SwitchSettingRow };
+export type { SettingRowProps, SwitchSettingRowProps };

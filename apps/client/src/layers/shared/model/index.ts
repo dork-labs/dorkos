@@ -5,7 +5,8 @@
  */
 export { TransportProvider, useTransport } from './TransportContext';
 export { useAppStore, type ContextFile, type RecentCwd } from './app-store';
-export type { AgentDialogTab } from './app-store/app-store-panels';
+export type { AgentDialogTab, SettingsTab } from './app-store/app-store-panels';
+export { useDialogTabState } from './use-dialog-tab-state';
 export { useTheme, type Theme } from './use-theme';
 export { useIsMobile } from './use-is-mobile';
 export { useFavicon } from './use-favicon';

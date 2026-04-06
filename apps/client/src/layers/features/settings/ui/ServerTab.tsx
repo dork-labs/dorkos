@@ -1,14 +1,16 @@
-import type { ServerConfig } from '@dorkos/shared/types';
+import { useQuery } from '@tanstack/react-query';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
 import { isNewer } from '@/layers/features/status';
 
-interface ServerTabProps {
-  config: ServerConfig | undefined;
-  isLoading: boolean;
-}
-
 /** Settings panel tab displaying server status, environment, and endpoints. */
-export function ServerTab({ config, isLoading }: ServerTabProps) {
+export function ServerTab() {
+  const transport = useTransport();
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => transport.getConfig(),
+    staleTime: 30_000,
+  });
   return (
     <div className="space-y-3">
       {isLoading ? (

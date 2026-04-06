@@ -5,6 +5,7 @@ import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
 import { RelayDialogWrapper } from './wrappers/RelayDialogWrapper';
 import { MeshDialogWrapper } from './wrappers/MeshDialogWrapper';
 import { AgentDialogWrapper } from './wrappers/AgentDialogWrapper';
+import { ServerRestartOverlayWrapper } from './wrappers/ServerRestartOverlayWrapper';
 
 /** Built-in dialog contributions for the root dialog host. */
 export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
@@ -43,5 +44,11 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     component: AgentDialogWrapper,
     openStateKey: 'agentDialogOpen',
     priority: 6,
+  },
+  {
+    id: 'server-restart-overlay',
+    component: ServerRestartOverlayWrapper,
+    openStateKey: 'restartOverlayOpen',
+    priority: 7,
   },
 ];

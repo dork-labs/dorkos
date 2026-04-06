@@ -89,8 +89,12 @@ export { Kbd } from './kbd';
 export { Label } from './label';
 export { PasswordInput } from './password-input';
 export type { PasswordInputProps } from './password-input';
-export { SettingRow } from './setting-row';
-export type { SettingRowProps } from './setting-row';
+export { SettingRow, SwitchSettingRow } from './setting-row';
+export type { SettingRowProps, SwitchSettingRowProps } from './setting-row';
+export { SettingsPanel } from './settings-panel';
+export type { SettingsPanelProps } from './settings-panel';
+export { TabbedDialog } from './tabbed-dialog';
+export type { TabbedDialogProps, TabbedDialogTab } from './tabbed-dialog';
 export { PathBreadcrumb } from './path-breadcrumb';
 export {
   Popover,
