@@ -1,5 +1,5 @@
 ---
-slug: dialog-url-deeplinks
+slug: settings-dialog-03-url-deeplinks
 number: 221
 created: 2026-04-06
 status: specified
@@ -95,7 +95,7 @@ Most callsites are one-liners. The migration is mechanical but broad.
 - **Browser history pruning or cleanup** — back button just works; no manual history manipulation
 - **Breaking changes to existing route schemas** (`?session=`, `?dir=`, `?detail=`, `?view=`, `?sort=`)
 - **Deep-linking dialogs that don't have store entries today** (e.g., `TunnelDialog`, `ServerRestartOverlay`, `DirectoryPicker`, `ResetDialog`, `RestartDialog`) — they're opened from inside other dialogs, not from across the app
-- **Migration from `useEffect`-based deep-link sync in `SettingsDialog` to React-recommended pattern** — that's the `tabbed-dialog-primitive` spec's job. This spec replaces the _whole_ sync layer with URL reads.
+- **Migration from `useEffect`-based deep-link sync in `SettingsDialog` to React-recommended pattern** — that's the `settings-dialog-02-tabbed-primitive` spec's job. This spec replaces the _whole_ sync layer with URL reads.
 
 ## 5. Technical Dependencies
 
@@ -607,7 +607,7 @@ The dialog still has local state (so non-URL opens work), but the URL takes prec
 
 **Agent dialog:** Same pattern with `useAgentDialogDeepLink()`.
 
-> **Note:** This subsection becomes simpler after `tabbed-dialog-primitive` lands. `TabbedDialog` will own this logic via its updated `useDialogTabState` hook (which becomes URL-aware in this spec). For now, write the explicit version in `SettingsDialog.tsx` and `AgentDialog.tsx`; collapse it into the primitive when both specs have shipped.
+> **Note:** This subsection becomes simpler after `settings-dialog-02-tabbed-primitive` lands. `TabbedDialog` will own this logic via its updated `useDialogTabState` hook (which becomes URL-aware in this spec). For now, write the explicit version in `SettingsDialog.tsx` and `AgentDialog.tsx`; collapse it into the primitive when both specs have shipped.
 
 ### 6.8 Sub-section scrolling
 
@@ -949,7 +949,7 @@ test('palette open keeps URL clean (store-based fallback)', async ({ page }) => 
 - Update `contributing/architecture.md` with a new section "Dialog deep linking via URL search params" describing the dual-signal pattern and the per-dialog hook API
 - Update `contributing/state-management.md` to point at the new hooks for cross-page dialog opens (replacing the existing guidance to use `openSettingsToTab` etc.)
 - Add a changelog entry: "Settings, Tasks, Relay, Mesh, and Agent dialogs are now URL-addressable via search params. Share links like `?settings=tools` to deep-link teammates."
-- Reference the URL params from the upcoming `dev-playground-settings-page` spec (so the playground demonstrates the feature)
+- Reference the URL params from the upcoming `settings-dialog-04-playground` spec (so the playground demonstrates the feature)
 - No user-facing docs change in `docs/` — this is an SPA convention, not a user feature to teach
 
 ## 12. Implementation Phases
@@ -1090,6 +1090,6 @@ Extensions register dialogs via `extensionApi.registerDialog`. Today they use a 
 
 ### Related specs
 
-- `specs/settings-dialog-file-splits/` — Independent prerequisite for cleaner Settings refactor (this spec works without it but the migration is easier)
-- `specs/tabbed-dialog-primitive/` — Related but independent. `useDialogTabState` from that spec collapses into URL-aware `useDialogDeepLink` once both ship. Either order works; prefer `tabbed-dialog-primitive` first so the abstraction lands cleanly.
-- `specs/dev-playground-settings-page/` — Will demonstrate URL deep-linking in the playground
+- `specs/settings-dialog-01-file-splits/` — Independent prerequisite for cleaner Settings refactor (this spec works without it but the migration is easier)
+- `specs/settings-dialog-02-tabbed-primitive/` — Related but independent. `useDialogTabState` from that spec collapses into URL-aware `useDialogDeepLink` once both ship. Either order works; prefer `settings-dialog-02-tabbed-primitive` first so the abstraction lands cleanly.
+- `specs/settings-dialog-04-playground/` — Will demonstrate URL deep-linking in the playground

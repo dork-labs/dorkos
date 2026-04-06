@@ -1,5 +1,5 @@
 ---
-slug: settings-dialog-file-splits
+slug: settings-dialog-01-file-splits
 number: 216
 created: 2026-04-06
 status: specified
@@ -42,11 +42,11 @@ The cost of leaving them this way:
 
 - **`.claude/rules/file-size.md` violations** — the rule explicitly states files > 300 lines "must split"; the only exceptions listed are generated files, barrels, state machines tightly coupled to UI, and tests. None of these four files qualify.
 - **Hard to navigate and review** — diffs touching these files force reviewers to load 500-line context windows for surgical changes.
-- **Hard to playground in isolation** — `dev-playground-settings-page` (a follow-on spec) needs to import individual tabs as standalone components. Today they're inline JSX inside one big function.
-- **Hard to formalize the system** — the planned `tabbed-dialog-primitive` spec needs `SettingsDialog` to be a thin shell that consumes a tab-config array. That refactor is hard to do _while also_ extracting tabs from a 491-line file in the same diff.
+- **Hard to playground in isolation** — `settings-dialog-04-playground` (a follow-on spec) needs to import individual tabs as standalone components. Today they're inline JSX inside one big function.
+- **Hard to formalize the system** — the planned `settings-dialog-02-tabbed-primitive` spec needs `SettingsDialog` to be a thin shell that consumes a tab-config array. That refactor is hard to do _while also_ extracting tabs from a 491-line file in the same diff.
 - **Duplication of `CopyButton`** — the same icon-with-feedback pattern is reimplemented in `ExternalMcpCard.tsx`, `ServerTab.tsx`, `AdvancedTab.tsx`, and `TunnelConnected.tsx`. The local definition in `ExternalMcpCard.tsx` is a 15-line component that should live in `shared/ui` and be consumed by all four.
 
-This spec exists as a **prerequisite refactor** that unlocks both the playground spec and the tabbed-dialog-primitive spec without entangling them with low-risk file moves.
+This spec exists as a **prerequisite refactor** that unlocks both the playground spec and the settings-dialog-02-tabbed-primitive spec without entangling them with low-risk file moves.
 
 ## 3. Goals
 
@@ -61,9 +61,9 @@ This spec exists as a **prerequisite refactor** that unlocks both the playground
 
 ## 4. Non-Goals
 
-- **No new shared abstractions** (`TabbedDialog` widget, `useDialogTabState` hook, `SwitchSettingRow` shorthand, `ExpandableSettingRow`) — those belong in spec `tabbed-dialog-primitive`
-- **No URL-based deep linking** — that belongs in spec `dialog-url-deeplinks`
-- **No dev playground additions** — that belongs in spec `dev-playground-settings-page`
+- **No new shared abstractions** (`TabbedDialog` widget, `useDialogTabState` hook, `SwitchSettingRow` shorthand, `ExpandableSettingRow`) — those belong in spec `settings-dialog-02-tabbed-primitive`
+- **No URL-based deep linking** — that belongs in spec `settings-dialog-03-url-deeplinks`
+- **No dev playground additions** — that belongs in spec `settings-dialog-04-playground`
 - **No behavior changes** — same handlers, same effects, same data flows, same callbacks
 - **No accessibility improvements** beyond what's already there (e.g., adding missing `aria-label`s is out of scope here even where obvious; track those separately)
 - **No UX polish** — animations, copy, layout, spacing all stay identical
@@ -335,7 +335,7 @@ export function SettingsDialog({ open, onOpenChange }) {
 }
 ```
 
-> **Why server/tools/channels/agents/advanced still have inlined `<NavigationLayoutPanelHeader>` blocks:** because their existing tab components (`ServerTab`, `ToolsTab`, etc.) already return _content only_ without their own header. Wrapping the panel header outside is consistent with current behavior. The header normalization is the `tabbed-dialog-primitive` spec's job.
+> **Why server/tools/channels/agents/advanced still have inlined `<NavigationLayoutPanelHeader>` blocks:** because their existing tab components (`ServerTab`, `ToolsTab`, etc.) already return _content only_ without their own header. Wrapping the panel header outside is consistent with current behavior. The header normalization is the `settings-dialog-02-tabbed-primitive` spec's job.
 
 > **Note on the Tools panel "Reset to defaults" action button** (`SettingsDialog.tsx:411-433`): this currently lives inside the SettingsDialog file but actually belongs in `ToolsTab.tsx` because it operates on its data. We move it inside `ToolsTab.tsx` as part of section 6.4. This is a pure relocation — same handler, same UI.
 
@@ -919,9 +919,9 @@ Resolved (§6.2): **No** — the panel wrapper stays in `SettingsDialog.tsx`. Re
 
 ### Follow-on specs (depend on this one)
 
-- `specs/tabbed-dialog-primitive/` (planned) — extracts `TabbedDialog` widget; consumes the slim `SettingsDialog` and `AgentDialog` shells this spec produces
-- `specs/dev-playground-settings-page/` (planned) — adds Settings page to dev playground; depends on the tab components extracted here
+- `specs/settings-dialog-02-tabbed-primitive/` (planned) — extracts `TabbedDialog` widget; consumes the slim `SettingsDialog` and `AgentDialog` shells this spec produces
+- `specs/settings-dialog-04-playground/` (planned) — adds Settings page to dev playground; depends on the tab components extracted here
 
 ### Independent
 
-- `specs/dialog-url-deeplinks/` (planned) — URL search-param deep linking for dialogs; independent of this refactor
+- `specs/settings-dialog-03-url-deeplinks/` (planned) — URL search-param deep linking for dialogs; independent of this refactor

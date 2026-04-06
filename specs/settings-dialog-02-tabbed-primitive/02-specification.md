@@ -1,5 +1,5 @@
 ---
-slug: tabbed-dialog-primitive
+slug: settings-dialog-02-tabbed-primitive
 number: 218
 created: 2026-04-06
 status: specified
@@ -19,7 +19,7 @@ Extract a `TabbedDialog` widget primitive into `shared/ui/` that owns the chrome
 
 After this spec:
 
-- `SettingsDialog.tsx` shrinks from ~140 lines (post-`settings-dialog-file-splits`) to ~50 lines
+- `SettingsDialog.tsx` shrinks from ~140 lines (post-`settings-dialog-01-file-splits`) to ~50 lines
 - `AgentDialog.tsx` shrinks from 177 lines to ~60 lines
 - ~150 lines of duplicated chrome are deleted
 - ~17 instances of `<SettingRow>+<Switch>` boilerplate collapse to `<SwitchSettingRow>` (~70 lines saved)
@@ -78,8 +78,8 @@ A `<SwitchSettingRow>` shorthand fixes both the boilerplate and the consistency.
 
 ## 4. Non-Goals
 
-- **No URL-based deep linking** — that belongs in spec `dialog-url-deeplinks`
-- **No dev playground additions** — that belongs in spec `dev-playground-settings-page`
+- **No URL-based deep linking** — that belongs in spec `settings-dialog-03-url-deeplinks`
+- **No dev playground additions** — that belongs in spec `settings-dialog-04-playground`
 - **No migration of `TasksDialog`/`RelayDialog`/`MeshDialog`/other dialogs** to `TabbedDialog` — those don't currently use `NavigationLayout`. They have different shapes (tasks list, message bus inspector, topology graph) and adopting `TabbedDialog` for them is a separate decision.
 - **No search inside settings** — planned but separate
 - **No tab-content lazy loading** beyond what already exists for extension tabs (which use `React.lazy` via the extension registry)
@@ -87,7 +87,7 @@ A `<SwitchSettingRow>` shorthand fixes both the boilerplate and the consistency.
 - **No unsaved-changes / dirty-state warnings** — separate concern
 - **No new accessibility features** beyond what `NavigationLayout` already provides — though the hook will _enforce_ `aria-label` on `SwitchSettingRow` (currently optional)
 - **No changes to `NavigationLayout` itself** — `TabbedDialog` is built **on top of** the existing primitive, not as a replacement
-- **No promotion of `useCopyFeedback` or `CopyButton`** — those are handled by `settings-dialog-file-splits`
+- **No promotion of `useCopyFeedback` or `CopyButton`** — those are handled by `settings-dialog-01-file-splits`
 - **No changes to the contribution registry** (`extension-registry.ts`) — `TabbedDialog` consumes `useSlotContributions` as it exists today
 
 ## 5. Technical Dependencies
@@ -518,7 +518,7 @@ Caveats documented in the TSDoc:
 
 ### 6.7 Refactoring `SettingsDialog`
 
-**Pre-condition:** `settings-dialog-file-splits` has landed. `AppearanceTab`, `PreferencesTab`, `StatusBarTab`, and `RemoteAccessAction` all exist as standalone components.
+**Pre-condition:** `settings-dialog-01-file-splits` has landed. `AppearanceTab`, `PreferencesTab`, `StatusBarTab`, and `RemoteAccessAction` all exist as standalone components.
 
 **Issue: `ServerTab` and `AdvancedTab` don't fit the parameterless pattern.**
 
@@ -1051,9 +1051,9 @@ Today `IdentityTab.test.tsx` (if it exists) renders `<IdentityTab agent={mockAge
 
 ### Internal
 
-- `specs/settings-dialog-file-splits/` — **Prerequisite spec.** Must land first.
-- `specs/dialog-url-deeplinks/` (planned) — Builds on this spec by adding URL search-param deep linking
-- `specs/dev-playground-settings-page/` (planned) — Builds on this spec by playgrounding tabs in isolation
+- `specs/settings-dialog-01-file-splits/` — **Prerequisite spec.** Must land first.
+- `specs/settings-dialog-03-url-deeplinks/` (planned) — Builds on this spec by adding URL search-param deep linking
+- `specs/settings-dialog-04-playground/` (planned) — Builds on this spec by playgrounding tabs in isolation
 - `apps/client/src/layers/shared/ui/navigation-layout.tsx` — Underlying primitive that `TabbedDialog` wraps
 - `apps/client/src/layers/shared/ui/responsive-dialog.tsx` — Dialog primitive with mobile drawer fallback
 - `apps/client/src/layers/shared/model/extension-registry.ts` — `useSlotContributions` for extension tabs

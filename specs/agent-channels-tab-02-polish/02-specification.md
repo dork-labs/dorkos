@@ -1,11 +1,11 @@
 ---
-slug: agent-channels-tab-polish
+slug: agent-channels-tab-02-polish
 number: 220
 status: specification
 created: 2026-04-06
 ---
 
-# Agent Dialog → Channels Tab — Visual Polish & Information Architecture
+# Agent Dialog → Channels Tab — Visual Polish & Information Architecture (02 of 03)
 
 ## Table of Contents
 
@@ -32,7 +32,7 @@ created: 2026-04-06
 
 ## 1. Overview
 
-Spec 217 (agent-channels-tab-correctness) fixed the bugs. This spec makes the Channels tab genuinely world-class by eliminating jargon, introducing brand iconography, humanizing labels, rebalancing colors, reordering the parent tab list, and applying progressive disclosure to the binding card. It is design-intensive and should not begin until Spec 217 is merged.
+Spec 01 (agent-channels-tab-01-correctness) fixed the bugs. This spec makes the Channels tab genuinely world-class by eliminating jargon, introducing brand iconography, humanizing labels, rebalancing colors, reordering the parent tab list, and applying progressive disclosure to the binding card. It is design-intensive and should not begin until Spec 01 is merged.
 
 **Blast radius:** ~8 files modified, 1-2 files created, 1 shared UI primitive extended.
 
@@ -62,7 +62,7 @@ Spec 217 (agent-channels-tab-correctness) fixed the bugs. This spec makes the Ch
 
 ## 2. Problem Statement
 
-After Spec 217 ships, the Channels tab is correct but still not world-class. Specifically:
+After Spec 01 ships, the Channels tab is correct but still not world-class. Specifically:
 
 ### 2.1 Jargon leaks into the primary surface
 
@@ -118,7 +118,7 @@ The current empty state is one gray line: "No channels connected." No explanatio
 ## 4. Non-Goals
 
 - **Server-side changes.** No changes to `AdapterManager`, `BindingRouter`, or any schema. Entirely client-side.
-- **New functionality.** No pause/mute, no test button, no last-activity metadata, no budget warnings. Spec 3.
+- **New functionality.** No pause/mute, no test button, no last-activity metadata, no budget warnings. Spec 03.
 - **Relay panel redesign.** The Relay panel's adapter cards get the color-semantics fix only. Full visual pass is out of scope.
 - **Changes to `BindingDialog`.** Still the canonical edit surface. We do not restyle it, we just ensure the card no longer duplicates what it shows.
 - **Tab rename.** "Channels" stays as the tab name; we do not introduce new terminology.
@@ -419,9 +419,9 @@ export function buildPreviewSentence({
 
 ### 7.5 `ChannelsTab.tsx` — wire the new card props
 
-**File:** `apps/client/src/layers/features/agent-settings/ui/ChannelsTab.tsx` _(modified from Spec 217 output)_
+**File:** `apps/client/src/layers/features/agent-settings/ui/ChannelsTab.tsx` _(modified from Spec 01 output)_
 
-Changes relative to the Spec 217 state:
+Changes relative to the Spec 01 state:
 
 1. Extend `AdapterDisplay` to carry `iconId` and `adapterType` from the manifest:
 
@@ -488,7 +488,7 @@ export function BoundChannelRow({ binding, ...rest }: Props) {
 
 ### 7.6 `ChannelPicker.tsx` — brand icons and humanized state
 
-**File:** `apps/client/src/layers/features/agent-settings/ui/ChannelPicker.tsx` _(modified from Spec 217 output)_
+**File:** `apps/client/src/layers/features/agent-settings/ui/ChannelPicker.tsx` _(modified from Spec 01 output)_
 
 Changes:
 
@@ -499,7 +499,7 @@ Changes:
    - `error` → "Error"
    - `connecting` → "Connecting…"
 3. Update `STATE_DOT_CLASS` to use gray for disconnected and amber (pulsing) for transient states.
-4. The "Available to set up" section (introduced in Spec 217) gains brand icons next to each manifest row.
+4. The "Available to set up" section (introduced in Spec 01) gains brand icons next to each manifest row.
 
 ```ts
 const STATE_DOT_CLASS: Record<AdapterStatus['state'], string> = {
@@ -534,7 +534,7 @@ const STATE_DOT_CLASS: Record<AdapterStatus['state'], string> = {
 </div>
 ```
 
-Note: this is a _read-only_ navigation to Settings. The user is not in the middle of a flow, so there is no context to preserve — a direct jump is fine. After Spec 217, `ChannelsTab` no longer imports `useAppStore` for state-juggling; for this empty-state convenience we re-import `openSettingsToTab` but only use it in this one terminal path. No state save/restore needed.
+Note: this is a _read-only_ navigation to Settings. The user is not in the middle of a flow, so there is no context to preserve — a direct jump is fine. After Spec 01, `ChannelsTab` no longer imports `useAppStore` for state-juggling; for this empty-state convenience we re-import `openSettingsToTab` but only use it in this one terminal path. No state save/restore needed.
 
 **State B — Relay on, no external adapters in catalog:**
 
@@ -909,7 +909,7 @@ No new ADR required. The progressive disclosure model for binding cards is a des
 
 ## 18. References
 
-**Depends on:** Spec 217 (agent-channels-tab-correctness). Do not begin this spec until Spec 217 is merged.
+**Depends on:** Spec 01 (agent-channels-tab-01-correctness). Do not begin this spec until Spec 01 is merged.
 
 **Source files modified:**
 
@@ -940,6 +940,10 @@ No new ADR required. The progressive disclosure model for binding cards is a des
 - Linear → Settings → Integrations (pattern reference)
 - Raycast → Extensions (kebab menu pattern reference)
 
-**Follow-up spec:**
+**Series — execute in order:**
 
-- **Spec 3 — Channels tab functionality** (post-merge of this spec): pause/mute, test button, last-activity metadata, budget warnings.
+1. **`agent-channels-tab-01-correctness`** — bug fixes and architecture cleanup. Must be merged before this spec begins.
+2. **`agent-channels-tab-02-polish`** _(this spec)_ — visual redesign, brand icons, humanized copy, tab reorder, color semantics, empty-state redesign.
+3. **`agent-channels-tab-03-functionality`** — pause/mute, test button, last-activity metadata, budget warnings.
+
+Do not begin Spec 03 until this spec is merged.

@@ -1,11 +1,11 @@
 ---
-slug: agent-channels-tab-correctness
+slug: agent-channels-tab-01-correctness
 number: 217
 status: specification
 created: 2026-04-06
 ---
 
-# Agent Dialog → Channels Tab — Correctness & Architecture Cleanup
+# Agent Dialog → Channels Tab — Correctness & Architecture Cleanup (01 of 03)
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ Visual redesign (brand icons, humanized copy, explainer text, tab reorder, kebab
 | 5   | Picker data source             | ChannelsTab owns the filtered catalog; ChannelPicker receives it as a prop (no double-fetching)                      |
 | 6   | Three `resolve*` helpers       | Collapsed into a single `resolveAdapterDisplay(adapterId)` returning `{ state, name, errorMessage }`                 |
 | 7   | Settings → Channels            | Refactored in this spec to consume the same shared hook (one source of truth)                                        |
-| 8   | Transient adapter states       | No change in this spec; stay normalized to "disconnected" until Spec 2 addresses color semantics                     |
+| 8   | Transient adapter states       | No change in this spec; stay normalized to "disconnected" until Spec 02 addresses color semantics                    |
 
 ---
 
@@ -120,11 +120,11 @@ The `requestAnimationFrame` wrapping is itself a symptom: closing one Radix dial
 
 The following are explicitly out of scope and belong to downstream specs:
 
-- **Visual redesign:** card layout changes, brand icons in the picker/cards, humanized `sessionStrategy`/`chatId` labels, permission summary pills, kebab menu replacing hover actions, empty-state redesign, explainer copy, panel-header subtitle. All deferred to Spec 2 ("Channels tab polish").
-- **Tab reorder:** moving Channels to position 2 in the AgentDialog sidebar. Spec 2.
-- **Color semantics:** amber → gray for "disconnected", reclaiming amber for transient states. Spec 2.
-- **Transient state surfacing:** showing `reconnecting` / `starting` distinctly. Spec 2.
-- **New functionality:** pause/mute, test button, last-activity metadata, per-binding budget warnings. Spec 3 ("Channels tab functionality").
+- **Visual redesign:** card layout changes, brand icons in the picker/cards, humanized `sessionStrategy`/`chatId` labels, permission summary pills, kebab menu replacing hover actions, empty-state redesign, explainer copy, panel-header subtitle. All deferred to Spec 02 ("Channels tab polish").
+- **Tab reorder:** moving Channels to position 2 in the AgentDialog sidebar. Spec 02.
+- **Color semantics:** amber → gray for "disconnected", reclaiming amber for transient states. Spec 02.
+- **Transient state surfacing:** showing `reconnecting` / `starting` distinctly. Spec 02.
+- **New functionality:** pause/mute, test button, last-activity metadata, per-binding budget warnings. Spec 03 ("Channels tab functionality").
 - **Schema changes:** `AdapterBinding`, `AdapterManifest`, and `CatalogEntry` remain untouched.
 - **Server-side changes:** `AdapterManager.getCatalog()` remains untouched. All fixes are client-side.
 - **`BindingDialog` changes:** reused as-is in edit mode.
@@ -653,7 +653,7 @@ After: User clicks an "Available to set up" item → wizard opens over AgentDial
 
 ### 8.3 No visual changes
 
-Every other aspect of the tab looks identical to today. The binding cards, the status dots, the edit flow, the remove confirmation, the empty state text — all unchanged. This is intentional. The visual pass is Spec 2 and deserves its own design attention.
+Every other aspect of the tab looks identical to today. The binding cards, the status dots, the edit flow, the remove confirmation, the empty state text — all unchanged. This is intentional. The visual pass is Spec 02 and deserves its own design attention.
 
 ### 8.4 Picker popover re-organization
 
@@ -832,7 +832,7 @@ None. All decisions were locked before spec creation:
 5. Picker data source → prop, not internal fetch.
 6. Three `resolve*` helpers → single `resolveAdapterDisplay`.
 7. Settings → Channels → refactor to use the shared hook in this spec.
-8. Transient adapter states → no change in this spec; deferred to Spec 2.
+8. Transient adapter states → no change in this spec; deferred to Spec 02.
 
 If any of these turn out to be wrong during implementation, stop and re-discuss rather than working around them.
 
@@ -889,7 +889,10 @@ No new ADR is created by this spec.
 - `.claude/rules/testing.md` — test patterns, Wrapper, mock patterns
 - `.claude/rules/file-size.md` — 300-line comfort threshold
 
-**Follow-up specs:**
+**Series — execute in order:**
 
-- **Spec 2 — Channels tab polish** (forthcoming): visual redesign, brand icons, humanized copy, tab reorder, color semantics, empty-state redesign.
-- **Spec 3 — Channels tab functionality** (post-Spec 2): pause/mute, test button, last-activity metadata, budget warnings.
+1. **`agent-channels-tab-01-correctness`** _(this spec)_ — bug fixes and architecture cleanup.
+2. **`agent-channels-tab-02-polish`** — visual redesign, brand icons, humanized copy, tab reorder, color semantics, empty-state redesign.
+3. **`agent-channels-tab-03-functionality`** — pause/mute, test button, last-activity metadata, budget warnings.
+
+Do not begin Spec 02 until this spec is merged. Do not begin Spec 03 until both 01 and 02 are merged.
