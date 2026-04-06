@@ -346,6 +346,15 @@ export const CreateAgentOptionsSchema = z
     runtime: AgentRuntimeSchema.optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
+    /**
+     * Internal flag for the marketplace install pipeline. When true, the
+     * agent-creator skips its own directory creation and template download
+     * steps and treats `directory` as an existing, pre-populated workspace
+     * that only needs the `.dork/agent.json` + SOUL.md + NOPE.md scaffold.
+     * Not part of the public CLI/API surface — set only by the marketplace
+     * install flow after copying a package onto disk.
+     */
+    skipTemplateDownload: z.boolean().optional(),
   })
   .openapi('CreateAgentOptions');
 

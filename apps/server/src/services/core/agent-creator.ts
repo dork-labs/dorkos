@@ -104,6 +104,13 @@ async function maybeSetDefaultAgent(agentName: string): Promise<void> {
  * and auto-sets as default agent when appropriate. Rolls back the created
  * directory on any failure.
  *
+ * When `opts.skipTemplateDownload` is true, the function assumes `directory`
+ * already exists on disk and is pre-populated with the agent's template
+ * contents (used by the marketplace install pipeline after copying a package
+ * onto disk). In that mode the collision check, parent/agent `mkdir` calls,
+ * and template-download branch are all skipped — only the scaffold pipeline
+ * runs against the existing directory.
+ *
  * @param input - Raw input to validate with CreateAgentOptionsSchema
  * @param meshCore - Optional MeshCore instance for DB sync after creation
  * @returns The created agent manifest, resolved path, and optional template meta
@@ -140,25 +147,27 @@ export async function createAgentWorkspace(
     throw err;
   }
 
-  // Check collision — directory must not already exist
-  try {
-    await fs.stat(resolvedPath);
-    throw new AgentCreationError('Directory already exists', 'COLLISION', 409);
-  } catch (err: unknown) {
-    if (err instanceof AgentCreationError) throw err;
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-    // ENOENT is expected — directory doesn't exist yet
-  }
+  if (!opts.skipTemplateDownload) {
+    // Check collision — directory must not already exist
+    try {
+      await fs.stat(resolvedPath);
+      throw new AgentCreationError('Directory already exists', 'COLLISION', 409);
+    } catch (err: unknown) {
+      if (err instanceof AgentCreationError) throw err;
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      // ENOENT is expected — directory doesn't exist yet
+    }
 
-  // Create parent directory (recursive) then agent directory (non-recursive)
-  const parentDir = path.dirname(resolvedPath);
-  await fs.mkdir(parentDir, { recursive: true });
-  await fs.mkdir(resolvedPath);
+    // Create parent directory (recursive) then agent directory (non-recursive)
+    const parentDir = path.dirname(resolvedPath);
+    await fs.mkdir(parentDir, { recursive: true });
+    await fs.mkdir(resolvedPath);
+  }
 
   // Template download (git clone with giget fallback)
   let meta: AgentCreationMeta | undefined;
 
-  if (opts.template) {
+  if (opts.template && !opts.skipTemplateDownload) {
     try {
       const { downloadTemplate } = await import('./template-downloader.js');
       await downloadTemplate(opts.template, resolvedPath);
@@ -177,9 +186,11 @@ export async function createAgentWorkspace(
   }
 
   try {
-    // Create .dork/ subdirectory
+    // Create .dork/ subdirectory. Recursive so this works in both modes:
+    // a fresh agent creation (where the dir doesn't exist) and a marketplace
+    // install (where the package may already ship a `.dork/` directory).
     const dorkDir = path.join(resolvedPath, '.dork');
-    await fs.mkdir(dorkDir);
+    await fs.mkdir(dorkDir, { recursive: true });
 
     // Scaffold agent.json
     const traits = opts.traits ?? {

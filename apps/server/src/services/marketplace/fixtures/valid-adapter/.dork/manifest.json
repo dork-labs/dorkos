@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "valid-adapter",
+  "version": "1.0.0",
+  "type": "adapter",
+  "adapterType": "slack",
+  "description": "A valid adapter fixture for the Slack relay backend",
+  "author": "DorkOS",
+  "license": "MIT",
+  "tags": [],
+  "layers": ["adapters"]
+}

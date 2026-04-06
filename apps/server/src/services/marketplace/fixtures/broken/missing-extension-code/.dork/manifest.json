@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "missing-extension-code",
+  "version": "1.0.0",
+  "type": "plugin",
+  "description": "Plugin missing its required .claude-plugin/plugin.json manifest",
+  "license": "MIT",
+  "tags": [],
+  "layers": ["extensions"],
+  "extensions": ["sample-ext"]
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "name": "valid-agent",
+  "version": "1.0.0",
+  "type": "agent",
+  "description": "A valid agent template fixture for the install-flow tests",
+  "author": "DorkOS",
+  "license": "MIT",
+  "tags": [],
+  "layers": ["skills", "tasks", "agents"],
+  "agentDefaults": {
+    "persona": "A focused builder agent.",
+    "capabilities": ["read", "write"],
+    "traits": {
+      "tone": 3,
+      "autonomy": 4,
+      "caution": 3,
+      "communication": 3,
+      "creativity": 3
+    }
+  }
+}

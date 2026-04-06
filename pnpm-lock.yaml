@@ -386,6 +386,9 @@ importers:
       '@dorkos/extension-api':
         specifier: workspace:*
         version: link:../../packages/extension-api
+      '@dorkos/marketplace':
+        specifier: workspace:*
+        version: link:../../packages/marketplace
       '@dorkos/mesh':
         specifier: workspace:*
         version: link:../../packages/mesh

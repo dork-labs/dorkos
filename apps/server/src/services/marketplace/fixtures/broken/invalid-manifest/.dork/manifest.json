@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "name": "BadName",
+  "version": "not-a-semver",
+  "type": "plugin",
+  "description": "",
+  "tags": "should-be-an-array"
+}

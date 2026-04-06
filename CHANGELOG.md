@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Implement install machinery foundation (Batches 1-3 of marketplace-02-install)
 - Implement foundation package, CLI commands, and kind field addendum
 - Show MCP servers in Tools tab
 - Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
