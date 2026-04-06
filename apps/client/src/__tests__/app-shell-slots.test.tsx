@@ -67,10 +67,14 @@ vi.mock('@/layers/entities/session', () => ({
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
 }));
 
-vi.mock('@/layers/entities/agent', () => ({
-  useCurrentAgent: () => ({ data: null, isLoading: false }),
-  useAgentVisual: () => ({ color: 'hsl(0,70%,55%)', emoji: '🤖' }),
-}));
+vi.mock('@/layers/entities/agent', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/agent')>();
+  return {
+    ...actual,
+    useCurrentAgent: () => ({ data: null, isLoading: false }),
+    useAgentVisual: () => ({ color: 'hsl(0,70%,55%)', emoji: '🤖' }),
+  };
+});
 
 // ── Mock shared model hooks ──
 

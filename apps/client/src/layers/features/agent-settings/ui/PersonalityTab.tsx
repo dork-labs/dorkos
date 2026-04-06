@@ -1,18 +1,36 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { AgentManifest, Traits, Conventions } from '@dorkos/shared/mesh-schemas';
 import {
   SOUL_MAX_CHARS,
   NOPE_MAX_CHARS,
   extractCustomProse,
   buildSoulContent,
-  TRAIT_SECTION_START,
 } from '@dorkos/shared/convention-files';
-import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { PersonalitySliders } from './PersonalitySliders';
+import {
+  renderTraits,
+  DEFAULT_TRAITS,
+  TRAIT_ORDER,
+  TRAIT_PREVIEWS,
+} from '@dorkos/shared/trait-renderer';
+import { playSliderTick } from '@/layers/shared/lib';
+import { useDebouncedInput } from '@/layers/shared/model';
+import {
+  Button,
+  FieldCard,
+  FieldCardContent,
+  Field,
+  FieldLabel,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SettingRow,
+  Switch,
+} from '@/layers/shared/ui';
+import { TraitSliders } from '@/layers/entities/agent';
 import { ConventionFileEditor } from './ConventionFileEditor';
 import { InjectionPreview } from './InjectionPreview';
-
-const DEBOUNCE_MS = 500;
 
 const NOPE_DISCLAIMER =
   'These boundaries guide agent behavior but are not enforced at the tool level. They serve as strong instructions, not hard blocks.';
@@ -27,159 +45,193 @@ interface PersonalityTabProps {
   onUpdate: (updates: {
     traits?: Traits;
     conventions?: Conventions;
+    behavior?: AgentManifest['behavior'];
     soulContent?: string;
     nopeContent?: string;
   }) => void;
-  /** Called to trigger persona-to-SOUL.md migration */
-  onMigrate?: () => void;
 }
 
 /**
- * Personality configuration tab — trait sliders, SOUL.md editor, NOPE.md editor,
- * and injection preview. Composes PersonalitySliders, ConventionFileEditor,
- * and InjectionPreview components.
+ * Personality configuration tab — personality summary, trait sliders,
+ * custom prose editor (SOUL.md), safety boundaries (NOPE.md),
+ * DorkOS knowledge toggle, and injection preview.
  */
 export function PersonalityTab({
   agent,
   soulContent: initialSoulContent,
   nopeContent: initialNopeContent,
   onUpdate,
-  onMigrate,
 }: PersonalityTabProps) {
-  // Extract manifest fields with type widening for optional fields
-  const agentAny = agent as AgentManifest & {
-    traits?: Traits;
-    conventions?: Conventions;
-    persona?: string;
-  };
-
   const [traits, setTraits] = useState<Traits>(
-    agentAny.traits ?? { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 }
+    agent.traits ?? { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 }
   );
   const [conventions, setConventions] = useState<Conventions>(
-    agentAny.conventions ?? { soul: true, nope: true, dorkosKnowledge: true }
+    agent.conventions ?? { soul: true, nope: true, dorkosKnowledge: true }
   );
 
-  // Initialize SOUL.md content: use server content, or build from traits if none exists
-  const [soulContent, setSoulContent] = useState<string>(() => {
-    if (initialSoulContent) return initialSoulContent;
-    const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
-    return buildSoulContent(traitBlock, '');
-  });
-  const [nopeContent, setNopeContent] = useState<string>(initialNopeContent ?? '');
-
-  // Separate debounce timers per editor to prevent cross-cancellation
-  const soulTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nopeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // Ref ensures debounced prose commit always has current trait values
+  const traitsRef = useRef(traits);
   useEffect(() => {
-    return () => {
-      if (soulTimerRef.current) clearTimeout(soulTimerRef.current);
-      if (nopeTimerRef.current) clearTimeout(nopeTimerRef.current);
-    };
-  }, []);
+    traitsRef.current = traits;
+  }, [traits]);
 
-  // Trigger migration for legacy agents (has persona but no SOUL.md)
-  const hasLegacyPersona = !initialSoulContent && !!agentAny.persona;
-  useEffect(() => {
-    if (hasLegacyPersona && onMigrate) {
-      onMigrate();
+  // Custom prose — everything after <!-- TRAITS:END --> in SOUL.md
+  const proseInput = useDebouncedInput(
+    extractCustomProse(initialSoulContent ?? ''),
+    agent.id,
+    (prose) => {
+      const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traitsRef.current });
+      onUpdate({ soulContent: buildSoulContent(traitBlock, prose) });
     }
-  }, [hasLegacyPersona, onMigrate]);
+  );
+
+  // NOPE.md content
+  const nopeInput = useDebouncedInput(initialNopeContent ?? '', agent.id, (content) => {
+    onUpdate({ nopeContent: content });
+  });
+
+  // Full soulContent for character count and injection preview
+  const fullSoulContent = useMemo(() => {
+    const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
+    return buildSoulContent(traitBlock, proseInput.value);
+  }, [traits, proseInput.value]);
 
   // --- Handlers ---
 
   const handleTraitsChange = useCallback(
     (newTraits: Traits) => {
       setTraits(newTraits);
-
-      // Regenerate trait section in SOUL.md
-      if (soulContent.includes(TRAIT_SECTION_START)) {
-        const customProse = extractCustomProse(soulContent);
-        const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...newTraits });
-        const newSoul = buildSoulContent(traitBlock, customProse);
-        setSoulContent(newSoul);
-        onUpdate({ traits: newTraits, soulContent: newSoul });
-      } else {
-        onUpdate({ traits: newTraits });
-      }
+      const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...newTraits });
+      onUpdate({ traits: newTraits, soulContent: buildSoulContent(traitBlock, proseInput.value) });
     },
-    [soulContent, onUpdate]
+    [proseInput.value, onUpdate]
   );
 
-  const handleSoulToggle = useCallback(
-    (enabled: boolean) => {
-      const newConventions = { ...conventions, soul: enabled };
+  const handleResetTraits = useCallback(() => {
+    const defaults: Traits = { ...DEFAULT_TRAITS } as Traits;
+    setTraits(defaults);
+    const traitBlock = renderTraits(defaults);
+    onUpdate({ traits: defaults, soulContent: buildSoulContent(traitBlock, proseInput.value) });
+  }, [proseInput.value, onUpdate]);
+
+  const handleConventionToggle = useCallback(
+    (key: keyof Conventions, enabled: boolean) => {
+      const newConventions = { ...conventions, [key]: enabled };
       setConventions(newConventions);
       onUpdate({ conventions: newConventions });
     },
     [conventions, onUpdate]
   );
 
-  const handleNopeToggle = useCallback(
-    (enabled: boolean) => {
-      const newConventions = { ...conventions, nope: enabled };
-      setConventions(newConventions);
-      onUpdate({ conventions: newConventions });
-    },
-    [conventions, onUpdate]
-  );
+  // Personality summary from TRAIT_PREVIEWS
+  const personalitySummary = TRAIT_ORDER.map(
+    (name) => TRAIT_PREVIEWS[name][traits[name] ?? 3]
+  ).join(' ');
 
-  const handleSoulChange = useCallback(
-    (content: string) => {
-      setSoulContent(content);
-      if (soulTimerRef.current) clearTimeout(soulTimerRef.current);
-      soulTimerRef.current = setTimeout(() => {
-        onUpdate({ soulContent: content });
-      }, DEBOUNCE_MS);
-    },
-    [onUpdate]
-  );
-
-  const handleNopeChange = useCallback(
-    (content: string) => {
-      setNopeContent(content);
-      if (nopeTimerRef.current) clearTimeout(nopeTimerRef.current);
-      nopeTimerRef.current = setTimeout(() => {
-        onUpdate({ nopeContent: content });
-      }, DEBOUNCE_MS);
-    },
-    [onUpdate]
-  );
+  const allDefault = TRAIT_ORDER.every((name) => traits[name] === DEFAULT_TRAITS[name]);
 
   return (
     <div className="space-y-6">
-      {/* Guidance */}
-      <p className="text-muted-foreground text-sm">
-        Configure your agent&apos;s personality, communication style, and safety boundaries. Changes
-        take effect on the next session.
-      </p>
+      {/* Personality Summary */}
+      <p className="text-muted-foreground text-sm leading-relaxed">{personalitySummary}</p>
 
-      {/* 1. Personality Sliders */}
-      <PersonalitySliders traits={traits} onChange={handleTraitsChange} />
+      {/* Trait Sliders */}
+      <FieldCard>
+        <FieldCardContent>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Traits</h3>
+            {!allDefault && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleResetTraits}>
+                Reset to defaults
+              </Button>
+            )}
+          </div>
+          <TraitSliders
+            traits={traits}
+            onChange={handleTraitsChange}
+            onSliderChange={() => playSliderTick()}
+            showEndpoints
+            showPreviews
+          />
+        </FieldCardContent>
+      </FieldCard>
 
-      {/* 2. SOUL.md Editor */}
+      {/* Custom Instructions (SOUL.md) — custom prose only */}
       <ConventionFileEditor
         title="Custom Instructions (SOUL.md)"
-        content={soulContent}
+        content={proseInput.value}
         enabled={conventions.soul}
         maxChars={SOUL_MAX_CHARS}
-        onChange={handleSoulChange}
-        onToggle={handleSoulToggle}
+        charCount={fullSoulContent.length}
+        onChange={(v) => proseInput.onChange(v)}
+        onBlur={proseInput.onBlur}
+        onToggle={(enabled) => handleConventionToggle('soul', enabled)}
       />
 
-      {/* 3. NOPE.md Editor */}
+      {/* Safety Boundaries (NOPE.md) */}
       <ConventionFileEditor
         title="Safety Boundaries (NOPE.md)"
-        content={nopeContent}
+        content={nopeInput.value}
         enabled={conventions.nope}
         maxChars={NOPE_MAX_CHARS}
         disclaimer={NOPE_DISCLAIMER}
-        onChange={handleNopeChange}
-        onToggle={handleNopeToggle}
+        onChange={(v) => nopeInput.onChange(v)}
+        onBlur={nopeInput.onBlur}
+        onToggle={(enabled) => handleConventionToggle('nope', enabled)}
       />
 
-      {/* 4. Injection Preview */}
+      {/* DorkOS Knowledge Base toggle */}
+      <FieldCard>
+        <FieldCardContent>
+          <Field orientation="horizontal" className="items-center justify-between">
+            <div>
+              <FieldLabel className="text-sm font-medium">DorkOS Knowledge Base</FieldLabel>
+              <p className="text-muted-foreground text-xs">
+                Inject DorkOS platform documentation into the agent&apos;s context
+              </p>
+            </div>
+            <Switch
+              checked={conventions.dorkosKnowledge}
+              onCheckedChange={(checked) => handleConventionToggle('dorkosKnowledge', checked)}
+              aria-label="Toggle DorkOS knowledge base injection"
+            />
+          </Field>
+        </FieldCardContent>
+      </FieldCard>
+
+      {/* Response Mode */}
+      <FieldCard>
+        <FieldCardContent>
+          <SettingRow
+            label="Response Mode"
+            description="Controls when this agent responds to messages automatically"
+          >
+            <Select
+              value={agent.behavior?.responseMode ?? 'always'}
+              onValueChange={(v) =>
+                onUpdate({
+                  behavior: {
+                    ...agent.behavior,
+                    responseMode: v as AgentManifest['behavior']['responseMode'],
+                  },
+                })
+              }
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="always">Always respond</SelectItem>
+                <SelectItem value="direct-only">Direct messages only</SelectItem>
+                <SelectItem value="mention-only">Only when mentioned</SelectItem>
+                <SelectItem value="silent">Never respond automatically</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        </FieldCardContent>
+      </FieldCard>
+
+      {/* Injection Preview */}
       <InjectionPreview
         agentName={agent.name}
         agentId={agent.id}
@@ -187,8 +239,8 @@ export function PersonalityTab({
         agentCapabilities={agent.capabilities}
         traits={traits}
         conventions={conventions}
-        soulContent={soulContent}
-        nopeContent={nopeContent}
+        soulContent={fullSoulContent}
+        nopeContent={nopeInput.value}
       />
     </div>
   );

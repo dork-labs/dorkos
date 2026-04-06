@@ -27,12 +27,16 @@ vi.mock('@/layers/shared/lib', async (importOriginal) => {
 
 const mockMutate = vi.fn();
 let mockIsPending = false;
-vi.mock('@/layers/entities/agent', () => ({
-  useUpdateAgent: () => ({
-    mutate: mockMutate,
-    isPending: mockIsPending,
-  }),
-}));
+vi.mock('@/layers/entities/agent', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/agent')>();
+  return {
+    ...actual,
+    useUpdateAgent: () => ({
+      mutate: mockMutate,
+      isPending: mockIsPending,
+    }),
+  };
+});
 
 vi.mock('../../model/use-onboarding', () => ({
   useOnboarding: () => ({
@@ -78,20 +82,20 @@ describe('MeetDorkBotStep', () => {
     expect(sliders).toHaveLength(5);
   });
 
-  it('renders trait labels for each slider', () => {
+  it('renders trait endpoint labels for each slider', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
-    // Check endpoint labels exist
-    expect(screen.getByText('Serious')).toBeInTheDocument();
-    expect(screen.getByText('Playful')).toBeInTheDocument();
-    expect(screen.getByText('Ask first')).toBeInTheDocument();
-    expect(screen.getByText('Act alone')).toBeInTheDocument();
-    expect(screen.getByText('Conservative')).toBeInTheDocument();
-    expect(screen.getByText('Bold')).toBeInTheDocument();
-    expect(screen.getByText('Terse')).toBeInTheDocument();
-    expect(screen.getByText('Thorough')).toBeInTheDocument();
-    expect(screen.getByText('By the book')).toBeInTheDocument();
-    expect(screen.getByText('Inventive')).toBeInTheDocument();
+    // Check canonical endpoint labels from TRAIT_ENDPOINT_LABELS
+    expect(screen.getByText('Silent')).toBeInTheDocument();
+    expect(screen.getByText('Professor')).toBeInTheDocument();
+    expect(screen.getByText('Ask Everything')).toBeInTheDocument();
+    expect(screen.getByText('Full Auto')).toBeInTheDocument();
+    expect(screen.getByText('YOLO')).toBeInTheDocument();
+    expect(screen.getByText('Paranoid')).toBeInTheDocument();
+    expect(screen.getByText('Ghost')).toBeInTheDocument();
+    expect(screen.getByText('Narrator')).toBeInTheDocument();
+    expect(screen.getByText('By the Book')).toBeInTheDocument();
+    expect(screen.getByText('Mad Scientist')).toBeInTheDocument();
   });
 
   it('avatar has breathe animation class', () => {

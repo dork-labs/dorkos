@@ -114,9 +114,8 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
         adapterName:
           adapterStatusByInstanceId.get(binding.adapterId)?.displayName ?? binding.adapterId,
       });
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [catalog]
+    [catalog, adapterStatusByInstanceId]
   );
 
   const handleRemove = useCallback(

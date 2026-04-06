@@ -3,6 +3,7 @@ import {
   renderTraits,
   TRAIT_LEVELS,
   TRAIT_ORDER,
+  TRAIT_ENDPOINT_LABELS,
   DEFAULT_TRAITS,
   TRAIT_PREVIEWS,
   getPreviewText,
@@ -20,6 +21,15 @@ describe('trait-renderer', () => {
           expect(entry.label).toBeTruthy();
           expect(entry.directive).toBeTruthy();
         }
+      }
+    });
+  });
+
+  describe('TRAIT_ENDPOINT_LABELS', () => {
+    it('matches TRAIT_LEVELS level 1 and 5 labels for every trait', () => {
+      for (const name of TRAIT_ORDER) {
+        expect(TRAIT_ENDPOINT_LABELS[name].min).toBe(TRAIT_LEVELS[name][1].label);
+        expect(TRAIT_ENDPOINT_LABELS[name].max).toBe(TRAIT_LEVELS[name][5].label);
       }
     });
   });

@@ -21,3 +21,5 @@ export { AgentAvatar, agentAvatarVariants } from './ui/AgentAvatar';
 export type { AgentAvatarProps } from './ui/AgentAvatar';
 export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';
+export { TraitSliders } from './ui/TraitSliders';
+export type { TraitSlidersProps } from './ui/TraitSliders';

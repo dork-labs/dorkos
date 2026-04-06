@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { validateAgentName } from '@dorkos/shared/validation';
-import { TRAIT_ORDER, TRAIT_LEVELS, type TraitName } from '@dorkos/shared/trait-renderer';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
@@ -17,23 +17,15 @@ import {
   Button,
   Input,
   Label,
-  Slider,
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { TraitSliders } from '@/layers/entities/agent';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { TemplatePicker } from './TemplatePicker';
-
-const DEFAULT_TRAITS: Traits = {
-  tone: 3,
-  autonomy: 3,
-  caution: 3,
-  communication: 3,
-  creativity: 3,
-};
 
 /**
  * Global dialog for creating a new agent. Controlled by useAgentCreationStore.
@@ -77,11 +69,6 @@ export function CreateAgentDialog() {
   const showNameError = name.length > 0 && !nameValidation.valid;
   const resolvedDirectory = directoryOverride || `${defaultDirectory}/${name}`;
   const canSubmit = name.length > 0 && nameValidation.valid && !createAgent.isPending;
-
-  const handleTraitChange = useCallback((traitName: TraitName, value: number) => {
-    playSliderTick();
-    setTraits((prev) => ({ ...prev, [traitName]: value }));
-  }, []);
 
   function resetForm() {
     setName('');
@@ -207,30 +194,12 @@ export function CreateAgentDialog() {
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="space-y-4 pt-3" data-testid="personality-section">
-                {TRAIT_ORDER.map((traitName) => {
-                  const level = traits[traitName] ?? 3;
-                  const entry = TRAIT_LEVELS[traitName][level];
-
-                  return (
-                    <div key={traitName} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm font-medium capitalize">{traitName}</Label>
-                        <span className="text-muted-foreground text-xs">
-                          {level}/5 {entry.label}
-                        </span>
-                      </div>
-                      <Slider
-                        value={[level]}
-                        onValueChange={([v]) => handleTraitChange(traitName, v)}
-                        min={1}
-                        max={5}
-                        step={1}
-                        aria-label={`${traitName} trait level`}
-                      />
-                    </div>
-                  );
-                })}
+              <div className="pt-3" data-testid="personality-section">
+                <TraitSliders
+                  traits={traits}
+                  onChange={setTraits}
+                  onSliderChange={() => playSliderTick()}
+                />
               </div>
             </CollapsibleContent>
           </Collapsible>

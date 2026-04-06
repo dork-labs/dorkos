@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Redesign PersonalityTab with extracted TraitSliders and response mode
 - Redesign IdentityTab with hero preview and extract useDebouncedInput
 - Move warning to top, multi-line endpoint, Remove on generated key, dork_mcp_ prefix
 - Redesign ExternalMcpCard with sectioned layout and better visual hierarchy

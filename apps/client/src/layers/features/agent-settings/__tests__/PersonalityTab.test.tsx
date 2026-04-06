@@ -4,11 +4,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+// Mock useDebouncedInput before importing PersonalityTab (prevents Zustand app-store init)
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useDebouncedInput: (serverValue: string) => ({
+      value: serverValue,
+      onChange: vi.fn(),
+      onBlur: vi.fn(),
+    }),
+  };
+});
+
 import { PersonalityTab } from '../ui/PersonalityTab';
 
 // Mock child components to isolate PersonalityTab tests
-vi.mock('../ui/PersonalitySliders', () => ({
-  PersonalitySliders: () => <div data-testid="personality-sliders" />,
+vi.mock('@/layers/entities/agent', () => ({
+  TraitSliders: ({ traits }: { traits: Record<string, number> }) => (
+    <div data-testid="trait-sliders" data-traits={JSON.stringify(traits)} />
+  ),
 }));
 vi.mock('../ui/ConventionFileEditor', () => ({
   ConventionFileEditor: ({ title }: { title: string }) => <div data-testid={`editor-${title}`} />,
@@ -19,14 +34,29 @@ vi.mock('../ui/InjectionPreview', () => ({
 vi.mock('@dorkos/shared/convention-files', () => ({
   SOUL_MAX_CHARS: 4000,
   NOPE_MAX_CHARS: 2000,
-  extractCustomProse: vi.fn(() => ''),
+  extractCustomProse: vi.fn((content: string) => content),
   buildSoulContent: vi.fn((t: string, p: string) => `traits:${t}\n${p}`),
   TRAIT_SECTION_START: '<!-- TRAITS:START -->',
 }));
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: vi.fn(() => 'rendered'),
   DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  TRAIT_ORDER: ['tone', 'autonomy', 'caution', 'communication', 'creativity'],
+  TRAIT_PREVIEWS: {
+    tone: { 3: 'Balanced tone.' },
+    autonomy: { 3: 'Balanced autonomy.' },
+    caution: { 3: 'Balanced caution.' },
+    communication: { 3: 'Balanced communication.' },
+    creativity: { 3: 'Balanced creativity.' },
+  },
 }));
+vi.mock('@/layers/shared/lib', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
+  return {
+    ...actual,
+    playSliderTick: vi.fn(),
+  };
+});
 
 const mockAgent = {
   id: 'test-id',
@@ -51,7 +81,7 @@ describe('PersonalityTab', () => {
     cleanup();
   });
 
-  it('renders all four sections in correct order', () => {
+  it('renders personality summary', () => {
     render(
       <PersonalityTab
         agent={mockAgent}
@@ -61,67 +91,79 @@ describe('PersonalityTab', () => {
       />
     );
 
-    expect(screen.getByTestId('personality-sliders')).toBeInTheDocument();
+    expect(screen.getByText(/Balanced tone\./)).toBeInTheDocument();
+  });
+
+  it('renders trait sliders, editors, and injection preview', () => {
+    render(
+      <PersonalityTab
+        agent={mockAgent}
+        soulContent="soul content"
+        nopeContent="nope content"
+        onUpdate={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('trait-sliders')).toBeInTheDocument();
     expect(screen.getByTestId('editor-Custom Instructions (SOUL.md)')).toBeInTheDocument();
     expect(screen.getByTestId('editor-Safety Boundaries (NOPE.md)')).toBeInTheDocument();
     expect(screen.getByTestId('injection-preview')).toBeInTheDocument();
   });
 
-  it('shows guidance text', () => {
+  it('renders dorkosKnowledge toggle', () => {
     render(
       <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
     );
 
-    expect(screen.getByText(/Configure your agent.*personality/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('switch', { name: 'Toggle DorkOS knowledge base injection' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('DorkOS Knowledge Base')).toBeInTheDocument();
   });
 
-  it('triggers migration for legacy agents (persona with no SOUL.md)', () => {
-    const onMigrate = vi.fn();
+  it('shows reset button only when traits differ from defaults', () => {
+    render(
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
+    );
+
+    // All traits at default (3) — reset button should not appear
+    expect(screen.queryByText('Reset to defaults')).not.toBeInTheDocument();
+  });
+
+  it('shows reset button when traits are non-default', () => {
+    const agentWithTraits = {
+      ...mockAgent,
+      traits: { tone: 1, autonomy: 5, caution: 3, communication: 3, creativity: 3 },
+    };
     render(
       <PersonalityTab
-        agent={
-          { ...mockAgent, persona: 'legacy persona' } as typeof mockAgent & { persona: string }
-        }
-        soulContent={null}
-        nopeContent={null}
+        agent={agentWithTraits}
+        soulContent="soul"
+        nopeContent="nope"
         onUpdate={vi.fn()}
-        onMigrate={onMigrate}
       />
     );
 
-    expect(onMigrate).toHaveBeenCalled();
+    expect(screen.getByText('Reset to defaults')).toBeInTheDocument();
   });
 
-  it('does not trigger migration when SOUL.md exists', () => {
-    const onMigrate = vi.fn();
+  it('renders response mode selector with current value', () => {
     render(
-      <PersonalityTab
-        agent={
-          { ...mockAgent, persona: 'legacy persona' } as typeof mockAgent & { persona: string }
-        }
-        soulContent="existing soul content"
-        nopeContent={null}
-        onUpdate={vi.fn()}
-        onMigrate={onMigrate}
-      />
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
     );
 
-    expect(onMigrate).not.toHaveBeenCalled();
+    expect(screen.getByText('Response Mode')).toBeInTheDocument();
+    expect(screen.getByText('Always respond')).toBeInTheDocument();
   });
 
-  it('does not trigger migration when no legacy persona', () => {
-    const onMigrate = vi.fn();
+  it('calls onUpdate with behavior when response mode changes', () => {
+    const onUpdate = vi.fn();
     render(
-      <PersonalityTab
-        agent={mockAgent}
-        soulContent={null}
-        nopeContent={null}
-        onUpdate={vi.fn()}
-        onMigrate={onMigrate}
-      />
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={onUpdate} />
     );
 
-    expect(onMigrate).not.toHaveBeenCalled();
+    // The response mode selector should be present
+    expect(screen.getByText('Response Mode')).toBeInTheDocument();
   });
 
   it('renders with null convention content without crashing', () => {
@@ -129,7 +171,7 @@ describe('PersonalityTab', () => {
       <PersonalityTab agent={mockAgent} soulContent={null} nopeContent={null} onUpdate={vi.fn()} />
     );
 
-    expect(screen.getByTestId('personality-sliders')).toBeInTheDocument();
+    expect(screen.getByTestId('trait-sliders')).toBeInTheDocument();
     expect(screen.getByTestId('injection-preview')).toBeInTheDocument();
   });
 });

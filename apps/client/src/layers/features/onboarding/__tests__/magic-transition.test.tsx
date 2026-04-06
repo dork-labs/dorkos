@@ -47,12 +47,16 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 const mockMutate = vi.fn();
 let mockIsPending = false;
-vi.mock('@/layers/entities/agent', () => ({
-  useUpdateAgent: () => ({
-    mutate: mockMutate,
-    isPending: mockIsPending,
-  }),
-}));
+vi.mock('@/layers/entities/agent', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/agent')>();
+  return {
+    ...actual,
+    useUpdateAgent: () => ({
+      mutate: mockMutate,
+      isPending: mockIsPending,
+    }),
+  };
+});
 
 vi.mock('../model/use-onboarding', () => ({
   useOnboarding: () => ({

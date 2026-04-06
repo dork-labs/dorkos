@@ -11,10 +11,14 @@ interface ConventionFileEditorProps {
   enabled: boolean;
   /** Maximum character count */
   maxChars: number;
+  /** Override displayed character count (e.g. full file size when editing a subset) */
+  charCount?: number;
   /** Advisory text shown below the header (used for NOPE.md) */
   disclaimer?: string;
   /** Called when content changes */
   onChange: (content: string) => void;
+  /** Called when the textarea loses focus (for debounce flush) */
+  onBlur?: () => void;
   /** Called when the enable toggle changes */
   onToggle: (enabled: boolean) => void;
 }
@@ -29,8 +33,10 @@ export function ConventionFileEditor({
   content,
   enabled,
   maxChars,
+  charCount,
   disclaimer,
   onChange,
+  onBlur,
   onToggle,
 }: ConventionFileEditorProps) {
   const handleChange = useCallback(
@@ -57,13 +63,14 @@ export function ConventionFileEditor({
           <textarea
             value={content}
             onChange={handleChange}
+            onBlur={onBlur}
             rows={8}
             maxLength={maxChars}
             className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
             placeholder={enabled ? 'Write markdown content...' : 'Toggle on to enable injection'}
           />
           <p className="text-muted-foreground text-right text-xs">
-            {content.length} / {maxChars.toLocaleString()}
+            {charCount ?? content.length} / {maxChars.toLocaleString()}
           </p>
         </div>
       </FieldCardContent>

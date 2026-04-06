@@ -1,22 +1,13 @@
 import { useState, useCallback } from 'react';
 import { Bot } from 'lucide-react';
-import { TRAIT_ORDER, DEFAULT_TRAITS, type TraitName } from '@dorkos/shared/trait-renderer';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { generateFirstMessage } from '@dorkos/shared/dorkbot-templates';
 import { playSliderTick, playCelebration, cn } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
-import { Button, Slider } from '@/layers/shared/ui';
-import { useUpdateAgent } from '@/layers/entities/agent';
+import { Button } from '@/layers/shared/ui';
+import { TraitSliders, useUpdateAgent } from '@/layers/entities/agent';
 import { useOnboarding } from '../model/use-onboarding';
-
-/** Slider endpoint labels for the two extremes of each trait. */
-const SLIDER_LABELS: Record<TraitName, { left: string; right: string }> = {
-  tone: { left: 'Serious', right: 'Playful' },
-  autonomy: { left: 'Ask first', right: 'Act alone' },
-  caution: { left: 'Conservative', right: 'Bold' },
-  communication: { left: 'Terse', right: 'Thorough' },
-  creativity: { left: 'By the book', right: 'Inventive' },
-};
 
 interface MeetDorkBotStepProps {
   onStepComplete: () => void;
@@ -34,11 +25,6 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
   const updateAgent = useUpdateAgent();
   const { config } = useOnboarding();
   const setDorkbotFirstMessage = useAppStore((s) => s.setDorkbotFirstMessage);
-
-  const handleTraitChange = useCallback((traitName: TraitName, value: number) => {
-    playSliderTick();
-    setTraits((prev) => ({ ...prev, [traitName]: value }));
-  }, []);
 
   const handleSliderPointerDown = useCallback(() => {
     setIsReacting(true);
@@ -94,31 +80,18 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
       </div>
 
       {/* Trait sliders */}
-      <div className="w-full max-w-md space-y-5" data-testid="personality-sliders">
-        {TRAIT_ORDER.map((traitName) => {
-          const level = traits[traitName] ?? 3;
-          const labels = SLIDER_LABELS[traitName];
-
-          return (
-            <div key={traitName} className="space-y-2">
-              <div className="grid grid-cols-3 text-sm">
-                <span className="text-muted-foreground">{labels.left}</span>
-                <span className="text-center font-medium capitalize">{traitName}</span>
-                <span className="text-muted-foreground text-right">{labels.right}</span>
-              </div>
-              <Slider
-                min={1}
-                max={5}
-                step={1}
-                value={[level]}
-                onValueChange={([val]) => handleTraitChange(traitName, val)}
-                onPointerDown={handleSliderPointerDown}
-                onPointerUp={handleSliderPointerUp}
-                aria-label={`${traitName} trait level`}
-              />
-            </div>
-          );
-        })}
+      <div
+        className="w-full max-w-md"
+        data-testid="personality-sliders"
+        onPointerDown={handleSliderPointerDown}
+        onPointerUp={handleSliderPointerUp}
+      >
+        <TraitSliders
+          traits={traits}
+          onChange={setTraits}
+          onSliderChange={() => playSliderTick()}
+          showEndpoints
+        />
       </div>
 
       {/* Error message */}

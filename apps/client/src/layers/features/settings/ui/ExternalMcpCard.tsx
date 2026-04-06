@@ -294,8 +294,11 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
                 <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                      <label className="text-muted-foreground text-xs">Max requests</label>
+                      <label htmlFor="mcp-max-requests" className="text-muted-foreground text-xs">
+                        Max requests
+                      </label>
                       <Input
+                        id="mcp-max-requests"
                         type="number"
                         min={1}
                         max={1000}
@@ -308,8 +311,11 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
                       />
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-muted-foreground text-xs">Window (sec)</label>
+                      <label htmlFor="mcp-window-secs" className="text-muted-foreground text-xs">
+                        Window (sec)
+                      </label>
                       <Input
+                        id="mcp-window-secs"
                         type="number"
                         min={1}
                         max={3600}

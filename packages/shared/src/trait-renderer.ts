@@ -143,6 +143,15 @@ export const TRAIT_LEVELS: Record<TraitName, Record<number, TraitLevel>> = {
   },
 };
 
+/** Endpoint labels for slider UI — derived from TRAIT_LEVELS level 1 and 5. */
+export const TRAIT_ENDPOINT_LABELS: Record<TraitName, { min: string; max: string }> = {
+  tone: { min: 'Silent', max: 'Professor' },
+  autonomy: { min: 'Ask Everything', max: 'Full Auto' },
+  caution: { min: 'YOLO', max: 'Paranoid' },
+  communication: { min: 'Ghost', max: 'Narrator' },
+  creativity: { min: 'By the Book', max: 'Mad Scientist' },
+};
+
 /** Default traits — all balanced */
 export const DEFAULT_TRAITS: Record<TraitName, number> = {
   tone: 3,
