@@ -7,7 +7,7 @@
  */
 
 import type { ServerConfig } from '@dorkos/shared/types';
-import { Input, SettingRow, Switch } from '@/layers/shared/ui';
+import { Input, SwitchSettingRow } from '@/layers/shared/ui';
 
 type McpConfig = NonNullable<ServerConfig['mcp']>;
 
@@ -20,13 +20,13 @@ interface RateLimitSectionProps {
 export function RateLimitSection({ rateLimit, onUpdate }: RateLimitSectionProps) {
   return (
     <div className="space-y-3">
-      <SettingRow label="Rate limiting" description="Limit external MCP requests per time window">
-        <Switch
-          checked={rateLimit.enabled}
-          onCheckedChange={(v) => onUpdate({ enabled: v })}
-          aria-label="Toggle rate limiting"
-        />
-      </SettingRow>
+      <SwitchSettingRow
+        label="Rate limiting"
+        description="Limit external MCP requests per time window"
+        checked={rateLimit.enabled}
+        onCheckedChange={(v) => onUpdate({ enabled: v })}
+        ariaLabel="Toggle rate limiting"
+      />
       {rateLimit.enabled && (
         <div className="space-y-3">
           <div className="flex items-center gap-4">
