@@ -330,7 +330,7 @@ function SchedulerSettings({ scheduler, onUpdate }: SchedulerSettingsProps) {
  * Displays global toggle switches for each MCP tool group with tool inventories,
  * init error warnings, and per-agent override counts. The Tasks group includes
  * an expandable scheduler configuration section. These are global defaults;
- * per-agent overrides are set in the Agent dialog Capabilities tab.
+ * per-agent overrides are set in the Agent dialog Tools tab.
  */
 export function ToolsTab() {
   const relayEnabled = useRelayEnabled();
@@ -397,7 +397,7 @@ export function ToolsTab() {
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
         Control which MCP tool groups are available to agents. These are global defaults —
-        individual agents can override them in their Capabilities tab.
+        individual agents can override them in their Tools tab.
       </p>
 
       <FieldCard>

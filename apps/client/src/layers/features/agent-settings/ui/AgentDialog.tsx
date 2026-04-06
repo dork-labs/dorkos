@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { FolderOpen, User, Sparkles, Zap, Radio } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { FolderOpen, User, Sparkles, Wrench, Radio } from 'lucide-react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import {
   ResponsiveDialog,
@@ -19,11 +19,17 @@ import {
   NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
 import type { AgentDialogTab } from '@/layers/shared/model';
-import type { AgentManifest, Traits, Conventions } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { IdentityTab } from './IdentityTab';
 import { PersonalityTab } from './PersonalityTab';
-import { CapabilitiesTab } from './CapabilitiesTab';
+import { ToolsTab } from './ToolsTab';
 import { ChannelsTab } from './ChannelsTab';
+
+/** Server GET response augments manifest with convention file content. */
+type AgentWithConventions = AgentManifest & {
+  soulContent?: string | null;
+  nopeContent?: string | null;
+};
 
 interface AgentDialogProps {
   projectPath: string;
@@ -35,19 +41,22 @@ interface AgentDialogProps {
 
 /**
  * Dialog shell for agent configuration with sidebar navigation.
- * Four sections: Identity, Personality, Capabilities, and Channels.
+ * Four sections: Identity, Personality, Tools, and Channels.
  */
 export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: AgentDialogProps) {
   const [activeTab, setActiveTab] = useState<AgentDialogTab>(initialTab ?? 'identity');
   const { data: agent } = useCurrentAgent(projectPath);
   const updateAgent = useUpdateAgent();
 
-  // Sync active tab when dialog opens with a pre-targeted tab
-  useEffect(() => {
-    if (open && initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [open, initialTab]);
+  // Reset active tab when dialog opens with a pre-targeted tab (React-recommended
+  // "adjust state during render" pattern — avoids setState-in-effect lint warning)
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open && !prevOpen && initialTab) {
+    setActiveTab(initialTab);
+  }
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+  }
 
   const handleUpdate = useCallback(
     (updates: Partial<AgentManifest>) => {
@@ -57,18 +66,8 @@ export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: Age
   );
 
   const handlePersonalityUpdate = useCallback(
-    (updates: {
-      traits?: Traits;
-      conventions?: Conventions;
-      soulContent?: string;
-      nopeContent?: string;
-    }) => {
-      // Pass manifest-level fields through; soulContent/nopeContent are handled
-      // by the server's convention file PATCH (task 2.2).
-      updateAgent.mutate({
-        path: projectPath,
-        updates: updates as Partial<AgentManifest>,
-      });
+    (updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }) => {
+      updateAgent.mutate({ path: projectPath, updates });
     },
     [projectPath, updateAgent]
   );
@@ -127,8 +126,8 @@ export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: Age
               <NavigationLayoutItem value="personality" icon={Sparkles}>
                 Personality
               </NavigationLayoutItem>
-              <NavigationLayoutItem value="capabilities" icon={Zap}>
-                Capabilities
+              <NavigationLayoutItem value="tools" icon={Wrench}>
+                Tools
               </NavigationLayoutItem>
               <NavigationLayoutItem value="channels" icon={Radio}>
                 Channels
@@ -148,21 +147,17 @@ export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: Age
                   <NavigationLayoutPanelHeader>Personality</NavigationLayoutPanelHeader>
                   <PersonalityTab
                     agent={agent}
-                    soulContent={
-                      (agent as AgentManifest & { soulContent?: string | null }).soulContent ?? null
-                    }
-                    nopeContent={
-                      (agent as AgentManifest & { nopeContent?: string | null }).nopeContent ?? null
-                    }
+                    soulContent={(agent as AgentWithConventions).soulContent ?? null}
+                    nopeContent={(agent as AgentWithConventions).nopeContent ?? null}
                     onUpdate={handlePersonalityUpdate}
                   />
                 </div>
               </NavigationLayoutPanel>
 
-              <NavigationLayoutPanel value="capabilities">
+              <NavigationLayoutPanel value="tools">
                 <div className="space-y-4">
-                  <NavigationLayoutPanelHeader>Capabilities</NavigationLayoutPanelHeader>
-                  <CapabilitiesTab agent={agent} onUpdate={handleUpdate} />
+                  <NavigationLayoutPanelHeader>Tools</NavigationLayoutPanelHeader>
+                  <ToolsTab agent={agent} onUpdate={handleUpdate} />
                 </div>
               </NavigationLayoutPanel>
 

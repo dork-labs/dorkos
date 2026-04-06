@@ -156,16 +156,6 @@ describe('PersonalityTab', () => {
     expect(screen.getByText('Always respond')).toBeInTheDocument();
   });
 
-  it('calls onUpdate with behavior when response mode changes', () => {
-    const onUpdate = vi.fn();
-    render(
-      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={onUpdate} />
-    );
-
-    // The response mode selector should be present
-    expect(screen.getByText('Response Mode')).toBeInTheDocument();
-  });
-
   it('renders with null convention content without crashing', () => {
     render(
       <PersonalityTab agent={mockAgent} soulContent={null} nopeContent={null} onUpdate={vi.fn()} />

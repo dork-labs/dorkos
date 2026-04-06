@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Restructure dialog tabs — replace Capabilities with Tools
+- Restructure dialog tabs — replace Capabilities with Tools
 - Redesign PersonalityTab with extracted TraitSliders and response mode
 - Redesign IdentityTab with hero preview and extract useDebouncedInput
 - Move warning to top, multi-line endpoint, Remove on generated key, dork_mcp_ prefix

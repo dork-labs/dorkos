@@ -25,7 +25,7 @@ export type SettingsTab =
   | (string & {});
 
 /** Valid tab identifiers for the Agent dialog. */
-export type AgentDialogTab = 'identity' | 'personality' | 'capabilities' | 'channels';
+export type AgentDialogTab = 'identity' | 'personality' | 'tools' | 'channels';
 
 // ---------------------------------------------------------------------------
 // Slice interface

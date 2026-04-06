@@ -16,8 +16,8 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 vi.mock('../ui/ChannelsTab', () => ({
   ChannelsTab: () => <div data-testid="channels-tab-content">Channels content</div>,
 }));
-vi.mock('../ui/CapabilitiesTab', () => ({
-  CapabilitiesTab: () => <div data-testid="capabilities-tab-content">Capabilities content</div>,
+vi.mock('../ui/ToolsTab', () => ({
+  ToolsTab: () => <div data-testid="tools-tab-content">Tools content</div>,
 }));
 vi.mock('../ui/PersonalityTab', () => ({
   PersonalityTab: () => <div data-testid="personality-tab-content">Personality content</div>,
@@ -142,9 +142,7 @@ describe('AgentDialog', () => {
     expect(
       within(dialog).getByRole('tab', { name: 'Personality', hidden: true })
     ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole('tab', { name: 'Capabilities', hidden: true })
-    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('tab', { name: 'Tools', hidden: true })).toBeInTheDocument();
     expect(within(dialog).getByRole('tab', { name: 'Channels', hidden: true })).toBeInTheDocument();
   });
 
@@ -234,7 +232,7 @@ describe('AgentDialog', () => {
     expect(channelsPanel).toHaveAttribute('id', 'nav-panel-channels');
   });
 
-  it('starts on Capabilities tab when initialTab is "capabilities"', async () => {
+  it('starts on Tools tab when initialTab is "tools"', async () => {
     const transport = createMockTransport({
       getAgentByPath: vi.fn().mockResolvedValue(mockAgent),
     });
@@ -246,19 +244,19 @@ describe('AgentDialog', () => {
           projectPath="/projects/myapp"
           open={true}
           onOpenChange={vi.fn()}
-          initialTab="capabilities"
+          initialTab="tools"
         />
       </Wrapper>
     );
 
     const dialog = await findDialog();
-    const capabilitiesTab = within(dialog).getByRole('tab', {
-      name: 'Capabilities',
+    const toolsTab = within(dialog).getByRole('tab', {
+      name: 'Tools',
       hidden: true,
     });
-    expect(capabilitiesTab).toHaveAttribute('aria-selected', 'true');
+    expect(toolsTab).toHaveAttribute('aria-selected', 'true');
 
-    const capabilitiesPanel = within(dialog).getByRole('tabpanel', { hidden: true });
-    expect(capabilitiesPanel).toHaveAttribute('id', 'nav-panel-capabilities');
+    const toolsPanel = within(dialog).getByRole('tabpanel', { hidden: true });
+    expect(toolsPanel).toHaveAttribute('id', 'nav-panel-tools');
   });
 });

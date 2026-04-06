@@ -8,7 +8,6 @@ import {
   Cog,
   User,
   Sparkles,
-  Zap,
   Plug2,
 } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -131,8 +130,8 @@ function CompactDemo() {
             <NavigationLayoutItem value="persona" icon={Sparkles}>
               Persona
             </NavigationLayoutItem>
-            <NavigationLayoutItem value="capabilities" icon={Zap}>
-              Capabilities
+            <NavigationLayoutItem value="tools" icon={Wrench}>
+              Tools
             </NavigationLayoutItem>
             <NavigationLayoutItem value="connections" icon={Plug2}>
               Connections
@@ -149,11 +148,8 @@ function CompactDemo() {
                 description="System prompt and personality traits."
               />
             </NavigationLayoutPanel>
-            <NavigationLayoutPanel value="capabilities">
-              <PanelPlaceholder
-                title="Capabilities"
-                description="Tools, MCP servers, permissions."
-              />
+            <NavigationLayoutPanel value="tools">
+              <PanelPlaceholder title="Tools" description="Tool access, safety limits." />
             </NavigationLayoutPanel>
             <NavigationLayoutPanel value="connections">
               <PanelPlaceholder

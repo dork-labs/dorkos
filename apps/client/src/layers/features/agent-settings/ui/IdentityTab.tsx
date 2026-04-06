@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, type KeyboardEvent } from 'react';
+import { X } from 'lucide-react';
 import {
   cn,
   EMOJI_SET,
@@ -9,6 +10,8 @@ import {
 import { useDebouncedInput } from '@/layers/shared/model';
 import { AgentIdentity, resolveAgentVisual } from '@/layers/entities/agent';
 import {
+  Badge,
+  CollapsibleFieldCard,
   FieldCard,
   FieldCardContent,
   Input,
@@ -17,6 +20,11 @@ import {
   ResponsivePopoverTrigger,
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -54,9 +62,18 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   const autoColor = useMemo(() => hashToHslColor(agent.id), [agent.id]);
   const autoEmoji = useMemo(() => hashToEmoji(agent.id), [agent.id]);
 
+  // Tag (capabilities) input state
+  const [tagInput, setTagInput] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const hasColorOverride = agent.color != null;
   const hasIconOverride = agent.icon != null;
   const hasAnyOverride = hasColorOverride || hasIconOverride;
+
+  // Debounced namespace (project group) input
+  const ns = useDebouncedInput(agent.namespace ?? '', agent.id, (v) => {
+    onUpdate({ namespace: v || undefined });
+  });
 
   // Popover open states — close on selection
   const [colorOpen, setColorOpen] = useState(false);
@@ -94,6 +111,34 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   const handleResetAppearance = useCallback(() => {
     onUpdate({ color: undefined, icon: undefined });
   }, [onUpdate]);
+
+  // Tag (capabilities) handlers
+  const addTag = useCallback(
+    (raw: string) => {
+      const trimmed = raw.trim();
+      if (!trimmed || agent.capabilities.includes(trimmed)) return;
+      onUpdate({ capabilities: [...agent.capabilities, trimmed] });
+      setTagInput('');
+    },
+    [agent.capabilities, onUpdate]
+  );
+
+  const removeTag = useCallback(
+    (tag: string) => {
+      onUpdate({ capabilities: agent.capabilities.filter((c) => c !== tag) });
+    },
+    [agent.capabilities, onUpdate]
+  );
+
+  const handleTagKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        addTag(tagInput);
+      }
+    },
+    [tagInput, addTag]
+  );
 
   // --- Render helpers for system agent tooltip wrapping ---
 
@@ -181,6 +226,25 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
                 Helps other agents and humans understand what this agent does
               </p>
             )}
+          </div>
+
+          {/* Runtime */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Runtime</Label>
+            <Select
+              value={agent.runtime}
+              onValueChange={(v) => onUpdate({ runtime: v as AgentManifest['runtime'] })}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="claude-code">Claude Code</SelectItem>
+                <SelectItem value="cursor">Cursor</SelectItem>
+                <SelectItem value="codex">Codex</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </FieldCardContent>
       </FieldCard>
@@ -303,6 +367,66 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
           </div>
         </FieldCardContent>
       </FieldCard>
+
+      {/* Tags (discovery capabilities) */}
+      <FieldCard>
+        <FieldCardContent>
+          <div className="space-y-2">
+            <Label htmlFor="tag-input" className="text-sm font-medium">
+              Tags
+            </Label>
+            {agent.capabilities.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {agent.capabilities.map((tag) => (
+                  <Badge key={tag} variant="secondary" className="gap-1 pr-1">
+                    {tag}
+                    <button
+                      onClick={() => removeTag(tag)}
+                      className="hover:bg-muted rounded-sm p-0.5 transition-colors duration-150"
+                      aria-label={`Remove ${tag}`}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-xs">
+                Tags help other agents find this one. Examples: code-review, devops, frontend
+              </p>
+            )}
+            <Input
+              id="tag-input"
+              type="text"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={handleTagKeyDown}
+              placeholder="Add tag and press Enter"
+            />
+          </div>
+        </FieldCardContent>
+      </FieldCard>
+
+      {/* Advanced — Project Group (namespace) */}
+      <CollapsibleFieldCard open={advancedOpen} onOpenChange={setAdvancedOpen} trigger="Advanced">
+        <div className="space-y-2">
+          <Label htmlFor="project-group" className="text-sm font-medium">
+            Project Group
+          </Label>
+          <p className="text-muted-foreground text-xs">
+            Agents in the same group can message each other freely. Cross-group messaging requires
+            explicit access rules. Auto-derived from the project directory.
+          </p>
+          <Input
+            id="project-group"
+            type="text"
+            value={ns.value}
+            onChange={(e) => ns.onChange(e.target.value)}
+            onBlur={ns.onBlur}
+            placeholder="e.g. backend-services"
+          />
+        </div>
+      </CollapsibleFieldCard>
     </div>
   );
 }
