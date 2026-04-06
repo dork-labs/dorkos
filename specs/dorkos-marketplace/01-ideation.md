@@ -1,16 +1,104 @@
 ---
-title: DorkOS Marketplace — Project Brief
-date: 2026-03-31
-status: active
-type: project-brief
+slug: dorkos-marketplace
+number: 219
+created: 2026-04-06
+status: ideation
 linear-issue: null
 tags: [marketplace, extensions, agent-templates, tasks, skills, distribution]
 ---
 
-# DorkOS Marketplace — Project Brief
+# DorkOS Marketplace
 
-**Date:** 2026-03-31
-**Status:** Pre-spec exploration — ready for ideation when prioritized
+**Slug:** dorkos-marketplace
+**Author:** Claude Code
+**Date:** 2026-04-06
+**Branch:** preflight/dorkos-marketplace
+
+---
+
+## Source Material
+
+This ideation document was created from a comprehensive pre-existing project brief. **All content from the source has been preserved verbatim** — do not paraphrase away precision. The original brief is the floor for detail, not the ceiling.
+
+- **Source brief:** [`research/20260331_marketplace_project_brief.md`](../../research/20260331_marketplace_project_brief.md)
+- **Brief status:** Active (pre-spec exploration, fully developed through multiple iterations)
+- **Maturity classification:** partial-spec — has decisions, structure, scope, and 10x vision; lacks API contracts, data models, file structures, and implementation phases
+- **Conversation context:** This brief is the result of an extended research-and-design conversation that explored the existing extension system, tasks system redesign, agent templates, Claude Code marketplace, skills.sh, Codex/Cursor plugin formats, and bidirectional compatibility tradeoffs
+
+### Research already incorporated
+
+The brief synthesizes findings from these prior research reports — review them before specification:
+
+- `research/20260329_claude_code_plugin_marketplace_extensibility.md` — Claude Code plugin format deep dive
+- `research/20260329_skills_sh_marketplace_format_specification.md` — skills.sh and Agent Skills standard
+- `research/20260329_ai_coding_agent_plugin_marketplaces.md` — Codex, Cursor, Copilot, Windsurf, Cline landscape
+- `research/20260323_plugin_extension_ui_architecture_patterns.md` — VSCode, Obsidian, Grafana, Backstage patterns
+- `research/20260326_extension_point_registry_patterns.md` — Extension registry implementation
+- `research/20260326_extension_system_open_questions.md` — Extension system design decisions
+- `research/20260326_agent_built_extensions_phase4.md` — Agent-built extension workflow
+
+### Codebase exploration already performed
+
+During brief development, these subsystems were thoroughly explored:
+
+- **Extension system** — `packages/extension-api/`, `apps/server/src/services/extensions/`, 8 UI slots, esbuild compilation, encrypted secrets, declarative settings
+- **Tasks system** — `apps/server/src/services/tasks/`, file-based SKILL.md format (post-redesign), Damon system agent, croner scheduling
+- **Agent template system** — `packages/shared/src/template-catalog.ts`, `apps/server/src/services/core/template-downloader.ts`, 7 built-in templates, git+giget download, scaffolding flow
+- **Skills package** — `packages/skills/`, `@dorkos/skills`, ADR-0220, SKILL.md unification for tasks/commands/skills
+- **Adapter catalog** — `apps/server/src/services/relay/adapter-manager.ts`, `packages/relay/src/adapters/`, plugin-based loading
+- **Mesh system** — `packages/mesh/`, agent discovery, agent.json file-first storage (ADR-0043)
+
+### Key architectural decisions already made
+
+These are decisions resolved during brief development — they should NOT be re-litigated during specification:
+
+1. **SKILL.md is the universal file format** (ADR-0220) — tasks, commands, and skills all use it
+2. **Bidirectional compatibility with Claude Code** — DorkOS marketplace IS a Claude Code marketplace
+3. **Plugins MUST include `.claude-plugin/plugin.json`**; agent templates are exempt (project scaffolds, not plugins)
+4. **Extended marketplace.json** approach (test first, fall back to companion file if needed)
+5. **Pursue 3 of 5 "10x" visions:** Agent App Store (Vision 1), AI-Native Discovery / MCP Server (Vision 2), Build-to-Install Pipeline (Vision 3)
+6. **Project will be decomposed into ~5 sequential specs** at `/ideate-to-spec` time, not implemented as a single monolithic spec
+
+### Recommended decomposition (from brief development)
+
+The brief is intentionally large because it covers an entire product surface. During specification, it should be broken into 5 sequential specs:
+
+1. **`marketplace-foundation`** — Schemas, parser, `@dorkos/marketplace` package (no install yet)
+2. **`marketplace-install`** — `dorkos install` CLI, three install flows, atomic transactions, rollback
+3. **`marketplace-extension`** — Built-in Marketplace Extension UI, browse/search/filter
+4. **`marketplace-web-and-registry`** — `/marketplace` page on dorkos.dev, dorkos-community registry repo, seed packages
+5. **`marketplace-agent-installer`** — MCP server, `marketplace_search`/`marketplace_install` tools, agent-driven discovery flow
+
+Each spec is 1-2 weeks of focused work. Critical sequencing: 1 → 2 → (3 ‖ 4) → 5.
+
+---
+
+## 1) Intent & Assumptions (for ideation system)
+
+- **Task brief:** Build a public marketplace for DorkOS that distributes agent templates, plugins (skill packs, extensions, adapters), and bundled "agent apps." Marketplace must be bidirectionally compatible with Claude Code's marketplace format. Pursue Agent App Store framing, expose via MCP server, lay groundwork for Build-to-Install pipeline.
+- **Assumptions:**
+  - SKILL.md format adoption (ADR-0220) is complete and stable
+  - Extension system (4 phases) is production-ready
+  - Agent template downloader exists and works
+  - Tasks system redesign is complete
+  - Claude Code's marketplace.json format is documented and stable
+  - Users want both browse-and-click AND agent-driven install flows
+  - DorkOS team has bandwidth for ~6 weeks of focused development across 5 specs
+- **Out of scope (for v1):**
+  - Payments / paid packages
+  - User accounts, reviews, ratings
+  - Live preview / sandboxed try-before-install
+  - Verified publisher checkmarks (Sigstore signing)
+  - Recommendation engine
+  - Public personal marketplace sharing
+  - Full `marketplace_create_package` MCP tool
+  - Private/enterprise registry UI (architecture supports it; no UI in v1)
+
+---
+
+## Original Brief Content
+
+The remainder of this document is the unchanged content from `research/20260331_marketplace_project_brief.md`. It will serve as the source material for `/ideate-to-spec`.
 
 ---
 

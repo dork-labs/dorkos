@@ -1,7 +1,49 @@
 {
   "version": 1,
-  "nextNumber": 216,
+  "nextNumber": 222,
   "specs": [
+    {
+      "number": 221,
+      "slug": "dialog-url-deeplinks",
+      "title": "Dialog URL Deeplinks",
+      "created": "2026-04-06",
+      "status": "specified"
+    },
+    {
+      "number": 220,
+      "slug": "agent-channels-tab-polish",
+      "title": "Agent Dialog → Channels Tab — Visual Polish & Information Architecture",
+      "created": "2026-04-06",
+      "status": "specified"
+    },
+    {
+      "number": 219,
+      "slug": "dorkos-marketplace",
+      "title": "DorkOS Marketplace",
+      "created": "2026-04-06",
+      "status": "ideation"
+    },
+    {
+      "number": 218,
+      "slug": "tabbed-dialog-primitive",
+      "title": "Tabbed Dialog Primitive",
+      "created": "2026-04-06",
+      "status": "specified"
+    },
+    {
+      "number": 217,
+      "slug": "agent-channels-tab-correctness",
+      "title": "Agent Dialog → Channels Tab — Correctness & Architecture Cleanup",
+      "created": "2026-04-06",
+      "status": "specified"
+    },
+    {
+      "number": 216,
+      "slug": "settings-dialog-file-splits",
+      "title": "Settings Dialog File Splits",
+      "created": "2026-04-06",
+      "status": "specified"
+    },
     {
       "number": 215,
       "slug": "external-mcp-access",
