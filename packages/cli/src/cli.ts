@@ -30,20 +30,52 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (process.argv[2] === 'package') {
   const packageSubcommand = process.argv[3];
   const subArgs = process.argv.slice(4);
-  if (packageSubcommand === 'init') {
-    const { runPackageInit, parsePackageInitArgs } = await import('./package-init-command.js');
-    await runPackageInit(parsePackageInitArgs(subArgs));
+
+  // Surface package-level help when invoked without a subcommand or with --help/-h.
+  if (
+    packageSubcommand === undefined ||
+    packageSubcommand === '--help' ||
+    packageSubcommand === '-h'
+  ) {
+    console.log(`
+Usage: dorkos package <subcommand> [options]
+
+Subcommands:
+  init <name>      Scaffold a new marketplace package
+  validate [path]  Validate a marketplace package on disk
+
+Examples:
+  dorkos package init my-plugin --type plugin
+  dorkos package init my-bot --type adapter --adapter-type slack
+  dorkos package validate ./my-plugin
+`);
     process.exit(0);
   }
-  if (packageSubcommand === 'validate') {
-    const { runPackageValidate } = await import('./package-validate-command.js');
-    const packagePath = subArgs[0];
-    const exitCode = await runPackageValidate({ packagePath });
-    process.exit(exitCode);
+
+  // Wrap dispatch in try/catch so any error (overwrite collision, missing arg,
+  // schema violation, etc.) surfaces as a clean one-line message instead of a
+  // raw Node.js stack trace. The dispatcher is the single source of truth for
+  // exit-code policy — handlers throw or return codes; only the dispatcher
+  // calls `process.exit`.
+  try {
+    if (packageSubcommand === 'init') {
+      const { runPackageInit, parsePackageInitArgs } = await import('./package-init-command.js');
+      await runPackageInit(parsePackageInitArgs(subArgs));
+      process.exit(0);
+    }
+    if (packageSubcommand === 'validate') {
+      const { runPackageValidate } = await import('./package-validate-command.js');
+      const packagePath = subArgs[0];
+      const exitCode = await runPackageValidate({ packagePath });
+      process.exit(exitCode);
+    }
+    console.error(`Unknown package subcommand: ${packageSubcommand}`);
+    console.error('Usage: dorkos package <init|validate> [args]');
+    process.exit(1);
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
   }
-  console.error(`Unknown package subcommand: ${packageSubcommand ?? '<none>'}`);
-  console.error('Usage: dorkos package <init|validate> [args]');
-  process.exit(1);
 }
 
 let values: ReturnType<typeof parseArgs>['values'];

@@ -20,27 +20,33 @@ export interface PackageInitArgs {
   description?: string;
   /** Optional author for the manifest. */
   author?: string;
+  /**
+   * Adapter implementation identifier (e.g. `'discord'`, `'slack'`). Only
+   * meaningful when `type === 'adapter'`. Forwarded to the scaffolder, which
+   * defaults to the package name when omitted. Ignored for non-adapter types.
+   */
+  adapterType?: string;
 }
 
-/** Allowed values for the `--type` flag, in canonical order. */
-const ALLOWED_PACKAGE_TYPES: readonly PackageType[] = [
-  'agent',
-  'plugin',
-  'skill-pack',
-  'adapter',
-] as const;
+/** Allowed values for the `--type` flag, derived from the canonical schema. */
+const ALLOWED_PACKAGE_TYPES: readonly PackageType[] = PackageTypeSchema.options;
+
+/** One-line usage string surfaced in error messages. */
+const USAGE_LINE =
+  'Usage: dorkos package init <name> [--type agent|plugin|skill-pack|adapter] ' +
+  '[--parent-dir <path>] [--description <text>] [--author <text>] [--adapter-type <id>]';
 
 /**
  * Parse raw CLI arguments for `dorkos package init` into a typed
  * {@link PackageInitArgs} object.
  *
  * Expected shape: `<name> [--type <type>] [--parent-dir <path>]
- * [--description <text>] [--author <text>]`.
+ * [--description <text>] [--author <text>] [--adapter-type <id>]`.
  *
- * Validates `--type` against the four allowed package types and exits the
- * process with a non-zero code if the value is invalid or if `<name>` is
- * missing. Designed to be invoked from the CLI dispatcher with the
- * positional/option slice that follows `package init`.
+ * Throws an `Error` (caught and formatted by the CLI dispatcher) when
+ * `<name>` is missing, `--type` is invalid, or an unknown option is passed.
+ * Never calls `process.exit` directly — exit-code policy lives in the
+ * top-level dispatcher in `cli.ts`.
  *
  * @param rawArgs - Raw argv slice that comes after `package init`.
  * @returns Parsed and validated {@link PackageInitArgs}.
@@ -55,6 +61,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
         'parent-dir': { type: 'string' },
         description: { type: 'string' },
         author: { type: 'string' },
+        'adapter-type': { type: 'string' },
       },
       allowPositionals: true,
       strict: true,
@@ -66,11 +73,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
     ) {
       const match = err.message.match(/Unknown option '([^']+)'/);
       const option = match?.[1] ?? 'unknown';
-      console.error(`Unknown option for 'package init': ${option}`);
-      console.error(
-        `Usage: dorkos package init <name> [--type <type>] [--parent-dir <path>] [--description <text>] [--author <text>]`
-      );
-      process.exit(1);
+      throw new Error(`Unknown option for 'package init': ${option}\n${USAGE_LINE}`);
     }
     throw err;
   }
@@ -78,8 +81,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
   const { values, positionals } = parsed;
   const name = positionals[0];
   if (!name) {
-    console.error('Usage: dorkos package init <name> [--type agent|plugin|skill-pack|adapter]');
-    process.exit(1);
+    throw new Error(`Missing required <name> argument.\n${USAGE_LINE}`);
   }
 
   let type: PackageType | undefined;
@@ -87,10 +89,9 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
   if (typeof rawType === 'string' && rawType.length > 0) {
     const result = PackageTypeSchema.safeParse(rawType);
     if (!result.success) {
-      console.error(
+      throw new Error(
         `Invalid --type value: '${rawType}'. Allowed: ${ALLOWED_PACKAGE_TYPES.join(', ')}`
       );
-      process.exit(1);
     }
     type = result.data;
   }
@@ -101,6 +102,7 @@ export function parsePackageInitArgs(rawArgs: string[]): PackageInitArgs {
     parentDir: typeof values['parent-dir'] === 'string' ? values['parent-dir'] : undefined,
     description: typeof values.description === 'string' ? values.description : undefined,
     author: typeof values.author === 'string' ? values.author : undefined,
+    adapterType: typeof values['adapter-type'] === 'string' ? values['adapter-type'] : undefined,
   };
 }
 
@@ -123,6 +125,7 @@ export async function runPackageInit(args: PackageInitArgs): Promise<void> {
     type: args.type ?? 'plugin',
     description: args.description,
     author: args.author,
+    adapterType: args.adapterType,
   });
 
   console.log(`Created package at: ${result.packagePath}`);

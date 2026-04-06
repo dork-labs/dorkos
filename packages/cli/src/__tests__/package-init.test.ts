@@ -13,21 +13,6 @@ function createTempDir(): string {
 const PACKAGE_TYPES: readonly PackageType[] = ['plugin', 'agent', 'skill-pack', 'adapter'] as const;
 
 describe('parsePackageInitArgs', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
-  let errSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-      throw new Error(`process.exit(${code ?? 0})`);
-    }) as never);
-    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    exitSpy.mockRestore();
-    errSpy.mockRestore();
-  });
-
   it('parses a bare name with no options', () => {
     const args = parsePackageInitArgs(['my-pkg']);
     expect(args.name).toBe('my-pkg');
@@ -53,23 +38,29 @@ describe('parsePackageInitArgs', () => {
       parentDir: '/tmp/foo',
       description: 'A test package',
       author: 'Tester',
+      adapterType: undefined,
     });
   });
 
-  it('exits with non-zero when name is missing', () => {
-    expect(() => parsePackageInitArgs([])).toThrow(/process\.exit\(1\)/);
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
+  it('parses --adapter-type for adapter packages', () => {
+    const args = parsePackageInitArgs(['my-slack', '--type', 'adapter', '--adapter-type', 'slack']);
+    expect(args.type).toBe('adapter');
+    expect(args.adapterType).toBe('slack');
   });
 
-  it('exits with non-zero when --type is invalid', () => {
-    expect(() => parsePackageInitArgs(['my-pkg', '--type', 'bogus'])).toThrow(/process\.exit\(1\)/);
-    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid --type value'));
+  it('throws with a clear message when name is missing', () => {
+    expect(() => parsePackageInitArgs([])).toThrow(/Missing required <name>/);
   });
 
-  it('exits with non-zero on unknown option', () => {
-    expect(() => parsePackageInitArgs(['my-pkg', '--nope', 'x'])).toThrow(/process\.exit\(1\)/);
-    expect(errSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Unknown option for 'package init'")
+  it('throws with a clear message when --type is invalid', () => {
+    expect(() => parsePackageInitArgs(['my-pkg', '--type', 'bogus'])).toThrow(
+      /Invalid --type value: 'bogus'/
+    );
+  });
+
+  it('throws with a clear message on unknown option', () => {
+    expect(() => parsePackageInitArgs(['my-pkg', '--nope', 'x'])).toThrow(
+      /Unknown option for 'package init': --nope/
     );
   });
 });
@@ -160,5 +151,26 @@ describe('runPackageInit', () => {
       fs.readFileSync(path.join(tmpDir, name, '.dork', 'manifest.json'), 'utf-8')
     );
     expect(manifest.name).toBe('BadName');
+  });
+
+  it('forwards adapterType to the scaffolder for adapter packages', async () => {
+    const name = 'my-discord-adapter';
+    await runPackageInit({ name, type: 'adapter', parentDir: tmpDir, adapterType: 'discord' });
+
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, name, '.dork', 'manifest.json'), 'utf-8')
+    );
+    expect(manifest.type).toBe('adapter');
+    expect(manifest.adapterType).toBe('discord');
+  });
+
+  it('defaults adapterType to the package name when not provided', async () => {
+    const name = 'auto-adapter';
+    await runPackageInit({ name, type: 'adapter', parentDir: tmpDir });
+
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, name, '.dork', 'manifest.json'), 'utf-8')
+    );
+    expect(manifest.adapterType).toBe('auto-adapter');
   });
 });

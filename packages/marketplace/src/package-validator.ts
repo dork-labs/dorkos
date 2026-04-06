@@ -70,10 +70,15 @@ export interface ValidatePackageResult {
  * Conventional directories inside a marketplace package that may contain
  * SKILL.md files. Each directory is scanned recursively for skill
  * subdirectories; missing directories are silently skipped.
+ *
+ * The `commands/` entry mirrors the plugin scaffolder's starter layout so
+ * that SKILL.md files dropped into a freshly scaffolded plugin's `commands/`
+ * directory are validated alongside `skills/` and `tasks/`.
  */
 const SKILL_SOURCE_DIRS = [
   'skills',
   'tasks',
+  'commands',
   '.claude/skills',
   '.claude/commands',
   '.dork/tasks',

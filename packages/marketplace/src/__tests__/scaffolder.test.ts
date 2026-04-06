@@ -149,15 +149,46 @@ describe('createPackage', () => {
       await assertExists(path.join(result.packagePath, 'README.md'));
       await assertExists(path.join(result.packagePath, '.dork/adapters'));
 
-      // Known gap: the scaffolder does not yet accept an `adapterType` option,
-      // so the manifest it writes for adapter packages will fail discriminated-
-      // union schema validation (the `adapterType` field is required). The
-      // round-trip case below skips adapters for the same reason. This is
-      // tracked as a follow-up to be addressed in a future spec.
+      // When `adapterType` is not provided, the scaffolder defaults it to the
+      // package name so the manifest still passes schema validation. The user
+      // is expected to edit it after scaffolding.
       const manifest = (await readJson(
         path.join(result.packagePath, PACKAGE_MANIFEST_PATH)
       )) as Record<string, unknown>;
       expect(manifest.type).toBe('adapter');
+      expect(manifest.adapterType).toBe('test-adapter');
+    });
+
+    it('uses an explicit adapterType when provided', async () => {
+      const parentDir = await tempDir();
+
+      const result = await createPackage({
+        parentDir,
+        name: 'my-slack-adapter',
+        type: 'adapter',
+        adapterType: 'slack',
+      });
+
+      const manifest = (await readJson(
+        path.join(result.packagePath, PACKAGE_MANIFEST_PATH)
+      )) as Record<string, unknown>;
+      expect(manifest.adapterType).toBe('slack');
+    });
+
+    it('ignores adapterType for non-adapter package types', async () => {
+      const parentDir = await tempDir();
+
+      const result = await createPackage({
+        parentDir,
+        name: 'plugin-with-stray-adapter-type',
+        type: 'plugin',
+        adapterType: 'should-be-ignored',
+      });
+
+      const manifest = (await readJson(
+        path.join(result.packagePath, PACKAGE_MANIFEST_PATH)
+      )) as Record<string, unknown>;
+      expect(manifest.type).toBe('plugin');
       expect(manifest).not.toHaveProperty('adapterType');
     });
   });
@@ -175,11 +206,10 @@ describe('createPackage', () => {
   });
 
   describe('round-trip with validatePackage', () => {
-    // The adapter case is skipped because the scaffolder does not currently
-    // accept an `adapterType` option, so its scaffolded manifest fails
-    // discriminated-union schema validation. See the adapter test above for
-    // details. Plugin / skill-pack / agent all round-trip cleanly.
-    const roundTripTypes: readonly PackageType[] = ['plugin', 'skill-pack', 'agent'];
+    // All four package types round-trip cleanly. The adapter case relies on
+    // the scaffolder defaulting `adapterType` to the package name when an
+    // explicit value isn't provided.
+    const roundTripTypes: readonly PackageType[] = ['plugin', 'skill-pack', 'agent', 'adapter'];
 
     it.each(roundTripTypes)('createPackage(%s) -> validatePackage passes', async (type) => {
       const parentDir = await tempDir();
@@ -197,12 +227,6 @@ describe('createPackage', () => {
       expect(validation.manifest).toBeDefined();
       expect(validation.manifest?.name).toBe(`roundtrip-${type}`);
       expect(validation.manifest?.type).toBe(type);
-    });
-
-    it.skip('createPackage(adapter) -> validatePackage passes (blocked: scaffolder lacks adapterType option)', async () => {
-      // Intentionally skipped — see comment above. When the scaffolder is
-      // extended to accept an `adapterType` option, drop this `it.skip` and
-      // re-add `'adapter'` to the `roundTripTypes` array above.
     });
   });
 

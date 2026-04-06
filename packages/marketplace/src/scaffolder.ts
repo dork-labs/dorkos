@@ -33,6 +33,14 @@ export interface CreatePackageOptions {
   description?: string;
   /** Optional author for the manifest. */
   author?: string;
+  /**
+   * Adapter implementation identifier (e.g. `'discord'`, `'slack'`). Only
+   * meaningful when `type === 'adapter'`. When omitted for an adapter package
+   * the package `name` is used as a placeholder so the scaffolded manifest
+   * still passes schema validation — the author is expected to edit it.
+   * Ignored for non-adapter package types.
+   */
+  adapterType?: string;
 }
 
 /**
@@ -81,7 +89,7 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
 
   const filesWritten: string[] = [];
 
-  const manifest = {
+  const baseManifest = {
     schemaVersion: 1,
     name: opts.name,
     version: '0.0.1',
@@ -92,6 +100,13 @@ export async function createPackage(opts: CreatePackageOptions): Promise<CreateP
     tags: [],
     layers: defaultLayersForType(opts.type),
   };
+  // Adapter packages require an `adapterType` field per the discriminated
+  // union schema. Default to the package name when not provided so the
+  // scaffolded manifest is always valid; the author is expected to edit it.
+  const manifest =
+    opts.type === 'adapter'
+      ? { ...baseManifest, adapterType: opts.adapterType ?? opts.name }
+      : baseManifest;
   await fs.writeFile(
     path.join(packagePath, PACKAGE_MANIFEST_PATH),
     JSON.stringify(manifest, null, 2) + '\n',

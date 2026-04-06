@@ -48,7 +48,12 @@ const ClaudeCodeStandardEntrySchema = z.object({
  * be moved to a companion `dorkos-catalog.json` file (Open Question #7).
  */
 const DorkosExtensionFieldsSchema = z.object({
-  /** Package type — determines install flow. Defaults to `plugin` if absent. */
+  /**
+   * Package type — determines install flow. Optional; when absent, consumers
+   * should treat the entry as a `plugin`. The schema does not apply a Zod
+   * default so the absence of the field remains observable to downstream
+   * code that wants to distinguish "explicit plugin" from "unspecified".
+   */
   type: PackageTypeSchema.optional(),
 
   /** Browsing category (e.g., "frontend", "code-quality"). */

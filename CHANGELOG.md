@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Close code-review gaps from 6fdd065c
 - Repair .gtrconfig format and assign unique dev ports
 - Add error handling for API key lifecycle and restart hint for rate limits
 

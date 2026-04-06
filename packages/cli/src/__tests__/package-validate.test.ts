@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { randomUUID } from 'crypto';
 
 import { runPackageValidate } from '../package-validate-command.js';
 
@@ -93,5 +96,48 @@ describe('runPackageValidate', () => {
 
     expect(code).toBe(0);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Package: valid-plugin'));
+  });
+
+  describe('warnings-only success path', () => {
+    let tmpRoot: string;
+
+    beforeEach(() => {
+      tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), `dorkos-validate-warn-${randomUUID()}-`));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    });
+
+    it('exits 0 with the with-warnings status line on NAME_DIRECTORY_MISMATCH', async () => {
+      // Build a package whose directory name does NOT match manifest.name.
+      // This triggers NAME_DIRECTORY_MISMATCH, which is a warning-level issue
+      // — the package is still `ok: true` and the CLI should exit 0.
+      const pkgDir = path.join(tmpRoot, 'wrong-dir-name');
+      fs.mkdirSync(path.join(pkgDir, '.dork'), { recursive: true });
+      fs.mkdirSync(path.join(pkgDir, '.claude-plugin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pkgDir, '.dork', 'manifest.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          name: 'right-name',
+          version: '1.0.0',
+          type: 'plugin',
+          description: 'A package whose directory name intentionally mismatches the manifest',
+        }) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(pkgDir, '.claude-plugin', 'plugin.json'),
+        JSON.stringify({ name: 'right-name', version: '1.0.0' }) + '\n'
+      );
+
+      const code = await runPackageValidate({ packagePath: pkgDir });
+
+      expect(code).toBe(0);
+      const calls = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(calls.some((line) => line.includes('[NAME_DIRECTORY_MISMATCH]'))).toBe(true);
+      expect(calls.some((line) => line.includes('⚠'))).toBe(true);
+      expect(calls.some((line) => /Package is valid \(with warnings\)/.test(line))).toBe(true);
+    });
   });
 });

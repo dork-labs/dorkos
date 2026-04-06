@@ -115,22 +115,35 @@
 
 - **Task #11 (package-validator.ts)**: `@dorkos/skills/scanner` signature differs from the spec (`scanSkillDirectory(dir, schema, options?)` returning `ParseResult<ParsedSkill<T>>[]`, not `scanSkillDirectory(dir)` returning `{ dirPath, filePath }[]`). Validator adapted by passing `z.unknown()` as a permissive frontmatter schema. Verified working against fixtures via task #14 tests. No functional impact — error codes preserved.
 
-- **Scaffolder adapter gap**: `createPackage` does not accept an `adapterType` option, so scaffolding an adapter package writes a manifest missing the required `adapterType` field (fails schema validation). The scaffolder test suite documents this gap explicitly (one `it.skip` on adapter round-trip, plus an explicit assertion that the gap exists). Fix path: extend `CreatePackageOptions` with `adapterType`, update scaffolder, unskip the test. Deferred to a follow-up.
-
 - **CLI bundler bug fix (Task #18)**: The CLI's esbuild bundle did not externalize `gray-matter`, which is a transitive dependency of the validator via `@dorkos/skills/parser`. Gray-matter uses CommonJS `require('fs')` which esbuild's ESM output cannot inline via dynamic requires, causing `dorkos package validate` to throw `Dynamic require of "fs" is not supported` at runtime. Fixed in `packages/cli/scripts/build.ts` by adding `'gray-matter'` to the CLI bundle's externals list. The server bundle already externalized it. Smoke tested: `package init` then `package validate` end-to-end roundtrip now works.
 
-- **Overwrite error UX polish**: When `dorkos package init <name>` collides with an existing directory, the scaffolder throws `Error('Directory already exists: ...')` which bubbles up through the async boundary as an unhandled rejection and prints the raw stack trace. Functional behavior is correct (refusal with non-zero exit), but the user sees a Node.js stack instead of a friendly one-line message. Fix path: catch the error in the `package` subcommand dispatcher in `cli.ts` and print just `error.message`. Deferred — not blocking spec completion.
+## Post-Review Fixes (Session 2 — 2026-04-06)
+
+After completing Session 1, an independent code review by the `code-reviewer` subagent surfaced 3 important issues and 4 notable minor issues. All have been resolved:
+
+- **Adapter scaffolder gap (was Important #2)** — `CreatePackageOptions` now accepts an optional `adapterType` field. When `type === 'adapter'`, the scaffolder writes `adapterType: opts.adapterType ?? opts.name` so the manifest is always schema-valid. The CLI accepts a new `--adapter-type` flag. The previously-skipped adapter round-trip test in `scaffolder.test.ts` is unskipped, and two new adapter tests cover explicit `adapterType` and the per-type ignore (non-adapter packages don't write the field).
+- **`parsePackageInitArgs` direct `process.exit` (was Important #3)** — Refactored to throw plain `Error` objects instead of calling `process.exit(1)`. The CLI dispatcher in `cli.ts` is now the single source of truth for exit-code policy. `package-init.test.ts` tests updated to assert on `.toThrow(/regex/)` instead of mocking `process.exit`.
+- **Overwrite error UX (was Important #1)** — Both `package init` and `package validate` are now wrapped in a try/catch in `cli.ts` that prints `Error: <message>` (one clean line) and exits 1. No more raw Node.js stack traces on overwrite collisions, missing arguments, or schema violations.
+- **`SKILL_SOURCE_DIRS` missing `commands/` (was Minor #1)** — Added `'commands'` to the validator's source-dir list so SKILL.md files dropped into the plugin scaffolder's auto-created `commands/` directory are validated.
+- **Misleading TSDoc on `type` field (was Minor #2)** — Reworded the comment in `marketplace-json-schema.ts` to make explicit that the schema does NOT apply a Zod default; consumers should treat absence as `plugin`.
+- **`--help` for `package` subcommand (was Minor #4)** — `dorkos package`, `dorkos package --help`, and `dorkos package -h` now print package-specific usage.
+- **Warnings-only success path missing CLI test (was Minor #3)** — Added `package-validate.test.ts > warnings-only success path` test that creates a package with mismatched directory name, asserts `NAME_DIRECTORY_MISMATCH` warning, `⚠` prefix, and `Package is valid (with warnings)` status with exit 0.
+
+**Post-fix test counts:** marketplace 107 · skills 113 · CLI 124. End-to-end smoke test verified all four package types init+validate cleanly through the bundled CLI, and all error paths print clean one-line messages.
 
 ## Implementation Notes
 
 ### Session 1
 
-Implemented the marketplace foundation spec in 11 dependency-aware parallel batches. Spawned ~19 background implementation agents, one follow-up completion agent (task #14 scaffolder tests needed a re-dispatch after the original agent stopped early), and 1 analysis agent. Two known gaps surfaced during implementation and are documented above for follow-up specs:
+Implemented the marketplace foundation spec in 11 dependency-aware parallel batches. Spawned ~19 background implementation agents, one follow-up completion agent (task #14 scaffolder tests needed a re-dispatch after the original agent stopped early), and 1 analysis agent.
 
-1. `createPackage` does not accept an `adapterType` option, so the scaffolder produces invalid adapter manifests. The scaffolder test suite documents the gap with an `it.skip` and an explicit assertion that the field is missing.
-2. The CLI `package init` overwrite refusal prints a raw Node.js stack trace instead of a clean one-line message. Functional behavior is correct.
+Two minor known gaps were initially flagged for follow-up but were closed in Session 2 (see "Post-Review Fixes" above).
 
 One build-system bug was found and fixed during the CLI smoke test: `gray-matter` was not in the CLI bundle's esbuild externals list, causing `dorkos package validate` to throw `Dynamic require of "fs" is not supported` at runtime. Fix landed in `packages/cli/scripts/build.ts`.
 
-**Final test counts:** marketplace 105 (104 passing, 1 skipped) · skills 113 · CLI 120.
-**Final artifact counts:** 15 new source files, 6 new test files, 7 fixture directories, 3 new documentation files, 4 modified files (schema.ts, CLAUDE.md, CHANGELOG.md, ADR-0220, cli.ts, build.ts).
+### Session 2
+
+Independent code review caught 3 important + 4 notable minor issues. All resolved inline by the main context (no agents needed — small targeted edits). Closed the adapter scaffolder gap, refactored `parsePackageInitArgs` to throw instead of exit, wrapped the CLI dispatcher in a try/catch for clean error messages, added `commands/` to validator source dirs, fixed misleading TSDoc, added package-level `--help`, and added a missing CLI test for the warnings-only success path.
+
+**Final test counts (post Session 2):** marketplace 107 · skills 113 · CLI 124 = **344 total**.
+**Final artifact counts:** 15 new source files, 6 new test files, 7 fixture directories, 3 new documentation files, 7 modified files (schema.ts in skills, CLAUDE.md, CHANGELOG.md, ADR-0220, cli.ts, build.ts in cli, scaffolder.ts + package-validator.ts + marketplace-json-schema.ts in marketplace, package-init-command.ts).
