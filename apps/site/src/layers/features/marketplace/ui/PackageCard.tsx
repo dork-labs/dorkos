@@ -9,20 +9,22 @@
  */
 
 import Link from 'next/link';
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
 
 interface PackageCardProps {
-  package: MarketplaceJsonEntry;
+  package: MergedMarketplaceEntry;
   installCount?: number;
 }
 
 /**
  * Render a marketplace package card linking to its detail page.
  *
- * @param props.package - The marketplace.json entry to display
+ * @param props.package - The merged marketplace entry (CC fields + DorkOS extensions)
  * @param props.installCount - Optional install count from telemetry
  */
 export function PackageCard({ package: pkg, installCount }: PackageCardProps) {
+  const icon = pkg.dorkos?.icon ?? '📦';
+  const kind = pkg.dorkos?.type ?? 'plugin';
   return (
     <Link
       href={`/marketplace/${pkg.name}`}
@@ -30,13 +32,11 @@ export function PackageCard({ package: pkg, installCount }: PackageCardProps) {
     >
       <div className="mb-3 flex items-center gap-3">
         <span className="text-3xl" aria-hidden>
-          {pkg.icon ?? '📦'}
+          {icon}
         </span>
         <div className="flex-1">
           <h3 className="text-charcoal font-mono text-base font-semibold">{pkg.name}</h3>
-          <p className="text-warm-gray-light font-mono text-xs tracking-wider uppercase">
-            {pkg.type ?? 'plugin'}
-          </p>
+          <p className="text-warm-gray-light font-mono text-xs tracking-wider uppercase">{kind}</p>
         </div>
       </div>
       {pkg.description && (

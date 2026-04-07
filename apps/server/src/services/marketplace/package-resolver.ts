@@ -4,17 +4,16 @@
  * or `./local/path`) into a concrete {@link ResolvedPackageSource}.
  *
  * The resolver is the single chokepoint between the user-facing install
- * surface (CLI flags, HTTP requests) and the downstream
- * `template-downloader` / install flows. It performs no network I/O of
- * its own — it consults the {@link MarketplaceSourceManager} for
- * configured sources and the {@link MarketplaceCache} for already-fetched
- * marketplace documents.
+ * surface (CLI flags, HTTP requests) and the downstream `package-fetcher`
+ * / install flows. It performs no network I/O of its own — it consults
+ * the {@link MarketplaceSourceManager} for configured sources and the
+ * {@link MarketplaceCache} for already-fetched marketplace documents.
  *
  * @module services/marketplace/package-resolver
  */
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MarketplaceJsonEntry, PluginSource } from '@dorkos/marketplace';
 import type { MarketplaceCache } from './marketplace-cache.js';
 import type { MarketplaceSourceManager } from './marketplace-source-manager.js';
 
@@ -23,8 +22,13 @@ export type PackageSourceKind = 'marketplace' | 'git' | 'local';
 
 /**
  * A resolved package source descriptor — the output of
- * {@link PackageResolver.resolve}. Downstream stages (template downloader,
+ * {@link PackageResolver.resolve}. Downstream stages (package fetcher,
  * install flows) consume this and never re-parse the original input.
+ *
+ * For `kind === 'marketplace'` and `kind === 'git'`, the `pluginSource`
+ * field carries the discriminated-union {@link PluginSource} value that
+ * the package fetcher dispatches on. For `kind === 'local'`, the
+ * `localPath` field is populated and `pluginSource` is omitted.
  */
 export interface ResolvedPackageSource {
   /** Discriminator for which fields are populated. */
@@ -33,12 +37,36 @@ export interface ResolvedPackageSource {
   packageName: string;
   /** Marketplace name when `kind === 'marketplace'`. */
   marketplaceName?: string;
-  /** Git URL when `kind === 'git'` or `kind === 'marketplace'` (post lookup). */
-  gitUrl?: string;
+  /**
+   * Discriminated-union plugin source for `kind === 'marketplace'` and
+   * `kind === 'git'`. Forwarded to {@link PackageFetcher.fetchPackage} as-is.
+   */
+  pluginSource?: PluginSource;
+  /**
+   * Marketplace clone root on disk for `kind === 'marketplace'` lookups
+   * whose plugin source resolves to a relative-path. Required so the
+   * package fetcher can join the relative path against the cloned
+   * marketplace tree.
+   */
+  marketplaceRoot?: string;
+  /**
+   * Optional `metadata.pluginRoot` value from the source marketplace.json.
+   * Only consulted by the source resolver for relative-path entries.
+   */
+  pluginRoot?: string;
   /** Absolute local path when `kind === 'local'`. */
   localPath?: string;
   /** Optional version pin (`#sha` or trailing `@version` syntax — not v1). */
   version?: string;
+  /**
+   * Legacy git URL field — kept for backward compatibility with consumers
+   * that have not yet migrated to the discriminated-union `pluginSource`.
+   *
+   * @deprecated Use `pluginSource` instead. This will be removed once all
+   *   call sites in `marketplace-installer.ts` and `package-fetcher.ts`
+   *   have been migrated to the new dispatch-based fetcher API.
+   */
+  gitUrl?: string;
 }
 
 /** The named marketplace was not found in the configured source list. */
@@ -107,9 +135,7 @@ export class PackageResolver {
    *    {@link MarketplaceSourceManager.get}. Throws
    *    {@link MarketplaceNotFoundError} when absent. Reads the cached
    *    document via {@link MarketplaceCache.readMarketplace}; throws
-   *    {@link PackageNotFoundError} when the cache is empty (an actual
-   *    fetch will be wired in via `package-fetcher` (task 1.5), which
-   *    will pre-warm the cache before `resolve()` runs).
+   *    {@link PackageNotFoundError} when the cache is empty.
    * 5. Bare `name` → search every enabled marketplace via
    *    {@link MarketplaceSourceManager.list}. Throws
    *    {@link AmbiguousPackageError} on 2+ hits and
@@ -136,7 +162,12 @@ export class PackageResolver {
       const left = input.slice(0, atIdx);
       const right = input.slice(atIdx + 1);
       if (isParseableUrl(right)) {
-        return { kind: 'git', packageName: left, gitUrl: right };
+        return {
+          kind: 'git',
+          packageName: left,
+          pluginSource: { source: 'url', url: right },
+          gitUrl: right,
+        };
       }
       return this.resolveExplicitMarketplace(left, right);
     }
@@ -146,8 +177,8 @@ export class PackageResolver {
 
   /**
    * Resolve `name@marketplaceName` against the source manager and cache.
-   * Performs no network I/O — task 1.5 (`package-fetcher`) will pre-warm
-   * the cache before this method runs.
+   * Performs no network I/O — the package-fetcher pre-warms the cache
+   * before this method runs.
    */
   private async resolveExplicitMarketplace(
     packageName: string,
@@ -176,7 +207,9 @@ export class PackageResolver {
       kind: 'marketplace',
       packageName,
       marketplaceName,
-      gitUrl: entry.source,
+      pluginSource: entry.source,
+      pluginRoot: cached.json.metadata?.pluginRoot,
+      gitUrl: legacyGitUrlFromSource(entry.source),
     };
   }
 
@@ -187,7 +220,8 @@ export class PackageResolver {
    */
   private async resolveBareName(packageName: string): Promise<ResolvedPackageSource> {
     const sources = await this.sourceManager.list();
-    const hits: { marketplaceName: string; entry: MarketplaceJsonEntry }[] = [];
+    const hits: { marketplaceName: string; entry: MarketplaceJsonEntry; pluginRoot?: string }[] =
+      [];
 
     for (const source of sources) {
       if (!source.enabled) {
@@ -199,7 +233,11 @@ export class PackageResolver {
       }
       const entry = cached.json.plugins.find((p) => p.name === packageName);
       if (entry) {
-        hits.push({ marketplaceName: source.name, entry });
+        hits.push({
+          marketplaceName: source.name,
+          entry,
+          pluginRoot: cached.json.metadata?.pluginRoot,
+        });
       }
     }
 
@@ -220,7 +258,9 @@ export class PackageResolver {
       kind: 'marketplace',
       packageName,
       marketplaceName: hit.marketplaceName,
-      gitUrl: hit.entry.source,
+      pluginSource: hit.entry.source,
+      pluginRoot: hit.pluginRoot,
+      gitUrl: legacyGitUrlFromSource(hit.entry.source),
     };
   }
 }
@@ -263,10 +303,12 @@ async function resolveLocal(input: string): Promise<ResolvedPackageSource> {
 /** Build a git-source descriptor from a `github:user/repo` regex match. */
 function resolveGithubShorthand(match: RegExpExecArray): ResolvedPackageSource {
   const [, user, repo] = match;
+  const cloneUrl = `https://github.com/${user}/${repo}`;
   return {
     kind: 'git',
     packageName: repo,
-    gitUrl: `https://github.com/${user}/${repo}`,
+    pluginSource: { source: 'url', url: cloneUrl },
+    gitUrl: cloneUrl,
   };
 }
 
@@ -277,5 +319,32 @@ function isParseableUrl(value: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Derive a legacy git URL string from a discriminated-union plugin source.
+ *
+ * Used for backward compatibility with consumers that still read
+ * `ResolvedPackageSource.gitUrl`. Returns `undefined` for source forms that
+ * have no git URL representation (relative-path, npm). Once all consumers
+ * migrate to `pluginSource`, this helper and the `gitUrl` field can both
+ * be deleted.
+ *
+ * @internal
+ */
+function legacyGitUrlFromSource(source: PluginSource): string | undefined {
+  if (typeof source === 'string') {
+    return undefined;
+  }
+  switch (source.source) {
+    case 'github':
+      return `https://github.com/${source.repo}.git`;
+    case 'url':
+      return source.url;
+    case 'git-subdir':
+      return source.url;
+    case 'npm':
+      return undefined;
   }
 }

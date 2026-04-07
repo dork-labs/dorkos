@@ -103,13 +103,15 @@ describe('ensurePersonalMarketplace', () => {
     const raw = await readFile(manifestPath, 'utf-8');
     const parsed = JSON.parse(raw) as {
       name: string;
-      description: string;
+      owner?: { name: string };
+      metadata?: { description?: string };
       plugins: unknown[];
     };
 
     expect(parsed.name).toBe('personal');
-    expect(typeof parsed.description).toBe('string');
-    expect(parsed.description.length).toBeGreaterThan(0);
+    expect(parsed.owner?.name).toBeTruthy();
+    expect(typeof parsed.metadata?.description).toBe('string');
+    expect(parsed.metadata?.description?.length ?? 0).toBeGreaterThan(0);
     expect(parsed.plugins).toEqual([]);
   });
 

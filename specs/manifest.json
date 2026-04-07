@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 229,
+  "nextNumber": 230,
   "specs": [
     {
       "number": 228,
@@ -1648,6 +1648,14 @@
       "title": "Upgrade electron-vite from v3.1.0 to v5.0.0 (+ Electron ecosystem)",
       "created": "2026-04-01",
       "status": "implemented"
+    },
+    {
+      "number": 229,
+      "slug": "marketplace-05-claude-code-format-superset",
+      "title": "Marketplace 05: Claude Code Marketplace Format Superset",
+      "created": "2026-04-07",
+      "status": "implemented"
     }
-  ]
+  ],
+  "lastModified": "2026-04-07"
 }

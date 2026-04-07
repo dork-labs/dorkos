@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { siteConfig } from '@/config/site';
 import { fetchMarketplaceJson } from '@/layers/features/marketplace';
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
 
 export const runtime = 'edge';
 
@@ -21,7 +21,7 @@ export const contentType = 'image/png';
 export default async function Image(props: { params: Promise<{ slug: string }> }) {
   const { slug } = await props.params;
 
-  let pkg: MarketplaceJsonEntry | undefined;
+  let pkg: MergedMarketplaceEntry | undefined;
   try {
     const marketplace = await fetchMarketplaceJson();
     pkg = marketplace.plugins.find((p) => p.name === slug);
@@ -29,7 +29,7 @@ export default async function Image(props: { params: Promise<{ slug: string }> }
     pkg = undefined;
   }
 
-  const icon = pkg?.icon ?? '📦';
+  const icon = pkg?.dorkos?.icon ?? '📦';
   const title = pkg?.name ?? 'Package not found';
   const description = pkg
     ? (pkg.description ?? 'A DorkOS marketplace package')

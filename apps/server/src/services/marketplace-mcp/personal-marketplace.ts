@@ -59,12 +59,16 @@ const DEFAULT_GITIGNORE = `# Default: ignore everything. Run \`git init\` and ed
 /** Build the seed `marketplace.json` envelope used on first run. */
 function defaultMarketplaceJson(): {
   name: typeof PERSONAL_MARKETPLACE_NAME;
-  description: string;
+  owner: { name: string };
+  metadata: { description: string };
   plugins: never[];
 } {
   return {
     name: PERSONAL_MARKETPLACE_NAME,
-    description: 'Your personal DorkOS marketplace — packages you scaffold or maintain locally',
+    owner: { name: 'local' },
+    metadata: {
+      description: 'Your personal DorkOS marketplace — packages you scaffold or maintain locally',
+    },
     plugins: [],
   };
 }

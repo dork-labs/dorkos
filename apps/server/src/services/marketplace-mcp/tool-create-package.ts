@@ -152,9 +152,8 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
     try {
       await registerInPersonalMarketplace(deps.dorkHome, {
         name: args.name,
-        type: args.type,
         description: args.description,
-        source: `file://${result.packagePath}`,
+        source: { source: 'url', url: `file://${result.packagePath}` },
       });
     } catch (err) {
       deps.logger.warn(
@@ -185,13 +184,18 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
  */
 async function registerInPersonalMarketplace(
   dorkHome: string,
-  entry: { name: string; type: string; description: string; source: string }
+  entry: {
+    name: string;
+    description: string;
+    source: { source: 'url'; url: string };
+  }
 ): Promise<void> {
   const manifestPath = path.join(personalMarketplaceRoot(dorkHome), 'marketplace.json');
   const raw = await readFile(manifestPath, 'utf-8');
   const json = JSON.parse(raw) as {
     name: string;
-    description?: string;
+    owner?: { name: string };
+    metadata?: { description?: string };
     plugins?: { name: string }[];
   };
   const plugins = (json.plugins ?? []) as { name: string }[];
@@ -200,10 +204,15 @@ async function registerInPersonalMarketplace(
   }
   plugins.push({
     name: entry.name,
-    type: entry.type,
     description: entry.description,
     source: entry.source,
-  } as { name: string });
+  } as unknown as { name: string });
   json.plugins = plugins;
+  // Defensively ensure the personal envelope still has the required
+  // CC-superset top-level fields. Older personal marketplaces created before
+  // the schema rewrite (Phase 1) may be missing `owner`.
+  if (!json.owner) {
+    json.owner = { name: 'local' };
+  }
   await writeFile(manifestPath, JSON.stringify(json, null, 2) + '\n', 'utf-8');
 }

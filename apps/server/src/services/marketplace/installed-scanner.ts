@@ -40,6 +40,31 @@ export interface InstalledPackage {
 const INSTALL_ROOTS = ['plugins', 'agents'] as const;
 
 /**
+ * Scan all installed packages and return only those whose `type` makes
+ * them candidates for Claude Agent SDK runtime activation (`plugin`,
+ * `skill-pack`, and `adapter`). Agents are excluded because they run as
+ * DorkOS-managed subprocesses, not as CC plugins.
+ *
+ * This is the data source for `plugin-activation.ts` — the returned list
+ * of package names is passed to `buildClaudeAgentSdkPluginsArray` which
+ * translates each name into a `{ type: 'local', path }` entry for the
+ * SDK's `options.plugins` array.
+ *
+ * DorkOS does not currently model plugin enable/disable state; every
+ * installed plugin is treated as enabled. If that changes, add the
+ * filter here so the runtime wiring stays a single call site.
+ *
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @returns Plugin package names to activate on session start.
+ */
+export async function listEnabledPluginNames(dorkHome: string): Promise<string[]> {
+  const installed = await scanInstalledPackages(dorkHome);
+  return installed
+    .filter((pkg) => pkg.type === 'plugin' || pkg.type === 'skill-pack' || pkg.type === 'adapter')
+    .map((pkg) => pkg.name);
+}
+
+/**
  * Walk `${dorkHome}/plugins/*` and `${dorkHome}/agents/*`, read each
  * `.dork/manifest.json`, merge in any `.dork/install-metadata.json` sidecar,
  * and return the resulting {@link InstalledPackage} list. Directories without

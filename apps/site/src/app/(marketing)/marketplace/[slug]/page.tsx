@@ -106,7 +106,7 @@ export default async function PackageDetailPage(props: { params: Promise<{ slug:
     applicationCategory: 'DeveloperApplication',
     operatingSystem: 'macOS, Linux, Windows',
     url: `${siteConfig.url}/marketplace/${pkg.name}`,
-    ...(pkg.author ? { author: { '@type': 'Person', name: pkg.author } } : {}),
+    ...(pkg.author ? { author: { '@type': 'Person', name: pkg.author.name } } : {}),
     ...(pkg.version ? { softwareVersion: pkg.version } : {}),
     ...(pkg.keywords && pkg.keywords.length > 0 ? { keywords: pkg.keywords.join(', ') } : {}),
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },

@@ -9,10 +9,11 @@ import { MarketplaceCache } from '../marketplace-cache.js';
 function buildMarketplaceJson(name = 'dorkos-community'): MarketplaceJson {
   return {
     name,
+    owner: { name: 'dorkos' },
     plugins: [
       {
         name: 'code-review-suite',
-        source: 'https://github.com/dorkos/code-review-suite',
+        source: { source: 'github', repo: 'dorkos/code-review-suite' },
       },
     ],
   };

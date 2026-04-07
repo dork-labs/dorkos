@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 236,
+  "nextNumber": 240,
   "decisions": [
     {
       "number": 235,
@@ -328,7 +328,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "proposed",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -355,7 +355,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "proposed",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1206,7 +1206,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
@@ -1332,7 +1332,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "proposed",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -1386,7 +1386,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
       "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -1544,6 +1544,42 @@
       "created": "2026-03-15",
       "extractedFrom": "sdk-command-discovery",
       "specSlug": "sdk-command-discovery"
+    },
+    {
+      "number": 236,
+      "slug": "sidecar-dorkos-json-for-marketplace-extensions",
+      "title": "Sidecar dorkos.json for DorkOS Marketplace Extensions",
+      "status": "draft",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 237,
+      "slug": "same-repo-monorepo-for-dork-labs-marketplace-seed",
+      "title": "Same-Repo Monorepo for dork-labs/marketplace Seed",
+      "status": "draft",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 238,
+      "slug": "port-to-zod-cc-validator-with-weekly-sync-cron",
+      "title": "Port-to-Zod CC Validator with Weekly Sync Cron",
+      "status": "draft",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 239,
+      "slug": "plugin-runtime-activation-via-claude-agent-sdk-options-plugins",
+      "title": "Plugin Runtime Activation via Claude Agent SDK options.plugins",
+      "status": "draft",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
     }
   ]
 }

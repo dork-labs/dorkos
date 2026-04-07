@@ -13,11 +13,11 @@
  * @module features/marketplace/ui/PermissionPreviewServer
  */
 
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
 import { formatPermissions } from '../lib/format-permissions';
 
 interface PermissionPreviewServerProps {
-  package: MarketplaceJsonEntry;
+  package: MergedMarketplaceEntry;
 }
 
 /**

@@ -13,7 +13,7 @@
  * @module features/marketplace/lib/format-permissions
  */
 
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
 
 /** A formatted permission claim ready for display. */
 export interface PermissionClaim {
@@ -50,16 +50,16 @@ const LAYER_LABELS: Record<string, string> = {
  * @param pkg - The marketplace.json entry whose permissions should be formatted
  * @returns Array of permission claims, always non-empty
  */
-export function formatPermissions(pkg: MarketplaceJsonEntry): PermissionClaim[] {
+export function formatPermissions(pkg: MergedMarketplaceEntry): PermissionClaim[] {
   const claims: PermissionClaim[] = [];
-  const layers = pkg.layers ?? [];
+  const layers = pkg.dorkos?.layers ?? [];
 
   for (const layer of layers) {
     const label = LAYER_LABELS[layer];
     if (!label) continue;
     claims.push({
       label,
-      detail: `Files will be staged under .dork/marketplaces/dorkos-community/${pkg.name}/`,
+      detail: `Files will be staged under .dork/marketplaces/dorkos/${pkg.name}/`,
       level: layer === 'hooks' || layer === 'mcp-servers' ? 'warn' : 'info',
     });
   }

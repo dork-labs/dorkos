@@ -12,7 +12,7 @@
  * @module features/marketplace/ui/RelatedPackages
  */
 
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
 import { PackageCard } from './PackageCard';
 
 const MAX_RELATED = 3;
@@ -21,7 +21,7 @@ interface RelatedPackagesProps {
   /** Name of the package being shown on the current detail page. */
   currentName: string;
   /** Full marketplace registry to pick related packages from. */
-  allPackages: MarketplaceJsonEntry[];
+  allPackages: MergedMarketplaceEntry[];
   /** Map of package name to install count, used by the rendered cards. */
   installCounts: Record<string, number>;
 }
@@ -33,8 +33,9 @@ export function RelatedPackages({ currentName, allPackages, installCounts }: Rel
   const current = allPackages.find((p) => p.name === currentName);
   if (!current) return null;
 
+  const currentType = current.dorkos?.type ?? 'plugin';
   const related = allPackages
-    .filter((p) => p.name !== currentName && p.type === current.type)
+    .filter((p) => p.name !== currentName && (p.dorkos?.type ?? 'plugin') === currentType)
     .slice(0, MAX_RELATED);
 
   if (related.length === 0) return null;

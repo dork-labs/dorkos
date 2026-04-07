@@ -213,16 +213,24 @@ describe('createCreatePackageHandler', () => {
     const raw = await readFile(manifestPath, 'utf-8');
     const parsed = JSON.parse(raw) as {
       name: string;
-      plugins: { name: string; type?: string; description?: string; source?: string }[];
+      owner?: { name: string };
+      plugins: {
+        name: string;
+        description?: string;
+        source?: { source: string; url?: string };
+      }[];
     };
 
     expect(parsed.name).toBe(PERSONAL_MARKETPLACE_NAME);
+    expect(parsed.owner?.name).toBeTruthy();
     expect(parsed.plugins).toHaveLength(1);
     const entry = parsed.plugins[0];
     expect(entry?.name).toBe('registered-pkg');
-    expect(entry?.type).toBe('plugin');
     expect(entry?.description).toBe('A plugin that should be registered.');
-    expect(entry?.source).toBe(`file://${payload.packagePath as string}`);
+    expect(entry?.source).toEqual({
+      source: 'url',
+      url: `file://${payload.packagePath as string}`,
+    });
   });
 
   it('is idempotent when the same package name is registered twice', async () => {

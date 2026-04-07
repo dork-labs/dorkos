@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Strict CC superset — schema, install, runtime, site (marketplace-05 Batches 1-4)
 - Add MCP server surface (marketplace-05-agent-installer) + in-flight WIP
 - **Marketplace as MCP server.** The DorkOS marketplace is now exposed as an MCP server at `/mcp`, alongside the existing DorkOS tools. Any AI agent that speaks MCP — Claude Code, Cursor, Codex, Cline, ChatGPT, Gemini — can search the marketplace, get package details, install packages (with user confirmation), and scaffold new packages on the fly. See `contributing/external-agent-marketplace-access.md` for setup instructions. (`marketplace-05-agent-installer`)
 - **Personal marketplace.** A per-user local marketplace at `~/.dork/personal-marketplace/` is now created on first server boot. Agents can scaffold new packages here via `marketplace_create_package` without leaving their tool of choice. (`marketplace-05-agent-installer`)

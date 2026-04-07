@@ -12,7 +12,7 @@
  * @module @dorkos/marketplace
  */
 
-// Schemas
+// Package manifest schemas
 export {
   MarketplacePackageManifestSchema,
   type MarketplacePackageManifest,
@@ -22,15 +22,59 @@ export {
   type AdapterPackageManifest,
 } from './manifest-schema.js';
 
+// marketplace.json schemas
 export {
   MarketplaceJsonSchema,
   MarketplaceJsonEntrySchema,
-  type MarketplaceJson,
-  type MarketplaceJsonEntry,
+  PluginSourceSchema,
+  AuthorSchema,
+  OwnerSchema,
+  MetadataSchema,
+  RESERVED_MARKETPLACE_NAMES,
+} from './marketplace-json-schema.js';
+export type {
+  MarketplaceJson,
+  MarketplaceJsonEntry,
+  PluginSource,
+  RelativePathSource,
+  GithubSource,
+  UrlSource,
+  GitSubdirSource,
+  NpmSource,
+  Author,
+  Owner,
+  Metadata,
 } from './marketplace-json-schema.js';
 
+// dorkos.json sidecar schemas
+export { DorkosSidecarSchema, DorkosEntrySchema, PricingSchema } from './dorkos-sidecar-schema.js';
+export type { DorkosSidecar, DorkosEntry, Pricing } from './dorkos-sidecar-schema.js';
+
+// Merge helper
+export { mergeMarketplace } from './merge-marketplace.js';
+export type { MergedMarketplaceEntry, MergeMarketplaceResult } from './merge-marketplace.js';
+
+// Source resolver
+export { resolvePluginSource, ResolvePluginSourceError } from './source-resolver.js';
+export type { ResolvedSourceDescriptor, ResolveContext } from './source-resolver.js';
+
+// CC validator (strict-mode oracle)
+export {
+  CcMarketplaceJsonSchema,
+  CcMarketplaceJsonEntrySchema,
+  CcSourceSchema,
+  validateAgainstCcSchema,
+} from './cc-validator.js';
+
 // Parser (browser-safe — no fs)
-export { parseMarketplaceJson, type ParseMarketplaceResult } from './marketplace-json-parser.js';
+export {
+  parseMarketplaceJson,
+  parseDorkosSidecar,
+  parseMarketplaceWithSidecar,
+  type ParseMarketplaceResult,
+  type ParseDorkosSidecarResult,
+  type ParseMarketplaceWithSidecarResult,
+} from './marketplace-json-parser.js';
 
 // Types & helpers
 export { PackageTypeSchema, type PackageType, requiresClaudePlugin } from './package-types.js';

@@ -1,250 +1,277 @@
 import { describe, it, expect } from 'vitest';
-import { MarketplaceJsonSchema, MarketplaceJsonEntrySchema } from '../marketplace-json-schema.js';
+import {
+  MarketplaceJsonSchema,
+  MarketplaceJsonEntrySchema,
+  PluginSourceSchema,
+  RESERVED_MARKETPLACE_NAMES,
+} from '../marketplace-json-schema.js';
 
-describe('MarketplaceJsonSchema — valid documents', () => {
-  it('accepts a standard Claude Code marketplace.json (no DorkOS fields)', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: 'test-marketplace',
-      plugins: [
-        {
-          name: 'a',
-          source: 'github:x/y',
-        },
-      ],
-    });
+const validOwner = { name: 'Test Owner' };
 
+describe('PluginSourceSchema — five source forms', () => {
+  it('accepts a relative-path source starting with ./', () => {
+    const result = PluginSourceSchema.safeParse('./plugins/foo');
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.name).toBe('test-marketplace');
-      expect(result.data.plugins).toHaveLength(1);
-      expect(result.data.plugins[0]?.name).toBe('a');
-      expect(result.data.plugins[0]?.source).toBe('github:x/y');
-      // type is optional and absent on standard CC entries
-      expect(result.data.plugins[0]?.type).toBeUndefined();
-    }
   });
 
-  it('accepts a fully DorkOS-extended marketplace.json', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: 'dorkos-marketplace',
-      plugins: [
-        {
-          name: 'fancy-plugin',
-          source: 'github:dorkos/fancy',
-          description: 'A fancy DorkOS plugin',
-          version: '1.0.0',
-          author: 'Dorkos Team',
-          homepage: 'https://example.com',
-          repository: 'https://github.com/dorkos/fancy',
-          license: 'MIT',
-          keywords: ['fancy', 'plugin'],
-          type: 'plugin',
-          category: 'devtools',
-          tags: ['cli', 'ops'],
-          icon: '🛠️',
-          layers: ['skills', 'commands'],
-          requires: ['adapter:slack@^1.0.0'],
-          featured: true,
-          dorkosMinVersion: '0.5.0',
-        },
-      ],
-    });
+  it('rejects a relative-path source without ./', () => {
+    // A bare "foo" is a valid pluginRoot-relative source at the entry level,
+    // but the PluginSourceSchema union itself requires either ./ prefix or
+    // an object form. The bare-name case is handled by the source resolver.
+    const result = PluginSourceSchema.safeParse('foo');
+    expect(result.success).toBe(false);
+  });
 
+  it('rejects a relative-path containing ..', () => {
+    const result = PluginSourceSchema.safeParse('./plugins/../evil');
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a github source', () => {
+    const result = PluginSourceSchema.safeParse({ source: 'github', repo: 'owner/repo' });
     expect(result.success).toBe(true);
-    if (result.success) {
-      const entry = result.data.plugins[0];
-      expect(entry?.type).toBe('plugin');
-      expect(entry?.category).toBe('devtools');
-      expect(entry?.tags).toEqual(['cli', 'ops']);
-      expect(entry?.layers).toEqual(['skills', 'commands']);
-      expect(entry?.requires).toEqual(['adapter:slack@^1.0.0']);
-      expect(entry?.featured).toBe(true);
-      expect(entry?.dorkosMinVersion).toBe('0.5.0');
-    }
   });
 
-  it('accepts each PackageType enum value on plugin entries', () => {
-    for (const type of ['agent', 'plugin', 'skill-pack', 'adapter'] as const) {
-      const result = MarketplaceJsonEntrySchema.safeParse({
-        name: 'pkg',
-        source: 'github:x/y',
-        type,
-      });
-      expect(result.success).toBe(true);
-    }
+  it('accepts a github source with ref and sha', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'github',
+      repo: 'owner/repo',
+      ref: 'main',
+      sha: 'a'.repeat(40),
+    });
+    expect(result.success).toBe(true);
   });
 
-  it('preserves unknown fields on plugin entries via passthrough', () => {
-    const result = MarketplaceJsonEntrySchema.parse({
-      name: 'a',
-      source: 'github:x/y',
+  it('rejects a github source with an invalid repo format', () => {
+    const result = PluginSourceSchema.safeParse({ source: 'github', repo: 'not-a-repo' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a github source with a short sha', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'github',
+      repo: 'owner/repo',
+      sha: 'abc',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a url source', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'url',
+      url: 'https://gitlab.com/foo/bar.git',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a url source with a non-URL string', () => {
+    const result = PluginSourceSchema.safeParse({ source: 'url', url: 'not-a-url' });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a git-subdir source', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: 'https://github.com/foo/monorepo.git',
+      path: 'plugins/qa',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a git-subdir source with empty path', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'git-subdir',
+      url: 'https://github.com/foo/monorepo.git',
+      path: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts an npm source', () => {
+    const result = PluginSourceSchema.safeParse({
+      source: 'npm',
+      package: '@dorkos/example',
+      version: '1.2.3',
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('MarketplaceJsonEntrySchema', () => {
+  it('accepts a minimal valid entry with a github source', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts author as object with required name', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
+      author: { name: 'Alice', email: 'alice@example.com' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects author as a bare string', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
+      author: 'Alice',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects uppercase names', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'Foo',
+      source: { source: 'github', repo: 'owner/repo' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects names starting with a dash', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: '-foo',
+      source: { source: 'github', repo: 'owner/repo' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts strict: true', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
+      strict: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('preserves unknown fields via passthrough', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
       publisherBadge: 'verified',
     });
-
-    // passthrough preserves the unknown field on the parsed output
-    expect((result as Record<string, unknown>).publisherBadge).toBe('verified');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as Record<string, unknown>).publisherBadge).toBe('verified');
+    }
   });
 
-  it('preserves unknown fields at the top level via passthrough', () => {
-    const result = MarketplaceJsonSchema.parse({
-      name: 'test',
-      plugins: [
-        {
-          name: 'a',
-          source: 'github:x/y',
-          publisherBadge: 'verified',
-        },
-      ],
-      publisherBadge: 'verified',
-    });
-
-    expect((result as Record<string, unknown>).publisherBadge).toBe('verified');
-    const entry = result.plugins[0] as Record<string, unknown>;
-    expect(entry.publisherBadge).toBe('verified');
-  });
-
-  it('accepts an empty plugins array', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: 'empty',
-      plugins: [],
+  it('preserves inline CC commands field as opaque metadata', () => {
+    const result = MarketplaceJsonEntrySchema.safeParse({
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
+      commands: { run: { description: 'A command' } },
     });
     expect(result.success).toBe(true);
-  });
-});
-
-describe('MarketplaceJsonSchema — invalid top-level structures', () => {
-  it('rejects documents missing the name field', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      plugins: [],
-    });
-    expect(result.success).toBe(false);
+    if (result.success) {
+      expect(result.data.commands).toBeDefined();
+    }
   });
 
-  it('rejects documents with an empty name', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: '',
-      plugins: [],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects documents missing the plugins field', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: 'test',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects documents where plugins is not an array', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: 'test',
-      plugins: 'not-an-array',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects documents where plugins is an object', () => {
-    const result = MarketplaceJsonSchema.safeParse({
-      name: 'test',
-      plugins: { foo: 'bar' },
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('MarketplaceJsonEntrySchema — invalid plugin entries', () => {
-  it('rejects entries missing name', () => {
+  it('rejects more than 20 tags', () => {
     const result = MarketplaceJsonEntrySchema.safeParse({
-      source: 'github:x/y',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects entries with empty name', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: '',
-      source: 'github:x/y',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects entries missing source', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'test',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects entries with empty source', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'test',
-      source: '',
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('MarketplaceJsonEntrySchema — DorkOS extension field validation', () => {
-  it('rejects entries with more than 20 tags', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
       tags: Array.from({ length: 21 }, (_, i) => `tag-${i}`),
     });
     expect(result.success).toBe(false);
   });
 
-  it('accepts entries with exactly 20 tags', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
-      tags: Array.from({ length: 20 }, (_, i) => `tag-${i}`),
-    });
-    expect(result.success).toBe(true);
-  });
-
   it('rejects category longer than 64 characters', () => {
     const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
+      name: 'foo',
+      source: { source: 'github', repo: 'owner/repo' },
       category: 'c'.repeat(65),
     });
     expect(result.success).toBe(false);
   });
+});
 
-  it('rejects type values outside the PackageType enum', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
-      type: 'extension',
+describe('MarketplaceJsonSchema — top-level document', () => {
+  it('accepts a minimal valid document', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: 'test',
+      owner: validOwner,
+      plugins: [{ name: 'foo', source: { source: 'github', repo: 'owner/repo' } }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('requires owner at the top level', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: 'test',
+      plugins: [],
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects icon longer than 64 characters', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
-      icon: 'i'.repeat(65),
+  it('requires owner.name', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: 'test',
+      owner: {},
+      plugins: [],
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects layers values outside the layer enum', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
-      layers: ['not-a-real-layer'],
+  it('accepts metadata with pluginRoot', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: 'test',
+      owner: validOwner,
+      metadata: {
+        description: 'Test',
+        version: '0.1.0',
+        pluginRoot: './plugins',
+      },
+      plugins: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty marketplace name', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: '',
+      owner: validOwner,
+      plugins: [],
     });
     expect(result.success).toBe(false);
   });
 
-  it('rejects individual tag strings longer than 32 characters', () => {
-    const result = MarketplaceJsonEntrySchema.safeParse({
-      name: 'a',
-      source: 'github:x/y',
-      tags: ['t'.repeat(33)],
+  it('rejects uppercase marketplace name', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: 'Test',
+      owner: validOwner,
+      plugins: [],
     });
     expect(result.success).toBe(false);
+  });
+
+  it('rejects all 8 reserved marketplace names', () => {
+    for (const reserved of RESERVED_MARKETPLACE_NAMES) {
+      const result = MarketplaceJsonSchema.safeParse({
+        name: reserved,
+        owner: validOwner,
+        plugins: [],
+      });
+      expect(result.success, `expected reserved name "${reserved}" to fail`).toBe(false);
+    }
+  });
+
+  it('preserves unknown top-level fields via passthrough', () => {
+    const result = MarketplaceJsonSchema.safeParse({
+      name: 'test',
+      owner: validOwner,
+      plugins: [],
+      publisherBadge: 'verified',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as Record<string, unknown>).publisherBadge).toBe('verified');
+    }
   });
 });

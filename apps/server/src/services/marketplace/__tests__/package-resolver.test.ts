@@ -47,9 +47,10 @@ function buildCacheStub(
 function buildCachedMarketplace(marketplaceName: string, pluginNames: string[]): CachedMarketplace {
   const json: MarketplaceJson = {
     name: marketplaceName,
+    owner: { name: 'example' },
     plugins: pluginNames.map((name) => ({
       name,
-      source: `https://github.com/example/${name}`,
+      source: { source: 'url', url: `https://github.com/example/${name}` },
     })),
   };
   return { json, fetchedAt: new Date(), stale: false };

@@ -9,10 +9,10 @@
  * @module features/marketplace/ui/InstallInstructions
  */
 
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
 
 interface InstallInstructionsProps {
-  package: MarketplaceJsonEntry;
+  package: MergedMarketplaceEntry;
 }
 
 /**

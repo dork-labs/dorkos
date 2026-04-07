@@ -1,56 +1,103 @@
 /**
- * Marketplace registry fetch helpers — pulls marketplace.json from
- * dorkos-community and per-package READMEs from raw GitHub URLs.
+ * Marketplace registry fetch helpers — pulls `.claude-plugin/marketplace.json`
+ * from `dork-labs/marketplace` (marketplace-05 layout) plus the optional
+ * `dorkos.json` sidecar, and per-package READMEs dispatched by source type.
  *
  * Used by the /marketplace and /marketplace/[slug] pages with hourly ISR.
  *
  * @module features/marketplace/lib/fetch
  */
 
-import { parseMarketplaceJson } from '@dorkos/marketplace';
-import type { MarketplaceJson } from '@dorkos/marketplace';
+import {
+  parseMarketplaceWithSidecar,
+  resolvePluginSource,
+  type MergedMarketplaceEntry,
+  type MarketplaceJson,
+  type DorkosSidecar,
+  type PluginSource,
+} from '@dorkos/marketplace';
 
-const REGISTRY_URL =
-  'https://raw.githubusercontent.com/dorkos-community/marketplace/main/marketplace.json';
+const MARKETPLACE_ROOT_URL = 'https://raw.githubusercontent.com/dork-labs/marketplace/main';
+const MARKETPLACE_URL = `${MARKETPLACE_ROOT_URL}/.claude-plugin/marketplace.json`;
+const DORKOS_SIDECAR_URL = `${MARKETPLACE_ROOT_URL}/.claude-plugin/dorkos.json`;
 
 const REVALIDATE_SECONDS = 3600;
 
 /**
- * Fetch the dorkos-community marketplace.json index.
+ * Merged fetch result: the parsed `marketplace.json`, the optional sidecar,
+ * the merged-per-plugin entries (CC fields + DorkOS extensions), and any
+ * orphan sidecar plugin names logged for awareness.
  *
- * Uses Next.js fetch revalidation (hourly) so build pages SSG and ISR refreshes
- * pick up registry updates within an hour.
- *
- * @throws when the fetch fails or the payload does not validate
+ * The `plugins` field is named to mirror `MarketplaceJson.plugins` so
+ * existing consumers continue to iterate via `result.plugins`. Each entry
+ * is a `MergedMarketplaceEntry` which is a structural superset of the
+ * CC-standard shape plus an optional `dorkos` extension object.
  */
-export async function fetchMarketplaceJson(): Promise<MarketplaceJson> {
-  const res = await fetch(REGISTRY_URL, { next: { revalidate: REVALIDATE_SECONDS } });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch marketplace registry: ${res.status} ${res.statusText}`);
-  }
-  const text = await res.text();
-  const result = parseMarketplaceJson(text);
-  if (!result.ok) {
-    throw new Error(`marketplace.json parse failed: ${result.error}`);
-  }
-  return result.marketplace;
+export interface MarketplaceFetchResult {
+  marketplace: MarketplaceJson;
+  sidecar: DorkosSidecar | null;
+  plugins: MergedMarketplaceEntry[];
+  orphans: string[];
 }
 
 /**
- * Fetch the README.md for a package given its source URL.
+ * Fetch the Dork Labs marketplace registry and its optional sidecar in
+ * parallel, merge them, and return the result.
  *
- * Converts a github.com URL like `https://github.com/dorkos-community/code-reviewer`
- * into the corresponding `https://raw.githubusercontent.com/.../main/README.md` URL.
- * Falls back to an empty string when the README is missing or the source URL is
- * not a GitHub URL.
+ * Uses Next.js fetch revalidation (hourly) so SSG pages and ISR refreshes
+ * pick up registry updates within an hour. A missing sidecar is NOT an
+ * error — every merged entry simply has `dorkos: undefined` and the
+ * caller treats the plugin as a default `plugin` type with no extensions.
  *
- * @param sourceUrl - The package's `source` field from marketplace.json
+ * @throws when `marketplace.json` cannot be fetched or fails validation.
  */
-export async function fetchPackageReadme(sourceUrl: string): Promise<string> {
-  const rawUrl = githubSourceToRawReadme(sourceUrl);
-  if (!rawUrl) return '';
+export async function fetchMarketplaceJson(): Promise<MarketplaceFetchResult> {
+  const [marketplaceRes, sidecarRes] = await Promise.all([
+    fetch(MARKETPLACE_URL, { next: { revalidate: REVALIDATE_SECONDS } }),
+    fetch(DORKOS_SIDECAR_URL, { next: { revalidate: REVALIDATE_SECONDS } }),
+  ]);
+
+  if (!marketplaceRes.ok) {
+    throw new Error(
+      `Failed to fetch marketplace registry: ${marketplaceRes.status} ${marketplaceRes.statusText}`
+    );
+  }
+
+  const rawMarketplace = await marketplaceRes.text();
+  const rawSidecar = sidecarRes.ok ? await sidecarRes.text() : null;
+
+  const result = parseMarketplaceWithSidecar(rawMarketplace, rawSidecar);
+  if (!result.ok) {
+    throw new Error(`marketplace.json parse failed: ${result.error}`);
+  }
+
+  if (result.orphans.length > 0) {
+    console.warn('marketplace: orphan plugins in sidecar', { orphans: result.orphans });
+  }
+
+  return {
+    marketplace: result.marketplace,
+    sidecar: result.sidecar,
+    plugins: result.merged,
+    orphans: result.orphans,
+  };
+}
+
+/**
+ * Fetch the README.md for a package given its discriminated `PluginSource`.
+ *
+ * Dispatches per source type (relative-path, github, url, git-subdir, npm)
+ * so the site can surface READMEs from every form of marketplace source.
+ * A missing or unreachable README returns an empty string — the rendering
+ * components already handle empty markdown gracefully.
+ *
+ * @param source - The package's `source` field from the merged entry.
+ */
+export async function fetchPackageReadme(source: PluginSource): Promise<string> {
+  const readmeUrl = resolvePackageReadmeUrl(source);
+  if (!readmeUrl) return '';
   try {
-    const res = await fetch(rawUrl, { next: { revalidate: REVALIDATE_SECONDS } });
+    const res = await fetch(readmeUrl, { next: { revalidate: REVALIDATE_SECONDS } });
     if (!res.ok) return '';
     return await res.text();
   } catch {
@@ -59,16 +106,25 @@ export async function fetchPackageReadme(sourceUrl: string): Promise<string> {
 }
 
 /**
- * Convert a github.com source URL into a raw README URL.
- *
- * Tries `main` first; the caller may extend this to fall back to `master` if
- * needed for older repos.
+ * Compute the raw README URL for a plugin source. Mirrors the same
+ * per-type dispatch the server-side source resolver uses, keeping the
+ * site and server READMEs in sync.
  *
  * @internal Exported for testing.
  */
-export function githubSourceToRawReadme(sourceUrl: string): string | null {
-  const match = sourceUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
-  if (!match) return null;
-  const [, owner, repo] = match;
-  return `https://raw.githubusercontent.com/${owner}/${repo}/main/README.md`;
+export function resolvePackageReadmeUrl(source: PluginSource): string | null {
+  const resolved = resolvePluginSource(source, { marketplaceRoot: MARKETPLACE_ROOT_URL });
+  switch (resolved.type) {
+    case 'relative-path':
+      return `${MARKETPLACE_ROOT_URL}/${resolved.path}/README.md`;
+    case 'github':
+      return `https://raw.githubusercontent.com/${resolved.repo}/main/README.md`;
+    case 'url':
+      return `${resolved.url.replace(/\.git$/, '')}/raw/main/README.md`;
+    case 'git-subdir':
+      return `${resolved.cloneUrl.replace(/\.git$/, '')}/raw/main/${resolved.subpath}/README.md`;
+    case 'npm':
+      // npm README fetching is deferred with npm install support itself.
+      return null;
+  }
 }

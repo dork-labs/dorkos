@@ -266,30 +266,29 @@ async function writeCommunityFixture(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'mcp-integration-community-'));
   const json = {
     name: 'community',
-    description: 'Test community marketplace',
+    owner: { name: 'community-test' },
+    metadata: {
+      description: 'Test community marketplace',
+    },
     plugins: [
       {
         name: 'sentry-monitor',
-        source: `file://${dir}/sentry-monitor`,
+        source: { source: 'url', url: `file://${dir}/sentry-monitor` },
         description: 'Track errors and exceptions across your Next.js app',
-        type: 'plugin',
         category: 'observability',
         tags: ['errors', 'monitoring', 'nextjs'],
-        featured: true,
       },
       {
         name: 'log-pretty',
-        source: `file://${dir}/log-pretty`,
+        source: { source: 'url', url: `file://${dir}/log-pretty` },
         description: 'Pretty-print structured logs in the terminal',
-        type: 'plugin',
         category: 'devex',
         tags: ['logging', 'terminal'],
       },
       {
         name: 'planner-agent',
-        source: `file://${dir}/planner-agent`,
+        source: { source: 'url', url: `file://${dir}/planner-agent` },
         description: 'Autonomous planning agent for multi-step tasks',
-        type: 'agent',
         category: 'productivity',
         tags: ['planning', 'autonomous'],
       },
