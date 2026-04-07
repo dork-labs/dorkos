@@ -57,7 +57,7 @@ export function setupMenu(mainWindow: BrowserWindow): void {
       submenu: [
         {
           label: 'DorkOS Documentation',
-          click: () => shell.openExternal('https://dorkos.dev/docs'),
+          click: () => shell.openExternal('https://dorkos.ai/docs'),
         },
       ],
     },

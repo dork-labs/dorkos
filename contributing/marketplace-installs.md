@@ -2,6 +2,8 @@
 
 The install machinery for the DorkOS Marketplace — how `dorkos install` turns a package name into files on disk, how rollback works when something breaks, and how to add a new install flow without violating the contract every other flow relies on.
 
+**See also:** [`contributing/external-agent-marketplace-access.md`](external-agent-marketplace-access.md) — how external AI agents (Claude Code, Cursor, Codex) connect to the DorkOS marketplace MCP server and drive the install flow remotely.
+
 Pair this guide with:
 
 - [`specs/marketplace-02-install/02-specification.md`](../specs/marketplace-02-install/02-specification.md) — the authoritative spec. If this guide and the spec disagree, the spec wins and this file needs a patch.

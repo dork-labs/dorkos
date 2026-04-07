@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 234,
+  "nextNumber": 236,
   "decisions": [
+    {
+      "number": 235,
+      "slug": "site-local-drizzle-schema-for-marketplace-telemetry",
+      "title": "Site-Local Drizzle Schema for Marketplace Telemetry (Not packages/db)",
+      "created": "2026-04-07",
+      "status": "accepted",
+      "extractedFrom": "marketplace-04-web-and-registry",
+      "specSlug": "marketplace-04-web-and-registry"
+    },
+    {
+      "number": 234,
+      "slug": "neon-drizzle-single-source-of-truth-for-marketplace-telemetry",
+      "title": "Neon + Drizzle as Single Source of Truth for Marketplace Install Telemetry",
+      "created": "2026-04-07",
+      "status": "accepted",
+      "extractedFrom": "marketplace-04-web-and-registry",
+      "specSlug": "marketplace-04-web-and-registry"
+    },
     {
       "number": 233,
       "slug": "marketplace-update-is-advisory-by-default",

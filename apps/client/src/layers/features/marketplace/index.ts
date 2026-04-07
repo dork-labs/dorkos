@@ -10,5 +10,6 @@
 export { DorkHub } from './ui/DorkHub';
 export { InstalledPackagesView } from './ui/InstalledPackagesView';
 export { MarketplaceSourcesView } from './ui/MarketplaceSourcesView';
+export { TelemetryConsentBanner } from './ui/TelemetryConsentBanner';
 export { useDorkHubStore } from './model/dork-hub-store';
 export type { DorkHubTypeFilter, DorkHubSort } from './model/dork-hub-store';

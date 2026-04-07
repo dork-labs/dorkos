@@ -109,7 +109,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree command
 
 Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`), `services/builtin-extensions/` (auto-stage built-in extensions like Dork Hub at startup so the discovery pass picks them up). API docs at `/api/docs`.
+**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`), `services/marketplace-mcp/` (marketplace exposed as MCP tools to external AI agents — see `contributing/external-agent-marketplace-access.md`), `services/builtin-extensions/` (auto-stage built-in extensions like Dork Hub at startup so the discovery pass picks them up). API docs at `/api/docs`.
 
 **Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
 
@@ -118,7 +118,7 @@ Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obta
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` in production, `apps/server/.temp/.dork/` in dev). See `.claude/rules/dork-home.md`
 - `lib/resolve-root.ts` resolves the default working directory (`DORKOS_DEFAULT_CWD` env var or repo root)
 - Each app has its own `env.ts` with Zod-validated env vars
-- External MCP server at `/mcp` — Streamable HTTP transport, stateless, optional API key auth (`MCP_API_KEY`). Exposes all DorkOS tools to external agents (Claude Code, Cursor, Windsurf).
+- External MCP server at `/mcp` — Streamable HTTP transport, stateless, optional API key auth (`MCP_API_KEY`). Exposes all DorkOS tools to external agents (Claude Code, Cursor, Windsurf), including the 8 marketplace tools that let any MCP-compatible agent search, install, and scaffold DorkOS packages.
 
 ### Sessions
 
@@ -150,6 +150,17 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). U
 
 **Client conventions**: `motion` for animations (see `contributing/animations.md`), `streamdown` for markdown rendering, TanStack Router for client-side routing and URL search params (`?session=`, `?dir=`). Design system documented in `contributing/design-system.md`.
 
+### Site (`apps/site/src/`)
+
+Next.js 16 marketing site + Fumadocs at `dorkos.ai`. Hosts the public marketplace browse experience and the install telemetry endpoint. Public routes:
+
+- `/marketplace` → public browse page (server-rendered, hourly ISR) — fetches `marketplace.json` from `dorkos-community/marketplace` and renders the package grid + featured rail
+- `/marketplace/[slug]` → per-package detail with README, install instructions, OG image, and JSON-LD `SoftwareApplication`
+- `/marketplace/privacy` → install telemetry privacy contract (the public version of the in-product opt-in copy)
+- `/api/telemetry/install` → Edge Function writing opt-in install events to Neon via Drizzle (single source of truth, no Redis)
+
+**apps/site database**: Neon Postgres + Drizzle ORM. Schema at `apps/site/src/db/schema.ts`. Migrations under `apps/site/drizzle/`. Run `pnpm db:generate` after schema changes, `pnpm db:migrate` to apply. See `contributing/marketplace-telemetry.md` and ADR-0234.
+
 ### Shared Package (`packages/shared/src/`)
 
 Cross-package imports use `@dorkos/shared/*` subpaths: `/agent-runtime`, `/types`, `/config-schema`, `/relay-schemas`, `/mesh-schemas`, `/manifest`, `/logger`, `/transport`, `/schemas`, `/constants`.
@@ -165,27 +176,30 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 ## Guides
 
-| Guide                                                                                        | Contents                                                    |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| [`contributing/architecture.md`](contributing/architecture.md)                               | Hexagonal architecture, Transport, DI, data flows, testing  |
-| [`contributing/design-system.md`](contributing/design-system.md)                             | Color palette, typography, spacing (8pt grid), motion specs |
-| [`contributing/api-reference.md`](contributing/api-reference.md)                             | OpenAPI spec, Zod schemas, SSE streaming                    |
-| [`contributing/configuration.md`](contributing/configuration.md)                             | Config system, CLI commands, precedence                     |
-| [`contributing/data-fetching.md`](contributing/data-fetching.md)                             | TanStack Query patterns, mutations                          |
-| [`contributing/state-management.md`](contributing/state-management.md)                       | Zustand vs TanStack Query decision guide                    |
-| [`contributing/animations.md`](contributing/animations.md)                                   | Motion library patterns                                     |
-| [`contributing/styling-theming.md`](contributing/styling-theming.md)                         | Tailwind v4, dark mode, Shadcn                              |
-| [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md) | Plugin lifecycle, Electron quirks                           |
-| [`contributing/interactive-tools.md`](contributing/interactive-tools.md)                     | Tool approval, AskUserQuestion flows                        |
-| [`contributing/parallel-execution.md`](contributing/parallel-execution.md)                   | Parallel agent patterns                                     |
-| [`contributing/browser-testing.md`](contributing/browser-testing.md)                         | Playwright E2E test patterns                                |
-| [`contributing/environment-variables.md`](contributing/environment-variables.md)             | Env var conventions, turbo.json                             |
-| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md)                   | Keybinding system, customization                            |
-| [`contributing/project-structure.md`](contributing/project-structure.md)                     | FSD layers, file organization                               |
-| [`contributing/relay-adapters.md`](contributing/relay-adapters.md)                           | Adapter development guide                                   |
-| [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md)                         | Adapter catalog system                                      |
-| [`contributing/extension-authoring.md`](contributing/extension-authoring.md)                 | Extension authoring guide                                   |
-| [`contributing/marketplace-installs.md`](contributing/marketplace-installs.md)               | Marketplace install pipeline: flows, transactions, testing  |
+| Guide                                                                                                    | Contents                                                                              |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [`contributing/architecture.md`](contributing/architecture.md)                                           | Hexagonal architecture, Transport, DI, data flows, testing                            |
+| [`contributing/design-system.md`](contributing/design-system.md)                                         | Color palette, typography, spacing (8pt grid), motion specs                           |
+| [`contributing/api-reference.md`](contributing/api-reference.md)                                         | OpenAPI spec, Zod schemas, SSE streaming                                              |
+| [`contributing/configuration.md`](contributing/configuration.md)                                         | Config system, CLI commands, precedence                                               |
+| [`contributing/data-fetching.md`](contributing/data-fetching.md)                                         | TanStack Query patterns, mutations                                                    |
+| [`contributing/state-management.md`](contributing/state-management.md)                                   | Zustand vs TanStack Query decision guide                                              |
+| [`contributing/animations.md`](contributing/animations.md)                                               | Motion library patterns                                                               |
+| [`contributing/styling-theming.md`](contributing/styling-theming.md)                                     | Tailwind v4, dark mode, Shadcn                                                        |
+| [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md)             | Plugin lifecycle, Electron quirks                                                     |
+| [`contributing/interactive-tools.md`](contributing/interactive-tools.md)                                 | Tool approval, AskUserQuestion flows                                                  |
+| [`contributing/parallel-execution.md`](contributing/parallel-execution.md)                               | Parallel agent patterns                                                               |
+| [`contributing/browser-testing.md`](contributing/browser-testing.md)                                     | Playwright E2E test patterns                                                          |
+| [`contributing/environment-variables.md`](contributing/environment-variables.md)                         | Env var conventions, turbo.json                                                       |
+| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md)                               | Keybinding system, customization                                                      |
+| [`contributing/project-structure.md`](contributing/project-structure.md)                                 | FSD layers, file organization                                                         |
+| [`contributing/relay-adapters.md`](contributing/relay-adapters.md)                                       | Adapter development guide                                                             |
+| [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md)                                     | Adapter catalog system                                                                |
+| [`contributing/extension-authoring.md`](contributing/extension-authoring.md)                             | Extension authoring guide                                                             |
+| [`contributing/marketplace-installs.md`](contributing/marketplace-installs.md)                           | Marketplace install pipeline: flows, transactions, testing                            |
+| [`contributing/marketplace-registry.md`](contributing/marketplace-registry.md)                           | dorkos-community registry repo layout, marketplace.json schema, submission flow       |
+| [`contributing/marketplace-telemetry.md`](contributing/marketplace-telemetry.md)                         | Marketplace install telemetry: Neon + Drizzle setup, schema, privacy contract         |
+| [`contributing/external-agent-marketplace-access.md`](contributing/external-agent-marketplace-access.md) | Connect external AI agents (Claude Code, Cursor, Codex) to the DorkOS marketplace MCP |
 
 `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 

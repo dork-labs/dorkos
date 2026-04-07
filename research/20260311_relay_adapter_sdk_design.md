@@ -628,7 +628,7 @@ The existing `validateAdapterShape` function is good. Enhance it with:
 throw new Error(
   `Adapter '${id}': missing 'deliver()' method.\n` +
     `Your factory function must return an object with a deliver(subject, envelope, context?) method.\n` +
-    `See: https://dorkos.dev/docs/relay/adapter-authoring`
+    `See: https://dorkos.ai/docs/relay/adapter-authoring`
 );
 ```
 

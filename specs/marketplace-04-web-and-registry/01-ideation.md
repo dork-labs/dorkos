@@ -34,7 +34,7 @@ This spec depends on specs 01 and 02 implemented. Spec 03 ships in parallel — 
 
 ## Scope of This Spec
 
-This spec produces **public discoverability and seed content**. It creates the `dorkos-community` GitHub organization and registry repo, ships the `/marketplace` web page on dorkos.dev, builds 5–10 seed packages (mix of Agents and plugins), and implements opt-in install telemetry that powers ranking and analytics.
+This spec produces **public discoverability and seed content**. It creates the `dorkos-community` GitHub organization and registry repo, ships the `/marketplace` web page on dorkos.ai, builds 5–10 seed packages (mix of Agents and plugins), and implements opt-in install telemetry that powers ranking and analytics.
 
 After this spec ships, the marketplace is **publicly browseable** on the web, has **real content** people can install, and **tracks adoption** to feed the flywheel.
 
@@ -56,7 +56,7 @@ After this spec ships, the marketplace is **publicly browseable** on the web, ha
    - **Adapters:**
      - `dorkos-community/discord-adapter` — Discord relay bridge
      - (Telegram and Slack adapters already built-in to DorkOS)
-4. **`/marketplace` web page on dorkos.dev** — Static SSG page reading from registry
+4. **`/marketplace` web page on dorkos.ai** — Static SSG page reading from registry
 5. **Per-package detail pages** — `/marketplace/[slug]` with README rendering
 6. **Search & filter** — Same UX as Dork Hub but server-rendered
 7. **OG images per package** — Auto-generated for sharing
@@ -72,7 +72,7 @@ After this spec ships, the marketplace is **publicly browseable** on the web, ha
 - MCP server (Spec 05)
 - Personal marketplace publishing (Spec 05)
 - Self-serve registry submission (v1 is PR-based)
-- User accounts on dorkos.dev (deferred)
+- User accounts on dorkos.ai (deferred)
 - Reviews/ratings (deferred)
 - Sigstore signing (deferred)
 
@@ -87,7 +87,7 @@ After this spec ships, the marketplace is **publicly browseable** on the web, ha
 | 3   | Web framework       | Existing Next.js 16 site (`apps/site`) with Fumadocs                              | Consistent with existing marketing site. SSG = fast.                    |
 | 4   | Static vs dynamic   | SSG with hourly ISR revalidation                                                  | Fast TTI, fresh enough for content that changes weekly                  |
 | 5   | Telemetry consent   | **Opt-in** (off by default)                                                       | Brand voice "honest by design". User trust over flywheel speed.         |
-| 6   | Telemetry endpoint  | Vercel Edge Function on dorkos.dev                                                | Already on Vercel. No new infra.                                        |
+| 6   | Telemetry endpoint  | Vercel Edge Function on dorkos.ai                                                 | Already on Vercel. No new infra.                                        |
 | 7   | Telemetry storage   | Vercel KV (Upstash Redis) for counters; Vercel Postgres for events                | Minimal infra, scales linearly                                          |
 | 8   | Ranking function    | Featured weight (manual curation) + log(install_count) + recency boost (last 30d) | Balanced — manual editorial + organic signal                            |
 | 9   | OG image generation | `@vercel/og` (Satori) with templated layouts                                      | Existing pattern in `apps/site/src/app/features/[slug]/opengraph-image` |
@@ -100,7 +100,7 @@ After this spec ships, the marketplace is **publicly browseable** on the web, ha
 - [ ] `dorkos-community` GitHub org exists with marketplace repo
 - [ ] `marketplace.json` validates against `MarketplaceJsonSchema` from spec 01
 - [ ] All 8 seed package repos exist, each passing `dorkos package validate`
-- [ ] `/marketplace` page on dorkos.dev renders package grid
+- [ ] `/marketplace` page on dorkos.ai renders package grid
 - [ ] `/marketplace/[slug]` page renders for each package
 - [ ] OG images generated for each package
 - [ ] Sitemap includes all marketplace URLs

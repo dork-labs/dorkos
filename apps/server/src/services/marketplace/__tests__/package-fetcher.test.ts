@@ -1,3 +1,7 @@
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson } from '@dorkos/marketplace';
@@ -211,6 +215,89 @@ describe('PackageFetcher', () => {
       const fetcher = new PackageFetcher(cache, downloader, buildLogger());
 
       await expect(fetcher.fetchMarketplaceJson(buildSource())).rejects.toThrow(/network down/);
+    });
+  });
+
+  describe('file:// source support', () => {
+    let workDir: string;
+
+    afterEach(async () => {
+      if (workDir) {
+        await rm(workDir, { recursive: true, force: true });
+      }
+    });
+
+    it('fetchMarketplaceJson reads a local marketplace.json from a file:// URL', async () => {
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      const json = buildMarketplaceJson('personal');
+      await writeFile(path.join(workDir, 'marketplace.json'), JSON.stringify(json), 'utf-8');
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      const result = await fetcher.fetchMarketplaceJson(
+        buildSource({ name: 'personal', source: pathToFileURL(workDir).href })
+      );
+
+      expect(result.name).toBe('personal');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(cache.writeMarketplace).toHaveBeenCalledWith('personal', expect.any(Object));
+    });
+
+    it('fetchMarketplaceJson throws a clear error when the local marketplace.json is missing', async () => {
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      // Note: do not seed marketplace.json on purpose.
+
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      const sourceUrl = pathToFileURL(workDir).href;
+      await expect(
+        fetcher.fetchMarketplaceJson(buildSource({ name: 'personal', source: sourceUrl }))
+      ).rejects.toThrow(/Failed to read local marketplace at .*marketplace\.json:/);
+      expect(cache.writeMarketplace).not.toHaveBeenCalled();
+    });
+
+    it('fetchMarketplaceJson throws when the local marketplace.json is invalid JSON', async () => {
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      await writeFile(path.join(workDir, 'marketplace.json'), '{ not valid json', 'utf-8');
+
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      await expect(
+        fetcher.fetchMarketplaceJson(
+          buildSource({ name: 'personal', source: pathToFileURL(workDir).href })
+        )
+      ).rejects.toThrow();
+      expect(cache.writeMarketplace).not.toHaveBeenCalled();
+    });
+
+    it('fetchFromGit returns the local directory immediately when gitUrl is file://', async () => {
+      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      const pkgDir = path.join(workDir, 'packages', 'my-plugin');
+      await mkdir(pkgDir, { recursive: true });
+
+      const cache = buildCacheMock();
+      const downloader = buildDownloaderMock();
+      const fetcher = new PackageFetcher(cache, downloader, buildLogger());
+
+      const result = await fetcher.fetchFromGit({
+        packageName: 'my-plugin',
+        gitUrl: pathToFileURL(pkgDir).href,
+      });
+
+      expect(result.fromCache).toBe(true);
+      expect(result.commitSha).toBe('local');
+      expect(result.path).toBe(pkgDir);
+      expect(cache.getPackage).not.toHaveBeenCalled();
+      expect(cache.putPackage).not.toHaveBeenCalled();
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
     });
   });
 });

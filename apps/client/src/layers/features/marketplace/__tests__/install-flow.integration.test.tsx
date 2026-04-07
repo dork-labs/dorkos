@@ -38,6 +38,7 @@ import {
   useInstalledPackages,
   useUninstallPackage,
 } from '@/layers/entities/marketplace';
+import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { useInstallWithToast } from '../model/use-install-with-toast';
 import { useDorkHubStore } from '../model/dork-hub-store';
 import { DorkHub } from '../ui/DorkHub';
@@ -54,6 +55,15 @@ vi.mock('@/layers/entities/marketplace', () => ({
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
   useUninstallPackage: vi.fn(),
+}));
+
+// Mock the config entity. The TelemetryConsentBanner rendered at the top of
+// DorkHub depends on `useConfig` + `useUpdateConfig`. Default to a config
+// where the user has already decided so the banner is hidden and the existing
+// flow assertions are unaffected.
+vi.mock('@/layers/entities/config', () => ({
+  useConfig: vi.fn(),
+  useUpdateConfig: vi.fn(),
 }));
 
 // Mock the install-with-toast wrapper directly so we can spy on `mutate`
@@ -126,6 +136,27 @@ interface InstallMutationHandle {
   mutate: ReturnType<typeof vi.fn>;
   mutateAsync: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
+}
+
+function setConfigState() {
+  vi.mocked(useConfig).mockReturnValue({
+    data: {
+      telemetry: { enabled: false, userHasDecided: true },
+    },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useConfig>);
+
+  vi.mocked(useUpdateConfig).mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+    error: null,
+    reset: vi.fn(),
+  } as unknown as ReturnType<typeof useUpdateConfig>);
 }
 
 function setInstallWithToastState(): InstallMutationHandle {
@@ -232,6 +263,7 @@ describe('DorkHub install flow integration', () => {
     setPermissionPreviewState(PKG_DETAIL);
     setInstalledPackagesState([]);
     setUninstallMutationState();
+    setConfigState();
     installHandle = setInstallWithToastState();
   });
 

@@ -38,6 +38,7 @@ describe('UserConfigSchema', () => {
         apiKey: null,
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
+      telemetry: { enabled: false, userHasDecided: false },
       sessionSecret: null,
     });
   });
@@ -236,6 +237,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         apiKey: null,
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
+      telemetry: { enabled: false, userHasDecided: false },
       sessionSecret: null,
     });
   });
@@ -401,5 +403,69 @@ describe('UserConfigSchema agents', () => {
   it('agents section defaults when empty object provided', () => {
     const result = UserConfigSchema.parse({ version: 1, agents: {} });
     expect(result.agents).toEqual({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' });
+  });
+});
+
+describe('UserConfigSchema telemetry', () => {
+  it('telemetry defaults to { enabled: false, userHasDecided: false } when omitted', () => {
+    const result = UserConfigSchema.parse({ version: 1 });
+    expect(result.telemetry).toEqual({ enabled: false, userHasDecided: false });
+    expect(result.telemetry.enabled).toBe(false);
+    expect(result.telemetry.userHasDecided).toBe(false);
+  });
+
+  it('telemetry section defaults when empty object provided', () => {
+    const result = UserConfigSchema.parse({ version: 1, telemetry: {} });
+    expect(result.telemetry).toEqual({ enabled: false, userHasDecided: false });
+  });
+
+  it('telemetry.enabled accepts true', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      telemetry: { enabled: true },
+    });
+    expect(result.telemetry.enabled).toBe(true);
+  });
+
+  it('telemetry.enabled accepts false explicitly', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      telemetry: { enabled: false },
+    });
+    expect(result.telemetry.enabled).toBe(false);
+  });
+
+  it('telemetry.userHasDecided accepts true', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      telemetry: { enabled: false, userHasDecided: true },
+    });
+    expect(result.telemetry.userHasDecided).toBe(true);
+  });
+
+  it('telemetry.userHasDecided defaults to false when only enabled is set', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      telemetry: { enabled: true },
+    });
+    expect(result.telemetry.userHasDecided).toBe(false);
+  });
+
+  it('telemetry.enabled rejects string values', () => {
+    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { enabled: 'yes' } })).toThrow();
+  });
+
+  it('telemetry.enabled rejects numeric values', () => {
+    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { enabled: 1 } })).toThrow();
+  });
+
+  it('telemetry.enabled rejects null', () => {
+    expect(() => UserConfigSchema.parse({ version: 1, telemetry: { enabled: null } })).toThrow();
+  });
+
+  it('telemetry.userHasDecided rejects non-boolean values', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, telemetry: { userHasDecided: 'yes' } })
+    ).toThrow();
   });
 });

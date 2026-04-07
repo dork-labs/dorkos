@@ -160,7 +160,7 @@ const { dir } = await downloadTemplate('github:ixartz/Next-js-Boilerplate', {
 - `downloadTemplate()` is a clean async function with typed options — no event emitter patterns
 - Returns `{ dir, source, url }` — easy to confirm success and present to user
 - Supports subdirectory extraction (`github:owner/repo/packages/my-template`) — useful if DorkOS hosts templates as subdirs in a monorepo
-- Custom registry support: DorkOS could host a `registry.json` at `https://templates.dorkos.dev` for curated templates discoverable without knowing exact GitHub coordinates
+- Custom registry support: DorkOS could host a `registry.json` at `https://templates.dorkos.ai` for curated templates discoverable without knowing exact GitHub coordinates
 
 ### GitHub Template API (when to use it instead)
 

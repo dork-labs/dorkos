@@ -1,0 +1,21 @@
+name: Validate Submission
+on:
+  pull_request:
+    paths:
+      - 'marketplace.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - name: Install dorkos CLI
+        run: pnpm install -g dorkos
+      - name: Validate marketplace.json
+        run: dorkos package validate-marketplace marketplace.json
+      - name: Validate each new package
+        run: |
+          for pkg in $(jq -r '.plugins[].source' marketplace.json); do
+            dorkos package validate-remote "$pkg"
+          done

@@ -73,7 +73,7 @@ This is the FIRST of 5 sequential specs that together implement the DorkOS Marke
 - Local cache (Spec 02)
 - Marketplace Extension (built-in UI) (Spec 03)
 - TemplatePicker integration (Spec 03)
-- `/marketplace` web page on dorkos.dev (Spec 04)
+- `/marketplace` web page on dorkos.ai (Spec 04)
 - `dorkos-community` registry repo (Spec 04)
 - Seed packages (Spec 04)
 - Telemetry (Spec 04)

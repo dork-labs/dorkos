@@ -7,14 +7,14 @@
       "slug": "marketplace-05-agent-installer",
       "title": "Marketplace 05: Agent Installer (MCP Server)",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 227,
       "slug": "marketplace-04-web-and-registry",
       "title": "Marketplace 04: Web & Registry",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 226,

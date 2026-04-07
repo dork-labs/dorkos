@@ -52,6 +52,14 @@ import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
+import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
+import {
+  AutoApproveConfirmationProvider,
+  TokenConfirmationProvider,
+  type ConfirmationProvider,
+} from './services/marketplace-mcp/confirmation-provider.js';
+import { setMarketplaceConfirmationProvider } from './services/marketplace-mcp/confirmation-registry.js';
+import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
@@ -64,6 +72,8 @@ import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
+import { SERVER_VERSION } from './lib/version.js';
+import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { env } from './env.js';
 
@@ -130,6 +140,18 @@ async function start() {
   const boundaryConfig = env.DORKOS_BOUNDARY;
   const resolvedBoundary = await initBoundary(boundaryConfig);
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
+
+  // Register the dorkos.ai marketplace telemetry reporter. This is a no-op
+  // unless `config.telemetry.enabled === true` — defaults to false. The
+  // reporter forwards `InstallEvent`s emitted by the marketplace install
+  // pipeline to https://dorkos.ai/api/telemetry/install with a stable
+  // per-machine install ID stored in dorkHome. Privacy contract:
+  // https://dorkos.ai/marketplace/privacy
+  const telemetryConfig = configManager.get('telemetry');
+  registerDorkosCommunityTelemetry(telemetryConfig?.enabled ?? false, dorkHome, SERVER_VERSION);
+  if (telemetryConfig?.enabled) {
+    logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
+  }
 
   // Stage the built-in Dork Hub (marketplace) extension on disk before the
   // discovery pipeline runs. Non-fatal: a missing or malformed bundle should
@@ -311,6 +333,12 @@ async function start() {
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
+  // Marketplace MCP deps are populated later in the marketplace wiring block
+  // (only when extensionManager + adapterManager are available). The factory
+  // closure below reads the captured `let` binding lazily on each request, so
+  // by the time the first MCP request arrives this is either populated or
+  // intentionally undefined (relay disabled).
+  let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
   if (claudeRuntime) {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
@@ -345,7 +373,7 @@ async function start() {
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      return createExternalMcpServer(mcpToolDeps);
+      return createExternalMcpServer(mcpToolDeps, marketplaceMcpDeps);
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
@@ -608,6 +636,47 @@ async function start() {
       })
     );
     logger.info('[Marketplace] Routes mounted');
+
+    // Personal marketplace bootstrap — runs after the source manager is wired
+    // but before the MCP server fields its first request so the personal
+    // source is registered when external clients call
+    // `marketplace_list_marketplaces`. Failure here is non-fatal: a missing
+    // personal marketplace just means the `marketplace_create_package` tool
+    // has no destination, every other tool keeps working.
+    try {
+      await ensurePersonalMarketplace({
+        dorkHome,
+        sourceManager: marketplaceSourceManager,
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[personal-marketplace] bootstrap failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Build the confirmation provider that gates marketplace mutation tools.
+    // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
+    // and tests; everything else uses the token provider, which issues
+    // out-of-band tokens that the DorkOS UI resolves via the
+    // `POST /api/marketplace/confirmations/:token` route.
+    const confirmationProvider: ConfirmationProvider =
+      env.MARKETPLACE_AUTO_APPROVE === '1'
+        ? new AutoApproveConfirmationProvider()
+        : new TokenConfirmationProvider();
+    setMarketplaceConfirmationProvider(confirmationProvider);
+
+    marketplaceMcpDeps = {
+      dorkHome,
+      installer: marketplaceInstaller,
+      sourceManager: marketplaceSourceManager,
+      fetcher: marketplaceFetcher,
+      cache: marketplaceCache,
+      uninstallFlow: marketplaceUninstallFlow,
+      confirmationProvider,
+      logger,
+    };
+    logger.info('[Marketplace] MCP tools wired into external /mcp server');
   } else {
     logger.warn(
       '[Marketplace] Routes skipped — requires extensionManager and adapterManager (relay must be enabled and extensions must have initialized successfully)'

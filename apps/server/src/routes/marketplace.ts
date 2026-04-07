@@ -11,12 +11,10 @@
  * @module routes/marketplace
  */
 import { Router } from 'express';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
-import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
-import { validatePackage } from '@dorkos/marketplace/package-validator';
+import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
 import { logger } from '../lib/logger.js';
 import type { MarketplaceCache, CachedPackage } from '../services/marketplace/marketplace-cache.js';
 import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
@@ -36,6 +34,19 @@ import {
 } from '../services/marketplace/flows/uninstall.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import type { MarketplaceSource } from '../services/marketplace/types.js';
+import {
+  scanInstalledPackages,
+  type InstalledPackage,
+} from '../services/marketplace/installed-scanner.js';
+import { getMarketplaceConfirmationProvider } from '../services/marketplace-mcp/confirmation-registry.js';
+import { TokenConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
+
+/**
+ * Re-export the canonical {@link InstalledPackage} type from this route module
+ * so external callers that historically imported it from `routes/marketplace`
+ * keep working after the scan helper moved into `services/marketplace/`.
+ */
+export type { InstalledPackage } from '../services/marketplace/installed-scanner.js';
 
 /** Dependencies injected into {@link createMarketplaceRouter}. */
 export interface MarketplaceRouteDeps {
@@ -60,25 +71,6 @@ export interface MarketplaceRouteDeps {
  * it was discovered in. Returned by `GET /api/marketplace/packages`.
  */
 export type AggregatedPackage = MarketplaceJsonEntry & { marketplace: string };
-
-/**
- * Summary of an installed marketplace package as surfaced by
- * `GET /api/marketplace/installed`.
- */
-export interface InstalledPackage {
-  /** Package name from `.dork/manifest.json`. */
-  name: string;
-  /** Package version from `.dork/manifest.json`. */
-  version: string;
-  /** Package type (plugin, agent, skill-pack, adapter). */
-  type: PackageType;
-  /** Absolute path to the package root directory. */
-  installPath: string;
-  /** Marketplace source the package was installed from, if known. */
-  installedFrom?: string;
-  /** ISO timestamp when the package was installed, if known. */
-  installedAt?: string;
-}
 
 const AddSourceBodySchema = z.object({
   name: z.string().min(1).max(128),
@@ -115,6 +107,18 @@ const UpdateRequestBodySchema = z.object({
 /** Body schema for `POST /api/marketplace/cache/prune`. */
 const PruneCacheBodySchema = z.object({
   keepLastN: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Body schema for `POST /api/marketplace/confirmations/:token`.
+ *
+ * Used by the DorkOS UI when a user clicks Approve / Decline in the install
+ * confirmation dialog for an externally-initiated marketplace install. The
+ * `reason` field is only meaningful for declines and is capped at 1024 chars.
+ */
+const ConfirmationActionBodySchema = z.object({
+  action: z.enum(['approve', 'decline']),
+  reason: z.string().max(1024).optional(),
 });
 
 /** Query schema for `GET /api/marketplace/packages/:name`. */
@@ -173,6 +177,8 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
  * - `POST /packages/:name/update` — advisory update check (with `apply: true` option)
+ * - `POST /confirmations/:token` — resolve an out-of-band confirmation token
+ *   issued by the marketplace MCP install/uninstall tools (UI Approve/Decline)
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
@@ -243,7 +249,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // GET /installed -- list installed packages from ${dorkHome}/plugins and /agents
   router.get('/installed', async (_req, res) => {
     try {
-      const packages = await listInstalledPackages(dorkHome);
+      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome);
       res.json({ packages });
     } catch (err) {
       logger.error('[Marketplace] Failed to list installed packages', err);
@@ -254,7 +260,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // GET /installed/:name -- get a specific installed package
   router.get('/installed/:name', async (req, res) => {
     try {
-      const packages = await listInstalledPackages(dorkHome);
+      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome);
       const match = packages.find((p) => p.name === req.params.name);
       if (!match) {
         return res.status(404).json({ error: `Installed package '${req.params.name}' not found` });
@@ -429,6 +435,39 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
+  // POST /confirmations/:token -- resolve an out-of-band confirmation token
+  //
+  // The marketplace MCP install/uninstall tools issue short-lived tokens via
+  // `TokenConfirmationProvider` when invoked by external agents. The DorkOS
+  // UI calls this endpoint when the user clicks Approve/Decline in the
+  // existing install confirmation dialog. The route is intentionally
+  // restricted to the token-based provider — `AutoApproveConfirmationProvider`
+  // has nothing to confirm and the in-app provider returns synchronously, so
+  // both are reported as 409 to surface the misconfiguration loudly.
+  router.post('/confirmations/:token', (req, res) => {
+    const parsed = ConfirmationActionBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+
+    const provider = getMarketplaceConfirmationProvider();
+    if (!provider) {
+      return res.status(503).json({ error: 'Confirmation provider not available' });
+    }
+
+    if (!(provider instanceof TokenConfirmationProvider)) {
+      return res.status(409).json({ error: 'Server not configured for out-of-band confirmations' });
+    }
+
+    const { token } = req.params;
+    if (parsed.data.action === 'approve') {
+      provider.approve(token);
+    } else {
+      provider.decline(token, parsed.data.reason);
+    }
+    return res.json({ ok: true });
+  });
+
   // POST /packages/:name/update -- advisory update check (pass apply:true to apply)
   router.post('/packages/:name/update', async (req, res) => {
     const parsed = UpdateRequestBodySchema.safeParse(req.body);
@@ -478,87 +517,6 @@ async function aggregatePackages(
     }
   }
   return results;
-}
-
-/**
- * Walk `${dorkHome}/plugins/*` and `${dorkHome}/agents/*`, read each
- * `.dork/manifest.json`, and return the resulting {@link InstalledPackage}
- * list. Directories without a readable manifest are skipped silently.
- */
-async function listInstalledPackages(dorkHome: string): Promise<InstalledPackage[]> {
-  const roots = [join(dorkHome, 'plugins'), join(dorkHome, 'agents')];
-  const results: InstalledPackage[] = [];
-
-  for (const root of roots) {
-    const entries = await safeReaddir(root);
-    for (const entry of entries) {
-      const packagePath = join(root, entry);
-      const installed = await readInstalledPackage(packagePath);
-      if (installed) {
-        results.push(installed);
-      }
-    }
-  }
-
-  return results;
-}
-
-/**
- * Read a single installed package's `.dork/manifest.json` and translate it
- * into an {@link InstalledPackage} summary. Returns `null` when the manifest
- * is missing, unreadable, or fails validation so the walker can skip silently.
- */
-async function readInstalledPackage(packagePath: string): Promise<InstalledPackage | null> {
-  const manifestPath = join(packagePath, PACKAGE_MANIFEST_PATH);
-  let raw: string;
-  try {
-    raw = await readFile(manifestPath, 'utf-8');
-  } catch {
-    return null;
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  const shallow = parsed as Partial<{
-    name: unknown;
-    version: unknown;
-    type: unknown;
-    installedFrom: unknown;
-    installedAt: unknown;
-  }>;
-
-  if (
-    typeof shallow.name !== 'string' ||
-    typeof shallow.version !== 'string' ||
-    typeof shallow.type !== 'string'
-  ) {
-    // Fall through to validatePackage for a second opinion; if that fails too,
-    // the package is malformed and we skip it.
-    const validated = await validatePackage(packagePath);
-    if (!validated.ok || !validated.manifest) {
-      return null;
-    }
-    return {
-      name: validated.manifest.name,
-      version: validated.manifest.version,
-      type: validated.manifest.type,
-      installPath: packagePath,
-    };
-  }
-
-  return {
-    name: shallow.name,
-    version: shallow.version,
-    type: shallow.type as PackageType,
-    installPath: packagePath,
-    ...(typeof shallow.installedFrom === 'string' && { installedFrom: shallow.installedFrom }),
-    ...(typeof shallow.installedAt === 'string' && { installedAt: shallow.installedAt }),
-  };
 }
 
 /** Compute counts + total size of the marketplace cache. */

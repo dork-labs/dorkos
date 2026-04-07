@@ -22,6 +22,8 @@
  * @module services/marketplace/package-fetcher
  */
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Logger } from '@dorkos/shared/logger';
 import { parseMarketplaceJson, type MarketplaceJson } from '@dorkos/marketplace';
@@ -93,6 +95,15 @@ export class PackageFetcher {
    * @param opts - Package identity and fetch options.
    */
   async fetchFromGit(opts: FetchPackageOptions): Promise<FetchedPackage> {
+    if (isFileUrl(opts.gitUrl)) {
+      const localPath = fileUrlToPath(opts.gitUrl);
+      this.logger.debug('package-fetcher: serving local file:// package', {
+        packageName: opts.packageName,
+        path: localPath,
+      });
+      return { path: localPath, commitSha: 'local', fromCache: true };
+    }
+
     const commitSha = await this.resolveCommitSha(opts.gitUrl, opts.ref);
 
     if (!opts.force) {
@@ -126,6 +137,9 @@ export class PackageFetcher {
    * @param source - Marketplace source descriptor.
    */
   async fetchMarketplaceJson(source: MarketplaceSource): Promise<MarketplaceJson> {
+    if (isFileUrl(source.source)) {
+      return this.readLocalMarketplaceJson(source);
+    }
     const url = resolveMarketplaceJsonUrl(source.source);
     try {
       const json = await this.fetchAndParseMarketplaceJson(url);
@@ -134,6 +148,33 @@ export class PackageFetcher {
     } catch (err) {
       return this.serveStaleMarketplace(source.name, err);
     }
+  }
+
+  /**
+   * Read and parse a `marketplace.json` document from a `file://` source on
+   * disk. Used by the personal marketplace and any other locally-resolved
+   * source. Caches the parsed document so resolver and search tools can read
+   * it back through the same code paths as remote marketplaces.
+   *
+   * @param source - Marketplace source whose `source` field is a `file://` URL.
+   */
+  private async readLocalMarketplaceJson(source: MarketplaceSource): Promise<MarketplaceJson> {
+    const root = fileUrlToPath(source.source);
+    const manifestPath = path.join(root, 'marketplace.json');
+    let raw: string;
+    try {
+      raw = await readFile(manifestPath, 'utf-8');
+    } catch (err) {
+      throw new Error(
+        `Failed to read local marketplace at ${manifestPath}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    const parsed = parseMarketplaceJson(raw);
+    if (!parsed.ok) {
+      throw new Error(parsed.error);
+    }
+    await this.cache.writeMarketplace(source.name, parsed.marketplace);
+    return parsed.marketplace;
   }
 
   /** GET the marketplace.json URL and parse it. Throws on any failure. */
@@ -196,6 +237,27 @@ export class PackageFetcher {
     }
     return `tmp-${Date.now()}`;
   }
+}
+
+/**
+ * True when `source` is a `file://` URL pointing at a local directory. Used
+ * to switch the fetcher between its remote (HTTP/git) and local (filesystem)
+ * code paths.
+ *
+ * @param source - Raw marketplace source string from a `MarketplaceSource`.
+ */
+function isFileUrl(source: string): boolean {
+  return source.startsWith('file://');
+}
+
+/**
+ * Convert a `file://` URL into an absolute filesystem path. Caller is
+ * responsible for ensuring the input is a `file://` URL — see {@link isFileUrl}.
+ *
+ * @param source - A `file://` URL produced by `pathToFileURL` or hand-built.
+ */
+function fileUrlToPath(source: string): string {
+  return new URL(source).pathname;
 }
 
 /**

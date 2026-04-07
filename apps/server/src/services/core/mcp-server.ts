@@ -57,6 +57,10 @@ import {
   createReloadExtensionsHandler,
   createTestExtensionHandler,
 } from '../runtimes/claude-code/mcp-tools/extension-tools.js';
+import {
+  registerMarketplaceTools,
+  type MarketplaceMcpDeps,
+} from '../marketplace-mcp/marketplace-mcp-tools.js';
 
 /**
  * Create the external MCP server instance with all DorkOS tools registered.
@@ -68,9 +72,20 @@ import {
  * All tools are always registered regardless of feature flag state. Feature-guarded
  * handlers already return descriptive errors when their service is disabled.
  *
+ * The marketplace MCP surface is registered conditionally — when
+ * `marketplaceDeps` is supplied (the relay-enabled boot path), every
+ * `marketplace_*` tool is added to the server. When `marketplaceDeps` is
+ * `undefined` (e.g. relay disabled), the server still boots and the
+ * marketplace branch is silently skipped.
+ *
  * @param deps - Service dependencies shared with the internal tool path
+ * @param marketplaceDeps - Optional marketplace dependency bundle. When
+ *   provided, every marketplace tool is registered against the server.
  */
-export function createExternalMcpServer(deps: McpToolDeps): McpServer {
+export function createExternalMcpServer(
+  deps: McpToolDeps,
+  marketplaceDeps?: MarketplaceMcpDeps
+): McpServer {
   const server = new McpServer({
     name: 'dorkos',
     version: '1.0.0',
@@ -502,6 +517,11 @@ export function createExternalMcpServer(deps: McpToolDeps): McpServer {
     },
     createTestExtensionHandler(deps)
   );
+
+  // ── Marketplace tools (conditional on marketplace deps being available) ─
+  if (marketplaceDeps) {
+    registerMarketplaceTools(server, marketplaceDeps);
+  }
 
   return server;
 }

@@ -1113,6 +1113,17 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'External MCP server access control status' }),
+    telemetry: z
+      .object({
+        enabled: z.boolean().openapi({
+          description: 'Whether marketplace install telemetry is opted in',
+        }),
+        userHasDecided: z.boolean().openapi({
+          description: 'True once the user has explicitly chosen (banner stops appearing)',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Marketplace telemetry consent state' }),
   })
   .openapi('ServerConfig');
 

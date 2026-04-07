@@ -262,7 +262,7 @@ Layer 3: DorkOS Package               ← THE NEW THING — everything above PLU
 | DorkOS registry (`marketplace.json`) | Small   | Claude Code-compatible format in git repo. PRs to add packages                   |
 | `marketplace.json` parser            | Small   | Parse Claude Code's marketplace.json format — enables reading ANY CC marketplace |
 | Marketplace Extension (built-in)     | Medium  | Browse/search UI within DorkOS client                                            |
-| Web browse experience                | Medium  | `/marketplace` on dorkos.dev                                                     |
+| Web browse experience                | Medium  | `/marketplace` on dorkos.ai                                                      |
 | Dependency resolution                | Medium  | `"requires"` in `.dork/package.json` with install-time checks                    |
 | Agent-as-installer flow              | Small   | MCP tool that queries registry + calls install                                   |
 | `AGENTS.md` detection                | Trivial | Add to unified scanner alongside CLAUDE.md                                       |
@@ -464,7 +464,7 @@ dorkos install github:user/repo
 | 4   | Distribution                  | Git-based (repos for templates, sparse clone for packages)                                                              | Aligns with Claude Code's approach. No custom registry infrastructure needed                                                                                      |
 | 5   | DorkOS-specific metadata      | In registry (extended fields) + in package (`.dork/package.json` for richer data)                                       | Registry has enough for browse/filter. Package has full details (dependencies, extension manifests).                                                              |
 | 6   | In-app browsing               | Built-in Marketplace Extension using extension API                                                                      | Dogfoods the extension system. Can be updated independently                                                                                                       |
-| 7   | Web browsing                  | `/marketplace` on dorkos.dev (marketing site)                                                                           | Discoverable via search engines. SSG from registry JSON                                                                                                           |
+| 7   | Web browsing                  | `/marketplace` on dorkos.ai (marketing site)                                                                            | Discoverable via search engines. SSG from registry JSON                                                                                                           |
 | 8   | Primary install channel       | Agent-driven (agent queries registry, installs based on context)                                                        | Differentiator. "Describe what you need" > "browse and click"                                                                                                     |
 | 9   | Secondary install channel     | CLI (`dorkos install`) + Marketplace Extension UI                                                                       | Traditional fallback for direct installs                                                                                                                          |
 | 10  | Trust model                   | Social trust (verified publishers, signed manifests) — no sandboxing                                                    | Matches Claude Code's full-trust model. Developer audience.                                                                                                       |
@@ -745,7 +745,7 @@ Don't add yet (defer to v2):
 **Discovery:**
 
 10. **Marketplace Extension** (built-in) — `sidebar.tabs` entry with browse/search/install UI, leads with Agents
-11. **`/marketplace` web page** — Static page on dorkos.dev reading from registry
+11. **`/marketplace` web page** — Static page on dorkos.ai reading from registry
 12. **Marketplace MCP server** — Thin wrapper over install API exposing `marketplace_search`, `marketplace_install`, etc. (Vision 2)
 13. **TemplatePicker integration** — Existing template picker reads marketplace, filters by `type: "agent"` or `"agent-template"`
 

@@ -465,7 +465,7 @@ cask "dorkos" do
   url "https://github.com/dorkos/dorkos/releases/download/v#{version}/DorkOS-#{version}.dmg"
   name "DorkOS"
   desc "The operating system for autonomous AI agents"
-  homepage "https://dorkos.dev"
+  homepage "https://dorkos.ai"
 
   app "DorkOS.app"
 end

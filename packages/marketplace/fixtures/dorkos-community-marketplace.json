@@ -1,0 +1,86 @@
+{
+  "name": "dorkos-community",
+  "description": "Official community marketplace for DorkOS — agents, plugins, skill packs, and adapters",
+  "plugins": [
+    {
+      "name": "code-reviewer",
+      "source": "https://github.com/dorkos-community/code-reviewer",
+      "description": "Reviews your PRs every weekday morning, posts findings to Slack, files Linear issues for blockers",
+      "type": "agent",
+      "category": "code-quality",
+      "tags": ["review", "pr", "ci"],
+      "icon": "🔍",
+      "featured": true
+    },
+    {
+      "name": "security-auditor",
+      "source": "https://github.com/dorkos-community/security-auditor",
+      "description": "Weekly dependency vulnerability scans, secret detection, and license compliance audits",
+      "type": "agent",
+      "category": "security",
+      "tags": ["audit", "security", "dependencies"],
+      "icon": "🛡️",
+      "featured": true
+    },
+    {
+      "name": "docs-keeper",
+      "source": "https://github.com/dorkos-community/docs-keeper",
+      "description": "Watches code changes, suggests documentation updates, keeps READMEs in sync with reality",
+      "type": "agent",
+      "category": "documentation",
+      "tags": ["docs", "maintenance"],
+      "icon": "📚",
+      "featured": true
+    },
+    {
+      "name": "linear-integration",
+      "source": "https://github.com/dorkos-community/linear-integration",
+      "description": "Linear status dashboard extension and webhook adapter for issue notifications",
+      "type": "plugin",
+      "category": "integration",
+      "tags": ["linear", "issues"],
+      "layers": ["extensions", "adapters"],
+      "icon": "📋"
+    },
+    {
+      "name": "posthog-monitor",
+      "source": "https://github.com/dorkos-community/posthog-monitor",
+      "description": "PostHog dashboard widget and error alerting for your DorkOS sidebar",
+      "type": "plugin",
+      "category": "observability",
+      "tags": ["analytics", "monitoring", "errors"],
+      "layers": ["extensions", "tasks"],
+      "icon": "📊"
+    },
+    {
+      "name": "security-audit-pack",
+      "source": "https://github.com/dorkos-community/security-audit-pack",
+      "description": "Scheduled security audit tasks: dependency scanning, secret detection, license checks",
+      "type": "skill-pack",
+      "category": "security",
+      "tags": ["audit", "tasks"],
+      "layers": ["tasks"],
+      "icon": "🔐"
+    },
+    {
+      "name": "release-pack",
+      "source": "https://github.com/dorkos-community/release-pack",
+      "description": "Tasks for version bumping, changelog generation, and git tagging",
+      "type": "skill-pack",
+      "category": "release",
+      "tags": ["release", "versioning", "changelog"],
+      "layers": ["tasks", "skills"],
+      "icon": "🚀"
+    },
+    {
+      "name": "discord-adapter",
+      "source": "https://github.com/dorkos-community/discord-adapter",
+      "description": "Discord relay adapter — bridge agent messages to Discord channels and DMs",
+      "type": "adapter",
+      "category": "messaging",
+      "tags": ["discord", "chat"],
+      "layers": ["adapters"],
+      "icon": "💬"
+    }
+  ]
+}

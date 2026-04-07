@@ -41,13 +41,17 @@ if (process.argv[2] === 'package') {
 Usage: dorkos package <subcommand> [options]
 
 Subcommands:
-  init <name>      Scaffold a new marketplace package
-  validate [path]  Validate a marketplace package on disk
+  init <name>                     Scaffold a new marketplace package
+  validate [path]                 Validate a marketplace package on disk
+  validate-marketplace <path>     Validate a marketplace.json file
+  validate-remote <github-url>    Clone and validate a remote package repo
 
 Examples:
   dorkos package init my-plugin --type plugin
   dorkos package init my-bot --type adapter --adapter-type slack
   dorkos package validate ./my-plugin
+  dorkos package validate-marketplace ./marketplace.json
+  dorkos package validate-remote https://github.com/dorkos-community/code-reviewer
 `);
     process.exit(0);
   }
@@ -69,8 +73,22 @@ Examples:
       const exitCode = await runPackageValidate({ packagePath });
       process.exit(exitCode);
     }
+    if (packageSubcommand === 'validate-marketplace') {
+      const { runValidateMarketplace, parseValidateMarketplaceArgs } =
+        await import('./commands/package-validate-marketplace.js');
+      const exitCode = await runValidateMarketplace(parseValidateMarketplaceArgs(subArgs));
+      process.exit(exitCode);
+    }
+    if (packageSubcommand === 'validate-remote') {
+      const { runValidateRemote, parseValidateRemoteArgs } =
+        await import('./commands/package-validate-remote.js');
+      const exitCode = await runValidateRemote(parseValidateRemoteArgs(subArgs));
+      process.exit(exitCode);
+    }
     console.error(`Unknown package subcommand: ${packageSubcommand}`);
-    console.error('Usage: dorkos package <init|validate> [args]');
+    console.error(
+      'Usage: dorkos package <init|validate|validate-marketplace|validate-remote> [args]'
+    );
     process.exit(1);
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -258,6 +276,8 @@ Commands:
   init --yes           Accept all defaults
   package init <name>  Scaffold a new marketplace package
   package validate [p] Validate a marketplace package
+  package validate-marketplace <p>   Validate a marketplace.json file
+  package validate-remote <url>      Clone and validate a remote package
   install <name>       Install a marketplace package (requires running server)
   uninstall <name>     Remove an installed marketplace package
   update [<name>]      Check for (or apply with --apply) package updates
