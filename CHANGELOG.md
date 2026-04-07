@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add Settings page and sections to the dev playground
 - URL deep links for Settings, Agent, Tasks, Relay, Mesh dialogs
 - Show MCP servers in Tools tab
 - Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
@@ -874,7 +875,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Migrate domain from dorkos.dev to dorkos.ai
+- Migrate domain from dorkos.ai to dorkos.ai
 - Add DORKOS_HOST, Docker workflow, and discovery endpoint to guides
 
 ### Fixed

@@ -1,78 +1,28 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, Copy, Check, ShieldOff, GitFork } from 'lucide-react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence, type TargetAndTransition, type Transition } from 'motion/react';
+import { ChevronDown, Pencil, ShieldOff, GitFork, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
-import { cn, formatRelativeTime, TIMING } from '@/layers/shared/lib';
-import { useSessionChatStore } from '@/layers/entities/session';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { useSessionBorderState, type SessionBorderState } from '@/layers/entities/session';
+import { useNow } from '@/layers/shared/model';
+import { CopyButton, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 
 interface SessionItemProps {
+  /** Session to render. */
   session: Session;
+  /** Whether this row represents the currently focused session. */
   isActive: boolean;
+  /** Fired when the row is clicked or activated via Enter/Space. */
   onClick: () => void;
+  /** Optional fork handler. When omitted, the Fork button is hidden. */
   onFork?: (sessionId: string) => void;
+  /**
+   * Optional rename handler. When omitted, the title is read-only and the
+   * pencil affordance is hidden.
+   */
   onRename?: (sessionId: string, title: string) => void;
+  /** Set to true to play an entry animation (fade + slide). */
   isNew?: boolean;
-}
-
-/*
- * Border color uses inline style because an unlayered browser-extension stylesheet
- * (`:where(:not(.copilot-view-content *))`) overrides all Tailwind border-color
- * utilities in `@layer utilities`. Explicit RGB values are required for the pulse
- * animation since motion cannot interpolate CSS custom properties.
- */
-const BORDER_COLORS = {
-  green: 'rgb(34, 197, 94)',
-  greenDim: 'rgba(34, 197, 94, 0.15)',
-  amber: 'rgb(245, 158, 11)',
-  amberDim: 'rgba(245, 158, 11, 0.15)',
-  blue: 'var(--color-blue-500)',
-  destructive: 'hsl(var(--destructive))',
-  primary: 'hsl(var(--primary))',
-  transparent: 'transparent',
-} as const;
-
-interface BorderState {
-  color: string;
-  pulse: boolean;
-  dimColor?: string;
-}
-
-/**
- * Derives a border color and pulse flag from session activity state.
- *
- * Priority: active → pending approval → streaming → error → unseen → idle.
- * Streaming and pending states pulse between full and dim opacity.
- */
-function useSessionBorderState(sessionId: string, isActive: boolean): BorderState {
-  const status = useSessionChatStore(
-    useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
-  );
-  const sdkRunning = useSessionChatStore(
-    useCallback((s) => s.sessions[sessionId]?.sdkState === 'running', [sessionId])
-  );
-  const hasUnseenActivity = useSessionChatStore(
-    useCallback((s) => s.sessions[sessionId]?.hasUnseenActivity ?? false, [sessionId])
-  );
-  const hasPendingApproval = useSessionChatStore(
-    useCallback(
-      (s) =>
-        s.sessions[sessionId]?.sdkState === 'requires_action' ||
-        (s.sessions[sessionId]?.messages.some((m) =>
-          m.toolCalls?.some((tc) => tc.interactiveType && tc.status === 'pending')
-        ) ??
-          false),
-      [sessionId]
-    )
-  );
-
-  if (isActive) return { color: BORDER_COLORS.primary, pulse: false };
-  if (hasPendingApproval)
-    return { color: BORDER_COLORS.amber, pulse: true, dimColor: BORDER_COLORS.amberDim };
-  if (sdkRunning || status === 'streaming')
-    return { color: BORDER_COLORS.green, pulse: true, dimColor: BORDER_COLORS.greenDim };
-  if (status === 'error') return { color: BORDER_COLORS.destructive, pulse: false };
-  if (hasUnseenActivity) return { color: BORDER_COLORS.blue, pulse: false };
-  return { color: BORDER_COLORS.transparent, pulse: false };
 }
 
 function formatTimestamp(iso: string): string {
@@ -89,38 +39,6 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
-      } catch {
-        // Clipboard API not available
-      }
-    },
-    [text]
-  );
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground rounded p-0.5 transition-colors duration-100 max-md:p-2"
-      aria-label={`Copy ${label}`}
-    >
-      {copied ? (
-        <Check className="size-(--size-icon-xs) text-green-500" />
-      ) : (
-        <Copy className="size-(--size-icon-xs)" />
-      )}
-    </button>
-  );
-}
-
 /** Sidebar row representing a single session with expandable details. */
 export function SessionItem({
   session,
@@ -134,10 +52,26 @@ export function SessionItem({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const isSkipMode = session.permissionMode === 'bypassPermissions';
+  // Guards against Enter + blur firing commitRename twice in a row.
+  const committedRef = useRef(false);
+  const isUnsafe: boolean = session.permissionMode === 'bypassPermissions';
+
+  // Re-render every minute so the relative timestamp stays fresh
+  // ("2m ago" → "3m ago") without waiting for an external trigger.
+  const now = useNow(60_000);
+  const relativeTime = useMemo(
+    () => formatRelativeTime(session.updatedAt),
+    // `now` intentionally triggers recomputation on each tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session.updatedAt, now]
+  );
 
   useEffect(() => {
-    if (isRenaming) renameInputRef.current?.focus();
+    if (isRenaming) {
+      committedRef.current = false;
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
   }, [isRenaming]);
 
   const startRename = useCallback(() => {
@@ -146,175 +80,262 @@ export function SessionItem({
   }, [session.title]);
 
   const commitRename = useCallback(() => {
+    if (committedRef.current) return;
+    committedRef.current = true;
     const trimmed = renameValue.trim();
     setIsRenaming(false);
     if (!trimmed || trimmed === session.title) return;
     onRename?.(session.id, trimmed);
   }, [renameValue, session.id, session.title, onRename]);
 
+  const cancelRename = useCallback(() => {
+    committedRef.current = true;
+    setIsRenaming(false);
+  }, []);
+
   const borderState = useSessionBorderState(session.id, isActive);
 
-  function handleExpandToggle(e: React.MouseEvent) {
+  const handleExpandToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setExpanded((prev) => !prev);
-  }
+  }, []);
 
-  const needsMotionAnimate = isNew || borderState.pulse;
-  const animate = needsMotionAnimate
-    ? {
-        ...(isNew ? { opacity: 1, y: 0 } : {}),
-        ...(borderState.pulse && borderState.dimColor
-          ? { borderLeftColor: [borderState.color, borderState.dimColor, borderState.color] }
-          : {}),
-      }
-    : undefined;
-  const transition = needsMotionAnimate
-    ? {
-        ...(isNew
-          ? {
-              opacity: { duration: 0.2, ease: [0, 0, 0.2, 1] as const },
-              y: { duration: 0.2, ease: [0, 0, 0.2, 1] as const },
-            }
-          : {}),
-        ...(borderState.pulse
-          ? { borderLeftColor: { duration: 2, repeat: Infinity, ease: 'easeInOut' as const } }
-          : {}),
-      }
-    : undefined;
+  const handleStartRename = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      startRename();
+    },
+    [startRename]
+  );
+
+  const { animate, transition, initial } = useMotionConfig({ isNew, borderState });
 
   return (
-    <motion.div
-      data-testid="session-item"
-      initial={isNew ? { opacity: 0, y: -8 } : undefined}
-      animate={animate}
-      transition={transition}
-      style={borderState.pulse ? undefined : { borderLeftColor: borderState.color }}
-      className={cn(
-        'group relative rounded-lg border-l-2 transition-colors duration-150',
-        isActive && 'text-foreground'
-      )}
-    >
-      {isActive && (
-        <motion.div
-          layoutId="active-session-bg"
-          className="bg-secondary absolute inset-0 rounded-lg"
-          transition={{ type: 'spring', stiffness: 280, damping: 32 }}
-        />
-      )}
+    <Tooltip>
       <motion.div
-        role="button"
-        tabIndex={0}
-        onClick={() => {
-          onClick();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onClick();
-          }
-        }}
-        whileTap={{ scale: 0.98 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className="relative z-10 cursor-pointer px-3 py-2"
+        data-testid="session-item"
+        initial={initial}
+        animate={animate}
+        transition={transition}
+        style={borderState.pulse ? undefined : { borderLeftColor: borderState.color }}
+        className={cn(
+          'group relative rounded-lg border-l-2 transition-colors duration-150',
+          isActive && 'text-foreground'
+        )}
       >
-        {/* Line 1: relative time + activity indicator + permission icon + expand */}
-        <div className="text-muted-foreground flex items-center gap-1 text-xs">
-          <span className="min-w-0 flex-1">{formatRelativeTime(session.updatedAt)}</span>
-          <span className="flex flex-shrink-0 items-center gap-1">
-            {isSkipMode && (
-              <ShieldOff
-                className="size-(--size-icon-xs) text-red-500"
-                aria-label="Permissions skipped"
-              />
-            )}
-            <button
-              onClick={handleExpandToggle}
-              className={cn(
-                'rounded p-0.5 transition-all duration-150 max-md:hidden max-md:p-2',
-                expanded
-                  ? 'text-muted-foreground opacity-100'
-                  : 'text-muted-foreground/60 hover:text-muted-foreground opacity-0 group-hover:opacity-100'
-              )}
-              aria-label="Session details"
-            >
-              <motion.div
-                animate={{ rotate: expanded ? 180 : 0 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              >
-                <ChevronDown className="size-(--size-icon-sm)" />
-              </motion.div>
-            </button>
-          </span>
-        </div>
-
-        {/* Line 2: title (double-click to rename) */}
-        {isRenaming ? (
-          <input
-            ref={renameInputRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') setIsRenaming(false);
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="bg-background text-foreground mt-0.5 w-full rounded border px-1 text-xs outline-none"
-          />
-        ) : onRename ? (
-          <div
-            className="text-muted-foreground/70 mt-0.5 truncate text-xs"
-            role="button"
-            tabIndex={-1}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              startRename();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'F2') startRename();
-            }}
-            title="Double-click or F2 to rename"
-          >
-            {session.title}
-          </div>
-        ) : (
-          <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">{session.title}</div>
-        )}
-      </motion.div>
-
-      <AnimatePresence initial={false}>
-        {expanded && (
+        {isActive && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
-            className="relative z-10 overflow-hidden"
-          >
-            <div className="text-muted-foreground border-border/30 mx-2 space-y-1.5 border-t px-3 pt-2 pb-2 text-[11px]">
-              <DetailRow label="Session ID" value={session.id} copyable />
-              <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
-              <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
-              <DetailRow label="Permissions" value={isSkipMode ? 'Skip (unsafe)' : 'Default'} />
-              {onFork && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onFork(session.id);
-                  }}
-                  className="hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-100"
-                  aria-label="Fork session"
-                >
-                  <GitFork className="size-(--size-icon-xs)" />
-                  <span>Fork</span>
-                </button>
-              )}
-            </div>
-          </motion.div>
+            layoutId="active-session-bg"
+            className="bg-secondary absolute inset-0 rounded-lg"
+            transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+          />
         )}
-      </AnimatePresence>
-    </motion.div>
+        <TooltipTrigger
+          asChild
+          // Avoid a tooltip on the idle state — there's nothing informative to show.
+          disabled={borderState.kind === 'idle'}
+        >
+          <motion.div
+            role="button"
+            tabIndex={0}
+            aria-current={isActive ? 'page' : undefined}
+            aria-label={`Session: ${session.title}. ${borderState.label}.`}
+            onClick={() => {
+              onClick();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }}
+            whileTap={{ scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="relative z-10 cursor-pointer px-3 py-2"
+          >
+            {/* Line 1: relative time + activity icons + expand chevron */}
+            <div className="text-muted-foreground flex items-center gap-1 text-xs">
+              <span className="min-w-0 flex-1">{relativeTime}</span>
+              <span className="flex flex-shrink-0 items-center gap-1">
+                {borderState.kind === 'pendingApproval' && (
+                  <Hand
+                    className="size-(--size-icon-xs) text-amber-500"
+                    aria-label="Awaiting your approval"
+                  />
+                )}
+                {isUnsafe && <BypassPermissionsIcon />}
+                {onRename && !isRenaming && (
+                  <button
+                    type="button"
+                    onClick={handleStartRename}
+                    className="text-muted-foreground/60 hover:text-muted-foreground rounded p-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 max-md:p-1.5 max-md:opacity-100"
+                    aria-label="Rename session"
+                  >
+                    <Pencil className="size-(--size-icon-xs)" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleExpandToggle}
+                  className={cn(
+                    'rounded p-0.5 transition-opacity duration-150 max-md:p-1.5',
+                    expanded
+                      ? 'text-muted-foreground opacity-100'
+                      : 'text-muted-foreground/60 hover:text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100'
+                  )}
+                  aria-label="Session details"
+                  aria-expanded={expanded}
+                >
+                  <motion.div
+                    animate={{ rotate: expanded ? 180 : 0 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  >
+                    <ChevronDown className="size-(--size-icon-sm)" />
+                  </motion.div>
+                </button>
+              </span>
+            </div>
+
+            {/* Line 2: title (double-click also starts rename for power users) */}
+            {isRenaming ? (
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitRename();
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-background text-foreground mt-0.5 w-full rounded border px-1 text-xs outline-none"
+                aria-label="Session title"
+              />
+            ) : (
+              <div
+                className="text-muted-foreground/70 mt-0.5 truncate text-xs"
+                title={onRename ? 'Click the pencil icon to rename' : undefined}
+              >
+                {session.title}
+              </div>
+            )}
+          </motion.div>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={8}>
+          {borderState.label}
+        </TooltipContent>
+
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+              className="relative z-10 overflow-hidden"
+            >
+              <div className="text-muted-foreground border-border/30 mx-2 space-y-1.5 border-t px-3 pt-2 pb-2 text-[11px]">
+                <DetailRow label="Session ID" value={session.id} copyable />
+                <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
+                <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
+                <DetailRow label="Permissions" value={isUnsafe ? 'Skip (unsafe)' : 'Default'} />
+                {onFork && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFork(session.id);
+                    }}
+                    className="hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-100"
+                    aria-label="Fork session"
+                  >
+                    <GitFork className="size-(--size-icon-xs)" />
+                    <span>Fork</span>
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </Tooltip>
   );
+}
+
+/** Small tooltip explaining the ShieldOff indicator. */
+function BypassPermissionsIcon() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex cursor-help"
+          aria-label="Permissions bypassed"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ShieldOff className="size-(--size-icon-xs) text-red-500" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={4}>
+        Permissions bypassed — agent can run any command without approval
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+interface MotionConfigInput {
+  isNew: boolean;
+  borderState: SessionBorderState;
+}
+
+/**
+ * Build memoized motion `initial` / `animate` / `transition` props.
+ *
+ * Motion performs best when these props are stable between renders. We also
+ * return `undefined` for both when no animation is needed so Motion can skip
+ * the animation pipeline entirely.
+ */
+function useMotionConfig({ isNew, borderState }: MotionConfigInput): {
+  initial: { opacity: number; y: number } | undefined;
+  animate: TargetAndTransition | undefined;
+  transition: Transition | undefined;
+} {
+  return useMemo(() => {
+    const needsMotion = isNew || borderState.pulse;
+    if (!needsMotion) {
+      return { initial: undefined, animate: undefined, transition: undefined };
+    }
+    const pulseColors =
+      borderState.pulse && borderState.dimColor
+        ? [borderState.color, borderState.dimColor, borderState.color]
+        : null;
+    const animate: TargetAndTransition = {
+      ...(isNew ? { opacity: 1, y: 0 } : {}),
+      ...(pulseColors ? { borderLeftColor: pulseColors } : {}),
+    };
+    const transition: Transition = {
+      ...(isNew
+        ? {
+            opacity: { duration: 0.2, ease: [0, 0, 0.2, 1] as const },
+            y: { duration: 0.2, ease: [0, 0, 0.2, 1] as const },
+          }
+        : {}),
+      ...(pulseColors
+        ? { borderLeftColor: { duration: 2, repeat: Infinity, ease: 'easeInOut' as const } }
+        : {}),
+    };
+    return {
+      initial: isNew ? { opacity: 0, y: -8 } : undefined,
+      animate,
+      transition,
+    };
+  }, [isNew, borderState.pulse, borderState.color, borderState.dimColor]);
 }
 
 function DetailRow({
@@ -330,7 +351,7 @@ function DetailRow({
     <div className="flex items-start gap-2">
       <span className="text-muted-foreground/60 w-16 flex-shrink-0">{label}</span>
       <span className="min-w-0 flex-1 truncate font-mono select-all">{value}</span>
-      {copyable && <CopyButton text={value} label={label} />}
+      {copyable && <CopyButton value={value} label={`Copy ${label}`} />}
     </div>
   );
 }

@@ -23,7 +23,7 @@ linear-issue: null
 
 ## Overview
 
-This specification covers the **public face** of the DorkOS Marketplace: the `dorkos-community` GitHub organization with its registry repo, the `/marketplace` web pages on dorkos.dev, the 8 seed packages (3 agents, 2 plugins, 2 skill packs, 1 adapter), the submission process, and the install telemetry pipeline that powers ranking and analytics.
+This specification covers the **public face** of the DorkOS Marketplace: the `dorkos-community` GitHub organization with its registry repo, the `/marketplace` web pages on dorkos.ai, the 8 seed packages (3 agents, 2 plugins, 2 skill packs, 1 adapter), the submission process, and the install telemetry pipeline that powers ranking and analytics.
 
 After this spec ships, anyone with a web browser can discover what DorkOS does without installing it, install pre-built packages from a curated catalog, and contribute their own packages via PR. The flywheel begins.
 
@@ -38,7 +38,7 @@ The web page is equally important. Users discover DorkOS via search engines and 
 - `specs/marketplace-04-web-and-registry/01-ideation.md` — This spec's ideation
 - `specs/dorkos-marketplace/01-ideation.md` — Parent project ideation
 - `specs/marketplace-02-install/02-specification.md` — HTTP API and telemetry hook
-- `apps/site/` — Existing dorkos.dev marketing site (Next.js 16, Fumadocs)
+- `apps/site/` — Existing dorkos.ai marketing site (Next.js 16, Fumadocs)
 - `apps/site/src/layers/features/marketing/lib/features.ts` — Reference: existing feature catalog data model
 - `apps/site/src/app/features/` — Reference: existing feature catalog routes + OG images
 - `meta/site-feature-catalog.md` — Memory note: feature catalog is the closest existing pattern
@@ -48,7 +48,7 @@ The web page is equally important. Users discover DorkOS via search engines and 
 ## Goals
 
 - Create `dorkos-community` GitHub organization and seed it with the registry + 8 packages
-- Implement `/marketplace` and `/marketplace/[slug]` pages on dorkos.dev
+- Implement `/marketplace` and `/marketplace/[slug]` pages on dorkos.ai
 - Implement telemetry endpoint (Vercel Edge Function) with KV + Postgres storage
 - Implement ranking function that combines featured weight, install count, and recency
 - Implement submission flow with GitHub Actions validation
@@ -63,7 +63,7 @@ The web page is equally important. Users discover DorkOS via search engines and 
 - MCP server (spec 05)
 - Personal marketplace publishing (spec 05)
 - Self-serve registry submission (PR-based for v1)
-- User accounts on dorkos.dev (deferred)
+- User accounts on dorkos.ai (deferred)
 - Payment processing (deferred)
 - Reviews / ratings (deferred)
 - Sigstore signing (deferred)
@@ -118,7 +118,7 @@ vercel integration add neon       # Provisions DATABASE_URL
                             │  hourly ISR fetch
                             ▼
         ┌───────────────────────────────────────────────────┐
-        │  dorkos.dev (Vercel — Next.js 16 SSG + ISR)       │
+        │  dorkos.ai (Vercel — Next.js 16 SSG + ISR)       │
         │                                                    │
         │  /marketplace            ← grid + filter + search │
         │  /marketplace/[slug]     ← detail + README + OG   │
@@ -151,7 +151,7 @@ dorkos-community/marketplace/
 └── .github/
     └── workflows/
         ├── validate-submission.yml   # Runs `dorkos package validate` on PRs
-        └── publish-update.yml        # Notifies dorkos.dev when registry changes
+        └── publish-update.yml        # Notifies dorkos.ai when registry changes
 ```
 
 **`marketplace.json`** (initial state):
@@ -501,7 +501,7 @@ export default async function PackageOgImage({ params }: { params: Promise<{ slu
       </div>
       <h1 tw="text-6xl font-bold mb-4">{pkg.name}</h1>
       <p tw="text-2xl text-zinc-300 max-w-3xl text-center">{pkg.description ?? ''}</p>
-      <div tw="absolute bottom-12 right-12 text-xl text-zinc-500">dorkos.dev/marketplace</div>
+      <div tw="absolute bottom-12 right-12 text-xl text-zinc-500">dorkos.ai/marketplace</div>
     </div>,
     { ...size }
   );
@@ -515,9 +515,9 @@ Update `apps/site/src/app/sitemap.ts` to include marketplace URLs:
 ```typescript
 const marketplace = await fetchMarketplaceJson();
 const marketplaceUrls = [
-  { url: 'https://dorkos.dev/marketplace', priority: 0.9, changeFrequency: 'daily' },
+  { url: 'https://dorkos.ai/marketplace', priority: 0.9, changeFrequency: 'daily' },
   ...marketplace.plugins.map((p) => ({
-    url: `https://dorkos.dev/marketplace/${p.name}`,
+    url: `https://dorkos.ai/marketplace/${p.name}`,
     priority: 0.7,
     changeFrequency: 'weekly' as const,
   })),
@@ -622,7 +622,7 @@ export function registerDorkosCommunityTelemetry(consent: boolean) {
   if (!consent) return;
 
   registerTelemetryReporter(async (event) => {
-    await fetch('https://dorkos.dev/api/telemetry/install', {
+    await fetch('https://dorkos.ai/api/telemetry/install', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -800,7 +800,7 @@ github.com/dorkos-community/discord-adapter/
 - [ ] `dorkos-community` GitHub org exists and is publicly browsable
 - [ ] `marketplace.json` contains 8 seed packages, all validated
 - [ ] All 8 seed package repos exist, each passing `dorkos package validate`
-- [ ] `/marketplace` page renders on dorkos.dev with all packages
+- [ ] `/marketplace` page renders on dorkos.ai with all packages
 - [ ] `/marketplace/[slug]` works for every package
 - [ ] OG images render correctly (visual check)
 - [ ] Sitemap includes all marketplace URLs
@@ -837,7 +837,7 @@ github.com/dorkos-community/discord-adapter/
 | MCP server                           | 05   |
 | Personal marketplace publishing      | 05   |
 | Self-serve registry (no PR required) | v2   |
-| User accounts on dorkos.dev          | v2   |
+| User accounts on dorkos.ai           | v2   |
 | Reviews / ratings                    | v2   |
 | Live preview                         | v2   |
 | Sigstore signing                     | v2   |

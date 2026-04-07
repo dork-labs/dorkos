@@ -40,6 +40,7 @@ import { ErrorStatesPage } from './pages/ErrorStatesPage';
 import { FilterBarPage } from './pages/FilterBarPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { TablesPage } from './pages/TablesPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import {
   DESIGN_SYSTEM_NAV,
@@ -92,6 +93,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   'error-states': ErrorStatesPage,
   onboarding: OnboardingPage,
   tables: TablesPage,
+  settings: SettingsPage,
 };
 
 /**

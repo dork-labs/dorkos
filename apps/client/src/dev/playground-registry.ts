@@ -13,7 +13,8 @@ export type Page =
   | 'filter-bar'
   | 'error-states'
   | 'onboarding'
-  | 'tables';
+  | 'tables'
+  | 'settings';
 
 /** A single searchable/navigable section in the playground. */
 export interface PlaygroundSection {
@@ -42,6 +43,7 @@ export { FILTER_BAR_SECTIONS } from './sections/filter-bar-sections';
 export { ERROR_STATES_SECTIONS } from './sections/error-states-sections';
 export { ONBOARDING_SECTIONS } from './sections/onboarding-sections';
 export { TABLES_SECTIONS } from './sections/tables-sections';
+export { SETTINGS_SECTIONS } from './sections/settings-sections';
 
 // Imported under aliases to compose the full registry without circular re-export issues.
 import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
@@ -57,6 +59,7 @@ import { FILTER_BAR_SECTIONS as filterBar } from './sections/filter-bar-sections
 import { ERROR_STATES_SECTIONS as errorStates } from './sections/error-states-sections';
 import { ONBOARDING_SECTIONS as onboarding } from './sections/onboarding-sections';
 import { TABLES_SECTIONS as tables } from './sections/tables-sections';
+import { SETTINGS_SECTIONS as settings } from './sections/settings-sections';
 
 /**
  * Full playground registry combining all page-level section arrays.
@@ -77,4 +80,5 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...errorStates,
   ...onboarding,
   ...tables,
+  ...settings,
 ];

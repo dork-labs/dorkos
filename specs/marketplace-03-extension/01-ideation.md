@@ -53,7 +53,7 @@ Build the in-app marketplace browsing experience. This spec ships a built-in Dor
 ### Out of Scope
 
 - Server-side install API (Spec 02)
-- Web marketplace page on dorkos.dev (Spec 04)
+- Web marketplace page on dorkos.ai (Spec 04)
 - Public registry / seed packages (Spec 04)
 - MCP server (Spec 05)
 - Live preview / try-before-install (deferred)

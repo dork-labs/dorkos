@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SessionItem } from '../ui/SessionItem';
 import type { Session } from '@dorkos/shared/types';
 import { useSessionChatStore } from '@/layers/entities/session';
+import { TooltipProvider } from '@/layers/shared/ui';
 
 // Mock window.matchMedia for useIsMobile hook
 beforeAll(() => {
@@ -19,6 +20,13 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
+
+  // Radix UI's @radix-ui/react-use-size calls ResizeObserver which jsdom doesn't provide.
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
 });
 
 const NOW = new Date('2026-02-07T15:00:00Z');
@@ -34,10 +42,19 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return <TooltipProvider>{children}</TooltipProvider>;
+}
+
+function renderItem(ui: React.ReactElement) {
+  return render(ui, { wrapper: Wrapper });
+}
+
 describe('SessionItem', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
+    useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
   });
   afterEach(() => {
     cleanup();
@@ -45,60 +62,53 @@ describe('SessionItem', () => {
   });
 
   it('renders session title', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     expect(screen.getByText('Test conversation')).toBeDefined();
   });
 
   it('renders relative time from updatedAt', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     // updatedAt is 1 hour before NOW
     expect(screen.getByText('1h ago')).toBeDefined();
   });
 
   it('shows active session with primary border color', () => {
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
     );
-    const item = container.firstChild as HTMLElement;
+    const item = container.querySelector('[data-testid="session-item"]') as HTMLElement;
     expect(item.style.borderLeftColor).toBe('hsl(var(--primary))');
+  });
+
+  it('sets aria-current=page when active', () => {
+    renderItem(<SessionItem session={makeSession()} isActive={true} onClick={() => {}} />);
+    const row = screen.getByRole('button', { name: /Session: Test conversation/ });
+    expect(row.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('omits aria-current when inactive', () => {
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    const row = screen.getByRole('button', { name: /Session: Test conversation/ });
+    expect(row.getAttribute('aria-current')).toBeNull();
   });
 
   it('calls onClick when clicked', () => {
     const onClick = vi.fn();
-    render(<SessionItem session={makeSession()} isActive={false} onClick={onClick} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={onClick} />);
     fireEvent.click(screen.getByText('Test conversation'));
     expect(onClick).toHaveBeenCalledOnce();
   });
 
   it('renders layoutId active background when isActive', () => {
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
     );
-    // The layoutId motion.div (rendered as plain div by mock) has class bg-secondary
-    const bg = container.querySelector('.bg-secondary');
-    expect(bg).not.toBeNull();
-  });
-
-  it('does not render layoutId active background when not active', () => {
-    const { container } = render(
-      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
-    );
-    const bg = container.querySelector('.bg-secondary');
-    expect(bg).toBeNull();
-  });
-
-  it('renders layoutId background element when isActive', () => {
-    const { container } = render(
-      <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
-    );
-    // The layoutId motion.div renders as a plain div under the mock
-    // It should have the absolute inset-0 bg-secondary classes
     const bg = container.querySelector('.absolute.inset-0.bg-secondary');
     expect(bg).not.toBeNull();
   });
 
-  it('does not render layoutId background element when not active', () => {
-    const { container } = render(
+  it('does not render layoutId active background when not active', () => {
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
     const bg = container.querySelector('.absolute.inset-0.bg-secondary');
@@ -106,7 +116,7 @@ describe('SessionItem', () => {
   });
 
   it('clickable surface is rendered with relative z-10 classes', () => {
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
     const clickable = container.querySelector('[role="button"]');
@@ -116,7 +126,7 @@ describe('SessionItem', () => {
   });
 
   it('shows permission warning for bypassPermissions mode', () => {
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem
         session={makeSession({ permissionMode: 'bypassPermissions' })}
         isActive={false}
@@ -128,7 +138,7 @@ describe('SessionItem', () => {
   });
 
   it('does not show permission warning for default mode', () => {
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
     const warning = container.querySelector('.text-red-500');
@@ -136,7 +146,7 @@ describe('SessionItem', () => {
   });
 
   it('does not render preview text', () => {
-    render(
+    renderItem(
       <SessionItem
         session={makeSession({ lastMessagePreview: 'Some preview text' })}
         isActive={false}
@@ -148,27 +158,35 @@ describe('SessionItem', () => {
 
   // Details panel tests
   it('does not show details panel by default', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     expect(screen.queryByText('Session ID')).toBeNull();
   });
 
   it('shows details panel when ellipsis button is clicked', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     const detailsBtn = screen.getByLabelText('Session details');
     fireEvent.click(detailsBtn);
     expect(screen.getByText('Session ID')).toBeDefined();
     expect(screen.getByText('abc12345-def6-7890-abcd-ef1234567890')).toBeDefined();
   });
 
+  it('details button has aria-expanded reflecting state', () => {
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    const detailsBtn = screen.getByLabelText('Session details');
+    expect(detailsBtn.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(detailsBtn);
+    expect(detailsBtn.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('shows timestamps in details panel', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.getByText('Created')).toBeDefined();
     expect(screen.getByText('Updated')).toBeDefined();
   });
 
   it('shows permission mode in details panel', () => {
-    render(
+    renderItem(
       <SessionItem
         session={makeSession({ permissionMode: 'bypassPermissions' })}
         isActive={false}
@@ -182,13 +200,13 @@ describe('SessionItem', () => {
 
   it('does not trigger onClick when details button is clicked', () => {
     const onClick = vi.fn();
-    render(<SessionItem session={makeSession()} isActive={false} onClick={onClick} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={onClick} />);
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(onClick).not.toHaveBeenCalled();
   });
 
   it('hides details panel when ellipsis is clicked again', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     const detailsBtn = screen.getByLabelText('Session details');
     fireEvent.click(detailsBtn);
     expect(screen.getByText('Session ID')).toBeDefined();
@@ -197,14 +215,14 @@ describe('SessionItem', () => {
   });
 
   it('renders copy button for session ID', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.getByLabelText('Copy Session ID')).toBeDefined();
   });
 
   // Fork button tests
   it('renders fork button when onFork is provided', () => {
-    render(
+    renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} onFork={vi.fn()} />
     );
     fireEvent.click(screen.getByLabelText('Session details'));
@@ -212,7 +230,7 @@ describe('SessionItem', () => {
   });
 
   it('does not render fork button when onFork is omitted', () => {
-    render(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.queryByLabelText('Fork session')).toBeNull();
   });
@@ -220,7 +238,9 @@ describe('SessionItem', () => {
   it('calls onFork with session ID when fork button is clicked', () => {
     const onFork = vi.fn();
     const session = makeSession();
-    render(<SessionItem session={session} isActive={false} onClick={() => {}} onFork={onFork} />);
+    renderItem(
+      <SessionItem session={session} isActive={false} onClick={() => {}} onFork={onFork} />
+    );
     fireEvent.click(screen.getByLabelText('Session details'));
     fireEvent.click(screen.getByLabelText('Fork session'));
     expect(onFork).toHaveBeenCalledWith(session.id);
@@ -228,12 +248,89 @@ describe('SessionItem', () => {
 
   it('does not trigger onClick when fork button is clicked', () => {
     const onClick = vi.fn();
-    render(
+    renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={onClick} onFork={vi.fn()} />
     );
     fireEvent.click(screen.getByLabelText('Session details'));
     fireEvent.click(screen.getByLabelText('Fork session'));
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  // Rename affordance
+  it('renders rename (pencil) button when onRename is provided', () => {
+    renderItem(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} onRename={vi.fn()} />
+    );
+    expect(screen.getByLabelText('Rename session')).toBeDefined();
+  });
+
+  it('does not render rename button when onRename is omitted', () => {
+    renderItem(<SessionItem session={makeSession()} isActive={false} onClick={() => {}} />);
+    expect(screen.queryByLabelText('Rename session')).toBeNull();
+  });
+
+  it('clicking pencil starts rename and focuses input', () => {
+    renderItem(
+      <SessionItem session={makeSession()} isActive={false} onClick={() => {}} onRename={vi.fn()} />
+    );
+    fireEvent.click(screen.getByLabelText('Rename session'));
+    const input = screen.getByLabelText('Session title') as HTMLInputElement;
+    expect(input).toBeDefined();
+    expect(input.value).toBe('Test conversation');
+  });
+
+  it('Enter commits a rename exactly once even after blur', () => {
+    const onRename = vi.fn();
+    renderItem(
+      <SessionItem
+        session={makeSession()}
+        isActive={false}
+        onClick={() => {}}
+        onRename={onRename}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Rename session'));
+    const input = screen.getByLabelText('Session title') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'New title' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    // Blur happens after Enter as the input is removed — simulate an explicit blur anyway.
+    fireEvent.blur(input);
+    expect(onRename).toHaveBeenCalledTimes(1);
+    expect(onRename).toHaveBeenCalledWith('abc12345-def6-7890-abcd-ef1234567890', 'New title');
+  });
+
+  it('Escape cancels a rename without calling onRename', () => {
+    const onRename = vi.fn();
+    renderItem(
+      <SessionItem
+        session={makeSession()}
+        isActive={false}
+        onClick={() => {}}
+        onRename={onRename}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Rename session'));
+    const input = screen.getByLabelText('Session title') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'Discarded' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it('empty or unchanged rename is silently dropped', () => {
+    const onRename = vi.fn();
+    renderItem(
+      <SessionItem
+        session={makeSession()}
+        isActive={false}
+        onClick={() => {}}
+        onRename={onRename}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Rename session'));
+    const input = screen.getByLabelText('Session title') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onRename).not.toHaveBeenCalled();
   });
 });
 
@@ -241,7 +338,8 @@ describe('Session border indicator', () => {
   const SESSION_ID = 'abc12345-def6-7890-abcd-ef1234567890';
 
   function getBorderColor(container: HTMLElement): string {
-    return (container.firstChild as HTMLElement).style.borderLeftColor;
+    const item = container.querySelector('[data-testid="session-item"]') as HTMLElement;
+    return item.style.borderLeftColor;
   }
 
   beforeEach(() => {
@@ -255,7 +353,7 @@ describe('Session border indicator', () => {
   });
 
   it('shows transparent border when session is idle', () => {
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(getBorderColor(container)).toBe('transparent');
@@ -264,19 +362,19 @@ describe('Session border indicator', () => {
   it('shows green border when session is streaming', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'streaming' });
 
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
-    // Pulsing states set color via motion animate, not inline style
-    // Motion renders as a plain div in tests, so check the element exists with border-l-2
-    const item = container.firstChild as HTMLElement;
+    // Pulsing states set color via motion animate, not inline style — just verify
+    // the row exists with the border-l-2 class.
+    const item = container.querySelector('[data-testid="session-item"]') as HTMLElement;
     expect(item.className).toContain('border-l-2');
   });
 
   it('shows destructive border when session has an error', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'error' });
 
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(getBorderColor(container)).toBe('hsl(var(--destructive))');
@@ -288,49 +386,46 @@ describe('Session border indicator', () => {
       hasUnseenActivity: true,
     });
 
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(getBorderColor(container)).toBe('var(--color-blue-500)');
   });
 
-  it('pending approval border takes priority over streaming', () => {
+  it('pending approval beats streaming', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, {
       status: 'streaming',
-      messages: [
-        {
-          id: 'msg-1',
-          role: 'assistant',
-          content: '',
-          parts: [],
-          timestamp: new Date().toISOString(),
-          toolCalls: [
-            {
-              toolCallId: 'tc-1',
-              toolName: 'Bash',
-              input: 'ls',
-              status: 'pending',
-              interactiveType: 'approval',
-            },
-          ],
-        },
-      ],
+      sdkState: 'requires_action',
     });
 
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
-    // Pending approval is a pulse state — motion animate controls color, not inline style
-    const item = container.firstChild as HTMLElement;
-    expect(item.className).toContain('border-l-2');
-    // Should NOT have the streaming (green) static style since pulse overrides
-    expect(item.style.borderLeftColor).not.toBe('hsl(var(--destructive))');
+    const item = container.querySelector('[data-testid="session-item"]') as HTMLElement;
+    // Pulse state: inline style is not set — animate controls color.
+    expect(item.style.borderLeftColor).toBe('');
+    // Hand icon is the non-color differentiator.
+    expect(screen.getByLabelText('Awaiting your approval')).toBeDefined();
   });
 
-  it('active session shows primary border, not activity color', () => {
+  it('pending approval beats active (active row must still surface approval)', () => {
+    useSessionChatStore.getState().updateSession(SESSION_ID, {
+      sdkState: 'requires_action',
+    });
+
+    const { container } = renderItem(
+      <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
+    );
+    const item = container.querySelector('[data-testid="session-item"]') as HTMLElement;
+    // Active would have set 'hsl(var(--primary))'. Pending approval pulses (no inline style).
+    expect(item.style.borderLeftColor).toBe('');
+    expect(screen.getByLabelText('Awaiting your approval')).toBeDefined();
+  });
+
+  it('active session shows primary border when no pending approval', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'streaming' });
 
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
     );
     expect(getBorderColor(container)).toBe('hsl(var(--primary))');
@@ -339,7 +434,7 @@ describe('Session border indicator', () => {
   it('active session ignores unseen activity', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, { hasUnseenActivity: true });
 
-    const { container } = render(
+    const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={true} onClick={() => {}} />
     );
     expect(getBorderColor(container)).toBe('hsl(var(--primary))');

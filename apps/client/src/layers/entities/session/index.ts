@@ -21,3 +21,5 @@ export {
   DEFAULT_SESSION_STATE,
 } from './model/session-chat-store';
 export type { SessionState } from './model/session-chat-store';
+export { useSessionBorderState } from './model/use-session-border-state';
+export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';

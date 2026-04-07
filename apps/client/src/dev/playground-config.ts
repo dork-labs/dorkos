@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Sparkles,
   Table2,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -28,6 +29,7 @@ import {
   ERROR_STATES_SECTIONS,
   ONBOARDING_SECTIONS,
   TABLES_SECTIONS,
+  SETTINGS_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -187,6 +189,16 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'design-system',
     sections: TABLES_SECTIONS,
     path: 'tables',
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    description:
+      'Settings dialogs, individual tabs, mobile drill-in, loading and empty states, and the underlying primitives.',
+    icon: SettingsIcon,
+    group: 'app-shell',
+    sections: SETTINGS_SECTIONS,
+    path: 'settings',
   },
 ];
 
