@@ -317,6 +317,38 @@ Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header
 
 **When to use**: Any UI surface that accepts contributions from multiple features (command palette items, dialogs, sidebar tabs). Prefer over hardcoded imports when the rendering component should not know about every contributor.
 
+### Feature-Level Zustand Stores (Dork Hub)
+
+For large features with complex ephemeral UI state, a dedicated Zustand store in the feature's `model/` directory is appropriate — distinct from the global app store in `shared/model/`.
+
+**Example: `useDorkHubStore`** (`apps/client/src/layers/features/marketplace/model/dork-hub-store.ts`) owns all client-only state for the Dork Hub browse experience:
+
+| State field             | Type                        | Purpose                                              |
+| ----------------------- | --------------------------- | ---------------------------------------------------- |
+| `filters.type`          | `DorkHubTypeFilter`         | Package type filter (`'all'` or specific type)       |
+| `filters.category`      | `string \| null`            | Category slug filter                                 |
+| `filters.search`        | `string`                    | Free-text search string                              |
+| `filters.sort`          | `DorkHubSort`               | Sort order (`featured`, `popular`, `recent`, `name`) |
+| `detailPackage`         | `AggregatedPackage \| null` | Currently-open package in the detail sheet           |
+| `installConfirmPackage` | `AggregatedPackage \| null` | Package pending install confirmation                 |
+
+```typescript
+// Reading filters
+const { filters, setSearch, setTypeFilter, resetFilters } = useDorkHubStore();
+
+// Opening the detail sheet
+const openDetail = useDorkHubStore((s) => s.openDetail);
+openDetail(pkg);
+
+// Opening the install confirmation dialog
+const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
+openInstallConfirm(pkg);
+```
+
+**Why Zustand here instead of TanStack Query:** Filter state, which package is in the detail sheet, and which package is in the install dialog are all ephemeral client UI state — they don't come from the server and don't need caching. Server state (package lists, install results) is owned by TanStack Query via `entities/marketplace`.
+
+**When to use this pattern:** A feature with multiple interactive panels, dialogs, or filters that share state and would cause deep prop-drilling or awkward lifting. Keep the store scoped to the feature — do not let sibling features import it directly. If another feature needs to react to this state, promote the signal to an entity-layer store (see [Cross-Feature Signal Stores](#cross-feature-signal-stores-entity-layer)).
+
 ### Event Stream (SSE Subscriptions)
 
 The `EventStreamProvider` manages a single SSE connection to `/api/events` shared across the entire app. All system-wide real-time events (tunnel status, relay messages, extension reloads) flow through this one connection instead of each consumer opening its own `EventSource`.

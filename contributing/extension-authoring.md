@@ -207,6 +207,40 @@ Use CSS custom properties (`var(--border)`, `var(--muted-foreground)`) from the 
 - **Compilation errors**: Check Settings > Extensions for error details if your extension fails to compile.
 - **State inspection**: Call `api.getState()` from a command callback to inspect host state.
 
+## Built-in Extensions
+
+Some extensions ship with DorkOS itself and are always active — they cannot be disabled by the user. These **built-in extensions** live in `apps/server/src/builtin-extensions/{id}/` and follow the same `extension.json` + `index.ts` + `server.ts` structure as user extensions.
+
+The key difference is how they are registered. Rather than being discovered from `~/.dork/extensions/`, they are **auto-staged at server startup** by dedicated `ensure-*` functions in `apps/server/src/services/builtin-extensions/`.
+
+### Dork Hub (marketplace)
+
+The Dork Hub extension backs the `/marketplace` UI. It is staged by `ensureBuiltinMarketplaceExtension()` in `apps/server/src/services/builtin-extensions/ensure-marketplace.ts`, which is called from `index.ts` before the first extension discovery pass.
+
+```typescript
+// apps/server/src/services/builtin-extensions/ensure-marketplace.ts
+export async function ensureBuiltinMarketplaceExtension(extensionManager): Promise<void> {
+  // Resolves the extension directory relative to the server build output
+  const extDir = resolve(__dirname, '../builtin-extensions/marketplace');
+  // Stages and activates the extension — no user action required
+  await extensionManager.stageBuiltinExtension(extDir);
+}
+```
+
+### Writing a New Built-in Extension
+
+1. Create a directory `apps/server/src/builtin-extensions/{id}/` with `extension.json`, `index.ts`, and optionally `server.ts`
+2. Follow the same manifest format as user extensions (see [Manifest](#manifest-extensionjson))
+3. Create `apps/server/src/services/builtin-extensions/ensure-{id}.ts` with an `ensureBuiltin{Name}Extension()` function
+4. Call that function from `apps/server/src/index.ts` before the extension discovery pass
+5. Add tests in `apps/server/src/services/builtin-extensions/__tests__/ensure-{id}.test.ts` — verify the function is idempotent (calling it twice does not error)
+
+**Conventions:**
+
+- Built-in extensions MUST be idempotent — `ensure*` is called on every server start
+- The extension `id` in `extension.json` must be unique and kebab-cased
+- Built-in extensions do not appear in the user-visible "Extensions" settings list as user-togglable items; they are always enabled
+
 ## Limitations (v1)
 
 - No sandboxing: client-side extensions run in the browser with full DOM access; server-side extensions run in the Node.js host process.

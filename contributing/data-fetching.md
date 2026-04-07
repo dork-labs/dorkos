@@ -6,23 +6,24 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 
 ## Key Files
 
-| Concept              | Location                                                         |
-| -------------------- | ---------------------------------------------------------------- |
-| Transport interface  | `packages/shared/src/transport.ts`                               |
-| HttpTransport        | `apps/client/src/layers/shared/lib/transport/http-transport.ts`  |
-| DirectTransport      | `apps/client/src/layers/shared/lib/direct-transport.ts`          |
-| TransportContext     | `apps/client/src/layers/shared/model/TransportContext.tsx`       |
-| EventStreamProvider  | `apps/client/src/layers/shared/model/event-stream-context.tsx`   |
-| Session entity hooks | `apps/client/src/layers/entities/session/`                       |
-| Command entity hooks | `apps/client/src/layers/entities/command/`                       |
-| Agent entity hooks   | `apps/client/src/layers/entities/agent/`                         |
-| Runtime entity hooks | `apps/client/src/layers/entities/runtime/`                       |
-| Relay entity hooks   | `apps/client/src/layers/entities/relay/`                         |
-| Binding entity hooks | `apps/client/src/layers/entities/binding/`                       |
-| Tasks entity hooks   | `apps/client/src/layers/entities/tasks/`                         |
-| Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
-| Express routes       | `apps/server/src/routes/`                                        |
-| Zod schemas          | `packages/shared/src/schemas.ts`                                 |
+| Concept                  | Location                                                         |
+| ------------------------ | ---------------------------------------------------------------- |
+| Transport interface      | `packages/shared/src/transport.ts`                               |
+| HttpTransport            | `apps/client/src/layers/shared/lib/transport/http-transport.ts`  |
+| DirectTransport          | `apps/client/src/layers/shared/lib/direct-transport.ts`          |
+| TransportContext         | `apps/client/src/layers/shared/model/TransportContext.tsx`       |
+| EventStreamProvider      | `apps/client/src/layers/shared/model/event-stream-context.tsx`   |
+| Session entity hooks     | `apps/client/src/layers/entities/session/`                       |
+| Command entity hooks     | `apps/client/src/layers/entities/command/`                       |
+| Agent entity hooks       | `apps/client/src/layers/entities/agent/`                         |
+| Runtime entity hooks     | `apps/client/src/layers/entities/runtime/`                       |
+| Relay entity hooks       | `apps/client/src/layers/entities/relay/`                         |
+| Binding entity hooks     | `apps/client/src/layers/entities/binding/`                       |
+| Tasks entity hooks       | `apps/client/src/layers/entities/tasks/`                         |
+| Marketplace entity hooks | `apps/client/src/layers/entities/marketplace/`                   |
+| Chat feature hooks       | `apps/client/src/layers/features/chat/model/use-chat-session.ts` |
+| Express routes           | `apps/server/src/routes/`                                        |
+| Zod schemas              | `packages/shared/src/schemas.ts`                                 |
 
 ## When to Use What
 
@@ -824,6 +825,95 @@ export function useTaskTemplates() {
 ### useTaskRuns / useTaskRun / useCancelTaskRun / useActiveTaskRunCount
 
 Hooks for task execution history. `useTaskRuns(taskId)` fetches the run list for a specific task. `useActiveTaskRunCount()` is a lightweight selector used by the sidebar badge.
+
+## Marketplace Entity Hooks
+
+The marketplace entity layer (`entities/marketplace/`) provides hooks for browsing, installing, and managing DorkOS marketplace packages. All hooks follow the same Transport-through-TanStack-Query pattern as other entities. Query keys are defined in `api/query-keys.ts`.
+
+### useMarketplacePackages / useMarketplacePackage
+
+Fetch all packages from enabled sources (aggregated) or a single package by name.
+
+```typescript
+// apps/client/src/layers/entities/marketplace/model/use-marketplace-packages.ts
+export function useMarketplacePackages() {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: marketplaceKeys.packages(),
+    queryFn: () => transport.listMarketplacePackages(),
+  });
+}
+
+// apps/client/src/layers/entities/marketplace/model/use-marketplace-package.ts
+export function useMarketplacePackage(name: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: marketplaceKeys.package(name ?? ''),
+    queryFn: () => transport.getMarketplacePackage(name!),
+    enabled: !!name,
+  });
+}
+```
+
+### useMarketplaceSources / useAddMarketplaceSource / useRemoveMarketplaceSource
+
+CRUD hooks for marketplace sources. Mutations invalidate the sources and packages caches.
+
+```typescript
+export function useMarketplaceSources() {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: marketplaceKeys.sources(),
+    queryFn: () => transport.listMarketplaceSources(),
+  });
+}
+```
+
+### useInstallPackage / useUninstallPackage / useUpdatePackage
+
+Mutation hooks for the install/uninstall/update pipeline. Each invalidates the installed-packages cache and the package query on success.
+
+```typescript
+export function useInstallPackage() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (opts: InstallRequest) => transport.installPackage(opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+    },
+  });
+}
+```
+
+### useInstalledPackages
+
+Lists packages currently installed in `~/.dork/plugins/` and `~/.dork/agents/`.
+
+```typescript
+export function useInstalledPackages() {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: marketplaceKeys.installed(),
+    queryFn: () => transport.listInstalledPackages(),
+  });
+}
+```
+
+### usePermissionPreview
+
+Fetches a `PermissionPreview` (filesystem writes, skills, extensions, adapters) for a package without installing it. Used by `InstallConfirmationDialog` to show users what a package will do before they confirm.
+
+```typescript
+export function usePermissionPreview(name: string | null) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: marketplaceKeys.preview(name ?? ''),
+    queryFn: () => transport.previewPackagePermissions(name!),
+    enabled: !!name,
+  });
+}
+```
 
 ## Agent Entity: useMcpConfig
 

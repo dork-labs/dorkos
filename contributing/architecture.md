@@ -168,6 +168,7 @@ Domain-specific methods (Relay, Tasks, Mesh) are delegated to factory-produced o
 - `createRelayMethods(baseUrl, getClientId)` — Relay bus, adapters, bindings, events
 - `createTasksMethods(baseUrl)` — Tasks schedules and runs
 - `createMeshMethods(baseUrl)` — Mesh discovery, registry, topology
+- `createMarketplaceMethods(baseUrl)` — Marketplace sources, package listing, install/uninstall/update, cache (`apps/client/src/layers/shared/lib/transport/marketplace-methods.ts`)
 
 HttpTransport uses `Object.assign(this, createRelayMethods(...))` at construction time. Each factory lives in its own file under `transport/` and handles HTTP serialization for its domain. This keeps the Transport interface unified while allowing independent testability of domain methods.
 
@@ -565,6 +566,23 @@ apps/
         subject-resolver.ts   -- Subject pattern resolution helpers
       mesh/                   -- Mesh state
         mesh-state.ts         -- Mesh subsystem internal state tracking
+      marketplace/            -- Package install/uninstall/update pipeline
+        marketplace-installer.ts -- 8-stage orchestrator; dispatches per-kind flows
+        marketplace-cache.ts  -- Content-addressable clone cache (TTL, prune)
+        marketplace-source-manager.ts -- Source CRUD (marketplaces.json on disk)
+        package-fetcher.ts    -- marketplace.json fetch + git clone of packages
+        package-resolver.ts   -- Resolves package name → source + entry
+        permission-preview.ts -- Builds PermissionPreview from manifest analysis
+        conflict-detector.ts  -- Detects file conflicts before writing begins
+        telemetry-hook.ts     -- Install/uninstall/update event telemetry
+        installed-metadata.ts -- Reads .dork/manifest.json from installed packages
+        transaction.ts        -- Atomic transaction engine: backup branch, stage, activate,
+                                  or git reset --hard on failure (see ADR-0231)
+        lib/atomic-move.ts    -- Crash-safe directory rename (tmp + rename)
+        flows/                -- Per-kind install flows: install-plugin.ts, install-agent.ts,
+                                  install-skill-pack.ts, install-adapter.ts, uninstall.ts, update.ts
+      builtin-extensions/     -- Always-on extensions auto-staged at server startup
+        ensure-marketplace.ts -- Registers Dork Hub extension so extension-manager picks it up
       discovery/              -- Agent discovery (delegates to @dorkos/mesh unified scanner)
     lib/
       resolve-root.ts       -- DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)
@@ -577,6 +595,8 @@ apps/
       uploads.ts            -- POST /api/uploads (multipart file upload)
       relay.ts              -- Relay HTTP routes (feature-flag guarded)
       mesh.ts               -- Mesh HTTP routes (always mounted)
+      marketplace.ts        -- Marketplace HTTP routes (/api/marketplace/*): sources, packages,
+                                install/uninstall/update, cache, installed listing
       mcp.ts                -- MCP server endpoint (/mcp, Streamable HTTP transport)
       a2a.ts                -- A2A protocol endpoints (feature-flag gated: DORKOS_A2A_ENABLED)
       models.ts             -- GET /api/models (dynamic via runtimeRegistry.getDefault())

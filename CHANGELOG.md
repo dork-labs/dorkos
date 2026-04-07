@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Marketplace as MCP server.** The DorkOS marketplace is now exposed as an MCP server at `/mcp`, alongside the existing DorkOS tools. Any AI agent that speaks MCP — Claude Code, Cursor, Codex, Cline, ChatGPT, Gemini — can search the marketplace, get package details, install packages (with user confirmation), and scaffold new packages on the fly. See `contributing/external-agent-marketplace-access.md` for setup instructions. (`marketplace-05-agent-installer`)
+- **Personal marketplace.** A per-user local marketplace at `~/.dork/personal-marketplace/` is now created on first server boot. Agents can scaffold new packages here via `marketplace_create_package` without leaving their tool of choice. (`marketplace-05-agent-installer`)
+- **8 new MCP tools:** `marketplace_search`, `marketplace_get`, `marketplace_list_marketplaces`, `marketplace_list_installed`, `marketplace_recommend`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`. (`marketplace-05-agent-installer`)
+- Add `/marketplace` browse page on dorkos.dev with hourly registry refresh from `dorkos-community/marketplace` (`marketplace-04-web-and-registry`)
+- Add per-package detail pages with README rendering, install instructions, related packages, and OG images (`marketplace-04-web-and-registry`)
+- Add `/marketplace/privacy` page documenting the install telemetry contract (`marketplace-04-web-and-registry`)
+- Add opt-in install telemetry endpoint (`/api/telemetry/install`) backed by Neon Postgres + Drizzle ORM as the single source of truth (`marketplace-04-web-and-registry`)
+- Add telemetry consent banner in the in-product Dork Hub (off by default) (`marketplace-04-web-and-registry`)
+- Add `dorkos package validate-marketplace` and `dorkos package validate-remote` CLI commands for the dorkos-community submission workflow (`marketplace-04-web-and-registry`)
+- Include all marketplace packages in `sitemap.xml` and `llms.txt` (`marketplace-04-web-and-registry`)
 - Ship Dork Hub browse UI as built-in extension (marketplace-03-extension)
 - Add Dork Hub — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
 - Add featured agents rail and type filters (agents, plugins, skills, adapters) with debounced search across the catalog (`marketplace-03-extension`)
@@ -36,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reconcile developer guides for marketplace-init branch
 - Restructure dialog tabs — replace Capabilities with Tools
 - Restructure dialog tabs — replace Capabilities with Tools
 - Redesign PersonalityTab with extracted TraitSliders and response mode

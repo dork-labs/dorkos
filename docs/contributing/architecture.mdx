@@ -200,6 +200,11 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       type: 'route',
       description: 'Extension discovery, enable/disable, bundle serving, and data storage',
     },
+    'marketplace.ts': {
+      type: 'route',
+      description:
+        'Marketplace sources, package browsing, permission preview, install/uninstall/update, and cache management',
+    },
   }}
 />
 
@@ -250,6 +255,23 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       description:
         'External MCP server factory — Streamable HTTP transport, stateless, optional API key auth',
     },
+    'marketplace-installer.ts': {
+      type: 'marketplace',
+      description:
+        '8-stage install orchestrator — resolves package, previews permissions, runs per-kind flow, commits via atomic transaction engine (see ADR-0231)',
+    },
+    'marketplace-cache.ts': {
+      type: 'marketplace',
+      description: 'Content-addressable clone cache with TTL and prune support',
+    },
+    'marketplace-source-manager.ts': {
+      type: 'marketplace',
+      description: 'Source CRUD — reads/writes marketplaces.json on disk',
+    },
+    'ensure-marketplace.ts': {
+      type: 'builtin-extensions',
+      description: 'Auto-stages the Dork Hub built-in extension at server startup',
+    },
     'extension-manager.ts': {
       type: 'extensions',
       description:
@@ -293,25 +315,28 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 
 ### FSD Layers
 
-| Layer                    | Purpose                    | Examples                               |
-| ------------------------ | -------------------------- | -------------------------------------- |
-| `shared/ui/`             | Reusable UI primitives     | Badge, Dialog, Select, Tabs (shadcn)   |
-| `shared/model/`          | Hooks, stores, context     | TransportContext, app-store, useTheme  |
-| `shared/lib/`            | Domain-agnostic utilities  | cn(), font-config, celebrations        |
-| `entities/session/`      | Session domain hooks       | useSessionId, useSessions              |
-| `entities/runtime/`      | Runtime capabilities       | useRuntimeCapabilities                 |
-| `entities/agent/`        | Agent identity hooks       | useCurrentAgent, useAgentVisual        |
-| `entities/tasks/`        | Task scheduler hooks       | useTasksEnabled, useSchedules, useRuns |
-| `entities/relay/`        | Relay messaging hooks      | useRelayEnabled, useRelayMessages      |
-| `entities/mesh/`         | Mesh discovery hooks       | useMeshEnabled, useRegisteredAgents    |
-| `features/chat/`         | Chat interface             | ChatPanel, MessageList, ToolCallCard   |
-| `features/session-list/` | Session management         | SessionSidebar, SessionItem            |
-| `features/settings/`     | Settings UI                | SettingsDialog                         |
-| `features/tasks/`        | Task scheduler UI          | TasksPanel, CreateScheduleDialog       |
-| `features/relay/`        | Relay messaging UI         | RelayPanel, AdapterCard                |
-| `features/mesh/`         | Mesh discovery UI          | MeshPanel, TopologyGraph               |
-| `features/canvas/`       | Agent-controlled UI panels | Canvas renderer, extension host        |
-| `widgets/app-layout/`    | App-level layout           | PermissionBanner                       |
+| Layer                    | Purpose                        | Examples                                                                  |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------------------- |
+| `shared/ui/`             | Reusable UI primitives         | Badge, Dialog, Select, Tabs (shadcn)                                      |
+| `shared/model/`          | Hooks, stores, context         | TransportContext, app-store, useTheme                                     |
+| `shared/lib/`            | Domain-agnostic utilities      | cn(), font-config, celebrations                                           |
+| `entities/session/`      | Session domain hooks           | useSessionId, useSessions                                                 |
+| `entities/runtime/`      | Runtime capabilities           | useRuntimeCapabilities                                                    |
+| `entities/agent/`        | Agent identity hooks           | useCurrentAgent, useAgentVisual                                           |
+| `entities/tasks/`        | Task scheduler hooks           | useTasksEnabled, useSchedules, useRuns                                    |
+| `entities/relay/`        | Relay messaging hooks          | useRelayEnabled, useRelayMessages                                         |
+| `entities/mesh/`         | Mesh discovery hooks           | useMeshEnabled, useRegisteredAgents                                       |
+| `features/chat/`         | Chat interface                 | ChatPanel, MessageList, ToolCallCard                                      |
+| `features/session-list/` | Session management             | SessionSidebar, SessionItem                                               |
+| `features/settings/`     | Settings UI                    | SettingsDialog                                                            |
+| `features/tasks/`        | Task scheduler UI              | TasksPanel, CreateScheduleDialog                                          |
+| `features/relay/`        | Relay messaging UI             | RelayPanel, AdapterCard                                                   |
+| `features/mesh/`         | Mesh discovery UI              | MeshPanel, TopologyGraph                                                  |
+| `features/canvas/`       | Agent-controlled UI panels     | Canvas renderer, extension host                                           |
+| `entities/marketplace/`  | Marketplace data hooks         | useMarketplacePackages, useInstallPackage, usePermissionPreview           |
+| `features/marketplace/`  | Dork Hub browse and install UI | DorkHub, PackageCard, PackageDetailSheet, InstallConfirmationDialog       |
+| `widgets/marketplace/`   | Marketplace pages              | DorkHubPage (/marketplace), MarketplaceSourcesPage (/marketplace/sources) |
+| `widgets/app-layout/`    | App-level layout               | PermissionBanner                                                          |
 
 <Callout type="warn">
   Layer imports are strictly unidirectional: `shared` ← `entities` ← `features` ← `widgets` ← `app`.

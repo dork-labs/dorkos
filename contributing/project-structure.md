@@ -20,6 +20,7 @@ dorkos/
 │   ├── db/               # @dorkos/db — Drizzle ORM schemas (SQLite)
 │   ├── relay/            # @dorkos/relay — Inter-agent message bus
 │   ├── mesh/             # @dorkos/mesh — Agent discovery & registry
+│   ├── marketplace/      # @dorkos/marketplace — Package manifest schema, validators, scaffolder
 │   ├── typescript-config/ # Shared tsconfig presets
 │   ├── eslint-config/    # @dorkos/eslint-config — Shared ESLint presets
 │   ├── icons/            # @dorkos/icons — SVG icon & logo registry
@@ -65,7 +66,8 @@ src/
 │   │   ├── discovery/   # Shared discovery scan state (Zustand store + useDiscoveryScan hook)
 │   │   ├── runtime/     # Runtime capabilities (useRuntimeCapabilities, useDefaultCapabilities)
 │   │   ├── tunnel/      # Tunnel state hooks
-│   │   └── binding/     # Adapter-agent binding hooks (useBindings, useCreateBinding, etc.)
+│   │   ├── binding/     # Adapter-agent binding hooks (useBindings, useCreateBinding, etc.)
+│   │   └── marketplace/ # Marketplace hooks (useMarketplacePackages, useInstallPackage, etc.)
 │   ├── features/        # Complete user-facing functionality
 │   │   ├── chat/        # ChatPanel, MessageList, streaming, useChatSession
 │   │   │   ├── ui/
@@ -94,12 +96,16 @@ src/
 │   │   ├── mesh/        # MeshPanel, TopologyGraph, AgentNode, BindingDialog
 │   │   ├── onboarding/  # OnboardingFlow, AgentDiscoveryStep, TaskPresetsStep
 │   │   ├── canvas/      # AgentCanvas split-view panel (JSON, Markdown, URL content renderers)
+│   │   ├── marketplace/ # Dork Hub UI — DorkHub, PackageCard, PackageDetailSheet, InstallConfirmationDialog, etc.
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
 │   └── widgets/         # Large UI compositions
 │       ├── app-layout/  # Header, Layout, main workspace
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── dashboard/   # DashboardPage — status overview at /
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── marketplace/ # DorkHubPage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)
 │       │   ├── ui/
 │       │   └── index.ts
 │       └── session/     # SessionPage — agent chat wrapper at /session
@@ -321,6 +327,21 @@ apps/server/src/
 │   │   └── subject-resolver.ts  # Subject pattern resolution helpers
 │   ├── mesh/                    # Mesh state
 │   │   └── mesh-state.ts        # Internal state tracking (Mesh is always-on)
+│   ├── marketplace/             # Package install/uninstall/update pipeline
+│   │   ├── marketplace-installer.ts  # Orchestrator (8-stage pipeline, dispatches per-kind flows)
+│   │   ├── marketplace-cache.ts      # Content-addressable cache (TTL, prune, listPackages)
+│   │   ├── marketplace-source-manager.ts # Source CRUD (marketplaces.json)
+│   │   ├── package-fetcher.ts        # marketplace.json fetch + package clone
+│   │   ├── package-resolver.ts       # Resolves package name → source + entry
+│   │   ├── permission-preview.ts     # Builds PermissionPreview from manifest
+│   │   ├── conflict-detector.ts      # Detects file conflicts before install
+│   │   ├── telemetry-hook.ts         # Install/uninstall/update telemetry
+│   │   ├── installed-metadata.ts     # Reads installed package metadata
+│   │   ├── transaction.ts            # Atomic transaction engine (backup/rollback)
+│   │   ├── lib/atomic-move.ts        # Crash-safe directory rename
+│   │   └── flows/                    # Per-kind install flows (plugin, agent, skill-pack, adapter)
+│   ├── builtin-extensions/      # Always-on extensions auto-staged at server startup
+│   │   └── ensure-marketplace.ts     # Stages Dork Hub marketplace extension on startup
 │   └── discovery/               # Agent discovery (delegates to @dorkos/mesh unified scanner)
 ├── lib/             # Shared utilities
 │   ├── resolve-root.ts  # DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)
