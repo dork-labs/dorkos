@@ -5,35 +5,71 @@
  * fires sonner toasts at each lifecycle stage:
  *
  * - **Pending**: a loading spinner toast while the HTTP request is in-flight.
- * - **Success**: a success toast with a "Configure secrets" action that deep-
- *   links the user to the secrets settings panel for the installed package.
- * - **Error**: an error toast showing the failure message.
+ * - **Success**: replaces the loading toast with a success confirmation.
+ * - **Error**: replaces the loading toast with an error message.
  *
- * Mutation state is reset immediately after the success/error toast fires to
- * prevent the same notification from appearing again on re-render.
+ * The toast lifecycle is driven by **per-call mutation callbacks** (not
+ * effects). Sonner's `{ id }` option is used to replace the same toast
+ * in-place rather than dismiss-then-show, so the user sees a single toast
+ * transition from loading → success/error.
+ *
+ * This avoids the effect-replay and `reset()`-race pitfalls of the previous
+ * effect-driven implementation. The hook state (`isPending`, `isSuccess`,
+ * etc.) is NOT read or reset inside any effect — consumers that need to
+ * react to success (e.g. closing a dialog) should use `mutateAsync` with
+ * try/catch in their click handler instead of watching `install.isSuccess`.
+ *
+ * NOTE: A "Configure secrets" action on the success toast is planned but
+ * deferred until the `/settings/secrets` route is registered in `router.tsx`.
  *
  * @module features/marketplace/model/use-install-with-toast
  */
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { toast } from 'sonner';
 
-import { useInstallPackage } from '@/layers/entities/marketplace';
+import { useInstallPackage, type InstallPackageArgs } from '@/layers/entities/marketplace';
+import type { InstallResult } from '@dorkos/shared/marketplace-schemas';
+
+/**
+ * Format an install error for a sonner toast message.
+ */
+function formatInstallError(err: unknown): string {
+  if (err instanceof Error) return `Install failed: ${err.message}`;
+  return 'Install failed: unknown error';
+}
 
 /**
  * Wraps `useInstallPackage` with automatic sonner toast notifications.
  *
- * Returns the same mutation object as `useInstallPackage` so call sites can
- * drop-in replace the bare hook without changing how they call `mutate`.
+ * Returns the same mutation object as `useInstallPackage` with `mutate` and
+ * `mutateAsync` overridden to fire loading/success/error toasts. All other
+ * mutation state (`isPending`, `isSuccess`, `data`, `error`, etc.) is
+ * passed through unchanged.
+ *
+ * The per-call callbacks run **in addition to** the hook-level `onSuccess`
+ * callback in `useInstallPackage`, so TanStack Query cache invalidation
+ * still fires correctly.
+ *
+ * Consumers that need to close a dialog or navigate on success should use
+ * `mutateAsync` with try/catch rather than watching `install.isSuccess` in
+ * an effect — this keeps control flow explicit and avoids hook-state races.
  *
  * @example
  * ```tsx
  * function InstallButton({ name }: { name: string }) {
  *   const install = useInstallWithToast();
+ *
+ *   async function handleClick() {
+ *     try {
+ *       await install.mutateAsync({ name });
+ *       // Success path — toast already fired.
+ *     } catch {
+ *       // Error path — toast already fired.
+ *     }
+ *   }
+ *
  *   return (
- *     <button
- *       disabled={install.isPending}
- *       onClick={() => install.mutate({ name })}
- *     >
+ *     <button disabled={install.isPending} onClick={handleClick}>
  *       Install
  *     </button>
  *   );
@@ -42,53 +78,37 @@ import { useInstallPackage } from '@/layers/entities/marketplace';
  */
 export function useInstallWithToast() {
   const install = useInstallPackage();
+  const { mutate: baseMutate, mutateAsync: baseMutateAsync } = install;
 
-  // Show a loading toast while the mutation is in-flight and dismiss it when
-  // it settles. The cleanup function dismisses the toast if the component
-  // unmounts mid-install.
-  useEffect(() => {
-    if (!install.isPending || !install.variables) return;
-
-    const name = install.variables.name;
-    const toastId = toast.loading(`Installing ${name}...`);
-
-    return () => {
-      toast.dismiss(toastId);
-    };
-  }, [install.isPending, install.variables]);
-
-  // Fire success/error toast once per settlement, then reset so re-renders
-  // don't replay the notification.
-  useEffect(() => {
-    if (install.isSuccess && install.variables) {
-      const name = install.variables.name;
-
-      toast.success(`Installed ${name}`, {
-        action: {
-          label: 'Configure secrets',
-          onClick: () => {
-            // TODO: replace with typed navigate({ to: '/settings/secrets', ... }) once
-            // the /settings/secrets route is registered in router.tsx.
-            window.location.hash = `#/settings/secrets?package=${encodeURIComponent(name)}`;
-          },
+  const mutate = useCallback(
+    (args: InstallPackageArgs) => {
+      const toastId = toast.loading(`Installing ${args.name}…`);
+      baseMutate(args, {
+        onSuccess: () => {
+          toast.success(`Installed ${args.name}`, { id: toastId });
+        },
+        onError: (err) => {
+          toast.error(formatInstallError(err), { id: toastId });
         },
       });
+    },
+    [baseMutate]
+  );
 
-      install.reset();
-    }
-  }, [install.isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mutateAsync = useCallback(
+    async (args: InstallPackageArgs): Promise<InstallResult> => {
+      const toastId = toast.loading(`Installing ${args.name}…`);
+      try {
+        const result = await baseMutateAsync(args);
+        toast.success(`Installed ${args.name}`, { id: toastId });
+        return result;
+      } catch (err) {
+        toast.error(formatInstallError(err), { id: toastId });
+        throw err;
+      }
+    },
+    [baseMutateAsync]
+  );
 
-  useEffect(() => {
-    if (install.isError) {
-      toast.error(
-        install.error instanceof Error
-          ? `Install failed: ${install.error.message}`
-          : 'Install failed: unknown error'
-      );
-
-      install.reset();
-    }
-  }, [install.isError]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return install;
+  return { ...install, mutate, mutateAsync };
 }

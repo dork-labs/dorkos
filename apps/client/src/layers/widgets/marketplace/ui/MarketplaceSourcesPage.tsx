@@ -1,4 +1,4 @@
-import { MarketplaceSourcesView } from '@/layers/features/marketplace/ui/MarketplaceSourcesView';
+import { MarketplaceSourcesView } from '@/layers/features/marketplace';
 
 /**
  * Marketplace sources page widget — renders the source management view at /marketplace/sources.

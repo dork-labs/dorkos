@@ -1,13 +1,11 @@
 /**
  * Blocking modal confirmation before a marketplace install. Shows the full
  * permission preview and requires an explicit "Install" click. Calls the
- * install mutation on confirm, fires a toast on success or failure, then
- * resets the mutation state to prevent duplicate toasts on re-render.
+ * install mutation on confirm and closes on success via `mutateAsync` +
+ * try/catch — toasts fire inside `useInstallWithToast`.
  *
  * @module features/marketplace/ui/InstallConfirmationDialog
  */
-import { useEffect } from 'react';
-
 import {
   AlertDialog,
   AlertDialogContent,
@@ -56,14 +54,15 @@ export function InstallConfirmationDialog() {
   const installDisabled =
     install.isPending || previewLoading || hasBlockingConflicts || pkg === null;
 
-  // Close dialog on successful install (the toast fires inside useInstallWithToast).
-  useEffect(() => {
-    if (install.isSuccess) close();
-  }, [install.isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function handleInstall() {
+  async function handleInstall() {
     if (!pkg) return;
-    install.mutate({ name: pkg.name });
+    try {
+      await install.mutateAsync({ name: pkg.name });
+      // Success — toast already fired inside useInstallWithToast. Close dialog.
+      close();
+    } catch {
+      // Error — toast already fired. Leave the dialog open so the user can retry.
+    }
   }
 
   function handleOpenChange(open: boolean) {

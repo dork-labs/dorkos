@@ -129,11 +129,13 @@ interface InstallMutationState {
 }
 
 const installMutate = vi.fn();
+const installMutateAsync = vi.fn();
 const installReset = vi.fn();
 
 function setInstallState(state: InstallMutationState = {}) {
   vi.mocked(useInstallPackage).mockReturnValue({
     mutate: installMutate,
+    mutateAsync: installMutateAsync,
     isPending: state.isPending ?? false,
     isSuccess: state.isSuccess ?? false,
     isError: state.isError ?? false,
@@ -163,6 +165,9 @@ describe('InstallConfirmationDialog', () => {
     resetStore();
     setPreviewState();
     setInstallState();
+    // Default: mutateAsync resolves with a stub result. Individual tests
+    // override with `.mockRejectedValueOnce(...)` to exercise the error path.
+    installMutateAsync.mockResolvedValue({ success: true });
   });
 
   afterEach(cleanup);
@@ -212,7 +217,7 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.queryByText(/loading preview/i)).not.toBeInTheDocument();
   });
 
-  it('clicking Install fires the mutation with the package name', async () => {
+  it('clicking Install fires mutateAsync with the package name', async () => {
     const user = userEvent.setup();
     useDorkHubStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
@@ -221,8 +226,10 @@ describe('InstallConfirmationDialog', () => {
 
     await user.click(screen.getByRole('button', { name: /^install$/i }));
 
-    expect(installMutate).toHaveBeenCalledTimes(1);
-    expect(installMutate).toHaveBeenCalledWith({ name: '@dorkos/code-reviewer' });
+    // The dialog now uses mutateAsync + try/catch to wait for success before
+    // closing. The bare `mutate` is not called by this code path.
+    expect(installMutateAsync).toHaveBeenCalledTimes(1);
+    expect(installMutateAsync).toHaveBeenCalledWith({ name: '@dorkos/code-reviewer' });
   });
 
   it('disables the Install button when the preview has error-level conflicts', () => {
@@ -275,17 +282,40 @@ describe('InstallConfirmationDialog', () => {
     expect(useDorkHubStore.getState().installConfirmPackage).toBeNull();
   });
 
-  it('closes the dialog automatically once the install mutation reports success', async () => {
+  it('closes the dialog after mutateAsync resolves', async () => {
+    const user = userEvent.setup();
     useDorkHubStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
-    // Simulate a successful install: the dialog's useEffect should call
-    // closeInstallConfirm() in response.
-    setInstallState({ isSuccess: true, variables: { name: '@dorkos/code-reviewer' } });
+    installMutateAsync.mockResolvedValueOnce({ success: true });
 
     render(<InstallConfirmationDialog />);
 
+    expect(useDorkHubStore.getState().installConfirmPackage).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /^install$/i }));
+
+    // handleInstall awaits mutateAsync then calls close(). Wait for the
+    // store to reflect the close so we're not racing React's microtask queue.
     await waitFor(() => {
       expect(useDorkHubStore.getState().installConfirmPackage).toBeNull();
     });
+  });
+
+  it('keeps the dialog open when mutateAsync rejects', async () => {
+    const user = userEvent.setup();
+    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+    installMutateAsync.mockRejectedValueOnce(new Error('network down'));
+
+    render(<InstallConfirmationDialog />);
+
+    await user.click(screen.getByRole('button', { name: /^install$/i }));
+
+    // Give the microtask queue a tick to resolve the rejected promise and
+    // run the try/catch, then assert the store is untouched.
+    await waitFor(() => {
+      expect(installMutateAsync).toHaveBeenCalled();
+    });
+    expect(useDorkHubStore.getState().installConfirmPackage).not.toBeNull();
   });
 });

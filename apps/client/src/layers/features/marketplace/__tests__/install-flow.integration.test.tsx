@@ -124,21 +124,24 @@ function setUninstallMutationState() {
 
 interface InstallMutationHandle {
   mutate: ReturnType<typeof vi.fn>;
+  mutateAsync: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
 }
 
 function setInstallWithToastState(): InstallMutationHandle {
   const mutate = vi.fn();
+  const mutateAsync = vi.fn().mockResolvedValue({ success: true });
   const reset = vi.fn();
   vi.mocked(useInstallWithToast).mockReturnValue({
     mutate,
+    mutateAsync,
     reset,
     isPending: false,
     isSuccess: false,
     isError: false,
     variables: undefined,
   } as unknown as ReturnType<typeof useInstallWithToast>);
-  return { mutate, reset };
+  return { mutate, mutateAsync, reset };
 }
 
 // ---------------------------------------------------------------------------
@@ -268,14 +271,16 @@ describe('DorkHub install flow integration', () => {
     expect(confirmHeading).toBeInTheDocument();
 
     // 5. Click the dialog's Install button → install mutation fires with the
-    //    package name. The dialog's button is the only "Install" (not
-    //    "Installing…" / not "Cancel") inside the alertdialog scope.
+    //    package name. The dialog uses `mutateAsync` + try/catch to await
+    //    success before closing, so the spy to assert on is `mutateAsync`
+    //    (not the bare `mutate`). The dialog's button is the only "Install"
+    //    (not "Installing…" / not "Cancel") inside the alertdialog scope.
     const dialog = screen.getByRole('alertdialog');
     const dialogInstallButton = within(dialog).getByRole('button', { name: /^install$/i });
     await user.click(dialogInstallButton);
 
-    expect(installHandle.mutate).toHaveBeenCalledTimes(1);
-    expect(installHandle.mutate).toHaveBeenCalledWith({ name: PKG.name });
+    expect(installHandle.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
   });
 
   it('clicking Install on the card opens the confirmation dialog directly without the detail sheet', async () => {
@@ -294,6 +299,6 @@ describe('DorkHub install flow integration', () => {
     const dialogInstallButton = within(dialog).getByRole('button', { name: /^install$/i });
     await user.click(dialogInstallButton);
 
-    expect(installHandle.mutate).toHaveBeenCalledWith({ name: PKG.name });
+    expect(installHandle.mutateAsync).toHaveBeenCalledWith({ name: PKG.name });
   });
 });
