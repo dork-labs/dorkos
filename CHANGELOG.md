@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Implement install machinery foundation (Batches 1-3 of marketplace-02-install)
+- Complete install/uninstall/update pipeline (Batches 4-9 of marketplace-02-install)
+- Add `dorkos install <name>` to install plugins, agents, skill packs, and adapters from configured marketplaces — atomic transactions with rollback on failure and permission preview before install (`marketplace-02-install`)
+- Add `dorkos uninstall <name>` with `--purge` flag for full data removal (`marketplace-02-install`)
+- Add `dorkos update [<name>]` advisory update notifications, with `--apply` to perform upgrades (`marketplace-02-install`)
+- Add `dorkos marketplace add/remove/list/refresh` to manage marketplace sources (`marketplace-02-install`)
+- Add `dorkos cache list/prune/clear` to manage the local marketplace cache (`marketplace-02-install`)
+- Add `/api/marketplace/*` HTTP endpoints for sources, packages, install/uninstall/update, and cache (`marketplace-02-install`)
 - Implement foundation package, CLI commands, and kind field addendum
 - Show MCP servers in Tools tab
 - Add external MCP access controls — toggle, API key, rate limiting, and setup instructions

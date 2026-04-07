@@ -10,12 +10,13 @@
  *
  * @module services/marketplace/flows/install-skill-pack
  */
-import { cp, mkdir, readdir, readFile, rename, rm } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SkillPackPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { SkillFrontmatterSchema } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
+import { atomicMove } from '../lib/atomic-move.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -99,10 +100,11 @@ async function stageSkillPack(packagePath: string, stagingPath: string): Promise
 }
 
 /**
- * Atomic rename staging → install root, with an EXDEV fallback for
- * cross-filesystem moves (rename only works on the same device on
- * POSIX). The fallback copies then removes staging so the result is
- * indistinguishable from a successful rename.
+ * Move staging → install root via {@link atomicMove}, which performs an
+ * atomic `fs.rename` on the same filesystem and falls back to
+ * `cp` + `rm` on cross-device (`EXDEV`) moves — common on Linux CI
+ * runners where `os.tmpdir()` lives on a distinct volume from the
+ * user's home directory.
  *
  * @internal
  */
@@ -111,13 +113,7 @@ async function activateSkillPack(
   installRoot: string
 ): Promise<{ installPath: string }> {
   await mkdir(path.dirname(installRoot), { recursive: true });
-  try {
-    await rename(stagingPath, installRoot);
-  } catch (err) {
-    if (!isCrossDeviceError(err)) throw err;
-    await cp(stagingPath, installRoot, { recursive: true, errorOnExist: true, force: false });
-    await rm(stagingPath, { recursive: true, force: true });
-  }
+  await atomicMove(stagingPath, installRoot);
   return { installPath: installRoot };
 }
 
@@ -177,20 +173,4 @@ async function validateSkillFile(absFile: string): Promise<void> {
   if (!result.ok) {
     throw new Error(`Invalid SKILL.md at ${absFile}: ${result.error}`);
   }
-}
-
-/**
- * Detect a cross-device link error from `fs.rename`. Different
- * platforms surface this as `EXDEV` (POSIX) or via the same code on
- * Windows when moving across volumes.
- *
- * @internal
- */
-function isCrossDeviceError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: string }).code === 'EXDEV'
-  );
 }

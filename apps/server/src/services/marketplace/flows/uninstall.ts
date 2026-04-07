@@ -19,7 +19,8 @@
  *
  * @module services/marketplace/flows/uninstall
  */
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { atomicMove } from '../lib/atomic-move.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -117,7 +118,7 @@ export class UninstallFlow {
     const stagingPath = path.join(stagingDir, 'pkg');
 
     try {
-      await rename(located.installRoot, stagingPath);
+      await atomicMove(located.installRoot, stagingPath);
     } catch (err) {
       await rm(stagingDir, { recursive: true, force: true });
       throw err;
@@ -264,7 +265,7 @@ export class UninstallFlow {
         await rm(installRoot, { recursive: true, force: true });
       }
       await mkdir(path.dirname(installRoot), { recursive: true });
-      await rename(stagingPath, installRoot);
+      await atomicMove(stagingPath, installRoot);
     } catch (rollbackErr) {
       this.deps.logger.warn(
         `[marketplace/uninstall] rollback failed for ${installRoot}: ${

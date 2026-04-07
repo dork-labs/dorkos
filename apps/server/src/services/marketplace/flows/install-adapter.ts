@@ -11,11 +11,12 @@
  *
  * @module services/marketplace/flows/install-adapter
  */
-import { cp, mkdir, rename } from 'node:fs/promises';
+import { cp, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { AdapterPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
+import { atomicMove } from '../lib/atomic-move.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -99,24 +100,16 @@ async function stageAdapterPackage(packagePath: string, stagingPath: string): Pr
 }
 
 /**
- * Move the staged package onto the live install path. Falls back to a
- * recursive copy when `rename` fails with `EXDEV` (cross-device move),
- * which can happen on Linux when `tmpdir()` and `dorkHome` live on
- * different filesystems.
+ * Move the staged package onto the live install path via
+ * {@link atomicMove}, which handles the cross-device (`EXDEV`)
+ * fallback when `os.tmpdir()` and `dorkHome` live on different
+ * filesystems (common on Linux CI runners).
  *
  * @internal
  */
 async function activateAdapterPackage(stagingPath: string, installPath: string): Promise<void> {
   await mkdir(path.dirname(installPath), { recursive: true });
-  try {
-    await rename(stagingPath, installPath);
-  } catch (err) {
-    if (isExdevError(err)) {
-      await cp(stagingPath, installPath, { recursive: true });
-      return;
-    }
-    throw err;
-  }
+  await atomicMove(stagingPath, installPath);
 }
 
 /**
@@ -153,14 +146,4 @@ async function registerAdapterWithCompensation(
     }
     throw err;
   }
-}
-
-/** Detect Node's `EXDEV` cross-device-link error from `fs.rename`. */
-function isExdevError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: string }).code === 'EXDEV'
-  );
 }

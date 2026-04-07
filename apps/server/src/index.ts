@@ -35,6 +35,22 @@ import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { createExtensionsRouter } from './routes/extensions.js';
+import { createAgentWorkspace } from './services/core/agent-creator.js';
+import { defaultTemplateDownloader } from './services/core/template-downloader.js';
+import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
+import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
+import { PackageResolver } from './services/marketplace/package-resolver.js';
+import { PackageFetcher } from './services/marketplace/package-fetcher.js';
+import { ConflictDetector } from './services/marketplace/conflict-detector.js';
+import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
+import { PluginInstallFlow } from './services/marketplace/flows/install-plugin.js';
+import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js';
+import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
+import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
+import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { UpdateFlow } from './services/marketplace/flows/update.js';
+import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
+import { createMarketplaceRouter } from './routes/marketplace.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
@@ -497,6 +513,96 @@ async function start() {
     })
   );
   logger.info('[Admin] Routes mounted');
+
+  // Mount Marketplace routes. The install pipeline has two optional
+  // collaborators — `extensionManager` (needed by plugin + uninstall flows)
+  // and `adapterManager` (needed by adapter + uninstall flows). When either
+  // is absent the corresponding flows will surface a clear error on call,
+  // but source listing, cache, discovery, agent installs, and skill-pack
+  // installs remain fully functional, so we always mount the router rather
+  // than gating the entire namespace.
+  if (extensionManager && adapterManager) {
+    const marketplaceSourceManager = new MarketplaceSourceManager(dorkHome);
+    const marketplaceCache = new MarketplaceCache(dorkHome);
+    const marketplaceFetcher = new PackageFetcher(
+      marketplaceCache,
+      defaultTemplateDownloader,
+      logger
+    );
+    const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
+    const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
+    const marketplacePreviewBuilder = new PermissionPreviewBuilder(
+      dorkHome,
+      marketplaceConflictDetector
+    );
+
+    const marketplacePluginFlow = new PluginInstallFlow({
+      dorkHome,
+      extensionCompiler: extensionManager.getCompiler(),
+      extensionManager,
+      logger,
+    });
+    const marketplaceAgentFlow = new AgentInstallFlow({
+      dorkHome,
+      agentCreator: { createAgentWorkspace },
+      logger,
+    });
+    const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
+    const marketplaceAdapterFlow = new AdapterInstallFlow({
+      dorkHome,
+      adapterManager,
+      logger,
+    });
+    const marketplaceUninstallFlow = new UninstallFlow({
+      dorkHome,
+      extensionManager,
+      adapterManager,
+      logger,
+    });
+
+    const marketplaceInstaller = new MarketplaceInstaller({
+      dorkHome,
+      resolver: marketplaceResolver,
+      fetcher: marketplaceFetcher,
+      previewBuilder: marketplacePreviewBuilder,
+      pluginFlow: marketplacePluginFlow,
+      agentFlow: marketplaceAgentFlow,
+      skillPackFlow: marketplaceSkillPackFlow,
+      adapterFlow: marketplaceAdapterFlow,
+      uninstallFlow: marketplaceUninstallFlow,
+      logger,
+    });
+
+    // UpdateFlow takes an `InstallerLike` — passing the concrete installer
+    // is safe because `MarketplaceInstaller implements InstallerLike` and
+    // breaks the type cycle between installer and update flow at the type
+    // level (see `marketplace-installer.ts`).
+    const marketplaceUpdateFlow = new UpdateFlow({
+      dorkHome,
+      installer: marketplaceInstaller,
+      sourceManager: marketplaceSourceManager,
+      fetcher: marketplaceFetcher,
+      logger,
+    });
+
+    app.use(
+      '/api/marketplace',
+      createMarketplaceRouter({
+        sourceManager: marketplaceSourceManager,
+        cache: marketplaceCache,
+        fetcher: marketplaceFetcher,
+        installer: marketplaceInstaller,
+        uninstallFlow: marketplaceUninstallFlow,
+        updateFlow: marketplaceUpdateFlow,
+        dorkHome,
+      })
+    );
+    logger.info('[Marketplace] Routes mounted');
+  } else {
+    logger.warn(
+      '[Marketplace] Routes skipped — requires extensionManager and adapterManager (relay must be enabled and extensions must have initialized successfully)'
+    );
+  }
 
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);

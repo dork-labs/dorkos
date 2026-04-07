@@ -13,11 +13,12 @@
  *
  * @module services/marketplace/flows/install-agent
  */
-import { cp, mkdir, rename, rm } from 'node:fs/promises';
+import { cp, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { createAgentWorkspace } from '../../core/agent-creator.js';
+import { atomicMove } from '../lib/atomic-move.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -157,30 +158,13 @@ async function stageAgentPackage(packagePath: string, stagingPath: string): Prom
 /**
  * Move the staged package onto the live target directory. Ensures the parent
  * directory exists first (so installs work on a fresh `dorkHome` that has
- * not yet had an `agents/` subdirectory created), then falls back to a
- * recursive copy when `rename` fails with `EXDEV` (cross-device move) —
- * which can happen on Linux when `tmpdir()` and `dorkHome` live on
- * different filesystems.
+ * not yet had an `agents/` subdirectory created), then delegates the move
+ * itself to {@link atomicMove}, which handles the cross-device (`EXDEV`)
+ * fallback when `os.tmpdir()` and `dorkHome` live on different filesystems.
  *
  * @internal
  */
 async function activateAgentPackage(stagingPath: string, targetDir: string): Promise<void> {
   await mkdir(path.dirname(targetDir), { recursive: true });
-  try {
-    await rename(stagingPath, targetDir);
-  } catch (err) {
-    if (!isExdevError(err)) throw err;
-    await cp(stagingPath, targetDir, { recursive: true });
-    await rm(stagingPath, { recursive: true, force: true });
-  }
-}
-
-/** Type guard for the Node.js `EXDEV` (cross-device link) error. */
-function isExdevError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code?: string }).code === 'EXDEV'
-  );
+  await atomicMove(stagingPath, targetDir);
 }

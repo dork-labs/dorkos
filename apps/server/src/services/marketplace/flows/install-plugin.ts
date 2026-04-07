@@ -10,12 +10,13 @@
  *
  * @module services/marketplace/flows/install-plugin
  */
-import { cp, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
+import { atomicMove } from '../lib/atomic-move.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -222,27 +223,6 @@ function buildCompilerRecord(ext: StagedExtension): ExtensionRecord {
     hasServerEntry: false,
     hasDataProxy: ext.manifest.dataProxy !== undefined,
   };
-}
-
-/**
- * Atomic move with EXDEV fallback. `fs.rename` is fast and atomic when
- * source and destination live on the same filesystem; on cross-device
- * renames it throws `EXDEV`, in which case we fall back to a recursive
- * copy followed by removal of the source.
- */
-async function atomicMove(source: string, dest: string): Promise<void> {
-  try {
-    await rename(source, dest);
-  } catch (err) {
-    if (!isExdevError(err)) throw err;
-    await cp(source, dest, { recursive: true, errorOnExist: true, force: false });
-    await rm(source, { recursive: true, force: true });
-  }
-}
-
-/** Type guard for the Node.js `EXDEV` (cross-device link) error. */
-function isExdevError(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as NodeJS.ErrnoException).code === 'EXDEV';
 }
 
 /** Returns true if the supplied path exists on disk (file or directory). */

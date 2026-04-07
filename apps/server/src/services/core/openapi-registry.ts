@@ -49,6 +49,168 @@ import {
 } from '@dorkos/shared/mesh-schemas';
 import { z } from 'zod';
 
+/**
+ * Local Zod 4 mirror of `@dorkos/marketplace`'s `PackageTypeSchema`. The
+ * package exports a Zod 3 schema that cannot be composed with the server's
+ * Zod 4 OpenAPI registry, so we redeclare it here. Keep in sync with
+ * `packages/marketplace/src/package-types.ts`.
+ */
+const LocalPackageTypeSchema = z.enum(['agent', 'plugin', 'skill-pack', 'adapter']);
+
+/**
+ * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplaceJsonSchema` shape.
+ * Only the fields surfaced by the API are modelled — the `passthrough()`
+ * behaviour of the source schema is approximated with `.catchall(z.unknown())`
+ * so unknown fields still round-trip through OpenAPI.
+ */
+const LocalMarketplaceJsonSchema = z
+  .object({
+    name: z.string(),
+    plugins: z.array(
+      z
+        .object({
+          name: z.string(),
+          source: z.string(),
+          description: z.string().optional(),
+          version: z.string().optional(),
+        })
+        .catchall(z.unknown())
+    ),
+  })
+  .catchall(z.unknown());
+
+/**
+ * Local Zod 4 mirror of a single marketplace.json entry with the
+ * discovered marketplace name tag appended. Returned by
+ * `GET /api/marketplace/packages`. Keep in sync with
+ * `packages/marketplace/src/marketplace-json-schema.ts` and the
+ * `AggregatedPackage` type declared in `routes/marketplace.ts`.
+ */
+const LocalAggregatedPackageSchema = z
+  .object({
+    name: z.string(),
+    source: z.string(),
+    description: z.string().optional(),
+    version: z.string().optional(),
+    marketplace: z.string(),
+  })
+  .catchall(z.unknown());
+
+/**
+ * Local Zod 4 mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
+ * Only the fields surfaced by the HTTP API are modelled. Keep in sync with
+ * `packages/marketplace/src/package-manifest-schema.ts`.
+ */
+const LocalMarketplacePackageManifestSchema = z
+  .object({
+    schemaVersion: z.number(),
+    name: z.string(),
+    version: z.string(),
+    type: LocalPackageTypeSchema,
+    description: z.string().optional(),
+  })
+  .catchall(z.unknown());
+
+/**
+ * Local Zod 4 mirror of the server-side `InstallRequest` minus `name`
+ * (the package name is taken from the URL `:name` parameter). Keep in sync
+ * with `apps/server/src/services/marketplace/types.ts`.
+ */
+const LocalInstallRequestBodySchema = z.object({
+  marketplace: z.string().optional(),
+  source: z.string().optional(),
+  force: z.boolean().optional(),
+  yes: z.boolean().optional(),
+  projectPath: z.string().optional(),
+});
+
+/**
+ * Local Zod 4 mirror of {@link import('../marketplace/types.js').ConflictReport}.
+ * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
+ */
+const LocalConflictReportSchema = z.object({
+  level: z.enum(['error', 'warning']),
+  type: z.enum(['package-name', 'slot', 'skill-name', 'task-name', 'cron-collision', 'adapter-id']),
+  description: z.string(),
+  conflictingPackage: z.string().optional(),
+});
+
+/**
+ * Local Zod 4 mirror of {@link import('../marketplace/types.js').PermissionPreview}.
+ * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
+ */
+const LocalPermissionPreviewSchema = z.object({
+  fileChanges: z.array(
+    z.object({
+      path: z.string(),
+      action: z.enum(['create', 'modify', 'delete']),
+    })
+  ),
+  extensions: z.array(z.object({ id: z.string(), slots: z.array(z.string()) })),
+  tasks: z.array(z.object({ name: z.string(), cron: z.string().nullable() })),
+  secrets: z.array(
+    z.object({
+      key: z.string(),
+      required: z.boolean(),
+      description: z.string().optional(),
+    })
+  ),
+  externalHosts: z.array(z.string()),
+  requires: z.array(
+    z.object({
+      type: z.string(),
+      name: z.string(),
+      version: z.string().optional(),
+      satisfied: z.boolean(),
+    })
+  ),
+  conflicts: z.array(LocalConflictReportSchema),
+});
+
+/**
+ * Local Zod 4 mirror of {@link import('../marketplace/types.js').InstallResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
+ */
+const LocalInstallResultSchema = z.object({
+  ok: z.boolean(),
+  packageName: z.string(),
+  version: z.string(),
+  type: LocalPackageTypeSchema,
+  installPath: z.string(),
+  manifest: LocalMarketplacePackageManifestSchema,
+  rollbackBranch: z.string().optional(),
+  warnings: z.array(z.string()),
+});
+
+/** Local Zod 4 mirror of the update flow's per-package advisory check. */
+const LocalUpdateCheckResultSchema = z.object({
+  packageName: z.string(),
+  installedVersion: z.string(),
+  latestVersion: z.string(),
+  hasUpdate: z.boolean(),
+  marketplace: z.string(),
+});
+
+/**
+ * Local Zod 4 mirror of {@link import('../marketplace/flows/update.js').UpdateResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+const LocalUpdateResultSchema = z.object({
+  checks: z.array(LocalUpdateCheckResultSchema),
+  applied: z.array(LocalInstallResultSchema),
+});
+
+/**
+ * Local Zod 4 mirror of {@link import('../marketplace/flows/uninstall.js').UninstallResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/flows/uninstall.ts`.
+ */
+const LocalUninstallResultSchema = z.object({
+  ok: z.boolean(),
+  packageName: z.string(),
+  removedFiles: z.number().int().nonnegative(),
+  preservedData: z.array(z.string()),
+});
+
 const registry = new OpenAPIRegistry();
 
 // --- Health ---
@@ -1024,6 +1186,420 @@ registry.registerPath({
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Marketplace ---
+
+const MarketplaceSourceSchema = z.object({
+  name: z.string(),
+  source: z.string(),
+  enabled: z.boolean(),
+  addedAt: z.string(),
+});
+
+const AddMarketplaceSourceBodySchema = z.object({
+  name: z.string().min(1).max(128),
+  source: z.string().min(1),
+  enabled: z.boolean().optional(),
+});
+
+const InstalledPackageSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  type: LocalPackageTypeSchema,
+  installPath: z.string(),
+  installedFrom: z.string().optional(),
+  installedAt: z.string().optional(),
+});
+
+const MarketplaceCacheStatusSchema = z.object({
+  marketplaces: z.number().int().nonnegative(),
+  packages: z.number().int().nonnegative(),
+  totalSizeBytes: z.number().int().nonnegative(),
+});
+
+const PruneMarketplaceCacheBodySchema = z.object({
+  keepLastN: z.number().int().nonnegative().optional(),
+});
+
+const PrunedCachedPackageSchema = z.object({
+  packageName: z.string(),
+  commitSha: z.string(),
+  path: z.string(),
+  cachedAt: z.string(),
+});
+
+const PruneMarketplaceCacheResponseSchema = z.object({
+  removed: z.array(PrunedCachedPackageSchema),
+  freedBytes: z.number().int().nonnegative(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/sources',
+  tags: ['Marketplace'],
+  summary: 'List configured marketplace sources',
+  responses: {
+    200: {
+      description: 'Configured marketplace sources',
+      content: {
+        'application/json': {
+          schema: z.object({ sources: z.array(MarketplaceSourceSchema) }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/sources',
+  tags: ['Marketplace'],
+  summary: 'Add a marketplace source',
+  request: {
+    body: {
+      content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Source added',
+      content: { 'application/json': { schema: MarketplaceSourceSchema } },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Duplicate source name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/marketplace/sources/{name}',
+  tags: ['Marketplace'],
+  summary: 'Remove a marketplace source',
+  request: {
+    params: z.object({ name: z.string() }),
+  },
+  responses: {
+    204: { description: 'Source removed' },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/sources/{name}/refresh',
+  tags: ['Marketplace'],
+  summary: 'Force refetch of a source marketplace.json',
+  request: {
+    params: z.object({ name: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Refreshed marketplace document',
+      content: {
+        'application/json': {
+          schema: z.object({
+            marketplace: LocalMarketplaceJsonSchema,
+            fetchedAt: z.string(),
+          }),
+        },
+      },
+    },
+    404: {
+      description: 'Source not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'Upstream fetch failure',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/installed',
+  tags: ['Marketplace'],
+  summary: 'List installed marketplace packages',
+  responses: {
+    200: {
+      description: 'Installed packages',
+      content: {
+        'application/json': {
+          schema: z.object({ packages: z.array(InstalledPackageSchema) }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/installed/{name}',
+  tags: ['Marketplace'],
+  summary: 'Get an installed marketplace package',
+  request: {
+    params: z.object({ name: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Installed package details',
+      content: {
+        'application/json': {
+          schema: z.object({ package: InstalledPackageSchema }),
+        },
+      },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/cache',
+  tags: ['Marketplace'],
+  summary: 'Marketplace cache status',
+  responses: {
+    200: {
+      description: 'Cache counts and total size',
+      content: { 'application/json': { schema: MarketplaceCacheStatusSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/marketplace/cache',
+  tags: ['Marketplace'],
+  summary: 'Clear the marketplace cache',
+  responses: {
+    204: { description: 'Cache cleared' },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/cache/prune',
+  tags: ['Marketplace'],
+  summary: 'Garbage-collect cached packages, keeping the N most recent per name',
+  request: {
+    body: {
+      content: { 'application/json': { schema: PruneMarketplaceCacheBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Prune result',
+      content: { 'application/json': { schema: PruneMarketplaceCacheResponseSchema } },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/packages',
+  tags: ['Marketplace'],
+  summary: 'List installable packages (aggregated from every enabled source)',
+  responses: {
+    200: {
+      description: 'Aggregated package list',
+      content: {
+        'application/json': {
+          schema: z.object({ packages: z.array(LocalAggregatedPackageSchema) }),
+        },
+      },
+    },
+    500: {
+      description: 'Aggregation failure',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/packages/{name}',
+  tags: ['Marketplace'],
+  summary: 'Get package details (fetches, validates, builds a preview)',
+  request: {
+    params: z.object({ name: z.string() }),
+    query: z.object({ marketplace: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: 'Package manifest, staged path, and permission preview',
+      content: {
+        'application/json': {
+          schema: z.object({
+            manifest: LocalMarketplacePackageManifestSchema,
+            packagePath: z.string(),
+            preview: LocalPermissionPreviewSchema,
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or invalid package',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Marketplace or package not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/preview',
+  tags: ['Marketplace'],
+  summary: 'Build a permission preview without installing',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: { 'application/json': { schema: LocalInstallRequestBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Permission preview, manifest, and staged path',
+      content: {
+        'application/json': {
+          schema: z.object({
+            preview: LocalPermissionPreviewSchema,
+            manifest: LocalMarketplacePackageManifestSchema,
+            packagePath: z.string(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or invalid package',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Marketplace or package not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/install',
+  tags: ['Marketplace'],
+  summary: 'Install a marketplace package',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: { 'application/json': { schema: LocalInstallRequestBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Install result from the type-specific flow',
+      content: { 'application/json': { schema: LocalInstallResultSchema } },
+    },
+    400: {
+      description: 'Validation error or invalid package',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Marketplace or package not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Install blocked by conflicts',
+      content: {
+        'application/json': {
+          schema: z.object({
+            error: z.string(),
+            conflicts: z.array(LocalConflictReportSchema),
+          }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/uninstall',
+  tags: ['Marketplace'],
+  summary: 'Uninstall a marketplace package',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            purge: z.boolean().optional(),
+            projectPath: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Uninstall result',
+      content: { 'application/json': { schema: LocalUninstallResultSchema } },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/update',
+  tags: ['Marketplace'],
+  summary: 'Advisory update check (pass apply:true to actually update)',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            apply: z.boolean().optional(),
+            projectPath: z.string().optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Update advisory result (and any applied reinstalls)',
+      content: { 'application/json': { schema: LocalUpdateResultSchema } },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

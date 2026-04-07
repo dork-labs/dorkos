@@ -71,7 +71,7 @@ dorkos/
 │   ├── typescript-config/ # @dorkos/typescript-config
 │   ├── icons/            # @dorkos/icons - SVG icon & logo registry
 │   ├── skills/            # @dorkos/skills - SKILL.md file format schemas, parser, writer, scanner
-│   ├── marketplace/       # @dorkos/marketplace - Marketplace package schemas, parser, validator, scaffolder
+│   ├── marketplace/       # @dorkos/marketplace - Marketplace package schemas, parser, validator, scaffolder (install runtime lives in apps/server/src/services/marketplace/)
 │   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
 ├── meta/                 # Brand foundation, personas, value architecture, litepaper
 ├── decisions/            # Architecture Decision Records (ADRs)
@@ -109,7 +109,9 @@ Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree command
 
 Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management). API docs at `/api/docs`.
+**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`). API docs at `/api/docs`.
+
+**Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
 
 **Key conventions:**
 
@@ -181,6 +183,7 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 | [`contributing/relay-adapters.md`](contributing/relay-adapters.md)                           | Adapter development guide                                   |
 | [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md)                         | Adapter catalog system                                      |
 | [`contributing/extension-authoring.md`](contributing/extension-authoring.md)                 | Extension authoring guide                                   |
+| [`contributing/marketplace-installs.md`](contributing/marketplace-installs.md)               | Marketplace install pipeline: flows, transactions, testing  |
 
 `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 
