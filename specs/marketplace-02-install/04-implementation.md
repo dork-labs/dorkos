@@ -6,9 +6,9 @@
 
 ## Progress
 
-**Status:** Complete — all 31 tasks across 9 batches implemented and verified
+**Status:** Complete — all 31 tasks implemented + Session 2 code-review fix-up landed
 **Tasks Completed:** 31 / 31
-**Verification:** typecheck clean (21/21 packages), server suite **2176 / 2176** (137 files), CLI suite **218 / 218** (14 files), 3 new ADRs, `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG entries (6 user-visible), CLAUDE.md updated, lint clean (2 known warnings: pre-existing `routes/config.ts` env access; `index.ts` max-lines from #20 wiring — flagged for follow-up refactor)
+**Verification:** typecheck clean (21/21 packages), server suite **2181 / 2181** (137 files, +5 from fix-up), CLI suite **218 / 218** (14 files), 3 new ADRs, `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG entries (6 user-visible), CLAUDE.md updated, lint clean (2 known warnings)
 
 ## Tasks Completed
 
@@ -198,13 +198,78 @@ _(Implementation in progress)_
 
 **Documentation**: `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG `## [Unreleased]` entries (6 user-visible), CLAUDE.md updates (4 edits).
 
-## Known Follow-ups (non-blocking)
+## Session 2 Code-Review Fix-Up — 2026-04-06
+
+The post-Session-2 `code-reviewer` subagent flagged 4 critical/important production bugs that the unit tests masked because they pre-seeded the wrong on-disk format. All fixes landed in this fix-up commit:
+
+### Issues Fixed (Critical)
+
+1. **Manifest path mismatch (Critical)** — `flows/update.ts` and `flows/uninstall.ts` were reading `dork-package.json` but the install pipeline writes `.dork/manifest.json` (the canonical path per `packages/marketplace/src/constants.ts`). Production effect: `dorkos update` would silently report "no installed packages" against any real install, and adapter uninstall would deregister the wrong adapter. The unit test fixtures pre-seeded `dork-package.json`, so the bug never surfaced under test. **Fix**: switched both flows to read `.dork/manifest.json` via `PACKAGE_MANIFEST_PATH` from `@dorkos/marketplace`. Updated all 5 flow test fixtures (`install-plugin/agent/skill-pack/uninstall/update`) to seed the canonical path. Also fixed the uninstall adapter fallback `path.basename(stagingPath)` (which returned the literal `'pkg'`) to use `path.basename(located.installRoot)`.
+
+2. **Apply-mode update path broken (Critical)** — `UpdateFlow.run()` called `installer.install({ force: true })` which dispatched straight to a flow's `atomicMove(stagingDir, installRoot)`, throwing `ENOTEMPTY` against any existing install. ADR-0233's "uninstall-without-purge → install" pattern was documented but never implemented. **Fix**: added `MarketplaceInstaller.update()` that:
+   - Resolves the request through `PackageResolver` to get the canonical package name (handles bare names, marketplace shortcuts, github shorthand, AND local paths)
+   - Calls `uninstallFlow.uninstall({ name, purge: false })` which preserves `.dork/data/` and `.dork/secrets.json` into the live install root
+   - **Captures** the preserved data into a temp scratch directory under `os.tmpdir()` and removes the data-only install root entirely (fixes the deeper bug where `restorePreservedData` left files that blocked the next `atomicMove`)
+   - Calls `this.install({ ..., force: true })` against the now-empty parent
+   - Restores the preserved data from the scratch directory into the new install root
+   - On install failure, restores preserved data to the original location best-effort before re-throwing
+   - Updated `InstallerLike` (in both `marketplace-installer.ts` and `flows/update.ts`) to expose `update()` instead of `install()`.
+   - Updated `UpdateFlow.run()` apply path to call `installer.update(...)` instead of `installer.install({ force: true })`.
+
+3. **Conflict detector adapter-id rule wrong (Important)** — `conflict-detector.ts:212` compared `entry.config.id === stagedId` (where `stagedId = manifest.adapterType`). But `addAdapter(adapterType, name, ...)` stores `manifest.name` on `config.id` and `manifest.adapterType` on `config.type`, so the rule never fires unless a package happens to be named after its adapter family. **Fix**: changed to `entry.config.type === stagedType`. Also improved the description to surface both the colliding type and the package id.
+
+4. **`valid-plugin` fixture missing `id` field (Important)** — `extension.json` omitted `id`, so `discoverStagedExtensions` silently dropped the bundled extension and the integration test asserted compile/enable were NOT called for it. The most important integration test in the spec wasn't actually exercising the compile or enable code paths. **Fix**: added `"id": "sample-ext"` to the fixture. Flipped the integration assertion to verify compile is called once and enable is called with `'sample-ext'`.
+
+### Install Metadata Sidecar (new)
+
+Added `apps/server/src/services/marketplace/installed-metadata.ts` exposing `INSTALL_METADATA_PATH = '.dork/install-metadata.json'`, `InstallMetadata` interface, `readInstallMetadata`, and `writeInstallMetadata`. The orchestrator's `install()` method now writes this sidecar after every successful flow dispatch with `{ name, version, type, installedFrom, installedAt }`. Best-effort: a metadata write failure is logged but does not fail the install. The update flow's `listInstalled()` reads the sidecar to honour the scoped marketplace lookup that ADR-0233 advertises.
+
+### New Tests
+
+- `marketplace-installer.test.ts` (+3 tests): unit coverage for `update()` — happy path (uninstall + install dispatch with empty preservedData), `projectPath` forwarding, and uninstall failure propagation.
+- `integration.test.ts` (+2 tests):
+  - **Roundtrip test** — install → assert manifest + sidecar exist → plant `.dork/data/` and `.dork/secrets.json` → uninstall(no-purge) → assert preserved data survived. This is the contract test the reviewer recommended; it would have caught issues #1, #2, #3, #6 simultaneously if it had existed in Session 2.
+  - **Apply-mode update test** — install → plant data + secrets → `installer.update(...)` → assert install root has fresh manifest + sidecar AND preserved data round-tripped through the scratch directory.
+
+### Test fixture updates
+
+All 5 flow test files now seed packages with `.dork/manifest.json` instead of the (wrong) top-level `dork-package.json`:
+
+- `__tests__/flows/install-plugin.test.ts`
+- `__tests__/flows/install-agent.test.ts`
+- `__tests__/flows/install-skill-pack.test.ts`
+- `__tests__/flows/uninstall.test.ts`
+- `__tests__/flows/update.test.ts`
+
+`install-agent.test.ts` got `mkdir` added to its `node:fs/promises` import.
+
+### Pre-existing failure-paths flake (also fixed)
+
+Three tests in `failure-paths.test.ts` were comparing global `listStagingDirs()` snapshots, which cross-contaminated when integration.test.ts ran the install path in parallel. Scoped each comparison to the test's own package-name prefix (network-failure test, validation-failure test) or removed the snapshot entirely (conflict-gate test, where the package name `valid-plugin` collides with integration.test.ts).
+
+### ADR Updates
+
+- **ADR-0231**: removed the false claim that uninstall uses `runTransaction`. Documents that uninstall implements its own staging+rollback because the semantics differ (it stages the _existing_ install, not a fresh one) but shares the EXDEV-safe `atomicMove` helper.
+- **ADR-0233**: rewrote the implementation section to describe the actual 5-step pattern (resolve → uninstall(no-purge) → capture preserved data into scratch → install(force) → restore preserved data). Also documents the failure-path data restoration behaviour.
+
+### Documentation Updates
+
+- `contributing/marketplace-installs.md` — fixed the `dork-package.json` reference in the "add a new install flow" recipe.
+- `flows/install-skill-pack.ts` — fixed the TSDoc reference.
+
+### Final Verification
+
+- Typecheck: 21/21 packages clean
+- Server tests: **2181 / 2181** passing (137 files, +5 from fix-up)
+- CLI tests: 218 / 218 passing
+- Server lint: 0 errors, 2 known warnings (unchanged)
+- CLI lint: clean
+
+## Known Follow-ups (non-blocking, deferred from fix-up scope)
 
 1. **`apps/server/src/routes/marketplace.ts` is 585 lines** — over the 500-line file-size rule threshold. Extract `listInstalledPackages` / `readInstalledPackage` / `computeCacheStatus` / helpers into `routes/marketplace-helpers.ts` in a dedicated cleanup pass.
 2. **`apps/server/src/index.ts` is 748 lines (573 code lines)** — also over the 500 soft cap. Extract marketplace wiring + other service-init blocks into `services/core/startup-*.ts` helpers.
 3. **Helper duplication between `integration.test.ts` and `failure-paths.test.ts`** — both have their own `buildInstallerForTests` / `buildHarness`. Merge into `__tests__/integration-helpers.ts`.
-4. **`valid-plugin` fixture missing `extension.json` `id` field** — the bundled extension is silently dropped by `discoverStagedExtensions`. Either add the `id` or move the tripwire to a broken fixture.
-5. **No `pnpm test` CI workflow exists** — neither Ubuntu nor Windows. The `atomicMove` helper provides the portable building block, but runtime verification on Windows requires a prerequisite test.yml infrastructure task.
-6. **Pre-existing failure-paths flake** — `listStagingDirs()` filters by global `dorkos-install-*` prefix, which cross-contaminates under parallel vitest runs. Fix: filter by per-test install-root name.
-7. **Zod 3 / Zod 4 skew** — `@dorkos/marketplace` uses Zod 3 but the server uses Zod 4, so `openapi-registry.ts` declares local Zod-4 mirror schemas. Plan to upgrade `@dorkos/marketplace` to Zod 4 and delete the mirrors.
-8. **SSE for clone progress on `POST /packages/:name/install`** — deferred with a `// TODO` marker in the source. Reference pattern is `services/discovery/scan-stream`.
+4. **No `pnpm test` CI workflow exists** — neither Ubuntu nor Windows. The `atomicMove` helper provides the portable building block, but runtime verification on Windows requires a prerequisite `test.yml` infrastructure task.
+5. **Zod 3 / Zod 4 skew** — `@dorkos/marketplace` uses Zod 3 but the server uses Zod 4, so `openapi-registry.ts` declares local Zod-4 mirror schemas. Plan to upgrade `@dorkos/marketplace` to Zod 4 and delete the mirrors.
+6. **SSE for clone progress on `POST /packages/:name/install`** — deferred with a `// TODO` marker in the source. Reference pattern is `services/discovery/scan-stream`.

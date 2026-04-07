@@ -37,7 +37,11 @@ import type { PluginInstallFlow } from './flows/install-plugin.js';
 import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent } from './telemetry-hook.js';
+import { writeInstallMetadata } from './installed-metadata.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
+import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 /** Sentinel marketplace value used when a package was resolved directly (git URL / local path). */
 const DIRECT_SOURCE_LABEL = '<direct>';
@@ -119,6 +123,7 @@ export interface InstallerDeps {
 export interface InstallerLike {
   preview(req: InstallRequest): Promise<PreviewResult>;
   install(req: InstallRequest): Promise<InstallResult>;
+  update(req: InstallRequest): Promise<InstallResult>;
 }
 
 /** The tuple returned by {@link MarketplaceInstaller.preview}. */
@@ -189,6 +194,27 @@ export class MarketplaceInstaller implements InstallerLike {
 
       const result = await this.dispatchFlow(staged.packagePath, staged.manifest, req);
 
+      // Persist install provenance to `.dork/install-metadata.json` so the
+      // update flow can scope its marketplace lookups and the routes layer
+      // can surface "installed from" / "installed at" to API clients.
+      // Best-effort: a metadata write failure is logged but does not fail
+      // the install — the package itself is already on disk.
+      try {
+        await writeInstallMetadata(result.installPath, {
+          name: result.packageName,
+          version: result.version,
+          type: result.type,
+          installedFrom: resolved.marketplaceName,
+          installedAt: new Date().toISOString(),
+        });
+      } catch (metaErr) {
+        this.deps.logger.warn('[marketplace-installer] failed to write install-metadata.json', {
+          packageName: result.packageName,
+          installPath: result.installPath,
+          error: metaErr instanceof Error ? metaErr.message : String(metaErr),
+        });
+      }
+
       await this.reportTerminalOutcome({
         resolved,
         packageType: staged.manifest.type,
@@ -209,6 +235,114 @@ export class MarketplaceInstaller implements InstallerLike {
       });
       throw err;
     }
+  }
+
+  /**
+   * Update an installed package by uninstalling without purging
+   * (`--purge: false`, which preserves `.dork/data/` and `.dork/secrets.json`)
+   * and then reinstalling fresh. This is the documented apply-mode update
+   * pattern (ADR-0233).
+   *
+   * The two-step uninstall → install dance is necessary because the install
+   * flows use `atomicMove` to swing the staging directory onto the live
+   * install root, which throws `ENOTEMPTY` against an existing install.
+   * Removing the live install first sidesteps that and lets the freshly
+   * fetched package version land cleanly. The uninstall flow's data
+   * preservation primitives copy `.dork/data/` and `.dork/secrets.json`
+   * back into the live location after package removal, so user state
+   * survives the round trip and is then overwritten only if the new
+   * version explicitly ships replacement files.
+   *
+   * Resolves the request through the same {@link PackageResolver} the
+   * install path uses so the uninstall lookup keys off the canonical
+   * package name (the manifest's `name` field), not whatever raw
+   * identifier the caller passed in. This lets `update()` accept the
+   * same input shapes as `install()` — bare names, marketplace
+   * shortcuts, github shorthand, and local paths — without putting
+   * format-parsing logic in two places.
+   *
+   * @param req - The install request to apply as an update.
+   * @returns The {@link InstallResult} from the post-uninstall reinstall.
+   */
+  async update(req: InstallRequest): Promise<InstallResult> {
+    // 1. Resolve so the uninstall lookup keys off the canonical package
+    //    name, not whatever raw identifier the caller passed.
+    const resolved = await this.deps.resolver.resolve(buildResolverInput(req));
+
+    // 2. Uninstall WITH purge so the install root is fully removed and
+    //    `atomicMove(stagingDir, installRoot)` does not later trip on
+    //    `ENOTEMPTY`. We do our own data preservation around the call so
+    //    `.dork/data/` and `.dork/secrets.json` survive the round trip.
+    const result = await this.deps.uninstallFlow.uninstall({
+      name: resolved.packageName,
+      purge: false,
+      projectPath: req.projectPath,
+    });
+
+    // 3. Capture preserved data into a temp scratch directory and remove
+    //    the now-data-only install root before the fresh install runs.
+    //    Without this, the surviving `.dork/data/` and `.dork/secrets.json`
+    //    leave the install root non-empty and atomicMove throws ENOTEMPTY.
+    const preserved = result.preservedData ?? [];
+    let scratchDir: string | null = null;
+    let installRoot: string | null = null;
+    if (preserved.length > 0) {
+      scratchDir = await mkdtemp(path.join(tmpdir(), 'dorkos-update-preserve-'));
+      // Every preserved path lives under the same install root — derive
+      // it from the first entry by finding the `.dork/` boundary so we
+      // can strip the install-root prefix when copying back later.
+      installRoot = await findInstallRootFromPreservedPath(preserved[0]);
+      for (const livePath of preserved) {
+        const relPath = path.relative(installRoot, livePath);
+        const scratchPath = path.join(scratchDir, relPath);
+        await mkdir(path.dirname(scratchPath), { recursive: true });
+        await cp(livePath, scratchPath, { recursive: true });
+      }
+      // Now remove the data-only install root entirely so atomicMove has
+      // a clean target. The caller's data is safe in `scratchDir`.
+      await rm(installRoot, { recursive: true, force: true });
+    }
+
+    // 4. Fresh install. The install flow's atomicMove now lands cleanly
+    //    onto an empty parent.
+    let installResult: InstallResult;
+    try {
+      installResult = await this.install({ ...req, force: true });
+    } catch (err) {
+      // If the install fails after we removed the data-only install root,
+      // restore preserved data to the original location so the user does
+      // not lose state. Best-effort: rethrow the original error either way.
+      if (scratchDir && installRoot) {
+        try {
+          await mkdir(installRoot, { recursive: true });
+          for (const livePath of preserved) {
+            const relPath = path.relative(installRoot, livePath);
+            const scratchPath = path.join(scratchDir, relPath);
+            await mkdir(path.dirname(livePath), { recursive: true });
+            await cp(scratchPath, livePath, { recursive: true });
+          }
+        } catch {
+          /* best-effort restore on failure path */
+        }
+        await rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+      throw err;
+    }
+
+    // 5. Copy preserved data back into the freshly installed package.
+    if (scratchDir && installRoot) {
+      for (const livePath of preserved) {
+        const relPath = path.relative(installRoot, livePath);
+        const scratchPath = path.join(scratchDir, relPath);
+        const destPath = path.join(installResult.installPath, relPath);
+        if (!(await pathExists(scratchPath))) continue;
+        await mkdir(path.dirname(destPath), { recursive: true });
+        await cp(scratchPath, destPath, { recursive: true });
+      }
+      await rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+
+    return installResult;
   }
 
   /**
@@ -335,4 +469,38 @@ function buildResolverInput(req: InstallRequest): string {
     return `${req.name}@${req.marketplace}`;
   }
   return req.name;
+}
+
+/**
+ * Test whether a path exists on disk. Used by `update()` to skip
+ * preserved paths that the user removed between snapshot and restore.
+ *
+ * @internal
+ */
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derive the install root from a preserved-data path produced by the
+ * uninstall flow. Preserved entries always live under `<installRoot>/.dork/`
+ * (either `.dork/data` or `.dork/secrets.json`), so the install root is the
+ * parent of the first `.dork` segment in the path.
+ *
+ * @internal
+ */
+async function findInstallRootFromPreservedPath(preservedPath: string): Promise<string> {
+  const segments = preservedPath.split(path.sep);
+  const dorkIdx = segments.lastIndexOf('.dork');
+  if (dorkIdx <= 0) {
+    throw new Error(
+      `[marketplace-installer] Cannot derive install root from preserved path '${preservedPath}'`
+    );
+  }
+  return segments.slice(0, dorkIdx).join(path.sep);
 }

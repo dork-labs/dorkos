@@ -92,8 +92,9 @@ async function stageInstalledPackage(opts: {
   secrets?: Record<string, unknown>;
 }): Promise<void> {
   await mkdir(opts.installRoot, { recursive: true });
+  await mkdir(path.join(opts.installRoot, '.dork'), { recursive: true });
   await writeFile(
-    path.join(opts.installRoot, 'dork-package.json'),
+    path.join(opts.installRoot, '.dork', 'manifest.json'),
     JSON.stringify(opts.manifest, null, 2),
     'utf-8'
   );
@@ -221,8 +222,8 @@ describe('UninstallFlow', () => {
     const result = await flow.uninstall({ name: 'plugin-with-data' });
 
     expect(result.ok).toBe(true);
-    // Package files removed.
-    expect(await pathExists(path.join(installRoot, 'dork-package.json'))).toBe(false);
+    // Package manifest removed.
+    expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(false);
     // Data and secrets re-created in the live location.
     const dataDir = path.join(installRoot, '.dork', 'data');
     expect(await pathExists(dataDir)).toBe(true);
@@ -290,7 +291,7 @@ describe('UninstallFlow', () => {
 
     // Original package is intact (rollback restored from staging).
     expect(await pathExists(installRoot)).toBe(true);
-    expect(await pathExists(path.join(installRoot, 'dork-package.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
     expect(
       await pathExists(path.join(installRoot, '.dork', 'extensions', 'ext-x', 'extension.json'))
     ).toBe(true);

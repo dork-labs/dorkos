@@ -71,8 +71,9 @@ async function buildValidPackage(): Promise<string> {
   await writeSkill(root, '.dork/skills', 'first-skill', 'Does the first thing.');
   await writeSkill(root, '.dork/skills', 'second-skill', 'Does the second thing.');
   await writeSkill(root, '.dork/tasks', 'nightly-thing', 'Runs nightly to do a thing.');
+  await mkdir(path.join(root, '.dork'), { recursive: true });
   await writeFile(
-    path.join(root, 'dork-package.json'),
+    path.join(root, '.dork', 'manifest.json'),
     JSON.stringify({ ...baseManifest }, null, 2),
     'utf8'
   );

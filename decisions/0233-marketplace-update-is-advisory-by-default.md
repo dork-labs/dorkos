@@ -26,11 +26,19 @@ The question for `dorkos update` was: what does the bare command do?
 
 `dorkos update` is **advisory by default**. It enumerates installed packages, compares their installed version against the latest available version in the marketplace catalog, and prints (or returns, via the HTTP API) the comparison. **It never touches disk.**
 
-To actually apply an update, the user must pass `--apply` (CLI) or set `apply: true` in the HTTP request. Even then, every update goes through the same `MarketplaceInstaller.install` pipeline as a first-time install — it shows the same permission preview, runs the same conflict detection, and runs inside the same atomic transaction. There is no fast path. There is no batch "update everything" without an explicit confirmation per package.
+To actually apply an update, the user must pass `--apply` (CLI) or set `apply: true` in the HTTP request. Even then, every update goes through the same `MarketplaceInstaller` as a first-time install — it shows the same permission preview, runs the same conflict detection, and runs inside the same atomic transaction. There is no fast path. There is no batch "update everything" without an explicit confirmation per package.
 
-The reinstall pattern is uninstall-without-purge → install. This preserves `.dork/data/` and `.dork/secrets.json` across versions so the user does not have to re-enter API keys or lose persistent state.
+The reinstall pattern is implemented by `MarketplaceInstaller.update()` and runs in five steps:
 
-Implementation: `apps/server/src/services/marketplace/flows/update.ts`. The flow forward-declares an `InstallerLike` interface to break the circular dependency on the orchestrator.
+1. Resolve the request through `PackageResolver` to get the canonical package name (so the next step's lookup keys off the manifest's `name` field, not the raw user identifier).
+2. Call `uninstallFlow.uninstall({ name, purge: false })`. This stages the existing install into a temp directory, runs side-effect cleanup (extension disable, adapter removal), and restores `.dork/data/` and `.dork/secrets.json` into the live install root.
+3. Move the restored data files into a fresh scratch directory under `os.tmpdir()` and then `rm -rf` the now-data-only install root entirely. Without this step, the surviving data files leave the install root non-empty and the next install's `atomicMove` would throw `ENOTEMPTY` against the existing directory.
+4. Call `this.install({ ..., force: true })` which runs the full install pipeline against an empty parent. The fresh package contents land cleanly via `atomicMove`.
+5. Copy the preserved data back from the scratch directory into the new install root, then delete the scratch directory.
+
+If step 4 fails, the orchestrator restores the preserved data to its original location on a best-effort basis before re-throwing — the user does not lose state on a failed update.
+
+Implementation: `apps/server/src/services/marketplace/marketplace-installer.ts` (`update()` method) and `apps/server/src/services/marketplace/flows/update.ts` (the advisory check + apply dispatch). The update flow forward-declares an `InstallerLike` interface to break the circular dependency on the orchestrator.
 
 ## Consequences
 

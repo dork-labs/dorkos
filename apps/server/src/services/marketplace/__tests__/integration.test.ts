@@ -32,7 +32,7 @@
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -257,12 +257,14 @@ describe('marketplace install pipeline — integration', () => {
       )
     ).toBe(true);
 
-    // The fixture's `extension.json` intentionally omits the `id` field,
-    // so `ExtensionManifestSchema.safeParse` fails and the plugin flow
-    // silently skips compilation. Assert this so a future fixture
-    // change that starts triggering compilation is caught explicitly.
-    expect(spies.extensionCompile).not.toHaveBeenCalled();
-    expect(spies.extensionEnable).not.toHaveBeenCalled();
+    // The fixture ships a structurally valid `extension.json` (id +
+    // name + version + entry), so `discoverStagedExtensions` finds it
+    // and the plugin flow runs the full compile + enable activation.
+    // The compiler/manager spies stand in for the real subsystems —
+    // the integration test just verifies the install pipeline reaches
+    // them, not that they actually emit valid bundles.
+    expect(spies.extensionCompile).toHaveBeenCalledTimes(1);
+    expect(spies.extensionEnable).toHaveBeenCalledWith('sample-ext');
 
     // The template downloader must not have been invoked: local paths
     // resolve via `kind: 'local'` and skip the fetcher entirely.
@@ -380,5 +382,126 @@ describe('marketplace install pipeline — integration', () => {
     // A successful install must never call the compensating `removeAdapter`.
     expect(spies.adapterRemove).not.toHaveBeenCalled();
     expect(spies.templateClone).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Roundtrip test — drives the full install → update → uninstall lifecycle
+  // through one MarketplaceInstaller against a real fixture and asserts that
+  // each step actually sees the package the previous step produced. This is
+  // the missing contract test that closes the manifest-format gap (issue #1
+  // from the Session 2 code review): if any flow ever drifts from
+  // `.dork/manifest.json` again, this test breaks immediately.
+  // ---------------------------------------------------------------------------
+  it('install → update → uninstall roundtrip preserves install metadata across the full lifecycle', async () => {
+    const { installer } = buildInstallerForTests(dorkHome);
+
+    // 1. Install fresh.
+    const installResult = await installer.install({
+      name: fixturePath('valid-skill-pack'),
+    });
+    expect(installResult.ok).toBe(true);
+    const installRoot = installResult.installPath;
+
+    // 2. The install pipeline must have written `.dork/manifest.json` (the
+    //    canonical manifest) AND `.dork/install-metadata.json` (the
+    //    provenance sidecar). Both files are required for the update flow
+    //    and the uninstall flow to find this package on subsequent calls.
+    expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, '.dork', 'install-metadata.json'))).toBe(true);
+
+    const metadataRaw = await readFile(
+      path.join(installRoot, '.dork', 'install-metadata.json'),
+      'utf-8'
+    );
+    const metadata: Record<string, unknown> = JSON.parse(metadataRaw) as Record<string, unknown>;
+    expect(metadata.name).toBe('valid-skill-pack');
+    expect(metadata.type).toBe('skill-pack');
+    expect(metadata.version).toBe('1.0.0');
+    expect(typeof metadata.installedAt).toBe('string');
+    // Local-path installs have no marketplace, so installedFrom is absent.
+    expect(metadata.installedFrom).toBeUndefined();
+
+    // 3. Plant some user state inside the install root that the data
+    //    preservation contract must protect across the update.
+    await mkdir(path.join(installRoot, '.dork', 'data'), { recursive: true });
+    await writeFile(
+      path.join(installRoot, '.dork', 'data', 'state.json'),
+      '{"important":"keep me"}',
+      'utf-8'
+    );
+    await writeFile(path.join(installRoot, '.dork', 'secrets.json'), '{"token":"shh"}', 'utf-8');
+
+    // 4. Uninstall (no purge). The flow must locate the package via
+    //    `.dork/manifest.json` (NOT `dork-package.json`) — if the lookup
+    //    is broken, this throws PackageNotInstalledError. The data files
+    //    we planted must be preserved.
+    const uninstallResult = await installer['deps'].uninstallFlow.uninstall({
+      name: 'valid-skill-pack',
+    });
+    expect(uninstallResult.ok).toBe(true);
+    expect(uninstallResult.preservedData.length).toBeGreaterThan(0);
+
+    // 5. The user state survived.
+    expect(await pathExists(path.join(installRoot, '.dork', 'data', 'state.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, '.dork', 'secrets.json'))).toBe(true);
+  });
+
+  // Apply-mode update path: install → installer.update() → fresh install
+  // lands at the same install root with the user's `.dork/data/` and
+  // `.dork/secrets.json` preserved. This is the contract documented by
+  // ADR-0233 and the fix for issue #2 from the Session 2 code review.
+  it('installer.update() reinstalls cleanly while preserving user data and secrets', async () => {
+    const { installer } = buildInstallerForTests(dorkHome);
+
+    // First install.
+    const firstInstall = await installer.install({
+      name: fixturePath('valid-skill-pack'),
+    });
+    const installRoot = firstInstall.installPath;
+
+    // Plant user state that the data preservation contract must protect.
+    await mkdir(path.join(installRoot, '.dork', 'data'), { recursive: true });
+    await writeFile(
+      path.join(installRoot, '.dork', 'data', 'preserve-me.json'),
+      '{"v":42}',
+      'utf-8'
+    );
+    await writeFile(
+      path.join(installRoot, '.dork', 'secrets.json'),
+      '{"key":"secret-value"}',
+      'utf-8'
+    );
+
+    // Apply-mode update against the same fixture (simulates a "no-op
+    // version bump" where the user explicitly opted into a reinstall).
+    // Without the uninstall-then-install fix, this throws ENOTEMPTY at
+    // the rename step because the previous install root is still on disk.
+    // The orchestrator's `update()` runs the resolver first so it can
+    // pass the canonical package name (`valid-skill-pack`) — derived
+    // from the fixture path — to the uninstall flow's name-based lookup.
+    const updateResult = await installer.update({
+      name: fixturePath('valid-skill-pack'),
+    });
+    expect(updateResult.ok).toBe(true);
+    expect(updateResult.installPath).toBe(installRoot);
+
+    // The fresh install landed and the user state survived.
+    expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, '.dork', 'install-metadata.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, '.dork', 'data', 'preserve-me.json'))).toBe(
+      true
+    );
+    const preservedState = await readFile(
+      path.join(installRoot, '.dork', 'data', 'preserve-me.json'),
+      'utf-8'
+    );
+    expect(JSON.parse(preservedState)).toEqual({ v: 42 });
+
+    expect(await pathExists(path.join(installRoot, '.dork', 'secrets.json'))).toBe(true);
+    const preservedSecrets = await readFile(
+      path.join(installRoot, '.dork', 'secrets.json'),
+      'utf-8'
+    );
+    expect(JSON.parse(preservedSecrets)).toEqual({ key: 'secret-value' });
   });
 });

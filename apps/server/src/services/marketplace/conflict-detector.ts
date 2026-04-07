@@ -201,21 +201,28 @@ export class ConflictDetector {
   }
 
   /**
-   * Rule 5 — adapter id collisions. Only runs for adapter packages; the
-   * staged `adapterType` is compared against installed adapter `id`s
-   * from {@link AdapterManager.listAdapters}.
+   * Rule 5 — adapter type collisions. Only runs for adapter packages; the
+   * staged `adapterType` is compared against the `type` field of every
+   * adapter currently registered with {@link AdapterManager.listAdapters}.
+   *
+   * The install flow registers adapters via `addAdapter(adapterType, name, ...)`,
+   * which stores the package name on `config.id` and the adapter family on
+   * `config.type`. So the collision check has to compare against
+   * `entry.config.type` — comparing against `entry.config.id` would only
+   * fire when a package happened to be named after its adapter family,
+   * which is the exception, not the rule.
    */
   #detectAdapterIdConflict(ctx: ConflictDetectionContext): ConflictReport[] {
     if (ctx.manifest.type !== 'adapter') return [];
-    const stagedId = ctx.manifest.adapterType;
+    const stagedType = ctx.manifest.adapterType;
     const installed = this.#adapterManager.listAdapters();
-    const collision = installed.find((entry) => entry.config.id === stagedId);
+    const collision = installed.find((entry) => entry.config.type === stagedType);
     if (!collision) return [];
     return [
       {
         level: 'error',
         type: 'adapter-id',
-        description: `An adapter with id "${stagedId}" is already configured.`,
+        description: `An adapter of type "${stagedType}" is already configured (installed package: "${collision.config.id}").`,
         conflictingPackage: collision.config.id,
       },
     ];

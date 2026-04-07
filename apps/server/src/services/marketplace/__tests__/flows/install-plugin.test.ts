@@ -61,8 +61,9 @@ async function stagePackage(opts: {
   extensions?: { id: string; manifest: Record<string, unknown> }[];
 }): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'install-plugin-pkg-'));
+  await mkdir(path.join(root, '.dork'), { recursive: true });
   await writeFile(
-    path.join(root, 'dork-package.json'),
+    path.join(root, '.dork', 'manifest.json'),
     JSON.stringify(opts.manifest, null, 2),
     'utf-8'
   );
@@ -135,7 +136,7 @@ describe('PluginInstallFlow', () => {
     const installRoot = path.join(deps.dorkHome, 'plugins', 'no-ext-plugin');
     expect(result.installPath).toBe(installRoot);
     expect(await pathExists(installRoot)).toBe(true);
-    expect(await pathExists(path.join(installRoot, 'dork-package.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
     expect(deps.extensionCompiler.compile).not.toHaveBeenCalled();
     expect(deps.extensionManager.enable).not.toHaveBeenCalled();
   });

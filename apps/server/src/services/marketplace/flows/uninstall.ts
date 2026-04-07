@@ -24,6 +24,7 @@ import { atomicMove } from '../lib/atomic-move.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
 
 /** Staging directory prefix used by the uninstall flow. */
@@ -198,8 +199,11 @@ export class UninstallFlow {
       await this.disableBundledExtensions(stagingPath);
     }
     if (type === 'adapter') {
+      // Prefer the manifest name; fall back to the install root basename
+      // (the directory the package was installed into) rather than the
+      // staging dir basename (which is always the literal 'pkg').
       await this.deps.adapterManager.removeAdapter(
-        located.manifest?.name ?? path.basename(stagingPath)
+        located.manifest?.name ?? path.basename(located.installRoot)
       );
     }
   }
@@ -304,7 +308,7 @@ async function pathExists(target: string): Promise<boolean> {
 }
 
 /**
- * Read and parse `dork-package.json` from an install root, returning
+ * Read and parse `.dork/manifest.json` from an install root, returning
  * `null` if the file is missing or unparseable. Validation is the
  * installer's job — we only need the type for routing.
  */
@@ -312,7 +316,7 @@ async function readManifestIfPresent(
   installRoot: string
 ): Promise<MarketplacePackageManifest | null> {
   try {
-    const raw = await readFile(path.join(installRoot, 'dork-package.json'), 'utf-8');
+    const raw = await readFile(path.join(installRoot, PACKAGE_MANIFEST_PATH), 'utf-8');
     return JSON.parse(raw) as MarketplacePackageManifest;
   } catch {
     return null;

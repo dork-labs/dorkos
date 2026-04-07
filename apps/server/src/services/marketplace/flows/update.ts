@@ -20,12 +20,11 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { gt as semverGt, valid as semverValid, coerce as semverCoerce } from 'semver';
+import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplaceJson, MarketplaceJsonEntry, PackageType } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import type { InstallRequest, InstallResult, MarketplaceSource } from '../types.js';
-
-/** Filename used for the installed-package manifest at the install root. */
-const INSTALLED_MANIFEST_FILENAME = 'dork-package.json';
+import { readInstallMetadata } from '../installed-metadata.js';
 
 /**
  * Structural interface for the forward-declared `MarketplaceInstaller`
@@ -35,11 +34,11 @@ const INSTALLED_MANIFEST_FILENAME = 'dork-package.json';
  */
 export interface InstallerLike {
   /**
-   * Install or reinstall a marketplace package. When called from the update
-   * flow, `force: true` is always set and `projectPath` is inherited from
-   * the request passed to {@link UpdateFlow.run}.
+   * Update an installed package by uninstalling (without purging
+   * `.dork/data/` or `.dork/secrets.json`) and reinstalling fresh.
+   * Preserves user secrets and persisted state across version bumps.
    */
-  install(req: InstallRequest): Promise<InstallResult>;
+  update(req: InstallRequest): Promise<InstallResult>;
 }
 
 /**
@@ -155,10 +154,9 @@ export class UpdateFlow {
     if (req.apply) {
       for (const check of checks) {
         if (!check.hasUpdate) continue;
-        const result = await this.deps.installer.install({
+        const result = await this.deps.installer.update({
           name: check.packageName,
           marketplace: check.marketplace,
-          force: true,
           projectPath: req.projectPath,
         });
         applied.push(result);
@@ -188,9 +186,10 @@ export class UpdateFlow {
 
   /**
    * Walk the install roots under `<dorkHome>/plugins/` and
-   * `<dorkHome>/agents/`, reading each `dork-package.json` and returning
-   * the discovered packages. Unreadable manifests are silently skipped
-   * so a single malformed install never blocks the update check.
+   * `<dorkHome>/agents/`, reading each `.dork/manifest.json` for the
+   * canonical package fields and `.dork/install-metadata.json` for the
+   * provenance fields. Unreadable manifests are silently skipped so a
+   * single malformed install never blocks the update check.
    *
    * @internal
    */
@@ -208,13 +207,13 @@ export class UpdateFlow {
         const installPath = path.join(root.dir, entry.name);
         const manifest = await readInstalledManifest(installPath);
         if (!manifest) continue;
+        const installMetadata = await readInstallMetadata(installPath);
         results.push({
           name: typeof manifest.name === 'string' ? manifest.name : entry.name,
           version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
           type: (manifest.type as PackageType | undefined) ?? root.inferredType,
           installPath,
-          installedFrom:
-            typeof manifest.installedFrom === 'string' ? manifest.installedFrom : undefined,
+          installedFrom: installMetadata?.installedFrom,
         });
       }
     }
@@ -333,12 +332,12 @@ async function readDirSafe(dir: string): Promise<Dirent[]> {
 }
 
 /**
- * Read and parse `dork-package.json` from an install root. Returns `null`
- * if the file is missing or unparseable — the update check silently
+ * Read and parse `.dork/manifest.json` from an install root. Returns
+ * `null` if the file is missing or unparseable — the update check silently
  * skips malformed installs rather than blocking the whole scan.
  */
 async function readInstalledManifest(installRoot: string): Promise<Record<string, unknown> | null> {
-  const manifestPath = path.join(installRoot, INSTALLED_MANIFEST_FILENAME);
+  const manifestPath = path.join(installRoot, PACKAGE_MANIFEST_PATH);
   try {
     const s = await stat(manifestPath);
     if (!s.isFile()) return null;

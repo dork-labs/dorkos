@@ -46,7 +46,7 @@ export class SkillPackInstallFlow {
    * Install a skill-pack package.
    *
    * @param packagePath - Filesystem path to the downloaded package source
-   * @param manifest - Validated skill-pack manifest from `dork-package.json`
+   * @param manifest - Validated skill-pack manifest from `.dork/manifest.json`
    * @param opts - Original install request (used for `projectPath`)
    * @returns Fully populated {@link InstallResult}
    */

@@ -41,7 +41,7 @@ runTransaction<T>(opts: {
 
 Lifecycle: create temp staging dir → optional git backup branch → `stage` → `activate` → cleanup. On any thrown error from `stage` or `activate`, the staging dir is removed and the backup branch (if any) is restored before the original error is re-raised. Cleanup errors on the success path are logged but never fail the transaction — the install already succeeded; the leftover temp dir is a janitorial concern, not a correctness one.
 
-All four install flows (`install-plugin`, `install-agent`, `install-skill-pack`, `install-adapter`) and `uninstall` are required to go through this primitive. The `atomicMove` helper at `lib/atomic-move.ts` provides the EXDEV-safe rename used inside every `activate` callback.
+All four install flows (`install-plugin`, `install-agent`, `install-skill-pack`, `install-adapter`) go through this primitive. The uninstall flow (`flows/uninstall.ts`) implements its own staging+rollback because its semantics differ — it stages the _existing_ installation into a temp dir, runs side-effect cleanup, restores preserved data, and only then commits — but it shares the same EXDEV-safe `atomicMove` helper for the rename steps. The `atomicMove` helper at `lib/atomic-move.ts` provides the cross-device rename used inside every `activate` callback and inside the uninstall stage/restore steps.
 
 ### Hazard: `git reset --hard` is destructive across the entire worktree
 

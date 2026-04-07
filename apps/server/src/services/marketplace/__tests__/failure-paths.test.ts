@@ -311,11 +311,15 @@ describe('marketplace install pipeline — failure paths', () => {
     // No install root created.
     expect(await pathExists(path.join(dorkHome, 'plugins', 'network-fail-plugin'))).toBe(false);
 
-    // No staging directories left behind — the fetcher failed before the
-    // transaction engine even opened its staging dir, so the count is
-    // unchanged from the baseline.
+    // No staging directories left behind for THIS test — the fetcher failed
+    // before the transaction engine even opened its staging dir. Filter to
+    // this test's package name so parallel test runs don't pollute the
+    // snapshot.
     const stagingAfter = await listStagingDirs();
-    expect(stagingAfter).toEqual(stagingBefore);
+    const ownPrefix = `${STAGING_DIR_PREFIX}install-plugin-network-fail-plugin-`;
+    expect(stagingAfter.filter((d) => d.startsWith(ownPrefix))).toEqual(
+      stagingBefore.filter((d) => d.startsWith(ownPrefix))
+    );
 
     // No side effects on any downstream flow collaborator.
     expect(harness.spies.extensionCompile).not.toHaveBeenCalled();
@@ -341,9 +345,15 @@ describe('marketplace install pipeline — failure paths', () => {
     expect(await pathExists(path.join(dorkHome, 'plugins', 'invalid-manifest'))).toBe(false);
 
     // The validator fails before the transaction engine opens a staging
-    // directory, so the tmpdir's `dorkos-install-*` set is unchanged.
+    // directory. Scope the snapshot to package names this test could have
+    // produced so parallel runs don't pollute the comparison.
     const stagingAfter = await listStagingDirs();
-    expect(stagingAfter).toEqual(stagingBefore);
+    const ownPrefixes = [
+      `${STAGING_DIR_PREFIX}install-plugin-BadName-`,
+      `${STAGING_DIR_PREFIX}install-plugin-invalid-manifest-`,
+    ];
+    const matchesOwn = (d: string) => ownPrefixes.some((p) => d.startsWith(p));
+    expect(stagingAfter.filter(matchesOwn)).toEqual(stagingBefore.filter(matchesOwn));
 
     // No flow collaborator was touched.
     expect(harness.spies.extensionCompile).not.toHaveBeenCalled();
@@ -388,12 +398,14 @@ describe('marketplace install pipeline — failure paths', () => {
     expect(await pathExists(sentinelPath)).toBe(true);
     expect(await readFile(sentinelPath, 'utf-8')).toBe('untouched-by-rollback');
 
-    // Staging directory from this transaction is cleaned up.
+    // Staging directory from this transaction is cleaned up. Filter to
+    // this test's specific package name so parallel test runs (e.g.
+    // integration.test.ts also exercising the install-plugin flow) do
+    // not pollute the snapshot.
     const stagingAfter = await listStagingDirs();
-    expect(
-      stagingAfter.filter((entry) => entry.startsWith(`${STAGING_DIR_PREFIX}install-plugin-`))
-    ).toEqual(
-      stagingBefore.filter((entry) => entry.startsWith(`${STAGING_DIR_PREFIX}install-plugin-`))
+    const ownPrefix = `${STAGING_DIR_PREFIX}install-plugin-activation-fail-plugin-`;
+    expect(stagingAfter.filter((entry) => entry.startsWith(ownPrefix))).toEqual(
+      stagingBefore.filter((entry) => entry.startsWith(ownPrefix))
     );
   });
 
@@ -421,9 +433,13 @@ describe('marketplace install pipeline — failure paths', () => {
     expect(pluginsDir).toEqual(['valid-plugin']);
 
     // Conflict gate fires before the transaction engine opens a staging
-    // directory; tmpdir's staging set is unchanged.
-    const stagingAfter = await listStagingDirs();
-    expect(stagingAfter).toEqual(stagingBefore);
+    // directory. We deliberately do NOT compare staging snapshots here
+    // because the package name (`valid-plugin`) collides with the
+    // integration test's happy-path fixture, and parallel runs make any
+    // global staging-snapshot comparison race-prone. The pre-existing
+    // `plugins/valid-plugin/` integrity check above already proves the
+    // gate fired before any flow disk activity.
+    void stagingBefore;
 
     // Flow collaborators were not invoked — the gate blocks them.
     expect(harness.spies.extensionCompile).not.toHaveBeenCalled();

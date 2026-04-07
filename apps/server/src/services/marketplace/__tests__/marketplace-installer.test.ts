@@ -545,6 +545,91 @@ describe('MarketplaceInstaller', () => {
     });
   });
 
+  describe('update()', () => {
+    it('uninstalls without purge then installs with force', async () => {
+      const { deps, resolver, pluginFlow, previewBuilder, uninstallFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'updateable-plugin' });
+
+      wireLocalResolution(resolver, 'updateable-plugin', '/tmp/updateable-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      // Empty preservedData keeps the unit test focused on the
+      // dispatch contract rather than the temp-scratch data shuffling
+      // (which is exercised end-to-end by integration.test.ts).
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'updateable-plugin',
+        removedFiles: 5,
+        preservedData: [],
+      });
+
+      const installer = new MarketplaceInstaller(deps);
+      const result = await installer.update({ name: 'updateable-plugin' });
+
+      // Uninstall first, with purge: false (the data preservation contract).
+      expect(uninstallFlow.uninstall).toHaveBeenCalledTimes(1);
+      expect(uninstallFlow.uninstall).toHaveBeenCalledWith({
+        name: 'updateable-plugin',
+        purge: false,
+        projectPath: undefined,
+      });
+
+      // Then install fresh with force: true (so any residual collision
+      // gates are bypassed — the prior package is already gone).
+      expect(pluginFlow.install).toHaveBeenCalledTimes(1);
+      const installCall = pluginFlow.install.mock.calls[0];
+      expect(installCall?.[2]).toEqual(
+        expect.objectContaining({ name: 'updateable-plugin', force: true })
+      );
+
+      // Telemetry fires once for the inner install() call.
+      expect(mockedReportInstallEvent).toHaveBeenCalledTimes(1);
+      expect(mockedReportInstallEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'success', packageName: 'updateable-plugin' })
+      );
+
+      expect(result.packageName).toBe('updateable-plugin');
+    });
+
+    it('forwards projectPath to both uninstall and install', async () => {
+      const { deps, resolver, pluginFlow, previewBuilder, uninstallFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'project-update' });
+
+      wireLocalResolution(resolver, 'project-update');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'project-update',
+        removedFiles: 0,
+        preservedData: [],
+      });
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.update({ name: 'project-update', projectPath: '/work/myapp' });
+
+      expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: '/work/myapp' })
+      );
+      const installCall = pluginFlow.install.mock.calls[0];
+      expect(installCall?.[2]).toEqual(expect.objectContaining({ projectPath: '/work/myapp' }));
+    });
+
+    it('propagates uninstall failures without calling install', async () => {
+      const { deps, resolver, pluginFlow, uninstallFlow } = buildDeps();
+      wireLocalResolution(resolver, 'fails-on-uninstall');
+      uninstallFlow.uninstall.mockRejectedValue(new Error('uninstall blew up'));
+
+      const installer = new MarketplaceInstaller(deps);
+      await expect(installer.update({ name: 'fails-on-uninstall' })).rejects.toThrow(
+        'uninstall blew up'
+      );
+      expect(pluginFlow.install).not.toHaveBeenCalled();
+    });
+  });
+
   describe('error classes', () => {
     it('InvalidPackageError preserves the issue messages', () => {
       const err = new InvalidPackageError(['issue one', 'issue two']);

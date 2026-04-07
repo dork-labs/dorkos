@@ -9,7 +9,7 @@
  * throws — staging must be cleaned and the install root must not exist.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -59,7 +59,12 @@ async function pathExists(target: string): Promise<boolean> {
  */
 async function stagePackage(manifest: AgentPackageManifest): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'install-agent-pkg-'));
-  await writeFile(path.join(root, 'dork-package.json'), JSON.stringify(manifest, null, 2), 'utf-8');
+  await mkdir(path.join(root, '.dork'), { recursive: true });
+  await writeFile(
+    path.join(root, '.dork', 'manifest.json'),
+    JSON.stringify(manifest, null, 2),
+    'utf-8'
+  );
   return root;
 }
 
@@ -127,7 +132,7 @@ describe('AgentInstallFlow', () => {
     expect(result.manifest).toEqual(manifest);
     expect(result.warnings).toEqual([]);
     expect(await pathExists(expectedDir)).toBe(true);
-    expect(await pathExists(path.join(expectedDir, 'dork-package.json'))).toBe(true);
+    expect(await pathExists(path.join(expectedDir, '.dork', 'manifest.json'))).toBe(true);
 
     expect(deps.agentCreator.createAgentWorkspace).toHaveBeenCalledTimes(1);
     const callArgs = deps.agentCreator.createAgentWorkspace.mock.calls[0]?.[0] as {

@@ -58,8 +58,9 @@ function buildPluginManifest(
 
 /**
  * Stage an installed package on disk under `<dorkHome>/plugins/<name>/` with
- * its `dork-package.json` (plus an optional `installedFrom` field that the
- * discovery walker picks up when present).
+ * its canonical `.dork/manifest.json` and an optional
+ * `.dork/install-metadata.json` sidecar (read by the update flow's
+ * provenance lookup when present).
  */
 async function stageInstalledPlugin(opts: {
   dorkHome: string;
@@ -67,16 +68,29 @@ async function stageInstalledPlugin(opts: {
   installedFrom?: string;
 }): Promise<string> {
   const installRoot = path.join(opts.dorkHome, 'plugins', opts.manifest.name);
-  await mkdir(installRoot, { recursive: true });
-  const raw: Record<string, unknown> = { ...opts.manifest };
-  if (opts.installedFrom !== undefined) {
-    raw.installedFrom = opts.installedFrom;
-  }
+  await mkdir(path.join(installRoot, '.dork'), { recursive: true });
   await writeFile(
-    path.join(installRoot, 'dork-package.json'),
-    JSON.stringify(raw, null, 2),
+    path.join(installRoot, '.dork', 'manifest.json'),
+    JSON.stringify(opts.manifest, null, 2),
     'utf-8'
   );
+  if (opts.installedFrom !== undefined) {
+    await writeFile(
+      path.join(installRoot, '.dork', 'install-metadata.json'),
+      JSON.stringify(
+        {
+          name: opts.manifest.name,
+          version: opts.manifest.version,
+          type: opts.manifest.type,
+          installedFrom: opts.installedFrom,
+          installedAt: '2025-01-01T00:00:00.000Z',
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+  }
   return installRoot;
 }
 
@@ -128,7 +142,7 @@ async function buildDeps(opts: {
 }): Promise<{
   deps: UpdateFlowDeps;
   dorkHome: string;
-  installer: { install: ReturnType<typeof vi.fn> };
+  installer: { update: ReturnType<typeof vi.fn> };
   fetcher: { fetchMarketplaceJson: ReturnType<typeof vi.fn> };
   sourceManager: {
     list: ReturnType<typeof vi.fn>;
@@ -137,7 +151,7 @@ async function buildDeps(opts: {
 }> {
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'update-flow-home-'));
   const installer: InstallerLike = {
-    install: vi.fn(async (req) =>
+    update: vi.fn(async (req) =>
       buildInstallResult(req.name, '2.0.0', path.join(dorkHome, 'plugins', req.name))
     ),
   };
@@ -161,7 +175,7 @@ async function buildDeps(opts: {
   return {
     deps,
     dorkHome,
-    installer: installer as { install: ReturnType<typeof vi.fn> },
+    installer: installer as { update: ReturnType<typeof vi.fn> },
     fetcher,
     sourceManager,
   };
@@ -200,7 +214,7 @@ describe('UpdateFlow', () => {
       })
     );
     expect(result.applied).toHaveLength(0);
-    expect(ctx.installer.install).not.toHaveBeenCalled();
+    expect(ctx.installer.update).not.toHaveBeenCalled();
   });
 
   it('reports update available but does not install in advisory mode', async () => {
@@ -226,10 +240,10 @@ describe('UpdateFlow', () => {
       })
     );
     expect(result.applied).toHaveLength(0);
-    expect(ctx.installer.install).not.toHaveBeenCalled();
+    expect(ctx.installer.update).not.toHaveBeenCalled();
   });
 
-  it('invokes installer.install with force when apply is true and an update exists', async () => {
+  it('invokes installer.update when apply is true and an update exists', async () => {
     const marketplaceJson = buildMarketplaceJson([{ name: 'outdated-plugin', version: '2.0.0' }]);
     const ctx = await buildDeps({ marketplaceJson });
     cleanupDirs.push(ctx.dorkHome);
@@ -242,12 +256,11 @@ describe('UpdateFlow', () => {
     const result = await flow.run({ name: 'outdated-plugin', apply: true });
 
     expect(result.checks[0]?.hasUpdate).toBe(true);
-    expect(ctx.installer.install).toHaveBeenCalledTimes(1);
-    expect(ctx.installer.install).toHaveBeenCalledWith(
+    expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+    expect(ctx.installer.update).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'outdated-plugin',
         marketplace: 'fixture-marketplace',
-        force: true,
       })
     );
     expect(result.applied).toHaveLength(1);
@@ -267,7 +280,7 @@ describe('UpdateFlow', () => {
     const result = await flow.run({ name: 'stable-plugin', apply: true });
 
     expect(result.checks[0]?.hasUpdate).toBe(false);
-    expect(ctx.installer.install).not.toHaveBeenCalled();
+    expect(ctx.installer.update).not.toHaveBeenCalled();
     expect(result.applied).toHaveLength(0);
   });
 

@@ -380,7 +380,7 @@ Construct a `ThemeInstallFlow` under the existing conditional marketplace router
 
 **Step 5 — Add a test fixture under `services/marketplace/fixtures/`.**
 
-Create `fixtures/valid-theme/` with a minimal `dork-package.json`, the theme's payload, and whatever the validator requires. Mirror the structure of `valid-plugin/`.
+Create `fixtures/valid-theme/` with a minimal `.dork/manifest.json`, the theme's payload, and whatever the validator requires. Mirror the structure of `valid-plugin/`.
 
 **Step 6 — Add a flow test mocking `transactionInternal.isGitRepo`.**
 
