@@ -65,15 +65,22 @@ function RegistryDialog({ contribution }: { contribution: DialogContribution }) 
   );
 
   const urlSignal = useDialogUrlSignal(contribution.urlParam);
+  // Capture primitive + stable callback reference separately so `onOpenChange`
+  // below isn't invalidated on every render. `useDialogUrlSignal` returns a
+  // fresh object literal each render (the switch picks a new `{isOpen, close}`),
+  // but the underlying `close` callbacks come from `useCallback` inside each
+  // deep-link hook and are stable across renders.
+  const urlIsOpen = urlSignal.isOpen;
+  const urlClose = urlSignal.close;
 
-  const open = storeOpen || urlSignal.isOpen;
+  const open = storeOpen || urlIsOpen;
 
   const onOpenChange = useCallback(
     (value: boolean) => {
       setStoreOpen(value);
-      if (!value && urlSignal.isOpen) urlSignal.close();
+      if (!value && urlIsOpen) urlClose();
     },
-    [setStoreOpen, urlSignal]
+    [setStoreOpen, urlIsOpen, urlClose]
   );
 
   const Component = contribution.component;

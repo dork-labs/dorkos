@@ -45,4 +45,22 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     // `?settings=open` (no tab argument).
     await expect(page).toHaveURL(/[?&]settings=open/);
   });
+
+  test('navigating to ?agent=identity&agentPath=... opens Agent dialog on a fresh tab', async ({
+    page,
+  }) => {
+    // Regression lock for the AgentDialogWrapper short-circuit fix: with a
+    // fresh tab (no in-app opener populating `useAgentDialog.projectPath`),
+    // the wrapper must read `agentPath` from the URL via
+    // `useAgentDialogDeepLink` to avoid dropping the deep link before
+    // `selectedCwd` hydrates.
+    await page.goto('/?agent=identity&agentPath=/tmp/dorkos-deep-link-test');
+    await page.waitForSelector('[data-testid="app-shell"]');
+    // The test path is not a registered agent, so `NoAgentFallback`
+    // renders with the "No agent registered" copy. Seeing that copy proves
+    // the wrapper did NOT short-circuit — it mounted AgentDialog, which
+    // then branched into the fallback. Before the wrapper fix, the deep
+    // link would have been dropped and nothing would render at all.
+    await expect(page.getByText('No agent registered')).toBeVisible();
+  });
 });

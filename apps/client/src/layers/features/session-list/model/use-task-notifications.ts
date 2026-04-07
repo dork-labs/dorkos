@@ -16,10 +16,15 @@ export function useTaskNotifications(): void {
   const enableTasksNotifications = useAppStore((s) => s.enableTasksNotifications);
   const tasksDeepLink = useTasksDeepLink();
   const setTasksBadgeCount = useAppStore((s) => s.setTasksBadgeCount);
-  const tasksIsOpen = tasksDeepLink.isOpen;
+  // Read BOTH signals so agent-dispatched opens (which flip the store flag
+  // via `executeUiCommand({ panel: 'tasks' })` without touching the URL)
+  // still clear the badge. See spec §6.10 / §13 Q4 — store-based opens
+  // remain a valid dual-signal path.
+  const tasksStoreOpen = useAppStore((s) => s.tasksOpen);
+  const tasksIsOpen = tasksStoreOpen || tasksDeepLink.isOpen;
   const openTasks = tasksDeepLink.open;
 
-  // Clear completion badge when Tasks panel opens
+  // Clear completion badge when Tasks panel opens (via either signal)
   useEffect(() => {
     if (tasksIsOpen) clearBadge();
   }, [tasksIsOpen, clearBadge]);
