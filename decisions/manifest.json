@@ -1549,7 +1549,7 @@
       "number": 236,
       "slug": "sidecar-dorkos-json-for-marketplace-extensions",
       "title": "Sidecar dorkos.json for DorkOS Marketplace Extensions",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-04-07",
       "extractedFrom": "marketplace-05-claude-code-format-superset",
       "specSlug": "marketplace-05-claude-code-format-superset"
@@ -1558,7 +1558,7 @@
       "number": 237,
       "slug": "same-repo-monorepo-for-dork-labs-marketplace-seed",
       "title": "Same-Repo Monorepo for dork-labs/marketplace Seed",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-04-07",
       "extractedFrom": "marketplace-05-claude-code-format-superset",
       "specSlug": "marketplace-05-claude-code-format-superset"
@@ -1567,7 +1567,7 @@
       "number": 238,
       "slug": "port-to-zod-cc-validator-with-weekly-sync-cron",
       "title": "Port-to-Zod CC Validator with Weekly Sync Cron",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-04-07",
       "extractedFrom": "marketplace-05-claude-code-format-superset",
       "specSlug": "marketplace-05-claude-code-format-superset"
@@ -1576,7 +1576,7 @@
       "number": 239,
       "slug": "plugin-runtime-activation-via-claude-agent-sdk-options-plugins",
       "title": "Plugin Runtime Activation via Claude Agent SDK options.plugins",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-04-07",
       "extractedFrom": "marketplace-05-claude-code-format-superset",
       "specSlug": "marketplace-05-claude-code-format-superset"

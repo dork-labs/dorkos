@@ -48,6 +48,7 @@ const InstallEventSchema = z.object({
   errorCode: z.string().max(MAX_ERROR_CODE_LEN).optional(),
   installId: z.string().uuid(),
   dorkosVersion: z.string().min(1).max(MAX_VERSION_LEN),
+  sourceType: z.enum(['relative-path', 'github', 'url', 'git-subdir', 'npm']),
 });
 
 type InstallEvent = z.infer<typeof InstallEventSchema>;
@@ -94,6 +95,7 @@ async function persistInstallEvent(event: InstallEvent): Promise<void> {
       errorCode: event.errorCode ?? null,
       installId: event.installId,
       dorkosVersion: event.dorkosVersion,
+      sourceType: event.sourceType,
     });
   } catch (error) {
     console.error('[api/telemetry/install] insert failed', {

@@ -1,5 +1,17 @@
 # Implementation Summary: Marketplace 04: Web & Registry
 
+> ⚠️ **Schema superseded** — The `marketplace.json` schema shipped in
+> this spec was a draft that did not pass `claude plugin validate`. It
+> has been superseded by
+> [marketplace-05-claude-code-format-superset](../marketplace-05-claude-code-format-superset/02-specification.md),
+> which converts the format to a strict superset of the Claude Code
+> marketplace format. Spec 05 covers the new schema, the sidecar
+> strategy for DorkOS extensions (ADR-0236), the same-repo monorepo
+> pattern (ADR-0237), the port-to-Zod CC validator (ADR-0238), and
+> the plugin runtime activation via Claude Agent SDK `options.plugins`
+> (ADR-0239). Task #28 (the manual GitHub org bootstrap) is unblocked
+> by spec 05's Phase 8 with the rewritten `dork-labs/marketplace` seed.
+
 **Created:** 2026-04-07
 **Last Updated:** 2026-04-07
 **Spec:** specs/marketplace-04-web-and-registry/02-specification.md

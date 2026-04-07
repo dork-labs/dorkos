@@ -25,7 +25,7 @@
  *
  * @module services/marketplace/marketplace-installer
  */
-import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
+import type { MarketplacePackageManifest, PackageType, PluginSource } from '@dorkos/marketplace';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { Logger } from '@dorkos/shared/logger';
 import type { PackageFetcher } from './package-fetcher.js';
@@ -36,7 +36,7 @@ import type { AgentInstallFlow } from './flows/install-agent.js';
 import type { PluginInstallFlow } from './flows/install-plugin.js';
 import type { SkillPackInstallFlow } from './flows/install-skill-pack.js';
 import type { UninstallFlow } from './flows/uninstall.js';
-import { reportInstallEvent } from './telemetry-hook.js';
+import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -447,8 +447,21 @@ export class MarketplaceInstaller implements InstallerLike {
       outcome: params.outcome,
       durationMs: Date.now() - params.startTime,
       errorCode: params.errorCode,
+      sourceType: derivePluginSourceType(params.resolved?.pluginSource),
     });
   }
+}
+
+/**
+ * Derive the `sourceType` discriminator for telemetry from a resolved
+ * discriminated-union `PluginSource`. Falls back to `github` when the
+ * resolver surface hasn't been populated yet (direct-URL installs
+ * routed through the legacy `gitUrl` path).
+ */
+function derivePluginSourceType(source: PluginSource | undefined): InstallEvent['sourceType'] {
+  if (!source) return 'github';
+  if (typeof source === 'string') return 'relative-path';
+  return source.source;
 }
 
 /**

@@ -34,6 +34,13 @@ export interface InstallEvent {
   durationMs: number;
   /** Stable error code when `outcome === 'failure'`. */
   errorCode?: string;
+  /**
+   * Marketplace source form the package was installed from. One of
+   * `relative-path`, `github`, `url`, `git-subdir`, `npm`. Added in
+   * marketplace-05 so the marketplace team can track adoption per
+   * source type. Non-PII install-pipeline metadata.
+   */
+  sourceType: 'relative-path' | 'github' | 'url' | 'git-subdir' | 'npm';
 }
 
 /**

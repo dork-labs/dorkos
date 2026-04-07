@@ -6,7 +6,11 @@
  */
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import type { ActivityCategory, ActorType, ListActivityQuery } from '@dorkos/shared/activity-schemas';
+import type {
+  ActivityCategory,
+  ActorType,
+  ListActivityQuery,
+} from '@dorkos/shared/activity-schemas';
 
 /** Active filter values read from URL search params. */
 export interface ActivityFilters {

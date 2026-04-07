@@ -1,40 +1,41 @@
 /**
- * CLI handler for `dorkos package validate-remote <github-url>`.
+ * CLI handler for `dorkos package validate-remote <marketplace-url>`.
  *
- * Shallow-clones a marketplace package repo into a temporary directory and
- * runs the same validations as `dorkos package validate`. Cleans up the temp
- * directory on every exit path via `try/finally`.
+ * Fetches `.claude-plugin/marketplace.json` and the optional sibling
+ * `.claude-plugin/dorkos.json` sidecar from a remote marketplace repo
+ * (usually `https://github.com/<owner>/<repo>` for GitHub-hosted
+ * marketplaces, or a direct raw URL), then runs the same DorkOS +
+ * strict-CC validation pipeline as the local `validate-marketplace`
+ * command. No clone, no temp directory, no git dependency.
  *
- * Used by the `dorkos-community` GitHub Actions workflow to verify each
- * referenced package URL still hosts a valid package before merging changes
- * to `marketplace.json`.
- *
- * Returns the intended exit code rather than calling `process.exit` so the
- * top-level dispatcher in `cli.ts` retains the single source of truth for
- * process termination.
+ * Used by the `dork-labs/marketplace` GitHub Actions workflow to verify
+ * that every referenced marketplace URL still serves a valid
+ * `marketplace.json` before merging catalog changes.
  *
  * Exit codes:
  *
- * - `0` — package is valid
- * - `1` — clone failed
- * - `2` — validation failed (one or more `error`-level issues)
+ * - `0` — marketplace.json (and sidecar, if present) pass both schemas
+ * - `1` — fetch failed / DorkOS schema failed / sidecar invalid / reserved name
+ * - `2` — DorkOS schema passes but strict CC validation fails
  *
  * @module commands/package-validate-remote
  */
-import { spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { validatePackage } from '@dorkos/marketplace/package-validator';
+import {
+  parseMarketplaceJson,
+  parseDorkosSidecar,
+  validateAgainstCcSchema,
+  RESERVED_MARKETPLACE_NAMES,
+} from '@dorkos/marketplace';
 
 /** Parsed CLI arguments accepted by {@link runValidateRemote}. */
 export interface ValidateRemoteArgs {
-  /** Remote Git URL of the package repo to clone and validate. */
+  /** Remote marketplace URL. Accepts either a GitHub repo URL or a raw
+   *  `.claude-plugin/marketplace.json` URL. */
   url: string;
 }
 
 /** One-line usage string surfaced in error messages. */
-const USAGE_LINE = 'Usage: dorkos package validate-remote <github-url>';
+const USAGE_LINE = 'Usage: dorkos package validate-remote <marketplace-url>';
 
 /**
  * Parse the raw argv slice that follows `dorkos package validate-remote`.
@@ -49,69 +50,131 @@ const USAGE_LINE = 'Usage: dorkos package validate-remote <github-url>';
 export function parseValidateRemoteArgs(rawArgs: string[]): ValidateRemoteArgs {
   const positional = rawArgs.filter((a) => !a.startsWith('-'));
   if (positional.length === 0) {
-    throw new Error(`Missing required <github-url> argument.\n${USAGE_LINE}`);
+    throw new Error(`Missing required <marketplace-url> argument.\n${USAGE_LINE}`);
   }
   return { url: positional[0] };
 }
 
 /**
- * Implements `dorkos package validate-remote <github-url>`.
+ * Implements `dorkos package validate-remote <url>`.
  *
- * Creates a temp directory, shallow-clones the repo into it, runs
- * {@link validatePackage}, and removes the temp directory before returning
- * (regardless of which path was taken — clone failure, validation failure,
- * or success).
+ * Performs, in order:
+ * 1. Resolve the `marketplace.json` and `dorkos.json` URLs from the input.
+ * 2. Fetch both in parallel. Sidecar 404 is non-fatal.
+ * 3. Run the DorkOS passthrough parse. Exit 1 on failure.
+ * 4. Parse the sidecar (if fetched). Exit 1 on parse error.
+ * 5. Run the strict CC compatibility second pass. Exit 2 on failure.
+ * 6. Check the marketplace name against the reserved list.
+ * 7. Print the summary to stdout and exit 0.
  *
  * @param args - Parsed CLI arguments.
  * @returns The intended process exit code.
  */
 export async function runValidateRemote(args: ValidateRemoteArgs): Promise<number> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-validate-'));
+  const marketplaceUrl = resolveMarketplaceJsonUrl(args.url);
+  const sidecarUrl = resolveDorkosSidecarUrl(args.url);
 
+  let marketplaceRaw: string;
   try {
-    const cloned = await shallowClone(args.url, tmpDir);
-    if (!cloned) {
-      process.stderr.write(`Clone failed: ${args.url}\n`);
+    const res = await fetch(marketplaceUrl);
+    if (!res.ok) {
+      process.stderr.write(
+        `[FAIL] Fetch marketplace.json\n  - ${marketplaceUrl}: ${res.status} ${res.statusText}\n`
+      );
       return 1;
     }
-
-    const result = await validatePackage(tmpDir);
-    if (!result.ok) {
-      const errors = result.issues
-        .filter((issue) => issue.level === 'error')
-        .map((issue) => `[${issue.code}] ${issue.message}`)
-        .join('; ');
-      process.stderr.write(`Validation failed: ${errors}\n`);
-      return 2;
-    }
-
-    process.stdout.write(`OK: ${args.url}\n`);
-    return 0;
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    marketplaceRaw = await res.text();
+  } catch (err) {
+    process.stderr.write(
+      `[FAIL] Fetch marketplace.json\n  - ${marketplaceUrl}: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+    return 1;
   }
+  process.stdout.write(`[OK]   Fetched ${marketplaceUrl}\n`);
+
+  // Sidecar fetch in parallel is unnecessary since we already awaited the
+  // marketplace fetch above; attempt it here (non-fatal) so the CLI doesn't
+  // need a second round-trip when the marketplace fails.
+  let sidecarRaw: string | null = null;
+  try {
+    const res = await fetch(sidecarUrl);
+    if (res.ok) {
+      sidecarRaw = await res.text();
+    }
+  } catch {
+    // Non-fatal — sidecar is always optional.
+  }
+
+  // 1. DorkOS passthrough schema.
+  const dorkosResult = parseMarketplaceJson(marketplaceRaw);
+  if (!dorkosResult.ok) {
+    process.stderr.write(`[FAIL] DorkOS schema\n  - ${dorkosResult.error}\n`);
+    return 1;
+  }
+  process.stdout.write(`[OK]   DorkOS schema (passthrough)\n`);
+
+  // 2. Optional sidecar parse.
+  let sidecarCount: number | 'absent' = 'absent';
+  if (sidecarRaw !== null) {
+    const sidecarResult = parseDorkosSidecar(sidecarRaw);
+    if (!sidecarResult.ok) {
+      process.stderr.write(`[FAIL] Sidecar dorkos.json\n  - ${sidecarResult.error}\n`);
+      return 1;
+    }
+    sidecarCount = Object.keys(sidecarResult.sidecar.plugins).length;
+    process.stdout.write(`[OK]   Sidecar present and valid (${sidecarCount} plugins)\n`);
+  } else {
+    process.stdout.write(`[OK]   Sidecar absent (optional)\n`);
+  }
+
+  // 3. Strict CC compatibility.
+  const ccResult = validateAgainstCcSchema(JSON.parse(marketplaceRaw));
+  if (!ccResult.ok) {
+    process.stderr.write(`[FAIL] Claude Code compatibility (strict)\n`);
+    for (const issue of ccResult.errors) {
+      const where = issue.path.join('.') || '<root>';
+      process.stderr.write(`  - ${where}: ${issue.message}\n`);
+    }
+    return 2;
+  }
+  process.stdout.write(`[OK]   Claude Code compatibility (strict)\n`);
+
+  // 4. Reserved-name enforcement (already caught by the DorkOS schema,
+  //    surfaced explicitly for a clearer error message).
+  if (RESERVED_MARKETPLACE_NAMES.has(dorkosResult.marketplace.name)) {
+    process.stderr.write(`[FAIL] Marketplace name reserved: "${dorkosResult.marketplace.name}"\n`);
+    return 1;
+  }
+  process.stdout.write(`[OK]   Marketplace name not reserved\n`);
+
+  process.stdout.write(
+    `\nAll checks passed. ${args.url} (${dorkosResult.marketplace.plugins.length} packages)\n`
+  );
+  return 0;
 }
 
 /**
- * Shallow-clone a remote Git repo into `dest` (`--depth 1`).
+ * Resolve a remote marketplace URL into the canonical raw
+ * `marketplace.json` URL. Mirrors the server-side helper of the same name
+ * in `apps/server/src/services/marketplace/package-fetcher.ts`.
  *
- * Resolves to `true` when `git clone` exits with code `0`, `false`
- * otherwise. Errors from `spawn` itself (e.g. `git` not on `PATH`) also
- * resolve to `false` so the caller never has to handle exceptions from
- * this helper.
- *
- * Exported for testing — production callers should go through
- * {@link runValidateRemote}.
- *
- * @internal
- * @param url - Remote Git URL to clone.
- * @param dest - Absolute path to the (existing, empty) destination directory.
- * @returns `true` when the clone succeeded, `false` otherwise.
+ * @internal Exported for testing.
  */
-export function shallowClone(url: string, dest: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const child = spawn('git', ['clone', '--depth', '1', url, dest], { stdio: 'inherit' });
-    child.on('exit', (code) => resolve(code === 0));
-    child.on('error', () => resolve(false));
-  });
+export function resolveMarketplaceJsonUrl(input: string): string {
+  if (input.endsWith('.claude-plugin/marketplace.json')) return input;
+  if (input.endsWith('marketplace.json')) return input;
+  const base = input.replace(/\.git$/, '').replace(/\/$/, '');
+  return `${base}/raw/main/.claude-plugin/marketplace.json`;
+}
+
+/**
+ * Resolve a remote marketplace URL into the canonical raw `dorkos.json`
+ * sidecar URL.
+ *
+ * @internal Exported for testing.
+ */
+export function resolveDorkosSidecarUrl(input: string): string {
+  if (input.endsWith('.claude-plugin/dorkos.json')) return input;
+  const base = input.replace(/\.git$/, '').replace(/\/$/, '');
+  return `${base}/raw/main/.claude-plugin/dorkos.json`;
 }

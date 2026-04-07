@@ -1,0 +1,104 @@
+{
+  "name": "dorkos",
+  "owner": {
+    "name": "Dork Labs",
+    "email": "hello@dorkos.ai"
+  },
+  "metadata": {
+    "description": "Official marketplace for DorkOS — agents, plugins, skill packs, and adapters",
+    "version": "0.1.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "code-reviewer",
+      "source": "./code-reviewer",
+      "description": "Reviews your PRs every weekday morning, posts findings to Slack, files Linear issues for blockers",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "code-quality",
+      "tags": ["review", "pr", "ci"],
+      "keywords": ["code-review", "quality"]
+    },
+    {
+      "name": "security-auditor",
+      "source": "./security-auditor",
+      "description": "Continuously audits dependencies, configurations, and code for security vulnerabilities",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "security",
+      "tags": ["security", "audit"],
+      "keywords": ["security", "vulnerability"]
+    },
+    {
+      "name": "docs-keeper",
+      "source": "./docs-keeper",
+      "description": "Keeps documentation in sync with code changes by monitoring git activity",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "documentation",
+      "tags": ["docs", "sync"]
+    },
+    {
+      "name": "linear-integration",
+      "source": "./linear-integration",
+      "description": "Two-way sync between agent activity and Linear issues",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "integration",
+      "tags": ["linear", "issues"]
+    },
+    {
+      "name": "posthog-monitor",
+      "source": "./posthog-monitor",
+      "description": "PostHog analytics integration for tracking agent runs",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "observability",
+      "tags": ["posthog", "analytics"]
+    },
+    {
+      "name": "security-audit-pack",
+      "source": "./security-audit-pack",
+      "description": "Skill pack for security auditing tasks",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "security",
+      "tags": ["skills", "security"]
+    },
+    {
+      "name": "release-pack",
+      "source": "./release-pack",
+      "description": "Skill pack for release management workflows",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "release",
+      "tags": ["skills", "release"]
+    },
+    {
+      "name": "discord-adapter",
+      "source": "./discord-adapter",
+      "description": "Send agent notifications and receive commands via Discord",
+      "author": {
+        "name": "Dork Labs"
+      },
+      "license": "MIT",
+      "category": "integration",
+      "tags": ["discord", "adapter"]
+    }
+  ]
+}

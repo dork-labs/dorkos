@@ -1,7 +1,7 @@
 ---
 number: 238
 title: Port-to-Zod CC Validator with Weekly Sync Cron
-status: draft
+status: accepted
 created: 2026-04-07
 spec: marketplace-05-claude-code-format-superset
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: marketplace-05-claude-code-format-superset)
+Accepted (marketplace-05 implementation landed)
 
 ## Context
 

@@ -9,10 +9,26 @@ import {
   runValidateMarketplace,
 } from '../package-validate-marketplace.js';
 
+const validMarketplace = {
+  name: 'dorkos',
+  owner: { name: 'Dork Labs' },
+  plugins: [
+    {
+      name: 'code-reviewer',
+      source: { source: 'github', repo: 'dork-labs/code-reviewer' },
+      description: 'Reviews PRs',
+    },
+    {
+      name: 'docs-keeper',
+      source: { source: 'github', repo: 'dork-labs/docs-keeper' },
+      description: 'Keeps docs in sync',
+    },
+  ],
+};
+
 /**
  * Build a temp directory with a `marketplace.json` containing `payload`
- * and return the absolute path to that file. Caller is responsible for
- * cleanup via the suite-level `tmpRoot` mechanism.
+ * and return the absolute path to that file.
  */
 function writeMarketplaceFixture(tmpRoot: string, payload: unknown): string {
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'marketplace-'));
@@ -22,10 +38,28 @@ function writeMarketplaceFixture(tmpRoot: string, payload: unknown): string {
 }
 
 /**
+ * Build a `.claude-plugin/marketplace.json` layout (and optional sidecar)
+ * inside `tmpRoot` so the validator takes its sidecar-lookup path.
+ */
+function writeClaudePluginFixture(
+  tmpRoot: string,
+  marketplacePayload: unknown,
+  sidecarPayload?: unknown
+): string {
+  const root = fs.mkdtempSync(path.join(tmpRoot, 'mp-'));
+  const claudeDir = path.join(root, '.claude-plugin');
+  fs.mkdirSync(claudeDir, { recursive: true });
+  const marketplacePath = path.join(claudeDir, 'marketplace.json');
+  fs.writeFileSync(marketplacePath, JSON.stringify(marketplacePayload, null, 2));
+  if (sidecarPayload !== undefined) {
+    fs.writeFileSync(path.join(claudeDir, 'dorkos.json'), JSON.stringify(sidecarPayload, null, 2));
+  }
+  return marketplacePath;
+}
+
+/**
  * Collapse all `process.stdout.write` / `process.stderr.write` invocations
- * captured by a Vitest spy into a single string. Avoids the implicit-any
- * pitfall of `mock.calls.map((c) => …)` against the overloaded `write`
- * signature.
+ * captured by a Vitest spy into a single string.
  */
 function collectWrites(spy: ReturnType<typeof vi.spyOn>): string {
   return (spy.mock.calls as unknown[][]).map((call) => String(call[0])).join('');
@@ -70,32 +104,17 @@ describe('runValidateMarketplace', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it('returns 0 and prints OK on a valid marketplace.json fixture', async () => {
-    const filePath = writeMarketplaceFixture(tmpRoot, {
-      name: 'dorkos-community',
-      description: 'Seed registry',
-      plugins: [
-        {
-          name: 'code-reviewer',
-          source: 'https://github.com/dorkos-community/code-reviewer',
-          description: 'Reviews PRs',
-          type: 'agent',
-        },
-        {
-          name: 'docs-keeper',
-          source: 'https://github.com/dorkos-community/docs-keeper',
-          description: 'Keeps docs in sync',
-          type: 'agent',
-        },
-      ],
-    });
+  it('returns 0 and prints the full passing summary on a valid fixture', async () => {
+    const filePath = writeMarketplaceFixture(tmpRoot, validMarketplace);
 
     const exitCode = await runValidateMarketplace({ path: filePath });
 
     expect(exitCode).toBe(0);
     const stdoutCalls = collectWrites(stdoutSpy);
-    expect(stdoutCalls).toContain(`OK: ${filePath}`);
-    expect(stdoutCalls).toContain('(2 packages)');
+    expect(stdoutCalls).toContain('[OK]   DorkOS schema');
+    expect(stdoutCalls).toContain('[OK]   Claude Code compatibility');
+    expect(stdoutCalls).toContain('[OK]   Marketplace name not reserved');
+    expect(stdoutCalls).toContain('All checks passed');
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
@@ -107,44 +126,114 @@ describe('runValidateMarketplace', () => {
     expect(exitCode).toBe(1);
     const stderrCalls = collectWrites(stderrSpy);
     expect(stderrCalls).toContain(`Failed to read ${missingPath}`);
-    expect(stdoutSpy).not.toHaveBeenCalled();
   });
 
-  it('returns 2 when the marketplace.json is missing the required name field', async () => {
+  it('returns 1 when the marketplace.json is missing required fields', async () => {
     const filePath = writeMarketplaceFixture(tmpRoot, {
-      // Intentionally omit `name` — schema requires it.
-      description: 'No name here',
+      name: 'dorkos',
       plugins: [],
+      // Missing required `owner`
     });
 
     const exitCode = await runValidateMarketplace({ path: filePath });
 
-    expect(exitCode).toBe(2);
+    expect(exitCode).toBe(1);
     const stderrCalls = collectWrites(stderrSpy);
-    expect(stderrCalls).toContain('Validation failed');
-    expect(stderrCalls).toContain('name');
-    expect(stdoutSpy).not.toHaveBeenCalled();
+    expect(stderrCalls).toContain('[FAIL] DorkOS schema');
+    expect(stderrCalls.toLowerCase()).toContain('owner');
   });
 
-  it('returns 2 when the file contains invalid JSON', async () => {
+  it('returns 1 when the file contains invalid JSON', async () => {
     const dir = fs.mkdtempSync(path.join(tmpRoot, 'marketplace-'));
     const filePath = path.join(dir, 'marketplace.json');
     fs.writeFileSync(filePath, '{ this is not valid json');
 
     const exitCode = await runValidateMarketplace({ path: filePath });
 
-    expect(exitCode).toBe(2);
+    expect(exitCode).toBe(1);
     const stderrCalls = collectWrites(stderrSpy);
-    expect(stderrCalls).toContain('Validation failed');
+    expect(stderrCalls).toContain('[FAIL] DorkOS schema');
     expect(stderrCalls).toContain('Invalid JSON');
   });
 
-  it('resolves relative paths against process.cwd()', async () => {
+  it('returns 2 when inline x-dorkos makes the document fail CC strict validation', async () => {
     const filePath = writeMarketplaceFixture(tmpRoot, {
-      name: 'rel-test',
-      description: 'Relative path resolution test',
-      plugins: [],
+      name: 'dorkos',
+      owner: { name: 'Dork Labs' },
+      plugins: [
+        {
+          name: 'leaky',
+          source: { source: 'github', repo: 'dork-labs/leaky' },
+          'x-dorkos': { type: 'agent' },
+        },
+      ],
     });
+
+    const exitCode = await runValidateMarketplace({ path: filePath });
+
+    expect(exitCode).toBe(2);
+    const stderrCalls = collectWrites(stderrSpy);
+    expect(stderrCalls).toContain('[FAIL] Claude Code compatibility');
+    expect(stderrCalls.toLowerCase()).toContain('unrecognized');
+  });
+
+  it('returns 1 on reserved marketplace names', async () => {
+    const filePath = writeMarketplaceFixture(tmpRoot, {
+      ...validMarketplace,
+      name: 'claude-plugins-official',
+    });
+
+    const exitCode = await runValidateMarketplace({ path: filePath });
+
+    // The DorkOS schema already rejects reserved names via `.refine()`,
+    // so this case surfaces as a schema failure rather than the later
+    // reserved-name guard.
+    expect(exitCode).toBe(1);
+    const stderrCalls = collectWrites(stderrSpy);
+    expect(stderrCalls.toLowerCase()).toContain('reserved');
+  });
+
+  it('detects and parses the optional .claude-plugin/dorkos.json sidecar', async () => {
+    const filePath = writeClaudePluginFixture(tmpRoot, validMarketplace, {
+      schemaVersion: 1,
+      plugins: {
+        'code-reviewer': { type: 'agent' },
+        'docs-keeper': { type: 'agent' },
+      },
+    });
+
+    const exitCode = await runValidateMarketplace({ path: filePath });
+
+    expect(exitCode).toBe(0);
+    const stdoutCalls = collectWrites(stdoutSpy);
+    expect(stdoutCalls).toContain('[OK]   Sidecar present and valid (2 plugins)');
+  });
+
+  it('treats missing sidecar as optional under .claude-plugin/', async () => {
+    const filePath = writeClaudePluginFixture(tmpRoot, validMarketplace);
+
+    const exitCode = await runValidateMarketplace({ path: filePath });
+
+    expect(exitCode).toBe(0);
+    const stdoutCalls = collectWrites(stdoutSpy);
+    expect(stdoutCalls).toContain('[OK]   Sidecar absent');
+  });
+
+  it('returns 1 when the sidecar is present but invalid', async () => {
+    const filePath = writeClaudePluginFixture(tmpRoot, validMarketplace, {
+      schemaVersion: 99, // not literal 1
+      plugins: {},
+    });
+
+    const exitCode = await runValidateMarketplace({ path: filePath });
+
+    expect(exitCode).toBe(1);
+    const stderrCalls = collectWrites(stderrSpy);
+    expect(stderrCalls).toContain('[FAIL] Sidecar dorkos.json');
+  });
+
+  it('resolves relative paths against process.cwd()', async () => {
+    const filePath = writeMarketplaceFixture(tmpRoot, validMarketplace);
 
     const originalCwd = process.cwd();
     try {

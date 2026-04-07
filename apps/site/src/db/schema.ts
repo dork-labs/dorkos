@@ -47,6 +47,13 @@ export const marketplaceInstallEvents = pgTable(
     installId: uuid('install_id').notNull(),
     /** DorkOS version that emitted the event (e.g. `0.4.2`). ≤32 chars. */
     dorkosVersion: text('dorkos_version').notNull(),
+    /**
+     * Marketplace source type the plugin was installed from. One of
+     * `relative-path`, `github`, `url`, `git-subdir`, `npm`. Added in
+     * marketplace-05 so we can track adoption of each source form over
+     * time. Not PII — purely an install-pipeline metadata field.
+     */
+    sourceType: text('source_type').notNull(),
     /** Server-side receive timestamp. Trust this, never the client clock. */
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
   },

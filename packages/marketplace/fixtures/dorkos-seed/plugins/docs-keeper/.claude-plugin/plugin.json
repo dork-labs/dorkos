@@ -1,0 +1,5 @@
+{
+  "name": "docs-keeper",
+  "description": "Keeps documentation in sync with code changes by monitoring git activity",
+  "version": "0.1.0"
+}

@@ -1,273 +1,297 @@
 # Marketplace Registry
 
-The `dorkos-community/marketplace` GitHub repository is the canonical registry for the DorkOS Marketplace. It hosts `marketplace.json` (the source of truth that `dorkos.ai/marketplace` and every DorkOS client read), the contributor-facing submission docs, the GitHub Actions validation workflow, and the branch-protection rules that keep the registry trustworthy.
+This guide describes the format of the DorkOS marketplace registry that
+powers browse, install, and telemetry. The registry format is a **strict
+superset** of Claude Code's `marketplace.json` format — every registry
+this guide covers is valid for BOTH `claude plugin validate` AND DorkOS's
+install pipeline. DorkOS-specific extensions live in a sidecar file
+(`dorkos.json`) that CC ignores entirely.
 
-This guide documents the registry repo layout, the JSON schema it serves, the submission flow contributors follow, and the operational settings (Actions workflow, branch protection, CODEOWNERS) maintainers configure when bootstrapping the org. The actual seed package repos (`code-reviewer`, `security-auditor`, etc.) live alongside the registry under the same `dorkos-community` org but are out of scope for this guide.
+> **Why a strict superset?** See ADR-0236. Empirical verification against
+> Claude Code 2.1.92 confirmed that CC's validator enforces
+> `additionalProperties: false` on plugin entries — any inline
+> `x-dorkos-*` field is rejected. The sidecar strategy is the only safe
+> extension mechanism.
 
-Pair this guide with:
+## Repository layout (Dork Labs seed)
 
-- [`specs/marketplace-04-web-and-registry/02-specification.md`](../specs/marketplace-04-web-and-registry/02-specification.md) — the authoritative spec. If this guide and the spec disagree, the spec wins and this file needs a patch.
-- [`contributing/marketplace-installs.md`](marketplace-installs.md) — the install pipeline that consumes a resolved package source from the registry.
-- [`contributing/marketplace-packages.md`](marketplace-packages.md) — package authoring (`dorkos package init`, manifest schema, layer rules).
-- [`packages/marketplace/src/marketplace-json-schema.ts`](../packages/marketplace/src/marketplace-json-schema.ts) — the Zod schema that defines `marketplace.json` and is run by `dorkos package validate-marketplace`.
-
-## 1. Overview
-
-The registry repo is intentionally minimal: a single JSON file that lists every published package, plus the docs and Actions plumbing required to keep that file trustworthy. It is **not** the install pipeline, **not** a package host, and **not** a CDN. It is a source-of-truth manifest, mirrored once per hour by `dorkos.ai/marketplace` (Next.js ISR) and by every DorkOS client that runs `dorkos install`.
-
-The registry exists for three reasons:
-
-1. **Discovery without installation.** Anyone can browse `https://dorkos.ai/marketplace` and learn what DorkOS does without running a single command. The web pages SSG-render directly from `marketplace.json`.
-2. **Deterministic install.** `dorkos install <name>` resolves the short package name to a real GitHub URL via `marketplace.json`. There is no central package host — each package lives in its own public git repo.
-3. **Auditable curation.** Every addition or change to `marketplace.json` lands via a pull request that runs `dorkos package validate-remote` against the submitted source. Maintainers review the PR. Branch protection prevents direct pushes to `main`.
-
-## 2. Repo layout
+The canonical Dork Labs marketplace lives at
+`github.com/dork-labs/marketplace` using the **same-repo monorepo**
+pattern (ADR-0237):
 
 ```
-dorkos-community/marketplace/
-├── marketplace.json                  # The registry index
-├── README.md                         # Public-facing description
-├── CONTRIBUTING.md                   # How to submit a package
-├── CODE_OF_CONDUCT.md
-├── LICENSE                           # MIT
-└── .github/
-    └── workflows/
-        ├── validate-submission.yml   # Runs `dorkos package validate` on PRs
-        └── publish-update.yml        # Notifies dorkos.ai when registry changes
+dork-labs/marketplace/
+├── .claude-plugin/
+│   ├── marketplace.json      # CC-standard registry
+│   └── dorkos.json           # DorkOS extension sidecar
+├── plugins/
+│   ├── code-reviewer/
+│   │   ├── .claude-plugin/
+│   │   │   └── plugin.json   # CC plugin manifest
+│   │   ├── README.md
+│   │   └── skills/code-reviewer/SKILL.md
+│   ├── security-auditor/
+│   └── ...
+├── CONTRIBUTING.md
+└── README.md
 ```
 
-The repo is publicly browsable. `marketplace.json` is served via the GitHub raw URL (`https://raw.githubusercontent.com/dorkos-community/marketplace/main/marketplace.json`) and consumed by both `apps/site` and the DorkOS server. There is no separate API in front of it — GitHub raw is the API.
+A reference copy of this layout lives in
+`packages/marketplace/fixtures/dorkos-seed/` and is exercised by both
+the schema tests and the Direction A bidirectional tests
+(`packages/marketplace/src/__tests__/cc-compat.test.ts`).
 
-## 3. `marketplace.json` schema
+Community contributors continue to host plugins in their own repos —
+the registry references them via the `github`, `url`, or `git-subdir`
+source forms. The monorepo pattern is the Dork Labs default, not a
+requirement.
 
-`marketplace.json` is a Claude Code-compatible marketplace document with optional DorkOS extension fields. The Zod schema lives in [`packages/marketplace/src/marketplace-json-schema.ts`](../packages/marketplace/src/marketplace-json-schema.ts) and is the single source of truth for what fields are valid. Both the GitHub Actions workflow and `apps/site` parse `marketplace.json` against this schema.
+## `marketplace.json` schema
 
-Per-package fields fall into two disjoint groups:
-
-- **Standard Claude Code fields** — `name`, `source`, `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`. These are the only fields Claude Code's parser is guaranteed to understand.
-- **DorkOS extension fields** — `type`, `category`, `tags`, `icon`, `layers`, `featured`. These power the browse/filter experience on `dorkos.ai/marketplace` without requiring every package to be cloned.
-
-Both the per-entry schema and the top-level document schema use `.passthrough()` so unknown fields survive a parse/serialize round-trip — the format may grow new fields and the registry should never silently strip them.
-
-The `featured` field is set by maintainers, not contributors. Contributor PRs that set `featured: true` will be asked to remove it before merge.
-
-<details>
-<summary>Initial seed payload (8 packages — verbatim from spec)</summary>
+The top-level document has three required fields (`name`, `owner`,
+`plugins`) plus optional `metadata`:
 
 ```json
 {
-  "name": "dorkos-community",
-  "description": "Official community marketplace for DorkOS — agents, plugins, skill packs, and adapters",
-  "plugins": [
-    {
-      "name": "code-reviewer",
-      "source": "https://github.com/dorkos-community/code-reviewer",
-      "description": "Reviews your PRs every weekday morning, posts findings to Slack, files Linear issues for blockers",
-      "type": "agent",
-      "category": "code-quality",
-      "tags": ["review", "pr", "ci"],
-      "icon": "🔍",
-      "featured": true
-    },
-    {
-      "name": "security-auditor",
-      "source": "https://github.com/dorkos-community/security-auditor",
-      "description": "Weekly dependency vulnerability scans, secret detection, and license compliance audits",
-      "type": "agent",
-      "category": "security",
-      "tags": ["audit", "security", "dependencies"],
-      "icon": "🛡️",
-      "featured": true
-    },
-    {
-      "name": "docs-keeper",
-      "source": "https://github.com/dorkos-community/docs-keeper",
-      "description": "Watches code changes, suggests documentation updates, keeps READMEs in sync with reality",
-      "type": "agent",
-      "category": "documentation",
-      "tags": ["docs", "maintenance"],
-      "icon": "📚",
-      "featured": true
-    },
-    {
-      "name": "linear-integration",
-      "source": "https://github.com/dorkos-community/linear-integration",
-      "description": "Linear status dashboard extension and webhook adapter for issue notifications",
-      "type": "plugin",
-      "category": "integration",
-      "tags": ["linear", "issues"],
-      "layers": ["extensions", "adapters"],
-      "icon": "📋"
-    },
-    {
-      "name": "posthog-monitor",
-      "source": "https://github.com/dorkos-community/posthog-monitor",
-      "description": "PostHog dashboard widget and error alerting for your DorkOS sidebar",
-      "type": "plugin",
-      "category": "observability",
-      "tags": ["analytics", "monitoring", "errors"],
-      "layers": ["extensions", "tasks"],
-      "icon": "📊"
-    },
-    {
-      "name": "security-audit-pack",
-      "source": "https://github.com/dorkos-community/security-audit-pack",
-      "description": "Scheduled security audit tasks: dependency scanning, secret detection, license checks",
-      "type": "skill-pack",
-      "category": "security",
-      "tags": ["audit", "tasks"],
-      "layers": ["tasks"],
-      "icon": "🔐"
-    },
-    {
-      "name": "release-pack",
-      "source": "https://github.com/dorkos-community/release-pack",
-      "description": "Tasks for version bumping, changelog generation, and git tagging",
-      "type": "skill-pack",
-      "category": "release",
-      "tags": ["release", "versioning", "changelog"],
-      "layers": ["tasks", "skills"],
-      "icon": "🚀"
-    },
-    {
-      "name": "discord-adapter",
-      "source": "https://github.com/dorkos-community/discord-adapter",
-      "description": "Discord relay adapter — bridge agent messages to Discord channels and DMs",
-      "type": "adapter",
-      "category": "messaging",
-      "tags": ["discord", "chat"],
-      "layers": ["adapters"],
-      "icon": "💬"
-    }
-  ]
+  "name": "dorkos",
+  "owner": { "name": "Dork Labs", "email": "hello@dorkos.ai" },
+  "metadata": {
+    "description": "Official marketplace for DorkOS",
+    "version": "0.1.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [ … ]
 }
 ```
 
-The seed contains exactly 3 agents, 2 plugins, 2 skill-packs, and 1 adapter — a 3+2+2+1 type distribution that the fixture validation test in `packages/marketplace/__tests__/` asserts on every CI run.
+### Five source forms
 
-</details>
+Each plugin entry's `source` is a discriminated union. The DorkOS install
+pipeline dispatches on the discriminator.
 
-## 4. Submission flow
+**1. Relative path** — bare string starting with `./`, resolved against
+the marketplace clone root. Used for same-repo monorepos:
 
-The contributor-facing submission flow lives in `dorkos-community/marketplace/CONTRIBUTING.md`. The canonical contents are reproduced below verbatim — when updating the registry repo's `CONTRIBUTING.md`, copy from this section, not the spec, so we have a single source of truth in the DorkOS repo.
+```json
+{ "name": "code-reviewer", "source": "./code-reviewer" }
+```
 
-`dorkos-community/marketplace/CONTRIBUTING.md`:
+When `metadata.pluginRoot` is set, entries can use the explicit path form
+`"./<name>"` so `pluginRoot` is implicit. Bare names without `./` are
+NOT accepted by Claude Code 2.1.92 — always include the `./` prefix.
 
-```markdown
-# Submitting a Package to the DorkOS Marketplace
+**2. GitHub object** — canonical form for GitHub-hosted plugins:
 
-## Quick Start
-
-1. Build your package using `dorkos package init <name> --type <type>`
-2. Develop, test locally with `dorkos package validate`
-3. Push your package to a public GitHub repo
-4. Open a PR to this repo adding your package to `marketplace.json`
-
-## Submission Checklist
-
-- [ ] Package builds and validates with `dorkos package validate`
-- [ ] README explains what the package does and any required setup
-- [ ] LICENSE file present (MIT, Apache-2.0, or compatible)
-- [ ] No hardcoded secrets or credentials
-- [ ] External hosts declared in `.dork/manifest.json`
-- [ ] If type is `plugin`, includes `.claude-plugin/plugin.json`
-
-## PR Format
-
-Add your package to the `plugins` array in `marketplace.json`, alphabetically ordered:
-
-\`\`\`json
+```json
 {
-"name": "your-package-name",
-"source": "https://github.com/your-username/your-package",
-"description": "What it does in one sentence",
-"type": "plugin",
-"category": "your-category",
-"tags": ["relevant", "tags"],
-"icon": "📦"
+  "name": "code-reviewer",
+  "source": {
+    "source": "github",
+    "repo": "owner/repo",
+    "ref": "main",
+    "sha": "<optional 40-char hex>"
+  }
 }
-\`\`\`
+```
 
-The `featured` field is set by maintainers, not contributors.
+**3. URL object** — generic git-cloneable URL (GitLab, Bitbucket, Gitea,
+Azure DevOps, self-hosted):
+
+```json
+{
+  "name": "code-reviewer",
+  "source": { "source": "url", "url": "https://gitlab.com/owner/repo.git" }
+}
+```
+
+**4. git-subdir object** — sparse clone of a subdirectory inside a
+monorepo. DorkOS uses partial sparse clone (`--filter=blob:none` +
+cone-mode sparse-checkout) with a 3-step fallback ladder for older
+self-hosted git servers.
+
+```json
+{
+  "name": "code-reviewer",
+  "source": {
+    "source": "git-subdir",
+    "url": "https://github.com/owner/monorepo.git",
+    "path": "plugins/code-reviewer"
+  }
+}
+```
+
+**5. npm object** — package reference. The install pipeline currently
+throws `NpmSourceNotSupportedError`; full implementation is tracked in
+spec `marketplace-06-npm-sources`.
+
+```json
+{
+  "name": "code-reviewer",
+  "source": {
+    "source": "npm",
+    "package": "@dorkos/code-reviewer",
+    "version": "^1.0.0"
+  }
+}
+```
+
+### Plugin entry fields
+
+CC-standard fields only. Anything else must go in the sidecar.
+
+| Field         | Type                    | Notes                                    |
+| ------------- | ----------------------- | ---------------------------------------- |
+| `name`        | kebab-case string       | Required                                 |
+| `source`      | discriminated union     | Required                                 |
+| `description` | string                  | Optional                                 |
+| `version`     | semver string           | Optional                                 |
+| `author`      | `{ name, email? }`      | **Object shape**, not bare string        |
+| `homepage`    | URL                     | Optional                                 |
+| `repository`  | URL                     | Optional                                 |
+| `license`     | string ≤64 chars        | Optional                                 |
+| `keywords`    | string[] ≤50            | Optional                                 |
+| `category`    | string ≤64 chars        | Optional                                 |
+| `tags`        | string[] ≤20 (≤32 each) | Optional                                 |
+| `strict`      | boolean                 | Optional — CC strict mode                |
+| `commands`    | unknown                 | CC component fields — opaque passthrough |
+| `agents`      | unknown                 | Same                                     |
+| `hooks`       | unknown                 | Same                                     |
+| `mcpServers`  | unknown                 | Same                                     |
+| `lspServers`  | unknown                 | Same                                     |
+
+## Sidecar `dorkos.json`
+
+The sidecar lives at `.claude-plugin/dorkos.json` alongside
+`marketplace.json` and is indexed by plugin name. It holds every
+DorkOS-specific field — `type`, `layers`, `requires`, `featured`,
+`icon`, `dorkosMinVersion`, `pricing`.
+
+```json
+{
+  "$schema": "https://dorkos.ai/schemas/dorkos-marketplace.schema.json",
+  "schemaVersion": 1,
+  "plugins": {
+    "code-reviewer": {
+      "type": "agent",
+      "layers": ["agents", "tasks"],
+      "icon": "🔍",
+      "featured": true,
+      "pricing": { "model": "free" }
+    }
+  }
+}
+```
+
+### Drift handling rules
+
+1. Plugin in `marketplace.json` but NOT in `dorkos.json` → merged entry
+   has `dorkos: undefined`. Consumers treat it as a default `plugin`
+   with no extensions. NOT an error.
+2. Plugin in `dorkos.json` but NOT in `marketplace.json` → added to the
+   merge helper's `orphans` list. Callers log a warning and drop the
+   orphan from merged output. NOT an error.
+
+See `packages/marketplace/src/merge-marketplace.ts` for the merge helper
+and the test suite that exercises both cases.
+
+## `metadata.pluginRoot` semantics
+
+`pluginRoot` lets same-repo monorepos elide the `./plugins/` prefix on
+every entry. The resolver applies these rules exactly (ordered):
+
+1. Object-form sources (`github`, `url`, `git-subdir`, `npm`) **always
+   ignore `pluginRoot`**.
+2. Relative-path sources starting with an explicit `./` are resolved
+   against `<marketplaceRoot>/<source>` — `pluginRoot` is **ignored**
+   because the leading `./` is explicit.
+3. Bare names (no `./`) are resolved against
+   `<marketplaceRoot>/<pluginRoot>/<name>`. **Note:** CC 2.1.92 does
+   not accept bare names — always use the explicit `./<name>` form.
+4. Trailing slashes on `pluginRoot` are normalized.
+5. Absolute paths in `pluginRoot` throw `ResolvePluginSourceError`.
+6. Any `..` traversal in `pluginRoot` or `source` throws
+   `ResolvePluginSourceError`.
+
+## Reserved marketplace names
+
+CC reserves 8 marketplace names for official use and impersonation
+prevention. DorkOS's schema rejects them via `.refine()`:
+
+- `claude-code-marketplace`
+- `claude-code-plugins`
+- `claude-plugins-official`
+- `anthropic-marketplace`
+- `anthropic-plugins`
+- `agent-skills`
+- `knowledge-work-plugins`
+- `life-sciences`
+
+## Strict superset framing
+
+**Outbound invariant**: Any `marketplace.json` produced against DorkOS's
+schema, using only CC-standard fields, must pass `claude plugin validate`.
+DorkOS extensions live in the sidecar.
+
+**Inbound invariant**: Any `marketplace.json` that passes `claude plugin
+validate` must install successfully via DorkOS's pipeline. No manual
+conversion. No import step. Native consumption.
+
+The `cc-validator.ts` module in `@dorkos/marketplace` ports CC's schema
+to strict-mode Zod and serves as the outbound oracle. The sync-direction
+invariant (ADR-0238) is load-bearing: **`cc-validator.ts` MUST NOT be
+stricter than CC's actual CLI behavior**. Looser-than-CC is acceptable;
+stricter-than-CC is a regression.
+
+The weekly sync cron at `.github/workflows/cc-schema-sync.yml` fetches
+`hesreallyhim/claude-code-json-schema` and opens a PR labeled
+`cc-schema-drift` when the DorkOS port has drifted from the upstream
+reference.
+
+## Submission flow
+
+To contribute a new package to the Dork Labs seed:
+
+1. Fork `github.com/dork-labs/marketplace`.
+2. Add a new `plugins/<name>/` directory with at minimum:
+   - `.claude-plugin/plugin.json` (CC manifest stub)
+   - `README.md`
+3. Add the entry to `.claude-plugin/marketplace.json` with
+   `"source": "./<name>"` and CC-standard metadata.
+4. Add the sidecar entry to `.claude-plugin/dorkos.json` with the
+   DorkOS type, layers, and pricing.
+5. Run `dorkos package validate-marketplace .claude-plugin/marketplace.json`
+   locally. Exit 0 means your entry is ready to submit.
+6. Open a PR against `main`.
+
+Community plugins hosted in their own repos go through the same flow
+except step 2 is skipped and step 3 uses the `github` or `git-subdir`
+source form instead of a relative path.
 
 ## Validation
 
-Our GitHub Actions workflow runs `dorkos package validate` on every submission.
-PRs failing validation cannot be merged.
+Two CLI commands gate submissions:
 
-## Review
+```bash
+# Validate a local marketplace.json file (with optional sidecar)
+dorkos package validate-marketplace .claude-plugin/marketplace.json
 
-A maintainer will review your submission within 7 days. We check:
-
-- Package quality and usefulness
-- Code safety (no obvious malware or supply chain risks)
-- Description accuracy
-- Category appropriateness
+# Validate a remote marketplace by URL
+dorkos package validate-remote https://github.com/dork-labs/marketplace
 ```
 
-## 5. GitHub Actions workflow
+Exit codes (both commands):
 
-`validate-submission.yml` runs on every pull request that touches `marketplace.json`. It installs the published `dorkos` CLI, runs `dorkos package validate-marketplace` against the modified file (which catches schema violations and duplicate names), and then iterates every entry in the `plugins` array running `dorkos package validate-remote` against each source URL. `validate-remote` shallow-clones the package into a temp directory and runs the full `validatePackage` pipeline against it.
+- `0` — all checks pass
+- `1` — fetch/parse failed, DorkOS schema failed, sidecar invalid, or reserved name
+- `2` — DorkOS schema passes but strict CC compatibility fails (outbound regression)
 
-Both CLI subcommands are added to `packages/cli` as part of spec 04 — they are not built specifically for the workflow, they are reusable validators that the workflow happens to call.
+Exit code 2 specifically means "your marketplace is valid for DorkOS but
+will break `claude plugin validate` — move the offending field to the
+sidecar."
 
-`.github/workflows/validate-submission.yml`:
+## Related ADRs
 
-```yaml
-name: Validate Submission
-on:
-  pull_request:
-    paths:
-      - 'marketplace.json'
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - name: Install dorkos CLI
-        run: pnpm install -g dorkos
-      - name: Validate marketplace.json
-        run: dorkos package validate-marketplace marketplace.json
-      - name: Validate each new package
-        run: |
-          for pkg in $(jq -r '.plugins[].source' marketplace.json); do
-            dorkos package validate-remote "$pkg"
-          done
-```
-
-A second workflow, `publish-update.yml`, fires after merge to `main` and notifies `dorkos.ai` so the next ISR revalidation picks up the change immediately instead of waiting for the hourly window. The exact webhook payload is owned by `apps/site` and is out of scope for this guide.
-
-## 6. Branch protection
-
-The `main` branch of `dorkos-community/marketplace` must be protected before the registry goes live. Required settings:
-
-- **Require a pull request before merging** — no direct pushes to `main`, including from maintainers and admins.
-- **Require status checks to pass before merging** — the `validate` job from `validate-submission.yml` is a required check.
-- **Require branches to be up to date before merging** — prevents stale PRs from merging an outdated `marketplace.json` over a newer one.
-- **Require review from a code owner** — at least one maintainer listed in `CODEOWNERS` must approve.
-- **Include administrators** — the rules apply to org admins as well, so a compromised admin account cannot push a malicious payload to `main` without going through the workflow.
-- **Restrict who can dismiss pull request reviews** — only maintainers, never the PR author.
-- **Do not allow force pushes or branch deletion** — the registry's history is auditable; rewriting it is never acceptable.
-
-These settings are the contractual mitigation for the "submission spam / low-quality PRs" risk in the spec — they guarantee that nothing reaches `main` without both automated validation and human review.
-
-## 7. CODEOWNERS
-
-`CODEOWNERS` lives at `.github/CODEOWNERS` in the registry repo and lists the maintainers who must approve every change. At minimum:
-
-```
-# Every change to the registry requires a maintainer review.
-*                       @dorkos-community/maintainers
-
-# marketplace.json is the source of truth — review extra carefully.
-/marketplace.json       @dorkos-community/maintainers
-
-# Workflow changes affect every future submission.
-/.github/workflows/     @dorkos-community/maintainers
-```
-
-`@dorkos-community/maintainers` is a GitHub team inside the `dorkos-community` org. Adding or removing someone from that team is itself a sensitive operation and should go through a public discussion in an issue.
-
-When the registry expands beyond its initial maintainer set, consider splitting CODEOWNERS by package category (e.g. `@dorkos-community/security-reviewers` for entries tagged `category: security`) to spread review load and let domain experts gate their own area. The single-team setup is the right starting point — split only when review latency becomes the bottleneck.
+- [ADR-0236: Sidecar dorkos.json for Marketplace Extensions](../decisions/0236-sidecar-dorkos-json-for-marketplace-extensions.md)
+- [ADR-0237: Same-Repo Monorepo for dork-labs/marketplace Seed](../decisions/0237-same-repo-monorepo-for-dork-labs-marketplace-seed.md)
+- [ADR-0238: Port-to-Zod CC Validator with Weekly Sync Cron](../decisions/0238-port-to-zod-cc-validator-with-weekly-sync-cron.md)
+- [ADR-0239: Plugin Runtime Activation via Claude Agent SDK options.plugins](../decisions/0239-plugin-runtime-activation-via-claude-agent-sdk-options-plugins.md)

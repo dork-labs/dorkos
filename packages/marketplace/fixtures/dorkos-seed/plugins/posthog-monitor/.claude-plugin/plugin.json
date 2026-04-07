@@ -1,0 +1,5 @@
+{
+  "name": "posthog-monitor",
+  "description": "PostHog analytics integration for tracking agent runs",
+  "version": "0.1.0"
+}

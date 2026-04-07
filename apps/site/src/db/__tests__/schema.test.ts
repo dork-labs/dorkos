@@ -19,7 +19,7 @@ describe('marketplaceInstallEvents schema', () => {
   const columns = getTableColumns(marketplaceInstallEvents);
   const columnNames = Object.keys(columns);
 
-  it('exposes exactly the 10 allowed columns', () => {
+  it('exposes exactly the 11 allowed columns', () => {
     const allowed = new Set([
       'id',
       'packageName',
@@ -30,14 +30,15 @@ describe('marketplaceInstallEvents schema', () => {
       'errorCode',
       'installId',
       'dorkosVersion',
+      'sourceType',
       'receivedAt',
     ]);
     const actual = new Set(columnNames);
     expect(actual).toEqual(allowed);
   });
 
-  it('column count is exactly 10', () => {
-    expect(columnNames.length).toBe(10);
+  it('column count is exactly 11', () => {
+    expect(columnNames.length).toBe(11);
   });
 
   describe('privacy contract — forbidden PII columns', () => {
@@ -57,6 +58,7 @@ describe('marketplaceInstallEvents schema', () => {
     expect(marketplaceInstallEvents.errorCode.name).toBe('error_code');
     expect(marketplaceInstallEvents.installId.name).toBe('install_id');
     expect(marketplaceInstallEvents.dorkosVersion.name).toBe('dorkos_version');
+    expect(marketplaceInstallEvents.sourceType.name).toBe('source_type');
     expect(marketplaceInstallEvents.receivedAt.name).toBe('received_at');
   });
 
@@ -68,6 +70,7 @@ describe('marketplaceInstallEvents schema', () => {
     expect(marketplaceInstallEvents.durationMs.notNull).toBe(true);
     expect(marketplaceInstallEvents.installId.notNull).toBe(true);
     expect(marketplaceInstallEvents.dorkosVersion.notNull).toBe(true);
+    expect(marketplaceInstallEvents.sourceType.notNull).toBe(true);
     expect(marketplaceInstallEvents.receivedAt.notNull).toBe(true);
   });
 
@@ -86,6 +89,7 @@ describe('marketplaceInstallEvents schema', () => {
       durationMs: 1234,
       installId: '00000000-0000-0000-0000-000000000000',
       dorkosVersion: '0.4.2',
+      sourceType: 'github',
     };
     expect(row.packageName).toBe('code-reviewer');
 
@@ -112,6 +116,7 @@ describe('marketplaceInstallEvents schema', () => {
       errorCode: null,
       installId: '00000000-0000-0000-0000-000000000000',
       dorkosVersion: '0.4.2',
+      sourceType: 'github',
       receivedAt: new Date('2026-04-07T00:00:00.000Z'),
     };
     expect(sample.id).toBe(1n);

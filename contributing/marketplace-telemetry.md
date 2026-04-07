@@ -208,3 +208,44 @@ The Edge Function would then perform two writes per success event: one insert in
 Per-event rows are kept indefinitely in v1 because the volume is small enough not to matter. Once event volume crosses ~10M rows, the plan is to **aggregate to daily after 30 days**: a scheduled job rolls events older than 30 days into a `marketplace_install_events_daily` table (one row per package per day) and deletes the source rows. The privacy contract is unchanged — daily aggregates contain only counts, never per-event fields.
 
 This rollup is also explicitly within Drizzle, also within Neon. The architectural commitment is "one ORM, one mental model" — every future evolution of telemetry storage stays inside that envelope, or it requires an ADR to overrule the 2026-04-07 changelog decision.
+
+## `source_type` column (marketplace-05)
+
+Marketplace-05 added a new `source_type` column to
+`marketplace_install_events` so the marketplace team can track adoption
+of each discriminated source form over time. The column is a plain
+`text` field constrained to five values:
+
+- `relative-path` — bare `./name` string resolved against the marketplace clone
+- `github` — `{ source: 'github', repo }` object form
+- `url` — `{ source: 'url', url }` object form (GitLab, Bitbucket, self-hosted)
+- `git-subdir` — `{ source: 'git-subdir', url, path }` sparse-clone form
+- `npm` — `{ source: 'npm', package }` stub (install deferred to marketplace-06)
+
+### Privacy implications
+
+None new. `source_type` is install-pipeline metadata, not user
+metadata. It captures WHICH source form was used, not WHO used it.
+The privacy contract is unchanged: no IP, no user agent, no hostname,
+no username, no working directory.
+
+### Migration
+
+The Drizzle migration at `apps/site/drizzle/0001_add_source_type.sql`
+uses the three-step nullable → backfill → NOT NULL pattern so existing
+rows (all of which were necessarily `github` under spec 04's single
+source type) don't block the schema change:
+
+```sql
+ALTER TABLE "marketplace_install_events" ADD COLUMN "source_type" text;
+UPDATE "marketplace_install_events" SET "source_type" = 'github' WHERE "source_type" IS NULL;
+ALTER TABLE "marketplace_install_events" ALTER COLUMN "source_type" SET NOT NULL;
+```
+
+### Wire format
+
+The telemetry reporter on the server (`services/marketplace/telemetry-reporter.ts`)
+derives `sourceType` from the resolved `PluginSource` discriminator and
+includes it in every POST to `/api/telemetry/install`. The Edge Function
+validates the field via the Zod `enum(['relative-path', 'github', 'url', 'git-subdir', 'npm'])`
+schema and inserts it into the `source_type` column.

@@ -1,222 +1,225 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EventEmitter } from 'node:events';
-import fs from 'node:fs';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { validatePackage } from '@dorkos/marketplace/package-validator';
 
-import { parseValidateRemoteArgs, runValidateRemote } from '../package-validate-remote.js';
+import {
+  parseValidateRemoteArgs,
+  runValidateRemote,
+  resolveMarketplaceJsonUrl,
+  resolveDorkosSidecarUrl,
+} from '../package-validate-remote.js';
 
-vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
-}));
+const validMarketplace = {
+  name: 'dorkos',
+  owner: { name: 'Dork Labs' },
+  plugins: [
+    {
+      name: 'code-reviewer',
+      source: { source: 'github', repo: 'dork-labs/code-reviewer' },
+      description: 'Reviews PRs',
+    },
+  ],
+};
 
-vi.mock('@dorkos/marketplace/package-validator', () => ({
-  validatePackage: vi.fn(),
-}));
+const validSidecar = {
+  schemaVersion: 1,
+  plugins: {
+    'code-reviewer': { type: 'agent' },
+  },
+};
 
-const mockedSpawn = vi.mocked(spawn);
-const mockedValidatePackage = vi.mocked(validatePackage);
-
-/**
- * Build a fake `ChildProcess`-shaped EventEmitter that fires `exit` with
- * the given exit code on the next tick. The shape is reduced to the bits
- * that {@link runValidateRemote} actually consumes (`on('exit', …)` and
- * `on('error', …)`), so we don't have to satisfy the full type.
- */
-function makeFakeChild(exitCode: number | null, error?: Error): EventEmitter {
-  const emitter = new EventEmitter();
-  setImmediate(() => {
-    if (error) {
-      emitter.emit('error', error);
-    } else {
-      emitter.emit('exit', exitCode);
-    }
-  });
-  return emitter;
+function mockResponse(body: unknown, ok = true, status = 200): Response {
+  return {
+    ok,
+    status,
+    statusText: ok ? 'OK' : 'Not Found',
+    text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
+  } as unknown as Response;
 }
 
-/**
- * Collapse all `process.stdout.write` / `process.stderr.write` invocations
- * captured by a Vitest spy into a single string. Avoids the implicit-any
- * pitfall of `mock.calls.map((c) => …)` against the overloaded `write`
- * signature.
- */
 function collectWrites(spy: ReturnType<typeof vi.spyOn>): string {
   return (spy.mock.calls as unknown[][]).map((call) => String(call[0])).join('');
 }
 
 describe('parseValidateRemoteArgs', () => {
-  it('returns the first positional as the URL', () => {
-    expect(parseValidateRemoteArgs(['https://github.com/dorkos-community/code-reviewer'])).toEqual({
-      url: 'https://github.com/dorkos-community/code-reviewer',
+  it('returns the first positional argument as url', () => {
+    expect(parseValidateRemoteArgs(['https://github.com/dork-labs/marketplace'])).toEqual({
+      url: 'https://github.com/dork-labs/marketplace',
     });
   });
 
-  it('ignores flag-style arguments when extracting positionals', () => {
-    expect(
-      parseValidateRemoteArgs(['--quiet', 'https://github.com/dorkos-community/code-reviewer'])
-    ).toEqual({ url: 'https://github.com/dorkos-community/code-reviewer' });
+  it('throws when no positional argument is supplied', () => {
+    expect(() => parseValidateRemoteArgs([])).toThrow(/Missing required <marketplace-url>/);
+  });
+});
+
+describe('resolveMarketplaceJsonUrl', () => {
+  it('appends the .claude-plugin path to a bare repo URL', () => {
+    expect(resolveMarketplaceJsonUrl('https://github.com/dork-labs/marketplace')).toBe(
+      'https://github.com/dork-labs/marketplace/raw/main/.claude-plugin/marketplace.json'
+    );
   });
 
-  it('throws when no URL is supplied', () => {
-    expect(() => parseValidateRemoteArgs([])).toThrow(/Missing required <github-url>/);
+  it('strips .git suffix', () => {
+    expect(resolveMarketplaceJsonUrl('https://github.com/dork-labs/marketplace.git')).toBe(
+      'https://github.com/dork-labs/marketplace/raw/main/.claude-plugin/marketplace.json'
+    );
+  });
+
+  it('passes through a full raw URL', () => {
+    const full =
+      'https://raw.githubusercontent.com/dork-labs/marketplace/main/.claude-plugin/marketplace.json';
+    expect(resolveMarketplaceJsonUrl(full)).toBe(full);
+  });
+
+  it('passes through a legacy marketplace.json URL', () => {
+    const legacy = 'https://example.com/marketplace.json';
+    expect(resolveMarketplaceJsonUrl(legacy)).toBe(legacy);
+  });
+});
+
+describe('resolveDorkosSidecarUrl', () => {
+  it('appends the .claude-plugin path', () => {
+    expect(resolveDorkosSidecarUrl('https://github.com/dork-labs/marketplace')).toBe(
+      'https://github.com/dork-labs/marketplace/raw/main/.claude-plugin/dorkos.json'
+    );
+  });
+
+  it('passes through a full sidecar URL', () => {
+    const full =
+      'https://raw.githubusercontent.com/dork-labs/marketplace/main/.claude-plugin/dorkos.json';
+    expect(resolveDorkosSidecarUrl(full)).toBe(full);
   });
 });
 
 describe('runValidateRemote', () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
-  /** Captured destination directory passed to `git clone`. */
-  let capturedDest: string | undefined;
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    capturedDest = undefined;
-
-    mockedSpawn.mockImplementation((..._args: unknown[]) => {
-      // git clone --depth 1 <url> <dest>
-      const argv = (_args[1] ?? []) as string[];
-      capturedDest = argv[argv.length - 1];
-      return makeFakeChild(0) as unknown as ReturnType<typeof spawn>;
-    });
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
   });
 
   afterEach(() => {
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
-    mockedSpawn.mockReset();
-    mockedValidatePackage.mockReset();
+    fetchSpy.mockRestore();
   });
 
-  it('returns 0 when clone and validation both succeed', async () => {
-    mockedValidatePackage.mockResolvedValue({ ok: true, issues: [] });
-
-    const exitCode = await runValidateRemote({
-      url: 'https://github.com/dorkos-community/code-reviewer',
+  it('returns 0 when both marketplace and sidecar fetches succeed', async () => {
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('marketplace.json')) {
+        return Promise.resolve(mockResponse(validMarketplace));
+      }
+      return Promise.resolve(mockResponse(validSidecar));
     });
+
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/marketplace' });
 
     expect(exitCode).toBe(0);
-    expect(mockedSpawn).toHaveBeenCalledTimes(1);
-    expect(mockedSpawn).toHaveBeenCalledWith(
-      'git',
-      expect.arrayContaining([
-        'clone',
-        '--depth',
-        '1',
-        'https://github.com/dorkos-community/code-reviewer',
-      ]),
-      expect.objectContaining({ stdio: 'inherit' })
-    );
-    expect(mockedValidatePackage).toHaveBeenCalledWith(capturedDest);
     const stdoutCalls = collectWrites(stdoutSpy);
-    expect(stdoutCalls).toContain('OK: https://github.com/dorkos-community/code-reviewer');
+    expect(stdoutCalls).toContain('[OK]   DorkOS schema');
+    expect(stdoutCalls).toContain('[OK]   Sidecar present and valid (1 plugins)');
+    expect(stdoutCalls).toContain('[OK]   Claude Code compatibility');
+    expect(stdoutCalls).toContain('All checks passed');
   });
 
-  it('returns 1 when git clone exits with a non-zero code', async () => {
-    mockedSpawn.mockImplementation((..._args: unknown[]) => {
-      const argv = (_args[1] ?? []) as string[];
-      capturedDest = argv[argv.length - 1];
-      return makeFakeChild(128) as unknown as ReturnType<typeof spawn>;
+  it('returns 0 when marketplace is valid but sidecar is absent (404)', async () => {
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('marketplace.json')) {
+        return Promise.resolve(mockResponse(validMarketplace));
+      }
+      return Promise.resolve(mockResponse('', false, 404));
     });
 
-    const exitCode = await runValidateRemote({
-      url: 'https://github.com/dorkos-community/missing-repo',
-    });
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/marketplace' });
+
+    expect(exitCode).toBe(0);
+    const stdoutCalls = collectWrites(stdoutSpy);
+    expect(stdoutCalls).toContain('[OK]   Sidecar absent');
+  });
+
+  it('returns 1 when marketplace fetch 404s', async () => {
+    fetchSpy.mockResolvedValue(mockResponse('', false, 404));
+
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/missing' });
 
     expect(exitCode).toBe(1);
-    expect(mockedValidatePackage).not.toHaveBeenCalled();
     const stderrCalls = collectWrites(stderrSpy);
-    expect(stderrCalls).toContain('Clone failed');
+    expect(stderrCalls).toContain('[FAIL] Fetch marketplace.json');
   });
 
-  it('returns 1 when spawn itself emits an error event', async () => {
-    mockedSpawn.mockImplementation((..._args: unknown[]) => {
-      const argv = (_args[1] ?? []) as string[];
-      capturedDest = argv[argv.length - 1];
-      return makeFakeChild(null, new Error('git not found')) as unknown as ReturnType<typeof spawn>;
+  it('returns 1 when marketplace JSON parse fails', async () => {
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('marketplace.json')) {
+        return Promise.resolve(mockResponse('{ invalid json'));
+      }
+      return Promise.resolve(mockResponse('', false, 404));
     });
 
-    const exitCode = await runValidateRemote({
-      url: 'https://github.com/dorkos-community/code-reviewer',
-    });
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/marketplace' });
 
     expect(exitCode).toBe(1);
-    expect(mockedValidatePackage).not.toHaveBeenCalled();
     const stderrCalls = collectWrites(stderrSpy);
-    expect(stderrCalls).toContain('Clone failed');
+    expect(stderrCalls).toContain('[FAIL] DorkOS schema');
   });
 
-  it('returns 2 when validatePackage reports error-level issues', async () => {
-    mockedValidatePackage.mockResolvedValue({
-      ok: false,
-      issues: [
+  it('returns 2 when inline x-dorkos fails CC strict validation', async () => {
+    const leakyMarketplace = {
+      ...validMarketplace,
+      plugins: [
         {
-          level: 'error',
-          code: 'MANIFEST_MISSING',
-          message: 'Required file missing: .dork/manifest.json',
-          path: '.dork/manifest.json',
+          name: 'leaky',
+          source: { source: 'github', repo: 'dork-labs/leaky' },
+          'x-dorkos': { type: 'agent' },
         },
       ],
+    };
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('marketplace.json')) {
+        return Promise.resolve(mockResponse(leakyMarketplace));
+      }
+      return Promise.resolve(mockResponse('', false, 404));
     });
 
-    const exitCode = await runValidateRemote({
-      url: 'https://github.com/dorkos-community/broken-package',
-    });
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/marketplace' });
 
     expect(exitCode).toBe(2);
     const stderrCalls = collectWrites(stderrSpy);
-    expect(stderrCalls).toContain('Validation failed');
-    expect(stderrCalls).toContain('MANIFEST_MISSING');
+    expect(stderrCalls).toContain('[FAIL] Claude Code compatibility');
   });
 
-  it('removes the temp directory after a successful run', async () => {
-    mockedValidatePackage.mockResolvedValue({ ok: true, issues: [] });
-
-    await runValidateRemote({ url: 'https://github.com/dorkos-community/code-reviewer' });
-
-    expect(capturedDest).toBeDefined();
-    expect(fs.existsSync(capturedDest!)).toBe(false);
-  });
-
-  it('removes the temp directory even when validation fails', async () => {
-    mockedValidatePackage.mockResolvedValue({
-      ok: false,
-      issues: [
-        {
-          level: 'error',
-          code: 'MANIFEST_MISSING',
-          message: 'Required file missing: .dork/manifest.json',
-        },
-      ],
+  it('returns 1 when the marketplace name is reserved', async () => {
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('marketplace.json')) {
+        return Promise.resolve(
+          mockResponse({ ...validMarketplace, name: 'claude-plugins-official' })
+        );
+      }
+      return Promise.resolve(mockResponse('', false, 404));
     });
 
-    await runValidateRemote({ url: 'https://github.com/dorkos-community/broken-package' });
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/marketplace' });
 
-    expect(capturedDest).toBeDefined();
-    expect(fs.existsSync(capturedDest!)).toBe(false);
+    // DorkOS schema itself rejects reserved names via .refine().
+    expect(exitCode).toBe(1);
+    const stderrCalls = collectWrites(stderrSpy);
+    expect(stderrCalls.toLowerCase()).toContain('reserved');
   });
 
-  it('removes the temp directory even when clone fails', async () => {
-    mockedSpawn.mockImplementation((..._args: unknown[]) => {
-      const argv = (_args[1] ?? []) as string[];
-      capturedDest = argv[argv.length - 1];
-      return makeFakeChild(1) as unknown as ReturnType<typeof spawn>;
+  it('returns 1 when the sidecar is present but invalid', async () => {
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).endsWith('marketplace.json')) {
+        return Promise.resolve(mockResponse(validMarketplace));
+      }
+      return Promise.resolve(mockResponse({ schemaVersion: 99, plugins: {} }));
     });
 
-    await runValidateRemote({ url: 'https://github.com/dorkos-community/missing-repo' });
+    const exitCode = await runValidateRemote({ url: 'https://github.com/dork-labs/marketplace' });
 
-    expect(capturedDest).toBeDefined();
-    expect(fs.existsSync(capturedDest!)).toBe(false);
-  });
-
-  it('creates the temp directory under os.tmpdir() with the dorkos-validate prefix', async () => {
-    mockedValidatePackage.mockResolvedValue({ ok: true, issues: [] });
-
-    await runValidateRemote({ url: 'https://github.com/dorkos-community/code-reviewer' });
-
-    expect(capturedDest).toBeDefined();
-    expect(path.basename(capturedDest!)).toMatch(/^dorkos-validate-/);
+    expect(exitCode).toBe(1);
+    const stderrCalls = collectWrites(stderrSpy);
+    expect(stderrCalls).toContain('[FAIL] Sidecar dorkos.json');
   });
 });

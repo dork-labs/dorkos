@@ -16,6 +16,7 @@ const VALID_EVENT = {
   durationMs: 1234,
   installId: '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
   dorkosVersion: '0.4.2',
+  sourceType: 'github' as const,
 };
 
 interface MockDb {
@@ -166,7 +167,7 @@ describe('POST /api/telemetry/install', () => {
       expect(mockValues).toHaveBeenCalledTimes(1);
       const inserted = mockValues.mock.calls[0][0] as Record<string, unknown>;
 
-      // Exact-shape assertion: every persisted field is one of the 8 validated
+      // Exact-shape assertion: every persisted field is one of the 9 validated
       // InstallEvent fields, and nothing PII-shaped sneaks in.
       expect(inserted).toEqual({
         packageName: 'code-reviewer',
@@ -177,6 +178,7 @@ describe('POST /api/telemetry/install', () => {
         errorCode: 'rate_limited',
         installId: VALID_EVENT.installId,
         dorkosVersion: '0.4.2',
+        sourceType: 'github',
       });
     });
 
@@ -236,6 +238,7 @@ describe('POST /api/telemetry/install', () => {
         errorCode: null,
         installId: VALID_EVENT.installId,
         dorkosVersion: VALID_EVENT.dorkosVersion,
+        sourceType: VALID_EVENT.sourceType,
       });
     });
   });

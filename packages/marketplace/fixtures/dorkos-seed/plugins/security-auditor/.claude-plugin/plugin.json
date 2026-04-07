@@ -1,0 +1,5 @@
+{
+  "name": "security-auditor",
+  "description": "Continuously audits dependencies, configurations, and code for security vulnerabilities",
+  "version": "0.1.0"
+}
