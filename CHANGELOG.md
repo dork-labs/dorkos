@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Ship Dork Hub browse UI as built-in extension (marketplace-03-extension)
+- Add Dork Hub — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
+- Add featured agents rail and type filters (agents, plugins, skills, adapters) with debounced search across the catalog (`marketplace-03-extension`)
+- Add package detail sheet with rendered README and permission preview (`marketplace-03-extension`)
+- Add install confirmation dialog with blocking conflict detection before any write (`marketplace-03-extension`)
+- Add installed packages view for updating and uninstalling from the Hub (`marketplace-03-extension`)
+- Add marketplace sources management for adding and removing git registries from the Hub (`marketplace-03-extension`)
+- Add "From Dork Hub" tab to TemplatePicker so agent creation can pull directly from marketplace agents (`marketplace-03-extension`)
 - Complete install/uninstall/update pipeline (Batches 4-9 of marketplace-02-install)
 - Add `dorkos install <name>` to install plugins, agents, skill packs, and adapters from configured marketplaces — atomic transactions with rollback on failure and permission preview before install (`marketplace-02-install`)
 - Add `dorkos uninstall <name>` with `--purge` flag for full data removal (`marketplace-02-install`)

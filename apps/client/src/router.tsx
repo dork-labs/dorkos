@@ -14,6 +14,7 @@ import { SessionPage } from '@/layers/widgets/session';
 import { AgentsPage } from '@/layers/widgets/agents';
 import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
+import { DorkHubPage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema } from '@/layers/features/agents-list';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import type { Session } from '@dorkos/shared/types';
@@ -149,6 +150,20 @@ const tasksRoute = createRoute({
   component: TasksPage,
 });
 
+// ── Dork Hub at /marketplace ─────────────────────────────────
+const dorkHubRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/marketplace',
+  component: DorkHubPage,
+});
+
+// ── Marketplace sources at /marketplace/sources ──────────────
+const marketplaceSourcesRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/marketplace/sources',
+  component: MarketplaceSourcesPage,
+});
+
 // ── Activity feed at /activity ───────────────────────────────
 const activitySearchSchema = z.object({
   categories: z.string().optional(),
@@ -169,7 +184,15 @@ const activityRoute = createRoute({
 
 // ── Route tree ──────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
-  appShellRoute.addChildren([indexRoute, sessionRoute, agentsRoute, tasksRoute, activityRoute]),
+  appShellRoute.addChildren([
+    indexRoute,
+    sessionRoute,
+    agentsRoute,
+    tasksRoute,
+    activityRoute,
+    dorkHubRoute,
+    marketplaceSourcesRoute,
+  ]),
 ]);
 
 /**

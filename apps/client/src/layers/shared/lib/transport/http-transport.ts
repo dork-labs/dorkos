@@ -14,6 +14,7 @@ import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
 import { createSessionMethods } from './session-methods';
 import { createSystemMethods } from './system-methods';
+import { createMarketplaceMethods } from './marketplace-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -31,7 +32,8 @@ export interface HttpTransport
     ReturnType<typeof createRelayMethods>,
     ReturnType<typeof createMeshMethods>,
     ReturnType<typeof createSessionMethods>,
-    ReturnType<typeof createSystemMethods> {}
+    ReturnType<typeof createSystemMethods>,
+    ReturnType<typeof createMarketplaceMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -52,7 +54,8 @@ export class HttpTransport implements Transport {
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
-      createSystemMethods(baseUrl)
+      createSystemMethods(baseUrl),
+      createMarketplaceMethods(baseUrl)
     );
   }
 }

@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Sparkles,
   Table2,
+  ShoppingBag,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -28,6 +29,7 @@ import {
   ERROR_STATES_SECTIONS,
   ONBOARDING_SECTIONS,
   TABLES_SECTIONS,
+  MARKETPLACE_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -187,6 +189,17 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'design-system',
     sections: TABLES_SECTIONS,
     path: 'tables',
+  },
+  // ── Marketplace ──
+  {
+    id: 'marketplace',
+    label: 'Marketplace',
+    description:
+      'Dork Hub browse grid, package cards, install flows, permission previews, and source management.',
+    icon: ShoppingBag,
+    group: 'agents',
+    sections: MARKETPLACE_SECTIONS,
+    path: 'marketplace',
   },
 ];
 

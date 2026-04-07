@@ -14,6 +14,7 @@ import {
   ERROR_STATES_SECTIONS,
   ONBOARDING_SECTIONS,
   TABLES_SECTIONS,
+  MARKETPLACE_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
 import { PAGE_CONFIGS, PAGE_ORDER, PAGE_LABELS } from '../playground-config';
@@ -53,6 +54,7 @@ describe('playground-registry', () => {
       ...ERROR_STATES_SECTIONS,
       ...ONBOARDING_SECTIONS,
       ...TABLES_SECTIONS,
+      ...MARKETPLACE_SECTIONS,
     ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);
   });

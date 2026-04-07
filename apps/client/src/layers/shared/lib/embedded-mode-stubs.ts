@@ -36,6 +36,20 @@ import type {
   ListTaskRunsQuery,
   TaskTemplate,
 } from '@dorkos/shared/types';
+import type {
+  AggregatedPackage,
+  PackageFilter,
+  MarketplacePackageDetail,
+  InstallOptions,
+  InstallResult,
+  UninstallOptions,
+  UninstallResult,
+  UpdateOptions,
+  UpdateResult,
+  InstalledPackage,
+  MarketplaceSource,
+  AddSourceInput,
+} from '@dorkos/shared/marketplace-schemas';
 
 // ---------------------------------------------------------------------------
 // Tasks scheduler stubs
@@ -406,5 +420,61 @@ export const serverOnlyStubs = {
 
   async deleteMcpApiKey(): Promise<{ success: boolean }> {
     throw new Error('MCP external access is not available in embedded mode.');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Marketplace stubs
+// ---------------------------------------------------------------------------
+
+/** @internal */
+export const marketplaceStubs = {
+  async listMarketplacePackages(_filter?: PackageFilter): Promise<AggregatedPackage[]> {
+    return [];
+  },
+
+  async getMarketplacePackage(
+    _name: string,
+    _marketplace?: string
+  ): Promise<MarketplacePackageDetail> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async previewMarketplacePackage(
+    _name: string,
+    _opts?: InstallOptions
+  ): Promise<MarketplacePackageDetail> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async installMarketplacePackage(_name: string, _opts?: InstallOptions): Promise<InstallResult> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async uninstallMarketplacePackage(
+    _name: string,
+    _opts?: UninstallOptions
+  ): Promise<UninstallResult> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async updateMarketplacePackage(_name: string, _opts?: UpdateOptions): Promise<UpdateResult> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async listInstalledPackages(): Promise<InstalledPackage[]> {
+    return [];
+  },
+
+  async listMarketplaceSources(): Promise<MarketplaceSource[]> {
+    return [];
+  },
+
+  async addMarketplaceSource(_input: AddSourceInput): Promise<MarketplaceSource> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async removeMarketplaceSource(_name: string): Promise<void> {
+    throw new Error('Marketplace is not supported in embedded mode');
   },
 };

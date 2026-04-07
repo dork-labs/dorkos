@@ -28,6 +28,7 @@ import {
   meshStubs,
   serverOnlyStubs,
   activityStubs,
+  marketplaceStubs,
 } from './embedded-mode-stubs';
 
 export interface DirectTransportServices {
@@ -569,4 +570,15 @@ export class DirectTransport implements Transport {
   getMeshTopology = meshStubs.getMeshTopology;
   updateMeshAccessRule = meshStubs.updateMeshAccessRule;
   getMeshAgentAccess = meshStubs.getMeshAgentAccess;
+
+  listMarketplacePackages = marketplaceStubs.listMarketplacePackages;
+  getMarketplacePackage = marketplaceStubs.getMarketplacePackage;
+  previewMarketplacePackage = marketplaceStubs.previewMarketplacePackage;
+  installMarketplacePackage = marketplaceStubs.installMarketplacePackage;
+  uninstallMarketplacePackage = marketplaceStubs.uninstallMarketplacePackage;
+  updateMarketplacePackage = marketplaceStubs.updateMarketplacePackage;
+  listInstalledPackages = marketplaceStubs.listInstalledPackages;
+  listMarketplaceSources = marketplaceStubs.listMarketplaceSources;
+  addMarketplaceSource = marketplaceStubs.addMarketplaceSource;
+  removeMarketplaceSource = marketplaceStubs.removeMarketplaceSource;
 }

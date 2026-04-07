@@ -109,7 +109,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree command
 
 Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`). API docs at `/api/docs`.
+**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`), `services/builtin-extensions/` (auto-stage built-in extensions like Dork Hub at startup so the discovery pass picks them up). API docs at `/api/docs`.
 
 **Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
 
@@ -141,6 +141,8 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). U
 - `/` → `DashboardPage` (widgets/dashboard) — mission control with three sections in priority order: `NeedsAttentionSection` (conditional, zero DOM when empty), `SystemStatusRow` (Tasks/Relay/Mesh health cards + sparkline), `RecentActivityFeed` (time-grouped event feed). With `DashboardSidebar` (navigation + recent agents) and `DashboardHeader` (system health dot + quick actions)
 - `/agents` → `AgentsPage` (widgets/agents) — fleet management surface. Mode A (no agents): full-bleed `DiscoveryView`. Mode B (agents present): tabbed `AgentsList` + lazy `TopologyGraph`. With `DashboardSidebar` (shared nav, Agents item active) and `AgentsHeader` (Scan for Agents button)
 - `/session` → `SessionPage` (widgets/session) — agent chat, with `SessionSidebar` + `SessionHeader`, `?session=` and `?dir=` search params
+- `/marketplace` → `DorkHubPage` (widgets/marketplace) — Dork Hub browse experience: featured rail, package grid, detail sheet, install confirmation. Backed by the `marketplace` built-in extension auto-staged on server startup via `ensureBuiltinMarketplaceExtension()` in `services/builtin-extensions/ensure-marketplace.ts`
+- `/marketplace/sources` → `MarketplaceSourcesPage` (widgets/marketplace) — marketplace source management
 - `/dev/*` → Dev playground (outside router, conditional on dev mode)
 - Embedded mode (Obsidian plugin) bypasses the router entirely — `App.tsx` renders `<ChatPanel>` directly
 

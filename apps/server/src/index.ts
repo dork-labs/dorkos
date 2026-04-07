@@ -34,6 +34,7 @@ import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
+import { ensureBuiltinMarketplaceExtension } from './services/builtin-extensions/ensure-marketplace.js';
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { defaultTemplateDownloader } from './services/core/template-downloader.js';
@@ -129,6 +130,15 @@ async function start() {
   const boundaryConfig = env.DORKOS_BOUNDARY;
   const resolvedBoundary = await initBoundary(boundaryConfig);
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
+
+  // Stage the built-in Dork Hub (marketplace) extension on disk before the
+  // discovery pipeline runs. Non-fatal: a missing or malformed bundle should
+  // not block server boot, it will just mean the Dork Hub tab is absent.
+  try {
+    await ensureBuiltinMarketplaceExtension(dorkHome);
+  } catch (err) {
+    logger.warn('[BuiltinExtensions] Failed to ensure Dork Hub extension', logError(err));
+  }
 
   // Initialize Extension System
   try {

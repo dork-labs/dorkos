@@ -599,3 +599,37 @@ pnpm lint                                               # ESLint (including the 
 ```
 
 The full marketplace suite sits at 174+ tests across source + routes + CLI and runs in under a minute on a laptop. Failure-path tests are the slowest because they spin real temp directories, so keep an eye on parallel-run cross-contamination when adding new ones — the recommended fix is to filter by a per-test install-root name rather than a shared `dorkos-install-*` prefix.
+
+## 15. Dork Hub UI (Built-in Extension)
+
+The Dork Hub browse experience ships as a built-in extension named `marketplace`. On server startup `ensureBuiltinMarketplaceExtension()` (in `apps/server/src/services/builtin-extensions/ensure-marketplace.ts`, mirroring `ensureDorkBot`) copies the extension source from `apps/server/src/builtin-extensions/marketplace/` into `{dorkHome}/extensions/marketplace/`. The standard `extensionManager.initialize()` discovery pass then picks up the staged directory — the helper does not call `ExtensionManager` directly. Production builds rely on `apps/server/package.json`'s `build` script post-copying `src/builtin-extensions/` to `dist/builtin-extensions/` (filtering `.ts`) so `extension.json` is present at runtime.
+
+The manifest at `apps/server/src/builtin-extensions/marketplace/extension.json` is parsed against `ExtensionManifestSchema` from `@dorkos/shared` like every other extension. It does **not** have `builtin`, `entry`, or `slots` fields — those don't exist on the schema. `contributions: Record<string, boolean>` is a discoverability hint only; the real registration happens at runtime inside the extension's `activate(api)` function via `api.registerComponent('sidebar.tabs', id, Component, { priority })`.
+
+### Layers
+
+The Dork Hub UI follows the standard FSD layout under `apps/client/src/`:
+
+- `layers/entities/marketplace/` — TanStack Query hooks (list, detail, permission preview, install, uninstall, update, sources) plus the `marketplaceKeys` cache-key factory in `api/query-keys.ts`.
+- `layers/features/marketplace/` — UI components: `DorkHub`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, plus the `useDorkHubStore` Zustand store under `model/dork-hub-store.ts`.
+- `layers/widgets/marketplace/` — Page shells (`DorkHubPage`, `MarketplaceSourcesPage`).
+- `layers/shared/lib/transport/marketplace-methods.ts` — `marketplaceMethods` factory wired into `HttpTransport`.
+- `packages/shared/src/marketplace-schemas.ts` — shared types (`AggregatedPackage`, `MarketplacePackageDetail`, `PermissionPreview`, etc.) consumed by both client and server.
+
+Always import from the layer barrels (`index.ts`), never internal paths — the FSD lint rules apply here too.
+
+### UI state
+
+`useDorkHubStore` owns purely-local UI state: active filters, the open detail package, and the install confirmation package. Server state lives in TanStack Query keyed off `marketplaceKeys.*`:
+
+- `marketplaceKeys.list(filter)` — aggregated package list.
+- `marketplaceKeys.detail(name)` — single package detail.
+- `marketplaceKeys.permissionPreview(name)` — permission preview for a target package.
+- `marketplaceKeys.installed()` — currently installed packages.
+- `marketplaceKeys.sources()` — configured marketplace sources.
+
+Install, uninstall, update, add-source, and remove-source mutations invalidate the appropriate keys on success. See `contributing/state-management.md` for the broader Zustand-vs-TanStack-Query rationale.
+
+### Testing Dork Hub
+
+Dork Hub UI tests mock `marketplaceMethods` at the hook level via the mock `Transport`, so the server-side `_internal.isGitRepo` rule from section 5 does not apply directly. **The moment a Dork Hub test grows past hook-level mocking and starts driving the real install flow through the Transport, the rule from section 5 applies in full force**: any code path that reaches a flow with `rollbackBranch: true` MUST mock `_internal.isGitRepo` to return false in `beforeEach`, or the failure path will silently `git reset --hard` the live worktree. Re-read section 5 before adding Transport-level Dork Hub integration tests.

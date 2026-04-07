@@ -79,6 +79,10 @@
     "./activity-schemas": {
       "types": "./src/activity-schemas.ts",
       "default": "./dist/activity-schemas.js"
+    },
+    "./marketplace-schemas": {
+      "types": "./src/marketplace-schemas.ts",
+      "default": "./dist/marketplace-schemas.js"
     }
   },
   "scripts": {

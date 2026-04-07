@@ -318,6 +318,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     // Templates
     getTemplates: vi.fn().mockResolvedValue([]),
+    // Marketplace
+    listMarketplacePackages: vi.fn().mockResolvedValue([]),
+    getMarketplacePackage: vi.fn(),
+    previewMarketplacePackage: vi.fn(),
+    installMarketplacePackage: vi.fn(),
+    uninstallMarketplacePackage: vi.fn(),
+    updateMarketplacePackage: vi.fn(),
+    listInstalledPackages: vi.fn().mockResolvedValue([]),
+    listMarketplaceSources: vi.fn().mockResolvedValue([]),
+    addMarketplaceSource: vi.fn(),
+    removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
