@@ -14,6 +14,7 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     component: SettingsDialogWrapper,
     openStateKey: 'settingsOpen',
     priority: 1,
+    urlParam: 'settings',
   },
   {
     id: 'directory-picker',
@@ -26,24 +27,28 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     component: TasksDialogWrapper,
     openStateKey: 'tasksOpen',
     priority: 3,
+    urlParam: 'tasks',
   },
   {
     id: 'relay',
     component: RelayDialogWrapper,
     openStateKey: 'relayOpen',
     priority: 4,
+    urlParam: 'relay',
   },
   {
     id: 'mesh',
     component: MeshDialogWrapper,
     openStateKey: 'meshOpen',
     priority: 5,
+    urlParam: 'mesh',
   },
   {
     id: 'agent',
     component: AgentDialogWrapper,
     openStateKey: 'agentDialogOpen',
     priority: 6,
+    urlParam: 'agent',
   },
   {
     id: 'server-restart-overlay',

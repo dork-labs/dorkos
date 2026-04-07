@@ -6,7 +6,7 @@ import { Badge } from '@/layers/shared/ui/badge';
 import { useRegisteredAgents, useDeniedAgents } from '@/layers/entities/mesh';
 import type { DenialRecord } from '@dorkos/shared/mesh-schemas';
 import { useDirectoryState } from '@/layers/entities/session';
-import { AgentDialog } from '@/layers/features/agent-settings';
+import { useOpenAgentDialog } from '@/layers/shared/model';
 import { MeshStatsHeader } from './MeshStatsHeader';
 import { AgentHealthDetail } from './AgentHealthDetail';
 import { TopologyPanel } from './TopologyPanel';
@@ -77,10 +77,7 @@ export function MeshPanel() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>('');
   const [activeTab, setActiveTab] = useState('topology');
 
-  // Agent settings dialog state
-  const [settingsProjectPath, setSettingsProjectPath] = useState<string>('');
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
+  const openAgentDialog = useOpenAgentDialog();
   const [, setDir] = useDirectoryState();
 
   /** Navigate to agent's working directory to start a chat session. */
@@ -98,10 +95,12 @@ export function MeshPanel() {
   }, []);
 
   /** Open agent settings dialog from topology toolbar. */
-  const handleOpenSettings = useCallback((_agentId: string, projectPath: string) => {
-    setSettingsProjectPath(projectPath);
-    setSettingsOpen(true);
-  }, []);
+  const handleOpenSettings = useCallback(
+    (_agentId: string, projectPath: string) => {
+      openAgentDialog(projectPath);
+    },
+    [openAgentDialog]
+  );
 
   const hasAgents = agents.length > 0;
   // Only show Mode A (discovery flow) when we *know* there are no agents.
@@ -222,13 +221,6 @@ export function MeshPanel() {
           </motion.div>
         )}
       </AnimatePresence>
-      {settingsProjectPath && (
-        <AgentDialog
-          projectPath={settingsProjectPath}
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-        />
-      )}
     </>
   );
 }

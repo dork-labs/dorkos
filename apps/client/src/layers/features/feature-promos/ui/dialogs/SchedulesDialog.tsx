@@ -1,15 +1,15 @@
 import { Moon, Repeat, Clock } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
+import { useTasksDeepLink } from '@/layers/shared/model';
 import type { PromoDialogProps } from '../../model/promo-types';
 
 /** Dialog content for the Schedules promo. */
 export function SchedulesDialog({ onClose }: PromoDialogProps) {
-  const setTasksOpen = useAppStore((s) => s.setTasksOpen);
+  const { open: openTasks } = useTasksDeepLink();
 
   const handleSetUp = () => {
     onClose();
-    setTasksOpen(true);
+    openTasks();
   };
 
   return (

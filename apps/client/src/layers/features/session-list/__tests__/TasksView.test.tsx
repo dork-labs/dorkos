@@ -32,19 +32,33 @@ vi.mock('@/layers/features/tasks', async (importOriginal) => {
   };
 });
 
-// Mock app store — capture setTasksOpen, openTasksForAgent, openTasksToEdit calls
-const mockSetTasksOpen = vi.fn();
-const mockOpenTasksForAgent = vi.fn();
-const mockOpenTasksToEdit = vi.fn();
+// Mock app store — TasksView reads `setTasksAgentFilter` and `setTasksEditScheduleId`
+// from the store. Open intent now flows through the URL deep-link hook below.
+const mockSetTasksAgentFilter = vi.fn();
+const mockSetTasksEditScheduleId = vi.fn();
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
-      setTasksOpen: mockSetTasksOpen,
-      openTasksForAgent: mockOpenTasksForAgent,
-      openTasksToEdit: mockOpenTasksToEdit,
+      setTasksAgentFilter: mockSetTasksAgentFilter,
+      setTasksEditScheduleId: mockSetTasksEditScheduleId,
     };
     return selector ? selector(state) : state;
   },
+}));
+
+// Mock URL deep-link hook — TasksView now opens the dialog via
+// `useTasksDeepLink().open()` instead of `setTasksOpen(true)`.
+const mockOpenTasksDeepLink = vi.fn();
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useTasksDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: mockOpenTasksDeepLink,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
 }));
 
 // Mock formatRelativeTime to return a predictable string
@@ -227,18 +241,18 @@ describe('TasksView', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
-  it('Open Tasks button calls setTasksOpen(true) in empty state', () => {
+  it('Open Tasks button opens via tasks deep-link in empty state', () => {
     render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
     const btn = screen.getByText(/Open Tasks/);
     fireEvent.click(btn);
-    expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenTasksDeepLink).toHaveBeenCalled();
   });
 
-  it('Open Tasks button calls setTasksOpen(true) in disabled-by-agent state', () => {
+  it('Open Tasks button opens via tasks deep-link in disabled-by-agent state', () => {
     render(<TasksView toolStatus="disabled-by-agent" agentId={null} />, { wrapper: Wrapper });
     const btn = screen.getByText(/Open Tasks/);
     fireEvent.click(btn);
-    expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenTasksDeepLink).toHaveBeenCalled();
   });
 
   it('renders both Running and Upcoming sections when applicable', () => {
@@ -306,14 +320,14 @@ describe('TasksView', () => {
     expect(screen.getByText('cron:0 10 * * *')).toBeInTheDocument();
   });
 
-  it('+ Use preset button calls openWithPreset and setTasksOpen', () => {
+  it('+ Use preset button calls openWithPreset and opens via tasks deep-link', () => {
     render(<TasksView toolStatus="enabled" agentId={null} />, { wrapper: Wrapper });
     const usePresetBtns = screen.getAllByText('+ Use preset');
     fireEvent.click(usePresetBtns[0]);
     expect(mockOpenWithPreset).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'health-check' })
     );
-    expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenTasksDeepLink).toHaveBeenCalled();
   });
 
   it('does not show preset cards when schedules exist', () => {

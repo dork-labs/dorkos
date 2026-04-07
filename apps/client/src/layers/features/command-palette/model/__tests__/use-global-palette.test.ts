@@ -5,20 +5,60 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useGlobalPalette } from '../use-global-palette';
 
-// Mock app store state
+// Mock app store state — only the global palette fields are read directly.
+// Closing other dialogs now flows through URL deep-link `close()` actions.
 const mockState = {
   globalPaletteOpen: false,
   toggleGlobalPalette: vi.fn(),
   setGlobalPaletteOpen: vi.fn(),
-  setSettingsOpen: vi.fn(),
-  setTasksOpen: vi.fn(),
-  setRelayOpen: vi.fn(),
-  setMeshOpen: vi.fn(),
 };
+
+// Deep-link `close` spies — useGlobalPalette calls these to clear feature
+// dialog URL signals before opening the palette.
+const mockCloseSettings = vi.fn();
+const mockCloseTasks = vi.fn();
+const mockCloseRelay = vi.fn();
+const mockCloseMesh = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: typeof mockState) => unknown) =>
     selector ? selector(mockState) : mockState,
+  useSettingsDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: mockCloseSettings,
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useTasksDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: mockCloseTasks,
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useRelayDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: mockCloseRelay,
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useMeshDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: mockCloseMesh,
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
 }));
 
 function fireKeydown(key: string, modifiers: { metaKey?: boolean; ctrlKey?: boolean } = {}) {
@@ -69,15 +109,15 @@ describe('useGlobalPalette', () => {
     expect(mockState.toggleGlobalPalette).not.toHaveBeenCalled();
   });
 
-  it('opening the palette closes other dialogs', () => {
+  it('opening the palette closes other dialogs via deep-link close', () => {
     mockState.globalPaletteOpen = false;
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { metaKey: true });
 
-    expect(mockState.setSettingsOpen).toHaveBeenCalledWith(false);
-    expect(mockState.setTasksOpen).toHaveBeenCalledWith(false);
-    expect(mockState.setRelayOpen).toHaveBeenCalledWith(false);
-    expect(mockState.setMeshOpen).toHaveBeenCalledWith(false);
+    expect(mockCloseSettings).toHaveBeenCalled();
+    expect(mockCloseTasks).toHaveBeenCalled();
+    expect(mockCloseRelay).toHaveBeenCalled();
+    expect(mockCloseMesh).toHaveBeenCalled();
   });
 
   it('does not close other dialogs when palette is already open (closing it)', () => {
@@ -85,10 +125,10 @@ describe('useGlobalPalette', () => {
     renderHook(() => useGlobalPalette());
     fireKeydown('k', { metaKey: true });
 
-    expect(mockState.setSettingsOpen).not.toHaveBeenCalled();
-    expect(mockState.setTasksOpen).not.toHaveBeenCalled();
-    expect(mockState.setRelayOpen).not.toHaveBeenCalled();
-    expect(mockState.setMeshOpen).not.toHaveBeenCalled();
+    expect(mockCloseSettings).not.toHaveBeenCalled();
+    expect(mockCloseTasks).not.toHaveBeenCalled();
+    expect(mockCloseRelay).not.toHaveBeenCalled();
+    expect(mockCloseMesh).not.toHaveBeenCalled();
     // Still toggles
     expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
   });

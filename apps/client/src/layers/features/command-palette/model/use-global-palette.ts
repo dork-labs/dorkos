@@ -1,45 +1,47 @@
 import { useEffect } from 'react';
-import { useAppStore } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useSettingsDeepLink,
+  useTasksDeepLink,
+  useRelayDeepLink,
+  useMeshDeepLink,
+} from '@/layers/shared/model';
 
 /**
  * Register the global Cmd+K / Ctrl+K keyboard shortcut to toggle the command palette.
  *
- * Also closes any open ResponsiveDialog before opening the palette.
- * Follows the same pattern as the Cmd+B sidebar toggle in App.tsx.
+ * Before opening the palette, clears the URL signals for the feature dialogs
+ * (settings, tasks, relay, mesh) so a deep-linked dialog does not stay
+ * visible behind the palette. Follows the same pattern as the Cmd+B sidebar
+ * toggle in App.tsx.
  */
 export function useGlobalPalette() {
   const toggleGlobalPalette = useAppStore((s) => s.toggleGlobalPalette);
   const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
-  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
-  const setTasksOpen = useAppStore((s) => s.setTasksOpen);
-  const setRelayOpen = useAppStore((s) => s.setRelayOpen);
-  const setMeshOpen = useAppStore((s) => s.setMeshOpen);
   const globalPaletteOpen = useAppStore((s) => s.globalPaletteOpen);
+
+  const { close: closeSettings } = useSettingsDeepLink();
+  const { close: closeTasks } = useTasksDeepLink();
+  const { close: closeRelay } = useRelayDeepLink();
+  const { close: closeMesh } = useMeshDeepLink();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        // Close any open feature dialogs before opening the palette
+        // Close any deep-linked feature dialogs before opening the palette.
         if (!globalPaletteOpen) {
-          setSettingsOpen(false);
-          setTasksOpen(false);
-          setRelayOpen(false);
-          setMeshOpen(false);
+          closeSettings();
+          closeTasks();
+          closeRelay();
+          closeMesh();
         }
         toggleGlobalPalette();
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [
-    toggleGlobalPalette,
-    setSettingsOpen,
-    setTasksOpen,
-    setRelayOpen,
-    setMeshOpen,
-    globalPaletteOpen,
-  ]);
+  }, [toggleGlobalPalette, closeSettings, closeTasks, closeRelay, closeMesh, globalPaletteOpen]);
 
   return {
     globalPaletteOpen,

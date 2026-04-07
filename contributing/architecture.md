@@ -237,6 +237,22 @@ Keyboard navigation inside the dialog is handled by `NavigationLayout`'s built-i
 
 For the underlying state-sync hook, see `useDialogTabState` in `shared/model/` (documented in `contributing/state-management.md`).
 
+## Dialog deep linking via URL search params
+
+DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via search params on every route. The `dialogSearchSchema` is merged into each route's `validateSearch` schema; consumers use the per-dialog hooks in `@/layers/shared/model`:
+
+- `useSettingsDeepLink()` — Settings dialog with tab + sub-section deep links
+- `useAgentDialogDeepLink()` + `useOpenAgentDialog()` — Agent dialog with `agentPath`
+- `useTasksDeepLink()` / `useRelayDeepLink()` / `useMeshDeepLink()` — parameterless dialogs
+
+`RegistryDialog` reads BOTH the URL signal and the existing store flag (`storeOpen || urlSignal.isOpen`) so legacy store-based opens continue to work. Closing the dialog clears both signals. Use the URL hooks for any new cross-page open.
+
+Example URLs:
+
+- `/?settings=tools` — Settings on Dashboard, Tools tab
+- `/agents?settings=tools&settingsSection=external-mcp` — Settings on Agents page, Tools tab, scrolled to External MCP
+- `/?agent=identity&agentPath=/abs/path/to/repo` — Agent dialog → Identity for that project
+
 ## Agent UI Control
 
 Agents can observe and control the DorkOS client UI through a bidirectional pattern:

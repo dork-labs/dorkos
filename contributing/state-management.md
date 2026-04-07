@@ -300,6 +300,12 @@ This hook is the single convergence point for tab state across `SettingsDialog`,
 
 `TabbedDialog` from `shared/ui/` already uses `useDialogTabState` internally — most consumers don't need to import the hook directly.
 
+### Cross-Page Dialog Opens (URL Deep-Link Hooks)
+
+Use the deep-link hooks from `@/layers/shared/model` (`useSettingsDeepLink`, `useTasksDeepLink`, `useRelayDeepLink`, `useMeshDeepLink`, `useAgentDialogDeepLink`, `useOpenAgentDialog`) for cross-page dialog opens. These hooks read and write URL search params merged into every route via `dialogSearchSchema`, so any link or button can deep-link to a dialog (and tab/section) from any page. Store-based opens via `setSettingsOpen` etc. remain valid as a fallback for in-dialog flows that don't need URL state.
+
+See [`contributing/architecture.md`](architecture.md#dialog-deep-linking-via-url-search-params) for the dual-signal pattern (`storeOpen || urlSignal.isOpen`) and example URLs.
+
 ### Extension Registry (Slot-Based UI Contributions)
 
 The extension registry (`useExtensionRegistry`) is a Zustand store that decouples UI composition from hardcoded imports. Features register typed contributions into named slots, and consumers subscribe to those slots via `useSlotContributions`. This eliminates cross-feature imports for shared surfaces like the command palette, sidebar, and dialogs.

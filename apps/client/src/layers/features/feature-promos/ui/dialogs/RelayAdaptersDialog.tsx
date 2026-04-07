@@ -1,15 +1,15 @@
 import { MessageSquare, Bell, Zap } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
+import { useRelayDeepLink } from '@/layers/shared/model';
 import type { PromoDialogProps } from '../../model/promo-types';
 
 /** Dialog content for the Relay Adapters promo. */
 export function RelayAdaptersDialog({ onClose }: PromoDialogProps) {
-  const setRelayOpen = useAppStore((s) => s.setRelayOpen);
+  const { open: openRelay } = useRelayDeepLink();
 
   const handleSetUp = () => {
     onClose();
-    setRelayOpen(true);
+    openRelay();
   };
 
   return (

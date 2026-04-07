@@ -23,6 +23,22 @@ vi.mock('../ui/PersonalityTab', () => ({
   PersonalityTab: () => <div data-testid="personality-tab-content">Personality content</div>,
 }));
 
+// Mock the URL deep-link hook — tests here don't mount a RouterProvider. A
+// follow-up task wires in a full router harness to exercise the URL signal
+// directly.
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useAgentDialogDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    agentPath: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+}));
+
 import { AgentDialog } from '../ui/AgentDialog';
 
 // Mock matchMedia for responsive components

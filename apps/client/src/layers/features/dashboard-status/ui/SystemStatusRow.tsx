@@ -3,7 +3,7 @@ import { useSubsystemStatus } from '../model/use-subsystem-status';
 import { useSessionActivity } from '../model/use-session-activity';
 import { SubsystemCard } from './SubsystemCard';
 import { ActivitySparkline } from './ActivitySparkline';
-import { useAppStore } from '@/layers/shared/model';
+import { useTasksDeepLink, useRelayDeepLink, useMeshDeepLink } from '@/layers/shared/model';
 
 const sectionEntrance = {
   initial: { opacity: 0, y: 12 },
@@ -27,9 +27,9 @@ const staggerItem = {
 export function SystemStatusRow() {
   const status = useSubsystemStatus();
   const activityData = useSessionActivity();
-  const setTasksOpen = useAppStore((s) => s.setTasksOpen);
-  const setRelayOpen = useAppStore((s) => s.setRelayOpen);
-  const setMeshOpen = useAppStore((s) => s.setMeshOpen);
+  const tasksDeepLink = useTasksDeepLink();
+  const relayDeepLink = useRelayDeepLink();
+  const meshDeepLink = useMeshDeepLink();
 
   const total = activityData.reduce((sum, d) => sum + d, 0);
 
@@ -59,7 +59,7 @@ export function SystemStatusRow() {
                 : undefined
             }
             disabled={!status.tasks.enabled}
-            onClick={() => setTasksOpen(true)}
+            onClick={() => tasksDeepLink.open()}
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -77,7 +77,7 @@ export function SystemStatusRow() {
                 : undefined
             }
             disabled={!status.relay.enabled}
-            onClick={() => setRelayOpen(true)}
+            onClick={() => relayDeepLink.open()}
           />
         </motion.div>
         <motion.div variants={staggerItem}>
@@ -89,7 +89,7 @@ export function SystemStatusRow() {
                 ? { count: status.mesh.offlineCount, label: 'offline', severity: 'error' }
                 : undefined
             }
-            onClick={() => setMeshOpen(true)}
+            onClick={() => meshDeepLink.open()}
           />
         </motion.div>
         {/* Activity card with sparkline */}

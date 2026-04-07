@@ -15,6 +15,7 @@ import { AgentsPage } from '@/layers/widgets/agents';
 import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { agentFilterSchema } from '@/layers/features/agents-list';
+import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import type { Session } from '@dorkos/shared/types';
 
@@ -39,28 +40,34 @@ const appShellRoute = createRoute({
 });
 
 // ── Search param schemas ────────────────────────────────────
-const sessionSearchSchema = z.object({
-  session: z.string().optional(),
-  dir: z.string().optional(),
-});
+const sessionSearchSchema = mergeDialogSearch(
+  z.object({
+    session: z.string().optional(),
+    dir: z.string().optional(),
+  })
+);
 
 /** Search params available on the `/session` route. */
 export type SessionSearch = z.infer<typeof sessionSearchSchema>;
 
-const dashboardSearchSchema = z.object({
-  detail: z.enum(['dead-letter', 'failed-run', 'offline-agent']).optional(),
-  itemId: z.string().optional(),
-});
+const dashboardSearchSchema = mergeDialogSearch(
+  z.object({
+    detail: z.enum(['dead-letter', 'failed-run', 'offline-agent']).optional(),
+    itemId: z.string().optional(),
+  })
+);
 
 /** Search params available on the `/` (dashboard) route. */
 export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
 
-const agentsSearchSchema = z
-  .object({
-    view: z.enum(['list', 'topology']).optional().default('list'),
-    sort: z.string().optional().default('lastSeen:desc'),
-  })
-  .merge(agentFilterSchema.searchValidator);
+const agentsSearchSchema = mergeDialogSearch(
+  z
+    .object({
+      view: z.enum(['list', 'topology']).optional().default('list'),
+      sort: z.string().optional().default('lastSeen:desc'),
+    })
+    .merge(agentFilterSchema.searchValidator)
+);
 
 /** Search params available on the `/agents` route. */
 export type AgentsSearch = z.infer<typeof agentsSearchSchema>;
@@ -150,12 +157,14 @@ const tasksRoute = createRoute({
 });
 
 // ── Activity feed at /activity ───────────────────────────────
-const activitySearchSchema = z.object({
-  categories: z.string().optional(),
-  actorType: z.string().optional(),
-  actorId: z.string().optional(),
-  since: z.string().optional(),
-});
+const activitySearchSchema = mergeDialogSearch(
+  z.object({
+    categories: z.string().optional(),
+    actorType: z.string().optional(),
+    actorId: z.string().optional(),
+    since: z.string().optional(),
+  })
+);
 
 /** Search params available on the `/activity` route. */
 export type ActivitySearch = z.infer<typeof activitySearchSchema>;

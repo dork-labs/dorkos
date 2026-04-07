@@ -78,6 +78,12 @@ export interface DialogContribution extends BaseContribution {
   component: ComponentType<{ open: boolean; onOpenChange: (open: boolean) => void }>;
   /** Key in `useAppStore()` that controls open state (e.g., 'settingsOpen'). */
   openStateKey: string;
+  /**
+   * URL search-param value identifying this dialog for deep linking
+   * (e.g., `?dialog=settings`). Omit for dialogs that should not be
+   * addressable via URL.
+   */
+  urlParam?: 'settings' | 'agent' | 'tasks' | 'relay' | 'mesh';
 }
 
 export interface SettingsTabContribution extends BaseContribution {

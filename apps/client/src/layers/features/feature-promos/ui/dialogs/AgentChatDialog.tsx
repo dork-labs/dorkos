@@ -1,15 +1,15 @@
 import { MessagesSquare, Users, Network } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
+import { useMeshDeepLink } from '@/layers/shared/model';
 import type { PromoDialogProps } from '../../model/promo-types';
 
 /** Dialog content for the Agent-to-Agent Chat promo. */
 export function AgentChatDialog({ onClose }: PromoDialogProps) {
-  const setMeshOpen = useAppStore((s) => s.setMeshOpen);
+  const { open: openMesh } = useMeshDeepLink();
 
   const handleExplore = () => {
     onClose();
-    setMeshOpen(true);
+    openMesh();
   };
 
   return (

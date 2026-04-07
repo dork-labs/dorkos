@@ -27,6 +27,61 @@ const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useLocation: () => ({ pathname: mockPathname }),
+  useSearch: () => ({}),
+}));
+
+// Mock URL deep-link hooks — TasksView (rendered in the schedules tabpanel) and
+// use-task-notifications both call useTasksDeepLink. Stubbing here keeps the
+// router mock minimal.
+const mockOpenTasks = vi.fn();
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useTasksDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: mockOpenTasks,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useRelayDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useMeshDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useSettingsDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useAgentDialogDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    agentPath: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useOpenAgentDialog: () => vi.fn(),
 }));
 
 // Mock app store (sidebar state + selectedCwd)

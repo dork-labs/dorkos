@@ -1,5 +1,14 @@
 import { useCallback } from 'react';
-import { useAppStore, useSlotContributions, type DialogContribution } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useSlotContributions,
+  useSettingsDeepLink,
+  useAgentDialogDeepLink,
+  useTasksDeepLink,
+  useRelayDeepLink,
+  useMeshDeepLink,
+  type DialogContribution,
+} from '@/layers/shared/model';
 import { OnboardingFlow } from '@/layers/features/onboarding';
 
 /**
@@ -11,19 +20,61 @@ function toSetterKey(openStateKey: string): string {
 }
 
 /**
- * Renders a single registry-driven dialog by reading its open state and setter
- * from the app store dynamically via the contribution's `openStateKey`.
+ * Read the URL open signal for a dialog by its `urlParam` field.
+ *
+ * All five deep-link hooks are called unconditionally on every render to
+ * satisfy React's rules-of-hooks; the `switch` only chooses which result to
+ * return. For contributions without a `urlParam` (e.g., `directory-picker`,
+ * `server-restart-overlay`), returns an inert `{ isOpen: false, close: noop }`.
+ */
+function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
+  isOpen: boolean;
+  close: () => void;
+} {
+  const settings = useSettingsDeepLink();
+  const agent = useAgentDialogDeepLink();
+  const tasks = useTasksDeepLink();
+  const relay = useRelayDeepLink();
+  const mesh = useMeshDeepLink();
+
+  switch (urlParam) {
+    case 'settings':
+      return { isOpen: settings.isOpen, close: settings.close };
+    case 'agent':
+      return { isOpen: agent.isOpen, close: agent.close };
+    case 'tasks':
+      return { isOpen: tasks.isOpen, close: tasks.close };
+    case 'relay':
+      return { isOpen: relay.isOpen, close: relay.close };
+    case 'mesh':
+      return { isOpen: mesh.isOpen, close: mesh.close };
+    default:
+      return { isOpen: false, close: () => {} };
+  }
+}
+
+/**
+ * Renders a single registry-driven dialog by reading its open state from a
+ * dual signal — the store flag (via `openStateKey`) OR the URL signal (via
+ * `urlParam`). Closing clears both so deep-linked dialogs don't stick around.
  */
 function RegistryDialog({ contribution }: { contribution: DialogContribution }) {
-  const openStateKey = contribution.openStateKey;
-  const setterKey = toSetterKey(openStateKey);
-
-  const open = useAppStore((state) => state[openStateKey as keyof typeof state] as boolean);
-  const setter = useAppStore(
-    (state) => state[setterKey as keyof typeof state] as (open: boolean) => void
+  const storeOpen = useAppStore((s) => s[contribution.openStateKey as keyof typeof s] as boolean);
+  const setStoreOpen = useAppStore(
+    (s) => s[toSetterKey(contribution.openStateKey) as keyof typeof s] as (open: boolean) => void
   );
 
-  const onOpenChange = useCallback((value: boolean) => setter(value), [setter]);
+  const urlSignal = useDialogUrlSignal(contribution.urlParam);
+
+  const open = storeOpen || urlSignal.isOpen;
+
+  const onOpenChange = useCallback(
+    (value: boolean) => {
+      setStoreOpen(value);
+      if (!value && urlSignal.isOpen) urlSignal.close();
+    },
+    [setStoreOpen, urlSignal]
+  );
 
   const Component = contribution.component;
   return <Component open={open} onOpenChange={onOpenChange} />;

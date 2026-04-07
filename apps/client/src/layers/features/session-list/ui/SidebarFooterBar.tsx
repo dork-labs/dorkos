@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DorkLogo } from '@dorkos/icons/logos';
 import {
   useAppStore,
+  useSettingsDeepLink,
   useSlotContributions,
   useTheme,
   useTransport,
@@ -38,6 +39,7 @@ export function SidebarFooterBar() {
   const queryClient = useQueryClient();
   const [tunnelDialogOpen, setTunnelDialogOpen] = useState(false);
   const { data: liveStatus } = useTunnelStatus();
+  const { open: openSettings } = useSettingsDeepLink();
 
   const footerButtons = useSlotContributions('sidebar.footer');
   const filteredButtons = useMemo(
@@ -134,7 +136,14 @@ export function SidebarFooterBar() {
           {filteredButtons.map((button) => {
             // Theme button needs dynamic icon based on current theme
             const Icon = button.id === 'theme' ? ThemeIcon : button.icon;
-            const handleClick = button.id === 'theme' ? cycleTheme : button.onClick;
+            // Override click handlers for buttons whose behavior requires React hooks
+            // (see sidebar-contributions.ts for the placeholder onClick comments).
+            const handleClick =
+              button.id === 'theme'
+                ? cycleTheme
+                : button.id === 'settings'
+                  ? () => openSettings()
+                  : button.onClick;
             const label = button.id === 'theme' ? `Theme: ${theme}. Click to cycle.` : button.label;
 
             return (

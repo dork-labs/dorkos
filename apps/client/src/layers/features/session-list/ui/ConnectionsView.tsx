@@ -6,7 +6,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents, useAgentAccess } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
-import { useAppStore, useTransport } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useTransport,
+  useRelayDeepLink,
+  useMeshDeepLink,
+  useAgentDialogDeepLink,
+} from '@/layers/shared/model';
 import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
 import { useMcpConfig } from '@/layers/entities/agent';
 import {
@@ -90,7 +96,10 @@ const emptyStateTransition = { duration: 0.15, ease: EASE_OUT } as const;
 
 /** Read-only channel and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId, activeSessionId }: ConnectionsViewProps) {
-  const { setRelayOpen, setMeshOpen, setAgentDialogOpen, selectedCwd } = useAppStore();
+  const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const relayDeepLink = useRelayDeepLink();
+  const meshDeepLink = useMeshDeepLink();
+  const agentDeepLink = useAgentDialogDeepLink();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';
   const { data: adapters = [] } = useRelayAdapters(relayEnabled);
@@ -186,7 +195,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                 </SidebarGroupLabel>
                 <SidebarGroupAction
                   aria-label="Open Relay panel"
-                  onClick={() => setRelayOpen(true)}
+                  onClick={() => relayDeepLink.open()}
                 >
                   <ArrowUpRight />
                 </SidebarGroupAction>
@@ -231,7 +240,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                         {visibleAdapters.map((adapter) => (
                           <SidebarMenuItem key={adapter.config.id}>
                             <SidebarMenuButton
-                              onClick={() => setRelayOpen(true)}
+                              onClick={() => relayDeepLink.open()}
                               className="text-sm"
                             >
                               <span
@@ -273,7 +282,10 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                 <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
                   Agents
                 </SidebarGroupLabel>
-                <SidebarGroupAction aria-label="Open Mesh panel" onClick={() => setMeshOpen(true)}>
+                <SidebarGroupAction
+                  aria-label="Open Mesh panel"
+                  onClick={() => meshDeepLink.open()}
+                >
                   <ArrowUpRight />
                 </SidebarGroupAction>
 
@@ -318,7 +330,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                         {cappedAgents.map((agent) => (
                           <SidebarMenuItem key={agent.id}>
                             <SidebarMenuButton
-                              onClick={() => setMeshOpen(true)}
+                              onClick={() => meshDeepLink.open()}
                               className="text-sm"
                             >
                               {/* Registered agents show a neutral dot — health status requires a separate topology query */}
@@ -344,7 +356,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                               {visibleAgents.slice(AGENT_CAP).map((agent) => (
                                 <SidebarMenuItem key={agent.id}>
                                   <SidebarMenuButton
-                                    onClick={() => setMeshOpen(true)}
+                                    onClick={() => meshDeepLink.open()}
                                     className="text-sm"
                                   >
                                     <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-full" />
@@ -394,10 +406,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
           <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
             Tools
           </SidebarGroupLabel>
-          <SidebarGroupAction
-            aria-label="Edit capabilities"
-            onClick={() => setAgentDialogOpen(true)}
-          >
+          <SidebarGroupAction aria-label="Edit capabilities" onClick={() => agentDeepLink.open()}>
             <ArrowUpRight />
           </SidebarGroupAction>
 
@@ -407,7 +416,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
               const state = toolStatus[key];
               return (
                 <SidebarMenuItem key={key}>
-                  <SidebarMenuButton className="text-sm" onClick={() => setAgentDialogOpen(true)}>
+                  <SidebarMenuButton className="text-sm" onClick={() => agentDeepLink.open()}>
                     <span
                       className={cn('size-2 shrink-0 rounded-full', TOOL_STATUS_COLORS[state])}
                     />

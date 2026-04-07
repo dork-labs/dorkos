@@ -8,7 +8,7 @@ import {
   useTaskTemplateDialog,
 } from '@/layers/entities/tasks';
 import { formatCron } from '@/layers/features/tasks';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTasksDeepLink } from '@/layers/shared/model';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -146,9 +146,9 @@ interface TasksViewProps {
 
 /** Schedule runs summary for the sidebar Schedules tab. */
 export function TasksView({ toolStatus, agentId }: TasksViewProps) {
-  const setTasksOpen = useAppStore((s) => s.setTasksOpen);
-  const openTasksForAgent = useAppStore((s) => s.openTasksForAgent);
-  const openTasksToEdit = useAppStore((s) => s.openTasksToEdit);
+  const tasksDeepLink = useTasksDeepLink();
+  const setTasksAgentFilter = useAppStore((s) => s.setTasksAgentFilter);
+  const setTasksEditScheduleId = useAppStore((s) => s.setTasksEditScheduleId);
   const enabled = toolStatus !== 'disabled-by-server';
   const { data: allSchedules = [] } = useTasks(enabled);
   const { data: activeRunCount = 0 } = useActiveTaskRunCount(enabled);
@@ -205,7 +205,21 @@ export function TasksView({ toolStatus, agentId }: TasksViewProps) {
     [schedules]
   );
 
-  const openTasks = () => (agentId ? openTasksForAgent(agentId) : setTasksOpen(true));
+  // Compose auxiliary store state (agent filter) with the URL deep-link hook.
+  // The aux store fields (`tasksAgentFilter`, `tasksEditScheduleId`) aren't
+  // URL-addressable yet, so we set them locally before triggering the URL open.
+  const openTasks = () => {
+    if (agentId) {
+      setTasksAgentFilter(agentId);
+      setTasksEditScheduleId(null);
+    }
+    tasksDeepLink.open();
+  };
+  const openTasksForEdit = (scheduleId: string) => {
+    setTasksEditScheduleId(scheduleId);
+    setTasksAgentFilter(null);
+    tasksDeepLink.open();
+  };
 
   if (toolStatus === 'disabled-by-agent') {
     return (
@@ -288,7 +302,7 @@ export function TasksView({ toolStatus, agentId }: TasksViewProps) {
                 <UpcomingScheduleItem
                   key={schedule.id}
                   schedule={schedule}
-                  onEdit={openTasksToEdit}
+                  onEdit={openTasksForEdit}
                 />
               ))}
             </SidebarMenu>

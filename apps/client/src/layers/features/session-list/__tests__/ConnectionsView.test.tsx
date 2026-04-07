@@ -69,20 +69,52 @@ vi.mock('@tanstack/react-query', async () => {
   };
 });
 
-// Mock app store — capture setRelayOpen / setMeshOpen / setAgentDialogOpen calls
-const mockSetRelayOpen = vi.fn();
-const mockSetMeshOpen = vi.fn();
-const mockSetAgentDialogOpen = vi.fn();
+// Mock app store — only `selectedCwd` is still read directly. Open intent for
+// relay/mesh/agent dialogs now flows through URL deep-link hooks below.
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
-      setRelayOpen: mockSetRelayOpen,
-      setMeshOpen: mockSetMeshOpen,
-      setAgentDialogOpen: mockSetAgentDialogOpen,
       selectedCwd: null,
     };
     return selector ? selector(state) : state;
   },
+}));
+
+// Mock URL deep-link hooks — ConnectionsView opens dialogs via
+// `useRelayDeepLink().open()`, `useMeshDeepLink().open()`, and
+// `useAgentDialogDeepLink().open()` instead of the legacy app-store setters.
+const mockOpenRelayDeepLink = vi.fn();
+const mockOpenMeshDeepLink = vi.fn();
+const mockOpenAgentDialogDeepLink = vi.fn();
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useRelayDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: mockOpenRelayDeepLink,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useMeshDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: mockOpenMeshDeepLink,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useAgentDialogDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    agentPath: null,
+    open: mockOpenAgentDialogDeepLink,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
 }));
 
 beforeAll(() => {
@@ -280,7 +312,7 @@ describe('ConnectionsView', () => {
     expect(screen.getByText('Tools')).toBeInTheDocument();
   });
 
-  it('Open Relay button calls setRelayOpen(true)', () => {
+  it('Open Relay button opens via relay deep-link', () => {
     render(
       <ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} activeSessionId={null} />,
       {
@@ -289,10 +321,10 @@ describe('ConnectionsView', () => {
     );
     const btn = screen.getByRole('button', { name: /Open Relay/ });
     fireEvent.click(btn);
-    expect(mockSetRelayOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenRelayDeepLink).toHaveBeenCalled();
   });
 
-  it('Open Mesh button calls setMeshOpen(true)', () => {
+  it('Open Mesh button opens via mesh deep-link', () => {
     render(
       <ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} activeSessionId={null} />,
       {
@@ -301,10 +333,10 @@ describe('ConnectionsView', () => {
     );
     const btn = screen.getByRole('button', { name: /Open Mesh/ });
     fireEvent.click(btn);
-    expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenMeshDeepLink).toHaveBeenCalled();
   });
 
-  it('Edit capabilities button calls setAgentDialogOpen(true)', () => {
+  it('Edit capabilities button opens via agent dialog deep-link', () => {
     render(
       <ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} activeSessionId={null} />,
       {
@@ -313,7 +345,7 @@ describe('ConnectionsView', () => {
     );
     const btn = screen.getByRole('button', { name: /Edit capabilities/ });
     fireEvent.click(btn);
-    expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenAgentDialogDeepLink).toHaveBeenCalled();
   });
 
   it('renders empty channel state when no channels configured', () => {

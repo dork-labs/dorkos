@@ -40,17 +40,29 @@ vi.mock('@/layers/entities/relay', () => ({
   useAdapterCatalog: () => mockUseAdapterCatalog(),
 }));
 
-const mockSetAgentDialogOpen = vi.fn();
-const mockOpenSettingsToTab = vi.fn();
+const mockCloseAgentDialog = vi.fn();
+const mockOpenSettings = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      setAgentDialogOpen: mockSetAgentDialogOpen,
-      openSettingsToTab: mockOpenSettingsToTab,
-    };
-    return selector ? selector(state) : state;
-  },
+  useAgentDialogDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    agentPath: null,
+    open: vi.fn(),
+    close: mockCloseAgentDialog,
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+  useSettingsDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: mockOpenSettings,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
 }));
 
 // Stub BindingDialog to avoid its complex internals
@@ -315,11 +327,6 @@ describe('ChannelsTab', () => {
 
   describe('setup new channel navigation', () => {
     it('closes agent dialog and navigates to relay settings', () => {
-      const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-        cb(0);
-        return 0;
-      });
-
       mockUseAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
 
@@ -328,10 +335,8 @@ describe('ChannelsTab', () => {
       // Popover content renders via portal — use screen
       fireEvent.click(screen.getByText('Set up a new channel...'));
 
-      expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(false);
-      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('channels');
-
-      rafSpy.mockRestore();
+      expect(mockCloseAgentDialog).toHaveBeenCalled();
+      expect(mockOpenSettings).toHaveBeenCalledWith('channels');
     });
   });
 });

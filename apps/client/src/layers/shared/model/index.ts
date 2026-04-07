@@ -56,3 +56,14 @@ export {
   type SettingsTabContribution,
   type SessionCanvasContribution,
 } from './extension-registry';
+export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
+export {
+  useSettingsDeepLink,
+  useAgentDialogDeepLink,
+  useOpenAgentDialog,
+  useTasksDeepLink,
+  useRelayDeepLink,
+  useMeshDeepLink,
+  type DialogDeepLink,
+} from './use-dialog-deep-link';
+export { useDeepLinkScroll } from './use-deep-link-scroll';

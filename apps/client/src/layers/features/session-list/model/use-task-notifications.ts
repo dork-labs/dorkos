@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTasksDeepLink } from '@/layers/shared/model';
 import { useTasksEnabled, useCompletedTaskRunBadge } from '@/layers/entities/tasks';
 import { toast } from 'sonner';
 
@@ -14,14 +14,15 @@ export function useTaskNotifications(): void {
   const tasksEnabled = useTasksEnabled();
   const { unviewedCount, clearBadge } = useCompletedTaskRunBadge(tasksEnabled);
   const enableTasksNotifications = useAppStore((s) => s.enableTasksNotifications);
-  const tasksOpen = useAppStore((s) => s.tasksOpen);
-  const { setTasksOpen } = useAppStore();
+  const tasksDeepLink = useTasksDeepLink();
   const setTasksBadgeCount = useAppStore((s) => s.setTasksBadgeCount);
+  const tasksIsOpen = tasksDeepLink.isOpen;
+  const openTasks = tasksDeepLink.open;
 
   // Clear completion badge when Tasks panel opens
   useEffect(() => {
-    if (tasksOpen) clearBadge();
-  }, [tasksOpen, clearBadge]);
+    if (tasksIsOpen) clearBadge();
+  }, [tasksIsOpen, clearBadge]);
 
   // Toast on new run completions
   const prevUnviewedRef = useRef(0);
@@ -33,12 +34,12 @@ export function useTaskNotifications(): void {
         duration: 6000,
         action: {
           label: 'View history',
-          onClick: () => setTasksOpen(true),
+          onClick: () => openTasks(),
         },
       });
     }
     prevUnviewedRef.current = unviewedCount;
-  }, [unviewedCount, enableTasksNotifications, setTasksOpen]);
+  }, [unviewedCount, enableTasksNotifications, openTasks]);
 
   // Flow badge count to Zustand so useDocumentTitle can render it
   useEffect(() => {

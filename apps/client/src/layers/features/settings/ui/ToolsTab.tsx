@@ -9,7 +9,7 @@ import {
   NavigationLayoutPanelHeader,
   SettingRow,
 } from '@/layers/shared/ui';
-import { useTransport } from '@/layers/shared/model';
+import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
 import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 import {
   TOOL_INVENTORY,
@@ -48,6 +48,8 @@ export function ToolsTab() {
   const { config, updateConfig } = useAgentContextConfig();
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const { section } = useSettingsDeepLink();
+  useDeepLinkScroll(section);
 
   const { data: serverConfig } = useQuery({
     queryKey: ['config'],
@@ -149,7 +151,11 @@ export function ToolsTab() {
           ))}
         </FieldCardContent>
       </FieldCard>
-      {serverConfig?.mcp && <ExternalMcpCard mcp={serverConfig.mcp} />}
+      {serverConfig?.mcp && (
+        <div data-section="external-mcp">
+          <ExternalMcpCard mcp={serverConfig.mcp} />
+        </div>
+      )}
     </div>
   );
 }

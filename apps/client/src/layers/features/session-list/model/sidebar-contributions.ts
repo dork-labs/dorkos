@@ -15,16 +15,20 @@ import { ConnectionsView } from '../ui/ConnectionsView';
 /**
  * Built-in sidebar footer buttons.
  *
- * Note: The theme button uses `Sun` as the default icon. The actual
- * rendering component (`SidebarFooterBar`) handles dynamic icon swapping
- * based on the current theme by checking the contribution `id`.
+ * Note: The `settings` and `theme` buttons use no-op `onClick` placeholders —
+ * the rendering component (`SidebarFooterBar`) overrides click behavior for
+ * these IDs because their handlers require React hooks (URL deep-link navigation
+ * for settings; theme state for theme cycling) that can't run outside a component.
  */
 export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
   {
     id: 'settings',
     icon: Settings,
     label: 'Settings',
-    onClick: () => useAppStore.getState().setSettingsOpen(true),
+    onClick: () => {
+      // Overridden in SidebarFooterBar — the actual handler calls
+      // `useSettingsDeepLink().open()` which requires the router context.
+    },
     priority: 2,
   },
   {

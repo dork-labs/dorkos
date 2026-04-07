@@ -32,6 +32,20 @@ vi.mock('@/layers/shared/model/app-store', () => ({
   }),
 }));
 
+// Mock URL deep-link hooks — SidebarFooterBar now calls useSettingsDeepLink().open()
+const mockOpenSettings = vi.fn();
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useSettingsDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: mockOpenSettings,
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+}));
+
 // Mock transport
 const mockGetConfig = vi.fn();
 const mockUpdateConfig = vi.fn().mockResolvedValue(undefined);
@@ -133,11 +147,11 @@ describe('SidebarFooterBar', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
-  it('calls setSettingsOpen(true) when settings button is clicked', () => {
+  it('opens settings via URL deep link when settings button is clicked', () => {
     render(<SidebarFooterBar />);
 
     fireEvent.click(screen.getByLabelText('Settings'));
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenSettings).toHaveBeenCalled();
   });
 
   it('cycles theme from light to dark', () => {

@@ -7,7 +7,7 @@ import {
   useUpdateBinding,
 } from '@/layers/entities/binding';
 import { useAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
-import { useAppStore } from '@/layers/shared/model';
+import { useAgentDialogDeepLink, useSettingsDeepLink } from '@/layers/shared/model';
 import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
@@ -41,7 +41,8 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
   const createBinding = useCreateBinding();
   const deleteBinding = useDeleteBinding();
   const updateBinding = useUpdateBinding();
-  const { setAgentDialogOpen, openSettingsToTab } = useAppStore();
+  const { close: closeAgentDialog } = useAgentDialogDeepLink();
+  const { open: openSettings } = useSettingsDeepLink();
 
   const [editDialog, setEditDialog] = useState<EditDialogState>(CLOSED_EDIT_DIALOG);
 
@@ -102,9 +103,9 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
 
   const handleSetupNewChannel = useCallback(() => {
     // Close the agent dialog, then navigate to Settings → Channels.
-    setAgentDialogOpen(false);
-    requestAnimationFrame(() => openSettingsToTab('channels'));
-  }, [setAgentDialogOpen, openSettingsToTab]);
+    closeAgentDialog();
+    openSettings('channels');
+  }, [closeAgentDialog, openSettings]);
 
   const handleEdit = useCallback(
     (binding: AdapterBinding) => {

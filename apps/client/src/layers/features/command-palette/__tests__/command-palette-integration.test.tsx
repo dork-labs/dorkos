@@ -72,6 +72,48 @@ vi.mock('@/layers/shared/model', () => ({
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
   useIsMobile: () => false,
   useNow: () => Date.now(),
+  // URL deep-link hooks — during the dual-signal era we forward open/close
+  // to the existing store-setter mocks so legacy assertions still hold while
+  // the palette migrates to router-first dialog opens (task 2.7).
+  useSettingsDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: () => mockSetSettingsOpen(true),
+    close: () => mockSetSettingsOpen(false),
+    setTab: () => {},
+    setSection: () => {},
+  }),
+  useTasksDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: () => mockSetTasksOpen(true),
+    close: () => mockSetTasksOpen(false),
+    setTab: () => {},
+    setSection: () => {},
+  }),
+  useRelayDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: () => mockSetRelayOpen(true),
+    close: () => mockSetRelayOpen(false),
+    setTab: () => {},
+    setSection: () => {},
+  }),
+  useMeshDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: () => mockSetMeshOpen(true),
+    close: () => mockSetMeshOpen(false),
+    setTab: () => {},
+    setSection: () => {},
+  }),
+  useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
+    getState: () => ({ open: vi.fn() }),
+  }),
 }));
 
 const mockSetDir = vi.fn();

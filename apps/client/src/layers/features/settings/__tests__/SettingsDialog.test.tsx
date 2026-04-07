@@ -27,6 +27,22 @@ vi.mock('../ui/ServerRestartOverlay', () => ({
   ServerRestartOverlay: () => null,
 }));
 
+// Mock the URL deep-link hook — these tests don't mount a RouterProvider and
+// exercise tab navigation via clicks rather than URL signals. URL-driven
+// behavior is covered by `use-dialog-deep-link.test.tsx` and
+// `DialogHost.test.tsx`.
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useSettingsDeepLink: () => ({
+    isOpen: false,
+    activeTab: null,
+    section: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+}));
+
 // Mock Radix dialog portal to render inline
 vi.mock('@radix-ui/react-dialog', async () => {
   const actual =

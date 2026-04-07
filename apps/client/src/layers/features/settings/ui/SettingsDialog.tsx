@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Palette, Settings2, LayoutList, Server, Wrench, Radio, Bot, Cog } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
-import { useAppStore, type SettingsTab } from '@/layers/shared/model';
+import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { StatusBarTab } from './tabs/StatusBarTab';
@@ -31,7 +31,7 @@ interface SettingsDialogProps {
 
 /** Tabbed Settings dialog (consumer of TabbedDialog primitive). */
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const settingsInitialTab = useAppStore((s) => s.settingsInitialTab);
+  const { activeTab: urlTab } = useSettingsDeepLink();
   const [tunnelDialogOpen, setTunnelDialogOpen] = useState(false);
 
   return (
@@ -42,7 +42,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         title="Settings"
         description="Application settings"
         defaultTab="appearance"
-        initialTab={settingsInitialTab}
+        initialTab={urlTab}
         tabs={SETTINGS_TABS}
         sidebarExtras={<RemoteAccessAction onClick={() => setTunnelDialogOpen(true)} />}
         extensionSlot="settings.tabs"

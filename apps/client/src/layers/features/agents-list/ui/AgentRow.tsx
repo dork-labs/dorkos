@@ -6,12 +6,10 @@ import type { AgentManifest, AgentHealthStatus } from '@dorkos/shared/mesh-schem
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { cn } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useOpenAgentDialog, useTransport } from '@/layers/shared/model';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { useBindings } from '@/layers/entities/binding';
 import { useAdapterCatalog } from '@/layers/entities/relay';
-import { AgentDialog } from '@/layers/features/agent-settings';
-import type { AgentDialogTab } from '@/layers/shared/model';
 import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
 import { SessionLaunchPopover } from './SessionLaunchPopover';
 import { UnregisterAgentDialog } from './UnregisterAgentDialog';
@@ -58,8 +56,7 @@ export function AgentRow({
   const { color, emoji } = resolveAgentVisual(agent);
   const [open, setOpen] = useState(false);
   const [unregisterOpen, setUnregisterOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<AgentDialogTab>('identity');
+  const openAgentDialog = useOpenAgentDialog();
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -245,20 +242,14 @@ export function AgentRow({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setSettingsInitialTab('identity');
-                      setSettingsOpen(true);
-                    }}
+                    onClick={() => openAgentDialog(projectPath, 'identity')}
                   >
                     Edit
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setSettingsInitialTab('channels');
-                      setSettingsOpen(true);
-                    }}
+                    onClick={() => openAgentDialog(projectPath, 'channels')}
                     data-testid="channels-btn"
                   >
                     <Radio className="mr-1 size-3" />
@@ -280,13 +271,6 @@ export function AgentRow({
           )}
         </AnimatePresence>
       </div>
-
-      <AgentDialog
-        projectPath={projectPath}
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        initialTab={settingsInitialTab}
-      />
 
       {!isSystem && (
         <UnregisterAgentDialog

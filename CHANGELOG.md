@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- URL deep links for Settings, Agent, Tasks, Relay, Mesh dialogs
 - Show MCP servers in Tools tab
 - Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
 - Use official brand logos for agent runtimes
 - Redesign Tools tab with tool inventories, init errors, and override counts
+- Make Settings, Tasks, Relay, Mesh, and Agent dialogs URL-addressable via search params — share links like `?settings=tools` to deep-link teammates to a specific dialog and tab; browser back closes dialogs and reload preserves dialog state. Note: deep links containing `?agentPath=...` include your local project path.
 
 ### Changed
 
