@@ -5,6 +5,82 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.0] - 2026-04-08
+
+> The marketplace lands — install pipeline, in-app Dork Hub, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.
+
+### Changed
+
+- **Marketplace**: Converted `marketplace.json` to a **strict superset** of the Claude Code marketplace format. Schema now supports 5 source types (relative-path, github, url, git-subdir, npm), `owner` / `metadata` / `author` object shapes, `.claude-plugin/` file location, and a sidecar `dorkos.json` for DorkOS-specific extensions. The `dorkos-community/marketplace` repo is renamed to `dork-labs/marketplace` and uses the same-repo monorepo layout. Plugin runtime activation now goes through the Claude Agent SDK `options.plugins` API so DorkOS owns install and the SDK owns runtime. Empirically verified against `claude plugin validate` (CC 2.1.92). See spec `marketplace-05-claude-code-format-superset` and ADRs 0236–0239. (`marketplace-05-claude-code-format-superset`)
+
+### Added
+
+- Unify validate CLI + add source reachability check
+- Add Settings page and sections to the dev playground
+- URL deep links for Settings, Agent, Tasks, Relay, Mesh dialogs
+- CLI validators, telemetry, seed fixture, docs (marketplace-05 Batches 5-8)
+- Strict CC superset — schema, install, runtime, site (marketplace-05 Batches 1-4)
+- Add MCP server surface (marketplace-05-agent-installer) + in-flight WIP
+- **Marketplace as MCP server.** The DorkOS marketplace is now exposed as an MCP server at `/mcp`, alongside the existing DorkOS tools. Any AI agent that speaks MCP — Claude Code, Cursor, Codex, Cline, ChatGPT, Gemini — can search the marketplace, get package details, install packages (with user confirmation), and scaffold new packages on the fly. See `contributing/external-agent-marketplace-access.md` for setup instructions. (`marketplace-05-agent-installer`)
+- **Personal marketplace.** A per-user local marketplace at `~/.dork/personal-marketplace/` is now created on first server boot. Agents can scaffold new packages here via `marketplace_create_package` without leaving their tool of choice. (`marketplace-05-agent-installer`)
+- **8 new MCP tools:** `marketplace_search`, `marketplace_get`, `marketplace_list_marketplaces`, `marketplace_list_installed`, `marketplace_recommend`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`. (`marketplace-05-agent-installer`)
+- Add `/marketplace` browse page on dorkos.ai with hourly registry refresh from `dorkos-community/marketplace` (`marketplace-04-web-and-registry`)
+- Add per-package detail pages with README rendering, install instructions, related packages, and OG images (`marketplace-04-web-and-registry`)
+- Add `/marketplace/privacy` page documenting the install telemetry contract (`marketplace-04-web-and-registry`)
+- Add opt-in install telemetry endpoint (`/api/telemetry/install`) backed by Neon Postgres + Drizzle ORM as the single source of truth (`marketplace-04-web-and-registry`)
+- Add telemetry consent banner in the in-product Dork Hub (off by default) (`marketplace-04-web-and-registry`)
+- Add `dorkos package validate-marketplace` and `dorkos package validate-remote` CLI commands for the dorkos-community submission workflow (`marketplace-04-web-and-registry`)
+- Include all marketplace packages in `sitemap.xml` and `llms.txt` (`marketplace-04-web-and-registry`)
+- Ship Dork Hub browse UI as built-in extension (marketplace-03-extension)
+- Add Dork Hub — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
+- Add featured agents rail and type filters (agents, plugins, skills, adapters) with debounced search across the catalog (`marketplace-03-extension`)
+- Add package detail sheet with rendered README and permission preview (`marketplace-03-extension`)
+- Add install confirmation dialog with blocking conflict detection before any write (`marketplace-03-extension`)
+- Add installed packages view for updating and uninstalling from the Hub (`marketplace-03-extension`)
+- Add marketplace sources management for adding and removing git registries from the Hub (`marketplace-03-extension`)
+- Add "From Dork Hub" tab to TemplatePicker so agent creation can pull directly from marketplace agents (`marketplace-03-extension`)
+- Complete install/uninstall/update pipeline (Batches 4-9 of marketplace-02-install)
+- Add `dorkos install <name>` to install plugins, agents, skill packs, and adapters from configured marketplaces — atomic transactions with rollback on failure and permission preview before install (`marketplace-02-install`)
+- Add `dorkos uninstall <name>` with `--purge` flag for full data removal (`marketplace-02-install`)
+- Add `dorkos update [<name>]` advisory update notifications, with `--apply` to perform upgrades (`marketplace-02-install`)
+- Add `dorkos marketplace add/remove/list/refresh` to manage marketplace sources (`marketplace-02-install`)
+- Add `dorkos cache list/prune/clear` to manage the local marketplace cache (`marketplace-02-install`)
+- Add `/api/marketplace/*` HTTP endpoints for sources, packages, install/uninstall/update, and cache (`marketplace-02-install`)
+- Implement foundation package, CLI commands, and kind field addendum
+- Show MCP servers in Tools tab
+- Add external MCP access controls — toggle, API key, rate limiting, and setup instructions
+- Use official brand logos for agent runtimes
+- Redesign Tools tab with tool inventories, init errors, and override counts
+- Make Settings, Tasks, Relay, Mesh, and Agent dialogs URL-addressable via search params — share links like `?settings=tools` to deep-link teammates to a specific dialog and tab; browser back closes dialogs and reload preserves dialog state. Note: deep links containing `?agentPath=...` include your local project path.
+- Add `@dorkos/marketplace` package with schemas, parser, validator, scanner, and scaffolder (spec 1 of 5)
+- Add `dorkos package init <name>` CLI command for scaffolding new marketplace packages
+- Add `dorkos package validate [path]` CLI command for validating package manifests
+- Add optional `kind` field to `SkillFrontmatterSchema` (addendum to ADR-0220)
+
+### Changed (other)
+
+- Extract `TabbedDialog` widget primitive — `SettingsDialog` and `AgentDialog` now consume it as thin declarative wrappers (491 → 54 lines and 177 → 75 lines respectively)
+- Split four oversized dialog files under 300 lines
+- Reconcile developer guides for marketplace-init branch
+- Restructure dialog tabs — replace Capabilities with Tools
+- Redesign PersonalityTab with extracted TraitSliders and response mode
+- Redesign IdentityTab with hero preview and extract useDebouncedInput
+- Move warning to top, multi-line endpoint, Remove on generated key, dork*mcp* prefix
+- Redesign ExternalMcpCard with sectioned layout and better visual hierarchy
+- Nest scheduler config inside Tasks tool group expansion
+
+### Fixed
+
+- Address code review findings on dialog URL deep links
+- Convert RateLimitSection to SwitchSettingRow
+- Address code review feedback from 413d74d3
+- Close 4 critical install-pipeline gaps from Session 2 review
+- Close code-review gaps from 6fdd065c
+- Repair .gtrconfig format and assign unique dev ports
+- Add error handling for API key lifecycle and restart hint for rate limits
+
+---
+
 ## [0.33.0] - 2026-04-05
 
 > Intelligent channel binding and dependency awareness — adapters become channels, runtime requirements surface during onboarding, and system configuration becomes discoverable.

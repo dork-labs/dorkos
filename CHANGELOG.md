@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+---
+
+## [0.34.0] - 2026-04-08
+
+> The marketplace lands — install pipeline, in-app Dork Hub, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.
+
 ### Changed
 
 - **Marketplace**: Converted `marketplace.json` to a **strict superset** of the Claude Code marketplace format. Schema now supports 5 source types (relative-path, github, url, git-subdir, npm), `owner` / `metadata` / `author` object shapes, `.claude-plugin/` file location, and a sidecar `dorkos.json` for DorkOS-specific extensions. The `dorkos-community/marketplace` repo is renamed to `dork-labs/marketplace` and uses the same-repo monorepo layout. Plugin runtime activation now goes through the Claude Agent SDK `options.plugins` API so DorkOS owns install and the SDK owns runtime. Empirically verified against `claude plugin validate` (CC 2.1.92). See spec `marketplace-05-claude-code-format-superset` and ADRs 0236–0239. (`marketplace-05-claude-code-format-superset`)
