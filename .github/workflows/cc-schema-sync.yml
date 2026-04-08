@@ -1,0 +1,33 @@
+name: cc-schema-sync
+
+# Weekly drift monitor for the Claude Code marketplace schema that DorkOS's
+# `cc-validator.ts` mirrors. See ADR-0238 and `scripts/sync-cc-schema.ts`.
+
+on:
+  schedule:
+    - cron: '0 10 * * 1' # Mondays at 10:00 UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run sync-cc-schema
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm tsx scripts/sync-cc-schema.ts

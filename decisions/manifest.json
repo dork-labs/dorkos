@@ -1,7 +1,52 @@
 {
   "version": 1,
-  "nextNumber": 231,
+  "nextNumber": 240,
   "decisions": [
+    {
+      "number": 235,
+      "slug": "site-local-drizzle-schema-for-marketplace-telemetry",
+      "title": "Site-Local Drizzle Schema for Marketplace Telemetry (Not packages/db)",
+      "created": "2026-04-07",
+      "status": "accepted",
+      "extractedFrom": "marketplace-04-web-and-registry",
+      "specSlug": "marketplace-04-web-and-registry"
+    },
+    {
+      "number": 234,
+      "slug": "neon-drizzle-single-source-of-truth-for-marketplace-telemetry",
+      "title": "Neon + Drizzle as Single Source of Truth for Marketplace Install Telemetry",
+      "created": "2026-04-07",
+      "status": "accepted",
+      "extractedFrom": "marketplace-04-web-and-registry",
+      "specSlug": "marketplace-04-web-and-registry"
+    },
+    {
+      "number": 233,
+      "slug": "marketplace-update-is-advisory-by-default",
+      "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
+      "created": "2026-04-06",
+      "status": "draft",
+      "extractedFrom": "marketplace-02-install",
+      "specSlug": "marketplace-02-install"
+    },
+    {
+      "number": 232,
+      "slug": "content-addressable-marketplace-cache-with-ttl",
+      "title": "Content-Addressable Marketplace Package Cache with 1h TTL on marketplace.json",
+      "created": "2026-04-06",
+      "status": "draft",
+      "extractedFrom": "marketplace-02-install",
+      "specSlug": "marketplace-02-install"
+    },
+    {
+      "number": 231,
+      "slug": "atomic-transaction-engine-for-marketplace-installs",
+      "title": "Atomic Transaction Engine for Marketplace Installs (Stage + Backup Branch + Activate)",
+      "created": "2026-04-06",
+      "status": "draft",
+      "extractedFrom": "marketplace-02-install",
+      "specSlug": "marketplace-02-install"
+    },
     {
       "number": 230,
       "slug": "marketplace-package-type-agent-naming",
@@ -283,7 +328,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "proposed",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -310,7 +355,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "proposed",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1161,7 +1206,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
@@ -1287,7 +1332,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "proposed",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -1341,7 +1386,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
       "status": "proposed",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -1499,6 +1544,42 @@
       "created": "2026-03-15",
       "extractedFrom": "sdk-command-discovery",
       "specSlug": "sdk-command-discovery"
+    },
+    {
+      "number": 236,
+      "slug": "sidecar-dorkos-json-for-marketplace-extensions",
+      "title": "Sidecar dorkos.json for DorkOS Marketplace Extensions",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 237,
+      "slug": "same-repo-monorepo-for-dork-labs-marketplace-seed",
+      "title": "Same-Repo Monorepo for dork-labs/marketplace Seed",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 238,
+      "slug": "port-to-zod-cc-validator-with-weekly-sync-cron",
+      "title": "Port-to-Zod CC Validator with Weekly Sync Cron",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 239,
+      "slug": "plugin-runtime-activation-via-claude-agent-sdk-options-plugins",
+      "title": "Plugin Runtime Activation via Claude Agent SDK options.plugins",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
     }
   ]
 }

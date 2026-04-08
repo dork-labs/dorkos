@@ -1,0 +1,6 @@
+{
+  "id": "sample-ext",
+  "name": "sample-ext",
+  "version": "1.0.0",
+  "entry": "./index.ts"
+}

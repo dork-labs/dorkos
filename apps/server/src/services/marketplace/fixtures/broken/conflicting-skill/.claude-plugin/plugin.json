@@ -1,0 +1,5 @@
+{
+  "name": "conflicting-skill",
+  "version": "1.0.0",
+  "description": "Skill pack whose bundled SKILL.md has frontmatter that conflicts with its directory name"
+}

@@ -19,6 +19,7 @@ import {
 const navLinks = [
   { label: 'about', href: '#about' },
   { label: 'features', href: '/features' },
+  { label: 'marketplace', href: '/marketplace' },
   { label: 'blog', href: '/blog' },
   { label: 'docs', href: '/docs' },
 ];

@@ -14,6 +14,7 @@ Request/response types are defined as **Zod schemas** in `packages/shared/src/`.
 - `schemas.ts` — Sessions, commands, health, pulse, models, capabilities
 - `relay-schemas.ts` — Relay envelopes, adapters, bindings, catalog
 - `mesh-schemas.ts` — Agent manifests, discovery, topology, access control
+- `marketplace-schemas.ts` — Marketplace sources, package entries, install/uninstall/update requests
 
 Each schema serves three roles:
 
@@ -38,6 +39,32 @@ const { field } = parsed.data;
 ```
 
 4. Export the inferred type from `packages/shared/src/types.ts` if needed by client code
+
+## Marketplace (`/api/marketplace/*`)
+
+The marketplace routes are mounted at `/api/marketplace` and backed by injected service dependencies (source manager, cache, fetcher, installer, uninstall/update flows). Route file: `apps/server/src/routes/marketplace.ts`.
+
+| Method   | Path                                        | Description                                                                 |
+| -------- | ------------------------------------------- | --------------------------------------------------------------------------- |
+| `GET`    | `/api/marketplace/sources`                  | List configured marketplace sources                                         |
+| `POST`   | `/api/marketplace/sources`                  | Add a new source (`{ name, source, enabled? }`)                             |
+| `DELETE` | `/api/marketplace/sources/:name`            | Remove a source                                                             |
+| `POST`   | `/api/marketplace/sources/:name/refresh`    | Force-refetch a source's `marketplace.json`                                 |
+| `GET`    | `/api/marketplace/installed`                | List installed packages from `~/.dork/plugins/` and `~/.dork/agents/`       |
+| `GET`    | `/api/marketplace/installed/:name`          | Get a single installed package by name                                      |
+| `GET`    | `/api/marketplace/cache`                    | Cache status (marketplace count, package count, total bytes)                |
+| `DELETE` | `/api/marketplace/cache`                    | Wipe the entire marketplace cache                                           |
+| `POST`   | `/api/marketplace/cache/prune`              | Prune old cached packages (`{ keepLastN? }`)                                |
+| `GET`    | `/api/marketplace/packages`                 | Aggregate packages from all enabled sources                                 |
+| `GET`    | `/api/marketplace/packages/:name`           | Fetch and validate a single package entry (`?marketplace=` to pin source)   |
+| `POST`   | `/api/marketplace/packages/:name/preview`   | Build a `PermissionPreview` without installing                              |
+| `POST`   | `/api/marketplace/packages/:name/install`   | Install a package (`{ marketplace?, source?, force?, yes?, projectPath? }`) |
+| `POST`   | `/api/marketplace/packages/:name/uninstall` | Uninstall a package (`{ purge?, projectPath? }`)                            |
+| `POST`   | `/api/marketplace/packages/:name/update`    | Advisory update check; pass `{ apply: true }` to apply the update           |
+
+**Error responses** use a centralised `mapErrorToStatus` helper — `400` for invalid manifests, `409` for file conflicts, `404` for missing packages/sources, `500` for unexpected failures.
+
+See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
 
 ## SSE Streaming
 

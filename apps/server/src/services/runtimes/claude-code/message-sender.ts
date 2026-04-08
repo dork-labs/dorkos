@@ -22,6 +22,7 @@ import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mapSdkMessage } from './sdk-event-mapper.js';
 import { makeUserPrompt } from './sdk-utils.js';
 import { buildSystemPromptAppend, buildPerMessageContext } from './context-builder.js';
+import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { BindingRouter } from '../../relay/binding-router.js';
 import type { BindingStore } from '../../relay/binding-store.js';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
@@ -66,6 +67,14 @@ export interface MessageSenderOpts {
   ) => void;
   sdkSessionIndex: Map<string, string>;
   sessionMapKey: string;
+  /**
+   * Pre-resolved marketplace plugin entries for the Claude Agent SDK
+   * `options.plugins` field (marketplace-05, ADR-0239). Populated by the
+   * runtime before calling `executeSdkQuery` so this module never touches
+   * the filesystem itself — the indirection keeps message-sender's test
+   * mocks simple and preserves fake-timer semantics.
+   */
+  plugins?: ClaudeAgentSdkPlugin[];
 }
 
 const RESUME_FAILURE_PATTERNS = [
@@ -249,6 +258,17 @@ export async function* executeSdkQuery(
     });
     return handleElicitation(session, request, signal);
   };
+
+  // Activate installed marketplace plugins (marketplace-05, ADR-0239).
+  // The runtime pre-resolves the plugin list via `opts.plugins`; this module
+  // does not touch the filesystem itself so fake-timer tests stay simple.
+  if (opts.plugins && opts.plugins.length > 0) {
+    (sdkOptions as Options & { plugins?: unknown }).plugins = opts.plugins;
+    logger.debug('[sendMessage] activated marketplace plugins', {
+      session: sessionId,
+      count: opts.plugins.length,
+    });
+  }
 
   const agentQuery = query({ prompt: makeUserPrompt(enrichedContent), options: sdkOptions });
   session.activeQuery = agentQuery;

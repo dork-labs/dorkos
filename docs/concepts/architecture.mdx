@@ -79,7 +79,7 @@ The `RuntimeRegistry` holds all registered runtimes keyed by type string. The cu
 
 The Express server exposes route groups including sessions, commands, health, config, files, git, Tasks scheduling, Relay messaging, Mesh agent discovery, and extensions. Routes are thin HTTP handlers — all business logic delegates to services or the active runtime.
 
-Server-side services are organized by domain: `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), and `services/extensions/` (extension lifecycle, compilation, and discovery).
+Server-side services are organized by domain: `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/extensions/` (extension lifecycle, compilation, and discovery), `services/marketplace/` (package install/uninstall/update pipeline, transaction engine, cache), and `services/builtin-extensions/` (always-on extensions like Dork Hub, auto-staged at startup).
 
 ### Client
 

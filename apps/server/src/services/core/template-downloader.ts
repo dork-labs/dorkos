@@ -275,3 +275,43 @@ export async function downloadTemplate(
     );
   }
 }
+
+/**
+ * Generic git-clone primitive for callers that need to clone an arbitrary
+ * repository into a specific directory without the template-shaped pre/post
+ * processing of {@link downloadTemplate}. Used by the marketplace install
+ * pipeline to fetch packages into the content-addressable cache.
+ *
+ * @param gitUrl - Fully-qualified git URL (no shorthand resolution)
+ * @param destDir - Local directory to clone into (must not exist)
+ * @param _ref - Optional ref/branch (currently unused — depth-1 single-branch clone always pulls the default branch)
+ */
+export async function cloneRepository(
+  gitUrl: string,
+  destDir: string,
+  _ref?: string
+): Promise<void> {
+  const auth = resolveGitAuth();
+  await execGitClone(gitUrl, destDir, auth);
+}
+
+/**
+ * Dependency-injection surface for callers (e.g. the marketplace install
+ * pipeline) that want to swap out the real git clone with a test double.
+ * Mirrors only the `cloneRepository` primitive — `downloadTemplate` is not
+ * part of this interface because the marketplace pipeline never invokes the
+ * shorthand-template flow.
+ */
+export interface TemplateDownloader {
+  cloneRepository(gitUrl: string, destDir: string, ref?: string): Promise<void>;
+}
+
+/**
+ * Default `TemplateDownloader` binding backed by the real `cloneRepository`
+ * function. Production callers (e.g. `apps/server/src/index.ts`) should pass
+ * this when constructing the marketplace `PackageFetcher`; tests should pass
+ * a `vi.fn()` stub instead.
+ */
+export const defaultTemplateDownloader: TemplateDownloader = {
+  cloneRepository,
+};

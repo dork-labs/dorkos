@@ -75,6 +75,15 @@ export class ExtensionManager {
   }
 
   /**
+   * Expose the internal {@link ExtensionCompiler} so the marketplace install
+   * pipeline can share the same instance (and therefore the same esbuild
+   * cache) as the extension system rather than constructing a parallel one.
+   */
+  getCompiler(): ExtensionCompiler {
+    return this.compiler;
+  }
+
+  /**
    * Initialize the extension system: clean stale cache, discover, compile, and start servers.
    *
    * @param cwd - Current working directory (null if none active)

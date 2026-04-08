@@ -9,7 +9,36 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 import { DEFAULT_TEMPLATES } from '@dorkos/shared/template-catalog';
+import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { TemplatePicker } from '../ui/TemplatePicker';
+
+// ---------------------------------------------------------------------------
+// Mock the marketplace entity so each test can control the Dork Hub tab state
+// independently of the Transport. Existing built-in tab tests default to an
+// empty marketplace response (no error, no agents), which preserves prior
+// behavior.
+// ---------------------------------------------------------------------------
+
+vi.mock('@/layers/entities/marketplace', () => ({
+  useMarketplacePackages: vi.fn(),
+}));
+
+type MarketplaceHookState = {
+  data?: AggregatedPackage[];
+  error?: Error | null;
+  isLoading?: boolean;
+};
+
+function setMarketplaceState(state: MarketplaceHookState) {
+  vi.mocked(useMarketplacePackages).mockReturnValue({
+    data: state.data,
+    error: state.error ?? null,
+    isLoading: state.isLoading ?? false,
+    // The component only reads `data` and `error`, but TanStack Query's
+    // UseQueryResult has many fields; cast keeps the type surface small.
+  } as unknown as ReturnType<typeof useMarketplacePackages>);
+}
 
 // ---------------------------------------------------------------------------
 // Browser API mocks
@@ -69,6 +98,9 @@ function renderPicker(props: { selectedTemplate?: string | null; onSelect?: () =
 describe('TemplatePicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: marketplace hook returns an empty agent list with no error.
+    // Individual tests override via setMarketplaceState().
+    setMarketplaceState({ data: [] });
   });
 
   afterEach(cleanup);
@@ -206,5 +238,157 @@ describe('TemplatePicker', () => {
     // Other cards should not have SVG
     const blankCard = screen.getByTestId('template-card-blank');
     expect(blankCard.querySelector('svg')).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Dork Hub tab regression tests (task 9.3)
+  //
+  // These tests verify the marketplace tab added by task 9.1 without breaking
+  // the built-in tab behavior covered by the tests above.
+  // -------------------------------------------------------------------------
+
+  describe('Dork Hub tab', () => {
+    const codeReviewer: AggregatedPackage = {
+      name: '@dorkos/code-reviewer',
+      source: 'github.com/dorkos/code-reviewer',
+      description: 'Reviews pull requests',
+      type: 'agent',
+      marketplace: 'dork-hub',
+    };
+
+    const docWriter: AggregatedPackage = {
+      name: '@dorkos/doc-writer',
+      source: 'github.com/dorkos/doc-writer',
+      description: 'Writes documentation',
+      type: 'agent',
+      marketplace: 'dork-hub',
+    };
+
+    it('built-in tab still renders template grid with default state', async () => {
+      renderPicker();
+
+      // template-grid test ID stability + default templates still render.
+      // findByTestId waits for useTemplateCatalog to resolve.
+      expect(await screen.findByTestId('template-grid')).toBeInTheDocument();
+      expect(await screen.findByTestId('template-card-blank')).toBeInTheDocument();
+      expect(await screen.findByTestId('template-card-nextjs')).toBeInTheDocument();
+    });
+
+    it('custom URL input is present regardless of active tab', async () => {
+      renderPicker();
+
+      // custom-url-input is outside the Tabs component, so it is always
+      // visible even before templates finish loading.
+      expect(screen.getByTestId('custom-url-input')).toBeInTheDocument();
+    });
+
+    it('renders marketplace agent cards when the hook returns data', async () => {
+      const user = userEvent.setup();
+      setMarketplaceState({ data: [codeReviewer, docWriter] });
+      renderPicker();
+
+      await screen.findByText('Blank');
+      await user.click(screen.getByRole('tab', { name: /from dork hub/i }));
+
+      const grid = await screen.findByTestId('marketplace-template-grid');
+      expect(
+        within(grid).getByTestId('marketplace-template-@dorkos/code-reviewer')
+      ).toBeInTheDocument();
+      expect(
+        within(grid).getByTestId('marketplace-template-@dorkos/doc-writer')
+      ).toBeInTheDocument();
+      expect(within(grid).getByText('Reviews pull requests')).toBeInTheDocument();
+    });
+
+    it('shows empty state when marketplace returns no agents', async () => {
+      const user = userEvent.setup();
+      setMarketplaceState({ data: [] });
+      renderPicker();
+
+      await screen.findByText('Blank');
+      await user.click(screen.getByRole('tab', { name: /from dork hub/i }));
+
+      expect(screen.getByText(/No marketplace agents available/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-template-grid')).not.toBeInTheDocument();
+    });
+
+    it('shows error state when marketplace hook returns an error', async () => {
+      const user = userEvent.setup();
+      setMarketplaceState({ data: undefined, error: new Error('network down') });
+      renderPicker();
+
+      await screen.findByText('Blank');
+      await user.click(screen.getByRole('tab', { name: /from dork hub/i }));
+
+      expect(screen.getByText(/Could not load marketplace agents/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('marketplace-template-grid')).not.toBeInTheDocument();
+    });
+
+    it('built-in tab still renders when marketplace hook returns an error', async () => {
+      // Critical regression: a marketplace API failure must not break the
+      // Built-in tab, because that is the primary template source.
+      setMarketplaceState({ data: undefined, error: new Error('API down') });
+      renderPicker();
+
+      // template-grid + default templates still resolve via the built-in tab.
+      expect(await screen.findByTestId('template-grid')).toBeInTheDocument();
+      expect(await screen.findByTestId('template-card-blank')).toBeInTheDocument();
+      expect(await screen.findByTestId('template-card-nextjs')).toBeInTheDocument();
+      // Custom URL input remains functional.
+      expect(screen.getByTestId('custom-url-input')).toBeInTheDocument();
+    });
+
+    it('clicking a marketplace agent calls onSelect with agent.source', async () => {
+      const user = userEvent.setup();
+      setMarketplaceState({ data: [codeReviewer] });
+      const { onSelect } = renderPicker();
+
+      await screen.findByText('Blank');
+      await user.click(screen.getByRole('tab', { name: /from dork hub/i }));
+
+      const card = await screen.findByTestId('marketplace-template-@dorkos/code-reviewer');
+      await user.click(card);
+
+      // Must pass the git source URL, not the package name — downstream
+      // template downloader treats source URLs uniformly.
+      expect(onSelect).toHaveBeenCalledWith('github.com/dorkos/code-reviewer');
+      expect(onSelect).not.toHaveBeenCalledWith('@dorkos/code-reviewer');
+    });
+
+    it('clicking the selected marketplace agent deselects it', async () => {
+      const user = userEvent.setup();
+      setMarketplaceState({ data: [codeReviewer] });
+      const { onSelect } = renderPicker({
+        selectedTemplate: 'github.com/dorkos/code-reviewer',
+      });
+
+      await screen.findByText('Blank');
+      await user.click(screen.getByRole('tab', { name: /from dork hub/i }));
+
+      const card = await screen.findByTestId('marketplace-template-@dorkos/code-reviewer');
+      await user.click(card);
+
+      expect(onSelect).toHaveBeenCalledWith(null);
+    });
+
+    it('selecting a marketplace agent clears the custom URL input', async () => {
+      const user = userEvent.setup();
+      setMarketplaceState({ data: [codeReviewer] });
+      renderPicker();
+
+      await screen.findByText('Blank');
+
+      // Populate the custom URL input first.
+      const urlInput = screen.getByTestId('custom-url-input');
+      await user.type(urlInput, 'github.com/other/repo');
+      expect(urlInput).toHaveValue('github.com/other/repo');
+
+      // Switch to Dork Hub and select an agent.
+      await user.click(screen.getByRole('tab', { name: /from dork hub/i }));
+      await user.click(await screen.findByTestId('marketplace-template-@dorkos/code-reviewer'));
+
+      // Custom URL should be cleared by the marketplace selection handler.
+      expect(urlInput).toHaveValue('');
+    });
   });
 });

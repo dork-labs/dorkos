@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "valid-skill-pack",
+  "version": "1.0.0",
+  "type": "skill-pack",
+  "description": "A valid skill-pack fixture with three bundled skills",
+  "author": "DorkOS",
+  "license": "MIT",
+  "tags": [],
+  "layers": ["skills"]
+}

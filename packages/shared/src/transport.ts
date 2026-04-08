@@ -60,6 +60,20 @@ import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js
 import type { TemplateEntry } from './template-catalog.js';
 import type { UiState } from './types.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
+import type {
+  AggregatedPackage,
+  PackageFilter,
+  MarketplacePackageDetail,
+  InstallOptions,
+  InstallResult,
+  UninstallOptions,
+  UninstallResult,
+  UpdateOptions,
+  UpdateResult,
+  InstalledPackage,
+  MarketplaceSource,
+  AddSourceInput,
+} from './marketplace-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -516,4 +530,76 @@ export interface Transport {
 
   /** Remove the config-stored MCP API key. Does not affect the MCP_API_KEY environment variable. */
   deleteMcpApiKey(): Promise<{ success: boolean }>;
+
+  // --- Marketplace ---
+
+  /**
+   * List packages from all enabled marketplace sources, with optional filtering.
+   *
+   * @param filter - Optional filter by type, marketplace source, or free-text query.
+   */
+  listMarketplacePackages(filter?: PackageFilter): Promise<AggregatedPackage[]>;
+
+  /**
+   * Fetch and validate a single package entry by name, returning its manifest
+   * and a permission preview.
+   *
+   * @param name - Package name (e.g. `@org/my-plugin`). Will be URL-encoded.
+   * @param marketplace - Restrict lookup to a specific marketplace source name.
+   */
+  getMarketplacePackage(name: string, marketplace?: string): Promise<MarketplacePackageDetail>;
+
+  /**
+   * Build a permission preview for a package without installing it.
+   *
+   * @param name - Package name. Will be URL-encoded.
+   * @param opts - Optional install options (marketplace, source, projectPath).
+   */
+  previewMarketplacePackage(name: string, opts?: InstallOptions): Promise<MarketplacePackageDetail>;
+
+  /**
+   * Install a marketplace package.
+   *
+   * @param name - Package name. Will be URL-encoded.
+   * @param opts - Install options (force, yes, marketplace, source, projectPath).
+   */
+  installMarketplacePackage(name: string, opts?: InstallOptions): Promise<InstallResult>;
+
+  /**
+   * Uninstall a marketplace package.
+   *
+   * @param name - Package name. Will be URL-encoded.
+   * @param opts - Uninstall options (purge, projectPath).
+   */
+  uninstallMarketplacePackage(name: string, opts?: UninstallOptions): Promise<UninstallResult>;
+
+  /**
+   * Check for (and optionally apply) updates to a marketplace package.
+   *
+   * Advisory by default — pass `{ apply: true }` to reinstall in place.
+   *
+   * @param name - Package name. Will be URL-encoded.
+   * @param opts - Update options (apply, projectPath).
+   */
+  updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult>;
+
+  /** List all installed marketplace packages from the DorkOS data directory. */
+  listInstalledPackages(): Promise<InstalledPackage[]>;
+
+  /** List all configured marketplace sources. */
+  listMarketplaceSources(): Promise<MarketplaceSource[]>;
+
+  /**
+   * Add a new marketplace source.
+   *
+   * @param input - Source name, URL, and optional enabled flag.
+   */
+  addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource>;
+
+  /**
+   * Remove a configured marketplace source by name.
+   *
+   * @param name - Source name. Will be URL-encoded.
+   */
+  removeMarketplaceSource(name: string): Promise<void>;
 }

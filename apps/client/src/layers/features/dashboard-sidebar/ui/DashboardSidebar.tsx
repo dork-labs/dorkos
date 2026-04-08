@@ -1,6 +1,6 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, LayoutDashboard, Search, Star, Users, Zap } from 'lucide-react';
+import { Activity, LayoutDashboard, Search, Star, Store, Users, Zap } from 'lucide-react';
 import {
   SidebarHeader,
   SidebarContent,
@@ -89,6 +89,16 @@ export function DashboardSidebar() {
             >
               <Zap className="size-(--size-icon-sm)" />
               Tasks
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={pathname === '/marketplace' || pathname.startsWith('/marketplace/')}
+              onClick={() => navigate({ to: '/marketplace' })}
+              className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
+            >
+              <Store className="size-(--size-icon-sm)" />
+              Dork Hub
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

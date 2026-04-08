@@ -101,6 +101,47 @@ dorkos init
 dorkos init --yes    # Accept all defaults
 ```
 
+### `dorkos install` / `dorkos uninstall` / `dorkos update`
+
+Install, remove, and update marketplace packages.
+
+```bash
+dorkos install <package>               # Install from any configured source
+dorkos install <package> --yes         # Skip confirmation prompt
+dorkos uninstall <package>             # Remove an installed package
+dorkos update                          # Check all installed packages for updates
+dorkos update <package> --apply        # Apply an available update
+```
+
+### `dorkos marketplace`
+
+Manage the marketplace sources that list available packages.
+
+```bash
+dorkos marketplace list [<source>]     # Browse available packages
+dorkos marketplace add <url-or-path>   # Register a new source
+dorkos marketplace remove <name>       # Remove a source
+dorkos marketplace refresh [<source>]  # Force-refresh source package listing
+```
+
+### `dorkos package`
+
+Scaffold and validate marketplace packages for publishing.
+
+```bash
+dorkos package init <name> --type plugin|agent|skill-pack|adapter
+dorkos package validate <path>
+```
+
+### `dorkos cache`
+
+Manage the package clone cache at `~/.dork/cache/`.
+
+```bash
+dorkos cache prune [--keep <N>]        # Remove old cached versions
+dorkos cache clear                     # Wipe the entire cache
+```
+
 ## Config Directory
 
 On first run, DorkOS creates `~/.dork/` for persistent storage:

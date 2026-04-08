@@ -50,3 +50,25 @@ Files are the source of truth (extending the ADR-0043 pattern from agents to tas
 - Existing task files (flat `.md` format) need migration to directory format
 - Two naming conventions coexist: kebab-case `name` (file) vs human-readable `display-name`
 - Commands still use flat `.md` files (Claude Code's native format) — the shared schema is used for validation but not the directory structure
+
+## Addendum (2026-04-06): Optional `kind` Field
+
+The marketplace foundation spec (`marketplace-01-foundation`) introduced an
+optional `kind` field on `SkillFrontmatterSchema` with values `skill`, `task`,
+or `command`. The field is OPTIONAL and existing files continue to work
+unchanged.
+
+**Rationale**: When SKILL.md files are distributed in marketplace packages, the
+installer needs to know each file's purpose (skill vs task vs command) to
+place it in the correct destination directory. Location-based inference works
+inside a single installation but breaks at the marketplace boundary, where the
+package author chooses arbitrary directory layouts.
+
+**Inference rules** when `kind` is absent:
+
+1. If `cron` field present → `task`
+2. If file is under `commands/` or `.claude/commands/` → `command`
+3. Otherwise → `skill`
+
+Marketplace package authors SHOULD include `kind` explicitly. User-created
+files (not destined for marketplace distribution) MAY omit it.

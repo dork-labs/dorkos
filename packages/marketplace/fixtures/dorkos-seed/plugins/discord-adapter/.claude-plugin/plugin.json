@@ -1,0 +1,5 @@
+{
+  "name": "discord-adapter",
+  "description": "Send agent notifications and receive commands via Discord",
+  "version": "0.1.0"
+}

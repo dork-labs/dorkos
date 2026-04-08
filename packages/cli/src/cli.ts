@@ -23,6 +23,205 @@ declare const __CLI_VERSION__: string;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// `package` subcommand has its own flag namespace (`--type`, `--parent-dir`, etc.).
+// Intercept before the top-level parseArgs call so those flags aren't rejected as
+// unknown options by the strict top-level parser. Package commands don't need the
+// ~/.dork directory or the server runtime, so they exit before any further setup.
+if (process.argv[2] === 'package') {
+  const packageSubcommand = process.argv[3];
+  const subArgs = process.argv.slice(4);
+
+  // Surface package-level help when invoked without a subcommand or with --help/-h.
+  if (
+    packageSubcommand === undefined ||
+    packageSubcommand === '--help' ||
+    packageSubcommand === '-h'
+  ) {
+    console.log(`
+Usage: dorkos package <subcommand> [options]
+
+Subcommands:
+  init <name>                     Scaffold a new marketplace package
+  validate [path]                 Validate a marketplace package on disk
+  validate-marketplace <path>     Validate a marketplace.json file
+  validate-remote <github-url>    Clone and validate a remote package repo
+
+Examples:
+  dorkos package init my-plugin --type plugin
+  dorkos package init my-bot --type adapter --adapter-type slack
+  dorkos package validate ./my-plugin
+  dorkos package validate-marketplace ./marketplace.json
+  dorkos package validate-remote https://github.com/dorkos-community/code-reviewer
+`);
+    process.exit(0);
+  }
+
+  // Wrap dispatch in try/catch so any error (overwrite collision, missing arg,
+  // schema violation, etc.) surfaces as a clean one-line message instead of a
+  // raw Node.js stack trace. The dispatcher is the single source of truth for
+  // exit-code policy — handlers throw or return codes; only the dispatcher
+  // calls `process.exit`.
+  try {
+    if (packageSubcommand === 'init') {
+      const { runPackageInit, parsePackageInitArgs } = await import('./package-init-command.js');
+      await runPackageInit(parsePackageInitArgs(subArgs));
+      process.exit(0);
+    }
+    if (packageSubcommand === 'validate') {
+      const { runPackageValidate } = await import('./package-validate-command.js');
+      const packagePath = subArgs[0];
+      const exitCode = await runPackageValidate({ packagePath });
+      process.exit(exitCode);
+    }
+    if (packageSubcommand === 'validate-marketplace') {
+      const { runValidateMarketplace, parseValidateMarketplaceArgs } =
+        await import('./commands/package-validate-marketplace.js');
+      const exitCode = await runValidateMarketplace(parseValidateMarketplaceArgs(subArgs));
+      process.exit(exitCode);
+    }
+    if (packageSubcommand === 'validate-remote') {
+      const { runValidateRemote, parseValidateRemoteArgs } =
+        await import('./commands/package-validate-remote.js');
+      const exitCode = await runValidateRemote(parseValidateRemoteArgs(subArgs));
+      process.exit(exitCode);
+    }
+    console.error(`Unknown package subcommand: ${packageSubcommand}`);
+    console.error(
+      'Usage: dorkos package <init|validate|validate-marketplace|validate-remote> [args]'
+    );
+    process.exit(1);
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+// `cache` subcommand has its own subcommand namespace
+// (`list`/`prune`/`clear`). Intercept before the top-level parseArgs call
+// so its sub-flags (`--keep-last-n`, `--yes`) aren't rejected as unknown
+// options. Talks to a running DorkOS server via the marketplace HTTP API;
+// does not boot the server itself. Dispatch + help text live in
+// commands/cache-dispatcher.ts so this file stays focused on global flag
+// parsing and server bootstrap.
+if (process.argv[2] === 'cache') {
+  const { runCacheDispatcher } = await import('./commands/cache-dispatcher.js');
+  const exitCode = await runCacheDispatcher(process.argv[3], process.argv.slice(4));
+  process.exit(exitCode);
+}
+
+// `install` subcommand has its own flag namespace (`--marketplace`, `--source`,
+// `--force`, `--project`). Intercept before the top-level parseArgs call so
+// those flags aren't rejected as unknown options. Talks to a running DorkOS
+// server via the marketplace HTTP API; does not boot the server itself.
+if (process.argv[2] === 'install') {
+  const subArgs = process.argv.slice(3);
+  if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+    console.log(`
+Usage: dorkos install <name> [options]
+
+Install a marketplace package on the running DorkOS server.
+
+Options:
+      --marketplace <name>  Marketplace identifier (e.g. dorkos-community)
+      --source <url>        Explicit Git URL or marketplace.json URL
+      --force               Override warning-level conflicts
+  -y, --yes                 Skip the interactive confirmation prompt
+      --project <path>      Project path for project-local installs
+
+Examples:
+  dorkos install code-review-suite
+  dorkos install code-review-suite@dorkos-community
+  dorkos install --yes --force my-package
+`);
+    process.exit(0);
+  }
+  try {
+    const { runInstall, parseInstallArgs } = await import('./commands/install.js');
+    const exitCode = await runInstall(parseInstallArgs(subArgs));
+    process.exit(exitCode);
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+// `uninstall` subcommand has its own flag namespace (`--purge`, `--project`).
+// Intercept before the top-level parseArgs call so those flags aren't rejected
+// as unknown options. Talks to a running DorkOS server via the marketplace
+// HTTP API; does not boot the server itself.
+if (process.argv[2] === 'uninstall') {
+  const subArgs = process.argv.slice(3);
+  if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+    console.log(`
+Usage: dorkos uninstall <name> [options]
+
+Remove an installed marketplace package from the running DorkOS server.
+
+Options:
+      --purge           Remove preserved data and secrets in addition to package files
+      --project <path>  Project path for project-local uninstalls
+
+Examples:
+  dorkos uninstall code-review-suite
+  dorkos uninstall --purge code-review-suite
+`);
+    process.exit(0);
+  }
+  try {
+    const { runUninstall, parseUninstallArgs } = await import('./commands/uninstall.js');
+    const exitCode = await runUninstall(parseUninstallArgs(subArgs));
+    process.exit(exitCode);
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+// `update` subcommand has its own flag namespace (`--apply`, `--project`).
+// Intercept before the top-level parseArgs call so those flags aren't rejected
+// as unknown options. Advisory by default — pass `--apply` to actually update.
+if (process.argv[2] === 'update') {
+  const subArgs = process.argv.slice(3);
+  if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+    console.log(`
+Usage: dorkos update [<name>] [options]
+
+Check for marketplace package updates on the running DorkOS server.
+
+Options:
+      --apply           Apply the update (default: advisory only)
+      --project <path>  Project path for project-local updates
+
+Examples:
+  dorkos update                       # check every installed package
+  dorkos update code-review-suite     # check a single package
+  dorkos update --apply               # apply every available update
+`);
+    process.exit(0);
+  }
+  try {
+    const { runUpdate, parseUpdateArgs } = await import('./commands/update.js');
+    const exitCode = await runUpdate(parseUpdateArgs(subArgs));
+    process.exit(exitCode);
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+// `marketplace` subcommand has its own subcommand namespace
+// (`add`/`remove`/`list`/`refresh`). Intercept before the top-level
+// parseArgs call so its sub-flags (`--name`) aren't rejected as unknown
+// options. Talks to a running DorkOS server via the marketplace HTTP API;
+// does not boot the server itself. Dispatch + help text live in
+// commands/marketplace-dispatcher.ts so this file stays focused on
+// global flag parsing and server bootstrap.
+if (process.argv[2] === 'marketplace') {
+  const { runMarketplaceDispatcher } = await import('./commands/marketplace-dispatcher.js');
+  const exitCode = await runMarketplaceDispatcher(process.argv[3], process.argv.slice(4));
+  process.exit(exitCode);
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -75,6 +274,15 @@ Commands:
   config validate      Check config validity
   init                 Interactive setup wizard
   init --yes           Accept all defaults
+  package init <name>  Scaffold a new marketplace package
+  package validate [p] Validate a marketplace package
+  package validate-marketplace <p>   Validate a marketplace.json file
+  package validate-remote <url>      Clone and validate a remote package
+  install <name>       Install a marketplace package (requires running server)
+  uninstall <name>     Remove an installed marketplace package
+  update [<name>]      Check for (or apply with --apply) package updates
+  marketplace <sub>    Manage marketplace sources (add|remove|list|refresh)
+  cache <sub>          Inspect the marketplace cache (list|prune|clear)
   cleanup              Remove all DorkOS data
 
 Options:

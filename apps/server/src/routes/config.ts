@@ -155,6 +155,10 @@ router.get('/', async (_req, res) => {
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
     })(),
+    telemetry: configManager.get('telemetry') ?? {
+      enabled: false,
+      userHasDecided: false,
+    },
   });
 });
 

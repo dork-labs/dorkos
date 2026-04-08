@@ -28,6 +28,7 @@
     "@slack/web-api": "^7.15.0",
     "chat": "^4.23.0",
     "chokidar": "^4.0.3",
+    "drizzle-orm": "^0.39.3",
     "grammy": "^1.41.1",
     "slackify-markdown": "^5.0.0",
     "ulidx": "^2.4.1"

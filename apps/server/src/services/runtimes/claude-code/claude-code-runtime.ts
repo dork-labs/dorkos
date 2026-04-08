@@ -75,6 +75,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
   private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
 
+  /**
+   * Cached Claude Agent SDK `options.plugins` array for the current set
+   * of installed marketplace packages. Empty until `refreshActivatedPlugins()`
+   * is called; mutated by that method and consumed by `sendMessage`.
+   */
+  private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
+
   constructor(cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
     this.claudeCliPath = resolveClaudeCliPath();
@@ -197,6 +204,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     if (opts?.uiState) session.uiState = opts.uiState;
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
+
     yield* executeSdkQuery(
       sessionId,
       content,
@@ -213,9 +221,41 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         ...this.cache.buildSendCallbacks(cwdKey),
         sdkSessionIndex: this.sessionStore.getSdkSessionIndex(),
         sessionMapKey: sessionId,
+        plugins: this.activatedPlugins,
       },
       opts
     );
+  }
+
+  /**
+   * Refresh the cached marketplace plugins array (marketplace-05,
+   * ADR-0239). Should be called once at server startup and whenever the
+   * install/uninstall/update pipeline mutates the set of installed
+   * packages so the next `sendMessage` picks up the new list.
+   *
+   * Best-effort — filesystem scan failures leave `activatedPlugins`
+   * unchanged so a single misbehaving plugin never blocks sessions.
+   */
+  async refreshActivatedPlugins(): Promise<void> {
+    try {
+      const { resolveDorkHome } = await import('../../../lib/dork-home.js');
+      const { listEnabledPluginNames } = await import('../../marketplace/installed-scanner.js');
+      const { buildClaudeAgentSdkPluginsArray } = await import('./plugin-activation.js');
+      const { logger } = await import('../../../lib/logger.js');
+      const dorkHome = resolveDorkHome();
+      const enabledNames = await listEnabledPluginNames(dorkHome);
+      if (enabledNames.length === 0) {
+        this.activatedPlugins = [];
+        return;
+      }
+      this.activatedPlugins = await buildClaudeAgentSdkPluginsArray({
+        dorkHome,
+        enabledPluginNames: enabledNames,
+        logger,
+      });
+    } catch {
+      // Best-effort; leave the previous value in place.
+    }
   }
 
   /** @inheritdoc */

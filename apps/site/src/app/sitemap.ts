@@ -2,16 +2,56 @@ import type { MetadataRoute } from 'next';
 import { siteConfig } from '@/config/site';
 import { source, blog } from '@/lib/source';
 import { features, CATEGORY_LABELS, type FeatureCategory } from '@/layers/features/marketing';
+import { fetchMarketplaceJson } from '@/layers/features/marketplace';
 
 const BASE_URL = siteConfig.url;
+
+/**
+ * Build sitemap entries for the marketplace browse page, privacy page, and one
+ * entry per published package.
+ *
+ * Wraps {@link fetchMarketplaceJson} in try/catch so a registry outage degrades
+ * to just the static `/marketplace` and `/marketplace/privacy` entries — the
+ * sitemap must keep generating even when the upstream registry is unavailable.
+ */
+async function buildMarketplaceEntries(): Promise<MetadataRoute.Sitemap> {
+  const staticEntries: MetadataRoute.Sitemap = [
+    {
+      url: `${BASE_URL}/marketplace`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    {
+      url: `${BASE_URL}/marketplace/privacy`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.4,
+    },
+  ];
+
+  try {
+    const marketplace = await fetchMarketplaceJson();
+    const packageEntries: MetadataRoute.Sitemap = marketplace.plugins.map((pkg) => ({
+      url: `${BASE_URL}/marketplace/${pkg.name}`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    }));
+    return [...staticEntries, ...packageEntries];
+  } catch {
+    return staticEntries;
+  }
+}
 
 /**
  * Generate the sitemap for the DorkOS marketing site.
  *
  * Includes static marketing/legal pages, all Fumadocs documentation pages,
- * and all blog posts.
+ * all blog posts, and the marketplace browse page plus one entry per published
+ * package (fetched from the dorkos-community registry with graceful fallback).
  */
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
@@ -83,6 +123,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.6,
   }));
 
+  const marketplacePages = await buildMarketplaceEntries();
+
   return [
     ...staticPages,
     ...featureCatalogPage,
@@ -90,5 +132,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...featureCategoryPages,
     ...docPages,
     ...blogPages,
+    ...marketplacePages,
   ];
 }

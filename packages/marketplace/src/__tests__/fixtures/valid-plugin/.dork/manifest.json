@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "valid-plugin",
+  "version": "1.0.0",
+  "type": "plugin",
+  "description": "A valid plugin fixture used by package-validator tests",
+  "author": "DorkOS",
+  "license": "MIT",
+  "tags": ["test", "fixture"],
+  "layers": ["skills", "extensions"],
+  "extensions": []
+}

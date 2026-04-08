@@ -1,0 +1,11 @@
+{
+  "id": "marketplace",
+  "name": "Dork Hub",
+  "version": "1.0.0",
+  "description": "Browse, install, and manage DorkOS marketplace packages.",
+  "author": "DorkOS",
+  "minHostVersion": "0.1.0",
+  "contributions": {
+    "sidebar.tabs": true
+  }
+}

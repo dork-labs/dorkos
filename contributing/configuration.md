@@ -537,6 +537,70 @@ Config validation failed:
   - server.port: Number must be greater than or equal to 1024
 ```
 
+### `dorkos install`
+
+Install a marketplace package into the current project.
+
+```bash
+dorkos install <package-name>
+dorkos install <package-name> --marketplace <source>    # Pin to a specific source
+dorkos install <package-name> --yes                     # Skip confirmation prompt
+dorkos install <package-name> --force                   # Overwrite conflicting files
+```
+
+Install dispatches the appropriate per-kind flow (plugin, agent, skill-pack, or adapter) based on the package manifest's `type` field. On failure, the atomic transaction engine restores the previous state. See `contributing/marketplace-installs.md` for the full pipeline.
+
+### `dorkos uninstall`
+
+Remove an installed marketplace package.
+
+```bash
+dorkos uninstall <package-name>
+dorkos uninstall <package-name> --purge    # Also remove package data directories
+```
+
+### `dorkos update`
+
+Check for and optionally apply updates to installed packages. Advisory by default — reports available updates without applying them.
+
+```bash
+dorkos update                     # Check all installed packages for updates
+dorkos update <package-name>      # Check a specific package
+dorkos update <package-name> --apply   # Fetch and apply the update
+```
+
+### `dorkos marketplace`
+
+Manage marketplace sources (the `marketplace.json` registries that list available packages).
+
+```bash
+dorkos marketplace list [<source>]        # List packages from all or a specific source
+dorkos marketplace add <url-or-path>      # Register a new marketplace source
+dorkos marketplace remove <source-name>   # Remove a registered source
+dorkos marketplace refresh [<source>]     # Force-refetch marketplace.json for all or one source
+```
+
+### `dorkos cache`
+
+Manage the marketplace package cache (content-addressable clone cache at `~/.dork/cache/`).
+
+```bash
+dorkos cache prune [--keep <N>]   # Remove old cached packages, keeping the N most recent per package
+dorkos cache clear                # Wipe the entire cache
+```
+
+### `dorkos package`
+
+Scaffold and validate DorkOS marketplace packages.
+
+```bash
+dorkos package init <name> --type <plugin|agent|skill-pack|adapter>
+                                  # Scaffold a new package in ./<name>/
+dorkos package validate <path>    # Validate a package directory against the manifest schema
+```
+
+See `contributing/marketplace-packages.md` for the package format and manifest reference.
+
 ### `dorkos cleanup`
 
 Interactively remove all DorkOS data. Prompts for confirmation at each phase.

@@ -155,6 +155,23 @@ export const UserConfigSchema = z.object({
       apiKey: null,
       rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
     })),
+  telemetry: z
+    .object({
+      /**
+       * Whether to send opt-in marketplace install events to dorkos.ai.
+       *
+       * Defaults to `false`. The user must explicitly enable this in their
+       * config file or via the in-product toggle. Privacy contract:
+       * https://dorkos.ai/marketplace/privacy
+       */
+      enabled: z.boolean().default(false),
+      /**
+       * True once the user has explicitly chosen (opt-in or opt-out) so the
+       * in-product consent banner stops appearing on the Dork Hub page.
+       */
+      userHasDecided: z.boolean().default(false),
+    })
+    .default(() => ({ enabled: false, userHasDecided: false })),
   sessionSecret: z.string().nullable().default(null),
 });
 

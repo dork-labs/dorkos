@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "valid-adapter",
+  "version": "1.0.0",
+  "type": "adapter",
+  "adapterType": "slack",
+  "description": "A valid adapter fixture",
+  "license": "MIT",
+  "tags": [],
+  "layers": ["adapters"]
+}

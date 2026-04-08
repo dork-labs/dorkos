@@ -14,6 +14,8 @@ import {
   AgentsHeader,
   ActivityHeader,
   TasksHeader,
+  DorkHubHeader,
+  MarketplaceSourcesHeader,
 } from '@/layers/features/top-nav';
 import {
   Toaster,
@@ -92,6 +94,14 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
       return { key: 'tasks', content: <TasksHeader />, borderStyle: undefined };
     case '/activity':
       return { key: 'activity', content: <ActivityHeader />, borderStyle: undefined };
+    case '/marketplace':
+      return { key: 'marketplace', content: <DorkHubHeader />, borderStyle: undefined };
+    case '/marketplace/sources':
+      return {
+        key: 'marketplace-sources',
+        content: <MarketplaceSourcesHeader />,
+        borderStyle: undefined,
+      };
     case '/session':
       return {
         key: 'session',

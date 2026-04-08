@@ -34,7 +34,32 @@ import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
+import { ensureBuiltinMarketplaceExtension } from './services/builtin-extensions/ensure-marketplace.js';
 import { createExtensionsRouter } from './routes/extensions.js';
+import { createAgentWorkspace } from './services/core/agent-creator.js';
+import { defaultTemplateDownloader } from './services/core/template-downloader.js';
+import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
+import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
+import { PackageResolver } from './services/marketplace/package-resolver.js';
+import { PackageFetcher } from './services/marketplace/package-fetcher.js';
+import { ConflictDetector } from './services/marketplace/conflict-detector.js';
+import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
+import { PluginInstallFlow } from './services/marketplace/flows/install-plugin.js';
+import { AgentInstallFlow } from './services/marketplace/flows/install-agent.js';
+import { SkillPackInstallFlow } from './services/marketplace/flows/install-skill-pack.js';
+import { AdapterInstallFlow } from './services/marketplace/flows/install-adapter.js';
+import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { UpdateFlow } from './services/marketplace/flows/update.js';
+import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
+import { createMarketplaceRouter } from './routes/marketplace.js';
+import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
+import {
+  AutoApproveConfirmationProvider,
+  TokenConfirmationProvider,
+  type ConfirmationProvider,
+} from './services/marketplace-mcp/confirmation-provider.js';
+import { setMarketplaceConfirmationProvider } from './services/marketplace-mcp/confirmation-registry.js';
+import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
@@ -47,6 +72,8 @@ import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
+import { SERVER_VERSION } from './lib/version.js';
+import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { env } from './env.js';
 
@@ -113,6 +140,27 @@ async function start() {
   const boundaryConfig = env.DORKOS_BOUNDARY;
   const resolvedBoundary = await initBoundary(boundaryConfig);
   logger.info(`[Boundary] Directory boundary: ${resolvedBoundary}`);
+
+  // Register the dorkos.ai marketplace telemetry reporter. This is a no-op
+  // unless `config.telemetry.enabled === true` — defaults to false. The
+  // reporter forwards `InstallEvent`s emitted by the marketplace install
+  // pipeline to https://dorkos.ai/api/telemetry/install with a stable
+  // per-machine install ID stored in dorkHome. Privacy contract:
+  // https://dorkos.ai/marketplace/privacy
+  const telemetryConfig = configManager.get('telemetry');
+  registerDorkosCommunityTelemetry(telemetryConfig?.enabled ?? false, dorkHome, SERVER_VERSION);
+  if (telemetryConfig?.enabled) {
+    logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
+  }
+
+  // Stage the built-in Dork Hub (marketplace) extension on disk before the
+  // discovery pipeline runs. Non-fatal: a missing or malformed bundle should
+  // not block server boot, it will just mean the Dork Hub tab is absent.
+  try {
+    await ensureBuiltinMarketplaceExtension(dorkHome);
+  } catch (err) {
+    logger.warn('[BuiltinExtensions] Failed to ensure Dork Hub extension', logError(err));
+  }
 
   // Initialize Extension System
   try {
@@ -285,6 +333,12 @@ async function start() {
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
+  // Marketplace MCP deps are populated later in the marketplace wiring block
+  // (only when extensionManager + adapterManager are available). The factory
+  // closure below reads the captured `let` binding lazily on each request, so
+  // by the time the first MCP request arrives this is either populated or
+  // intentionally undefined (relay disabled).
+  let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
   if (claudeRuntime) {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
@@ -319,7 +373,7 @@ async function start() {
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      return createExternalMcpServer(mcpToolDeps);
+      return createExternalMcpServer(mcpToolDeps, marketplaceMcpDeps);
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
@@ -497,6 +551,137 @@ async function start() {
     })
   );
   logger.info('[Admin] Routes mounted');
+
+  // Mount Marketplace routes. The install pipeline has two optional
+  // collaborators — `extensionManager` (needed by plugin + uninstall flows)
+  // and `adapterManager` (needed by adapter + uninstall flows). When either
+  // is absent the corresponding flows will surface a clear error on call,
+  // but source listing, cache, discovery, agent installs, and skill-pack
+  // installs remain fully functional, so we always mount the router rather
+  // than gating the entire namespace.
+  if (extensionManager && adapterManager) {
+    const marketplaceSourceManager = new MarketplaceSourceManager(dorkHome);
+    const marketplaceCache = new MarketplaceCache(dorkHome);
+    const marketplaceFetcher = new PackageFetcher(
+      marketplaceCache,
+      defaultTemplateDownloader,
+      logger
+    );
+    const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
+    const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
+    const marketplacePreviewBuilder = new PermissionPreviewBuilder(
+      dorkHome,
+      marketplaceConflictDetector
+    );
+
+    const marketplacePluginFlow = new PluginInstallFlow({
+      dorkHome,
+      extensionCompiler: extensionManager.getCompiler(),
+      extensionManager,
+      logger,
+    });
+    const marketplaceAgentFlow = new AgentInstallFlow({
+      dorkHome,
+      agentCreator: { createAgentWorkspace },
+      logger,
+    });
+    const marketplaceSkillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
+    const marketplaceAdapterFlow = new AdapterInstallFlow({
+      dorkHome,
+      adapterManager,
+      logger,
+    });
+    const marketplaceUninstallFlow = new UninstallFlow({
+      dorkHome,
+      extensionManager,
+      adapterManager,
+      logger,
+    });
+
+    const marketplaceInstaller = new MarketplaceInstaller({
+      dorkHome,
+      resolver: marketplaceResolver,
+      fetcher: marketplaceFetcher,
+      previewBuilder: marketplacePreviewBuilder,
+      pluginFlow: marketplacePluginFlow,
+      agentFlow: marketplaceAgentFlow,
+      skillPackFlow: marketplaceSkillPackFlow,
+      adapterFlow: marketplaceAdapterFlow,
+      uninstallFlow: marketplaceUninstallFlow,
+      logger,
+    });
+
+    // UpdateFlow takes an `InstallerLike` — passing the concrete installer
+    // is safe because `MarketplaceInstaller implements InstallerLike` and
+    // breaks the type cycle between installer and update flow at the type
+    // level (see `marketplace-installer.ts`).
+    const marketplaceUpdateFlow = new UpdateFlow({
+      dorkHome,
+      installer: marketplaceInstaller,
+      sourceManager: marketplaceSourceManager,
+      fetcher: marketplaceFetcher,
+      logger,
+    });
+
+    app.use(
+      '/api/marketplace',
+      createMarketplaceRouter({
+        sourceManager: marketplaceSourceManager,
+        cache: marketplaceCache,
+        fetcher: marketplaceFetcher,
+        installer: marketplaceInstaller,
+        uninstallFlow: marketplaceUninstallFlow,
+        updateFlow: marketplaceUpdateFlow,
+        dorkHome,
+      })
+    );
+    logger.info('[Marketplace] Routes mounted');
+
+    // Personal marketplace bootstrap — runs after the source manager is wired
+    // but before the MCP server fields its first request so the personal
+    // source is registered when external clients call
+    // `marketplace_list_marketplaces`. Failure here is non-fatal: a missing
+    // personal marketplace just means the `marketplace_create_package` tool
+    // has no destination, every other tool keeps working.
+    try {
+      await ensurePersonalMarketplace({
+        dorkHome,
+        sourceManager: marketplaceSourceManager,
+        logger,
+      });
+    } catch (err) {
+      logger.warn('[personal-marketplace] bootstrap failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Build the confirmation provider that gates marketplace mutation tools.
+    // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
+    // and tests; everything else uses the token provider, which issues
+    // out-of-band tokens that the DorkOS UI resolves via the
+    // `POST /api/marketplace/confirmations/:token` route.
+    const confirmationProvider: ConfirmationProvider =
+      env.MARKETPLACE_AUTO_APPROVE === '1'
+        ? new AutoApproveConfirmationProvider()
+        : new TokenConfirmationProvider();
+    setMarketplaceConfirmationProvider(confirmationProvider);
+
+    marketplaceMcpDeps = {
+      dorkHome,
+      installer: marketplaceInstaller,
+      sourceManager: marketplaceSourceManager,
+      fetcher: marketplaceFetcher,
+      cache: marketplaceCache,
+      uninstallFlow: marketplaceUninstallFlow,
+      confirmationProvider,
+      logger,
+    };
+    logger.info('[Marketplace] MCP tools wired into external /mcp server');
+  } else {
+    logger.warn(
+      '[Marketplace] Routes skipped — requires extensionManager and adapterManager (relay must be enabled and extensions must have initialized successfully)'
+    );
+  }
 
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);

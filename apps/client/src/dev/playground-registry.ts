@@ -14,7 +14,8 @@ export type Page =
   | 'error-states'
   | 'onboarding'
   | 'tables'
-  | 'settings';
+  | 'settings'
+  | 'marketplace';
 
 /** A single searchable/navigable section in the playground. */
 export interface PlaygroundSection {
@@ -44,6 +45,7 @@ export { ERROR_STATES_SECTIONS } from './sections/error-states-sections';
 export { ONBOARDING_SECTIONS } from './sections/onboarding-sections';
 export { TABLES_SECTIONS } from './sections/tables-sections';
 export { SETTINGS_SECTIONS } from './sections/settings-sections';
+export { MARKETPLACE_SECTIONS } from './sections/marketplace-sections';
 
 // Imported under aliases to compose the full registry without circular re-export issues.
 import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
@@ -60,6 +62,7 @@ import { ERROR_STATES_SECTIONS as errorStates } from './sections/error-states-se
 import { ONBOARDING_SECTIONS as onboarding } from './sections/onboarding-sections';
 import { TABLES_SECTIONS as tables } from './sections/tables-sections';
 import { SETTINGS_SECTIONS as settings } from './sections/settings-sections';
+import { MARKETPLACE_SECTIONS as marketplace } from './sections/marketplace-sections';
 
 /**
  * Full playground registry combining all page-level section arrays.
@@ -81,4 +84,5 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...onboarding,
   ...tables,
   ...settings,
+  ...marketplace,
 ];

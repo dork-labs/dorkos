@@ -152,8 +152,10 @@ describe('POST /api/agents/create', () => {
     expect(mkdirCalls[0]).toEqual(['/mock/agents', { recursive: true }]);
     // Agent directory created (non-recursive)
     expect(mkdirCalls[1]).toEqual(['/mock/agents/my-agent']);
-    // .dork/ subdirectory
-    expect(mkdirCalls[2]).toEqual(['/mock/agents/my-agent/.dork']);
+    // .dork/ subdirectory created recursively so the same code path also
+    // works for the marketplace install pipeline, where the package may
+    // already ship a `.dork/` directory before scaffolding runs.
+    expect(mkdirCalls[2]).toEqual(['/mock/agents/my-agent/.dork', { recursive: true }]);
   });
 
   it('scaffolds SOUL.md and NOPE.md via writeConventionFile', async () => {

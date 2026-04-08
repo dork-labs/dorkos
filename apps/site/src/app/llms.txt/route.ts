@@ -6,6 +6,7 @@ import {
   CATEGORY_LABELS,
   type FeatureCategory,
 } from '@/layers/features/marketing/lib/features';
+import { fetchMarketplaceJson } from '@/layers/features/marketplace';
 
 export const dynamic = 'force-static';
 
@@ -119,12 +120,40 @@ function buildFeatureCategoriesSection(): string {
 }
 
 /**
+ * Build the marketplace section of llms.txt — fetches the registry and emits
+ * one bullet per package. Degrades gracefully on fetch failure to a single
+ * browse link so transient registry outages don't break the file.
+ */
+async function buildMarketplaceSection(): Promise<string> {
+  const browseUrl = `${siteConfig.url}/marketplace`;
+  try {
+    const marketplace = await fetchMarketplaceJson();
+    if (marketplace.plugins.length === 0) {
+      return `Browse the catalog at ${browseUrl}`;
+    }
+    const lines = marketplace.plugins.map((pkg) => {
+      const url = `${siteConfig.url}/marketplace/${pkg.name}`;
+      const type = pkg.type ?? 'plugin';
+      const description = pkg.description ?? '';
+      return description
+        ? `- [${pkg.name}](${url}) (${type}): ${description}`
+        : `- [${pkg.name}](${url}) (${type})`;
+    });
+    return lines.join('\n');
+  } catch {
+    return `Browse the catalog at ${browseUrl}`;
+  }
+}
+
+/**
  * Dynamic llms.txt route handler.
  *
  * Generates the llms.txt file at build time from live fumadocs loaders,
- * siteConfig, and subsystems data. Replaces the static public/llms.txt.
+ * siteConfig, subsystems data, and the dorkos-community marketplace registry.
+ * Replaces the static public/llms.txt.
  */
-export function GET() {
+export async function GET() {
+  const marketplaceSection = await buildMarketplaceSection();
   const text = `# ${siteConfig.name}
 
 > ${siteConfig.description}
@@ -142,6 +171,10 @@ ${buildFeaturesSection()}
 ## Feature Categories
 
 ${buildFeatureCategoriesSection()}
+
+## Marketplace
+
+${marketplaceSection}
 
 ## Documentation
 

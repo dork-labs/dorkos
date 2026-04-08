@@ -1,0 +1,5 @@
+{
+  "name": "linear-integration",
+  "description": "Two-way sync between agent activity and Linear issues",
+  "version": "0.1.0"
+}

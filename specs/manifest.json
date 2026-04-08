@@ -1,41 +1,41 @@
 {
   "version": 1,
-  "nextNumber": 229,
+  "nextNumber": 230,
   "specs": [
     {
       "number": 228,
       "slug": "marketplace-05-agent-installer",
       "title": "Marketplace 05: Agent Installer (MCP Server)",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 227,
       "slug": "marketplace-04-web-and-registry",
       "title": "Marketplace 04: Web & Registry",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 226,
       "slug": "marketplace-03-extension",
       "title": "Marketplace 03: Marketplace Extension (Browse UI)",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 225,
       "slug": "marketplace-02-install",
       "title": "Marketplace 02: Install",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 224,
       "slug": "marketplace-01-foundation",
       "title": "Marketplace 01: Foundation",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 223,
@@ -1648,6 +1648,14 @@
       "title": "Upgrade electron-vite from v3.1.0 to v5.0.0 (+ Electron ecosystem)",
       "created": "2026-04-01",
       "status": "implemented"
+    },
+    {
+      "number": 229,
+      "slug": "marketplace-05-claude-code-format-superset",
+      "title": "Marketplace 05: Claude Code Marketplace Format Superset",
+      "created": "2026-04-07",
+      "status": "implemented"
     }
-  ]
+  ],
+  "lastModified": "2026-04-07"
 }

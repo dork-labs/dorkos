@@ -1,0 +1,5 @@
+{
+  "name": "valid-plugin",
+  "version": "1.0.0",
+  "description": "A valid plugin fixture used by package-validator tests"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "code-reviewer",
+  "description": "Reviews your PRs every weekday morning, posts findings to Slack, files Linear issues for blockers",
+  "version": "0.1.0"
+}

@@ -1,0 +1,218 @@
+---
+title: Marketplace
+description: Browse and install pre-built agents, plugins, and skill packs from the DorkOS community.
+---
+
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+# Marketplace
+
+The DorkOS Marketplace is the curated catalog of pre-built agents, plugins, skill packs, and adapters that you can drop into your installation in a single command. Everything you install runs locally, on your machine, with the same permission model as the rest of DorkOS.
+
+## What is the marketplace?
+
+The marketplace is the public face of the [`dorkos-community`](https://github.com/dorkos-community) GitHub organization. The community maintains a registry of vetted packages — agents that review your PRs, plugins that surface Linear issues in your sidebar, skill packs for security auditing or release automation, adapters for messaging services like Discord. Browse the full catalog at [dorkos.ai/marketplace](https://dorkos.ai/marketplace) without installing anything.
+
+Every entry in the registry is a real GitHub repository. You can read the source before you install, fork it, and submit improvements upstream. Nothing is hosted, executed, or transformed by a third-party service — DorkOS fetches the package directly from its repo and validates the manifest against the same schemas as your local extensions.
+
+## Installing a package
+
+You can install a package from the command line or from inside DorkOS.
+
+<Tabs items={['CLI', 'Dork Hub (in DorkOS)']}>
+
+<Tab value="CLI">
+
+<Steps>
+
+<Step>
+
+### Find a package
+
+Browse [dorkos.ai/marketplace](https://dorkos.ai/marketplace) or search the registry from the CLI:
+
+```bash
+dorkos marketplace search code-review
+```
+
+</Step>
+
+<Step>
+
+### Install it
+
+```bash
+dorkos install code-reviewer
+```
+
+DorkOS fetches the package, verifies its manifest, shows you the requested permissions, and asks for confirmation before writing any files.
+
+</Step>
+
+<Step>
+
+### Manage installed packages
+
+```bash
+dorkos installed             # list installed packages
+dorkos update code-reviewer  # update to the latest version
+dorkos uninstall code-reviewer
+```
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+<Tab value="Dork Hub (in DorkOS)">
+
+<Steps>
+
+<Step>
+
+### Open Dork Hub
+
+Click the **Marketplace** entry in the dashboard sidebar, or navigate directly to [http://localhost:4242/marketplace](http://localhost:4242/marketplace).
+
+</Step>
+
+<Step>
+
+### Browse and search
+
+The featured rail at the top highlights curated agents. Below it, the package grid lists every package in the registry. Filter by type (`agent`, `plugin`, `skill-pack`, `adapter`) or category, or search by name and tag.
+
+</Step>
+
+<Step>
+
+### Review and install
+
+Click a package to open the detail sheet. You'll see the README, the requested permissions, the external hosts the package needs to reach, and a one-click install button. Review the permission preview and confirm — DorkOS handles the rest.
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+</Tabs>
+
+## Browsing in DorkOS
+
+Dork Hub is the in-product browse experience. It mirrors the public catalog but adds the install machinery — you can go from "interesting package" to "running on my machine" without leaving the app.
+
+The browse surface has three sections:
+
+- **Featured rail** — A curated row of agents the maintainers have highlighted. Rotates monthly.
+- **Package grid** — Every package in every registered marketplace, ranked by featured weight and install count.
+- **Detail sheet** — Opens when you click a package. Shows the README, permission preview, install instructions, and related packages.
+
+The install confirmation dialog always shows you exactly what the package wants to do — which files it will write, which network hosts it needs to reach, which Claude Code permissions it will request — before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
+
+## Marketplace sources
+
+The default registry is [`dorkos-community`](https://github.com/dorkos-community/marketplace), but you can add your own. Personal marketplaces are useful for sharing internal packages across a team without publishing them to the public registry.
+
+```bash
+# Add a marketplace source
+dorkos marketplace add my-team https://github.com/my-team/marketplace
+
+# List configured sources
+dorkos marketplace list
+
+# Remove a source
+dorkos marketplace remove my-team
+```
+
+You can also manage sources in DorkOS at [http://localhost:4242/marketplace/sources](http://localhost:4242/marketplace/sources). Sources are merged into a single browse surface — packages from your team's marketplace appear alongside community packages, with the source clearly labeled on each card.
+
+<Callout type="info">
+  A marketplace source is just a GitHub repo with a `marketplace.json` at its root. The schema is
+  documented in the [dorkos-community CONTRIBUTING
+  guide](https://github.com/dorkos-community/marketplace/blob/main/CONTRIBUTING.md).
+</Callout>
+
+## Telemetry consent
+
+DorkOS can report anonymous install events to dorkos.ai to power the public install counts and ranking on the marketplace browse page. This is **opt-in** — telemetry is disabled by default and DorkOS will never report anything until you explicitly enable it in settings.
+
+When telemetry is on, each successful install sends a single event containing:
+
+- The package name and marketplace source
+- The package type (`agent`, `plugin`, `skill-pack`, `adapter`)
+- The outcome (`success`, `failure`, `cancelled`) and duration
+- A random per-install UUID (not tied to you or your machine)
+- The DorkOS version (for compatibility analytics)
+
+No IP addresses, no user identifiers, no package contents, no file paths. The full privacy contract — including what we store, who can access it, and how to opt out — is documented at [dorkos.ai/marketplace/privacy](https://dorkos.ai/marketplace/privacy).
+
+To enable telemetry:
+
+```bash
+dorkos config set telemetry.enabled true
+```
+
+Or toggle the **Help improve the marketplace** switch in the Dork Hub settings panel.
+
+## Submitting a package
+
+The marketplace is community-driven. If you've built something useful — an agent that automates a workflow, a plugin that integrates a new service, a skill pack that codifies your team's conventions — you can submit it to the registry via a PR.
+
+<Steps>
+
+<Step>
+
+### Build your package
+
+Scaffold a new package with the CLI:
+
+```bash
+dorkos package init my-package --type agent
+```
+
+Develop locally, then validate before submitting:
+
+```bash
+dorkos package validate
+```
+
+</Step>
+
+<Step>
+
+### Push to GitHub
+
+Push your package to a public GitHub repo. The repo must include a `README.md`, a `LICENSE` (MIT or Apache-2.0), and a `.dork/manifest.json` that passes validation.
+
+</Step>
+
+<Step>
+
+### Open a PR
+
+Open a PR against [`dorkos-community/marketplace`](https://github.com/dorkos-community/marketplace) adding your package to `marketplace.json`. The full submission checklist and PR template are in the [CONTRIBUTING guide](https://github.com/dorkos-community/marketplace/blob/main/CONTRIBUTING.md). A maintainer will review within 7 days.
+
+</Step>
+
+</Steps>
+
+GitHub Actions automatically runs `dorkos package validate-remote` against your submission. PRs that fail validation cannot be merged, so make sure `dorkos package validate` passes locally before opening the PR.
+
+## Next Steps
+
+<Cards>
+  <Card title="CLI Usage" href="/docs/guides/cli-usage">
+    All `dorkos` commands, flags, and subcommands.
+  </Card>
+  <Card title="Tool Approval" href="/docs/guides/tool-approval">
+    How DorkOS handles permission requests from installed packages.
+  </Card>
+  <Card title="Building Relay Adapters" href="/docs/guides/building-relay-adapters">
+    Build a custom adapter and ship it to the marketplace.
+  </Card>
+</Cards>

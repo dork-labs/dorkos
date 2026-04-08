@@ -848,6 +848,29 @@ github.com/dorkos-community/discord-adapter/
 
 ## Changelog
 
+### 2026-04-07 — Drop Upstash Redis, use Neon + Drizzle as single source of truth
+
+**Issue:** Original spec used a dual-store pattern (Upstash Redis for fast counters, Neon Postgres for full event log via Vercel Queues). Adding a second ORM/storage paradigm fragments the data layer in a codebase that already standardizes on Drizzle (`packages/db` for SQLite).
+
+**Decision:** Use Neon Postgres + Drizzle ORM as the single source of truth. The `/api/telemetry/install` Edge Function writes directly to `marketplace_install_events` via Drizzle (no Redis, no queue indirection). The `/marketplace` page reads counts via `SELECT package_name, count(*) GROUP BY package_name`, cached by hourly ISR. If aggregation slows at scale, add an atomic counter table later via `INSERT ... ON CONFLICT DO UPDATE`.
+
+**Why:**
+
+1. **ORM consistency** — DorkOS already uses Drizzle for `packages/db` (SQLite). One ORM, one mental model, one set of migration tools (`drizzle-kit`).
+2. **Future-proof** — once Neon + Drizzle is wired into apps/site, adding new tables (ratings, submissions, version history, registry analytics) is trivial. Premature dual-store optimization avoided.
+3. **Hourly ISR makes the latency concern moot** — `/marketplace` uses `revalidate = 3600`, so the counter `GROUP BY` only runs once per hour per region. Sub-100ms even at millions of rows.
+4. **Simpler infra** — one Vercel integration (`vercel integration add neon`), one secret (`DATABASE_URL`).
+5. **Type-safe queries** — Drizzle's typed `db.select()` is harder to get wrong than stringly-typed Redis keys.
+6. **Edge-compatible** — `@neondatabase/serverless` HTTP driver and `drizzle-orm/neon-http` both work in Vercel Edge runtime.
+
+**Implementation Impact:**
+
+- Tasks **#1, #6, #15, #16, #27** modified (drop Upstash, use Drizzle)
+- New task **#1.5** added: Define Drizzle schema for `marketplace_install_events` + drizzle.config.ts + initial migration
+- Schema location: `apps/site/src/db/schema.ts` (site-local, not `packages/db` — that package is SQLite-only)
+- Tasks #6 and #15 now depend on #1.5
+- 23 other tasks unchanged
+
 ### 2026-04-06 — Initial specification
 
 Created from `/ideate-to-spec specs/dorkos-marketplace/01-ideation.md` (batched generation).

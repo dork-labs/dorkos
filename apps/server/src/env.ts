@@ -22,6 +22,9 @@ const serverEnvSchema = z.object({
   CLIENT_DIST_PATH: z.string().optional(),
   // MCP external server — optional API key for authenticated access
   MCP_API_KEY: z.string().optional(),
+  // Marketplace MCP — when '1', auto-approves every install/uninstall/create
+  // confirmation request without prompting the user. Used by CI and tests.
+  MARKETPLACE_AUTO_APPROVE: z.string().optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
   DORKOS_TASKS_ENABLED: boolFlag,

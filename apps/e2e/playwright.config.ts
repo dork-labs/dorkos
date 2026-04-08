@@ -11,6 +11,9 @@ const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
 // Vite client for mock tests — proxies /api to MOCK_PORT instead of PORT.
 // NOTE: port 6244 is taken by @dorkos/site (Next.js marketing site).
 const MOCK_VITE_PORT = process.env.DORKOS_MOCK_VITE_PORT || '4248';
+// Marketing site (Next.js) — hosts the public /marketplace pages exercised by
+// `tests/marketplace.spec.ts`. Port matches `apps/site/package.json` `dev` script.
+const SITE_PORT = process.env.DORKOS_SITE_PORT || '6244';
 /* eslint-enable no-restricted-syntax */
 
 export default defineConfig({
@@ -75,6 +78,18 @@ export default defineConfig({
       timeout: 120_000,
       reuseExistingServer: !CI,
       stdout: 'pipe',
+    },
+    // Marketing site (Next.js) — hosts the public /marketplace pages exercised
+    // by `tests/marketplace.spec.ts`. The marketplace test mocks the upstream
+    // GitHub registry fetch so the dev server does not need network access.
+    {
+      command: 'pnpm --filter @dorkos/site dev',
+      url: `http://localhost:${SITE_PORT}`,
+      name: 'Marketing Site',
+      timeout: 180_000,
+      reuseExistingServer: !CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
   ],
 

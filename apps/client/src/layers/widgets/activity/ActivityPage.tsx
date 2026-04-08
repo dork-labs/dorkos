@@ -28,27 +28,16 @@ export function ActivityPage() {
     useFullActivityFeed(queryFilters);
 
   // Flatten all pages into a single sorted item array
-  const allItems = useMemo(
-    () => data?.pages.flatMap((page) => page.items) ?? [],
-    [data]
-  );
+  const allItems = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
 
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-4xl space-y-4 py-6 sm:py-8">
         {/* Digest banner — only visible when there is a prior visit with new events */}
-        <ActivitySinceLastVisit
-          lastVisitedAt={lastVisitedAt}
-          items={allItems}
-          className="mx-4"
-        />
+        <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} className="mx-4" />
 
         {/* Time-grouped event rows */}
-        <ActivityTimeline
-          items={allItems}
-          isLoading={isLoading}
-          isFiltered={isFiltered}
-        />
+        <ActivityTimeline items={allItems} isLoading={isLoading} isFiltered={isFiltered} />
 
         {/* Cursor-based pagination trigger */}
         <ActivityLoadMore
