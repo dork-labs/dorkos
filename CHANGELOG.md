@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unify validate CLI + add source reachability check
 - Add Settings page and sections to the dev playground
 - URL deep links for Settings, Agent, Tasks, Relay, Mesh dialogs
 - CLI validators, telemetry, seed fixture, docs (marketplace-05 Batches 5-8)

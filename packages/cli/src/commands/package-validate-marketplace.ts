@@ -31,6 +31,12 @@ import {
   validateAgainstCcSchema,
   RESERVED_MARKETPLACE_NAMES,
 } from '@dorkos/marketplace';
+import {
+  checkSourcePaths,
+  localProbe,
+  makeLocalCandidateBuilder,
+  renderSourcePathResults,
+} from './validate-source-paths.js';
 
 /** Parsed CLI arguments accepted by {@link runValidateMarketplace}. */
 export interface ValidateMarketplaceArgs {
@@ -69,8 +75,11 @@ export function parseValidateMarketplaceArgs(rawArgs: string[]): ValidateMarketp
  *    read `.../.claude-plugin/dorkos.json` as a sidecar. Missing sidecar
  *    is non-fatal; parse errors exit 1.
  * 4. Run the strict CC-compatibility second pass. Exit 2 on failure.
- * 5. Check the marketplace name against the reserved list. Exit 1 on hit.
- * 6. Print the summary to stdout and exit 0.
+ * 5. Probe every relative-path plugin source for reachability (does
+ *    `<marketplaceRoot>/<resolved>/.claude-plugin/plugin.json` exist?).
+ *    Exit 2 when any source would fail at `claude plugin install` time.
+ * 6. Check the marketplace name against the reserved list. Exit 1 on hit.
+ * 7. Print the summary to stdout and exit 0.
  *
  * @param args - Parsed CLI arguments.
  * @returns The intended process exit code.
@@ -130,7 +139,30 @@ export async function runValidateMarketplace(args: ValidateMarketplaceArgs): Pro
   }
   process.stdout.write(`[OK]   Claude Code compatibility (strict)\n`);
 
-  // 4. Reserved-name enforcement — already caught by the DorkOS schema
+  // 4. Reachability check for relative-path sources. Schema shape alone
+  //    can't catch the case where `./<name>` + pluginRoot resolves to a
+  //    directory that doesn't exist on disk (CC 2.1.92 ignores
+  //    pluginRoot when the source has an explicit `./` prefix). This
+  //    catches the regression at validate time instead of at
+  //    `claude plugin install` time.
+  const marketplaceRoot =
+    path.basename(path.dirname(absPath)) === '.claude-plugin'
+      ? path.dirname(path.dirname(absPath))
+      : path.dirname(absPath);
+  const sourcePathReport = await checkSourcePaths(
+    dorkosResult.marketplace,
+    localProbe,
+    makeLocalCandidateBuilder(marketplaceRoot),
+    marketplaceRoot
+  );
+  const sourceRendered = renderSourcePathResults(sourcePathReport, dorkosResult.marketplace);
+  if (!sourcePathReport.ok) {
+    process.stderr.write(sourceRendered.failBlock);
+    return 2;
+  }
+  process.stdout.write(sourceRendered.okLine);
+
+  // 5. Reserved-name enforcement — already caught by the DorkOS schema
   //    but we surface it explicitly for a clearer error message.
   if (RESERVED_MARKETPLACE_NAMES.has(dorkosResult.marketplace.name)) {
     process.stderr.write(`[FAIL] Marketplace name reserved: "${dorkosResult.marketplace.name}"\n`);

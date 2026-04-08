@@ -22,13 +22,19 @@
 const HELP_TEXT = `
 Usage: dorkos marketplace <subcommand> [options]
 
-Manage marketplace sources on the running DorkOS server.
+Manage marketplace sources on the running DorkOS server, and validate
+marketplace registries before publishing them.
 
 Subcommands:
   add <url> [--name <name>]   Register a marketplace source
   remove <name>               Remove a registered marketplace source
   list                        List configured marketplace sources
   refresh [<name>]            Re-fetch one or every marketplace.json
+  validate <path-or-url>      Validate a marketplace.json (local path
+                                or remote HTTPS URL) against the DorkOS
+                                schema + strict Claude Code schema;
+                                also checks the optional dorkos.json
+                                sidecar. No clone; HTTPS fetch only.
 
 Examples:
   dorkos marketplace add https://github.com/dorkos/marketplace
@@ -37,6 +43,15 @@ Examples:
   dorkos marketplace refresh
   dorkos marketplace refresh dorkos-community
   dorkos marketplace remove acme
+  dorkos marketplace validate ./.claude-plugin/marketplace.json
+  dorkos marketplace validate https://github.com/dork-labs/marketplace
+
+Exit codes for \`validate\`:
+  0  All checks pass
+  1  Fetch/read failed, DorkOS schema failed, sidecar invalid, or reserved name
+  2  DorkOS schema passes but strict Claude Code compatibility fails
+     (i.e. your marketplace drifted out of the CC superset — move the
+     offending fields to the dorkos.json sidecar)
 `;
 
 /**
@@ -77,9 +92,14 @@ export async function runMarketplaceDispatcher(
         await import('./marketplace-refresh.js');
       return await runMarketplaceRefresh(parseMarketplaceRefreshArgs(subArgs));
     }
+    if (subcommand === 'validate') {
+      const { runMarketplaceValidate, parseMarketplaceValidateArgs } =
+        await import('./marketplace-validate.js');
+      return await runMarketplaceValidate(parseMarketplaceValidateArgs(subArgs));
+    }
 
     console.error(`Unknown marketplace subcommand: ${subcommand}`);
-    console.error('Usage: dorkos marketplace <add|remove|list|refresh> [args]');
+    console.error('Usage: dorkos marketplace <add|remove|list|refresh|validate> [args]');
     return 1;
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);

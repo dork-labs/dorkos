@@ -12,7 +12,7 @@
   "plugins": [
     {
       "name": "code-reviewer",
-      "source": "./code-reviewer",
+      "source": "./plugins/code-reviewer",
       "description": "Reviews your PRs every weekday morning, posts findings to Slack, files Linear issues for blockers",
       "author": {
         "name": "Dork Labs"
@@ -24,7 +24,7 @@
     },
     {
       "name": "security-auditor",
-      "source": "./security-auditor",
+      "source": "./plugins/security-auditor",
       "description": "Continuously audits dependencies, configurations, and code for security vulnerabilities",
       "author": {
         "name": "Dork Labs"
@@ -36,7 +36,7 @@
     },
     {
       "name": "docs-keeper",
-      "source": "./docs-keeper",
+      "source": "./plugins/docs-keeper",
       "description": "Keeps documentation in sync with code changes by monitoring git activity",
       "author": {
         "name": "Dork Labs"
@@ -47,7 +47,7 @@
     },
     {
       "name": "linear-integration",
-      "source": "./linear-integration",
+      "source": "./plugins/linear-integration",
       "description": "Two-way sync between agent activity and Linear issues",
       "author": {
         "name": "Dork Labs"
@@ -58,7 +58,7 @@
     },
     {
       "name": "posthog-monitor",
-      "source": "./posthog-monitor",
+      "source": "./plugins/posthog-monitor",
       "description": "PostHog analytics integration for tracking agent runs",
       "author": {
         "name": "Dork Labs"
@@ -69,7 +69,7 @@
     },
     {
       "name": "security-audit-pack",
-      "source": "./security-audit-pack",
+      "source": "./plugins/security-audit-pack",
       "description": "Skill pack for security auditing tasks",
       "author": {
         "name": "Dork Labs"
@@ -80,7 +80,7 @@
     },
     {
       "name": "release-pack",
-      "source": "./release-pack",
+      "source": "./plugins/release-pack",
       "description": "Skill pack for release management workflows",
       "author": {
         "name": "Dork Labs"
@@ -91,7 +91,7 @@
     },
     {
       "name": "discord-adapter",
-      "source": "./discord-adapter",
+      "source": "./plugins/discord-adapter",
       "description": "Send agent notifications and receive commands via Discord",
       "author": {
         "name": "Dork Labs"

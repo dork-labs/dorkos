@@ -26,6 +26,12 @@ import {
   validateAgainstCcSchema,
   RESERVED_MARKETPLACE_NAMES,
 } from '@dorkos/marketplace';
+import {
+  checkSourcePaths,
+  makeRemoteCandidateBuilder,
+  remoteProbe,
+  renderSourcePathResults,
+} from './validate-source-paths.js';
 
 /** Parsed CLI arguments accepted by {@link runValidateRemote}. */
 export interface ValidateRemoteArgs {
@@ -139,7 +145,26 @@ export async function runValidateRemote(args: ValidateRemoteArgs): Promise<numbe
   }
   process.stdout.write(`[OK]   Claude Code compatibility (strict)\n`);
 
-  // 4. Reserved-name enforcement (already caught by the DorkOS schema,
+  // 4. Reachability check for relative-path sources. Issues a parallel
+  //    GET for each resolved `<rawBase>/<resolved>/.claude-plugin/plugin.json`
+  //    so the CI gate catches broken paths before publish. Object-form
+  //    sources (`github`, `url`, `git-subdir`, `npm`) are skipped to
+  //    avoid introducing network dependencies on external git hosts.
+  const rawBase = resolveRawBaseUrl(marketplaceUrl);
+  const sourcePathReport = await checkSourcePaths(
+    dorkosResult.marketplace,
+    remoteProbe,
+    makeRemoteCandidateBuilder(rawBase),
+    rawBase
+  );
+  const sourceRendered = renderSourcePathResults(sourcePathReport, dorkosResult.marketplace);
+  if (!sourcePathReport.ok) {
+    process.stderr.write(sourceRendered.failBlock);
+    return 2;
+  }
+  process.stdout.write(sourceRendered.okLine);
+
+  // 5. Reserved-name enforcement (already caught by the DorkOS schema,
   //    surfaced explicitly for a clearer error message).
   if (RESERVED_MARKETPLACE_NAMES.has(dorkosResult.marketplace.name)) {
     process.stderr.write(`[FAIL] Marketplace name reserved: "${dorkosResult.marketplace.name}"\n`);
@@ -177,4 +202,16 @@ export function resolveDorkosSidecarUrl(input: string): string {
   if (input.endsWith('.claude-plugin/dorkos.json')) return input;
   const base = input.replace(/\.git$/, '').replace(/\/$/, '');
   return `${base}/raw/main/.claude-plugin/dorkos.json`;
+}
+
+/**
+ * Given the canonical raw `marketplace.json` URL returned by
+ * {@link resolveMarketplaceJsonUrl}, strip the trailing
+ * `/.claude-plugin/marketplace.json` to produce the raw base URL that
+ * sibling files (plugin manifests, READMEs) are resolved against.
+ *
+ * @internal Exported for testing.
+ */
+export function resolveRawBaseUrl(marketplaceJsonUrl: string): string {
+  return marketplaceJsonUrl.replace(/\/?\.claude-plugin\/marketplace\.json$/, '');
 }

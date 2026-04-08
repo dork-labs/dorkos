@@ -40,18 +40,18 @@ if (process.argv[2] === 'package') {
     console.log(`
 Usage: dorkos package <subcommand> [options]
 
+Scaffold and validate individual marketplace packages. To validate an
+entire marketplace registry (marketplace.json + optional dorkos.json
+sidecar), use \`dorkos marketplace validate\` instead.
+
 Subcommands:
-  init <name>                     Scaffold a new marketplace package
-  validate [path]                 Validate a marketplace package on disk
-  validate-marketplace <path>     Validate a marketplace.json file
-  validate-remote <github-url>    Clone and validate a remote package repo
+  init <name>       Scaffold a new marketplace package
+  validate [path]   Validate a marketplace package on disk
 
 Examples:
   dorkos package init my-plugin --type plugin
   dorkos package init my-bot --type adapter --adapter-type slack
   dorkos package validate ./my-plugin
-  dorkos package validate-marketplace ./marketplace.json
-  dorkos package validate-remote https://github.com/dorkos-community/code-reviewer
 `);
     process.exit(0);
   }
@@ -73,21 +73,35 @@ Examples:
       const exitCode = await runPackageValidate({ packagePath });
       process.exit(exitCode);
     }
+    // Hidden back-compat aliases. These two forms are deprecated in favor of
+    // `dorkos marketplace validate <path-or-url>`, which auto-detects the
+    // input shape. They still work for one release but emit a stderr notice
+    // pointing at the new canonical form. See ADR notes in contributing/
+    // marketplace-registry.md#validation for the rationale.
     if (packageSubcommand === 'validate-marketplace') {
+      process.stderr.write(
+        '⚠  `dorkos package validate-marketplace` is deprecated. ' +
+          'Use `dorkos marketplace validate <path>` instead.\n'
+      );
       const { runValidateMarketplace, parseValidateMarketplaceArgs } =
         await import('./commands/package-validate-marketplace.js');
       const exitCode = await runValidateMarketplace(parseValidateMarketplaceArgs(subArgs));
       process.exit(exitCode);
     }
     if (packageSubcommand === 'validate-remote') {
+      process.stderr.write(
+        '⚠  `dorkos package validate-remote` is deprecated. ' +
+          'Use `dorkos marketplace validate <url>` instead.\n'
+      );
       const { runValidateRemote, parseValidateRemoteArgs } =
         await import('./commands/package-validate-remote.js');
       const exitCode = await runValidateRemote(parseValidateRemoteArgs(subArgs));
       process.exit(exitCode);
     }
     console.error(`Unknown package subcommand: ${packageSubcommand}`);
+    console.error('Usage: dorkos package <init|validate> [args]');
     console.error(
-      'Usage: dorkos package <init|validate|validate-marketplace|validate-remote> [args]'
+      'To validate an entire marketplace registry, use: dorkos marketplace validate <path-or-url>'
     );
     process.exit(1);
   } catch (err) {
@@ -276,12 +290,10 @@ Commands:
   init --yes           Accept all defaults
   package init <name>  Scaffold a new marketplace package
   package validate [p] Validate a marketplace package
-  package validate-marketplace <p>   Validate a marketplace.json file
-  package validate-remote <url>      Clone and validate a remote package
   install <name>       Install a marketplace package (requires running server)
   uninstall <name>     Remove an installed marketplace package
   update [<name>]      Check for (or apply with --apply) package updates
-  marketplace <sub>    Manage marketplace sources (add|remove|list|refresh)
+  marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
   cleanup              Remove all DorkOS data
 

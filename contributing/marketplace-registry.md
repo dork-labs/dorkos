@@ -76,9 +76,20 @@ the marketplace clone root. Used for same-repo monorepos:
 { "name": "code-reviewer", "source": "./code-reviewer" }
 ```
 
-When `metadata.pluginRoot` is set, entries can use the explicit path form
-`"./<name>"` so `pluginRoot` is implicit. Bare names without `./` are
-NOT accepted by Claude Code 2.1.92 — always include the `./` prefix.
+**`pluginRoot` + relative sources — read this carefully.** CC 2.1.92
+**ignores** `metadata.pluginRoot` whenever a `source` starts with an
+explicit `./`. The leading `./` is treated as absolute-from-marketplace-
+root, not relative-to-pluginRoot. So with `pluginRoot: "./plugins"`,
+the entry **must** be `"source": "./plugins/<name>"` — NOT
+`"source": "./<name>"`, which silently points at a directory that
+doesn't exist and fails at `claude plugin install` time with
+`Source path does not exist`.
+
+Bare names (no `./`) DO honor `pluginRoot`, but CC 2.1.92 rejects bare
+names during its schema validation. Net effect: always use the fully
+explicit `"./<pluginRoot>/<name>"` form. The DorkOS CLI's
+`marketplace validate` catches the `./<name>` regression at publish
+time via a reachability probe — see the Validation section below.
 
 **2. GitHub object** — canonical form for GitHub-hosted plugins:
 
@@ -259,7 +270,7 @@ To contribute a new package to the Dork Labs seed:
    `"source": "./<name>"` and CC-standard metadata.
 4. Add the sidecar entry to `.claude-plugin/dorkos.json` with the
    DorkOS type, layers, and pricing.
-5. Run `dorkos package validate-marketplace .claude-plugin/marketplace.json`
+5. Run `dorkos marketplace validate .claude-plugin/marketplace.json`
    locally. Exit 0 means your entry is ready to submit.
 6. Open a PR against `main`.
 
@@ -269,25 +280,106 @@ source form instead of a relative path.
 
 ## Validation
 
-Two CLI commands gate submissions:
+One CLI command gates submissions. It takes either a local filesystem
+path or a remote HTTPS URL and auto-detects which mode to use:
 
 ```bash
 # Validate a local marketplace.json file (with optional sidecar)
-dorkos package validate-marketplace .claude-plugin/marketplace.json
+dorkos marketplace validate .claude-plugin/marketplace.json
 
-# Validate a remote marketplace by URL
-dorkos package validate-remote https://github.com/dork-labs/marketplace
+# Validate a remote marketplace by URL (GitHub repo URL or direct raw URL)
+dorkos marketplace validate https://github.com/dork-labs/marketplace
 ```
 
-Exit codes (both commands):
+> **Back-compat:** The legacy `dorkos package validate-marketplace <path>`
+> and `dorkos package validate-remote <url>` forms still work but emit a
+> stderr deprecation notice. They'll be removed in a future release — use
+> the `marketplace validate` form in new scripts and CI.
 
-- `0` — all checks pass
-- `1` — fetch/parse failed, DorkOS schema failed, sidecar invalid, or reserved name
-- `2` — DorkOS schema passes but strict CC compatibility fails (outbound regression)
+### What it does
 
-Exit code 2 specifically means "your marketplace is valid for DorkOS but
-will break `claude plugin validate` — move the offending field to the
-sidecar."
+Both invocation shapes run the same five checks against the same Zod
+schemas (`@dorkos/marketplace`). Only the two top-level registry files
+are schema-checked; the reachability probe (step 5) also verifies that
+each relative-path plugin's `.claude-plugin/plugin.json` exists without
+parsing it.
+
+1. **Fetch / read.**
+   - For a URL: HTTPS `fetch()` (not `git clone`) against
+     `<repo>/raw/main/.claude-plugin/marketplace.json` and
+     `<repo>/raw/main/.claude-plugin/dorkos.json`. The `main` branch is
+     hardcoded; non-`main` default branches are not supported via the
+     repo-URL shorthand. To target a different branch, pass a direct
+     raw URL instead (anything ending in `marketplace.json` is passed
+     through unchanged).
+   - For a path: `fs.readFile()` on the target. If the file lives under
+     `.claude-plugin/`, a sibling `dorkos.json` is read as the sidecar.
+
+2. **DorkOS schema (passthrough).** Parses `marketplace.json` against
+   DorkOS's schema. "Passthrough" means DorkOS accepts any CC-valid
+   marketplace without requiring its own extra fields — the DorkOS
+   extensions live in the sidecar.
+
+3. **Sidecar parse (optional).** If `dorkos.json` is present, parses it
+   against the sidecar schema (per-plugin `type`, `layers`, `pricing`,
+   etc.). Absence is fine; invalid-when-present is fatal.
+
+4. **Claude Code compatibility (strict).** Runs the same
+   `marketplace.json` through DorkOS's port of the Claude Code validator
+   (`@dorkos/marketplace` `cc-validator.ts`, kept in sync with upstream
+   CC by a weekly cron — see ADR-0238). This is the load-bearing check
+   for the strict-superset invariant: whatever DorkOS publishes must
+   also pass `claude plugin validate`, unmodified, so a vanilla Claude
+   Code install can consume the same registry.
+
+5. **Plugin sources reachable.** For each plugin entry with a
+   relative-path source, resolves the source via the same rules CC
+   2.1.92 uses at install time (`@dorkos/marketplace` `resolvePluginSource`
+   — crucially, `metadata.pluginRoot` is ignored when a source starts
+   with an explicit `./`) and probes the resulting
+   `<resolved>/.claude-plugin/plugin.json`. Local paths are `fs.stat`'d;
+   remote URLs get a parallel `GET`. Object-form sources (`github`,
+   `url`, `git-subdir`, `npm`) are skipped — CC clones those at install
+   and the validator should not depend on external git hosts. This is
+   the load-bearing check that prevents `./<name>` + `pluginRoot`
+   regressions from shipping: schema shape alone can't catch them.
+
+6. **Reserved-name check.** The marketplace's `name` field isn't on the
+   reserved list (already enforced by the DorkOS schema — surfaced
+   separately for a clearer error message).
+
+### Exit codes
+
+- `0` — all checks pass.
+- `1` — fetch/read failed, JSON parse failed, DorkOS schema failed,
+  sidecar present but invalid, or marketplace name is reserved.
+- `2` — DorkOS schema passes but either **strict CC validation fails**
+  OR a **plugin source is not reachable** (outbound regression). In
+  both sub-cases your marketplace is valid-looking to DorkOS but will
+  break for a Claude Code user. The fix for strict-schema failures is
+  almost always: move the offending field into `.claude-plugin/dorkos.json`
+  instead of inlining it in `marketplace.json`. The fix for
+  unreachable-source failures is almost always: rewrite
+  `"source": "./<name>"` as `"source": "./<pluginRoot>/<name>"` because
+  CC ignores `pluginRoot` on explicit-`./` sources.
+
+### What it does NOT validate
+
+- **Plugin contents.** The reachability probe (check 5) confirms that
+  each relative-path plugin's `.claude-plugin/plugin.json` _exists_,
+  but it never _reads_ or _parses_ that file — nor any `SKILL.md` or
+  per-package `README`. Individual packages can be broken (invalid
+  `plugin.json`, missing components, bad YAML frontmatter) and this
+  command will still exit 0 as long as the file exists and the
+  top-level registry is well-formed. Use `dorkos package validate <path>`
+  on individual packages to catch per-package regressions.
+- **Installability.** Whether Claude Code or DorkOS can actually install
+  one of the listed plugins is not checked. That's what
+  `claude plugin install` and `dorkos install` prove end-to-end.
+- **Runtime activation.** Whether a plugin's skills show up in a live
+  agent session is not checked. That's a separate integration test.
+- **Any branch other than `main`** (for the URL shorthand — pass a raw
+  URL to override).
 
 ## Related ADRs
 
