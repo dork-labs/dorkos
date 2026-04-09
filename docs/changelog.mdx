@@ -5,6 +5,17 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.1] - 2026-04-09
+
+> Emergency patch — unblocks `npm install -g dorkos` / `npm update -g dorkos` and restores the Docker image publish pipeline after the v0.34.0 release shipped broken.
+
+### Fixed
+
+- Fix `npm install -g dorkos` and `npm update -g dorkos` failing with `E404 '@dorkos/marketplace@0.0.0' is not in this registry`. The v0.34.0 package mistakenly listed a private workspace package as a runtime dependency — v0.34.1 removes it from the published tarball entirely. The marketplace validator and install commands are unaffected because the code was already bundled into the CLI binary at build time, so nothing is actually missing from the runtime. If you hit the 404 on v0.34.0, run `npm install -g dorkos@0.34.1` to recover.
+- Restore the Docker image publish pipeline. The v0.34.0 release failed CI because of a cross-environment TypeScript resolution drift in the server build, which blocked `ghcr.io/dork-labs/dorkos:v0.34.0` from being published. v0.34.1 pins `@types/node` deterministically so CI reproduces the local tsc behavior exactly.
+
+---
+
 ## [0.34.0] - 2026-04-08
 
 > The marketplace lands — install pipeline, in-app Dork Hub, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.

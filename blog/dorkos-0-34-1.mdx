@@ -1,0 +1,41 @@
+---
+title: DorkOS 0.34.1
+description: Emergency patch — unblocks `npm install -g dorkos` and restores the Docker image publish pipeline after the v0.34.0 release shipped broken.
+date: 2026-04-09
+author: DorkOS Team
+category: release
+tags: [release, patch, hotfix, npm, docker]
+---
+
+DorkOS 0.34.1 is an emergency patch for two issues that shipped with yesterday's v0.34.0 release. If you hit `E404 '@dorkos/marketplace@0.0.0' is not in this registry` when running `npm install -g dorkos` or `npm update -g dorkos`, v0.34.1 is the fix — run `npm install -g dorkos@0.34.1` to recover.
+
+## What went wrong
+
+The v0.34.0 release shipped with `@dorkos/marketplace` mistakenly listed as a runtime dependency in the published `dorkos` package. Because `@dorkos/marketplace` is a private workspace package at version `0.0.0`, pnpm's publish rewrite turned it into `"@dorkos/marketplace": "0.0.0"` in the tarball — which does not exist on the public npm registry. Every `npm install -g dorkos` and `npm update -g dorkos` call on v0.34.0 failed with a 404.
+
+A second, independent regression in the v0.34.0 CI pipeline — a cross-environment TypeScript resolution drift in the server build — blocked `ghcr.io/dork-labs/dorkos:v0.34.0` from being published. Users pulling the Docker image by tag saw the previous v0.33.0 image instead.
+
+## Highlights
+
+**`npm install -g dorkos` works again.** The marketplace code was always bundled into the CLI binary at build time, so nothing is actually missing from the runtime — the `@dorkos/marketplace` entry in runtime dependencies was spurious and has been removed. The `dorkos package validate`, `dorkos marketplace validate`, and all other marketplace commands continue to work unchanged.
+
+**Docker image pipeline restored.** `@types/node` is now pinned deterministically in the server package so CI reproduces the local tsc behavior exactly. The `ghcr.io/dork-labs/dorkos:v0.34.1` image will be published automatically by the tag push.
+
+## All Changes
+
+### Fixed
+
+- Fix `npm install -g dorkos` and `npm update -g dorkos` failing with `E404 '@dorkos/marketplace@0.0.0' is not in this registry`. The v0.34.0 package mistakenly listed a private workspace package as a runtime dependency — v0.34.1 removes it from the published tarball entirely. The marketplace validator and install commands are unaffected because the code was already bundled into the CLI binary at build time, so nothing is actually missing from the runtime. If you hit the 404 on v0.34.0, run `npm install -g dorkos@0.34.1` to recover.
+- Restore the Docker image publish pipeline. The v0.34.0 release failed CI because of a cross-environment TypeScript resolution drift in the server build, which blocked `ghcr.io/dork-labs/dorkos:v0.34.0` from being published. v0.34.1 pins `@types/node` deterministically so CI reproduces the local tsc behavior exactly.
+
+## Install / Update
+
+```
+npm install -g dorkos@0.34.1
+```
+
+or
+
+```
+npm update -g dorkos
+```
