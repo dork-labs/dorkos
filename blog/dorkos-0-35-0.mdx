@@ -1,0 +1,56 @@
+---
+title: DorkOS 0.35.0
+description: Release tooling and configuration robustness — schema validation gates, migration automation, and marketplace stability converge to prevent upgrade breakage.
+date: 2026-04-09
+author: DorkOS Team
+category: release
+tags: [release, tooling, config, marketplace]
+---
+
+This release is about catching the bugs that only show up after you ship. `/system:release` now detects config schema changes that are missing a paired migration and offers to scaffold one inline before the tag is cut, the `adding-config-fields` skill guides contributors through the full config lifecycle so nobody ships a half-update again, and the Dork Hub marketplace browse experience is fully restored after the upstream parser and seed URL bugs that silently returned zero packages.
+
+## Highlights
+
+### 🔧 Release schema validation
+
+Every release from here on runs a config schema drift check in Phase 2 of `/system:release`. If you changed `UserConfigSchema` or `ConfigManager` since the last tag and there's no matching migration keyed to the target version, the command detects it, classifies the change (added-with-default, removed, renamed, type-change), drafts a migration for your review, and offers to apply it automatically. The whole thing runs inline in main context — no subagent hallucination risk on generated migration code. This catches the entire class of "shipped a schema change, forgot the migration, broke upgrades for existing users" bugs before they reach npm.
+
+### 🛠️ The `adding-config-fields` skill
+
+Contributors editing `UserConfigSchema` now get a model-invoked skill that walks the full lifecycle automatically: add the Zod field with a `.default(...)`, verify `USER_CONFIG_DEFAULTS` still parses at import time, append a migration to the module-level `CONFIG_MIGRATIONS` constant, document the field in `contributing/configuration.md` and the external Fumadocs mirror, and add an upgrade-path test. Pairs with the release drift gate — one teaches the right process, the other enforces it at release time.
+
+### 📦 Marketplace loading fixed
+
+The Dork Hub in the client was silently returning zero packages on v0.34.x. Two independent bugs compounded: the default community source URL pointed at `github.com/dorkos/marketplace` (wrong — the real repo lives at `dork-labs/marketplace`), and the upstream marketplace.json parser was using the strict _authoring_ schema for _consumption_, so it rejected the real Anthropic `claude-plugins-official` catalog because of a reserved-name check plus a kebab-case regex that couldn't handle `wordpress.com`. Both are fixed: the seed URL is corrected with auto-migration for existing users, and a new `parseMarketplaceJsonLenient` gracefully skips individual invalid plugin entries instead of rejecting the whole document. End-to-end verified: **8 Dork Labs community plugins + 126 Anthropic catalog entries** now load successfully.
+
+## All Changes
+
+### Added
+
+- `/system:release` now detects config schema changes without a paired migration and offers to scaffold one inline before the tag is cut. Catches the class of "shipped a schema change, forgot the migration, broke upgrades for existing users" bugs before they reach npm.
+- New `adding-config-fields` skill walks contributors through the full Zod → migration → docs → test lifecycle when adding, renaming, removing, or retyping a user-config field. Model-invoked — activates automatically when editing `UserConfigSchema`.
+- Agent discovery guide now distinguishes marketplace-installed agents (in `~/.dork/{plugins,agents}`) from agents discovered anywhere on disk via the mesh scanner. The two-registry split is no longer implicit — `GET /api/marketplace/installed` and `GET /api/agents` answer different questions and the docs now say so plainly.
+- New `context-isolator` subagent for running data-heavy read-and-summarize operations (release analysis, schema-diff classification, large searches) in an isolated context window. Ported from a sibling project and wired into `/system:release` Phase 3, which was silently missing the agent before.
+
+### Changed
+
+- Persistent user config now sources its migration `projectVersion` from `SERVER_VERSION` automatically — no more hardcoded stub. Migration keys tie to real release boundaries for the first time, so future schema migrations actually fire on upgrade.
+- Corrupt-config recovery path now preserves the migration chain. Previously, users who hit corrupt-recovery on any prior build would silently stop running migrations on subsequent upgrades — the fallback Conf instance was missing `projectVersion` and `migrations`. Both the primary and recovery branches now use a single shared options object.
+- Schema migration process is now documented first-class in `contributing/configuration.md` with the full `conf` `projectVersion` model, append-only rule, step-by-step procedure, real examples, and anti-patterns. Previously covered in one sentence.
+- CI/CD: All JavaScript-based GitHub Actions workflows opt into the Node 24 runtime ahead of GitHub's September 2026 Node 20 deprecation. Preempts the forced-upgrade disruption.
+
+### Fixed
+
+- The Dork Hub marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
+
+## Install / Update
+
+```
+npm install -g dorkos@0.35.0
+```
+
+Existing installs can update in place:
+
+```
+npm update -g dorkos
+```

@@ -9,13 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Config migration framework, release drift gate, agent discovery clarity
-
 ### Changed
 
 ### Fixed
 
-- Unblock browse for dork-labs and claude-plugins-official upstreams
+---
+
+## [0.35.0] - 2026-04-09
+
+> Release tooling and configuration robustness — schema validation gates, migration automation, and marketplace stability converge to prevent upgrade breakage.
+
+### Added
+
+- `/system:release` now detects config schema changes without a paired migration and offers to scaffold one inline before the tag is cut. Catches the class of "shipped a schema change, forgot the migration, broke upgrades for existing users" bugs before they reach npm.
+- New `adding-config-fields` skill walks contributors through the full Zod → migration → docs → test lifecycle when adding, renaming, removing, or retyping a user-config field. Model-invoked — activates automatically when editing `UserConfigSchema`.
+- Agent discovery guide now distinguishes marketplace-installed agents (in `~/.dork/{plugins,agents}`) from agents discovered anywhere on disk via the mesh scanner. The two-registry split is no longer implicit — `GET /api/marketplace/installed` and `GET /api/agents` answer different questions and the docs now say so plainly.
+- New `context-isolator` subagent for running data-heavy read-and-summarize operations (release analysis, schema-diff classification, large searches) in an isolated context window. Ported from a sibling project and wired into `/system:release` Phase 3, which was silently missing the agent before.
+
+### Changed
+
+- Persistent user config now sources its migration `projectVersion` from `SERVER_VERSION` automatically — no more hardcoded stub. Migration keys tie to real release boundaries for the first time, so future schema migrations actually fire on upgrade.
+- Corrupt-config recovery path now preserves the migration chain. Previously, users who hit corrupt-recovery on any prior build would silently stop running migrations on subsequent upgrades — the fallback Conf instance was missing `projectVersion` and `migrations`. Both the primary and recovery branches now use a single shared options object.
+- Schema migration process is now documented first-class in `contributing/configuration.md` with the full `conf` `projectVersion` model, append-only rule, step-by-step procedure, real examples, and anti-patterns. Previously covered in one sentence.
+- CI/CD: All JavaScript-based GitHub Actions workflows opt into the Node 24 runtime ahead of GitHub's September 2026 Node 20 deprecation. Preempts the forced-upgrade disruption.
+
+### Fixed
+
+- The Dork Hub marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
+
 ---
 
 ## [0.34.1] - 2026-04-09
