@@ -32,7 +32,9 @@ vi.mock('node:fs/promises', async () => {
   };
 });
 
-// Module-level mock for child_process — git-subdir spawns the git binary.
+// Module-level mock for child_process — git-subdir spawns the git binary,
+// and package-fetcher.resolveCommitSha calls execFile('git', ['ls-remote',...]).
+// Both must be mocked so no real network I/O happens during the dispatch tests.
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
   return {
@@ -49,6 +51,31 @@ vi.mock('node:child_process', async () => {
       });
       return child as unknown as ReturnType<typeof import('node:child_process').spawn>;
     }),
+    // Callback-style mock so `promisify(execFile)` wraps it correctly.
+    // Returns empty stdout — resolveCommitSha then falls back to tmp SHA,
+    // which is exactly the dispatch path these tests intend to exercise.
+    execFile: vi
+      .fn()
+      .mockImplementation(
+        (
+          _cmd: string,
+          _args: readonly string[],
+          optionsOrCallback: unknown,
+          maybeCallback?: unknown
+        ) => {
+          const callback =
+            typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback;
+          if (typeof callback === 'function') {
+            setImmediate(() => {
+              (callback as (err: unknown, out: { stdout: string; stderr: string }) => void)(null, {
+                stdout: '',
+                stderr: '',
+              });
+            });
+          }
+          return undefined as unknown as ReturnType<typeof import('node:child_process').execFile>;
+        }
+      ),
   };
 });
 

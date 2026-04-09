@@ -57,6 +57,7 @@
     "@types/express": "^5.0.6",
     "@types/express-serve-static-core": "^5.1.1",
     "@types/multer": "^2.1.0",
+    "@types/node": "^22.19.15",
     "@types/semver": "^7.7.1",
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",

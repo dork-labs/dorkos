@@ -25,7 +25,7 @@
  *
  * @module services/marketplace/source-resolvers/git-subdir
  */
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -236,7 +236,12 @@ export class GitSpawnError extends Error {
  */
 async function runGit(args: string[], cwd: string | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, {
+    // Widen to ChildProcess so `.on()` resolves unambiguously regardless of
+    // which @types/node version is picked up. Newer @types/node (25.x) moved
+    // ChildProcess to an interface-merge pattern with InternalEventEmitter,
+    // which can confuse tsc when the narrow ChildProcessByStdio subtype is
+    // inferred from a stdio tuple under certain install topologies.
+    const child: ChildProcess = spawn('git', args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -244,10 +249,10 @@ async function runGit(args: string[], cwd: string | undefined): Promise<void> {
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on('error', (err) => {
+    child.on('error', (err: Error) => {
       reject(new GitSpawnError(err.message, stderr, null));
     });
-    child.on('close', (code) => {
+    child.on('close', (code: number | null) => {
       if (code === 0) {
         resolve();
       } else {

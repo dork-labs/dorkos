@@ -52,7 +52,6 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.89",
     "@asteasolutions/zod-to-openapi": "^8.5.0",
-    "@dorkos/marketplace": "workspace:*",
     "@inquirer/prompts": "^8.3.2",
     "@ngrok/ngrok": "^1.7.0",
     "@scalar/express-api-reference": "^0.8.48",
@@ -68,6 +67,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/marketplace": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "esbuild": "^0.24.2",
