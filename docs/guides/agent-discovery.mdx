@@ -12,6 +12,42 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Mesh is the agent discovery and registry system in DorkOS. It scans your filesystem for AI agent projects, registers them with capability manifests, and connects them to [Relay](/docs/concepts/relay) for inter-agent communication. Mesh is always on — no feature flag or environment variable required. For a deeper look at the architecture, see the [Mesh concept page](/docs/concepts/mesh).
 
+## Two registries: installed vs discovered
+
+DorkOS maintains **two independent agent registries**, populated by two different scanners, backing two different APIs. They answer different questions and shouldn't be conflated:
+
+| Registry                  | Where agents live                                                   | Who populates it                        | Scanner                                                     | API                                           |
+| ------------------------- | ------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| **Marketplace-installed** | `~/.dork/plugins/*` and `~/.dork/agents/*`                          | The marketplace install pipeline        | `apps/server/src/services/marketplace/installed-scanner.ts` | `GET /api/marketplace/installed`              |
+| **Mesh-discovered**       | Any directory you scan — typically project folders anywhere on disk | You, via scan from UI / MCP / CLI / API | `packages/mesh/src/discovery/unified-scanner.ts`            | `GET /api/agents` (mesh registry, this guide) |
+
+### When to use which
+
+- **"What agents did I install from the marketplace?"** → installed-scanner / `GET /api/marketplace/installed`. This answers a narrow provenance question — packages that came through the managed marketplace pipeline with their `.dork/install-metadata.json` sidecar intact.
+- **"What agents does my system know about right now?"** → mesh registry / `GET /api/agents`. This is the full fleet — every directory with a `.dork/agent.json` manifest that Mesh has been pointed at, whether via the marketplace install pipeline, manual registration, or a discovery scan.
+
+Marketplace installs always land under `~/.dork/{plugins,agents}/` with provenance metadata, so they also show up in the mesh registry after the install hands off. Mesh-discovered agents do **not** necessarily appear in the installed-scanner's results — if an agent was registered from a directory the marketplace never touched, there is no install-metadata sidecar and the installed-scanner ignores it.
+
+### Where agents can live
+
+**Any directory with a `.dork/agent.json` file is a valid agent location.** You are not restricted to `~/.dork/agents/`. Common patterns:
+
+- **Marketplace installs** → `~/.dork/agents/<name>/.dork/agent.json` (managed by the install pipeline)
+- **Project-local agents** → `<your-project>/.dork/agent.json` (useful when an agent is version-controlled alongside the code it maintains)
+- **Arbitrary locations** → any absolute path in `mesh.scanRoots` in `~/.dork/config.json`, or passed explicitly to `mesh_discover`
+
+### Discovery is pull-based
+
+Mesh does **not** watch your filesystem for new `.dork/agent.json` files. Discovery runs when you trigger it:
+
+- Clicking "Scan for Agents" in the UI
+- Calling `POST /api/mesh/discover` or the `mesh_discover` MCP tool
+- On startup, the background reconciler walks every path in `mesh.scanRoots` (configured in `config.json`) and picks up any new manifests since the last scan
+
+If you drop a new `.dork/agent.json` file into a directory Mesh has never walked, it is invisible until a scan hits that directory. This is intentional — filesystem watchers are expensive and noisy, and pull-based discovery gives you deterministic control over when the registry changes.
+
+Manifest write-through semantics (the file-on-disk is authoritative, the SQLite registry is a derived cache) are covered by the [`agent-storage` contributor rule](https://github.com/dork-labs/dorkos/blob/main/.claude/rules/agent-storage.md) and [ADR-0043](https://github.com/dork-labs/dorkos/blob/main/decisions/).
+
 ## Discovering Agents
 
 Discovery scans your filesystem for directories that contain recognized agent markers. Mesh ships with three detection strategies:

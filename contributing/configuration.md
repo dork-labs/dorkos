@@ -81,6 +81,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `logging.maxLogSizeKb`        | integer (100--10240)                                                     | `500`              | Maximum log file size in KB before rotation                                        |
 | `logging.maxLogFiles`         | integer (1--30)                                                          | `14`               | Number of rotated log files to retain                                              |
 | `ui.theme`                    | `"light"` \| `"dark"` \| `"system"`                                      | `"system"`         | UI color theme                                                                     |
+| `ui.dismissedUpgradeVersions` | string[]                                                                 | `[]`               | Version strings the user has dismissed upgrade notifications for                   |
 | `relay.enabled`               | boolean                                                                  | `true`             | Enable Relay subsystem (config-level toggle, distinct from `DORKOS_RELAY_ENABLED`) |
 | `relay.dataDir`               | string \| null                                                           | `null`             | Override Relay data directory (`null` = default under `DORK_HOME`)                 |
 | `scheduler.enabled`           | boolean                                                                  | `true`             | Enable Tasks scheduler subsystem (config-level toggle)                             |
@@ -121,7 +122,117 @@ The following settings are controlled exclusively by environment variables and h
 | `DORKOS_CORS_ORIGIN`      | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s). Set to `*` for wildcard or a comma-separated list to override.                                                                                                                                                                              |
 | `DORKOS_VERSION_OVERRIDE` | (none)                             | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
-The config file also contains a `version` field (always `1`) used for schema migrations.
+The config file also contains a `version` field (currently `1`) that the schema carries for historical reasons. The authoritative migration tracker is a separate internal key that `conf` manages automatically — see **Schema Migrations** below.
+
+## Schema Migrations
+
+DorkOS's user config (`~/.dork/config.json`) is owned by the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0) via the `ConfigManager` wrapper at `apps/server/src/services/core/config-manager.ts`. Zod is the authoritative schema; `z.toJSONSchema(UserConfigSchema)` bridges to conf's Ajv validation so we never hand-maintain JSON Schema.
+
+Any change to `UserConfigSchema` (add / rename / remove / retype a field) that affects an existing user's stored data **requires a migration**. This section documents when and how.
+
+### Why migrations matter
+
+When a user upgrades DorkOS, their `config.json` was written by the previous version. The schema Zod now validates may differ from the shape on disk:
+
+- **Added field with a default** — conf's defaults-merge handles this automatically on next instantiation. No migration needed.
+- **Renamed field** — the old key lingers under its old name and the new key is absent. Without a migration the user loses their setting.
+- **Removed field** — the old key sticks around as dead data and can trip up future type checks.
+- **Type change** — a stored `number` being re-parsed as `string` will fail Zod validation and trigger the corrupt-config recovery path, losing the user's data.
+- **Default value change** — sometimes OK, sometimes not. If the user never set the value explicitly, do they want the new default or their old inferred one? Usually they want the new default — but be deliberate.
+
+Migrations run once per user, per version boundary, the first time a new DorkOS version instantiates `ConfigManager`. They are the only safe way to evolve stored data across releases.
+
+### How `conf` handles migrations
+
+`conf` tracks migration state **inside the config file itself**, in an internal key at `__internal__.migrations.version`. The flow is:
+
+1. `ConfigManager` constructs `new Conf<UserConfig>({ projectVersion, migrations, ... })`.
+2. `conf` reads the stored `__internal__.migrations.version` and compares it against `projectVersion`.
+3. Every migration whose key satisfies `> storedVersion && <= projectVersion` (semver-ordered) runs in sequence. Each migration receives the `conf` store and may call `store.has()`, `store.get()`, `store.set()`, `store.delete()`.
+4. After all applicable migrations run, `conf` updates `__internal__.migrations.version` to `projectVersion`.
+5. Each migration runs at most once per user — subsequent launches see the updated internal version and skip.
+
+`projectVersion` is the **app version**, not a schema version. Migration keys are the app versions at or after which each migration should run. A migration keyed `'0.35.0'` runs on the first launch of DorkOS 0.35.0 (or any later version, if the user skipped 0.35.0 entirely).
+
+> `projectVersion` is not hardcoded — `ConfigManager` imports `SERVER_VERSION` from `apps/server/src/lib/version.ts` and hands it to Conf. That resolver honors `DORKOS_VERSION_OVERRIDE`, the esbuild-injected `__CLI_VERSION__`, and the `package.json` dev fallback, in that order. Migration keys line up with real release boundaries automatically — do not reintroduce a hardcoded `projectVersion` string.
+
+### Append-only rule
+
+**Never edit a shipped migration.** Once a migration has run on real users, its body is frozen — editing it would leave users in divergent states (those who ran the old body vs. those who ran the new one). To fix a bad migration:
+
+1. Leave the broken migration in place (or amend its body only to be a no-op if it never shipped).
+2. Append a **new** migration at the next version that reverses the damage and applies the correct change.
+
+### Step-by-step: adding a new config field
+
+For the guided flow, use the `.claude/skills/adding-config-fields/` skill — Claude will walk through these steps interactively. For reference, they are:
+
+1. **Add the field to the Zod schema** in `packages/shared/src/config-schema.ts` with a `.default(...)` (make it optional only if the absence of the field is semantically meaningful).
+2. **Verify `USER_CONFIG_DEFAULTS` still parses** — that constant is computed from `UserConfigSchema.parse({ version: 1 })` at import time; a required field without a default crashes on first import.
+3. **Bump `projectVersion`** in `ConfigManager` constructor to the target release version.
+4. **Append a migration** to the `migrations` block, keyed to the same version. Guard every `store.set/delete` with `store.has()` so the migration is idempotent.
+5. **Document the field** in the Settings Reference table above. The `check-docs-changed.sh` hook will remind you at session-stop if you forget, but doing it inline is cleaner.
+6. **Mirror the doc to `docs/getting-started/configuration.mdx`** if the field is user-visible.
+7. **Add a test** in `apps/server/src/services/core/__tests__/config-manager.test.ts` that exercises the migration against a realistic stale-config blob.
+8. **Wire a CLI flag** in `packages/cli/src/cli.ts` if the field needs one, following the precedence rule (CLI flag > env var > config > default).
+
+### Reference example
+
+The current migrations block at `apps/server/src/services/core/config-manager.ts:96-102`:
+
+```typescript
+migrations: {
+  '1.0.0': (store) => {
+    if (!store.has('version')) {
+      store.set('version', 1);
+    }
+  },
+},
+```
+
+A hypothetical migration for a future `0.35.0` release that renames `server.cwd` to `server.workingDirectory` would look like:
+
+```typescript
+migrations: {
+  '1.0.0': (store) => {
+    if (!store.has('version')) {
+      store.set('version', 1);
+    }
+  },
+  '0.35.0': (store) => {
+    // Rename server.cwd → server.workingDirectory.
+    // Idempotent: guarded by store.has() so re-running is safe.
+    if (store.has('server.cwd') && !store.has('server.workingDirectory')) {
+      store.set('server.workingDirectory', store.get('server.cwd'));
+      store.delete('server.cwd');
+    }
+  },
+},
+```
+
+No manual `projectVersion` bump is needed — it resolves from `SERVER_VERSION` via `lib/version.ts`, which reflects the real app version at runtime. The new field would be updated in `UserConfigSchema` and this doc's Settings Reference table in the same PR.
+
+### Interaction with `/system:release`
+
+The `/system:release` command includes a **config schema migration drift** check in Phase 2. When it detects that `packages/shared/src/config-schema.ts` or `apps/server/src/services/core/config-manager.ts` changed since the last tag without a matching migration entry at the target version, it offers three paths:
+
+- **Scaffold the migration inline** — the command drafts a migration, presents it for your review, then edits `config-manager.ts` to append the entry and bump `projectVersion`. The modified file is staged into the release commit automatically.
+- **Pause so you can write it manually** — exits the release cleanly; you edit `config-manager.ts`, commit, then re-run `/system:release`.
+- **Mark as "no migration needed"** — for type-only changes, TSDoc updates, or added-field-with-default cases where conf's defaults-merge handles it automatically. You take responsibility; the release continues.
+
+See `.claude/commands/system/release.md` Phase 2 for the full flow.
+
+### Anti-patterns
+
+- **Editing a shipped migration body.** Creates inconsistent state across users. Append a new migration instead.
+- **Hardcoding `projectVersion` in the Conf constructor.** It's sourced from `SERVER_VERSION` — never pass a string literal. If the version resolver itself breaks, fix `lib/version.ts`, not `config-manager.ts`.
+- **Non-idempotent migrations.** Always guard with `store.has()` / `store.get() === oldValue` so re-running the same migration (e.g., after a corrupt-recovery that reset the internal version tracker) is safe.
+- **Adding a required field without a default.** `USER_CONFIG_DEFAULTS = UserConfigSchema.parse({ version: 1 })` runs at import time — a missing required field crashes the server on startup for every new install.
+- **Changing `UserConfigSchema` without updating this doc or `docs/getting-started/configuration.mdx`.** Users read docs to discover what they can configure; leaving them stale is worse than not having them.
+
+### Future work
+
+`~/.dork/marketplaces.json` is currently owned by a hand-rolled `MarketplaceSourceManager` (in `apps/server/src/services/marketplace/marketplace-source-manager.ts`) rather than `conf`. A pending refactor will unify it onto the same pattern. When it lands, the `adding-config-fields` skill and the `/system:release` drift check both extend to cover it — no parallel system.
 
 ### server.port
 

@@ -4,6 +4,15 @@ paths: packages/mesh/src/**/*.ts, packages/shared/src/manifest.ts, apps/server/s
 
 # Agent Storage: File-First Write-Through (ADR-0043)
 
+## Installed vs Discovered
+
+The file-first write-through rule below applies to every `.dork/agent.json` manifest regardless of where it lives on disk. But **where** the files live splits by purpose, and the two cases are populated by different subsystems:
+
+- **`${dorkHome}/agents/*/.dork/agent.json`** — marketplace-installed agents. Managed by the install pipeline in `apps/server/src/services/marketplace/flows/install-agent.ts` and scanned by `installed-scanner.ts`. Have an `.dork/install-metadata.json` provenance sidecar.
+- **Arbitrary user paths** — discovered agents. Walked by the unified scanner in `packages/mesh/src/discovery/unified-scanner.ts` starting from `mesh.scanRoots` in `~/.dork/config.json` or from roots passed to `mesh_discover`. No provenance sidecar unless the user added one manually.
+
+Both populate the same SQLite `agents` table and both must follow the write-through rule below. See [`docs/guides/agent-discovery.mdx`](../../docs/guides/agent-discovery.mdx) for the full two-registry framing and when to use each API.
+
 ## Canonical Source of Truth
 
 `.dork/agent.json` files on disk are the canonical source of truth for agent data. The SQLite `agents` table is a **derived cache/index** maintained by the Mesh module.

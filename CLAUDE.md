@@ -59,6 +59,7 @@ dorkos/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
 │   ├── server/           # @dorkos/server - Express API (tsc, NodeNext)
 │   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)
+│   ├── desktop/          # @dorkos/desktop - Electron shell (electron-builder, electron.vite)
 │   ├── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
 │   └── e2e/              # @dorkos/e2e - Playwright browser tests
 ├── packages/
@@ -109,7 +110,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree command
 
 Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery), `services/discovery/` (filesystem scanning), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`), `services/marketplace-mcp/` (marketplace exposed as MCP tools to external AI agents — see `contributing/external-agent-marketplace-access.md`), `services/builtin-extensions/` (auto-stage built-in extensions like Dork Hub at startup so the discovery pass picks them up). API docs at `/api/docs`.
+**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery orchestration — filesystem scanning itself lives in `packages/mesh/src/discovery/unified-scanner.ts`; `services/discovery/` is now an 8-line forwarder kept for legacy imports), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`), `services/marketplace-mcp/` (marketplace exposed as MCP tools to external AI agents — see `contributing/external-agent-marketplace-access.md`), `services/builtin-extensions/` (auto-stage built-in extensions like Dork Hub at startup so the discovery pass picks them up). API docs at `/api/docs`.
 
 **Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
 
@@ -118,6 +119,7 @@ Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obta
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` in production, `apps/server/.temp/.dork/` in dev). See `.claude/rules/dork-home.md`
 - `lib/resolve-root.ts` resolves the default working directory (`DORKOS_DEFAULT_CWD` env var or repo root)
 - Each app has its own `env.ts` with Zod-validated env vars
+- Persistent user config lives at `~/.dork/config.json` via `conf` v15.1.0 (`apps/server/src/services/core/config-manager.ts`). Zod is the authoritative schema; `z.toJSONSchema(UserConfigSchema)` bridges to conf's Ajv validation. Schema changes require a semver-keyed migration — see `contributing/configuration.md` → Schema Migrations and `.claude/skills/adding-config-fields/`. `/system:release` detects drift and offers to scaffold missing migrations before the tag is cut.
 - External MCP server at `/mcp` — Streamable HTTP transport, stateless, optional API key auth (`MCP_API_KEY`). Exposes all DorkOS tools to external agents (Claude Code, Cursor, Windsurf), including the 8 marketplace tools that let any MCP-compatible agent search, install, and scaffold DorkOS packages.
 
 ### Sessions
@@ -181,7 +183,7 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 | [`contributing/architecture.md`](contributing/architecture.md)                                           | Hexagonal architecture, Transport, DI, data flows, testing                            |
 | [`contributing/design-system.md`](contributing/design-system.md)                                         | Color palette, typography, spacing (8pt grid), motion specs                           |
 | [`contributing/api-reference.md`](contributing/api-reference.md)                                         | OpenAPI spec, Zod schemas, SSE streaming                                              |
-| [`contributing/configuration.md`](contributing/configuration.md)                                         | Config system, CLI commands, precedence                                               |
+| [`contributing/configuration.md`](contributing/configuration.md)                                         | Config system, CLI commands, precedence, schema migrations                            |
 | [`contributing/data-fetching.md`](contributing/data-fetching.md)                                         | TanStack Query patterns, mutations                                                    |
 | [`contributing/state-management.md`](contributing/state-management.md)                                   | Zustand vs TanStack Query decision guide                                              |
 | [`contributing/animations.md`](contributing/animations.md)                                               | Motion library patterns                                                               |

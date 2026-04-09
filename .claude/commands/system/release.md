@@ -198,6 +198,179 @@ There's nothing to release.
 
 **STOP** the release process.
 
+### Check 6: Config schema migration drift
+
+After the changelog check, verify that any changes to the user-config schema since the last release have a paired `conf` migration. Missing migrations silently break upgrades for existing users, so catch it here before the tag is cut.
+
+**Do this check inline in the main context (no subagent).** The diff is small (usually <500 lines) and the judgment calls ("is this an added field with a default? a rename? a type change?") benefit from full project knowledge.
+
+**Ordering with auto-detect mode:** Steps 1 and 2 below (detect drift, classify changes) can run in Phase 2 regardless of whether the version bump is explicit or auto-detected. Steps 3 and 4 (check for matching migration at target version, present findings, scaffold) require `NEXT_VERSION`, which is computed in Phase 1 for explicit bumps and in Phase 3 for auto-detect. **If auto-detect is in play, run Steps 1-2 here in Phase 2 and defer Steps 3-4 until immediately after Phase 3 version analysis, before Phase 4 confirmation.** For explicit bumps, run all four steps sequentially here.
+
+#### Step 1: Detect drift
+
+```bash
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+SCHEMA_DIFF=$(git diff "$LAST_TAG"..HEAD -- \
+  packages/shared/src/config-schema.ts \
+  apps/server/src/services/core/config-manager.ts)
+```
+
+If `SCHEMA_DIFF` is empty → skip the rest of this sub-phase, go to Phase 3.
+
+#### Step 2: Analyze the diff
+
+Read `apps/server/src/services/core/config-manager.ts` and extract:
+
+- The current `migrations` block keys (array of semver strings).
+- The current `projectVersion` string.
+
+Parse `SCHEMA_DIFF` and classify each hunk:
+
+- **Added field with a `.default(...)`** — `conf`'s defaults-merge handles this automatically on next instantiation. Usually no migration needed.
+- **Added field without a default** — will crash `USER_CONFIG_DEFAULTS` import. Block the release and tell the user to add a default.
+- **Removed field** — migration needed (clean up stale user data).
+- **Renamed field** (paired add + remove with similar name/type) — migration needed (move user's value from old key to new key).
+- **Type change** (e.g., `z.number()` → `z.string()`) — migration needed (transform stored values).
+- **Default value change** — **sometimes** needs a migration. If users can have set an explicit value, leave theirs alone. If the default was never user-settable, no migration needed.
+- **TSDoc-only / comment-only changes** — no migration needed.
+
+#### Step 3: Check for existing migration at the target version
+
+The target version is `NEXT_VERSION` (computed in Phase 1 for explicit bump type, or in Phase 3 for auto-detect — see the "Ordering with auto-detect mode" note at the top of this check).
+
+Check the `migrations` block for an entry keyed to `NEXT_VERSION`. If present, display its body verbatim so the user can confirm it's correct.
+
+#### Step 4: Present findings
+
+```markdown
+## Config Schema Migration Check
+
+**Since tag:** [last_tag]
+**Target version:** [next_version]
+**Schema files changed:**
+
+- packages/shared/src/config-schema.ts: [summary of hunks]
+- apps/server/src/services/core/config-manager.ts: [summary of hunks]
+
+**Detected changes:**
+
+- [classification]: [field name] ([reason])
+- ...
+
+**Migration required:** [yes/no]
+**Existing migration for v[next_version]:** [yes/no + body summary if yes]
+```
+
+Then follow one of three flows.
+
+#### Flow A — migration needed, none exists
+
+Draft a scaffolded migration based on the detected changes. Keep it idempotent (always guard with `store.has()`). Present it for user review:
+
+```typescript
+// Proposed migration (append to migrations block in apps/server/src/services/core/config-manager.ts)
+'[next_version]': (store) => {
+  // Auto-scaffolded during /system:release for v[next_version]
+  // Review carefully before accepting.
+  if (store.has('mesh.legacyMode')) {
+    store.delete('mesh.legacyMode');
+  }
+  // `server.timeout` added with a default — conf's defaults merge handles
+  // the new-key case automatically; no explicit migration needed for it.
+},
+```
+
+Use `AskUserQuestion` (mirror the changelog backfill style in Phase 2):
+
+```
+header: "Config Migration"
+question: "Schema changes detected without a matching migration. What would you like to do?"
+options:
+  - label: "Yes, add the scaffolded migration (Recommended)"
+    description: "Appends to CONFIG_MIGRATIONS in config-manager.ts and stages for the release commit"
+  - label: "Let me write it myself"
+    description: "Pauses the release so you can edit config-manager.ts manually, then re-run"
+  - label: "No migration needed (I know what I'm doing)"
+    description: "Skip. Use only for type-only or no-op schema changes"
+  - label: "Cancel release"
+    description: "Abort without making changes"
+```
+
+**On "Yes, add the scaffolded migration":**
+
+1. Use the Edit tool to append the migration entry to the module-level `CONFIG_MIGRATIONS` constant in `apps/server/src/services/core/config-manager.ts`, keyed to `[next_version]`. Do NOT touch `projectVersion` — it's sourced from `SERVER_VERSION` (see `lib/version.ts`) and updates automatically when `VERSION` and `package.json` are bumped in Phase 5.2 / 5.3 below.
+2. Add `apps/server/src/services/core/config-manager.ts` to the Phase 5.6 `git add` list (see below — it must be staged alongside VERSION/CHANGELOG/package.json).
+3. Log the scaffold action in the Phase 6 report: `✓ Auto-scaffolded config migration for v[next_version]`.
+4. Continue to Phase 3.
+
+**On "Let me write it myself":** exit cleanly with this message:
+
+```
+## Release Paused: Manual Migration Required
+
+Config schema changed since [last_tag] and a migration is needed. Exiting so you can edit:
+
+  apps/server/src/services/core/config-manager.ts
+
+Add a new migration entry keyed to '[next_version]' to the CONFIG_MIGRATIONS
+constant. You do not need to touch projectVersion — it's sourced from
+SERVER_VERSION automatically. See .claude/skills/adding-config-fields/SKILL.md
+for the full process.
+
+When finished, re-run /system:release.
+```
+
+**On "No migration needed (I know what I'm doing)":** log the acknowledgment and continue to Phase 3. Include in the Phase 6 report: `⚠ Config schema changed but user declined migration (acknowledged)`.
+
+**On "Cancel release":** exit with no changes.
+
+#### Flow B — migration needed, matching entry exists
+
+Show:
+
+```
+✓ Config schema changed since [last_tag] and migration for v[next_version] already exists in config-manager.ts.
+
+  Existing migration body:
+  [one-line summary of the existing migration's first 3 lines]
+
+Continuing.
+```
+
+Continue to Phase 3. No user interaction needed.
+
+#### Flow C — changes are safe (no migration needed)
+
+Applies when: all detected changes are "added field with default" or "TSDoc-only" or "comment-only".
+
+Show:
+
+```
+ℹ Config schema changed since [last_tag], but detected changes do not require a migration:
+
+  - [classification]: [field name] ([reason])
+
+Continuing.
+```
+
+Ask for a single confirmation before proceeding (in case the user's intent is different from the classifier's reading):
+
+```
+header: "Confirm"
+question: "Proceed without a migration?"
+options:
+  - label: "Yes, no migration needed (Recommended)"
+    description: "Continue to Phase 3"
+  - label: "No, I want to add one manually"
+    description: "Pause so you can edit config-manager.ts"
+```
+
+#### Known limitations
+
+- **Cross-file renames** (a field is moved from one nested object to another) surface as paired add + remove with different paths. The classifier may miss the connection. Use "Let me write it myself" if you spot this.
+- **Schemas imported from outside the watch list** won't show up in the diff. Today all DorkOS user-config sub-schemas (e.g., `LoggingConfigSchema`, `OnboardingStateSchema`) live inline in `packages/shared/src/config-schema.ts`, so this is a theoretical concern. If a future refactor moves a sub-schema into a separate file (e.g., `packages/shared/src/logging-config-schema.ts`), add that file to Step 1's `git diff` path list.
+- **The `context-isolator` subagent referenced in Phase 3 is missing from `.claude/agents/`.** This Check 6 intentionally avoids subagents for exactly that reason — do not add a Migration Analyzer subagent without first verifying the agent type exists.
+
 ---
 
 ## Phase 3: Version Analysis
@@ -522,7 +695,15 @@ The user can edit this post before the release commit. Add the blog post file to
 ### 5.6: Commit and Tag
 
 ```bash
-# Stage all version-related changes
+# Stage all version-related changes.
+#
+# If Phase 2 Check 6 scaffolded a config migration (Flow A "Yes, add the
+# scaffolded migration"), also stage the modified config files so they land
+# in the release commit. Check 6 tracks whether it modified these files;
+# include them conditionally:
+#
+#   apps/server/src/services/core/config-manager.ts
+#   packages/shared/src/config-schema.ts  (if its diff was part of the drift check)
 git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json blog/
 
 # Commit (use HEREDOC for message)
