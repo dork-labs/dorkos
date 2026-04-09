@@ -8,6 +8,10 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: dork-labs/dorkos
+  # Opt into Node 24 for every JavaScript-based action (checkout, docker/*,
+  # attest-build-provenance, etc.) ahead of GitHub's Sept 2026 hard cutoff for
+  # Node 20 runtime. See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   build-and-push:

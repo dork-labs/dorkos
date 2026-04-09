@@ -5,6 +5,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Opt into Node 24 for every JavaScript-based action (checkout, setup-node,
+# upload-artifact, download-artifact, etc.) ahead of GitHub's Sept 2026 hard
+# cutoff for Node 20 runtime. See the deprecation notice at
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build-tarball:
     runs-on: ubuntu-latest

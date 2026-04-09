@@ -7,6 +7,12 @@ on:
         description: 'Version to update to (e.g., 1.2.3). Leave empty to use latest from npm.'
         required: false
 
+# Opt into Node 24 for every JavaScript-based action (checkout) ahead of
+# GitHub's Sept 2026 hard cutoff for Node 20 runtime. See
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   update-formula:
     runs-on: ubuntu-latest
