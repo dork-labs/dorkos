@@ -28,7 +28,7 @@ describe('MarketplaceSourceManager', () => {
     const community = sources.find((s) => s.name === 'dorkos-community');
     expect(community).toMatchObject({
       name: 'dorkos-community',
-      source: 'https://github.com/dorkos/marketplace',
+      source: 'https://github.com/dork-labs/marketplace',
       enabled: true,
     });
     expect(typeof community?.addedAt).toBe('string');
@@ -174,5 +174,43 @@ describe('MarketplaceSourceManager', () => {
     // Confirm mkdir is robust against pre-existing dirs (recursive: true)
     await expect(access(dorkHome)).resolves.toBeUndefined();
     await expect(manager.list()).resolves.toHaveLength(2);
+  });
+
+  it('migrates legacy dorkos/marketplace URL to dork-labs/marketplace on read', async () => {
+    // Simulate an existing install where the user's marketplaces.json was
+    // seeded by an earlier build with the now-broken dorkos/marketplace URL.
+    const filePath = join(dorkHome, 'marketplaces.json');
+    const legacy = {
+      version: 1,
+      sources: [
+        {
+          name: 'dorkos-community',
+          source: 'https://github.com/dorkos/marketplace',
+          enabled: true,
+          addedAt: '2026-04-08T23:47:26.969Z',
+        },
+        {
+          name: 'my-custom',
+          source: 'https://github.com/me/my-marketplace',
+          enabled: true,
+          addedAt: '2026-04-08T23:47:26.969Z',
+        },
+      ],
+    };
+    await writeFile(filePath, JSON.stringify(legacy, null, 2), 'utf-8');
+
+    const sources = await manager.list();
+    const community = sources.find((s) => s.name === 'dorkos-community');
+    expect(community?.source).toBe('https://github.com/dork-labs/marketplace');
+
+    // Custom sources should pass through untouched.
+    const custom = sources.find((s) => s.name === 'my-custom');
+    expect(custom?.source).toBe('https://github.com/me/my-marketplace');
+
+    // Migration should be persisted so subsequent reads are no-ops.
+    const persisted = JSON.parse(await readFile(filePath, 'utf-8')) as typeof legacy;
+    expect(persisted.sources.find((s) => s.name === 'dorkos-community')?.source).toBe(
+      'https://github.com/dork-labs/marketplace'
+    );
   });
 });

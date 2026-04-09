@@ -32,13 +32,33 @@ type MarketplacesFile = z.infer<typeof MarketplacesFileSchema>;
 /** File name for the marketplaces config inside `dorkHome`. */
 const MARKETPLACES_FILENAME = 'marketplaces.json';
 
+/**
+ * Canonical URL for the Dork Labs community marketplace. Prior versions
+ * seeded `https://github.com/dorkos/marketplace` which was an ambiguous
+ * placeholder — the real repository lives under the `dork-labs` org.
+ * Kept as a module-level constant so the migration (see
+ * {@link migrateKnownBadSources}) and the default seed stay in sync.
+ */
+const DORKOS_COMMUNITY_URL = 'https://github.com/dork-labs/marketplace';
+
+/**
+ * Map of legacy marketplace source URLs that shipped in earlier DorkOS
+ * builds but were known-broken. When we encounter one of these in an
+ * existing `marketplaces.json`, we rewrite it in place the next time
+ * the file is read. Add entries as `[oldUrl, newUrl]` tuples — the
+ * migration runs once per read and no-ops when nothing matches.
+ */
+const LEGACY_SOURCE_MIGRATIONS: ReadonlyMap<string, string> = new Map([
+  ['https://github.com/dorkos/marketplace', DORKOS_COMMUNITY_URL],
+]);
+
 /** Default sources seeded the first time the file is read. */
 function buildDefaultSources(): MarketplaceSource[] {
   const now = new Date().toISOString();
   return [
     {
       name: 'dorkos-community',
-      source: 'https://github.com/dorkos/marketplace',
+      source: DORKOS_COMMUNITY_URL,
       enabled: true,
       addedAt: now,
     },
@@ -49,6 +69,23 @@ function buildDefaultSources(): MarketplaceSource[] {
       addedAt: now,
     },
   ];
+}
+
+/**
+ * Rewrite any sources whose URL matches a known-bad legacy URL. Returns
+ * the number of entries that were rewritten so the caller can decide
+ * whether to persist the file.
+ */
+function migrateKnownBadSources(sources: MarketplaceSource[]): number {
+  let rewrites = 0;
+  for (const source of sources) {
+    const replacement = LEGACY_SOURCE_MIGRATIONS.get(source.source);
+    if (replacement !== undefined) {
+      source.source = replacement;
+      rewrites += 1;
+    }
+  }
+  return rewrites;
 }
 
 /**
@@ -183,6 +220,16 @@ export class MarketplaceSourceManager {
     if (!parsed.success) {
       throw new Error(`Invalid marketplaces.json at ${this.filePath}: ${parsed.error.message}`);
     }
+
+    // One-shot migration: rewrite any known-bad legacy URLs so existing
+    // users pick up corrected defaults without needing to manually edit
+    // their marketplaces.json. Only persists when something actually
+    // changed to avoid churn on every read.
+    const rewrites = migrateKnownBadSources(parsed.data.sources);
+    if (rewrites > 0) {
+      await this.writeFile(parsed.data);
+    }
+
     return parsed.data;
   }
 

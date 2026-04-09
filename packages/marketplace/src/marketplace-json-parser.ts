@@ -28,8 +28,15 @@
  * @module @dorkos/marketplace/marketplace-json-parser
  */
 
-import { type ZodIssue } from 'zod';
-import { MarketplaceJsonSchema, type MarketplaceJson } from './marketplace-json-schema.js';
+import { z, type ZodIssue } from 'zod';
+import {
+  MarketplaceJsonSchema,
+  MarketplaceJsonEntrySchema,
+  MetadataSchema,
+  OwnerSchema,
+  type MarketplaceJson,
+  type MarketplaceJsonEntry,
+} from './marketplace-json-schema.js';
 import { DorkosSidecarSchema, type DorkosSidecar } from './dorkos-sidecar-schema.js';
 import { mergeMarketplace, type MergedMarketplaceEntry } from './merge-marketplace.js';
 
@@ -162,4 +169,150 @@ export function parseMarketplaceWithSidecar(
 
 function formatZodIssues(issues: readonly ZodIssue[]): string {
   return issues.map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`).join('; ');
+}
+
+/**
+ * A single plugin entry that could not be parsed by the lenient consumer.
+ * Returned from {@link parseMarketplaceJsonLenient} so callers can log or
+ * surface which entries were dropped without failing the whole document.
+ */
+export interface SkippedPlugin {
+  /** Index within the source document's `plugins` array. */
+  index: number;
+  /** Best-effort name recovered from the raw entry, if any. */
+  name?: string;
+  /** Human-readable validation error message. */
+  error: string;
+}
+
+/**
+ * Discriminated result of {@link parseMarketplaceJsonLenient}. On success,
+ * the parsed marketplace is returned alongside any individual plugin
+ * entries that were skipped due to per-entry validation failures.
+ */
+export type ParseMarketplaceJsonLenientResult =
+  | {
+      ok: true;
+      marketplace: MarketplaceJson;
+      skippedPlugins: SkippedPlugin[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Lenient top-level `marketplace.json` schema used for CONSUMPTION of
+ * upstream documents. Unlike {@link MarketplaceJsonSchema} (the authoring
+ * schema), this variant:
+ *
+ * 1. Does NOT reject reserved marketplace names (e.g., `claude-plugins-official`) —
+ *    the reserved list is a publishing policy, not a consumption policy. The
+ *    real Anthropic marketplace is literally named `claude-plugins-official`,
+ *    so consumers must be able to parse it.
+ * 2. Accepts plugin names with broader characters (letters, digits, dots,
+ *    hyphens) — matching what real upstream marketplaces ship today. The
+ *    strict kebab-case authoring regex is enforced elsewhere.
+ * 3. Models `plugins` as `z.unknown().array()` so individual entries can be
+ *    re-validated one-by-one in the lenient parser, allowing a single bad
+ *    entry to be skipped instead of failing the whole document.
+ */
+const LenientMarketplaceEnvelopeSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .regex(/^[a-z0-9][a-z0-9.-]*$/, 'Must be kebab-case (letters, digits, dots, hyphens)'),
+    owner: OwnerSchema,
+    metadata: MetadataSchema.optional(),
+    plugins: z.array(z.unknown()),
+  })
+  .passthrough();
+
+/**
+ * Lenient plugin entry schema used for per-entry re-validation in the
+ * consumption path. Identical to {@link MarketplaceJsonEntrySchema} except
+ * the name regex is relaxed to allow dots — real upstream marketplaces
+ * ship entries like `wordpress.com` that would otherwise fail.
+ */
+const LenientPluginEntrySchema = MarketplaceJsonEntrySchema.extend({
+  name: z
+    .string()
+    .min(1)
+    .regex(/^[a-z0-9][a-z0-9.-]*$/, 'Must be kebab-case (letters, digits, dots, hyphens)'),
+});
+
+/**
+ * Parse a `marketplace.json` string for CONSUMPTION (i.e., displaying
+ * upstream packages to the user), gracefully degrading on per-entry
+ * failures.
+ *
+ * Behavior differs from {@link parseMarketplaceJson}:
+ *
+ * - Accepts reserved marketplace names (the reserved list applies only to
+ *   publishing, not consuming).
+ * - Accepts plugin names that include dots (e.g., `wordpress.com`), matching
+ *   what real upstream marketplaces ship.
+ * - A single invalid plugin entry is SKIPPED and surfaced in
+ *   `skippedPlugins` rather than failing the whole document. Only a
+ *   broken top-level envelope (missing `name`/`owner`/`plugins`) is fatal.
+ *
+ * Use this parser in code paths that fetch untrusted upstream content —
+ * package fetcher, marketplace browse UI, install flows. Use the strict
+ * {@link parseMarketplaceJson} for authoring paths (scaffolder, CLI
+ * validators, local file:// publishing).
+ *
+ * @param content - Raw JSON string from a remote `marketplace.json`.
+ * @returns Parsed marketplace + skipped entries, or a fatal envelope error.
+ */
+export function parseMarketplaceJsonLenient(content: string): ParseMarketplaceJsonLenientResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  const envelope = LenientMarketplaceEnvelopeSchema.safeParse(parsed);
+  if (!envelope.success) {
+    return {
+      ok: false,
+      error: `marketplace.json validation failed: ${formatZodIssues(envelope.error.issues)}`,
+    };
+  }
+
+  const validPlugins: MarketplaceJsonEntry[] = [];
+  const skippedPlugins: SkippedPlugin[] = [];
+
+  envelope.data.plugins.forEach((rawEntry, index) => {
+    const entryResult = LenientPluginEntrySchema.safeParse(rawEntry);
+    if (entryResult.success) {
+      validPlugins.push(entryResult.data as MarketplaceJsonEntry);
+      return;
+    }
+    const recoveredName =
+      rawEntry !== null && typeof rawEntry === 'object' && 'name' in rawEntry
+        ? String((rawEntry as { name: unknown }).name)
+        : undefined;
+    skippedPlugins.push({
+      index,
+      name: recoveredName,
+      error: formatZodIssues(entryResult.error.issues),
+    });
+  });
+
+  // Reconstruct the typed document with only the valid plugins. The
+  // authoring schema's name regex would reject some valid upstream names,
+  // so we cast through `unknown` — the lenient envelope + per-entry
+  // validation above already guarantees shape safety.
+  const marketplace = {
+    ...envelope.data,
+    plugins: validPlugins,
+  } as unknown as MarketplaceJson;
+
+  return {
+    ok: true,
+    marketplace,
+    skippedPlugins,
+  };
 }

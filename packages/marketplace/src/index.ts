@@ -69,11 +69,14 @@ export {
 // Parser (browser-safe — no fs)
 export {
   parseMarketplaceJson,
+  parseMarketplaceJsonLenient,
   parseDorkosSidecar,
   parseMarketplaceWithSidecar,
   type ParseMarketplaceResult,
+  type ParseMarketplaceJsonLenientResult,
   type ParseDorkosSidecarResult,
   type ParseMarketplaceWithSidecarResult,
+  type SkippedPlugin,
 } from './marketplace-json-parser.js';
 
 // Types & helpers

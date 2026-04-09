@@ -29,6 +29,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import {
   parseDorkosSidecar,
   parseMarketplaceJson,
+  parseMarketplaceJsonLenient,
   resolvePluginSource,
   type DorkosSidecar,
   type MarketplaceJson,
@@ -275,10 +276,18 @@ export class PackageFetcher {
     }
     const url = resolveMarketplaceJsonUrl(source.source);
     try {
-      const json = await this.fetchAndParseMarketplaceJson(url);
+      const json = await this.fetchAndParseMarketplaceJson(url, source.name);
       await this.cache.writeMarketplace(source.name, json);
       return json;
     } catch (err) {
+      // Surface the attempted URL alongside the marketplace name so it's
+      // obvious from the log whether the failure is a wrong URL (404 on a
+      // typo'd org) or a genuine upstream outage.
+      this.logger.warn('package-fetcher: marketplace.json fetch failed', {
+        marketplaceName: source.name,
+        url,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return this.serveStaleMarketplace(source.name, err);
     }
   }
@@ -377,16 +386,38 @@ export class PackageFetcher {
     return parsed.marketplace;
   }
 
-  /** GET the marketplace.json URL and parse it. Throws on any failure. */
-  private async fetchAndParseMarketplaceJson(url: string): Promise<MarketplaceJson> {
+  /**
+   * GET the marketplace.json URL and parse it via the lenient consumption
+   * parser. Throws on network failure or a broken top-level envelope.
+   * Individual plugin entries that fail validation are SKIPPED (not
+   * fatal) and logged with the marketplace name, attempted URL, and
+   * the offending entry identity so future debugging is self-serve.
+   */
+  private async fetchAndParseMarketplaceJson(
+    url: string,
+    marketplaceName: string
+  ): Promise<MarketplaceJson> {
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`marketplace.json fetch failed: ${response.status} ${response.statusText}`);
     }
     const raw = await response.text();
-    const parsed = parseMarketplaceJson(raw);
+    const parsed = parseMarketplaceJsonLenient(raw);
     if (!parsed.ok) {
       throw new Error(parsed.error);
+    }
+    if (parsed.skippedPlugins.length > 0) {
+      this.logger.warn('package-fetcher: skipped invalid plugin entries', {
+        marketplaceName,
+        url,
+        skippedCount: parsed.skippedPlugins.length,
+        validCount: parsed.marketplace.plugins.length,
+        skippedPlugins: parsed.skippedPlugins.map((p) => ({
+          index: p.index,
+          name: p.name ?? '<unknown>',
+          error: p.error,
+        })),
+      });
     }
     return parsed.marketplace;
   }

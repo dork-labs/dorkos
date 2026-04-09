@@ -496,26 +496,35 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
  * single flat list, tagging each entry with its origin marketplace name.
  * A single marketplace fetch failure is logged and skipped so one broken
  * source never blocks the whole listing.
+ *
+ * On completion, logs an info summary of `source → plugin count` for
+ * every source — including zero-count sources — so the "empty results"
+ * case is self-explanatory in logs without having to grep for warnings.
  */
 async function aggregatePackages(
   sources: MarketplaceSource[],
   fetcher: PackageFetcher
 ): Promise<AggregatedPackage[]> {
   const results: AggregatedPackage[] = [];
+  const breakdown: Record<string, number | string> = {};
   for (const source of sources) {
     try {
       const json = await fetcher.fetchMarketplaceJson(source);
       for (const entry of json.plugins) {
         results.push({ ...entry, marketplace: source.name });
       }
+      breakdown[source.name] = json.plugins.length;
     } catch (err) {
-      logger.warn(
-        `[Marketplace] Failed to fetch marketplace.json for ${source.name}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      breakdown[source.name] = `error: ${message}`;
+      logger.warn(`[Marketplace] Failed to fetch marketplace.json for ${source.name}: ${message}`);
     }
   }
+  logger.info('[Marketplace] Aggregated packages from enabled sources', {
+    totalPlugins: results.length,
+    sourceCount: sources.length,
+    perSource: breakdown,
+  });
   return results;
 }
 
