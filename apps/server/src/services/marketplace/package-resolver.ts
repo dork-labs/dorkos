@@ -54,6 +54,13 @@ export interface ResolvedPackageSource {
    * Only consulted by the source resolver for relative-path entries.
    */
   pluginRoot?: string;
+  /**
+   * The raw marketplace source URL (e.g. `https://github.com/dork-labs/marketplace`
+   * or `file:///path/to/personal-marketplace`). Used by the installer to
+   * construct a `git-subdir` source for remote marketplace packages whose
+   * `pluginSource` is a relative-path string.
+   */
+  marketplaceSourceUrl?: string;
   /** Absolute local path when `kind === 'local'`. */
   localPath?: string;
   /** Optional version pin (`#sha` or trailing `@version` syntax — not v1). */
@@ -209,6 +216,7 @@ export class PackageResolver {
       marketplaceName,
       pluginSource: entry.source,
       pluginRoot: cached.json.metadata?.pluginRoot,
+      marketplaceSourceUrl: source.source,
       gitUrl: legacyGitUrlFromSource(entry.source),
     };
   }
@@ -220,8 +228,12 @@ export class PackageResolver {
    */
   private async resolveBareName(packageName: string): Promise<ResolvedPackageSource> {
     const sources = await this.sourceManager.list();
-    const hits: { marketplaceName: string; entry: MarketplaceJsonEntry; pluginRoot?: string }[] =
-      [];
+    const hits: {
+      marketplaceName: string;
+      entry: MarketplaceJsonEntry;
+      pluginRoot?: string;
+      sourceUrl: string;
+    }[] = [];
 
     for (const source of sources) {
       if (!source.enabled) {
@@ -237,6 +249,7 @@ export class PackageResolver {
           marketplaceName: source.name,
           entry,
           pluginRoot: cached.json.metadata?.pluginRoot,
+          sourceUrl: source.source,
         });
       }
     }
@@ -260,6 +273,7 @@ export class PackageResolver {
       marketplaceName: hit.marketplaceName,
       pluginSource: hit.entry.source,
       pluginRoot: hit.pluginRoot,
+      marketplaceSourceUrl: hit.sourceUrl,
       gitUrl: legacyGitUrlFromSource(hit.entry.source),
     };
   }

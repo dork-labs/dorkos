@@ -154,7 +154,7 @@ function buildDeps(): {
   logger: Logger;
 } {
   const resolver = { resolve: vi.fn() };
-  const fetcher = { fetchFromGit: vi.fn() };
+  const fetcher = { fetchFromGit: vi.fn(), fetchPackage: vi.fn() };
   const previewBuilder = { build: vi.fn() };
   const pluginFlow = { install: vi.fn() };
   const agentFlow = { install: vi.fn() };
@@ -220,6 +220,33 @@ function wireGitResolution(
   };
   resolver.resolve.mockResolvedValue(resolved);
   fetcher.fetchFromGit.mockResolvedValue({
+    path: fetchedPath,
+    commitSha: 'abc123',
+    fromCache: false,
+  });
+}
+
+/**
+ * Configure a resolver + fetcher combo for a marketplace package with a
+ * relative-path pluginSource (the monorepo pattern from ADR-0237).
+ */
+function wireRelativePathResolution(
+  resolver: { resolve: ReturnType<typeof vi.fn> },
+  fetcher: { fetchPackage: ReturnType<typeof vi.fn> },
+  packageName: string,
+  marketplaceName: string,
+  fetchedPath = '/tmp/cached-pkg'
+): void {
+  const resolved: ResolvedPackageSource = {
+    kind: 'marketplace',
+    packageName,
+    marketplaceName,
+    pluginSource: `./plugins/${packageName}`,
+    pluginRoot: './plugins',
+    marketplaceSourceUrl: 'https://github.com/dork-labs/marketplace',
+  };
+  resolver.resolve.mockResolvedValue(resolved);
+  fetcher.fetchPackage.mockResolvedValue({
     path: fetchedPath,
     commitSha: 'abc123',
     fromCache: false,
@@ -316,6 +343,72 @@ describe('MarketplaceInstaller', () => {
       await installer.install({ name: 'git-plugin', marketplace: 'dorkos-community', force: true });
 
       expect(fetcher.fetchFromGit).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
+    });
+
+    it('converts relative-path pluginSource to git-subdir for remote marketplaces', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+
+      wireRelativePathResolution(
+        resolver,
+        fetcher,
+        'code-reviewer',
+        'dorkos-community',
+        '/tmp/cached/code-reviewer'
+      );
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'code-reviewer' });
+
+      expect(fetcher.fetchPackage).toHaveBeenCalledWith({
+        packageName: 'code-reviewer',
+        source: {
+          source: 'git-subdir',
+          url: 'https://github.com/dork-labs/marketplace',
+          path: 'plugins/code-reviewer',
+        },
+        marketplaceRoot: undefined,
+        pluginRoot: './plugins',
+        force: undefined,
+      });
+      expect(fetcher.fetchFromGit).not.toHaveBeenCalled();
+      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/cached/code-reviewer');
+    });
+
+    it('uses relative-path resolver for file:// marketplace sources', async () => {
+      const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'my-plugin' });
+
+      const resolved: ResolvedPackageSource = {
+        kind: 'marketplace',
+        packageName: 'my-plugin',
+        marketplaceName: 'personal',
+        pluginSource: './my-plugin',
+        marketplaceSourceUrl: 'file:///Users/test/.dork/personal-marketplace',
+      };
+      resolver.resolve.mockResolvedValue(resolved);
+      fetcher.fetchPackage.mockResolvedValue({
+        path: '/Users/test/.dork/personal-marketplace/my-plugin',
+        commitSha: 'relative-path',
+        fromCache: true,
+      });
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+      await installer.install({ name: 'my-plugin' });
+
+      expect(fetcher.fetchPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: './my-plugin',
+          marketplaceRoot: '/Users/test/.dork/personal-marketplace',
+        })
+      );
+      expect(fetcher.fetchFromGit).not.toHaveBeenCalled();
     });
 
     it('throws InvalidPackageError on validation failure and reports failure telemetry', async () => {

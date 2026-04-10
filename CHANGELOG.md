@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Migrate stagePackage to fetchPackage dispatcher for relative-path sources
 - Prevent stale ToolApproval card after input-zone approval
 - Align ModelConfigPopover with Design B mockup
 - Filter internal adapters from channels tab and inline setup wizard

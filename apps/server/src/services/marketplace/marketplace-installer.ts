@@ -373,8 +373,8 @@ export class MarketplaceInstaller implements InstallerLike {
 
   /**
    * Stage the resolved package on disk. Local packages are used in place;
-   * git-backed packages are cloned into the content-addressable cache via
-   * {@link PackageFetcher.fetchFromGit}.
+   * remote packages are fetched via the source-aware dispatcher in
+   * {@link PackageFetcher.fetchPackage}.
    *
    * @internal
    */
@@ -389,16 +389,64 @@ export class MarketplaceInstaller implements InstallerLike {
       return resolved.localPath;
     }
 
-    if (!resolved.gitUrl) {
-      throw new Error(`Resolved ${resolved.kind} package missing gitUrl`);
+    // Modern path: dispatch via pluginSource (handles all five source types).
+    if (resolved.pluginSource !== undefined) {
+      const source = this.buildFetchableSource(resolved);
+      const fetched = await this.deps.fetcher.fetchPackage({
+        packageName: resolved.packageName,
+        source,
+        marketplaceRoot: resolved.marketplaceRoot,
+        pluginRoot: resolved.pluginRoot,
+        force: req.force,
+      });
+      return fetched.path;
     }
 
+    // Legacy path: bare gitUrl (deprecated — kept for backward compat with
+    // pre-superset install inputs that resolve directly to a git URL).
+    if (!resolved.gitUrl) {
+      throw new Error(`Resolved ${resolved.kind} package missing gitUrl and pluginSource`);
+    }
     const fetched = await this.deps.fetcher.fetchFromGit({
       packageName: resolved.packageName,
       gitUrl: resolved.gitUrl,
       force: req.force,
     });
     return fetched.path;
+  }
+
+  /**
+   * Build a fetchable {@link PluginSource} from the resolved descriptor.
+   *
+   * For relative-path sources (`typeof pluginSource === 'string'`) from
+   * remote marketplaces, converts to a `git-subdir` source so the fetcher
+   * performs a sparse clone of just the package subdirectory rather than
+   * requiring a full marketplace clone. For `file://` marketplaces, the
+   * source is passed through and the fetcher resolves it locally via
+   * `marketplaceRoot`.
+   *
+   * @internal
+   */
+  private buildFetchableSource(resolved: ResolvedPackageSource): PluginSource {
+    if (typeof resolved.pluginSource !== 'string') {
+      return resolved.pluginSource!;
+    }
+
+    // For file:// marketplace sources, the relative-path resolver can
+    // resolve directly against the local filesystem.
+    const sourceUrl = resolved.marketplaceSourceUrl;
+    if (!sourceUrl || sourceUrl.startsWith('file://')) {
+      // Populate marketplaceRoot from the file:// URL for the fetcher.
+      if (sourceUrl) {
+        resolved.marketplaceRoot = new URL(sourceUrl).pathname;
+      }
+      return resolved.pluginSource;
+    }
+
+    // Remote marketplace: convert relative-path to a git-subdir source.
+    // This lets the fetcher sparse-clone just the package subdirectory.
+    const subpath = resolveRelativeSubpath(resolved.pluginSource, resolved.pluginRoot);
+    return { source: 'git-subdir', url: sourceUrl, path: subpath };
   }
 
   /**
@@ -516,4 +564,22 @@ async function findInstallRootFromPreservedPath(preservedPath: string): Promise<
     );
   }
   return segments.slice(0, dorkIdx).join(path.sep);
+}
+
+/**
+ * Resolve a relative-path `pluginSource` string into the subdirectory path
+ * within the marketplace repo. Mirrors the logic in
+ * `@dorkos/marketplace/source-resolver#resolveRelativePath`:
+ *
+ * - `./plugins/code-reviewer` → `plugins/code-reviewer` (strip `./`)
+ * - `code-reviewer` (bare name) + `pluginRoot: './plugins'` → `plugins/code-reviewer`
+ *
+ * @internal
+ */
+function resolveRelativeSubpath(source: string, pluginRoot?: string): string {
+  if (source.startsWith('./')) {
+    return source.slice(2);
+  }
+  const normalized = pluginRoot ? pluginRoot.replace(/^\.\//, '').replace(/\/+$/, '') : '';
+  return normalized ? `${normalized}/${source}` : source;
 }
