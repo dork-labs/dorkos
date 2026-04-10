@@ -277,7 +277,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     }
     // At this point part.type === 'tool_call' — all other variants have been handled above.
     const toolPart = part;
-    if (toolPart.interactiveType === 'approval') {
+    if (toolPart.interactiveType === 'approval' && toolPart.status === 'pending') {
       if (toolPart.toolCallId === inputZoneToolCallId) {
         return (
           <CompactPendingRow

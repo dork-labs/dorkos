@@ -145,13 +145,14 @@ export function ToolApproval({
     return () => clearInterval(interval);
   }, [timeoutMs, approvalStartedAt, decided]);
 
-  // Timeout detection — transition to denied state
+  // Timeout detection — transition to denied state and clear active interaction
   useEffect(() => {
     if (secondsRemaining === 0 && !decided) {
       timedOut.current = true;
       setDecided('denied');
+      onDecided?.();
     }
-  }, [secondsRemaining, decided]);
+  }, [secondsRemaining, decided, onDecided]);
 
   // Screen reader announcements at threshold crossings
   useEffect(() => {
@@ -251,7 +252,7 @@ export function ToolApproval({
         handleDeny();
       },
     }),
-    [handleApprove, handleDeny]
+    [handleApprove, handleAlwaysAllow, handleDeny]
   );
 
   if (decided) {
