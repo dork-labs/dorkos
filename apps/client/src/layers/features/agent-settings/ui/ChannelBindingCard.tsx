@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { FlaskConical, Loader2, MoreHorizontal, Pause, Play } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -17,12 +17,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
 import { buildPreviewSentence } from '@/layers/features/mesh/lib/build-preview-sentence';
-import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import type { AdapterBinding, BindingTestResult } from '@dorkos/shared/relay-schemas';
 
 /** The four states exposed by ChannelBindingCard (transient states collapsed to 'connecting'). */
 export type CardAdapterState = 'connected' | 'disconnected' | 'error' | 'connecting';
@@ -67,6 +68,12 @@ interface ChannelBindingCardProps {
   errorMessage?: string;
   /** Pre-resolved display name for the binding's chatId, if any. */
   chatDisplayName?: string;
+  /** ISO timestamp of the last observed inbound message for this binding's adapter instance. */
+  lastMessageAt?: string;
+  /** Called when the user toggles pause/resume. */
+  onTogglePause: (enabled: boolean) => void;
+  /** Called when the user runs a test. Returns a promise for the UI to await. */
+  onTest: () => Promise<BindingTestResult>;
   /** Called when the user clicks Edit. */
   onEdit: () => void;
   /** Called when the user confirms removal. */
@@ -91,10 +98,24 @@ export function ChannelBindingCard({
   adapterState,
   errorMessage,
   chatDisplayName,
+  lastMessageAt,
+  onTogglePause,
+  onTest,
   onEdit,
   onRemove,
 }: ChannelBindingCardProps) {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [isTestPending, setIsTestPending] = useState(false);
+
+  const isPaused = binding.enabled === false;
+
+  // Force re-render every 60s so the relative time label stays fresh.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!lastMessageAt || isPaused) return;
+    const interval = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(interval);
+  }, [lastMessageAt, isPaused]);
 
   // Concatenate channel name + chat display name with an em-dash when present.
   const primaryText = chatDisplayName ? `${channelName} — ${chatDisplayName}` : channelName;
@@ -109,11 +130,27 @@ export function ChannelBindingCard({
   const isRestricted = binding.canInitiate || !binding.canReply || !binding.canReceive;
   const restrictionDetail = isRestricted ? buildRestrictionDetail(binding) : '';
 
+  const activityText = useMemo(() => {
+    if (isPaused) return 'Paused \u2014 no messages routing';
+    if (!lastMessageAt) return 'No recent activity';
+    return `Last received ${formatRelativeTime(lastMessageAt).toLowerCase()}`;
+  }, [isPaused, lastMessageAt]);
+
+  const handleTest = async () => {
+    setIsTestPending(true);
+    try {
+      await onTest();
+    } finally {
+      setIsTestPending(false);
+    }
+  };
+
   return (
     <div
       className={cn(
         'relative rounded-xl border px-4 py-3 transition-colors',
-        adapterState === 'error' && 'border-red-500/50 bg-red-500/[0.02]'
+        adapterState === 'error' && !isPaused && 'border-red-500/50 bg-red-500/[0.02]',
+        isPaused && 'opacity-60'
       )}
     >
       <div className="flex items-start gap-3">
@@ -123,19 +160,33 @@ export function ChannelBindingCard({
           <span
             className={cn(
               'ring-background absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2',
-              STATE_DOT_CLASS[adapterState]
+              isPaused ? 'bg-muted-foreground/40' : STATE_DOT_CLASS[adapterState]
             )}
           />
         </div>
 
         {/* Text content */}
         <div className="min-w-0 flex-1">
-          <span className="truncate text-sm font-medium">{primaryText}</span>
-          {adapterState === 'error' && errorMessage ? (
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{primaryText}</span>
+            {isPaused && (
+              <Badge variant="secondary" className="text-xs">
+                Paused
+              </Badge>
+            )}
+          </div>
+          {isPaused ? (
+            <p className="text-muted-foreground mt-1 text-xs">{activityText}</p>
+          ) : adapterState === 'error' && errorMessage ? (
             <p className="text-xs text-red-600 dark:text-red-400">{errorMessage}</p>
-          ) : previewSentence ? (
-            <p className="text-muted-foreground truncate text-xs italic">{previewSentence}</p>
-          ) : null}
+          ) : (
+            <>
+              {previewSentence && (
+                <p className="text-muted-foreground truncate text-xs italic">{previewSentence}</p>
+              )}
+              <p className="text-muted-foreground mt-1 text-xs">{activityText}</p>
+            </>
+          )}
         </div>
 
         {/* Restricted pill — shown only when permissions deviate from defaults */}
@@ -159,6 +210,29 @@ export function ChannelBindingCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleTest} disabled={isTestPending || isPaused}>
+              {isTestPending ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <FlaskConical className="mr-2 size-4" />
+              )}
+              Send test
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onTogglePause(!binding.enabled)}>
+              {isPaused ? (
+                <>
+                  <Play className="mr-2 size-4" />
+                  Resume
+                </>
+              ) : (
+                <>
+                  <Pause className="mr-2 size-4" />
+                  Pause
+                </>
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setShowRemoveConfirm(true)}

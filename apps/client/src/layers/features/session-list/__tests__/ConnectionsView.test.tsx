@@ -183,6 +183,7 @@ function makeBinding(adapterId: string, agentId: string): AdapterBinding {
     sessionStrategy: 'per-chat',
     label: '',
     permissionMode: 'acceptEdits',
+    enabled: true,
     canInitiate: false,
     canReply: true,
     canReceive: true,

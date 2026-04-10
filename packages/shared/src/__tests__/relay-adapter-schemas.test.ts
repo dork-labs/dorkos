@@ -37,6 +37,54 @@ describe('AdapterBindingSchema', () => {
   });
 });
 
+describe('AdapterBindingSchema — enabled field', () => {
+  const baseBinding = {
+    id: '00000000-0000-0000-0000-000000000000',
+    adapterId: 'telegram-bot-1',
+    agentId: '01ABC123',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  it('defaults enabled to true when not provided', () => {
+    const result = AdapterBindingSchema.safeParse(baseBinding);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.enabled).toBe(true);
+    }
+  });
+
+  it('round-trips enabled: false', () => {
+    const result = AdapterBindingSchema.safeParse({
+      ...baseBinding,
+      enabled: false,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.enabled).toBe(false);
+    }
+  });
+
+  it('round-trips enabled: true', () => {
+    const result = AdapterBindingSchema.safeParse({
+      ...baseBinding,
+      enabled: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.enabled).toBe(true);
+    }
+  });
+
+  it('rejects non-boolean enabled value', () => {
+    const result = AdapterBindingSchema.safeParse({
+      ...baseBinding,
+      enabled: 'yes',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('ConfigFieldSchema', () => {
   const baseField = {
     key: 'token',

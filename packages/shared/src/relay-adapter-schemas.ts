@@ -298,6 +298,15 @@ export const AdapterBindingSchema = z
     sessionStrategy: SessionStrategySchema.default('per-chat'),
     label: z.string().default(''),
     permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
+    /**
+     * When false, the binding is paused — the router skips it for both
+     * inbound delivery and agent-initiated publishes. The binding remains
+     * persisted so the user can resume it without reconfiguration.
+     *
+     * Race-condition note: pausing takes effect at the next routing decision.
+     * In-flight messages already past the router filter are not retroactively cancelled.
+     */
+    enabled: z.boolean().default(true),
     canInitiate: z.boolean().default(false),
     canReply: z.boolean().default(true),
     canReceive: z.boolean().default(true),
@@ -388,3 +397,30 @@ export const AdapterConfigUpdateSchema = z
   .openapi('AdapterConfigUpdate');
 
 export type AdapterConfigUpdate = z.infer<typeof AdapterConfigUpdateSchema>;
+
+// === Binding Test Result ===
+
+/**
+ * Response shape for `POST /api/relay/bindings/:id/test`.
+ *
+ * Returned by the synthetic test probe endpoint. The probe exercises the
+ * full binding resolution pipeline without invoking the agent runtime.
+ */
+export const BindingTestResultSchema = z
+  .object({
+    /** Whether the synthetic test probe succeeded in resolving a binding. */
+    ok: z.boolean(),
+    /** Whether the probe resolved to a valid binding. */
+    resolved: z.boolean(),
+    /** Round-trip latency in milliseconds. */
+    latencyMs: z.number(),
+    /** Agent ID that would have received the message if this were real. */
+    wouldDeliverTo: z.string().optional(),
+    /** Human-readable failure reason when ok=false. */
+    reason: z.string().optional(),
+    /** Human-readable detail when ok=true. */
+    details: z.string().optional(),
+  })
+  .openapi('BindingTestResult');
+
+export type BindingTestResult = z.infer<typeof BindingTestResultSchema>;

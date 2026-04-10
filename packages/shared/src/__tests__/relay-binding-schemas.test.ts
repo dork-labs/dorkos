@@ -37,7 +37,7 @@ describe('AdapterBindingSchema', () => {
   };
 
   it('validates a complete binding', () => {
-    expect(AdapterBindingSchema.parse(validBinding)).toEqual(validBinding);
+    expect(AdapterBindingSchema.parse(validBinding)).toEqual({ ...validBinding, enabled: true });
   });
 
   it('applies permission defaults when not provided', () => {
@@ -66,6 +66,16 @@ describe('AdapterBindingSchema', () => {
     expect(() => AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'yolo' })).toThrow();
   });
 
+  it('defaults enabled to true when field is absent', () => {
+    const parsed = AdapterBindingSchema.parse(validBinding);
+    expect(parsed.enabled).toBe(true);
+  });
+
+  it('preserves enabled: false when explicitly set', () => {
+    const parsed = AdapterBindingSchema.parse({ ...validBinding, enabled: false });
+    expect(parsed.enabled).toBe(false);
+  });
+
   it('accepts optional chatId and channelType', () => {
     const binding = {
       ...validBinding,
@@ -73,7 +83,7 @@ describe('AdapterBindingSchema', () => {
       channelType: 'dm',
       sessionStrategy: 'per-user',
     };
-    expect(AdapterBindingSchema.parse(binding)).toEqual(binding);
+    expect(AdapterBindingSchema.parse(binding)).toEqual({ ...binding, enabled: true });
   });
 
   it('rejects invalid UUID for id', () => {
@@ -92,7 +102,7 @@ describe('AdapterBindingSchema', () => {
 });
 
 describe('CreateBindingRequestSchema', () => {
-  it('applies defaults for sessionStrategy, label, permissionMode, and permissions', () => {
+  it('applies defaults for sessionStrategy, label, permissionMode, enabled, and permissions', () => {
     const input = {
       adapterId: 'telegram-main',
       agentId: 'agent-1',
@@ -101,6 +111,7 @@ describe('CreateBindingRequestSchema', () => {
     expect(parsed.sessionStrategy).toBe('per-chat');
     expect(parsed.label).toBe('');
     expect(parsed.permissionMode).toBe('acceptEdits');
+    expect(parsed.enabled).toBe(true);
     expect(parsed.canInitiate).toBe(false);
     expect(parsed.canReply).toBe(true);
     expect(parsed.canReceive).toBe(true);
@@ -144,6 +155,7 @@ describe('BindingListResponseSchema', () => {
           sessionStrategy: 'per-chat',
           label: '',
           permissionMode: 'acceptEdits',
+          enabled: true,
           canInitiate: false,
           canReply: true,
           canReceive: true,
@@ -170,6 +182,7 @@ describe('BindingResponseSchema', () => {
         sessionStrategy: 'per-chat',
         label: '',
         permissionMode: 'acceptEdits',
+        enabled: true,
         canInitiate: false,
         canReply: true,
         canReceive: true,

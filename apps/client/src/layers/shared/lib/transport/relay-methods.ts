@@ -12,6 +12,7 @@ import type {
   AdapterBinding,
   CreateBindingRequest,
   ObservedChat,
+  BindingTestResult,
 } from '@dorkos/shared/relay-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 
@@ -240,6 +241,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
           | 'canInitiate'
           | 'canReply'
           | 'canReceive'
+          | 'enabled'
         >
       >
     ): Promise<AdapterBinding> {
@@ -251,6 +253,14 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
           body: JSON.stringify(updates),
         }
       ).then((r) => r.binding);
+    },
+
+    testBinding(bindingId: string): Promise<BindingTestResult> {
+      return fetchJSON<BindingTestResult>(
+        baseUrl,
+        `/relay/bindings/${encodeURIComponent(bindingId)}/test`,
+        { method: 'POST' }
+      );
     },
   };
 }

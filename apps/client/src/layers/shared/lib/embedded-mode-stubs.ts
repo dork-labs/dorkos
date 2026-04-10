@@ -14,6 +14,7 @@ import type {
   CatalogEntry,
   AdapterBinding,
   CreateBindingRequest,
+  BindingTestResult,
 } from '@dorkos/shared/relay-schemas';
 import type {
   AgentManifest,
@@ -248,9 +249,14 @@ export const bindingStubs = {
         | 'canInitiate'
         | 'canReply'
         | 'canReceive'
+        | 'enabled'
       >
     >
   ): Promise<AdapterBinding> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  },
+
+  async testBinding(_bindingId: string): Promise<BindingTestResult> {
     throw new Error('Relay bindings are not supported in embedded mode');
   },
 };

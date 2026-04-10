@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Channels tab functionality — pause, test, activity metadata
 - Channels tab visual polish — brand icons, progressive disclosure, humanized copy
 
 ### Changed

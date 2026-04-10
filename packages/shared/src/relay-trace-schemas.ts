@@ -53,6 +53,41 @@ export const ReliabilityConfigSchema = z
 
 export type ReliabilityConfig = z.infer<typeof ReliabilityConfigSchema>;
 
+// === Trace Metadata ===
+
+/**
+ * Typed schema for the JSON metadata attached to trace spans.
+ *
+ * The `metadata` column in `TraceSpanSchema` stores this as a serialized
+ * JSON string. Use this schema to parse/validate the structured payload.
+ *
+ * Known fields are explicitly typed; additional adapter-specific fields
+ * are passed through via `.passthrough()`.
+ */
+export const TraceMetadataSchema = z
+  .object({
+    /** Adapter instance ID that produced this trace. */
+    adapterId: z.string().optional(),
+    /** Platform chat/conversation ID from the adapter. */
+    chatId: z.string().optional(),
+    /** Platform user ID from the adapter. */
+    userId: z.string().optional(),
+    /**
+     * When true, this message is a synthetic test probe — the router must
+     * short-circuit before agent invocation.
+     *
+     * **Security:** This flag must NEVER be accepted from inbound adapter
+     * messages. It is only set by the server-side test route
+     * (`POST /api/relay/bindings/:id/test`). Adapters must sanitize
+     * (strip) this field from any externally received payload.
+     */
+    isSyntheticTest: z.boolean().optional(),
+  })
+  .passthrough()
+  .openapi('TraceMetadata');
+
+export type TraceMetadata = z.infer<typeof TraceMetadataSchema>;
+
 // === Trace & Metrics ===
 
 export const TraceSpanStatusSchema = z

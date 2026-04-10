@@ -551,6 +551,7 @@ export class DirectTransport implements Transport {
   createBinding = bindingStubs.createBinding;
   deleteBinding = bindingStubs.deleteBinding;
   updateBinding = bindingStubs.updateBinding;
+  testBinding = bindingStubs.testBinding;
 
   listActivityEvents = activityStubs.listActivityEvents;
 

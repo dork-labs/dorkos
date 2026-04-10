@@ -28,6 +28,16 @@ vi.mock('@/layers/features/mesh/lib/build-preview-sentence', () => ({
   buildPreviewSentence: vi.fn(() => 'One thread for each conversation'),
 }));
 
+// Mock formatRelativeTime so tests are time-independent.
+// We mock the source module so the barrel re-export picks it up without disrupting cn/other utils.
+vi.mock('@/layers/shared/lib/session-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/lib/session-utils')>();
+  return {
+    ...actual,
+    formatRelativeTime: vi.fn(() => '5m ago'),
+  };
+});
+
 // --- Test fixtures ---
 
 function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
@@ -38,6 +48,7 @@ function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
     sessionStrategy: 'per-chat',
     label: '',
     permissionMode: 'acceptEdits',
+    enabled: true,
     canInitiate: false,
     canReply: true,
     canReceive: true,
@@ -53,6 +64,8 @@ function renderCard(props: Partial<React.ComponentProps<typeof ChannelBindingCar
     channelName: 'Telegram',
     channelAdapterType: 'telegram',
     adapterState: 'connected',
+    onTogglePause: vi.fn(),
+    onTest: vi.fn().mockResolvedValue({ ok: true, resolved: true, latencyMs: 42 }),
     onEdit: vi.fn(),
     onRemove: vi.fn(),
     ...props,
@@ -242,6 +255,163 @@ describe('ChannelBindingCard', () => {
       const dialogContent = screen.getByRole('alertdialog');
       fireEvent.click(within(dialogContent).getByText('Cancel'));
       expect(onRemove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('paused state', () => {
+    it('applies opacity-60 class when binding is paused', () => {
+      const { container } = renderCard({ binding: makeBinding({ enabled: false }) });
+      const card = container.firstElementChild as HTMLElement;
+      expect(card.className).toContain('opacity-60');
+    });
+
+    it('does not apply opacity-60 when binding is active', () => {
+      const { container } = renderCard({ binding: makeBinding({ enabled: true }) });
+      const card = container.firstElementChild as HTMLElement;
+      expect(card.className).not.toContain('opacity-60');
+    });
+
+    it('shows a "Paused" badge next to the channel name', () => {
+      const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
+      expect(view.getByText('Paused')).toBeInTheDocument();
+    });
+
+    it('does not show "Paused" badge when active', () => {
+      const { view } = renderCard({ binding: makeBinding({ enabled: true }) });
+      expect(view.queryByText('Paused')).not.toBeInTheDocument();
+    });
+
+    it('shows "Paused — no messages routing" subtitle when paused', () => {
+      const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
+      expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
+    });
+
+    it('shows gray status dot when paused (overrides adapter state)', () => {
+      const { container } = renderCard({
+        binding: makeBinding({ enabled: false }),
+        adapterState: 'connected',
+      });
+      expect(container.querySelector('.bg-muted-foreground\\/40')).toBeInTheDocument();
+      // Should NOT show green dot even though adapter is connected
+      expect(container.querySelector('.bg-green-500')).not.toBeInTheDocument();
+    });
+
+    it('does not show error border when paused even with error adapter state', () => {
+      const { container } = renderCard({
+        binding: makeBinding({ enabled: false }),
+        adapterState: 'error',
+        errorMessage: 'Connection refused',
+      });
+      expect(container.querySelector('.border-red-500\\/50')).not.toBeInTheDocument();
+    });
+
+    it('does not show preview sentence when paused (shows paused subtitle instead)', () => {
+      const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
+      expect(view.queryByText('One thread for each conversation')).not.toBeInTheDocument();
+      expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
+    });
+  });
+
+  describe('activity subtitle', () => {
+    it('shows "No recent activity" when lastMessageAt is not provided', () => {
+      const { view } = renderCard({ lastMessageAt: undefined });
+      expect(view.getByText('No recent activity')).toBeInTheDocument();
+    });
+
+    it('shows relative time when lastMessageAt is provided', () => {
+      const { view } = renderCard({
+        lastMessageAt: '2025-01-01T12:00:00.000Z',
+      });
+      // formatRelativeTime is mocked to return '5m ago', activityText lowercases it
+      expect(view.getByText('Last received 5m ago')).toBeInTheDocument();
+    });
+
+    it('shows paused subtitle instead of activity when binding is paused', () => {
+      const { view } = renderCard({
+        binding: makeBinding({ enabled: false }),
+        lastMessageAt: '2025-01-01T12:00:00.000Z',
+      });
+      expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
+      expect(view.queryByText(/Last received/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('kebab menu: send test', () => {
+    it('shows "Send test" menu item', async () => {
+      // pointerEventsCheck: 0 — Radix DropdownMenu applies pointer-events:none during portal open
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const { view } = renderCard();
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      expect(screen.getByText('Send test')).toBeInTheDocument();
+    });
+
+    it('calls onTest when Send test is clicked', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const onTest = vi.fn().mockResolvedValue({ ok: true, resolved: true, latencyMs: 42 });
+      const { view } = renderCard({ onTest });
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Send test'));
+      expect(onTest).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables Send test when binding is paused', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      const sendTestItem = screen.getByText('Send test').closest('[role="menuitem"]');
+      expect(sendTestItem).toHaveAttribute('data-disabled');
+    });
+  });
+
+  describe('kebab menu: pause/resume', () => {
+    it('shows "Pause" option when binding is active', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const { view } = renderCard({ binding: makeBinding({ enabled: true }) });
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      expect(screen.getByText('Pause')).toBeInTheDocument();
+      expect(screen.queryByText('Resume')).not.toBeInTheDocument();
+    });
+
+    it('shows "Resume" option when binding is paused', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      expect(screen.getByText('Resume')).toBeInTheDocument();
+      expect(screen.queryByText('Pause')).not.toBeInTheDocument();
+    });
+
+    it('calls onTogglePause(false) when Pause is clicked on an active binding', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const onTogglePause = vi.fn();
+      const { view } = renderCard({
+        binding: makeBinding({ enabled: true }),
+        onTogglePause,
+      });
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Pause'));
+      expect(onTogglePause).toHaveBeenCalledWith(false);
+    });
+
+    it('calls onTogglePause(true) when Resume is clicked on a paused binding', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const onTogglePause = vi.fn();
+      const { view } = renderCard({
+        binding: makeBinding({ enabled: false }),
+        onTogglePause,
+      });
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Resume'));
+      expect(onTogglePause).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('kebab menu separators', () => {
+    it('renders separator between Send test and Pause/Resume', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const { view } = renderCard();
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      const separators = screen.getAllByRole('separator');
+      expect(separators.length).toBeGreaterThanOrEqual(2);
     });
   });
 

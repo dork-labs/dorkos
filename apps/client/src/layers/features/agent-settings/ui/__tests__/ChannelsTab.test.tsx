@@ -4,13 +4,25 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas';
+import type { AdapterBinding, CatalogEntry, ObservedChat } from '@dorkos/shared/relay-schemas';
 
 // --- Mocks (must be before imports that use them) ---
+
+const mockToastSuccess = vi.fn();
+const mockToastError = vi.fn();
+vi.mock('sonner', () => ({
+  toast: {
+    success: (...args: unknown[]) => mockToastSuccess(...args),
+    error: (...args: unknown[]) => mockToastError(...args),
+  },
+}));
 
 const mockMutateCreateAsync = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const mockMutateDeleteAsync = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const mockMutateUpdateAsync = vi.fn<() => Promise<void>>(() => Promise.resolve());
+const mockMutateTestAsync = vi.fn<
+  () => Promise<{ ok: boolean; resolved: boolean; latencyMs: number; reason?: string }>
+>(() => Promise.resolve({ ok: true, resolved: true, latencyMs: 42 }));
 
 const mockUseBindings = vi.fn<() => { data: AdapterBinding[] }>(() => ({ data: [] }));
 const mockUseCreateBinding = vi.fn(() => ({
@@ -19,6 +31,10 @@ const mockUseCreateBinding = vi.fn(() => ({
 }));
 const mockUseDeleteBinding = vi.fn(() => ({
   mutateAsync: mockMutateDeleteAsync,
+  isPending: false,
+}));
+const mockUseTestBinding = vi.fn(() => ({
+  mutateAsync: mockMutateTestAsync,
   isPending: false,
 }));
 const mockUseUpdateBinding = vi.fn(() => ({
@@ -30,13 +46,14 @@ vi.mock('@/layers/entities/binding', () => ({
   useBindings: () => mockUseBindings(),
   useCreateBinding: () => mockUseCreateBinding(),
   useDeleteBinding: () => mockUseDeleteBinding(),
+  useTestBinding: () => mockUseTestBinding(),
   useUpdateBinding: () => mockUseUpdateBinding(),
 }));
 
 const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
 const mockUseExternalAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
 // BoundChannelRow calls useObservedChats once per binding to resolve chatId → displayName.
-const mockUseObservedChats = vi.fn(() => ({ data: [] }));
+const mockUseObservedChats = vi.fn<() => { data: ObservedChat[] }>(() => ({ data: [] }));
 
 vi.mock('@/layers/entities/relay', () => ({
   useRelayEnabled: () => mockUseRelayEnabled(),
@@ -134,6 +151,7 @@ function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
     sessionStrategy: 'per-chat',
     label: '',
     permissionMode: 'acceptEdits',
+    enabled: true,
     canInitiate: false,
     canReply: true,
     canReceive: true,
@@ -442,6 +460,175 @@ describe('ChannelsTab', () => {
       const view = renderTab();
       expect(view.getByText('Telegram')).toBeInTheDocument();
       expect(view.queryByText('Claude Code')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('pause/resume', () => {
+    it('dispatches update mutation with enabled=false when Pause is clicked', async () => {
+      const user = userEvent.setup();
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-001', enabled: true })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+
+      renderTab();
+
+      await user.click(screen.getAllByRole('button', { name: /actions/i }).at(-1)!);
+      fireEvent.click(screen.getByText('Pause'));
+
+      await waitFor(() => {
+        expect(mockMutateUpdateAsync).toHaveBeenCalledWith({
+          id: 'b-001',
+          updates: { enabled: false },
+        });
+      });
+
+      await waitFor(() => {
+        expect(mockToastSuccess).toHaveBeenCalledWith('Channel paused');
+      });
+    });
+
+    it('dispatches update mutation with enabled=true when Resume is clicked on a paused binding', async () => {
+      const user = userEvent.setup();
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-001', enabled: false })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+
+      renderTab();
+
+      await user.click(screen.getAllByRole('button', { name: /actions/i }).at(-1)!);
+      fireEvent.click(screen.getByText('Resume'));
+
+      await waitFor(() => {
+        expect(mockMutateUpdateAsync).toHaveBeenCalledWith({
+          id: 'b-001',
+          updates: { enabled: true },
+        });
+      });
+
+      await waitFor(() => {
+        expect(mockToastSuccess).toHaveBeenCalledWith('Channel resumed');
+      });
+    });
+  });
+
+  describe('test binding', () => {
+    it('dispatches test mutation when Send test is clicked', async () => {
+      const user = userEvent.setup();
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-test' })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+
+      renderTab();
+
+      await user.click(screen.getAllByRole('button', { name: /actions/i }).at(-1)!);
+      fireEvent.click(screen.getByText('Send test'));
+
+      await waitFor(() => {
+        expect(mockMutateTestAsync).toHaveBeenCalledWith('b-test');
+      });
+    });
+
+    it('shows success toast with latency on successful test', async () => {
+      const user = userEvent.setup();
+      mockMutateTestAsync.mockResolvedValue({ ok: true, resolved: true, latencyMs: 42 });
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-test-ok' })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+
+      renderTab();
+
+      await user.click(screen.getAllByRole('button', { name: /actions/i }).at(-1)!);
+      fireEvent.click(screen.getByText('Send test'));
+
+      await waitFor(() => {
+        expect(mockToastSuccess).toHaveBeenCalledWith('Test OK \u2014 routed in 42ms');
+      });
+    });
+
+    it('shows error toast on failed test', async () => {
+      const user = userEvent.setup();
+      mockMutateTestAsync.mockResolvedValue({
+        ok: false,
+        resolved: false,
+        latencyMs: 15,
+        reason: 'Agent not found',
+      });
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-test-fail' })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+
+      renderTab();
+
+      await user.click(screen.getAllByRole('button', { name: /actions/i }).at(-1)!);
+      fireEvent.click(screen.getByText('Send test'));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith('Test failed: Agent not found');
+      });
+    });
+  });
+
+  describe('activity metadata', () => {
+    it('passes lastMessageAt from observed chats down to the card', () => {
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-activity', adapterId: 'telegram-1' })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+      mockUseObservedChats.mockReturnValue({
+        data: [
+          {
+            chatId: 'chat-1',
+            displayName: 'Dev Chat',
+            lastMessageAt: new Date().toISOString(),
+            messageCount: 5,
+          },
+        ],
+      });
+
+      const view = renderTab();
+      expect(view.getByText(/Last received/)).toBeInTheDocument();
+    });
+
+    it('shows "No recent activity" when no observed chats exist', () => {
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-no-activity', adapterId: 'telegram-1' })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+      mockUseObservedChats.mockReturnValue({ data: [] });
+
+      const view = renderTab();
+      expect(view.getByText('No recent activity')).toBeInTheDocument();
+    });
+
+    it('shows paused activity text when binding is paused', () => {
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-paused', adapterId: 'telegram-1', enabled: false })],
+      });
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
+      });
+
+      const view = renderTab();
+      expect(view.getByText(/Paused .* no messages routing/)).toBeInTheDocument();
     });
   });
 

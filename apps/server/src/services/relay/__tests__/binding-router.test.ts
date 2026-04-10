@@ -40,6 +40,7 @@ describe('BindingRouter', () => {
 
     mockBindingStore = {
       resolve: vi.fn(),
+      getById: vi.fn(),
     };
 
     router = new BindingRouter({
@@ -913,6 +914,155 @@ describe('BindingRouter', () => {
         'plain string',
         expect.any(Object)
       );
+    });
+  });
+
+  describe('enabled filtering', () => {
+    const makeEnvelope = (chatId = '123') => ({
+      id: 'msg-1',
+      subject: `relay.human.telegram.tg-bot.${chatId}`,
+      payload: { content: 'hello' },
+      from: 'tg',
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const makeBinding = (overrides: Record<string, unknown> = {}) => ({
+      id: 'bind-1',
+      adapterId: 'tg-bot',
+      agentId: 'agent-a',
+      sessionStrategy: 'per-chat',
+      label: '',
+      permissionMode: 'acceptEdits' as const,
+      enabled: true,
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    it('drops inbound messages when binding is paused (enabled=false)', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ enabled: false }));
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+      expect(mockAgentManager.createSession).not.toHaveBeenCalled();
+    });
+
+    it('skips paused binding before canReceive check', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
+        makeBinding({ enabled: false, canReceive: true })
+      );
+      await capturedHandler!(makeEnvelope());
+
+      // Should not reach the publish step — paused takes priority
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+    });
+
+    it('routes normally when binding is enabled (enabled=true)', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ enabled: true }));
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent.'),
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
+    it('routes normally when enabled is undefined (defaults to true)', async () => {
+      const binding = makeBinding();
+      delete (binding as Record<string, unknown>).enabled;
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(binding);
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent.'),
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('testBinding()', () => {
+    const makeBinding = (overrides: Record<string, unknown> = {}) => ({
+      id: 'bind-1',
+      adapterId: 'tg-bot',
+      agentId: 'agent-a',
+      sessionStrategy: 'per-chat' as const,
+      label: '',
+      permissionMode: 'acceptEdits' as const,
+      enabled: true,
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    it('returns ok=false when binding is not found', () => {
+      vi.mocked(mockBindingStore.getById!).mockReturnValue(undefined);
+
+      const result = router.testBinding('nonexistent');
+
+      expect(result.ok).toBe(false);
+      expect(result.resolved).toBe(false);
+      expect(result.reason).toBe('Binding not found');
+      expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('returns ok=false when binding is paused', () => {
+      vi.mocked(mockBindingStore.getById!).mockReturnValue(makeBinding({ enabled: false }));
+
+      const result = router.testBinding('bind-1');
+
+      expect(result.ok).toBe(false);
+      expect(result.resolved).toBe(false);
+      expect(result.reason).toBe('Binding is paused (enabled=false)');
+    });
+
+    it('returns ok=false when agent is not in mesh registry', () => {
+      vi.mocked(mockBindingStore.getById!).mockReturnValue(makeBinding());
+      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue(undefined);
+
+      const result = router.testBinding('bind-1');
+
+      expect(result.ok).toBe(false);
+      expect(result.resolved).toBe(false);
+      expect(result.reason).toContain('agent-a');
+      expect(result.reason).toContain('not found in mesh registry');
+    });
+
+    it('returns ok=true with agent ID when routing succeeds', () => {
+      vi.mocked(mockBindingStore.getById!).mockReturnValue(makeBinding());
+      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue('/agents/a');
+
+      const result = router.testBinding('bind-1');
+
+      expect(result.ok).toBe(true);
+      expect(result.resolved).toBe(true);
+      expect(result.wouldDeliverTo).toBe('agent-a');
+      expect(result.details).toBe('Routing succeeded. No agent was invoked.');
+      expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('does not invoke the agent or publish to relay', () => {
+      vi.mocked(mockBindingStore.getById!).mockReturnValue(makeBinding());
+      vi.mocked(mockMeshCore.getProjectPath).mockReturnValue('/agents/a');
+
+      router.testBinding('bind-1');
+
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+      expect(mockAgentManager.createSession).not.toHaveBeenCalled();
     });
   });
 

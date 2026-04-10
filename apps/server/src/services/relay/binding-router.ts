@@ -15,6 +15,7 @@ import { join as pathJoin } from 'node:path';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import type { BindingTestResult } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { PublishOptions, Unsubscribe } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
@@ -118,6 +119,58 @@ export class BindingRouter {
   }
 
   /**
+   * Run a synthetic test probe through the routing pipeline without invoking the agent.
+   *
+   * Exercises binding resolution, enabled state, and agent lookup — the same
+   * checks that {@link handleInbound} performs — but returns a verdict instead
+   * of dispatching to `relay.agent.*`.
+   *
+   * @param bindingId - The binding UUID to test
+   * @returns Routing verdict with `ok`, `resolved`, timing, and diagnostic fields
+   */
+  testBinding(bindingId: string): BindingTestResult {
+    const start = performance.now();
+
+    const binding = this.deps.bindingStore.getById(bindingId);
+    if (!binding) {
+      return {
+        ok: false,
+        resolved: false,
+        latencyMs: Math.round(performance.now() - start),
+        reason: 'Binding not found',
+      };
+    }
+
+    if (!binding.enabled) {
+      return {
+        ok: false,
+        resolved: false,
+        latencyMs: Math.round(performance.now() - start),
+        reason: 'Binding is paused (enabled=false)',
+      };
+    }
+
+    // Verify the agent exists in the mesh registry
+    const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
+    if (!projectPath) {
+      return {
+        ok: false,
+        resolved: false,
+        latencyMs: Math.round(performance.now() - start),
+        reason: `Agent '${binding.agentId}' not found in mesh registry`,
+      };
+    }
+
+    return {
+      ok: true,
+      resolved: true,
+      latencyMs: Math.round(performance.now() - start),
+      wouldDeliverTo: binding.agentId,
+      details: 'Routing succeeded. No agent was invoked.',
+    };
+  }
+
+  /**
    * Get active sessions for a specific binding.
    *
    * @param bindingId - Binding UUID to filter by
@@ -176,10 +229,19 @@ export class BindingRouter {
         return;
       }
 
+      // Skip paused bindings — they do not participate in routing
+      if (binding.enabled === false) {
+        logger.debug(
+          '[BindingRouter] Dropping inbound — binding %s is paused (enabled=false)',
+          binding.id
+        );
+        return;
+      }
+
       // Permission check: drop inbound if canReceive is false
       if (binding.canReceive === false) {
         logger.debug(
-          '[BindingRouter] Dropping inbound \u2014 canReceive=false for binding %s',
+          '[BindingRouter] Dropping inbound — canReceive=false for binding %s',
           binding.id
         );
         return;

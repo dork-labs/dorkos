@@ -26,6 +26,7 @@ export function useUpdateBinding() {
           | 'canInitiate'
           | 'canReply'
           | 'canReceive'
+          | 'enabled'
         >
       >;
     }) => transport.updateBinding(id, updates),

@@ -303,6 +303,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         updatedAt: new Date().toISOString(),
         ...updates,
       })),
+    testBinding: vi.fn().mockResolvedValue({
+      ok: true,
+      resolved: true,
+      latencyMs: 1,
+      wouldDeliverTo: 'mock-agent',
+      details: 'Routing succeeded. No agent was invoked.',
+    }),
     updateConfig: vi.fn().mockResolvedValue(undefined),
     // Directory Operations
     createDirectory: vi.fn().mockResolvedValue({ path: '/test/new-folder' }),
@@ -385,6 +392,7 @@ export function createMockBinding(overrides: Partial<AdapterBinding> = {}): Adap
     sessionStrategy: 'per-chat',
     label: '',
     permissionMode: 'acceptEdits',
+    enabled: true,
     canInitiate: false,
     canReply: true,
     canReceive: true,

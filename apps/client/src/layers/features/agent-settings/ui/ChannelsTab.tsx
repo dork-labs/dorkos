@@ -5,6 +5,7 @@ import {
   useBindings,
   useCreateBinding,
   useDeleteBinding,
+  useTestBinding,
   useUpdateBinding,
 } from '@/layers/entities/binding';
 import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
@@ -58,6 +59,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
   const { data: externalCatalog = [] } = useExternalAdapterCatalog(relayEnabled);
   const createBinding = useCreateBinding();
   const deleteBinding = useDeleteBinding();
+  const testBinding = useTestBinding();
   const updateBinding = useUpdateBinding();
   const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
 
@@ -149,6 +151,36 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
       }
     },
     [deleteBinding]
+  );
+
+  const handleTogglePause = useCallback(
+    async (bindingId: string, enabled: boolean) => {
+      try {
+        await updateBinding.mutateAsync({ id: bindingId, updates: { enabled } });
+        toast.success(enabled ? 'Channel resumed' : 'Channel paused');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to update channel');
+      }
+    },
+    [updateBinding]
+  );
+
+  const handleTest = useCallback(
+    async (bindingId: string) => {
+      try {
+        const result = await testBinding.mutateAsync(bindingId);
+        if (result.ok) {
+          toast.success(`Test OK \u2014 routed in ${result.latencyMs}ms`);
+        } else {
+          toast.error(`Test failed: ${result.reason ?? 'unknown error'}`);
+        }
+        return result;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Test failed');
+        throw err;
+      }
+    },
+    [testBinding]
   );
 
   const handleEditConfirm = useCallback(
@@ -318,6 +350,8 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
               channelAdapterType={display.adapterType}
               adapterState={display.state}
               errorMessage={display.errorMessage}
+              onTogglePause={(enabled) => handleTogglePause(binding.id, enabled)}
+              onTest={() => handleTest(binding.id)}
               onEdit={() => handleEdit(binding)}
               onRemove={() => handleRemove(binding.id)}
             />

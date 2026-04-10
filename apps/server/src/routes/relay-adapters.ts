@@ -8,6 +8,7 @@
  */
 import { Router } from 'express';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import type { WebhookAdapter } from '@dorkos/relay';
 import {
@@ -307,6 +308,7 @@ export function createAdapterRouter(
       canReply: z.boolean().optional(),
       canReceive: z.boolean().optional(),
       permissionMode: PermissionModeSchema.optional(),
+      enabled: z.boolean().optional(),
     });
 
     const result = UpdateBindingSchema.safeParse(req.body);
@@ -379,6 +381,60 @@ export function createAdapterRouter(
 
     return res.json({ ok: true });
   });
+
+  // Rate limiter for binding test endpoint — 10 tests per minute per IP
+  const testRateLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many test requests, try again in a minute' },
+  });
+
+  // POST /bindings/:id/test — Synthetic routing test probe
+  router.post(
+    '/bindings/:id/test',
+    testRateLimiter,
+    async (req: express.Request<{ id: string }>, res) => {
+      const bindingStore = adapterManager.getBindingStore();
+      if (!bindingStore) {
+        return res.status(503).json({ error: 'Binding subsystem not available' });
+      }
+
+      const binding = bindingStore.getById(req.params.id);
+      if (!binding) {
+        return res.status(404).json({ error: 'Binding not found' });
+      }
+
+      if (binding.enabled === false) {
+        return res.status(409).json({
+          error: 'Binding is paused. Resume to run a test.',
+        });
+      }
+
+      const bindingRouter = adapterManager.getBindingRouter();
+      if (!bindingRouter) {
+        return res.status(503).json({ error: 'Binding router not available' });
+      }
+
+      try {
+        const result = bindingRouter.testBinding(binding.id);
+
+        return res.json({
+          ok: result.ok,
+          resolved: result.resolved,
+          latencyMs: result.latencyMs,
+          wouldDeliverTo: result.wouldDeliverTo,
+          reason: result.reason,
+          details: result.details,
+        });
+      } catch (err) {
+        return res.status(500).json({
+          error: err instanceof Error ? err.message : 'Internal routing error',
+        });
+      }
+    }
+  );
 
   // POST /webhooks/:adapterId — Inbound webhook receiver
   router.post('/webhooks/:adapterId', express.raw({ type: '*/*' }), async (req, res) => {

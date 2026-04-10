@@ -41,6 +41,7 @@ import type {
   AdapterBinding,
   CreateBindingRequest,
   ObservedChat,
+  BindingTestResult,
 } from './relay-schemas.js';
 import type {
   AgentManifest,
@@ -383,9 +384,17 @@ export interface Transport {
         | 'canInitiate'
         | 'canReply'
         | 'canReceive'
+        | 'enabled'
       >
     >
   ): Promise<AdapterBinding>;
+  /**
+   * Send a synthetic test probe through a binding. The server short-circuits
+   * before invoking the agent; no real messages are delivered to any platform.
+   *
+   * @param bindingId - The binding to test
+   */
+  testBinding(bindingId: string): Promise<BindingTestResult>;
 
   // --- Mesh Agent Discovery ---
 
