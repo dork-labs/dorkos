@@ -379,7 +379,7 @@ export function ModelConfigPopover({
         className="w-80 p-0"
         data-testid="model-config-popover"
       >
-        <div className="p-3">
+        <div className="max-h-[min(70vh,28rem)] overflow-y-auto p-3">
           {/* Model selection */}
           {isLoading && <ModelCardsSkeleton />}
           {isError && <ModelLoadError onRetry={() => refetch()} />}
@@ -397,11 +397,13 @@ export function ModelConfigPopover({
             </RadioGroup>
           )}
 
-          {/* Configuration section — effort + mode grouped under shared header */}
-          <AnimatePresence mode="wait">
+          {/* Configuration section — effort + mode grouped under shared header.
+           * Uses a stable key so effort/mode changes within the same model don't
+           * trigger exit→enter re-animation (which causes a visible blank gap). */}
+          <AnimatePresence>
             {!isLoading && !isError && (showEffort || showModes) && (
               <motion.div
-                key={selectedModel?.value ?? 'none'}
+                key="config"
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 4 }}
