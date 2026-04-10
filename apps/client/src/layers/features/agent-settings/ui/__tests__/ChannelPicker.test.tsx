@@ -4,16 +4,6 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 
-// --- Mocks (before imports that use them) ---
-
-const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
-const mockUseAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
-
-vi.mock('@/layers/entities/relay', () => ({
-  useRelayEnabled: () => mockUseRelayEnabled(),
-  useAdapterCatalog: () => mockUseAdapterCatalog(),
-}));
-
 import { ChannelPicker } from '../ChannelPicker';
 
 // --- Test helpers ---
@@ -27,6 +17,9 @@ function makeCatalogEntry(overrides: {
   state?: 'connected' | 'disconnected' | 'error' | 'starting' | 'stopping' | 'reconnecting';
   enabled?: boolean;
   label?: string;
+  deprecated?: boolean;
+  multiInstance?: boolean;
+  noInstances?: boolean;
 }): CatalogEntry {
   const type = (overrides.type ?? 'telegram') as CatalogEntry['manifest']['type'];
   const id = overrides.instanceId ?? `${type}-1`;
@@ -38,37 +31,42 @@ function makeCatalogEntry(overrides: {
       category: 'messaging',
       builtin: true,
       configFields: [],
-      multiInstance: false,
+      multiInstance: overrides.multiInstance ?? false,
+      deprecated: overrides.deprecated,
     },
-    instances: [
-      {
-        id,
-        enabled: overrides.enabled ?? true,
-        label: overrides.label,
-        status: {
-          id,
-          type: type as 'telegram',
-          displayName: overrides.instanceDisplayName ?? overrides.displayName ?? 'Telegram',
-          state: overrides.state ?? 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        },
-      },
-    ],
+    instances: overrides.noInstances
+      ? []
+      : [
+          {
+            id,
+            enabled: overrides.enabled ?? true,
+            label: overrides.label,
+            status: {
+              id,
+              type: type as 'telegram',
+              displayName: overrides.instanceDisplayName ?? overrides.displayName ?? 'Telegram',
+              state: overrides.state ?? 'connected',
+              messageCount: { inbound: 0, outbound: 0 },
+              errorCount: 0,
+            },
+          },
+        ],
   };
 }
 
 interface RenderPickerOptions {
+  catalog?: CatalogEntry[];
   onSelectChannel?: ReturnType<typeof vi.fn>;
-  onSetupNewChannel?: ReturnType<typeof vi.fn>;
+  onRequestSetup?: ReturnType<typeof vi.fn>;
   boundAdapterIds?: Set<string>;
   disabled?: boolean;
 }
 
 function renderPicker(options: RenderPickerOptions = {}) {
   const props = {
+    catalog: options.catalog ?? [],
     onSelectChannel: options.onSelectChannel ?? vi.fn(),
-    onSetupNewChannel: options.onSetupNewChannel ?? vi.fn(),
+    onRequestSetup: options.onRequestSetup ?? vi.fn(),
     boundAdapterIds: options.boundAdapterIds ?? new Set<string>(),
     disabled: options.disabled,
   };
@@ -81,8 +79,6 @@ function renderPicker(options: RenderPickerOptions = {}) {
 describe('ChannelPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseRelayEnabled.mockReturnValue(true);
-    mockUseAdapterCatalog.mockReturnValue({ data: [] });
   });
 
   it('renders a "Connect to Channel" button', () => {
@@ -98,26 +94,23 @@ describe('ChannelPicker', () => {
   describe('popover content', () => {
     // PopoverContent renders via Radix portal — use screen for portal queries.
 
-    it('shows "No channels configured" when catalog is empty', () => {
-      mockUseAdapterCatalog.mockReturnValue({ data: [] });
-      const { view } = renderPicker();
+    it('shows "No channels available" when catalog is empty', () => {
+      const { view } = renderPicker({ catalog: [] });
 
       fireEvent.click(view.getByText('Connect to Channel'));
-      expect(screen.getByText('No channels configured')).toBeInTheDocument();
+      expect(screen.getByText('No channels available')).toBeInTheDocument();
     });
 
     it('lists configured channels from the catalog', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [
-          makeCatalogEntry({ displayName: 'Telegram', instanceId: 'tg-1' }),
-          makeCatalogEntry({
-            type: 'slack',
-            displayName: 'Slack',
-            instanceId: 'slack-1',
-          }),
-        ],
-      });
-      const { view } = renderPicker();
+      const catalog = [
+        makeCatalogEntry({ displayName: 'Telegram', instanceId: 'tg-1' }),
+        makeCatalogEntry({
+          type: 'slack',
+          displayName: 'Slack',
+          instanceId: 'slack-1',
+        }),
+      ];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       expect(screen.getByText('Telegram')).toBeInTheDocument();
@@ -125,40 +118,32 @@ describe('ChannelPicker', () => {
     });
 
     it('shows adapter label when present', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ label: 'Work Bot' })],
-      });
-      const { view } = renderPicker();
+      const catalog = [makeCatalogEntry({ label: 'Work Bot' })];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       expect(screen.getByText('Work Bot')).toBeInTheDocument();
     });
 
     it('shows channel state text', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ state: 'connected' })],
-      });
-      const { view } = renderPicker();
+      const catalog = [makeCatalogEntry({ state: 'connected' })];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       expect(screen.getByText('connected')).toBeInTheDocument();
     });
 
     it('shows "connected" text for already-bound channels', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ instanceId: 'tg-1' })],
-      });
-      const { view } = renderPicker({ boundAdapterIds: new Set(['tg-1']) });
+      const catalog = [makeCatalogEntry({ instanceId: 'tg-1' })];
+      const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       expect(screen.getByText('connected')).toBeInTheDocument();
     });
 
     it('disables already-bound channels', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })],
-      });
-      const { view } = renderPicker({ boundAdapterIds: new Set(['tg-1']) });
+      const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
+      const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       const channelButton = screen.getByText('Telegram').closest('button');
@@ -166,10 +151,8 @@ describe('ChannelPicker', () => {
     });
 
     it('disables channels in error state', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ state: 'error', displayName: 'Broken Bot' })],
-      });
-      const { view } = renderPicker();
+      const catalog = [makeCatalogEntry({ state: 'error', displayName: 'Broken Bot' })];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       const channelButton = screen.getByText('Broken Bot').closest('button');
@@ -177,10 +160,8 @@ describe('ChannelPicker', () => {
     });
 
     it('disables channels that are not enabled', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ enabled: false, displayName: 'Disabled Bot' })],
-      });
-      const { view } = renderPicker();
+      const catalog = [makeCatalogEntry({ enabled: false, displayName: 'Disabled Bot' })];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       const channelButton = screen.getByText('Disabled Bot').closest('button');
@@ -188,11 +169,9 @@ describe('ChannelPicker', () => {
     });
 
     it('calls onSelectChannel when a channel is clicked', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })],
-      });
+      const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
       const onSelectChannel = vi.fn();
-      const { view } = renderPicker({ onSelectChannel });
+      const { view } = renderPicker({ catalog, onSelectChannel });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       fireEvent.click(screen.getByText('Telegram'));
@@ -200,33 +179,65 @@ describe('ChannelPicker', () => {
     });
 
     it('closes popover after selecting a channel', () => {
-      mockUseAdapterCatalog.mockReturnValue({
-        data: [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })],
-      });
-      const { view } = renderPicker();
+      const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
       fireEvent.click(screen.getByText('Telegram'));
       // After selection, popover should close — channel name should no longer be in portal
-      expect(screen.queryByText('Set up a new channel...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Telegram')).not.toBeInTheDocument();
     });
   });
 
-  describe('setup new channel footer', () => {
-    it('shows "Set up a new channel..." link', () => {
-      const { view } = renderPicker();
+  describe('available to set up section', () => {
+    it('shows "Available to set up" section for entries with no instances', () => {
+      const catalog = [makeCatalogEntry({ displayName: 'Webhook', noInstances: true })];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
-      expect(screen.getByText('Set up a new channel...')).toBeInTheDocument();
+      expect(screen.getByText('Available to set up')).toBeInTheDocument();
+      expect(screen.getByText('Webhook')).toBeInTheDocument();
     });
 
-    it('calls onSetupNewChannel when clicked', () => {
-      const onSetupNewChannel = vi.fn();
-      const { view } = renderPicker({ onSetupNewChannel });
+    it('shows "Available to set up" for multiInstance entries', () => {
+      const catalog = [
+        makeCatalogEntry({ displayName: 'Telegram', multiInstance: true, instanceId: 'tg-1' }),
+      ];
+      const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
-      fireEvent.click(screen.getByText('Set up a new channel...'));
-      expect(onSetupNewChannel).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Available to set up')).toBeInTheDocument();
+    });
+
+    it('does not show deprecated entries in "Available to set up"', () => {
+      const catalog = [
+        makeCatalogEntry({ displayName: 'Old Bot', deprecated: true, noInstances: true }),
+      ];
+      const { view } = renderPicker({ catalog });
+
+      fireEvent.click(view.getByText('Connect to Channel'));
+      expect(screen.queryByText('Available to set up')).not.toBeInTheDocument();
+    });
+
+    it('calls onRequestSetup when a setup entry is clicked', () => {
+      const catalog = [makeCatalogEntry({ displayName: 'Webhook', noInstances: true })];
+      const onRequestSetup = vi.fn();
+      const { view } = renderPicker({ catalog, onRequestSetup });
+
+      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(screen.getByText('Webhook'));
+      expect(onRequestSetup).toHaveBeenCalledWith(catalog[0].manifest);
+    });
+
+    it('closes popover before calling onRequestSetup', () => {
+      const catalog = [makeCatalogEntry({ displayName: 'Webhook', noInstances: true })];
+      const onRequestSetup = vi.fn();
+      const { view } = renderPicker({ catalog, onRequestSetup });
+
+      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(screen.getByText('Webhook'));
+      // The popover should close — the "Available to set up" text should not be visible
+      expect(screen.queryByText('Available to set up')).not.toBeInTheDocument();
     });
   });
 });

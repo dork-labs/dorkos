@@ -19,6 +19,10 @@ export {
   useUpdateAdapterConfig,
   useTestAdapterConnection,
 } from './model/use-adapter-catalog';
+export {
+  useExternalAdapterCatalog,
+  ADAPTER_CATEGORY_INTERNAL,
+} from './model/use-external-adapter-catalog';
 export { useMessageTrace } from './model/use-message-trace';
 export { useDeliveryMetrics } from './model/use-delivery-metrics';
 export {

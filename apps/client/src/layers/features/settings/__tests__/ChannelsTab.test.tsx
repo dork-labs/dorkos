@@ -15,7 +15,7 @@ const mockToggleAdapter = vi.fn();
 
 // Mock relay entity hooks — return plain objects, no internal useQuery
 vi.mock('@/layers/entities/relay', () => ({
-  useAdapterCatalog: () => ({ data: mockCatalogData, isLoading: mockIsLoading }),
+  useExternalAdapterCatalog: () => ({ data: mockCatalogData, isLoading: mockIsLoading }),
   useToggleAdapter: () => ({ mutate: mockToggleAdapter }),
   useRelayEnabled: () => mockRelayEnabled,
 }));
@@ -327,32 +327,10 @@ describe('ChannelsTab', () => {
   });
 
   it('excludes internal adapters from configured channels', () => {
+    // useExternalAdapterCatalog pre-filters internal adapters, so the mock
+    // returns only external entries — verifying that the component uses the
+    // shared hook rather than raw useAdapterCatalog.
     mockCatalogData = [
-      {
-        manifest: {
-          type: 'claude-code',
-          displayName: 'Claude Code',
-          description: 'Internal adapter',
-          category: 'internal',
-          builtin: true,
-          configFields: [],
-          multiInstance: false,
-        },
-        instances: [
-          {
-            id: 'claude-code',
-            enabled: true,
-            status: {
-              id: 'claude-code',
-              type: 'claude-code',
-              displayName: 'Claude Code',
-              state: 'connected',
-              messageCount: { inbound: 0, outbound: 0 },
-              errorCount: 0,
-            },
-          },
-        ],
-      },
       makeCatalogEntry('telegram', 'Telegram', [
         {
           id: 'tg-1',
@@ -373,24 +351,14 @@ describe('ChannelsTab', () => {
     render(<ChannelsTab />);
 
     expect(screen.getByText('My Bot')).toBeInTheDocument();
+    // Internal adapters never reach the component — the hook filters them.
     expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
   });
 
   it('excludes internal adapters from Available Channels', () => {
-    mockCatalogData = [
-      {
-        manifest: {
-          type: 'claude-code',
-          displayName: 'Claude Code',
-          description: 'Internal adapter',
-          category: 'internal',
-          builtin: true,
-          configFields: [],
-          multiInstance: false,
-        },
-        instances: [],
-      },
-    ];
+    // When only internal adapters exist, the hook returns an empty array.
+    // The component should show the empty state, not the Available Channels section.
+    mockCatalogData = [];
 
     render(<ChannelsTab />);
 

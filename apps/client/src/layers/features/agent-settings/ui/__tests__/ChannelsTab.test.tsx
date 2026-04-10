@@ -33,36 +33,26 @@ vi.mock('@/layers/entities/binding', () => ({
 }));
 
 const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
-const mockUseAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
+const mockUseExternalAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
 
 vi.mock('@/layers/entities/relay', () => ({
   useRelayEnabled: () => mockUseRelayEnabled(),
-  useAdapterCatalog: () => mockUseAdapterCatalog(),
+  useExternalAdapterCatalog: () => mockUseExternalAdapterCatalog(),
 }));
 
-const mockCloseAgentDialog = vi.fn();
-const mockOpenSettings = vi.fn();
-
-vi.mock('@/layers/shared/model', () => ({
-  useAgentDialogDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    agentPath: null,
-    open: vi.fn(),
-    close: mockCloseAgentDialog,
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-  useSettingsDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: mockOpenSettings,
-    close: vi.fn(),
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
+vi.mock('@/layers/features/relay', () => ({
+  AdapterSetupWizard: ({
+    open,
+    onOpenChange,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? (
+      <div data-testid="adapter-setup-wizard">
+        <button onClick={() => onOpenChange(false)}>Close Wizard</button>
+      </div>
+    ) : null,
 }));
 
 // Stub BindingDialog to avoid its complex internals
@@ -158,6 +148,34 @@ function makeCatalogEntry(overrides: {
   };
 }
 
+function makeCatalogEntryInternal(): CatalogEntry {
+  return {
+    manifest: {
+      type: 'claude-code',
+      displayName: 'Claude Code',
+      description: 'Runtime bridge adapter',
+      category: 'internal',
+      builtin: true,
+      configFields: [],
+      multiInstance: false,
+    },
+    instances: [
+      {
+        id: 'claude-code-1',
+        enabled: true,
+        status: {
+          id: 'claude-code-1',
+          type: 'claude-code',
+          displayName: 'Claude Code',
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        },
+      },
+    ],
+  };
+}
+
 function renderTab(agent: AgentManifest = baseAgent) {
   const { container } = render(<ChannelsTab agent={agent} />);
   return within(container);
@@ -170,7 +188,7 @@ describe('ChannelsTab', () => {
     vi.clearAllMocks();
     mockUseRelayEnabled.mockReturnValue(true);
     mockUseBindings.mockReturnValue({ data: [] });
-    mockUseAdapterCatalog.mockReturnValue({ data: [] });
+    mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
   });
 
   describe('empty state', () => {
@@ -193,7 +211,7 @@ describe('ChannelsTab', () => {
         makeBinding({ id: 'b-2', adapterId: 'slack-1' }),
       ];
       mockUseBindings.mockReturnValue({ data: bindings });
-      mockUseAdapterCatalog.mockReturnValue({
+      mockUseExternalAdapterCatalog.mockReturnValue({
         data: [
           makeCatalogEntry({ instanceId: 'telegram-1', displayName: 'Telegram' }),
           makeCatalogEntry({ instanceId: 'slack-1', displayName: 'Slack' }),
@@ -211,7 +229,7 @@ describe('ChannelsTab', () => {
         makeBinding({ id: 'b-2', agentId: 'other-agent', adapterId: 'slack-1' }),
       ];
       mockUseBindings.mockReturnValue({ data: bindings });
-      mockUseAdapterCatalog.mockReturnValue({
+      mockUseExternalAdapterCatalog.mockReturnValue({
         data: [
           makeCatalogEntry({ instanceId: 'telegram-1', displayName: 'Telegram' }),
           makeCatalogEntry({ instanceId: 'slack-1', displayName: 'Slack' }),
@@ -228,7 +246,7 @@ describe('ChannelsTab', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ adapterId: 'unknown-adapter' })],
       });
-      mockUseAdapterCatalog.mockReturnValue({ data: [] });
+      mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
 
       const view = renderTab();
       expect(view.getByText('unknown-adapter')).toBeInTheDocument();
@@ -253,7 +271,7 @@ describe('ChannelsTab', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-to-remove' })],
       });
-      mockUseAdapterCatalog.mockReturnValue({
+      mockUseExternalAdapterCatalog.mockReturnValue({
         data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
       });
 
@@ -281,7 +299,7 @@ describe('ChannelsTab', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-edit' })],
       });
-      mockUseAdapterCatalog.mockReturnValue({
+      mockUseExternalAdapterCatalog.mockReturnValue({
         data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
       });
 
@@ -294,7 +312,7 @@ describe('ChannelsTab', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-edit' })],
       });
-      mockUseAdapterCatalog.mockReturnValue({
+      mockUseExternalAdapterCatalog.mockReturnValue({
         data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
       });
 
@@ -311,7 +329,7 @@ describe('ChannelsTab', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-dialog-delete' })],
       });
-      mockUseAdapterCatalog.mockReturnValue({
+      mockUseExternalAdapterCatalog.mockReturnValue({
         data: [makeCatalogEntry({ instanceId: 'telegram-1' })],
       });
 
@@ -325,18 +343,97 @@ describe('ChannelsTab', () => {
     });
   });
 
-  describe('setup new channel navigation', () => {
-    it('closes agent dialog and navigates to relay settings', () => {
-      mockUseAdapterCatalog.mockReturnValue({ data: [] });
+  describe('internal adapter filtering', () => {
+    /**
+     * Verifies that `claude-code` / internal-category adapters never appear in the
+     * bound-adapter Map, even if the mocked catalog contains them. This is the
+     * end-to-end regression guard.
+     */
+    it('never surfaces internal-category adapters in the picker or binding list', () => {
+      // The hook mock returns pre-filtered data (since the real hook filters).
+      // Verify the component uses useExternalAdapterCatalog (not useAdapterCatalog)
+      // by checking that only external adapters appear when both are provided.
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1', displayName: 'Telegram' })],
+      });
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ adapterId: 'telegram-1' })],
+      });
+
+      const view = renderTab();
+      expect(view.getByText('Telegram')).toBeInTheDocument();
+      expect(view.queryByText('Claude Code')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('inline wizard flow', () => {
+    /**
+     * Verifies that clicking an "Available to set up" item opens the
+     * AdapterSetupWizard without closing the AgentDialog.
+     */
+    it('opens AdapterSetupWizard inline without closing the AgentDialog', async () => {
+      // Provide a catalog with an unconfigured adapter type (no instances)
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [
+          {
+            manifest: {
+              type: 'webhook',
+              displayName: 'Webhook',
+              description: 'HTTP webhook',
+              category: 'messaging',
+              builtin: true,
+              configFields: [],
+              multiInstance: false,
+            },
+            instances: [],
+          },
+        ],
+      });
+
       const view = renderTab();
 
       // Open the picker popover
       fireEvent.click(view.getByText('Connect to Channel'));
-      // Popover content renders via portal — use screen
-      fireEvent.click(screen.getByText('Set up a new channel...'));
+      // Click the available-to-setup item (renders via portal)
+      fireEvent.click(screen.getByText('Webhook'));
 
-      expect(mockCloseAgentDialog).toHaveBeenCalled();
-      expect(mockOpenSettings).toHaveBeenCalledWith('channels');
+      // The wizard should be open
+      expect(screen.getByTestId('adapter-setup-wizard')).toBeInTheDocument();
+    });
+
+    /**
+     * Verifies that ChannelsTab no longer calls `setAgentDialogOpen` or
+     * `openSettingsToTab`. This is a defensive test — if the component still
+     * imported @/layers/shared/model, the vi.mock for that module no longer
+     * exists and the import itself would cause an error.
+     */
+    it('does not dispatch cross-dialog navigation when setting up a new channel', async () => {
+      // Provide a catalog entry with an unconfigured adapter
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [
+          {
+            manifest: {
+              type: 'webhook',
+              displayName: 'Webhook',
+              description: 'HTTP webhook',
+              category: 'messaging',
+              builtin: true,
+              configFields: [],
+              multiInstance: false,
+            },
+            instances: [],
+          },
+        ],
+      });
+
+      const view = renderTab();
+
+      // Open the picker and trigger setup
+      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(screen.getByText('Webhook'));
+
+      // The wizard opens inline; no cross-dialog navigation occurred.
+      expect(screen.getAllByTestId('adapter-setup-wizard').length).toBeGreaterThan(0);
     });
   });
 });

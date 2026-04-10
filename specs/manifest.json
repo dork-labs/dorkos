@@ -84,7 +84,7 @@
       "slug": "agent-channels-tab-01-correctness",
       "title": "Agent Dialog → Channels Tab — Correctness & Architecture Cleanup",
       "created": "2026-04-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 216,

@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
+
 import { Plug2 } from 'lucide-react';
 import { FieldCard, FieldCardContent, Skeleton } from '@/layers/shared/ui';
-import { useAdapterCatalog, useToggleAdapter } from '@/layers/entities/relay';
-import { useRelayEnabled } from '@/layers/entities/relay';
+import {
+  useExternalAdapterCatalog,
+  useRelayEnabled,
+  useToggleAdapter,
+} from '@/layers/entities/relay';
 import { useBindings } from '@/layers/entities/binding';
 import { AdapterSetupWizard, CatalogCard } from '@/layers/features/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
@@ -22,16 +26,10 @@ interface WizardState {
  */
 export function ChannelsTab() {
   const relayEnabled = useRelayEnabled();
-  const { data: catalog = [], isLoading } = useAdapterCatalog(relayEnabled);
+  const { data: externalCatalog = [], isLoading } = useExternalAdapterCatalog(relayEnabled);
   const { mutate: toggleAdapter } = useToggleAdapter();
   const { data: bindings = [] } = useBindings();
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
-
-  // Exclude internal adapters (e.g. claude-code) — they belong on the Agents tab.
-  const externalCatalog = useMemo(
-    () => catalog.filter((entry) => entry.manifest.category !== 'internal'),
-    [catalog]
-  );
 
   // Count bound agents per adapter instance for the metadata line.
   const bindingCountByAdapter = useMemo(() => {

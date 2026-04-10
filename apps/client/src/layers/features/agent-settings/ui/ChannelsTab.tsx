@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   useBindings,
@@ -6,11 +6,11 @@ import {
   useDeleteBinding,
   useUpdateBinding,
 } from '@/layers/entities/binding';
-import { useAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
-import { useAgentDialogDeepLink, useSettingsDeepLink } from '@/layers/shared/model';
+import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
 import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
+import { AdapterSetupWizard } from '@/layers/features/relay';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { ChannelBindingCard } from './ChannelBindingCard';
 import { ChannelPicker } from './ChannelPicker';
 
@@ -19,67 +19,74 @@ interface ChannelsTabProps {
   agent: AgentManifest;
 }
 
-/** State for the edit binding dialog. */
+/** Display fields derived from a catalog entry for a bound adapter instance. */
+interface AdapterDisplay {
+  state: 'connected' | 'disconnected' | 'error';
+  name: string;
+  errorMessage?: string;
+}
+
 interface EditDialogState {
   open: boolean;
   binding: AdapterBinding | null;
   adapterName: string;
 }
 
+interface WizardState {
+  open: boolean;
+  manifest?: AdapterManifest;
+}
+
 const CLOSED_EDIT_DIALOG: EditDialogState = { open: false, binding: null, adapterName: '' };
+const CLOSED_WIZARD: WizardState = { open: false };
 
 /**
  * Channels tab in the Agent dialog.
  *
  * Lists all relay bindings for the agent, lets the user add new bindings via
- * the ChannelPicker, and opens the BindingDialog for editing existing bindings.
+ * the ChannelPicker, opens the BindingDialog for editing existing bindings,
+ * and renders AdapterSetupWizard inline for configuring new adapter types.
  */
 export function ChannelsTab({ agent }: ChannelsTabProps) {
   const relayEnabled = useRelayEnabled();
   const { data: allBindings = [] } = useBindings();
-  const { data: catalog = [] } = useAdapterCatalog(relayEnabled);
+  const { data: externalCatalog = [] } = useExternalAdapterCatalog(relayEnabled);
   const createBinding = useCreateBinding();
   const deleteBinding = useDeleteBinding();
   const updateBinding = useUpdateBinding();
-  const { close: closeAgentDialog } = useAgentDialogDeepLink();
-  const { open: openSettings } = useSettingsDeepLink();
 
   const [editDialog, setEditDialog] = useState<EditDialogState>(CLOSED_EDIT_DIALOG);
+  const [wizardState, setWizardState] = useState<WizardState>(CLOSED_WIZARD);
 
   const agentBindings = allBindings.filter((b) => b.agentId === agent.id);
 
-  // Build a flat lookup: adapterId → { displayName, state, errorMessage }
-  const adapterStatusByInstanceId = new Map(
-    catalog.flatMap((entry) =>
-      entry.instances.map((inst) => [
-        inst.id,
-        {
-          displayName: inst.status.displayName ?? entry.manifest.displayName,
-          state: inst.status.state as 'connected' | 'disconnected' | 'error',
-          errorMessage: inst.status.lastError,
-        },
-      ])
-    )
+  const adapterDisplayByInstanceId = useMemo(() => {
+    const map = new Map<string, AdapterDisplay>();
+    for (const entry of externalCatalog) {
+      for (const inst of entry.instances) {
+        const raw = inst.status.state;
+        const state: AdapterDisplay['state'] =
+          raw === 'connected' || raw === 'error' ? raw : 'disconnected';
+        map.set(inst.id, {
+          state,
+          name: inst.status.displayName ?? entry.manifest.displayName,
+          errorMessage: inst.status.lastError ?? undefined,
+        });
+      }
+    }
+    return map;
+  }, [externalCatalog]);
+
+  const resolveAdapterDisplay = useCallback(
+    (adapterId: string): AdapterDisplay =>
+      adapterDisplayByInstanceId.get(adapterId) ?? { state: 'disconnected', name: adapterId },
+    [adapterDisplayByInstanceId]
   );
 
-  const boundAdapterIds = new Set(agentBindings.map((b) => b.adapterId));
-
-  function resolveAdapterState(adapterId: string): 'connected' | 'disconnected' | 'error' {
-    const status = adapterStatusByInstanceId.get(adapterId);
-    if (!status) return 'disconnected';
-    // Normalize transient states (starting, stopping, reconnecting) to disconnected for display.
-    if (status.state === 'connected' || status.state === 'error') return status.state;
-    return 'disconnected';
-  }
-
-  function resolveAdapterName(adapterId: string): string {
-    return adapterStatusByInstanceId.get(adapterId)?.displayName ?? adapterId;
-  }
-
-  function resolveErrorMessage(adapterId: string): string | undefined {
-    const status = adapterStatusByInstanceId.get(adapterId);
-    return status?.errorMessage ?? undefined;
-  }
+  const boundAdapterIds = useMemo(
+    () => new Set(agentBindings.map((b) => b.adapterId)),
+    [agentBindings]
+  );
 
   const handleSelectChannel = useCallback(
     async (adapterId: string) => {
@@ -101,22 +108,19 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
     [agent.id, createBinding]
   );
 
-  const handleSetupNewChannel = useCallback(() => {
-    // Close the agent dialog, then navigate to Settings → Channels.
-    closeAgentDialog();
-    openSettings('channels');
-  }, [closeAgentDialog, openSettings]);
+  const handleRequestSetup = useCallback((manifest: AdapterManifest) => {
+    setWizardState({ open: true, manifest });
+  }, []);
 
   const handleEdit = useCallback(
     (binding: AdapterBinding) => {
       setEditDialog({
         open: true,
         binding,
-        adapterName:
-          adapterStatusByInstanceId.get(binding.adapterId)?.displayName ?? binding.adapterId,
+        adapterName: resolveAdapterDisplay(binding.adapterId).name,
       });
     },
-    [catalog, adapterStatusByInstanceId]
+    [resolveAdapterDisplay]
   );
 
   const handleRemove = useCallback(
@@ -174,17 +178,20 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
       {/* Binding list */}
       {agentBindings.length > 0 ? (
         <div className="space-y-2">
-          {agentBindings.map((binding) => (
-            <ChannelBindingCard
-              key={binding.id}
-              binding={binding}
-              channelName={resolveAdapterName(binding.adapterId)}
-              adapterState={resolveAdapterState(binding.adapterId)}
-              errorMessage={resolveErrorMessage(binding.adapterId)}
-              onEdit={() => handleEdit(binding)}
-              onRemove={() => handleRemove(binding.id)}
-            />
-          ))}
+          {agentBindings.map((binding) => {
+            const display = resolveAdapterDisplay(binding.adapterId);
+            return (
+              <ChannelBindingCard
+                key={binding.id}
+                binding={binding}
+                channelName={display.name}
+                adapterState={display.state}
+                errorMessage={display.errorMessage}
+                onEdit={() => handleEdit(binding)}
+                onRemove={() => handleRemove(binding.id)}
+              />
+            );
+          })}
         </div>
       ) : (
         <p className="text-muted-foreground py-2 text-sm">
@@ -194,9 +201,10 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
 
       {/* Add channel picker */}
       <ChannelPicker
-        onSelectChannel={handleSelectChannel}
-        onSetupNewChannel={handleSetupNewChannel}
+        catalog={externalCatalog}
         boundAdapterIds={boundAdapterIds}
+        onSelectChannel={handleSelectChannel}
+        onRequestSetup={handleRequestSetup}
         disabled={!relayEnabled || createBinding.isPending}
       />
 
@@ -225,6 +233,18 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           onConfirm={handleEditConfirm}
           onDelete={handleEditDelete}
           isPending={updateBinding.isPending || deleteBinding.isPending}
+        />
+      )}
+
+      {/* Inline setup wizard — opens on top of the AgentDialog */}
+      {wizardState.manifest && (
+        <AdapterSetupWizard
+          open={wizardState.open}
+          onOpenChange={(open) => {
+            if (!open) setWizardState(CLOSED_WIZARD);
+          }}
+          manifest={wizardState.manifest}
+          existingAdapterIds={externalCatalog.flatMap((e) => e.instances.map((i) => i.id))}
         />
       )}
     </div>
