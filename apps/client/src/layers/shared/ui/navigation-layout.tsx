@@ -500,16 +500,19 @@ NavigationLayoutDialogHeader.displayName = 'NavigationLayoutDialogHeader';
 interface NavigationLayoutPanelHeaderProps {
   children: React.ReactNode;
   actions?: React.ReactNode;
+  description?: React.ReactNode;
   className?: string;
 }
 
 /**
  * Panel header with desktop/mobile awareness.
- * Desktop: renders title + optional actions. Mobile: hides title (shown in back button), renders actions only.
+ * Desktop: renders title + optional actions + optional description subtitle.
+ * Mobile: hides title (shown in back button), renders actions only; description is hidden.
  */
 function NavigationLayoutPanelHeader({
   children,
   actions,
+  description,
   className,
 }: NavigationLayoutPanelHeaderProps) {
   const { isMobile } = useNavigationLayout();
@@ -520,11 +523,16 @@ function NavigationLayoutPanelHeader({
     return <div className={cn('flex items-center justify-end', className)}>{actions}</div>;
   }
 
-  // Desktop: title + optional actions in a flex row
+  // Desktop: title + optional actions + optional description subtitle
   return (
-    <div className={cn('flex items-center justify-between', className)}>
-      <h3 className="text-foreground text-sm font-semibold">{children}</h3>
-      {actions}
+    <div className={cn('space-y-1', className)}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-foreground text-sm font-semibold">{children}</h3>
+        {actions}
+      </div>
+      {description && (
+        <p className="text-muted-foreground text-xs leading-relaxed">{description}</p>
+      )}
     </div>
   );
 }

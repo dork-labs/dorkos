@@ -1,7 +1,7 @@
 import { Settings } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button, Switch } from '@/layers/shared/ui';
-import { AdapterIcon } from '@/layers/features/relay';
+import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 interface ChannelSettingRowProps {
@@ -19,14 +19,8 @@ interface ChannelSettingRowProps {
 
 /** Derives Tailwind classes for the status indicator dot from the instance state. */
 function resolveStatusDotClass(instance: CatalogInstance): string {
-  const { state } = instance.status;
-  return cn('size-2 shrink-0 rounded-full', {
-    'bg-red-500': state === 'error',
-    'bg-green-500': state === 'connected',
-    'bg-gray-400': state === 'disconnected',
-    'animate-tasks bg-blue-400': state === 'starting',
-    'animate-tasks bg-gray-400': state === 'stopping',
-  });
+  const dotColor = ADAPTER_STATE_DOT_CLASS[instance.status.state] ?? 'bg-muted-foreground';
+  return cn('size-2 shrink-0 rounded-full', dotColor);
 }
 
 /**

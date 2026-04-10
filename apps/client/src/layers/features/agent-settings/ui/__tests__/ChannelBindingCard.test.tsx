@@ -1,10 +1,32 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { ChannelBindingCard } from '../ChannelBindingCard';
+import type { CardAdapterState } from '../ChannelBindingCard';
+
+// Mock AdapterIcon to avoid logo resolution in tests
+vi.mock('@/layers/features/relay', () => ({
+  AdapterIcon: ({ adapterType }: { adapterType?: string }) => (
+    <span data-testid="adapter-icon" data-adapter-type={adapterType} />
+  ),
+  ADAPTER_STATE_DOT_CLASS: {
+    connected: 'bg-green-500',
+    disconnected: 'bg-muted-foreground',
+    error: 'bg-red-500',
+    starting: 'bg-amber-500 motion-safe:animate-pulse',
+    stopping: 'bg-amber-500 motion-safe:animate-pulse',
+    reconnecting: 'bg-amber-500 motion-safe:animate-pulse',
+  },
+}));
+
+// Mock buildPreviewSentence to return deterministic text in tests
+vi.mock('@/layers/features/mesh/lib/build-preview-sentence', () => ({
+  buildPreviewSentence: vi.fn(() => 'One thread for each conversation'),
+}));
 
 // --- Test fixtures ---
 
@@ -29,6 +51,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof ChannelBindingCar
   const defaultProps: React.ComponentProps<typeof ChannelBindingCard> = {
     binding: makeBinding(),
     channelName: 'Telegram',
+    channelAdapterType: 'telegram',
     adapterState: 'connected',
     onEdit: vi.fn(),
     onRemove: vi.fn(),
@@ -49,57 +72,68 @@ describe('ChannelBindingCard', () => {
     vi.clearAllMocks();
   });
 
-  it('renders channel name', () => {
+  it('renders channel name as primary text', () => {
     const { view } = renderCard();
     expect(view.getByText('Telegram')).toBeInTheDocument();
   });
 
-  it('renders session strategy badge', () => {
+  it('renders channel name + chat display name with em-dash when chatDisplayName provided', () => {
+    const { view } = renderCard({ chatDisplayName: 'Dev chat' });
+    expect(view.getByText('Telegram — Dev chat')).toBeInTheDocument();
+  });
+
+  it('renders AdapterIcon with channelAdapterType', () => {
+    const { view } = renderCard({ channelAdapterType: 'telegram' });
+    const icon = view.getByTestId('adapter-icon');
+    expect(icon).toBeInTheDocument();
+    expect(icon).toHaveAttribute('data-adapter-type', 'telegram');
+  });
+
+  it('renders preview sentence from buildPreviewSentence', () => {
     const { view } = renderCard();
-    expect(view.getByText('per-chat')).toBeInTheDocument();
+    expect(view.getByText('One thread for each conversation')).toBeInTheDocument();
   });
 
-  it('renders chatId badge when present', () => {
-    const { view } = renderCard({
-      binding: makeBinding({ chatId: '-100123456' }),
-    });
-    expect(view.getByText('-100123456')).toBeInTheDocument();
+  it('never renders raw sessionStrategy text', () => {
+    const { view } = renderCard({ binding: makeBinding({ sessionStrategy: 'per-chat' }) });
+    expect(view.queryByText('per-chat')).not.toBeInTheDocument();
   });
 
-  it('does not render chatId badge when absent', () => {
-    const { view } = renderCard();
-    // Only the strategy badge should be present
-    const badges = view.getAllByText('per-chat');
-    expect(badges).toHaveLength(1);
+  it('never renders raw chatId text', () => {
+    const { view } = renderCard({ binding: makeBinding({ chatId: '-100123456' }) });
+    expect(view.queryByText('-100123456')).not.toBeInTheDocument();
   });
 
-  describe('status dot', () => {
+  describe('status dot overlay', () => {
     it('shows green dot when connected', () => {
       const { container } = renderCard({ adapterState: 'connected' });
-      const dot = container.querySelector('.bg-green-500');
-      expect(dot).toBeInTheDocument();
+      expect(container.querySelector('.bg-green-500')).toBeInTheDocument();
     });
 
-    it('shows amber dot when disconnected', () => {
+    it('shows amber dot when disconnected (dropped binding warrants attention)', () => {
       const { container } = renderCard({ adapterState: 'disconnected' });
-      const dot = container.querySelector('.bg-amber-500');
-      expect(dot).toBeInTheDocument();
+      expect(container.querySelector('.bg-amber-500')).toBeInTheDocument();
     });
 
     it('shows red dot when error', () => {
       const { container } = renderCard({ adapterState: 'error' });
-      const dot = container.querySelector('.bg-red-500');
-      expect(dot).toBeInTheDocument();
+      expect(container.querySelector('.bg-red-500')).toBeInTheDocument();
+    });
+
+    it('shows amber pulse dot when connecting', () => {
+      const { container } = renderCard({ adapterState: 'connecting' });
+      expect(container.querySelector('.bg-amber-500')).toBeInTheDocument();
     });
   });
 
   describe('error state', () => {
-    it('shows error message when adapter is in error state', () => {
+    it('shows error message (not preview sentence) when adapter is in error state', () => {
       const { view } = renderCard({
         adapterState: 'error',
         errorMessage: 'Connection refused',
       });
       expect(view.getByText('Connection refused')).toBeInTheDocument();
+      expect(view.queryByText('One thread for each conversation')).not.toBeInTheDocument();
     });
 
     it('does not show error message when adapter is connected', () => {
@@ -112,69 +146,64 @@ describe('ChannelBindingCard', () => {
 
     it('applies error border class when in error state', () => {
       const { container } = renderCard({ adapterState: 'error' });
-      const card = container.querySelector('.border-red-500\\/50');
-      expect(card).toBeInTheDocument();
+      expect(container.querySelector('.border-red-500\\/50')).toBeInTheDocument();
     });
   });
 
-  describe('permission icons', () => {
-    // Tooltip content renders in a portal only when open, so we test for the
-    // presence/absence of the icon SVG element by its lucide class name instead.
-    it('shows initiate icon when canInitiate is true', () => {
-      const { container } = renderCard({
-        binding: makeBinding({ canInitiate: true }),
+  describe('Restricted pill', () => {
+    it('does not show Restricted pill when all permissions are default', () => {
+      const { view } = renderCard({
+        binding: makeBinding({ canInitiate: false, canReply: true, canReceive: true }),
       });
-      expect(container.querySelector('.lucide-zap')).toBeInTheDocument();
+      expect(view.queryByText('Restricted')).not.toBeInTheDocument();
     });
 
-    it('does not show initiate icon when canInitiate is false', () => {
+    it('shows Restricted pill when canInitiate is true', () => {
+      const { view } = renderCard({ binding: makeBinding({ canInitiate: true }) });
+      expect(view.getByText('Restricted')).toBeInTheDocument();
+    });
+
+    it('shows Restricted pill when canReply is false', () => {
+      const { view } = renderCard({ binding: makeBinding({ canReply: false }) });
+      expect(view.getByText('Restricted')).toBeInTheDocument();
+    });
+
+    it('shows Restricted pill when canReceive is false', () => {
+      const { view } = renderCard({ binding: makeBinding({ canReceive: false }) });
+      expect(view.getByText('Restricted')).toBeInTheDocument();
+    });
+
+    it('does not show per-permission icons (zap, message-square-off, bell-off)', () => {
       const { container } = renderCard({
-        binding: makeBinding({ canInitiate: false }),
+        binding: makeBinding({ canInitiate: true, canReply: false, canReceive: false }),
       });
       expect(container.querySelector('.lucide-zap')).not.toBeInTheDocument();
-    });
-
-    it('shows "cannot reply" icon when canReply is false', () => {
-      const { container } = renderCard({
-        binding: makeBinding({ canReply: false }),
-      });
-      expect(container.querySelector('.lucide-message-square-off')).toBeInTheDocument();
-    });
-
-    it('does not show "cannot reply" icon when canReply is true', () => {
-      const { container } = renderCard({
-        binding: makeBinding({ canReply: true }),
-      });
       expect(container.querySelector('.lucide-message-square-off')).not.toBeInTheDocument();
-    });
-
-    it('shows "cannot receive" icon when canReceive is false', () => {
-      const { container } = renderCard({
-        binding: makeBinding({ canReceive: false }),
-      });
-      expect(container.querySelector('.lucide-bell-off')).toBeInTheDocument();
-    });
-
-    it('does not show "cannot receive" icon when canReceive is true', () => {
-      const { container } = renderCard({
-        binding: makeBinding({ canReceive: true }),
-      });
       expect(container.querySelector('.lucide-bell-off')).not.toBeInTheDocument();
     });
   });
 
-  describe('hover actions', () => {
-    it('calls onEdit when Edit button is clicked', () => {
+  describe('kebab menu actions', () => {
+    it('renders an always-visible Actions button', () => {
+      const { view } = renderCard();
+      expect(view.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
+    });
+
+    it('calls onEdit when Edit is clicked in the kebab menu', async () => {
+      const user = userEvent.setup();
       const onEdit = vi.fn();
       const { view } = renderCard({ onEdit });
-      fireEvent.click(view.getByText('Edit'));
+      // userEvent opens the Radix dropdown; fireEvent bypasses pointer-events:none on portal items
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Edit'));
       expect(onEdit).toHaveBeenCalledTimes(1);
     });
 
-    it('shows remove confirmation dialog when Remove is clicked', () => {
+    it('shows remove confirmation dialog when Remove is clicked in the kebab menu', async () => {
+      const user = userEvent.setup();
       const { view } = renderCard({ channelName: 'Telegram' });
-      fireEvent.click(view.getByText('Remove'));
-      // AlertDialog renders via portal — use screen to find portal content
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
       expect(screen.getByText('Remove channel binding')).toBeInTheDocument();
       expect(
         screen.getByText(
@@ -183,13 +212,15 @@ describe('ChannelBindingCard', () => {
       ).toBeInTheDocument();
     });
 
-    it('calls onRemove when removal is confirmed', () => {
+    it('calls onRemove when removal is confirmed', async () => {
+      // pointerEventsCheck: 0 because the AlertDialog traps pointer-events on the rest of the DOM
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
       const onRemove = vi.fn();
       const { view } = renderCard({ onRemove });
 
-      fireEvent.click(view.getByText('Remove'));
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
 
-      // AlertDialog renders via portal — find the red confirm button there
       const dialogContent = screen.getByRole('alertdialog');
       const confirmButton = within(dialogContent)
         .getAllByRole('button')
@@ -199,15 +230,27 @@ describe('ChannelBindingCard', () => {
       expect(onRemove).toHaveBeenCalledTimes(1);
     });
 
-    it('does not call onRemove when Cancel is clicked in confirmation', () => {
+    it('does not call onRemove when Cancel is clicked in confirmation', async () => {
+      // pointerEventsCheck: 0 because the AlertDialog traps pointer-events on the rest of the DOM
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
       const onRemove = vi.fn();
       const { view } = renderCard({ onRemove });
 
-      fireEvent.click(view.getByText('Remove'));
-      // AlertDialog renders via portal
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
+
       const dialogContent = screen.getByRole('alertdialog');
       fireEvent.click(within(dialogContent).getByText('Cancel'));
       expect(onRemove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('type safety', () => {
+    it('accepts all four CardAdapterState values', () => {
+      const states: CardAdapterState[] = ['connected', 'disconnected', 'error', 'connecting'];
+      for (const adapterState of states) {
+        expect(() => renderCard({ adapterState })).not.toThrow();
+      }
     });
   });
 });

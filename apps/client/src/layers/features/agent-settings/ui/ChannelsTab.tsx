@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { Plug2, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useBindings,
@@ -9,9 +10,11 @@ import {
 import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
 import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
 import { AdapterSetupWizard } from '@/layers/features/relay';
+import { useAppStore } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { ChannelBindingCard } from './ChannelBindingCard';
+import { BoundChannelRow } from './BoundChannelRow';
 import { ChannelPicker } from './ChannelPicker';
 
 interface ChannelsTabProps {
@@ -21,8 +24,10 @@ interface ChannelsTabProps {
 
 /** Display fields derived from a catalog entry for a bound adapter instance. */
 interface AdapterDisplay {
-  state: 'connected' | 'disconnected' | 'error';
+  state: 'connected' | 'disconnected' | 'error' | 'connecting';
   name: string;
+  iconId?: string;
+  adapterType: string;
   errorMessage?: string;
 }
 
@@ -54,6 +59,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
   const createBinding = useCreateBinding();
   const deleteBinding = useDeleteBinding();
   const updateBinding = useUpdateBinding();
+  const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
 
   const [editDialog, setEditDialog] = useState<EditDialogState>(CLOSED_EDIT_DIALOG);
   const [wizardState, setWizardState] = useState<WizardState>(CLOSED_WIZARD);
@@ -66,10 +72,16 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
       for (const inst of entry.instances) {
         const raw = inst.status.state;
         const state: AdapterDisplay['state'] =
-          raw === 'connected' || raw === 'error' ? raw : 'disconnected';
+          raw === 'connected' || raw === 'error'
+            ? raw
+            : raw === 'starting' || raw === 'stopping' || raw === 'reconnecting'
+              ? 'connecting'
+              : 'disconnected';
         map.set(inst.id, {
           state,
           name: inst.status.displayName ?? entry.manifest.displayName,
+          iconId: entry.manifest.iconId,
+          adapterType: entry.manifest.type,
           errorMessage: inst.status.lastError ?? undefined,
         });
       }
@@ -79,7 +91,11 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
 
   const resolveAdapterDisplay = useCallback(
     (adapterId: string): AdapterDisplay =>
-      adapterDisplayByInstanceId.get(adapterId) ?? { state: 'disconnected', name: adapterId },
+      adapterDisplayByInstanceId.get(adapterId) ?? {
+        state: 'disconnected',
+        name: adapterId,
+        adapterType: adapterId,
+      },
     [adapterDisplayByInstanceId]
   );
 
@@ -173,42 +189,10 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
     [deleteBinding]
   );
 
-  return (
-    <div className="space-y-4">
-      {/* Binding list */}
-      {agentBindings.length > 0 ? (
-        <div className="space-y-2">
-          {agentBindings.map((binding) => {
-            const display = resolveAdapterDisplay(binding.adapterId);
-            return (
-              <ChannelBindingCard
-                key={binding.id}
-                binding={binding}
-                channelName={display.name}
-                adapterState={display.state}
-                errorMessage={display.errorMessage}
-                onEdit={() => handleEdit(binding)}
-                onRemove={() => handleRemove(binding.id)}
-              />
-            );
-          })}
-        </div>
-      ) : (
-        <p className="text-muted-foreground py-2 text-sm">
-          {relayEnabled ? 'No channels connected.' : 'Relay is not enabled.'}
-        </p>
-      )}
-
-      {/* Add channel picker */}
-      <ChannelPicker
-        catalog={externalCatalog}
-        boundAdapterIds={boundAdapterIds}
-        onSelectChannel={handleSelectChannel}
-        onRequestSetup={handleRequestSetup}
-        disabled={!relayEnabled || createBinding.isPending}
-      />
-
-      {/* Edit binding dialog */}
+  // Shared dialogs — rendered in all states so wizard/edit state is preserved
+  // if the component re-renders into a different state while they are open.
+  const dialogs = (
+    <>
       {editDialog.binding && (
         <BindingDialog
           open={editDialog.open}
@@ -235,8 +219,6 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           isPending={updateBinding.isPending || deleteBinding.isPending}
         />
       )}
-
-      {/* Inline setup wizard — opens on top of the AgentDialog */}
       {wizardState.manifest && (
         <AdapterSetupWizard
           open={wizardState.open}
@@ -247,6 +229,112 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           existingAdapterIds={externalCatalog.flatMap((e) => e.instances.map((i) => i.id))}
         />
       )}
+    </>
+  );
+
+  // State A: relay bus is off
+  if (!relayEnabled) {
+    return (
+      <>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
+          <Plug2 className="text-muted-foreground/40 size-8" />
+          <div className="space-y-1 text-center">
+            <p className="text-sm font-medium">The Relay message bus is off</p>
+            <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
+              Channels connect this agent to external messaging platforms. Enable Relay in Settings
+              to get started.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => openSettingsToTab('advanced')}>
+            Open Relay settings
+          </Button>
+        </div>
+        {dialogs}
+      </>
+    );
+  }
+
+  // State B: relay on but no external adapters configured
+  if (externalCatalog.length === 0) {
+    return (
+      <>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
+          <Radio className="text-muted-foreground/40 size-8" />
+          <div className="space-y-1 text-center">
+            <p className="text-sm font-medium">No channels available</p>
+            <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
+              To connect this agent to Telegram, Slack, or a webhook, first configure a channel in
+              Settings. It will appear here as soon as it&apos;s ready.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => openSettingsToTab('channels')}>
+            Configure a channel
+          </Button>
+        </div>
+        {dialogs}
+      </>
+    );
+  }
+
+  // State C: relay on, adapters exist, no bindings for this agent
+  if (agentBindings.length === 0) {
+    return (
+      <>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
+          <Radio className="text-muted-foreground/40 size-8" />
+          <div className="space-y-1 text-center">
+            <p className="text-sm font-medium">Let this agent reach the outside world</p>
+            <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
+              Connect Telegram, Slack, or a webhook so this agent can send and receive messages
+              while you are away.
+            </p>
+          </div>
+          <ChannelPicker
+            catalog={externalCatalog}
+            boundAdapterIds={boundAdapterIds}
+            onSelectChannel={handleSelectChannel}
+            onRequestSetup={handleRequestSetup}
+            disabled={createBinding.isPending}
+          />
+        </div>
+        {dialogs}
+      </>
+    );
+  }
+
+  // State D: bindings exist — standard list with picker below
+  return (
+    <div className="space-y-4">
+      {/* Binding list */}
+      <div className="space-y-2">
+        {agentBindings.map((binding) => {
+          const display = resolveAdapterDisplay(binding.adapterId);
+          return (
+            <BoundChannelRow
+              key={binding.id}
+              binding={binding}
+              channelName={display.name}
+              channelIconId={display.iconId}
+              channelAdapterType={display.adapterType}
+              adapterState={display.state}
+              errorMessage={display.errorMessage}
+              onEdit={() => handleEdit(binding)}
+              onRemove={() => handleRemove(binding.id)}
+            />
+          );
+        })}
+      </div>
+
+      {/* Add channel picker */}
+      <ChannelPicker
+        catalog={externalCatalog}
+        boundAdapterIds={boundAdapterIds}
+        onSelectChannel={handleSelectChannel}
+        onRequestSetup={handleRequestSetup}
+        disabled={createBinding.isPending}
+      />
+
+      {dialogs}
     </div>
   );
 }

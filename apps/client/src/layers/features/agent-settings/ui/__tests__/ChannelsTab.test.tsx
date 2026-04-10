@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas';
@@ -34,10 +35,20 @@ vi.mock('@/layers/entities/binding', () => ({
 
 const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
 const mockUseExternalAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
+// BoundChannelRow calls useObservedChats once per binding to resolve chatId → displayName.
+const mockUseObservedChats = vi.fn(() => ({ data: [] }));
 
 vi.mock('@/layers/entities/relay', () => ({
   useRelayEnabled: () => mockUseRelayEnabled(),
   useExternalAdapterCatalog: () => mockUseExternalAdapterCatalog(),
+  useObservedChats: () => mockUseObservedChats(),
+}));
+
+const mockOpenSettingsToTab = vi.fn();
+
+vi.mock('@/layers/shared/model', () => ({
+  useAppStore: (selector: (s: { openSettingsToTab: typeof mockOpenSettingsToTab }) => unknown) =>
+    selector({ openSettingsToTab: mockOpenSettingsToTab }),
 }));
 
 vi.mock('@/layers/features/relay', () => ({
@@ -53,6 +64,25 @@ vi.mock('@/layers/features/relay', () => ({
         <button onClick={() => onOpenChange(false)}>Close Wizard</button>
       </div>
     ) : null,
+  AdapterIcon: ({ adapterType }: { adapterType?: string }) => (
+    <span data-testid="adapter-icon" data-adapter-type={adapterType} />
+  ),
+  ADAPTER_STATE_DOT_CLASS: {
+    connected: 'bg-green-500',
+    disconnected: 'bg-muted-foreground',
+    error: 'bg-red-500',
+    starting: 'bg-amber-500',
+    stopping: 'bg-amber-500',
+    reconnecting: 'bg-amber-500',
+  },
+  ADAPTER_STATE_LABEL: {
+    connected: 'Connected',
+    disconnected: 'Ready',
+    error: 'Error',
+    starting: 'Connecting\u2026',
+    stopping: 'Stopping\u2026',
+    reconnecting: 'Reconnecting\u2026',
+  },
 }));
 
 // Stub BindingDialog to avoid its complex internals
@@ -188,19 +218,46 @@ describe('ChannelsTab', () => {
     vi.clearAllMocks();
     mockUseRelayEnabled.mockReturnValue(true);
     mockUseBindings.mockReturnValue({ data: [] });
-    mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
+    // Default to one catalog entry so most tests reach State C/D rather than State B.
+    mockUseExternalAdapterCatalog.mockReturnValue({
+      data: [makeCatalogEntry({ instanceId: 'telegram-1', displayName: 'Telegram' })],
+    });
   });
 
   describe('empty state', () => {
-    it('shows "No channels connected." when relay is enabled but no bindings exist', () => {
-      const view = renderTab();
-      expect(view.getByText('No channels connected.')).toBeInTheDocument();
-    });
-
-    it('shows "Relay is not enabled." when relay is disabled', () => {
+    it('State A: shows relay-off message and CTA when relay is disabled', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.getByText('Relay is not enabled.')).toBeInTheDocument();
+      expect(view.getByText('The Relay message bus is off')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
+    });
+
+    it('State A: CTA calls openSettingsToTab("advanced")', () => {
+      mockUseRelayEnabled.mockReturnValue(false);
+      const view = renderTab();
+      fireEvent.click(view.getByRole('button', { name: 'Open Relay settings' }));
+      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('advanced');
+    });
+
+    it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
+      mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
+      const view = renderTab();
+      expect(view.getByText('No channels available')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Configure a channel' })).toBeInTheDocument();
+    });
+
+    it('State B: CTA calls openSettingsToTab("channels")', () => {
+      mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
+      const view = renderTab();
+      fireEvent.click(view.getByRole('button', { name: 'Configure a channel' }));
+      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('channels');
+    });
+
+    it('State C: shows no-bindings message with ChannelPicker CTA when relay is on and adapters exist', () => {
+      // Default beforeEach: relay enabled, one catalog entry, no bindings.
+      const view = renderTab();
+      expect(view.getByText('Let this agent reach the outside world')).toBeInTheDocument();
+      expect(view.getByText('Connect to Channel')).toBeInTheDocument();
     });
   });
 
@@ -246,7 +303,11 @@ describe('ChannelsTab', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ adapterId: 'unknown-adapter' })],
       });
-      mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
+      // Provide a catalog entry for a *different* adapter so State B doesn't fire,
+      // but the binding's adapterId is still absent from the catalog.
+      mockUseExternalAdapterCatalog.mockReturnValue({
+        data: [makeCatalogEntry({ instanceId: 'telegram-1', displayName: 'Telegram' })],
+      });
 
       const view = renderTab();
       expect(view.getByText('unknown-adapter')).toBeInTheDocument();
@@ -254,20 +315,31 @@ describe('ChannelsTab', () => {
   });
 
   describe('ChannelPicker integration', () => {
-    it('renders the Connect to Channel button', () => {
+    it('renders the Connect to Channel button in State C (no bindings)', () => {
+      // Default beforeEach: relay enabled, one catalog entry, no bindings → State C.
       const view = renderTab();
       expect(view.getByText('Connect to Channel')).toBeInTheDocument();
     });
 
-    it('disables picker when relay is not enabled', () => {
+    it('renders the Connect to Channel button in State D (bindings exist)', () => {
+      mockUseBindings.mockReturnValue({
+        data: [makeBinding({ id: 'b-1', adapterId: 'telegram-1' })],
+      });
+      const view = renderTab();
+      expect(view.getByText('Connect to Channel')).toBeInTheDocument();
+    });
+
+    it('does not render ChannelPicker in State A (relay off) — shows relay CTA instead', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.getByText('Connect to Channel').closest('button')).toBeDisabled();
+      expect(view.queryByText('Connect to Channel')).not.toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
     });
   });
 
   describe('remove binding', () => {
     it('calls deleteBinding.mutateAsync when a binding is removed', async () => {
+      const user = userEvent.setup();
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-to-remove' })],
       });
@@ -277,8 +349,9 @@ describe('ChannelsTab', () => {
 
       const view = renderTab();
 
-      // Click the Remove button on the card
-      fireEvent.click(view.getByText('Remove'));
+      // userEvent opens the Radix dropdown; fireEvent bypasses pointer-events:none on portal items
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Remove'));
 
       // AlertDialog renders via portal — find confirm button via screen
       const dialogContent = screen.getByRole('alertdialog');
@@ -295,7 +368,8 @@ describe('ChannelsTab', () => {
   });
 
   describe('edit binding dialog', () => {
-    it('opens BindingDialog when Edit is clicked on a card', () => {
+    it('opens BindingDialog when Edit is clicked on a card', async () => {
+      const user = userEvent.setup();
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-edit' })],
       });
@@ -304,11 +378,13 @@ describe('ChannelsTab', () => {
       });
 
       const view = renderTab();
-      fireEvent.click(view.getByText('Edit'));
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Edit'));
       expect(view.getByTestId('binding-dialog')).toBeInTheDocument();
     });
 
     it('calls updateBinding.mutateAsync when edit dialog is confirmed', async () => {
+      const user = userEvent.setup();
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-edit' })],
       });
@@ -317,7 +393,8 @@ describe('ChannelsTab', () => {
       });
 
       const view = renderTab();
-      fireEvent.click(view.getByText('Edit'));
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Edit'));
       fireEvent.click(view.getByText('Confirm'));
 
       await waitFor(() => {
@@ -326,6 +403,7 @@ describe('ChannelsTab', () => {
     });
 
     it('calls deleteBinding.mutateAsync when delete is triggered from dialog', async () => {
+      const user = userEvent.setup();
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-dialog-delete' })],
       });
@@ -334,7 +412,8 @@ describe('ChannelsTab', () => {
       });
 
       const view = renderTab();
-      fireEvent.click(view.getByText('Edit'));
+      await user.click(view.getByRole('button', { name: 'Actions' }));
+      fireEvent.click(screen.getByText('Edit'));
       fireEvent.click(view.getByText('Delete from dialog'));
 
       await waitFor(() => {
@@ -402,10 +481,8 @@ describe('ChannelsTab', () => {
     });
 
     /**
-     * Verifies that ChannelsTab no longer calls `setAgentDialogOpen` or
-     * `openSettingsToTab`. This is a defensive test — if the component still
-     * imported @/layers/shared/model, the vi.mock for that module no longer
-     * exists and the import itself would cause an error.
+     * Verifies that the inline wizard flow does NOT call openSettingsToTab —
+     * that action is reserved for the empty-state CTAs (States A and B).
      */
     it('does not dispatch cross-dialog navigation when setting up a new channel', async () => {
       // Provide a catalog entry with an unconfigured adapter
@@ -432,8 +509,9 @@ describe('ChannelsTab', () => {
       fireEvent.click(view.getByText('Connect to Channel'));
       fireEvent.click(screen.getByText('Webhook'));
 
-      // The wizard opens inline; no cross-dialog navigation occurred.
+      // The wizard opens inline; openSettingsToTab was NOT called.
       expect(screen.getAllByTestId('adapter-setup-wizard').length).toBeGreaterThan(0);
+      expect(mockOpenSettingsToTab).not.toHaveBeenCalled();
     });
   });
 });

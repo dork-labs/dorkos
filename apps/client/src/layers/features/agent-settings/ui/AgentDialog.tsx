@@ -13,9 +13,15 @@ import { NoAgentFallback } from './NoAgentFallback';
 
 const AGENT_TABS: TabbedDialogTab<AgentDialogTab>[] = [
   { id: 'identity', label: 'Identity', icon: User, component: IdentityTabConsumer },
+  {
+    id: 'channels',
+    label: 'Channels',
+    icon: Radio,
+    component: ChannelsTabConsumer,
+    description: 'Connect this agent to messaging platforms so it can send and receive messages.',
+  },
   { id: 'personality', label: 'Personality', icon: Sparkles, component: PersonalityTabConsumer },
   { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTabConsumer },
-  { id: 'channels', label: 'Channels', icon: Radio, component: ChannelsTabConsumer },
 ];
 
 interface AgentDialogProps {

@@ -277,12 +277,12 @@ describe('BindingDialog', () => {
       />
     );
     expect(
-      screen.getByText(/All messages will be routed to Alpha Bot using per-chat sessions/)
+      screen.getByText(/One thread for each conversation — routed to Alpha Bot\./)
     ).toBeInTheDocument();
   });
 
   it('does not show preview sentence when form is incomplete', () => {
     render(<BindingDialog {...defaultProps()} />);
-    expect(screen.queryByText(/will be routed to/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/routed to/)).not.toBeInTheDocument();
   });
 });

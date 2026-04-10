@@ -34,6 +34,7 @@ import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { BindingAdvancedSection } from './BindingAdvancedSection';
+import { buildPreviewSentence, SELECT_ANY } from '../lib/build-preview-sentence';
 
 const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'dm', label: 'Direct Message' },
@@ -41,13 +42,6 @@ const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'channel', label: 'Channel' },
   { value: 'thread', label: 'Thread' },
 ];
-
-/**
- * Sentinel value used for Radix Select "any / no filter" option.
- * Radix forbids empty-string values on SelectItem, so we use this
- * sentinel and convert back to undefined before submitting.
- */
-const SELECT_ANY = '__any__';
 
 /** Values submitted when the user confirms the dialog. */
 export interface BindingFormValues {
@@ -72,35 +66,6 @@ function hasNonDefaultAdvanced(vals?: Partial<BindingFormValues>): boolean {
     (vals?.permissionMode !== undefined && vals.permissionMode !== 'acceptEdits') ||
     (vals?.sessionStrategy && vals.sessionStrategy !== 'per-chat')
   );
-}
-
-/** Human-readable strategy labels for the preview sentence. */
-const STRATEGY_LABELS: Record<SessionStrategy, string> = {
-  'per-chat': 'per-chat sessions',
-  'per-user': 'per-user sessions',
-  stateless: 'stateless sessions',
-};
-
-/**
- * Build a human-readable preview of what the binding will do.
- *
- * @param values - Current form values
- * @param agentName - Resolved display name of the selected agent
- */
-function buildPreviewSentence(
-  values: { chatId: string; channelType: string; strategy: SessionStrategy },
-  agentName: string | undefined
-): string | null {
-  if (!agentName) return null;
-
-  const scope =
-    values.chatId !== SELECT_ANY
-      ? `Messages from #${values.chatId}`
-      : values.channelType !== SELECT_ANY
-        ? `${values.channelType.charAt(0).toUpperCase() + values.channelType.slice(1)} messages`
-        : 'All messages';
-
-  return `${scope} will be routed to ${agentName} using ${STRATEGY_LABELS[values.strategy]}.`;
 }
 
 /** Build TanStack Form default values from optional initial values. */
@@ -275,16 +240,19 @@ export function BindingDialog({
             const resolvedAgentName = isEdit
               ? agentName
               : agentOptions.find((a) => a.id === values.agentId)?.name;
-            const previewSentence = isValid
-              ? buildPreviewSentence(
-                  {
-                    chatId: values.chatId,
-                    channelType: values.channelType,
-                    strategy: values.strategy,
-                  },
-                  resolvedAgentName
-                )
-              : null;
+            const previewSentence =
+              isValid && resolvedAgentName
+                ? (() => {
+                    const sentence = buildPreviewSentence({
+                      sessionStrategy: values.strategy,
+                      chatDisplayName:
+                        values.chatId !== SELECT_ANY ? `#${values.chatId}` : undefined,
+                      channelType:
+                        values.channelType !== SELECT_ANY ? values.channelType : undefined,
+                    });
+                    return `${sentence} — routed to ${resolvedAgentName}.`;
+                  })()
+                : null;
             // SELECT_ANY means "no filter selected" — used for badge and clear button visibility.
             const hasChatFilter = values.chatId !== SELECT_ANY || values.channelType !== SELECT_ANY;
             // Advanced section badge: non-default when strategy or permissions deviate from defaults.

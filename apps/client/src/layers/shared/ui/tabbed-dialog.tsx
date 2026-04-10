@@ -31,6 +31,8 @@ export interface TabbedDialogTab<T extends string> {
   component: ComponentType;
   /** Optional per-tab header actions (e.g., a "Reset to defaults" button). */
   actions?: ReactNode;
+  /** Optional description rendered below the panel header title on desktop. */
+  description?: ReactNode;
 }
 
 /** Props for `TabbedDialog`. */
@@ -133,7 +135,10 @@ export function TabbedDialog<T extends string>({
                 return (
                   <NavigationLayoutPanel key={tab.id} value={tab.id}>
                     <div className="space-y-4">
-                      <NavigationLayoutPanelHeader actions={tab.actions}>
+                      <NavigationLayoutPanelHeader
+                        actions={tab.actions}
+                        description={tab.description}
+                      >
                         {tab.label}
                       </NavigationLayoutPanelHeader>
                       <Suspense fallback={<TabSuspenseFallback />}>

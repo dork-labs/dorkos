@@ -12,6 +12,14 @@ vi.mock('@/layers/features/relay', () => ({
   AdapterIcon: ({ adapterType }: { adapterType: string }) => (
     <span data-testid="adapter-icon">{adapterType}</span>
   ),
+  ADAPTER_STATE_DOT_CLASS: {
+    connected: 'bg-green-500',
+    disconnected: 'bg-muted-foreground',
+    error: 'bg-red-500',
+    starting: 'bg-amber-500 motion-safe:animate-pulse',
+    stopping: 'bg-amber-500 motion-safe:animate-pulse',
+    reconnecting: 'bg-amber-500 motion-safe:animate-pulse',
+  },
 }));
 
 beforeAll(() => {

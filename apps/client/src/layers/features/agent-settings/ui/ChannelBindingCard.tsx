@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Zap, MessageSquareOff, BellOff } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -14,19 +14,59 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
+import { buildPreviewSentence } from '@/layers/features/mesh/lib/build-preview-sentence';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+
+/** The four states exposed by ChannelBindingCard (transient states collapsed to 'connecting'). */
+export type CardAdapterState = 'connected' | 'disconnected' | 'error' | 'connecting';
+
+/**
+ * Maps the four card-level states to dot classes.
+ * 'disconnected' uses amber here — a dropped channel binding warrants attention,
+ * unlike the relay panel where disconnected means idle/ready (muted-foreground).
+ * 'connecting' surfaces as the amber-pulsing 'starting' class — same visual meaning.
+ */
+const STATE_DOT_CLASS: Record<CardAdapterState, string> = {
+  connected: ADAPTER_STATE_DOT_CLASS.connected,
+  disconnected: 'bg-amber-500',
+  error: ADAPTER_STATE_DOT_CLASS.error,
+  connecting: ADAPTER_STATE_DOT_CLASS.starting,
+};
+
+/**
+ * Returns a human-readable summary of non-default permissions for the tooltip.
+ * Empty string when no permissions deviate from defaults.
+ */
+function buildRestrictionDetail(binding: AdapterBinding): string {
+  const parts: string[] = [];
+  if (binding.canInitiate) parts.push('Can start conversations');
+  if (!binding.canReply) parts.push('Cannot reply');
+  if (!binding.canReceive) parts.push('Cannot receive');
+  return parts.join(' · ');
+}
 
 interface ChannelBindingCardProps {
   /** The binding to display. */
   binding: AdapterBinding;
   /** Display name of the channel (adapter displayName from catalog). */
   channelName: string;
-  /** Current adapter connection state. */
-  adapterState: 'connected' | 'disconnected' | 'error';
-  /** Whether the adapter has an error message to show. */
+  /** Icon identifier from the adapter manifest. */
+  channelIconId?: string;
+  /** Adapter type — used as icon fallback when channelIconId is absent. */
+  channelAdapterType: string;
+  /** Current adapter connection state. Transient states (starting/stopping/reconnecting) should be passed as 'connecting'. */
+  adapterState: CardAdapterState;
+  /** Error message to show when adapterState === 'error'. */
   errorMessage?: string;
+  /** Pre-resolved display name for the binding's chatId, if any. */
+  chatDisplayName?: string;
   /** Called when the user clicks Edit. */
   onEdit: () => void;
   /** Called when the user confirms removal. */
@@ -34,102 +74,103 @@ interface ChannelBindingCardProps {
 }
 
 /**
- * Card displaying a single channel binding with status dot, name, strategy badge,
- * chat filter, permission icons, hover actions, error state, and remove confirmation.
+ * Card displaying a single channel binding with progressive disclosure design.
+ *
+ * Primary surface shows: brand icon with status-dot overlay, channel name,
+ * optional chat display name, preview sentence (or error), Restricted pill
+ * when permissions deviate from defaults, and an always-visible kebab menu.
+ *
+ * Raw jargon (sessionStrategy, chatId, per-permission icons) is never shown
+ * on this card — those details live in the edit dialog.
  */
 export function ChannelBindingCard({
   binding,
   channelName,
+  channelIconId,
+  channelAdapterType,
   adapterState,
   errorMessage,
+  chatDisplayName,
   onEdit,
   onRemove,
 }: ChannelBindingCardProps) {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
+  // Concatenate channel name + chat display name with an em-dash when present.
+  const primaryText = chatDisplayName ? `${channelName} — ${chatDisplayName}` : channelName;
+
+  const previewSentence = buildPreviewSentence({
+    sessionStrategy: binding.sessionStrategy,
+    chatDisplayName,
+    channelType: binding.channelType,
+  });
+
+  // Show the Restricted pill when any permission deviates from its default.
+  const isRestricted = binding.canInitiate || !binding.canReply || !binding.canReceive;
+  const restrictionDetail = isRestricted ? buildRestrictionDetail(binding) : '';
+
   return (
     <div
       className={cn(
-        'group relative rounded-lg border px-3 py-2.5 transition-colors',
-        adapterState === 'error' && 'border-red-500/50'
+        'relative rounded-xl border px-4 py-3 transition-colors',
+        adapterState === 'error' && 'border-red-500/50 bg-red-500/[0.02]'
       )}
     >
-      <div className="flex items-center gap-3">
-        {/* Status dot */}
-        <span
-          className={cn(
-            'size-2 shrink-0 rounded-full',
-            adapterState === 'connected' && 'bg-green-500',
-            adapterState === 'disconnected' && 'bg-amber-500',
-            adapterState === 'error' && 'bg-red-500'
-          )}
-        />
+      <div className="flex items-start gap-3">
+        {/* Brand icon with status-dot overlay */}
+        <div className="relative shrink-0">
+          <AdapterIcon iconId={channelIconId} adapterType={channelAdapterType} size={32} />
+          <span
+            className={cn(
+              'ring-background absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2',
+              STATE_DOT_CLASS[adapterState]
+            )}
+          />
+        </div>
 
-        {/* Channel name */}
-        <span className="text-sm font-medium">{channelName}</span>
+        {/* Text content */}
+        <div className="min-w-0 flex-1">
+          <span className="truncate text-sm font-medium">{primaryText}</span>
+          {adapterState === 'error' && errorMessage ? (
+            <p className="text-xs text-red-600 dark:text-red-400">{errorMessage}</p>
+          ) : previewSentence ? (
+            <p className="text-muted-foreground truncate text-xs italic">{previewSentence}</p>
+          ) : null}
+        </div>
 
-        {/* Strategy badge */}
-        <Badge variant="outline" className="text-xs">
-          {binding.sessionStrategy}
-        </Badge>
-
-        {/* Chat filter badge (optional) */}
-        {binding.chatId && (
-          <Badge variant="secondary" className="text-xs">
-            {binding.chatId}
-          </Badge>
+        {/* Restricted pill — shown only when permissions deviate from defaults */}
+        {isRestricted && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="outline" className="text-xs">
+                Restricted
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{restrictionDetail}</TooltipContent>
+          </Tooltip>
         )}
 
-        {/* Permission icons */}
-        <div className="ml-auto flex items-center gap-1">
-          {binding.canInitiate && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Zap className="text-muted-foreground size-3" />
-              </TooltipTrigger>
-              <TooltipContent>Can initiate conversations</TooltipContent>
-            </Tooltip>
-          )}
-          {!binding.canReply && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <MessageSquareOff className="text-muted-foreground/50 size-3" />
-              </TooltipTrigger>
-              <TooltipContent>Cannot reply</TooltipContent>
-            </Tooltip>
-          )}
-          {!binding.canReceive && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <BellOff className="text-muted-foreground/50 size-3" />
-              </TooltipTrigger>
-              <TooltipContent>Cannot receive</TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-
-        {/* Hover actions */}
-        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onEdit}>
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive h-7 px-2 text-xs"
-            onClick={() => setShowRemoveConfirm(true)}
-          >
-            Remove
-          </Button>
-        </div>
+        {/* Always-visible kebab menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+              <MoreHorizontal className="size-4" />
+              <span className="sr-only">Actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setShowRemoveConfirm(true)}
+              className="text-destructive focus:text-destructive"
+            >
+              Remove
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {/* Error detail */}
-      {adapterState === 'error' && errorMessage && (
-        <p className="mt-1.5 text-xs text-red-500">{errorMessage}</p>
-      )}
-
-      {/* Remove confirmation */}
+      {/* Remove confirmation dialog */}
       <AlertDialog open={showRemoveConfirm} onOpenChange={setShowRemoveConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>

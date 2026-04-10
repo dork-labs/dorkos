@@ -130,15 +130,16 @@ describe('ChannelPicker', () => {
       const { view } = renderPicker({ catalog });
 
       fireEvent.click(view.getByText('Connect to Channel'));
-      expect(screen.getByText('connected')).toBeInTheDocument();
+      // ChannelPicker uses ADAPTER_STATE_LABEL which humanizes 'connected' → 'Connected'
+      expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
-    it('shows "connected" text for already-bound channels', () => {
+    it('shows "Connected" text for already-bound channels', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1' })];
       const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
       fireEvent.click(view.getByText('Connect to Channel'));
-      expect(screen.getByText('connected')).toBeInTheDocument();
+      expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
     it('disables already-bound channels', () => {

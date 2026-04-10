@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger, Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { AdapterIcon, ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from '@/layers/features/relay';
 import type { AdapterManifest, AdapterStatus, CatalogEntry } from '@dorkos/shared/relay-schemas';
 
 interface ChannelPickerProps {
@@ -24,16 +25,11 @@ interface ChannelItem {
   state: AdapterStatus['state'];
   isDisabled: boolean;
   alreadyBound: boolean;
+  /** Adapter icon identifier from the manifest — forwarded to AdapterIcon. */
+  iconId: string | undefined;
+  /** Adapter type from the manifest — used as fallback key in AdapterIcon. */
+  adapterType: string;
 }
-
-const STATE_DOT_CLASS: Record<AdapterStatus['state'], string> = {
-  connected: 'bg-green-500',
-  disconnected: 'bg-amber-500',
-  error: 'bg-red-500',
-  starting: 'bg-amber-400',
-  stopping: 'bg-amber-400',
-  reconnecting: 'bg-amber-400',
-};
 
 /**
  * Popover listing all configured relay channel instances for binding to an agent,
@@ -62,6 +58,8 @@ export function ChannelPicker({
           state: inst.status.state,
           isDisabled: inst.status.state === 'error' || !inst.enabled,
           alreadyBound: boundAdapterIds.has(inst.id),
+          iconId: entry.manifest.iconId,
+          adapterType: entry.manifest.type,
         }))
       ),
     [catalog, boundAdapterIds]
@@ -118,12 +116,20 @@ export function ChannelPicker({
                         'hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50'
                       )}
                     >
-                      <span
-                        className={cn(
-                          'size-2 shrink-0 rounded-full',
-                          STATE_DOT_CLASS[channel.state]
-                        )}
-                      />
+                      <div className="relative shrink-0">
+                        <AdapterIcon
+                          iconId={channel.iconId}
+                          adapterType={channel.adapterType}
+                          size={20}
+                          className="text-muted-foreground"
+                        />
+                        <span
+                          className={cn(
+                            'ring-background absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-[1.5px]',
+                            ADAPTER_STATE_DOT_CLASS[channel.state]
+                          )}
+                        />
+                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{channel.displayName}</p>
                         {channel.label && (
@@ -131,7 +137,7 @@ export function ChannelPicker({
                         )}
                       </div>
                       <span className="text-muted-foreground/60 text-xs">
-                        {channel.alreadyBound ? 'connected' : channel.state}
+                        {channel.alreadyBound ? 'Connected' : ADAPTER_STATE_LABEL[channel.state]}
                       </span>
                     </button>
                   ))}
@@ -155,7 +161,12 @@ export function ChannelPicker({
                           'hover:bg-accent'
                         )}
                       >
-                        <Plus className="size-3.5 shrink-0" />
+                        <AdapterIcon
+                          iconId={entry.manifest.iconId}
+                          adapterType={entry.manifest.type}
+                          size={14}
+                          className="text-muted-foreground shrink-0"
+                        />
                         <span className="truncate font-medium">{entry.manifest.displayName}</span>
                       </button>
                     ))}
