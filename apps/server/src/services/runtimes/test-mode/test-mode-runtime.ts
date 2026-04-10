@@ -14,6 +14,7 @@ import type {
   ModelOption,
   CommandRegistry,
   PermissionMode,
+  EffortLevel,
 } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import { scenarioStore } from './scenario-store.js';
@@ -50,7 +51,13 @@ export class TestModeRuntime implements AgentRuntime {
 
   updateSession(
     sessionId: string,
-    opts: { permissionMode?: PermissionMode; model?: string }
+    opts: {
+      permissionMode?: PermissionMode;
+      model?: string;
+      effort?: EffortLevel;
+      fastMode?: boolean;
+      autoMode?: boolean;
+    }
   ): boolean {
     const existing = this._sessions.get(sessionId);
     if (!existing) return false;

@@ -146,7 +146,7 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     CwdItem: ({ cwd }: { cwd: string }) => <span data-testid="cwd-item">{cwd}</span>,
     GitStatusItem: () => <span data-testid="git-item">git</span>,
     PermissionModeItem: () => <span data-testid="permission-item">perm</span>,
-    ModelItem: () => <span data-testid="model-item">model</span>,
+    ModelConfigPopover: () => <span data-testid="model-item">model</span>,
     CostItem: () => <span data-testid="cost-item">cost</span>,
     ContextItem: () => <span data-testid="context-item">ctx</span>,
     NotificationSoundItem: () => <span data-testid="sound-item">sound</span>,

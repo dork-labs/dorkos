@@ -15,6 +15,7 @@ import type {
   ModelOption,
   CommandRegistry,
   PermissionMode,
+  EffortLevel,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -68,7 +69,16 @@ export class FakeAgentRuntime implements AgentRuntime {
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
   hasSession = vi.fn<(sessionId: string) => boolean>(() => false);
   updateSession = vi.fn<
-    (sessionId: string, opts: { permissionMode?: PermissionMode; model?: string }) => boolean
+    (
+      sessionId: string,
+      opts: {
+        permissionMode?: PermissionMode;
+        model?: string;
+        effort?: EffortLevel;
+        fastMode?: boolean;
+        autoMode?: boolean;
+      }
+    ) => boolean
   >(() => true);
   forkSession = vi
     .fn<

@@ -57,7 +57,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   // Collaborators
   private readonly sessionStore = new SessionStore();
-  private readonly cache = new RuntimeCache();
+  private readonly cache: RuntimeCache;
   private readonly transcriptReader: TranscriptReader;
   private readonly broadcaster: SessionBroadcaster;
   private readonly lockManager = new SessionLockManager();
@@ -83,11 +83,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
-  constructor(cwd?: string) {
+  constructor(dorkHome: string, cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
+    this.cache = new RuntimeCache(dorkHome);
+    this.cache.setDefaultCwd(this.cwd);
     this.claudeCliPath = resolveClaudeCliPath();
     this.transcriptReader = new TranscriptReader();
     this.broadcaster = new SessionBroadcaster(this.transcriptReader, this.lockManager);
+  }
+
+  /** Warm up the model cache by fetching models from the SDK. */
+  async warmup(): Promise<void> {
+    return this.cache.warmup(this.cwd);
   }
 
   // ---------------------------------------------------------------------------

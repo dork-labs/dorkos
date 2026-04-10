@@ -181,9 +181,14 @@ async function start() {
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
   } else {
-    claudeRuntime = new ClaudeCodeRuntime(env.DORKOS_DEFAULT_CWD);
+    claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
     runtimeRegistry.register(claudeRuntime);
     logger.info('[Runtime] ClaudeCodeRuntime registered as default');
+
+    // Non-blocking warm-up — populates model cache without delaying server listen
+    claudeRuntime.warmup().catch((err) => {
+      logger.warn('[Startup] Model warm-up failed (will retry on first API call)', { err });
+    });
   }
 
   // Initialize Tasks scheduler if enabled

@@ -94,7 +94,7 @@ describe('ClaudeCodeRuntime', () => {
       query: vi.fn(),
     }));
     const mod = await import('../claude-code-runtime.js');
-    agentManager = new mod.ClaudeCodeRuntime();
+    agentManager = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
   });
 
   describe('ensureSession()', () => {

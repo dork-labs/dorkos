@@ -122,13 +122,19 @@ router.patch('/:id', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { permissionMode, model, effort, title } = parsed.data;
+  const { permissionMode, model, effort, fastMode, autoMode, title } = parsed.data;
   const runtime = runtimeRegistry.getDefault();
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  const updated = runtime.updateSession(internalSessionId, { permissionMode, model, effort });
+  const updated = runtime.updateSession(internalSessionId, {
+    permissionMode,
+    model,
+    effort,
+    fastMode,
+    autoMode,
+  });
   if (!updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
 
   const cwd = (req.query.cwd as string) || vaultRoot;

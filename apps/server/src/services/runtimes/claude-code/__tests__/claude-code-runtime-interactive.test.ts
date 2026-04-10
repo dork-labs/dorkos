@@ -92,7 +92,7 @@ describe('ClaudeCodeRuntime interactive tools', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    manager = new ClaudeCodeRuntime('/tmp/test-cwd');
+    manager = new ClaudeCodeRuntime('/tmp/dorkos-test', '/tmp/test-cwd');
   });
 
   afterEach(() => {

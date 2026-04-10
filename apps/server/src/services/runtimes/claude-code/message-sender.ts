@@ -236,6 +236,16 @@ export async function* executeSdkQuery(
   if (session.effort) {
     sdkOptions.effort = session.effort as Options['effort'];
   }
+  // Pass fastMode/autoMode via SDK settings (not top-level options).
+  // The SDK uses Settings.fastMode and Settings.disableAutoMode (inverted opt-out).
+  if (session.fastMode || session.autoMode === false) {
+    const base = typeof sdkOptions.settings === 'object' ? sdkOptions.settings : {};
+    sdkOptions.settings = {
+      ...base,
+      ...(session.fastMode ? { fastMode: true } : {}),
+      ...(session.autoMode === false ? { disableAutoMode: 'disable' as const } : {}),
+    };
+  }
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.

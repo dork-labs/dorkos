@@ -18,7 +18,7 @@ import {
   CwdItem,
   GitStatusItem,
   PermissionModeItem,
-  ModelItem,
+  ModelConfigPopover,
   CostItem,
   CacheItem,
   ContextItem,
@@ -276,11 +276,15 @@ export function ChatStatusSection({
                 onHide={() => setShowStatusBarModel(false)}
                 onConfigure={() => setConfigureOpen(true)}
               >
-                <ModelItem
+                <ModelConfigPopover
                   model={status.model}
                   onChangeModel={(model) => status.updateSession({ model })}
                   effort={status.effort}
                   onChangeEffort={(effort) => status.updateSession({ effort: effort ?? undefined })}
+                  fastMode={status.fastMode}
+                  onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
+                  autoMode={status.autoMode}
+                  onChangeAutoMode={(autoMode) => status.updateSession({ autoMode })}
                   disabled={!sessionId}
                 />
               </ItemContextMenu>

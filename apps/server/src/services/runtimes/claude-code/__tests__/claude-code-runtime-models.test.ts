@@ -49,43 +49,16 @@ describe('ClaudeCodeRuntime.getSupportedModels', () => {
     ClaudeCodeRuntime = mod.ClaudeCodeRuntime;
   });
 
-  it('returns default models when no query has run', async () => {
-    const manager = new ClaudeCodeRuntime();
+  it('returns empty array when no cache or warm-up is available', async () => {
+    const manager = new ClaudeCodeRuntime('/tmp/dorkos-test');
     const models = await manager.getSupportedModels();
 
-    expect(models).toHaveLength(3);
-    expect(models[0]).toEqual({
-      value: 'claude-sonnet-4-5-20250929',
-      displayName: 'Sonnet 4.5',
-      description: 'Fast, intelligent model for everyday tasks',
-      supportsEffort: true,
-      supportedEffortLevels: ['low', 'medium', 'high'],
-    });
-    expect(models[1]).toEqual({
-      value: 'claude-haiku-4-5-20251001',
-      displayName: 'Haiku 4.5',
-      description: 'Fastest, most compact model',
-      supportsEffort: true,
-      supportedEffortLevels: ['low', 'medium', 'high'],
-    });
-    expect(models[2]).toEqual({
-      value: 'claude-opus-4-6',
-      displayName: 'Opus 4.6',
-      description: 'Most capable model for complex tasks',
-      supportsEffort: true,
-      supportedEffortLevels: ['low', 'medium', 'high', 'max'],
-    });
-
-    // Each model has the required fields
-    for (const model of models) {
-      expect(model).toHaveProperty('value');
-      expect(model).toHaveProperty('displayName');
-      expect(model).toHaveProperty('description');
-    }
+    // No disk cache, no warm-up in test — returns empty array
+    expect(models).toEqual([]);
   });
 
   it('returns cached models after they are populated', async () => {
-    const manager = new ClaudeCodeRuntime();
+    const manager = new ClaudeCodeRuntime('/tmp/dorkos-test');
     const customModels = [
       { value: 'custom-model', displayName: 'Custom', description: 'A custom model' },
     ];
@@ -96,8 +69,5 @@ describe('ClaudeCodeRuntime.getSupportedModels', () => {
 
     const models = await manager.getSupportedModels();
     expect(models).toEqual(customModels);
-    expect(models).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ value: 'claude-sonnet-4-5-20250929' })])
-    );
   });
 });

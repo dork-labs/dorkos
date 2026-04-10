@@ -1,37 +1,22 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
+import { useModels } from './use-models';
 import type {
   Session,
   SessionStatusEvent,
   PermissionMode,
   EffortLevel,
+  ModelOption,
   UpdateSessionRequest,
 } from '@dorkos/shared/types';
-
-/** Default model for new sessions before any SDK interaction. */
-const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
-
-/** Known context window sizes (tokens) by model ID prefix. */
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-opus-4': 200_000,
-  'claude-sonnet-4': 200_000,
-  'claude-haiku-4': 200_000,
-  'claude-sonnet-3': 200_000,
-  'claude-haiku-3': 200_000,
-};
-
-function getContextWindowForModel(model: string): number | null {
-  for (const [prefix, size] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
-    if (model.startsWith(prefix)) return size;
-  }
-  return null;
-}
 
 export interface SessionStatusData {
   permissionMode: PermissionMode;
   model: string;
   effort: EffortLevel | null;
+  fastMode: boolean;
+  autoMode: boolean;
   costUsd: number | null;
   contextPercent: number | null; // 0-100
   isStreaming: boolean;
@@ -55,11 +40,14 @@ export function useSessionStatus(
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const { data: models } = useModels();
 
   // Optimistic local overrides (applied immediately on user action)
   const [localModel, setLocalModel] = useState<string | null>(null);
   const [localPermissionMode, setLocalPermissionMode] = useState<PermissionMode | null>(null);
   const [localEffort, setLocalEffort] = useState<EffortLevel | null>(null);
+  const [localFastMode, setLocalFastMode] = useState<boolean | null>(null);
+  const [localAutoMode, setLocalAutoMode] = useState<boolean | null>(null);
 
   const { data: session } = useQuery({
     queryKey: ['session', sessionId, selectedCwd],
@@ -68,23 +56,33 @@ export function useSessionStatus(
     enabled: !!sessionId,
   });
 
+  // Derive default model from useModels() data — no hardcoded fallback
+  const defaultModel =
+    models?.find((m: ModelOption) => m.isDefault)?.value ?? models?.[0]?.value ?? '';
+
   // Priority: local optimistic > streaming live data (only while streaming) > persisted session data > defaults
   // streamingStatus is never cleared after streaming ends, so streamingStatus?.model retains its
   // last value and would permanently shadow session?.model (the PATCH-confirmed value). Gate it
   // behind isStreaming so model changes via the dropdown are reflected immediately post-stream.
   const model =
-    localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? DEFAULT_MODEL;
+    localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? defaultModel;
 
-  // Context: prefer streaming max, fall back to known model context window
+  // Context: derive from ModelOption.contextWindow (no hardcoded map)
+  const selectedModel = models?.find((m: ModelOption) => m.value === model);
   const contextTokens = streamingStatus?.contextTokens ?? session?.contextTokens ?? null;
-  const contextMaxTokens = streamingStatus?.contextMaxTokens ?? getContextWindowForModel(model);
+  const contextMaxTokens =
+    streamingStatus?.contextMaxTokens ?? selectedModel?.contextWindow ?? null;
 
   const effort = localEffort ?? session?.effort ?? null;
+  const fastMode = localFastMode ?? session?.fastMode ?? false;
+  const autoMode = localAutoMode ?? session?.autoMode ?? false;
 
   const statusData: SessionStatusData = {
     permissionMode: localPermissionMode ?? session?.permissionMode ?? 'default',
     model,
     effort,
+    fastMode,
+    autoMode,
     costUsd: streamingStatus?.costUsd ?? null,
     contextPercent:
       contextTokens && contextMaxTokens
@@ -103,6 +101,8 @@ export function useSessionStatus(
       if (opts.model) setLocalModel(opts.model);
       if (opts.permissionMode) setLocalPermissionMode(opts.permissionMode);
       if (opts.effort) setLocalEffort(opts.effort);
+      if (opts.fastMode !== undefined) setLocalFastMode(opts.fastMode);
+      if (opts.autoMode !== undefined) setLocalAutoMode(opts.autoMode);
 
       try {
         const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
@@ -119,6 +119,8 @@ export function useSessionStatus(
         if (opts.model) setLocalModel(null);
         if (opts.permissionMode) setLocalPermissionMode(null);
         if (opts.effort) setLocalEffort(null);
+        if (opts.fastMode !== undefined) setLocalFastMode(null);
+        if (opts.autoMode !== undefined) setLocalAutoMode(null);
       }
     },
     [transport, sessionId, selectedCwd, queryClient]
@@ -137,13 +139,23 @@ export function useSessionStatus(
     if (localEffort !== null && session?.effort === localEffort) {
       setLocalEffort(null);
     }
+    if (localFastMode !== null && session?.fastMode === localFastMode) {
+      setLocalFastMode(null);
+    }
+    if (localAutoMode !== null && session?.autoMode === localAutoMode) {
+      setLocalAutoMode(null);
+    }
   }, [
     session?.model,
     session?.permissionMode,
     session?.effort,
+    session?.fastMode,
+    session?.autoMode,
     localModel,
     localPermissionMode,
     localEffort,
+    localFastMode,
+    localAutoMode,
   ]);
 
   return { ...statusData, updateSession };

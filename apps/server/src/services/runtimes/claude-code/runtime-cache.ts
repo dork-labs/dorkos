@@ -3,11 +3,14 @@
  *
  * Caches values received from the Claude Agent SDK during query execution
  * and exposes them via synchronous getters. Provides cache-population callbacks
- * for the message-sender pipeline.
+ * for the message-sender pipeline. Persists the model cache to disk for fast
+ * server restarts.
  *
  * @module services/runtimes/claude-code/runtime-cache
  */
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import path from 'path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { query, type Query, type ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 import type {
   ModelOption,
   SubagentInfo,
@@ -18,7 +21,6 @@ import type {
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { SdkCommandEntry, MessageSenderOpts } from './message-sender.js';
 import type { CommandRegistryService } from './command-registry.js';
-import { DEFAULT_MODELS } from './runtime-constants.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
@@ -27,19 +29,208 @@ type CacheCallbacks = Pick<
   'onModelsReceived' | 'onMcpStatusReceived' | 'onCommandsReceived' | 'onSubagentsReceived'
 >;
 
+/** Disk cache format for persisted model data. */
+interface ModelDiskCache {
+  /** Cached model list from SDK. */
+  models: ModelOption[];
+  /** ISO timestamp of when models were fetched. */
+  fetchedAt: string;
+  /** SDK version that reported these models. */
+  sdkVersion: string;
+  /** Cache format version for future migrations. */
+  version: 1;
+}
+
+/**
+ * Extract model family from a model ID.
+ *
+ * @example extractFamily('claude-opus-4-6') → 'claude-opus-4'
+ * @example extractFamily('claude-sonnet-4-5-20250929') → 'claude-sonnet-4'
+ */
+function extractFamily(value: string): string | undefined {
+  // Pattern: claude-{variant}-{major}[-{minor}[-{date}]]
+  const match = value.match(/^(claude-\w+-\d+)/);
+  return match?.[1];
+}
+
+/** Infer model tier from the model ID. */
+function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined {
+  if (value.includes('opus')) return 'flagship';
+  if (value.includes('sonnet')) return 'balanced';
+  if (value.includes('haiku')) return 'fast';
+  return undefined;
+}
+
+/** Map an SDK ModelInfo to a universal ModelOption. */
+export function mapSdkModelToModelOption(m: {
+  value: string;
+  displayName: string;
+  description: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: string[];
+  supportsAdaptiveThinking?: boolean;
+  supportsFastMode?: boolean;
+  supportsAutoMode?: boolean;
+  [key: string]: unknown;
+}): ModelOption {
+  return {
+    value: m.value,
+    displayName: m.displayName,
+    description: m.description,
+    supportsEffort: m.supportsEffort,
+    supportedEffortLevels: m.supportedEffortLevels as ModelOption['supportedEffortLevels'],
+    supportsAdaptiveThinking: m.supportsAdaptiveThinking,
+    supportsFastMode: m.supportsFastMode,
+    supportsAutoMode: m.supportsAutoMode,
+    contextWindow: m['contextWindow'] as number | undefined,
+    maxOutputTokens: m['maxOutputTokens'] as number | undefined,
+    provider: 'anthropic',
+    family: extractFamily(m.value),
+    tier: inferTier(m.value),
+  };
+}
+
 /**
  * Caches SDK-reported metadata (models, subagents, MCP status, commands)
- * and provides merge logic for command registries.
+ * and provides merge logic for command registries. Persists model data
+ * to disk at `${dorkHome}/cache/runtimes/${runtimeType}/models.json`.
  */
 export class RuntimeCache {
   private cachedModels: ModelOption[] | null = null;
   private cachedSubagents = new Map<string, SubagentInfo[]>();
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
   private cachedSdkCommands = new Map<string, SdkCommandEntry[]>();
+  private warmupPromise: Promise<void> | null = null;
+  private readonly cachePath: string;
+  private defaultCwd: string = '';
+  private static readonly TTL_MS = 86_400_000; // 24 hours
 
-  /** Get available models — returns SDK-reported models if cached, otherwise defaults. */
-  getSupportedModels(): ModelOption[] {
-    return this.cachedModels ?? DEFAULT_MODELS;
+  constructor(dorkHome: string, runtimeType: string = 'claude-code') {
+    this.cachePath = path.join(dorkHome, 'cache', 'runtimes', runtimeType, 'models.json');
+  }
+
+  /** Set the default cwd for lazy warm-up fallback. */
+  setDefaultCwd(cwd: string): void {
+    this.defaultCwd = cwd;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Disk cache
+  // ---------------------------------------------------------------------------
+
+  /** Load models from disk cache if fresh. Returns true if loaded. */
+  private loadFromDisk(): boolean {
+    try {
+      if (!existsSync(this.cachePath)) return false;
+      const raw = readFileSync(this.cachePath, 'utf-8');
+      const parsed: ModelDiskCache = JSON.parse(raw);
+      if (parsed.version !== 1 || !Array.isArray(parsed.models)) return false;
+      if (this.isDiskCacheStale(parsed.fetchedAt)) return false;
+      this.cachedModels = parsed.models;
+      logger.debug('[RuntimeCache] loaded models from disk cache', {
+        count: parsed.models.length,
+        fetchedAt: parsed.fetchedAt,
+      });
+      return true;
+    } catch (err) {
+      logger.debug('[RuntimeCache] disk cache read failed', { err });
+      return false;
+    }
+  }
+
+  /** Write current in-memory models to disk. */
+  private writeToDisk(): void {
+    try {
+      const dir = path.dirname(this.cachePath);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const cache: ModelDiskCache = {
+        models: this.cachedModels ?? [],
+        fetchedAt: new Date().toISOString(),
+        sdkVersion: 'unknown',
+        version: 1,
+      };
+      writeFileSync(this.cachePath, JSON.stringify(cache, null, 2), 'utf-8');
+      logger.debug('[RuntimeCache] wrote models to disk cache', { count: cache.models.length });
+    } catch (err) {
+      logger.warn('[RuntimeCache] disk cache write failed', { err });
+    }
+  }
+
+  /** Check if disk cache is stale (> TTL or missing timestamp). */
+  private isDiskCacheStale(fetchedAt?: string): boolean {
+    if (!fetchedAt) return true;
+    return Date.now() - Date.parse(fetchedAt) > RuntimeCache.TTL_MS;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Warm-up
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Warm up the model cache by creating a temporary SDK query.
+   *
+   * Uses a never-yielding async iterable as the prompt so the SDK subprocess
+   * initializes without sending a user message. Fetches models, writes to disk,
+   * then closes the query. Safe to call multiple times — deduplicates via a
+   * shared promise.
+   */
+  async warmup(cwd: string): Promise<void> {
+    if (this.warmupPromise) return this.warmupPromise;
+
+    this.warmupPromise = (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentionally never yields
+        const neverYield = (async function* () {})();
+        const agentQuery = query({ prompt: neverYield, options: { cwd } });
+
+        const models = await agentQuery.supportedModels();
+        this.cachedModels = models.map(mapSdkModelToModelOption);
+        this.writeToDisk();
+        logger.info('[RuntimeCache] warm-up populated model cache', {
+          count: this.cachedModels.length,
+        });
+
+        agentQuery.close();
+      } catch (err) {
+        logger.warn('[RuntimeCache] warm-up failed', { err });
+      } finally {
+        this.warmupPromise = null;
+      }
+    })();
+
+    return this.warmupPromise;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Models
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get available models with a multi-tier fallback:
+   * memory cache → disk cache → lazy warm-up (3s timeout) → empty array.
+   */
+  async getSupportedModels(): Promise<ModelOption[]> {
+    // 1. Memory cache (fastest)
+    if (this.cachedModels) return this.cachedModels;
+
+    // 2. Disk cache
+    if (this.loadFromDisk()) return this.cachedModels!;
+
+    // 3. Lazy warm-up with timeout
+    if (this.defaultCwd) {
+      try {
+        await Promise.race([
+          this.warmup(this.defaultCwd),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('warmup timeout')), 3000)),
+        ]);
+        if (this.cachedModels) return this.cachedModels;
+      } catch {
+        logger.debug('[RuntimeCache] lazy warm-up timed out or failed');
+      }
+    }
+
+    // 4. Empty — client shows loading state
+    return [];
   }
 
   /**
@@ -126,15 +317,15 @@ export class RuntimeCache {
    *
    * Returns callback functions that update internal caches when the SDK
    * reports models, subagents, MCP status, and commands during a query.
+   * Models always refresh (no first-call guard) and write to disk.
    */
   buildSendCallbacks(cwdKey: string): CacheCallbacks {
     return {
-      onModelsReceived: !this.cachedModels
-        ? (models) => {
-            this.cachedModels = models;
-            logger.debug('[sendMessage] cached supported models', { count: models.length });
-          }
-        : undefined,
+      onModelsReceived: (models) => {
+        this.cachedModels = models.map(mapSdkModelToModelOption);
+        this.writeToDisk();
+        logger.debug('[sendMessage] refreshed model cache', { count: models.length });
+      },
       onMcpStatusReceived: (servers) => {
         this.cachedMcpStatus.set(cwdKey, servers);
         logger.debug('[sendMessage] cached MCP server status', {

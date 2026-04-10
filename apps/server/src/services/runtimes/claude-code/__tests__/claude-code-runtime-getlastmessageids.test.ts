@@ -58,7 +58,7 @@ describe('ClaudeCodeRuntime.getLastMessageIds', () => {
     mockLoggerWarn.mockReset();
 
     const mod = await import('../claude-code-runtime.js');
-    runtime = new mod.ClaudeCodeRuntime('/mock/cwd');
+    runtime = new mod.ClaudeCodeRuntime('/tmp/dorkos-test', '/mock/cwd');
   });
 
   it('returns last user and assistant IDs from a multi-turn transcript', async () => {

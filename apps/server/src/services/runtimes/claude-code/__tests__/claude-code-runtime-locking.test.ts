@@ -54,7 +54,7 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
     }));
     const mod = await import('../claude-code-runtime.js');
     ClaudeCodeRuntime = mod.ClaudeCodeRuntime;
-    agentManager = new ClaudeCodeRuntime();
+    agentManager = new ClaudeCodeRuntime('/tmp/dorkos-test');
   });
 
   describe('acquireLock()', () => {

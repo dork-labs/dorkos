@@ -9,14 +9,8 @@ import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { SdkCommandEntry } from '../message-sender.js';
 import type { CommandRegistryService } from '../command-registry.js';
 
-vi.mock('../runtime-constants.js', () => ({
-  DEFAULT_MODELS: [
-    {
-      value: 'claude-sonnet-4-5-20250929',
-      displayName: 'Sonnet 4.5',
-      description: 'Fast model',
-    },
-  ] satisfies ModelOption[],
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  query: vi.fn(),
 }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {
@@ -32,7 +26,6 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 import { RuntimeCache } from '../runtime-cache.js';
-import { DEFAULT_MODELS } from '../runtime-constants.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,7 +73,9 @@ describe('RuntimeCache', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    cache = new RuntimeCache();
+    cache = new RuntimeCache(
+      `/tmp/dorkos-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
   });
 
   // =========================================================================
@@ -88,17 +83,20 @@ describe('RuntimeCache', () => {
   // =========================================================================
 
   describe('getSupportedModels', () => {
-    it('returns DEFAULT_MODELS when nothing is cached', () => {
-      const result = cache.getSupportedModels();
-      expect(result).toBe(DEFAULT_MODELS);
+    it('returns empty array when nothing is cached', async () => {
+      const result = await cache.getSupportedModels();
+      expect(result).toEqual([]);
     });
 
-    it('returns cached models after buildSendCallbacks populates them', () => {
+    it('returns cached models after buildSendCallbacks populates them', async () => {
       const custom = makeModels('custom-model');
       const callbacks = cache.buildSendCallbacks('/project');
       callbacks.onModelsReceived!(custom);
 
-      expect(cache.getSupportedModels()).toBe(custom);
+      const result = await cache.getSupportedModels();
+      expect(result).toHaveLength(1);
+      // buildSendCallbacks now maps through mapSdkModelToModelOption, adding provider/family/tier
+      expect(result[0]).toMatchObject({ value: 'custom-model', provider: 'anthropic' });
     });
   });
 
@@ -181,12 +179,12 @@ describe('RuntimeCache', () => {
       expect(cb.onModelsReceived).toBeDefined();
     });
 
-    it('does not provide onModelsReceived once models are already cached', () => {
+    it('always provides onModelsReceived (refreshes every time)', () => {
       const cb1 = cache.buildSendCallbacks('/project');
       cb1.onModelsReceived!(makeModels('m'));
 
       const cb2 = cache.buildSendCallbacks('/project');
-      expect(cb2.onModelsReceived).toBeUndefined();
+      expect(cb2.onModelsReceived).toBeDefined();
     });
 
     it('always provides onMcpStatusReceived (refreshes every time)', () => {
@@ -587,7 +585,7 @@ describe('RuntimeCache', () => {
       expect(names).not.toContain('/initial');
     });
 
-    it('buildSendCallbacks updates are visible to getters', () => {
+    it('buildSendCallbacks updates are visible to getters', async () => {
       const cb = cache.buildSendCallbacks('/project');
 
       // Populate all caches
@@ -598,7 +596,7 @@ describe('RuntimeCache', () => {
       cb.onCommandsReceived!(makeSdkCommands('c1'));
 
       // Verify all caches are populated
-      expect(cache.getSupportedModels()).toBe(models);
+      expect(await cache.getSupportedModels()).toHaveLength(1);
       expect(cache.getMcpStatus('/project')).toEqual(makeMcpServers('s1'));
       expect(cache.getSupportedSubagents('/project')).toEqual(makeSubagents('a1'));
     });
