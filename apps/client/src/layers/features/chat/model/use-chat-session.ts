@@ -219,6 +219,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     isWaitingForUser,
     waitingType,
     activeInteraction,
+    pendingInteractions,
     markToolCallResponded,
     isRateLimited,
     rateLimitRetryAfter,

@@ -177,9 +177,23 @@ export interface Transport {
     options?: { clientMessageId?: string; uiState?: UiState }
   ): Promise<void>;
   /** Approve a pending tool call that requires user confirmation. */
-  approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
+  approveTool(
+    sessionId: string,
+    toolCallId: string,
+    alwaysAllow?: boolean
+  ): Promise<{ ok: boolean }>;
   /** Deny a pending tool call that requires user confirmation. */
   denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
+  /** Approve multiple pending tool calls at once. */
+  batchApprove(
+    sessionId: string,
+    toolCallIds: string[]
+  ): Promise<{ results: { toolCallId: string; ok: boolean }[] }>;
+  /** Deny multiple pending tool calls at once. */
+  batchDeny(
+    sessionId: string,
+    toolCallIds: string[]
+  ): Promise<{ results: { toolCallId: string; ok: boolean }[] }>;
   /** Submit answers for an AskUserQuestion interactive prompt. */
   submitAnswers(
     sessionId: string,

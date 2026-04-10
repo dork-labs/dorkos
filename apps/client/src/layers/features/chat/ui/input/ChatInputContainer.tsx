@@ -17,6 +17,7 @@ import { useChatQueue } from '../../model/use-chat-queue';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
 import { ToolApproval } from '../tools/ToolApproval';
+import { BatchApprovalBar } from '../tools/BatchApprovalBar';
 import { QuestionPrompt } from '../tools/QuestionPrompt';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
@@ -42,6 +43,8 @@ interface FileUploadProps {
 /** Interactive tool state shared between the message list and input zone. */
 interface InteractionProps {
   active: ToolCallState | null;
+  /** All pending interactive tool calls (for batch approve/deny). */
+  pendingApprovals: ToolCallState[];
   focusedOptionIndex: number;
   onToolRef: (handle: InteractiveToolHandle | null) => void;
   onToolDecided: (toolCallId: string) => void;
@@ -90,7 +93,13 @@ export function ChatInputContainer({
   interaction,
   sync,
 }: ChatInputContainerProps) {
-  const { active: activeInteraction, focusedOptionIndex, onToolRef, onToolDecided } = interaction;
+  const {
+    active: activeInteraction,
+    pendingApprovals,
+    focusedOptionIndex,
+    onToolRef,
+    onToolDecided,
+  } = interaction;
   const { pendingFiles, onFilesSelected, onFileRemove, isUploading } = fileUpload;
   const mode = activeInteraction ? 'interactive' : 'normal';
   const isStreaming = status === 'streaming';
@@ -225,6 +234,7 @@ export function ChatInputContainer({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
+            <BatchApprovalBar sessionId={sessionId} pendingApprovals={pendingApprovals} />
             {activeInteraction!.interactiveType === 'approval' ? (
               <ToolApproval
                 ref={onToolRef}
@@ -237,6 +247,13 @@ export function ChatInputContainer({
                   onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined
                 }
                 timeoutMs={activeInteraction!.timeoutMs}
+                approvalStartedAt={activeInteraction!.approvalStartedAt}
+                approvalTitle={activeInteraction!.approvalTitle}
+                approvalDisplayName={activeInteraction!.approvalDisplayName}
+                approvalDescription={activeInteraction!.approvalDescription}
+                approvalBlockedPath={activeInteraction!.approvalBlockedPath}
+                approvalDecisionReason={activeInteraction!.approvalDecisionReason}
+                approvalHasSuggestions={activeInteraction!.approvalHasSuggestions}
               />
             ) : activeInteraction!.interactiveType === 'question' &&
               activeInteraction!.questions ? (

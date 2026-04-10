@@ -122,6 +122,7 @@ const baseProps = {
   },
   interaction: {
     active: null,
+    pendingApprovals: [],
     focusedOptionIndex: 0,
     onToolRef: vi.fn(),
     onToolDecided: vi.fn(),

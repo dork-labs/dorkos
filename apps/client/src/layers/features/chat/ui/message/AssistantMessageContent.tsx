@@ -279,7 +279,14 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     const toolPart = part;
     if (toolPart.interactiveType === 'approval') {
       if (toolPart.toolCallId === inputZoneToolCallId) {
-        return <CompactPendingRow key={toolPart.toolCallId} type="approval" />;
+        return (
+          <CompactPendingRow
+            key={toolPart.toolCallId}
+            type="approval"
+            toolName={toolPart.toolName}
+            toolInput={toolPart.input}
+          />
+        );
       }
       const isActive = toolPart.toolCallId === activeToolCallId;
       return (
@@ -291,6 +298,13 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           toolName={toolPart.toolName}
           input={toolPart.input || ''}
           timeoutMs={toolPart.timeoutMs}
+          approvalStartedAt={toolPart.approvalStartedAt}
+          approvalTitle={toolPart.approvalTitle}
+          approvalDisplayName={toolPart.approvalDisplayName}
+          approvalDescription={toolPart.approvalDescription}
+          approvalBlockedPath={toolPart.approvalBlockedPath}
+          approvalDecisionReason={toolPart.approvalDecisionReason}
+          approvalHasSuggestions={toolPart.approvalHasSuggestions}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
         />
@@ -298,7 +312,14 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     }
     if (toolPart.interactiveType === 'question' && toolPart.questions) {
       if (toolPart.toolCallId === inputZoneToolCallId) {
-        return <CompactPendingRow key={toolPart.toolCallId} type="question" />;
+        return (
+          <CompactPendingRow
+            key={toolPart.toolCallId}
+            type="question"
+            toolName={toolPart.toolName}
+            toolInput={toolPart.input}
+          />
+        );
       }
       const isActive = toolPart.toolCallId === activeToolCallId;
       return (

@@ -179,10 +179,20 @@ export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
 export const ApprovalRequestSchema = z
   .object({
     toolCallId: z.string(),
+    /** When true, resolves as "Always Allow" — forwards SDK permission suggestions. */
+    alwaysAllow: z.boolean().optional(),
   })
   .openapi('ApprovalRequest');
 
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
+
+export const BatchApprovalRequestSchema = z
+  .object({
+    toolCallIds: z.array(z.string()).min(1),
+  })
+  .openapi('BatchApprovalRequest');
+
+export type BatchApprovalRequest = z.infer<typeof BatchApprovalRequestSchema>;
 
 export const SubmitAnswersRequestSchema = z
   .object({
@@ -276,6 +286,14 @@ export const ApprovalEventSchema = z
     toolName: z.string(),
     input: z.string(),
     timeoutMs: z.number().describe('Server-side approval timeout in milliseconds'),
+    startedAt: z.number().describe('Server timestamp when the approval timer started'),
+    // SDK-provided rich context for the approval UI
+    title: z.string().optional().describe('Full permission prompt sentence from SDK'),
+    displayName: z.string().optional().describe('Short noun phrase for the tool action'),
+    description: z.string().optional().describe('Human-readable subtitle from SDK'),
+    blockedPath: z.string().optional().describe('File path that triggered the permission request'),
+    decisionReason: z.string().optional().describe('Why this permission request was triggered'),
+    hasSuggestions: z.boolean().describe('Whether "Always Allow" permission updates are available'),
   })
   .openapi('ApprovalEvent');
 
@@ -710,6 +728,18 @@ export const ToolCallPartSchema = z
     questions: z.array(QuestionItemSchema).optional(),
     answers: z.record(z.string(), z.string()).optional(),
     timeoutMs: z.number().optional().describe('Approval timeout duration in milliseconds'),
+    /** Server timestamp (ms since epoch) when the approval timer started. Used for drift-free countdown. */
+    approvalStartedAt: z.number().optional(),
+    // SDK-provided rich context for approval UI
+    approvalTitle: z.string().optional().describe('Full permission prompt sentence from SDK'),
+    approvalDisplayName: z.string().optional().describe('Short noun phrase for the tool action'),
+    approvalDescription: z.string().optional().describe('Human-readable subtitle from SDK'),
+    approvalBlockedPath: z.string().optional().describe('File path that triggered the permission'),
+    approvalDecisionReason: z
+      .string()
+      .optional()
+      .describe('Why this permission request was triggered'),
+    approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
     hooks: z.array(HookPartSchema).optional(),
     /** Client-only: timestamp (ms since epoch) when tool_call_start was received. Never serialized. */
     startedAt: z.number().optional(),

@@ -31,6 +31,7 @@ vi.mock('../model/use-chat-session', () => ({
     isWaitingForUser: false,
     waitingType: null,
     activeInteraction: null,
+    pendingInteractions: [],
     markToolCallResponded: vi.fn(),
     isRateLimited: false,
     rateLimitRetryAfter: null,

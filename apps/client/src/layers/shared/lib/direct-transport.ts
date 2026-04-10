@@ -39,7 +39,12 @@ export interface DirectTransportServices {
       content: string,
       opts?: { permissionMode?: PermissionMode; cwd?: string }
     ): AsyncGenerator<StreamEvent>;
-    approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean;
+    approveTool(
+      sessionId: string,
+      toolCallId: string,
+      approved: boolean,
+      alwaysAllow?: boolean
+    ): boolean;
     submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
     updateSession(
       sessionId: string,
@@ -135,14 +140,40 @@ export class DirectTransport implements Transport {
     }
   }
 
-  async approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }> {
-    const result = this.services.runtime.approveTool(sessionId, toolCallId, true);
+  async approveTool(
+    sessionId: string,
+    toolCallId: string,
+    alwaysAllow?: boolean
+  ): Promise<{ ok: boolean }> {
+    const result = this.services.runtime.approveTool(sessionId, toolCallId, true, alwaysAllow);
     return { ok: result };
   }
 
   async denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }> {
     const result = this.services.runtime.approveTool(sessionId, toolCallId, false);
     return { ok: result };
+  }
+
+  async batchApprove(
+    sessionId: string,
+    toolCallIds: string[]
+  ): Promise<{ results: { toolCallId: string; ok: boolean }[] }> {
+    const results = toolCallIds.map((id) => ({
+      toolCallId: id,
+      ok: this.services.runtime.approveTool(sessionId, id, true),
+    }));
+    return { results };
+  }
+
+  async batchDeny(
+    sessionId: string,
+    toolCallIds: string[]
+  ): Promise<{ results: { toolCallId: string; ok: boolean }[] }> {
+    const results = toolCallIds.map((id) => ({
+      toolCallId: id,
+      ok: this.services.runtime.approveTool(sessionId, id, false),
+    }));
+    return { results };
   }
 
   async submitAnswers(

@@ -109,7 +109,7 @@ describe('POST /api/sessions/:id/approve', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', true);
+    expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', true, undefined);
   });
 
   it('returns 404 when session does not exist (approve)', async () => {

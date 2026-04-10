@@ -197,12 +197,23 @@ export class SessionStore {
   // Interactive flows
   // ---------------------------------------------------------------------------
 
-  /** Approve or deny a pending tool call. */
-  approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean {
+  /** Approve or deny a pending tool call. When `alwaysAllow` is true, forwards SDK suggestions. */
+  approveTool(
+    sessionId: string,
+    toolCallId: string,
+    approved: boolean,
+    alwaysAllow?: boolean
+  ): boolean {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
     if (!pending || pending.type !== 'approval') return false;
-    pending.resolve(approved);
+
+    if (approved && alwaysAllow && pending.suggestions?.length) {
+      // "Always Allow" — pass the SDK permission suggestions array
+      pending.resolve(pending.suggestions);
+    } else {
+      pending.resolve(approved);
+    }
     return true;
   }
 
@@ -225,7 +236,10 @@ export class SessionStore {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(interactionId);
     if (!pending || pending.type !== 'elicitation') return false;
-    pending.resolve({ action, content });
+    pending.resolve({
+      action,
+      content: content as Record<string, string | number | boolean | string[]> | undefined,
+    });
     return true;
   }
 

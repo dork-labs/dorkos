@@ -48,6 +48,20 @@ export interface ToolCallState {
   answers?: Record<string, string>;
   /** Approval timeout duration in milliseconds (present for approval-type tool calls) */
   timeoutMs?: number;
+  /** Server timestamp (ms since epoch) when the approval timer started — for drift-free countdown */
+  approvalStartedAt?: number;
+  /** SDK-provided full permission prompt sentence */
+  approvalTitle?: string;
+  /** SDK-provided short noun phrase for the tool action */
+  approvalDisplayName?: string;
+  /** SDK-provided human-readable subtitle */
+  approvalDescription?: string;
+  /** File path that triggered the permission request */
+  approvalBlockedPath?: string;
+  /** Why this permission request was triggered */
+  approvalDecisionReason?: string;
+  /** Whether "Always Allow" permission updates are available */
+  approvalHasSuggestions?: boolean;
   /** Hook executions attached to this tool call (pre-tool and post-tool hooks). */
   hooks?: HookState[];
   /** Timestamp (ms since epoch) when tool_call_start was received. */

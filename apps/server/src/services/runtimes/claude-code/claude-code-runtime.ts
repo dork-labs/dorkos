@@ -279,8 +279,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // ---------------------------------------------------------------------------
 
   /** @inheritdoc */
-  approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean {
-    return this.sessionStore.approveTool(sessionId, toolCallId, approved);
+  approveTool(
+    sessionId: string,
+    toolCallId: string,
+    approved: boolean,
+    alwaysAllow?: boolean
+  ): boolean {
+    return this.sessionStore.approveTool(sessionId, toolCallId, approved, alwaysAllow);
   }
 
   /** @inheritdoc */

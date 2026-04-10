@@ -190,9 +190,15 @@ export interface AgentRuntime {
    * @param sessionId - Target session
    * @param toolCallId - The tool call to approve/deny
    * @param approved - Whether to approve (true) or deny (false)
+   * @param alwaysAllow - When true, forwards SDK permission suggestions for persistent approval
    * @returns false if the session or interaction was not found
    */
-  approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean;
+  approveTool(
+    sessionId: string,
+    toolCallId: string,
+    approved: boolean,
+    alwaysAllow?: boolean
+  ): boolean;
 
   /**
    * Submit answers to a pending AskUserQuestion interaction.

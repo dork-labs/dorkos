@@ -51,6 +51,11 @@ export function useToolShortcuts(
     if (handle && 'approve' in handle) handle.approve();
   }, []);
 
+  const onAlwaysAllow = useCallback(() => {
+    const handle = activeToolHandleRef.current;
+    if (handle && 'alwaysAllow' in handle) handle.alwaysAllow();
+  }, []);
+
   const onDeny = useCallback(() => {
     const handle = activeToolHandleRef.current;
     if (handle && 'deny' in handle) handle.deny();
@@ -91,6 +96,7 @@ export function useToolShortcuts(
   useInteractiveShortcuts({
     activeInteraction: activeInteractionForShortcuts,
     onApprove,
+    onAlwaysAllow,
     onDeny,
     onToggleOption,
     onNavigateOption,

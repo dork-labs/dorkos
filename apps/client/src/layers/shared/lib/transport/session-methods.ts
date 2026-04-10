@@ -154,10 +154,14 @@ export function createSessionMethods(
 
     // ── Tool Approval ──────────────────────────────────────────────────────
 
-    approveTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }> {
+    approveTool(
+      sessionId: string,
+      toolCallId: string,
+      alwaysAllow?: boolean
+    ): Promise<{ ok: boolean }> {
       return fetchJSON<{ ok: boolean }>(baseUrl, `/sessions/${sessionId}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ toolCallId }),
+        body: JSON.stringify({ toolCallId, alwaysAllow: alwaysAllow || undefined }),
         timeout: INTERACTION_TIMEOUT_MS,
       });
     },
@@ -166,6 +170,28 @@ export function createSessionMethods(
       return fetchJSON<{ ok: boolean }>(baseUrl, `/sessions/${sessionId}/deny`, {
         method: 'POST',
         body: JSON.stringify({ toolCallId }),
+        timeout: INTERACTION_TIMEOUT_MS,
+      });
+    },
+
+    batchApprove(
+      sessionId: string,
+      toolCallIds: string[]
+    ): Promise<{ results: { toolCallId: string; ok: boolean }[] }> {
+      return fetchJSON(baseUrl, `/sessions/${sessionId}/batch-approve`, {
+        method: 'POST',
+        body: JSON.stringify({ toolCallIds }),
+        timeout: INTERACTION_TIMEOUT_MS,
+      });
+    },
+
+    batchDeny(
+      sessionId: string,
+      toolCallIds: string[]
+    ): Promise<{ results: { toolCallId: string; ok: boolean }[] }> {
+      return fetchJSON(baseUrl, `/sessions/${sessionId}/batch-deny`, {
+        method: 'POST',
+        body: JSON.stringify({ toolCallIds }),
         timeout: INTERACTION_TIMEOUT_MS,
       });
     },

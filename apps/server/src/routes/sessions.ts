@@ -6,6 +6,7 @@ import {
   ForkSessionRequestSchema,
   SendMessageRequestSchema,
   ApprovalRequestSchema,
+  BatchApprovalRequestSchema,
   SubmitAnswersRequestSchema,
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
@@ -308,9 +309,9 @@ router.post('/:id/approve', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { toolCallId } = parsed.data;
+  const { toolCallId, alwaysAllow } = parsed.data;
   const runtime = runtimeRegistry.getDefault();
-  const approved = runtime.approveTool(sessionId, toolCallId, true);
+  const approved = runtime.approveTool(sessionId, toolCallId, true, alwaysAllow);
   if (!approved) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
@@ -339,6 +340,40 @@ router.post('/:id/deny', async (req, res) => {
     return sendError(res, 404, 'No pending approval', 'NO_PENDING_APPROVAL');
   }
   res.json({ ok: true });
+});
+
+// POST /api/sessions/:id/batch-approve - Approve multiple pending tool calls
+router.post('/:id/batch-approve', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = BatchApprovalRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const runtime = runtimeRegistry.getDefault();
+  const results = parsed.data.toolCallIds.map((id) => ({
+    toolCallId: id,
+    ok: runtime.approveTool(sessionId, id, true),
+  }));
+  res.json({ results });
+});
+
+// POST /api/sessions/:id/batch-deny - Deny multiple pending tool calls
+router.post('/:id/batch-deny', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = BatchApprovalRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
+  }
+  const runtime = runtimeRegistry.getDefault();
+  const results = parsed.data.toolCallIds.map((id) => ({
+    toolCallId: id,
+    ok: runtime.approveTool(sessionId, id, false),
+  }));
+  res.json({ results });
 });
 
 // POST /api/sessions/:id/submit-answers - Submit answers for AskUserQuestion

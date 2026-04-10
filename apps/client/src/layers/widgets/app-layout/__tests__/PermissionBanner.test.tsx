@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PermissionBanner } from '../ui/PermissionBanner';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -54,7 +54,7 @@ describe('PermissionBanner', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('returns null even for bypassPermissions mode (banner hidden)', () => {
+  it('shows warning banner for bypassPermissions mode', () => {
     const session = {
       id: 's2',
       permissionMode: 'bypassPermissions',
@@ -62,7 +62,37 @@ describe('PermissionBanner', () => {
       createdAt: '',
       updatedAt: '',
     };
-    const { container } = render(<PermissionBanner sessionId="s2" />, {
+    render(<PermissionBanner sessionId="s2" />, {
+      wrapper: createWrapper(session),
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeDefined();
+    expect(alert.textContent).toContain('All permissions bypassed');
+  });
+
+  it('returns null for acceptEdits mode', () => {
+    const session = {
+      id: 's3',
+      permissionMode: 'acceptEdits',
+      title: 'Test',
+      createdAt: '',
+      updatedAt: '',
+    };
+    const { container } = render(<PermissionBanner sessionId="s3" />, {
+      wrapper: createWrapper(session),
+    });
+    expect(container.textContent).toBe('');
+  });
+
+  it('returns null for plan mode', () => {
+    const session = {
+      id: 's4',
+      permissionMode: 'plan',
+      title: 'Test',
+      createdAt: '',
+      updatedAt: '',
+    };
+    const { container } = render(<PermissionBanner sessionId="s4" />, {
       wrapper: createWrapper(session),
     });
     expect(container.textContent).toBe('');

@@ -105,6 +105,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     sendMessage: vi.fn(),
     approveTool: vi.fn(),
     denyTool: vi.fn(),
+    batchApprove: vi.fn().mockResolvedValue({ results: [] }),
+    batchDeny: vi.fn().mockResolvedValue({ results: [] }),
     submitAnswers: vi.fn().mockResolvedValue({ ok: true }),
     submitElicitation: vi.fn().mockResolvedValue({ ok: true }),
     stopTask: vi.fn().mockResolvedValue({ success: true, taskId: '' }),

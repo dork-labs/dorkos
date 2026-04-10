@@ -8,6 +8,7 @@ interface UseInteractiveShortcutsOptions {
   } | null;
   /** Callbacks for approval shortcuts */
   onApprove?: () => void;
+  onAlwaysAllow?: () => void;
   onDeny?: () => void;
   /** Callbacks for question shortcuts */
   onToggleOption?: (index: number) => void;
@@ -24,6 +25,7 @@ interface UseInteractiveShortcutsOptions {
 export function useInteractiveShortcuts({
   activeInteraction,
   onApprove,
+  onAlwaysAllow,
   onDeny,
   onToggleOption,
   onNavigateOption,
@@ -52,7 +54,11 @@ export function useInteractiveShortcuts({
       if (respondingRef.current) return;
 
       if (activeInteraction!.type === 'approval') {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && e.shiftKey) {
+          e.preventDefault();
+          respondingRef.current = true;
+          onAlwaysAllow?.();
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           respondingRef.current = true;
           onApprove?.();
@@ -132,6 +138,7 @@ export function useInteractiveShortcuts({
   }, [
     activeInteraction,
     onApprove,
+    onAlwaysAllow,
     onDeny,
     onToggleOption,
     onNavigateOption,

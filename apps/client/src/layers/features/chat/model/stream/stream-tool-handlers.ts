@@ -138,22 +138,29 @@ export function handleApprovalRequired(
   assistantId: string
 ) {
   const approval = data as ApprovalEvent;
+  const approvalFields = {
+    interactiveType: 'approval' as const,
+    input: approval.input,
+    status: 'pending' as const,
+    timeoutMs: approval.timeoutMs,
+    approvalStartedAt: approval.startedAt,
+    approvalTitle: approval.title,
+    approvalDisplayName: approval.displayName,
+    approvalDescription: approval.description,
+    approvalBlockedPath: approval.blockedPath,
+    approvalDecisionReason: approval.decisionReason,
+    approvalHasSuggestions: approval.hasSuggestions,
+  };
   const existing = helpers.findToolCallPart(approval.toolCallId);
   if (existing) {
-    existing.interactiveType = 'approval';
-    existing.input = approval.input;
-    existing.status = 'pending';
-    existing.timeoutMs = approval.timeoutMs;
+    Object.assign(existing, approvalFields);
   } else {
     // New tool call arriving directly as approval_required (no prior tool_call_start)
     helpers.currentPartsRef.current.push({
       type: 'tool_call',
       toolCallId: approval.toolCallId,
       toolName: approval.toolName,
-      input: approval.input,
-      status: 'pending',
-      interactiveType: 'approval',
-      timeoutMs: approval.timeoutMs,
+      ...approvalFields,
     });
   }
   helpers.updateAssistantMessage(assistantId);

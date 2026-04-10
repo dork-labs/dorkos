@@ -114,6 +114,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     isWaitingForUser,
     waitingType,
     activeInteraction,
+    pendingInteractions,
     markToolCallResponded,
     isRateLimited,
     rateLimitRetryAfter,
@@ -284,6 +285,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         }}
         interaction={{
           active: activeInteraction,
+          pendingApprovals: pendingInteractions.filter((tc) => tc.interactiveType === 'approval'),
           focusedOptionIndex,
           onToolRef: handleToolRef,
           onToolDecided: markToolCallResponded,
