@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Align ModelConfigPopover with Design B mockup
 - Filter internal adapters from channels tab and inline setup wizard
 
 ---

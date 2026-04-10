@@ -1,14 +1,17 @@
-import { Bot, AlertCircle, RefreshCw, Check, Zap, Sparkles } from 'lucide-react';
+import { Bot, AlertCircle, RefreshCw, Zap, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
+  RadioGroup,
+  RadioGroupItem,
   Skeleton,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   Badge,
+  Separator,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useModels } from '@/layers/entities/session';
@@ -95,37 +98,26 @@ function ModelLoadError({ onRetry }: { onRetry: () => void }) {
 interface ModelCardProps {
   model: ModelOption;
   isSelected: boolean;
-  onSelect: () => void;
 }
 
-/** Selectable model card with radio indicator and context window badge. */
-function ModelCard({ model, isSelected, onSelect }: ModelCardProps) {
+/** Selectable model card with Radix radio indicator and context window badge. */
+function ModelCard({ model, isSelected }: ModelCardProps) {
   return (
-    <button
-      role="radio"
-      aria-checked={isSelected}
-      onClick={onSelect}
+    <label
       className={cn(
-        'relative flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors duration-150',
+        'relative flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors duration-150',
         isSelected
-          ? 'border-primary/30 bg-primary/5'
-          : 'border-border hover:border-border/80 hover:bg-muted/50'
+          ? 'border-primary/40 bg-primary/5'
+          : 'border-border hover:border-muted-foreground/30 hover:bg-muted/50 opacity-70'
       )}
     >
       {/* Accent left border on selected card */}
       {isSelected && (
-        <div className="bg-primary absolute top-2 bottom-2 left-0 w-0.5 rounded-full" />
+        <div className="bg-primary absolute top-2 bottom-2 left-0 w-[3px] rounded-full" />
       )}
 
-      {/* Radio indicator */}
-      <div
-        className={cn(
-          'flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors',
-          isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40'
-        )}
-      >
-        {isSelected && <Check className="size-2.5 text-white" />}
-      </div>
+      {/* Radix radio indicator — filled circle */}
+      <RadioGroupItem value={model.value} className="shrink-0" />
 
       {/* Model info */}
       <div className="min-w-0 flex-1">
@@ -141,7 +133,7 @@ function ModelCard({ model, isSelected, onSelect }: ModelCardProps) {
           {formatContextWindow(model.contextWindow)}
         </Badge>
       )}
-    </button>
+    </label>
   );
 }
 
@@ -154,13 +146,7 @@ interface EffortSectionProps {
 /** Effort level selector rendered as pill/segment buttons. */
 function EffortSection({ effortLevels, effort, onChangeEffort }: EffortSectionProps) {
   return (
-    <motion.div
-      key="effort-section"
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 4 }}
-      transition={SECTION_TRANSITION}
-    >
+    <div>
       <div className="text-muted-foreground mb-2 text-[11px] font-medium tracking-wide uppercase">
         Effort
       </div>
@@ -180,7 +166,7 @@ function EffortSection({ effortLevels, effort, onChangeEffort }: EffortSectionPr
           />
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -242,13 +228,7 @@ function ModeSection({
   if (!supportsFastMode && !supportsAutoMode) return null;
 
   return (
-    <motion.div
-      key="mode-section"
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 4 }}
-      transition={SECTION_TRANSITION}
-    >
+    <div>
       <div className="text-muted-foreground mb-2 text-[11px] font-medium tracking-wide uppercase">
         Mode
       </div>
@@ -270,7 +250,7 @@ function ModeSection({
           />
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -299,16 +279,6 @@ function ModeToggle({ label, icon, isActive, onToggle }: ModeToggleProps) {
       {label}
     </button>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Trigger label helpers
-// ---------------------------------------------------------------------------
-
-/** Format the effort badge label for the status bar trigger. */
-function getEffortBadge(effort: EffortLevel | null): string | null {
-  if (effort === null) return null;
-  return EFFORT_LABELS[effort].label;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,8 +328,9 @@ export function ModelConfigPopover({
   const showModes =
     (selectedModel?.supportsFastMode ?? false) || (selectedModel?.supportsAutoMode ?? false);
 
-  const effortBadge = getEffortBadge(effort);
+  const effortLabel = effort ? EFFORT_LABELS[effort].label : null;
 
+  // Build status bar trigger content
   const trigger = (
     <button
       disabled={disabled}
@@ -368,10 +339,22 @@ export function ModelConfigPopover({
     >
       <Bot className="size-(--size-icon-xs)" />
       <span>{getModelLabel(model, modelList)}</span>
-      {effortBadge && (
-        <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px]">
-          {effortBadge}
-        </Badge>
+      {effortLabel && (
+        <>
+          <span className="text-muted-foreground text-[11px]">·</span>
+          <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            {effortLabel}
+          </Badge>
+        </>
+      )}
+      {fastMode && (
+        <>
+          <span className="text-muted-foreground text-[11px]">·</span>
+          <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+            <Zap className="mr-0.5 inline size-2.5" />
+            Fast
+          </Badge>
+        </>
       )}
     </button>
   );
@@ -401,51 +384,52 @@ export function ModelConfigPopover({
           {isLoading && <ModelCardsSkeleton />}
           {isError && <ModelLoadError onRetry={() => refetch()} />}
           {!isLoading && !isError && (
-            <div
-              className="space-y-1.5"
-              role="radiogroup"
+            <RadioGroup
+              value={model}
+              onValueChange={onChangeModel}
+              className="gap-1.5"
               aria-label="Model selection"
               data-testid="model-card-list"
             >
               {modelList.map((m) => (
-                <ModelCard
-                  key={m.value}
-                  model={m}
-                  isSelected={m.value === model}
-                  onSelect={() => onChangeModel(m.value)}
-                />
+                <ModelCard key={m.value} model={m} isSelected={m.value === model} />
               ))}
-            </div>
+            </RadioGroup>
           )}
 
-          {/* Effort and Mode sections — animate in/out when switching models */}
+          {/* Configuration section — effort + mode grouped under shared header */}
           <AnimatePresence mode="wait">
             {!isLoading && !isError && (showEffort || showModes) && (
               <motion.div
                 key={selectedModel?.value ?? 'none'}
-                className="border-border mt-3 space-y-3 border-t pt-3"
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 4 }}
                 transition={SECTION_TRANSITION}
               >
-                {showEffort && (
-                  <EffortSection
-                    effortLevels={selectedModel!.supportedEffortLevels!}
-                    effort={effort}
-                    onChangeEffort={onChangeEffort}
-                  />
-                )}
-                {showModes && (
-                  <ModeSection
-                    supportsFastMode={selectedModel?.supportsFastMode ?? false}
-                    supportsAutoMode={selectedModel?.supportsAutoMode ?? false}
-                    fastMode={fastMode}
-                    autoMode={autoMode}
-                    onChangeFastMode={onChangeFastMode}
-                    onChangeAutoMode={onChangeAutoMode}
-                  />
-                )}
+                <Separator className="my-3" />
+                <div className="text-muted-foreground mb-3 text-[11px] font-medium tracking-wide uppercase">
+                  Configuration
+                </div>
+                <div className="space-y-3">
+                  {showEffort && (
+                    <EffortSection
+                      effortLevels={selectedModel!.supportedEffortLevels!}
+                      effort={effort}
+                      onChangeEffort={onChangeEffort}
+                    />
+                  )}
+                  {showModes && (
+                    <ModeSection
+                      supportsFastMode={selectedModel?.supportsFastMode ?? false}
+                      supportsAutoMode={selectedModel?.supportsAutoMode ?? false}
+                      fastMode={fastMode}
+                      autoMode={autoMode}
+                      onChangeFastMode={onChangeFastMode}
+                      onChangeAutoMode={onChangeAutoMode}
+                    />
+                  )}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
